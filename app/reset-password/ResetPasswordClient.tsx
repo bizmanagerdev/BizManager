@@ -111,10 +111,10 @@ export default function ResetPasswordClient() {
     <div
       style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 10 }}
     >
-      <h1>Reset password</h1>
+      <h1>איפוס סיסמה</h1>
 
       <input
-        placeholder="New password"
+        placeholder="סיסמה חדשה"
         type="password"
         value={password}
         onChange={onPasswordChange}
@@ -122,7 +122,7 @@ export default function ResetPasswordClient() {
       />
 
       <input
-        placeholder="Confirm new password"
+        placeholder="אימות סיסמה חדשה"
         type="password"
         value={confirm}
         onChange={onConfirmChange}
@@ -130,11 +130,11 @@ export default function ResetPasswordClient() {
       />
 
       <button onClick={updatePassword} disabled={loading || Boolean(err)}>
-        {loading ? "Updating..." : "Update password"}
+        {loading ? "מעדכן..." : "עדכון סיסמה"}
       </button>
 
       <button onClick={() => router.replace("/login")} disabled={loading}>
-        Back to login
+        חזרה להתחברות
       </button>
 
       {info && <p style={{ color: "#155724" }}>{info}</p>}
@@ -142,4 +142,3 @@ export default function ResetPasswordClient() {
     </div>
   );
 }
-

@@ -6,8 +6,8 @@ export default async function SalesPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
-      <h1>Sales</h1>
-      <p>Coming soon.</p>
+      <h1>מכירות</h1>
+      <p>בקרוב.</p>
     </AppShell>
   );
 }

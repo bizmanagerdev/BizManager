@@ -19,7 +19,7 @@ export function AppSidebar({ items, appName = "BizManager", logo }: Props) {
   return (
     <aside
       className={cn(
-        "hidden md:flex flex-col border-r bg-sidebar transition-all duration-200 shrink-0",
+        "hidden md:flex flex-col border-e bg-sidebar transition-all duration-200 shrink-0",
         collapsed ? "w-16" : "w-60"
       )}
     >

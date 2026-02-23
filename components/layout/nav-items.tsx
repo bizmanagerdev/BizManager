@@ -20,28 +20,28 @@ export type SidebarNavItem = {
 
 export function useNavItems() {
   const sidebarItems: SidebarNavItem[] = [
-    { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-    { title: "Projects", url: "/projects", icon: FolderKanban },
-    { title: "Sales", url: "/sales", icon: ShoppingCart },
-    { title: "Inventory", url: "/inventory", icon: Boxes },
-    { title: "Payroll", url: "/payroll", icon: BadgeDollarSign },
-    { title: "Tasks", url: "/tasks", icon: ListTodo },
-    { title: "Invoices", url: "/invoices", icon: FileText },
-    { title: "Settings", url: "/settings", icon: Settings },
+    { title: "דשבורד", url: "/dashboard", icon: LayoutDashboard },
+    { title: "פרויקטים", url: "/projects", icon: FolderKanban },
+    { title: "מכירות", url: "/sales", icon: ShoppingCart },
+    { title: "מלאי", url: "/inventory", icon: Boxes },
+    { title: "שכר", url: "/payroll", icon: BadgeDollarSign },
+    { title: "משימות", url: "/tasks", icon: ListTodo },
+    { title: "חשבוניות", url: "/invoices", icon: FileText },
+    { title: "הגדרות", url: "/settings", icon: Settings },
   ];
 
   const bottomNavItems: SidebarNavItem[] = [
-    { title: "Home", url: "/dashboard", icon: LayoutDashboard },
-    { title: "Projects", url: "/projects", icon: FolderKanban },
-    { title: "Sales", url: "/sales", icon: ShoppingCart },
-    { title: "Tasks", url: "/tasks", icon: ListTodo },
+    { title: "דשבורד", url: "/dashboard", icon: LayoutDashboard },
+    { title: "פרויקטים", url: "/projects", icon: FolderKanban },
+    { title: "מכירות", url: "/sales", icon: ShoppingCart },
+    { title: "משימות", url: "/tasks", icon: ListTodo },
   ];
 
   const bottomNavMoreItems: SidebarNavItem[] = [
-    { title: "Inventory", url: "/inventory", icon: Boxes },
-    { title: "Payroll", url: "/payroll", icon: BadgeDollarSign },
-    { title: "Invoices", url: "/invoices", icon: FileText },
-    { title: "Settings", url: "/settings", icon: Settings },
+    { title: "מלאי", url: "/inventory", icon: Boxes },
+    { title: "שכר", url: "/payroll", icon: BadgeDollarSign },
+    { title: "חשבוניות", url: "/invoices", icon: FileText },
+    { title: "הגדרות", url: "/settings", icon: Settings },
   ];
 
   return { sidebarItems, bottomNavItems, bottomNavMoreItems };

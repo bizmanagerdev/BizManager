@@ -133,6 +133,7 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    direction: rtl;
   }
 
   h1,

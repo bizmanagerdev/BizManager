@@ -41,10 +41,10 @@ export function TopBar({
       {showSearch && (
         <div className="hidden sm:flex flex-1 max-w-sm">
           <div className="relative w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search..."
-              className="pl-9 h-9 bg-muted border-0 focus-visible:ring-1"
+              placeholder="חיפוש..."
+              className="ps-9 h-9 bg-muted border-0 focus-visible:ring-1"
             />
           </div>
         </div>
@@ -86,15 +86,15 @@ export function TopBar({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem>
-              <User className="h-4 w-4 mr-2" />
-              Profile
+              <User className="h-4 w-4 me-2" />
+              פרופיל
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <form action="/api/auth/logout" method="post">
               <DropdownMenuItem asChild className="text-destructive">
                 <button type="submit" className="w-full flex items-center">
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Log out
+                  <LogOut className="h-4 w-4 me-2" />
+                  התנתקות
                 </button>
               </DropdownMenuItem>
             </form>
@@ -104,4 +104,3 @@ export function TopBar({
     </header>
   );
 }
-

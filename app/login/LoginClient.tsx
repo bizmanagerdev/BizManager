@@ -69,9 +69,9 @@ export default function LoginClient() {
       }}
       style={{ maxWidth: 420, margin: "40px auto", display: "grid", gap: 10 }}
     >
-      <h1>Login</h1>
+      <h1>התחברות</h1>
       <input
-        placeholder="Email"
+        placeholder="אימייל"
         type="email"
         value={email}
         onChange={onEmailChange}
@@ -79,7 +79,7 @@ export default function LoginClient() {
       />
 
       <input
-        placeholder="Password"
+        placeholder="סיסמה"
         type="password"
         value={password}
         onChange={onPasswordChange}
@@ -87,7 +87,7 @@ export default function LoginClient() {
       />
 
       <button type="submit" disabled={loading}>
-        {loading ? "Signing in..." : "Sign in"}
+        {loading ? "מתחבר..." : "התחבר/י"}
       </button>
 
       <button
@@ -100,7 +100,7 @@ export default function LoginClient() {
         }
         disabled={loading}
       >
-        Forgot password?
+        שכחת סיסמה?
       </button>
 
       <button
@@ -113,14 +113,14 @@ export default function LoginClient() {
         }
         disabled={loading}
       >
-        Create an account
+        יצירת חשבון
       </button>
 
       {err && <p style={{ color: "red" }}>{err}</p>}
 
       {showSignUpPrompt && (
         <p style={{ margin: 0, color: "#555" }}>
-          Don&apos;t have an account?{" "}
+          אין לך חשבון?{" "}
           <button
             type="button"
             onClick={() =>
@@ -128,11 +128,10 @@ export default function LoginClient() {
             }
             disabled={loading}
           >
-            Sign up
+            הרשמה
           </button>
         </p>
       )}
     </form>
   );
 }
-

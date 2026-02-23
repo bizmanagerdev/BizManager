@@ -6,9 +6,9 @@ export default async function DashboardPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
-      <h1>Dashboard</h1>
-      <p>Logged in as: {profile.email}</p>
-      <p>Role: {profile.role}</p>
+      <h1>דשבורד</h1>
+      <p>מחובר/ת כ: {profile.email}</p>
+      <p>תפקיד: {profile.role}</p>
     </AppShell>
   );
 }

@@ -6,8 +6,8 @@ export default async function ProjectsPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
-      <h1>Projects</h1>
-      <p>Coming soon.</p>
+      <h1>פרויקטים</h1>
+      <p>בקרוב.</p>
     </AppShell>
   );
 }

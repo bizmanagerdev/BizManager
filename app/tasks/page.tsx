@@ -6,8 +6,8 @@ export default async function TasksPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
-      <h1>Tasks</h1>
-      <p>Coming soon.</p>
+      <h1>משימות</h1>
+      <p>בקרוב.</p>
     </AppShell>
   );
 }

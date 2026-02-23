@@ -23,8 +23,8 @@ export async function middleware(req: NextRequest) {
   });
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
   const path = req.nextUrl.pathname;
 
@@ -35,13 +35,13 @@ export async function middleware(req: NextRequest) {
     path.startsWith("/reset-password") ||
     path.startsWith("/api");
 
-  if (user && path.startsWith("/login")) {
+  if (session && path.startsWith("/login")) {
     const url = req.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
   }
 
-  if (!user && !isPublic) {
+  if (!session && !isPublic) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

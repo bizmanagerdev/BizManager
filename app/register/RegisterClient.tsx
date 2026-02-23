@@ -94,17 +94,17 @@ export default function RegisterClient() {
     <div
       style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 10 }}
     >
-      <h1>Register</h1>
+      <h1>הרשמה</h1>
 
       <input
-        placeholder="Full name"
+        placeholder="שם מלא"
         value={fullName}
         onChange={onChange(setFullName)}
         autoComplete="name"
       />
 
       <input
-        placeholder="Email"
+        placeholder="אימייל"
         type="email"
         value={email}
         onChange={onChange(setEmail)}
@@ -112,14 +112,14 @@ export default function RegisterClient() {
       />
 
       <input
-        placeholder="Phone (optional)"
+        placeholder="טלפון (אופציונלי)"
         value={phone}
         onChange={onChange(setPhone)}
         autoComplete="tel"
       />
 
       <input
-        placeholder="Password"
+        placeholder="סיסמה"
         type="password"
         value={password}
         onChange={onChange(setPassword)}
@@ -127,14 +127,14 @@ export default function RegisterClient() {
       />
 
       <textarea
-        placeholder="Notes (optional)"
+        placeholder="הערות (אופציונלי)"
         value={notes}
         onChange={onChange(setNotes)}
         rows={3}
       />
 
       <button onClick={register} disabled={loading}>
-        {loading ? "Creating account..." : "Create account"}
+        {loading ? "יוצר חשבון..." : "יצירת חשבון"}
       </button>
 
       <button
@@ -147,7 +147,7 @@ export default function RegisterClient() {
         }
         disabled={loading}
       >
-        Back to login
+        חזרה להתחברות
       </button>
 
       {info && <p style={{ color: "#155724" }}>{info}</p>}
@@ -155,4 +155,3 @@ export default function RegisterClient() {
     </div>
   );
 }
-

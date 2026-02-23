@@ -45,12 +45,12 @@ export function BottomNav({ items, moreItems = [] }: Props) {
                   className="flex flex-col items-center justify-center gap-0.5 min-w-[3.5rem] py-1.5 text-muted-foreground transition-colors"
                 >
                   <MoreHorizontal className="h-5 w-5" />
-                  <span className="text-[10px] font-medium">More</span>
+                  <span className="text-[10px] font-medium">עוד</span>
                 </button>
               </SheetTrigger>
               <SheetContent side="bottom" className="rounded-t-2xl pb-8">
                 <SheetHeader>
-                  <SheetTitle>More</SheetTitle>
+                  <SheetTitle>עוד</SheetTitle>
                 </SheetHeader>
                 <div className="grid grid-cols-4 gap-4 mt-4">
                   {moreItems.map((item) => (
@@ -76,4 +76,3 @@ export function BottomNav({ items, moreItems = [] }: Props) {
     </>
   );
 }
-

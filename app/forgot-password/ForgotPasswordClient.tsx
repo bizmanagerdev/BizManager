@@ -53,14 +53,14 @@ export default function ForgotPasswordClient() {
     <div
       style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 10 }}
     >
-      <h1>Forgot password</h1>
+      <h1>שחזור סיסמה</h1>
 
       <p style={{ margin: 0, color: "#555" }}>
-        Enter your email and we’ll send you a password reset link.
+        הזן/י אימייל ונשלח קישור לאיפוס סיסמה.
       </p>
 
       <input
-        placeholder="Email"
+        placeholder="אימייל"
         type="email"
         value={email}
         onChange={onEmailChange}
@@ -68,7 +68,7 @@ export default function ForgotPasswordClient() {
       />
 
       <button onClick={sendResetEmail} disabled={loading}>
-        {loading ? "Sending..." : "Send reset link"}
+        {loading ? "שולח..." : "שליחת קישור איפוס"}
       </button>
 
       <button
@@ -81,7 +81,7 @@ export default function ForgotPasswordClient() {
         }
         disabled={loading}
       >
-        Back to login
+        חזרה להתחברות
       </button>
 
       {info && <p style={{ color: "#155724" }}>{info}</p>}
@@ -89,4 +89,3 @@ export default function ForgotPasswordClient() {
     </div>
   );
 }
-

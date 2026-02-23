@@ -6,9 +6,8 @@ export default async function SettingsPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
-      <h1>Settings</h1>
-      <p>Coming soon.</p>
+      <h1>הגדרות</h1>
+      <p>בקרוב.</p>
     </AppShell>
   );
 }
-
