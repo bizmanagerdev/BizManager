@@ -7,7 +7,9 @@ export async function POST(req: Request) {
     password: string;
   }>;
 
-  if (!email || !password) {
+  const trimmedEmail = email?.trim();
+
+  if (!trimmedEmail || !password) {
     return NextResponse.json(
       { error: "Email and password are required." },
       { status: 400 }
@@ -17,11 +19,19 @@ export async function POST(req: Request) {
   const supabase = await createSupabaseRouteClient();
 
   const { error } = await supabase.auth.signInWithPassword({
-    email: email.trim(),
+    email: trimmedEmail,
     password,
   });
 
   if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("invalid login credentials")) {
+      return NextResponse.json(
+        { error: "Invalid email or password." },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 

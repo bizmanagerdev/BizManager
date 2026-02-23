@@ -1,30 +1,46 @@
 "use client";
 
 import { useState, type ChangeEvent } from "react";
-import { useRouter } from "next/navigation";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
-  const supabase = createSupabaseBrowserClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [email, setEmail] = useState<string>("");
+  const [email, setEmail] = useState<string>(
+    (searchParams.get("email") ?? "").trim()
+  );
   const [password, setPassword] = useState<string>("");
   const [err, setErr] = useState<string | null>(null);
+  const [showSignUpPrompt, setShowSignUpPrompt] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
 
   async function signIn() {
     setErr(null);
+    setShowSignUpPrompt(false);
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
+      const trimmedEmail = email.trim();
+
+      if (!trimmedEmail || !password) {
+        setErr("Email and password are required.");
+        return;
+      }
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: trimmedEmail, password }),
       });
 
-      if (error) {
-        setErr(error.message);
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as Partial<{
+          error: string;
+        }>;
+
+        const message = data.error ?? "Sign in failed.";
+        setErr(message);
+        setShowSignUpPrompt(message.toLowerCase().includes("invalid email or password"));
         return;
       }
 
@@ -44,11 +60,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: "40px auto", display: "grid", gap: 10 }}>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        signIn();
+      }}
+      style={{ maxWidth: 420, margin: "40px auto", display: "grid", gap: 10 }}
+    >
       <h1>Login</h1>
-
       <input
         placeholder="Email"
+        type="email"
         value={email}
         onChange={onEmailChange}
         autoComplete="email"
@@ -62,11 +84,48 @@ export default function LoginPage() {
         autoComplete="current-password"
       />
 
-      <button onClick={signIn} disabled={loading}>
+      <button type="submit" disabled={loading}>
         {loading ? "Signing in..." : "Sign in"}
       </button>
 
+      <button
+        onClick={() =>
+          router.push(
+            `/forgot-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""}`
+          )
+        }
+        disabled={loading}
+      >
+        Forgot password?
+      </button>
+
+      <button
+        onClick={() =>
+          router.push(
+            `/register${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""}`
+          )
+        }
+        disabled={loading}
+      >
+        Create an account
+      </button>
+
       {err && <p style={{ color: "red" }}>{err}</p>}
-    </div>
+
+      {showSignUpPrompt && (
+        <p style={{ margin: 0, color: "#555" }}>
+          Don&apos;t have an account?{" "}
+          <button
+            type="button"
+            onClick={() =>
+              router.push(`/register?email=${encodeURIComponent(email.trim())}`)
+            }
+            disabled={loading}
+          >
+            Sign up
+          </button>
+        </p>
+      )}
+    </form>
   );
 }
