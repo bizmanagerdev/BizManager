@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
+import { ClientOnly } from "@/components/ClientOnly";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 import {
   Sheet,
@@ -29,23 +30,35 @@ export function BottomNav({ items, moreItems = [] }: Props) {
               key={item.title}
               to={item.url}
               end={item.url === "/"}
-              className="flex flex-col items-center justify-center gap-0.5 min-w-[3.5rem] py-1.5 text-muted-foreground transition-colors"
-              activeClassName="text-primary"
+              className="flex flex-col items-center justify-center gap-1 min-w-[4.25rem] py-2 rounded-xl text-muted-foreground transition-colors"
+              activeClassName="text-primary bg-primary/15"
+              pendingClassName="bg-primary/10 opacity-70"
             >
-              <item.icon className="h-5 w-5" />
-              <span className="text-[10px] font-medium">{item.title}</span>
+              <item.icon className="h-6 w-6" />
+              <span className="text-xs font-medium">{item.title}</span>
             </NavLink>
           ))}
 
           {moreItems.length > 0 && (
-            <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+            <ClientOnly
+              fallback={
+                <button
+                  type="button"
+                  className="flex flex-col items-center justify-center gap-1 min-w-[4.25rem] py-2 rounded-xl text-muted-foreground transition-colors"
+                >
+                  <MoreHorizontal className="h-6 w-6" />
+                  <span className="text-xs font-medium">עוד</span>
+                </button>
+              }
+            >
+              <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
               <SheetTrigger asChild>
                 <button
                   type="button"
-                  className="flex flex-col items-center justify-center gap-0.5 min-w-[3.5rem] py-1.5 text-muted-foreground transition-colors"
+                  className="flex flex-col items-center justify-center gap-1 min-w-[4.25rem] py-2 rounded-xl text-muted-foreground transition-colors"
                 >
-                  <MoreHorizontal className="h-5 w-5" />
-                  <span className="text-[10px] font-medium">עוד</span>
+                  <MoreHorizontal className="h-6 w-6" />
+                  <span className="text-xs font-medium">עוד</span>
                 </button>
               </SheetTrigger>
               <SheetContent side="bottom" className="rounded-t-2xl pb-8">
@@ -54,20 +67,22 @@ export function BottomNav({ items, moreItems = [] }: Props) {
                 </SheetHeader>
                 <div className="grid grid-cols-4 gap-4 mt-4">
                   {moreItems.map((item) => (
-                    <NavLink
-                      key={item.title}
-                      to={item.url}
-                      className="flex flex-col items-center gap-1.5 p-3 rounded-xl text-muted-foreground hover:bg-accent transition-colors"
-                      activeClassName="text-primary bg-accent"
-                      onClick={() => setMoreOpen(false)}
-                    >
-                      <item.icon className="h-6 w-6" />
-                      <span className="text-xs font-medium">{item.title}</span>
-                    </NavLink>
-                  ))}
+                      <NavLink
+                        key={item.title}
+                        to={item.url}
+                        className="flex flex-col items-center gap-1.5 p-3 rounded-xl text-muted-foreground hover:bg-accent transition-colors"
+                        activeClassName="text-primary bg-primary/15"
+                        pendingClassName="bg-primary/10 opacity-70"
+                        onClick={() => setMoreOpen(false)}
+                      >
+                        <item.icon className="h-6 w-6" />
+                        <span className="text-xs font-medium">{item.title}</span>
+                      </NavLink>
+                    ))}
                 </div>
               </SheetContent>
-            </Sheet>
+              </Sheet>
+            </ClientOnly>
           )}
         </div>
       </nav>

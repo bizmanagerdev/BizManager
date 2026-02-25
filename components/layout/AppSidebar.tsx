@@ -47,10 +47,11 @@ export function AppSidebar({ items, appName = "BizManager", logo }: Props) {
             to={item.url}
             end={item.url === "/"}
             className={cn(
-              "flex items-center gap-3 rounded-md px-3 h-10 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors",
+              "flex items-center gap-3 rounded-md px-3 h-11 text-base text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors",
               collapsed && "justify-center px-0"
             )}
-            activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+            activeClassName="bg-primary/15 text-primary font-medium"
+            pendingClassName="bg-primary/10 opacity-70"
           >
             <item.icon className="h-4 w-4 shrink-0" />
             {!collapsed && <span>{item.title}</span>}

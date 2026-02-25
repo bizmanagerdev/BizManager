@@ -3,6 +3,7 @@
 import { type ReactNode } from "react";
 import { Search, Bell, LogOut, User, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ClientOnly } from "@/components/ClientOnly";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,7 +36,7 @@ export function TopBar({
             </span>
           </div>
         )}
-        <span className="font-semibold text-sm text-foreground">{appName}</span>
+        <span className="font-semibold text-base text-foreground">{appName}</span>
       </div>
 
       {showSearch && (
@@ -72,7 +73,23 @@ export function TopBar({
           <Bell className="h-4 w-4" />
         </Button>
 
-        <DropdownMenu>
+        <ClientOnly
+          fallback={
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-muted-foreground"
+              type="button"
+            >
+              <div className="h-7 w-7 rounded-full bg-secondary flex items-center justify-center">
+                <User className="h-3.5 w-3.5" />
+              </div>
+              {userName && <span className="hidden sm:inline text-sm">{userName}</span>}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          }
+        >
+          <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" type="button">
               <div className="h-7 w-7 rounded-full bg-secondary flex items-center justify-center">
@@ -99,7 +116,8 @@ export function TopBar({
               </DropdownMenuItem>
             </form>
           </DropdownMenuContent>
-        </DropdownMenu>
+          </DropdownMenu>
+        </ClientOnly>
       </div>
     </header>
   );

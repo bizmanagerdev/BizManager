@@ -25,12 +25,32 @@ export const NavLink = React.forwardRef<HTMLAnchorElement, Props>(
     const toPath = typeof to === "string" ? to : (to as any).pathname ?? "/";
 
     const active = isActivePath(pathname, toPath, end);
+    const [pending, setPending] = React.useState(false);
+    const lastPathRef = React.useRef(pathname);
+
+    React.useEffect(() => {
+      if (pathname !== lastPathRef.current) {
+        lastPathRef.current = pathname;
+        setPending(false);
+      }
+    }, [pathname]);
+
+    const onClick: React.MouseEventHandler<HTMLAnchorElement> = (e) => {
+      props.onClick?.(e);
+      if (e.defaultPrevented) return;
+      setPending(true);
+    };
 
     return (
       <Link
         ref={ref}
         href={to}
-        className={cn(className, active && activeClassName, pendingClassName)}
+        className={cn(
+          className,
+          active && activeClassName,
+          pending && pendingClassName
+        )}
+        onClick={onClick}
         {...props}
       />
     );
@@ -38,4 +58,3 @@ export const NavLink = React.forwardRef<HTMLAnchorElement, Props>(
 );
 
 NavLink.displayName = "NavLink";
-
