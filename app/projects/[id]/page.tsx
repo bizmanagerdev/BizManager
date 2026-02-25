@@ -4,6 +4,16 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import ProjectTabsClient from "@/app/projects/[id]/ProjectTabsClient";
 import { Badge } from "@/components/ui/badge";
 
+const DOCUMENTS_BUCKET = "business-documents";
+
+function getFirstString(obj: any, keys: string[]) {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (typeof v === "string" && v) return v;
+  }
+  return null;
+}
+
 function projectStatusVariant(status: string) {
   switch (status) {
     case "planned":
@@ -145,6 +155,65 @@ export default async function ProjectPage({
     .order("payment_date", { ascending: false })
     .limit(100);
 
+  const { data: projectDocumentsRaw, error: projectDocumentsError } =
+    await supabase
+      .from("project_documents_view")
+      .select("*")
+      .eq("project_id", id)
+      .limit(500);
+
+  const projectDocuments = await Promise.all(
+    (projectDocumentsRaw ?? []).map(async (row: any) => {
+      const documentId = getFirstString(row, ["document_id", "id"]);
+      const storageKey = getFirstString(row, ["storage_key", "storage_path", "path", "key"]);
+      const fileName = getFirstString(row, ["file_name", "filename", "name"]);
+      const title = getFirstString(row, ["title"]);
+      const documentType = getFirstString(row, ["document_type", "type", "tag"]);
+      const entityType = getFirstString(row, ["entity_type"]);
+      const entityId = getFirstString(row, ["entity_id"]);
+      const uploadedAt = getFirstString(row, ["uploaded_at", "created_at"]);
+
+      const { data: signed, error: signError } = storageKey
+        ? await supabase.storage
+            .from(DOCUMENTS_BUCKET)
+            .createSignedUrl(storageKey, 60 * 60)
+        : { data: null as any, error: null as any };
+
+      const url =
+        signError ? null : typeof signed?.signedUrl === "string" ? signed.signedUrl : null;
+
+      return {
+        document_id: documentId,
+        storage_key: storageKey,
+        file_name: fileName,
+        title,
+        document_type: documentType,
+        entity_type: entityType,
+        entity_id: entityId,
+        uploaded_at: uploadedAt,
+        url,
+      };
+    })
+  );
+
+  const projectDocumentsUnique = Array.from(
+    new Map(
+      (projectDocuments ?? [])
+        .filter((d: any) => typeof d?.document_id === "string")
+        .map((d: any) => [d.document_id as string, d])
+    ).values()
+  ) as Array<{
+    document_id: string;
+    storage_key: string | null;
+    file_name: string | null;
+    title: string | null;
+    document_type: string | null;
+    entity_type: string | null;
+    entity_id: string | null;
+    uploaded_at: string | null;
+    url: string | null;
+  }>;
+
   const status =
     typeof (overview as any)?.status === "string" ? (overview as any).status : "";
 
@@ -188,6 +257,8 @@ export default async function ProjectPage({
             tasks={(tasks as any) ?? null}
             projectTasks={(projectTasks as any) ?? []}
             projectTasksError={projectTasksError?.message ?? null}
+            projectDocuments={projectDocumentsUnique}
+            projectDocumentsError={projectDocumentsError?.message ?? null}
             assignableUsers={(assignableUsers as any) ?? []}
             assignableUsersError={assignableUsersError?.message ?? null}
             expenseSummary={(expenseSummary as any) ?? null}

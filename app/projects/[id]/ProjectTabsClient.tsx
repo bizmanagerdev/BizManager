@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientOnly } from "@/components/ClientOnly";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
@@ -124,6 +124,25 @@ function formatDate(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("he-IL").format(date);
+}
+
+function inferKindFromFilename(name: string | null) {
+  const value = (name ?? "").toLowerCase();
+  const ext = value.includes(".") ? value.split(".").pop() ?? "" : "";
+  const imageExts = new Set([
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+    "bmp",
+    "svg",
+    "heic",
+  ]);
+  const videoExts = new Set(["mp4", "mov", "webm", "mkv", "avi", "m4v"]);
+  if (imageExts.has(ext)) return "image";
+  if (videoExts.has(ext)) return "video";
+  return "file";
 }
 
 function getString(row: Record<string, unknown> | null, key: string) {
@@ -240,6 +259,8 @@ export default function ProjectTabsClient({
   tasks,
   projectTasks,
   projectTasksError,
+  projectDocuments,
+  projectDocumentsError,
   assignableUsers,
   assignableUsersError,
   expenseSummary,
@@ -254,6 +275,18 @@ export default function ProjectTabsClient({
   tasks: ProjectTaskProgress;
   projectTasks: Record<string, unknown>[];
   projectTasksError: string | null;
+  projectDocuments: Array<{
+    document_id: string;
+    storage_key: string | null;
+    file_name: string | null;
+    title: string | null;
+    document_type: string | null;
+    entity_type: string | null;
+    entity_id: string | null;
+    uploaded_at: string | null;
+    url: string | null;
+  }>;
+  projectDocumentsError: string | null;
   assignableUsers: AssignableUser[];
   assignableUsersError: string | null;
   expenseSummary: ProjectExpenseSummary;
@@ -267,6 +300,29 @@ export default function ProjectTabsClient({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const [docsUploading, setDocsUploading] = useState(false);
+  const docsFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [docsTag, setDocsTag] = useState("");
+  const [pendingDocUploads, setPendingDocUploads] = useState<
+    Array<{
+      name: string;
+      status: "uploading" | "done" | "error";
+      documentId: string | null;
+    }>
+  >([]);
+  const [pendingDocsRefresh, setPendingDocsRefresh] = useState(false);
+  const [pendingDocsStuck, setPendingDocsStuck] = useState(false);
+  const docsToastIdRef = useRef<string | number | null>(null);
+  const docsRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const docsStuckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [editTagOpen, setEditTagOpen] = useState(false);
+  const [editTagSaving, setEditTagSaving] = useState(false);
+  const [editTagDocumentId, setEditTagDocumentId] = useState<string | null>(null);
+  const [editTagValue, setEditTagValue] = useState("");
+  const [deleteDocOpen, setDeleteDocOpen] = useState(false);
+  const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
+  const [deleteDocName, setDeleteDocName] = useState<string>("");
+  const [deleteDocDeleting, setDeleteDocDeleting] = useState(false);
 
   const tabFromUrl = searchParams.get("tab");
   const [tabValue, setTabValue] = useState(tabFromUrl ?? "overview");
@@ -277,6 +333,99 @@ export default function ProjectTabsClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabFromUrl]);
 
+  useEffect(() => {
+    if (!pendingDocsRefresh) return;
+    if (pendingDocUploads.length === 0) return;
+
+    const ids = pendingDocUploads
+      .map((p) => p.documentId)
+      .filter((v): v is string => typeof v === "string" && Boolean(v));
+
+    if (ids.length === 0) return;
+
+    const existingIds = new Set(projectDocuments.map((d) => d.document_id));
+    const allVisible = ids.every((id) => existingIds.has(id));
+    if (!allVisible) return;
+
+    if (docsRefreshTimeoutRef.current) {
+      clearTimeout(docsRefreshTimeoutRef.current);
+      docsRefreshTimeoutRef.current = null;
+    }
+
+    if (docsStuckTimeoutRef.current) {
+      clearTimeout(docsStuckTimeoutRef.current);
+      docsStuckTimeoutRef.current = null;
+    }
+
+    const toastId = docsToastIdRef.current ?? undefined;
+    toast.success("הקבצים נוספו לרשימה", { id: toastId });
+    docsToastIdRef.current = null;
+    setPendingDocsRefresh(false);
+    setPendingDocsStuck(false);
+    setPendingDocUploads([]);
+  }, [projectDocuments, pendingDocsRefresh, pendingDocUploads]);
+
+  useEffect(() => {
+    if (!pendingDocsRefresh) return;
+    if (pendingDocUploads.length === 0) return;
+
+    if (docsRefreshTimeoutRef.current) {
+      clearTimeout(docsRefreshTimeoutRef.current);
+      docsRefreshTimeoutRef.current = null;
+    }
+
+    docsRefreshTimeoutRef.current = setTimeout(() => {
+      const toastId = docsToastIdRef.current ?? undefined;
+      toast(
+        "העלאה הושלמה, אבל הרשימה לא התעדכנה עדיין. נסה לרענן את הדף/הלשונית.",
+        { id: toastId }
+      );
+      docsToastIdRef.current = null;
+      setPendingDocsRefresh(false);
+      setPendingDocsStuck(false);
+      setPendingDocUploads([]);
+    }, 15000);
+
+    return () => {
+      if (docsRefreshTimeoutRef.current) {
+        clearTimeout(docsRefreshTimeoutRef.current);
+        docsRefreshTimeoutRef.current = null;
+      }
+    };
+  }, [pendingDocsRefresh, pendingDocUploads.length]);
+
+  useEffect(() => {
+    if (!pendingDocsRefresh) return;
+    if (pendingDocUploads.length === 0) return;
+
+    const allDone = pendingDocUploads.every((p) => p.status === "done");
+    if (!allDone) {
+      setPendingDocsStuck(false);
+      if (docsStuckTimeoutRef.current) {
+        clearTimeout(docsStuckTimeoutRef.current);
+        docsStuckTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    setPendingDocsStuck(false);
+    if (docsStuckTimeoutRef.current) {
+      clearTimeout(docsStuckTimeoutRef.current);
+      docsStuckTimeoutRef.current = null;
+    }
+
+    docsStuckTimeoutRef.current = setTimeout(() => {
+      setPendingDocsStuck(true);
+    }, 5000);
+
+    return () => {
+      if (docsStuckTimeoutRef.current) {
+        clearTimeout(docsStuckTimeoutRef.current);
+        docsStuckTimeoutRef.current = null;
+      }
+    };
+  }, [pendingDocsRefresh, pendingDocUploads]);
+
   function setTab(next: string) {
     setTabValue(next);
     const params = new URLSearchParams(searchParams.toString());
@@ -286,6 +435,151 @@ export default function ProjectTabsClient({
     startTransition(() => {
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     });
+  }
+
+  async function uploadProjectDocuments(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setDocsUploading(true);
+    const fileList = Array.from(files);
+    setPendingDocUploads(
+      fileList.map((f) => ({ name: f.name, status: "uploading", documentId: null }))
+    );
+    setPendingDocsRefresh(false);
+    setPendingDocsStuck(false);
+
+    const toastId = toast.loading("מעלה קבצים...");
+    docsToastIdRef.current = toastId;
+
+    try {
+      const total = fileList.length;
+      for (let i = 0; i < total; i++) {
+        const file = fileList[i]!;
+        const form = new FormData();
+        form.set("project_id", overview.id);
+        form.set("file", file);
+        if (docsTag.trim()) form.set("tag", docsTag.trim());
+
+        toast.loading(`מעלה קבצים... (${i + 1}/${total})`, { id: toastId });
+
+        const res = await fetch("/api/projects/documents/upload", {
+          method: "POST",
+          body: form,
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: json?.error ?? "" });
+          setPendingDocsRefresh(false);
+          setPendingDocsStuck(false);
+          setPendingDocUploads((prev) =>
+            prev.map((p) => (p.name === file.name ? { ...p, status: "error" } : p))
+          );
+          docsToastIdRef.current = null;
+          return;
+        }
+
+        setPendingDocUploads((prev) =>
+          prev.map((p) =>
+            p.name === file.name
+              ? {
+                  ...p,
+                  status: "done",
+                  documentId:
+                    typeof json?.document?.id === "string" ? (json.document.id as string) : null,
+                }
+              : p
+          )
+        );
+      }
+
+      toast.loading("העלאה הושלמה — מעדכן רשימה...", { id: toastId });
+      setDocsTag("");
+      setPendingDocsRefresh(true);
+      router.refresh();
+    } catch (e: any) {
+      toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: e?.message ?? "" });
+      setPendingDocsRefresh(false);
+      setPendingDocsStuck(false);
+      setPendingDocUploads((prev) => prev.map((p) => ({ ...p, status: "error" })));
+      docsToastIdRef.current = null;
+    } finally {
+      setDocsUploading(false);
+      if (docsFileInputRef.current) docsFileInputRef.current.value = "";
+    }
+  }
+
+  function openEditTag(documentId: string) {
+    const current =
+      projectDocuments.find((d) => d.document_id === documentId)?.document_type ?? "";
+    setEditTagDocumentId(documentId);
+    setEditTagValue(current ?? "");
+    setEditTagOpen(true);
+  }
+
+  async function saveEditTag() {
+    const documentId = editTagDocumentId;
+    const value = editTagValue.trim();
+    if (!documentId) return;
+    if (!value) {
+      toast.error("יש להזין תג");
+      return;
+    }
+
+    setEditTagSaving(true);
+    try {
+      const res = await fetch("/api/documents/tag", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document_id: documentId, document_type: value }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error("שגיאה בעדכון תג", { description: json?.error ?? "" });
+        return;
+      }
+      toast.success("התג עודכן");
+      setEditTagOpen(false);
+      setEditTagDocumentId(null);
+      setEditTagValue("");
+      router.refresh();
+    } catch (e: any) {
+      toast.error("שגיאה בעדכון תג", { description: e?.message ?? "" });
+    } finally {
+      setEditTagSaving(false);
+    }
+  }
+
+  function openDeleteDocument(documentId: string) {
+    const row = projectDocuments.find((d) => d.document_id === documentId);
+    const name = row?.title ?? row?.file_name ?? "מסמך";
+    setDeleteDocId(documentId);
+    setDeleteDocName(name);
+    setDeleteDocOpen(true);
+  }
+
+  async function confirmDeleteDocument() {
+    if (!deleteDocId) return;
+    setDeleteDocDeleting(true);
+    try {
+      const res = await fetch("/api/documents/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document_id: deleteDocId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error("שגיאה במחיקה", { description: json?.error ?? "" });
+        return;
+      }
+      toast.success("המסמך נמחק");
+      setDeleteDocOpen(false);
+      setDeleteDocId(null);
+      setDeleteDocName("");
+      router.refresh();
+    } catch (e: any) {
+      toast.error("שגיאה במחיקה", { description: e?.message ?? "" });
+    } finally {
+      setDeleteDocDeleting(false);
+    }
   }
 
   const [addExpenseOpen, setAddExpenseOpen] = useState(false);
@@ -723,11 +1017,259 @@ export default function ProjectTabsClient({
           <CardHeader>
             <CardTitle className="text-base">מסמכים</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            הבא: `project_documents_view` + העלאה ל-Supabase Storage.
+          <CardContent className="text-sm space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-[220px]">
+                <div className="text-xs text-muted-foreground">תגית</div>
+                <Input
+                  value={docsTag}
+                  onChange={(e) => setDocsTag(e.target.value)}
+                  placeholder="למשל: חוזה / חשבונית / תמונות"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  ref={docsFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
+                  className="hidden"
+                  onChange={(e) => void uploadProjectDocuments(e.target.files)}
+                />
+                <Button
+                  variant="secondary"
+                  disabled={docsUploading}
+                  onClick={() => docsFileInputRef.current?.click()}
+                >
+                  {docsUploading ? "מעלה..." : "העלאה"}
+                </Button>
+                <div className="text-xs text-muted-foreground">
+                  {projectDocuments.length} קבצים
+                </div>
+              </div>
+            </div>
+
+            {projectDocumentsError ? (
+              <div className="text-destructive text-sm">
+                שגיאה בטעינת מסמכים: {projectDocumentsError}
+              </div>
+            ) : pendingDocUploads.length > 0 ? (
+              <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
+                <div className="font-medium text-foreground">
+                  {pendingDocUploads.every((p) => p.status === "done") && pendingDocsRefresh
+                    ? "מעדכן רשימה..."
+                    : "מעלה קבצים"}
+                </div>
+                <div className="mt-2 space-y-1">
+                  {pendingDocUploads.map((p) => (
+                    <div key={p.name} className="flex items-center justify-between gap-2">
+                      <div className="truncate">{p.name}</div>
+                      <div className="shrink-0">
+                        {p.status === "done"
+                          ? "הועלה"
+                          : p.status === "error"
+                            ? "שגיאה"
+                            : "מעלה..."}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {pendingDocUploads.some((p) => p.status === "error") ? (
+                  <div className="mt-2 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setPendingDocsRefresh(false);
+                        setPendingDocsStuck(false);
+                        setPendingDocUploads([]);
+                      }}
+                    >
+                      סגירה
+                    </Button>
+                  </div>
+                ) : pendingDocUploads.every((p) => p.status === "done") &&
+                  pendingDocsRefresh &&
+                  pendingDocsStuck ? (
+                  <div className="mt-2 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => router.refresh()}
+                    >
+                      רענון רשימה
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : projectDocuments.length === 0 ? (
+              <div className="text-muted-foreground">אין מסמכים להצגה.</div>
+            ) : (
+              <div className="divide-y rounded-md border">
+                {projectDocuments.map((d) => {
+                  const name = d.title ?? d.file_name ?? "document";
+                  const kind = inferKindFromFilename(d.file_name ?? d.title);
+                  const when = d.uploaded_at ? formatDate(d.uploaded_at) : "—";
+
+                  const sourceType =
+                    d.entity_type ??
+                    (typeof d.storage_key === "string" && d.storage_key.startsWith("tasks/")
+                      ? "task"
+                      : typeof d.storage_key === "string" &&
+                          d.storage_key.startsWith("projects/")
+                        ? "project"
+                        : null);
+
+                  const where =
+                    sourceType === "task"
+                      ? "משימה"
+                      : sourceType === "project"
+                        ? "פרויקט"
+                        : "—";
+
+                  const kindLabel =
+                    kind === "image"
+                      ? "תמונה"
+                      : kind === "video"
+                        ? "וידאו"
+                        : "קובץ";
+
+                  return (
+                    <div
+                      key={d.document_id}
+                      className="p-3 flex items-start justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">
+                          {d.url ? (
+                            <a
+                              href={d.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary hover:underline"
+                            >
+                              {name}
+                            </a>
+                          ) : (
+                            name
+                          )}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                          <span>{when}</span>
+                          <span>{where}</span>
+                          {d.document_type ? <span>#{d.document_type}</span> : null}
+                          <span>{kindLabel}</span>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => openEditTag(d.document_id)}
+                        >
+                          ערוך תגית
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => openDeleteDocument(d.document_id)}
+                        >
+                          מחיקה
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       </TabsContent>
+
+      <Dialog
+        open={editTagOpen}
+        onOpenChange={(open) => {
+          setEditTagOpen(open);
+          if (!open) {
+            setEditTagDocumentId(null);
+            setEditTagValue("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>ערוך תגית</DialogTitle>
+            <DialogDescription>עדכון תגית למסמך (documents.document_type).</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium">תגית</div>
+            <Input
+              value={editTagValue}
+              onChange={(e) => setEditTagValue(e.target.value)}
+              placeholder="למשל: חוזה / חשבונית / תמונות"
+            />
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button type="button" variant="secondary" onClick={() => setEditTagOpen(false)}>
+              ביטול
+            </Button>
+            <Button type="button" disabled={editTagSaving || !editTagValue.trim()} onClick={() => void saveEditTag()}>
+              {editTagSaving ? "שומר..." : "שמירה"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteDocOpen}
+        onOpenChange={(open) => {
+          setDeleteDocOpen(open);
+          if (!open) {
+            setDeleteDocId(null);
+            setDeleteDocName("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>מחיקת מסמך</DialogTitle>
+            <DialogDescription>
+              פעולה זו תמחק את הרשומה ואת הקובץ מ־Storage (אם יש הרשאה).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="text-sm">
+            למחוק את: <span className="font-medium">{deleteDocName || "מסמך"}</span> ?
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={deleteDocDeleting}
+              onClick={() => setDeleteDocOpen(false)}
+            >
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteDocDeleting || !deleteDocId}
+              onClick={() => void confirmDeleteDocument()}
+            >
+              {deleteDocDeleting ? "מוחק..." : "מחיקה"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <TabsContent value="payments">
         <Card>
@@ -811,6 +1353,8 @@ function ProjectTasksTab({
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState<string>("");
   const [assignedUserId, setAssignedUserId] = useState<string>("");
+  const [createFiles, setCreateFiles] = useState<File[]>([]);
+  const createFilesInputRef = useRef<HTMLInputElement | null>(null);
 
   const statusOptions = useMemo(() => {
     return ["todo", "in_progress", "blocked", "done", "cancelled"] as TaskStatus[];
@@ -855,6 +1399,33 @@ function ProjectTasksTab({
         toast.error("שגיאה ביצירת משימה", { description: json?.error ?? "" });
         return;
       }
+      const createdTaskId =
+        typeof json?.task?.id === "string"
+          ? (json.task.id as string)
+          : typeof json?.task?.task_id === "string"
+            ? (json.task.task_id as string)
+            : null;
+
+      if (createdTaskId && createFiles.length > 0) {
+        for (const file of createFiles) {
+          const form = new FormData();
+          form.set("task_id", createdTaskId);
+          form.set("file", file);
+
+          const uploadRes = await fetch("/api/tasks/attachments/upload", {
+            method: "POST",
+            body: form,
+          });
+          const uploadJson = await uploadRes.json().catch(() => ({}));
+          if (!uploadRes.ok) {
+            toast.error("שגיאה בהעלאת קובץ", {
+              description: uploadJson?.error ?? "",
+            });
+            break;
+          }
+        }
+      }
+
       toast.success("המשימה נוצרה");
       setCreateOpen(false);
       setSubject("");
@@ -863,6 +1434,7 @@ function ProjectTasksTab({
       setAssignedUserId("");
       setPriority("");
       setStatus("");
+      setCreateFiles([]);
       onChange();
     } catch (e: any) {
       toast.error("שגיאה ביצירת משימה", { description: e?.message ?? "" });
@@ -1210,7 +1782,13 @@ function ProjectTasksTab({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) setCreateFiles([]);
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>הוספת משימה</DialogTitle>
@@ -1302,6 +1880,43 @@ function ProjectTasksTab({
                   ))}
                 </select>
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">
+                {"\u05E7\u05D1\u05E6\u05D9\u05DD \u05DE\u05E6\u05D5\u05E8\u05E4\u05D9\u05DD (\u05D0\u05D5\u05E4\u05E6\u05D9\u05D5\u05E0\u05DC\u05D9)"}
+              </div>
+              <input
+                ref={createFilesInputRef}
+                type="file"
+                multiple
+                accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
+                className="hidden"
+                onChange={(e) => setCreateFiles(Array.from(e.target.files ?? []))}
+              />
+              <div className="flex items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => createFilesInputRef.current?.click()}
+                >
+                  {createFiles.length > 0
+                    ? "\u05E9\u05D9\u05E0\u05D5\u05D9 \u05E7\u05D1\u05E6\u05D9\u05DD"
+                    : "\u05D1\u05D7\u05D9\u05E8\u05EA \u05E7\u05D1\u05E6\u05D9\u05DD"}
+                </Button>
+                <div className="text-xs text-muted-foreground">
+                  {createFiles.length} {"\u05E7\u05D1\u05E6\u05D9\u05DD"}
+                </div>
+              </div>
+              {createFiles.length > 0 ? (
+                <div className="text-xs text-muted-foreground truncate">
+                  {createFiles
+                    .slice(0, 3)
+                    .map((f) => f.name)
+                    .join(", ")}
+                  {createFiles.length > 3 ? ` +${createFiles.length - 3}` : ""}
+                </div>
+              ) : null}
             </div>
 
             <DialogFooter className="mt-6">
