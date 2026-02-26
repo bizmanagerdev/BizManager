@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const form = await req.formData();
     const projectId = String(form.get("project_id") ?? "");
     const file = form.get("file");
-    const tag = String(form.get("tag") ?? "").trim();
+    const category = String(form.get("category") ?? form.get("tag") ?? "").trim();
 
     if (!projectId) return NextResponse.json({ error: "Missing project_id" }, { status: 400 });
     if (!file || !(file instanceof File)) {
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
 
     const { error: docError } = await supabase.from("documents").insert({
       id: documentId,
-      document_type: tag || "project_document",
+      document_type: category || "project_document",
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
         id: documentId,
         storage_key: storagePath,
         file_name: displayName,
-        document_type: tag || "project_document",
+        document_type: category || "project_document",
         uploaded_at: uploadedAt,
       },
     });

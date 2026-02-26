@@ -302,7 +302,30 @@ export default function ProjectTabsClient({
   const [isPending, startTransition] = useTransition();
   const [docsUploading, setDocsUploading] = useState(false);
   const docsFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [docsTag, setDocsTag] = useState("");
+  const [docsFilterCategory, setDocsFilterCategory] = useState<string>("");
+  const [expensesUi, setExpensesUi] = useState<ExpenseListItem[]>(expenses);
+  const [paymentsUi, setPaymentsUi] = useState<PaymentRow[]>(payments);
+  const [projectTasksUi, setProjectTasksUi] =
+    useState<Record<string, unknown>[]>(projectTasks);
+
+  useEffect(() => {
+    setExpensesUi(expenses);
+  }, [expenses]);
+
+  useEffect(() => {
+    setPaymentsUi(payments);
+  }, [payments]);
+
+  useEffect(() => {
+    setProjectTasksUi(projectTasks);
+  }, [projectTasks]);
+  const [uploadDocsOpen, setUploadDocsOpen] = useState(false);
+  const [uploadDocsCategory, setUploadDocsCategory] = useState<string>("");
+  const [uploadDocsCategoryMode, setUploadDocsCategoryMode] = useState<
+    "existing" | "new"
+  >("existing");
+  const [uploadDocsNewCategory, setUploadDocsNewCategory] = useState<string>("");
+  const [uploadDocsFiles, setUploadDocsFiles] = useState<File[]>([]);
   const [pendingDocUploads, setPendingDocUploads] = useState<
     Array<{
       name: string;
@@ -324,12 +347,29 @@ export default function ProjectTabsClient({
   const [deleteDocName, setDeleteDocName] = useState<string>("");
   const [deleteDocDeleting, setDeleteDocDeleting] = useState(false);
 
+  const existingCategories = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of projectDocuments) {
+      const value = typeof d.document_type === "string" ? d.document_type.trim() : "";
+      if (value) set.add(value);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "he"));
+  }, [projectDocuments]);
+
+  const filteredProjectDocuments = useMemo(() => {
+    if (!docsFilterCategory) return projectDocuments;
+    return projectDocuments.filter((d) => d.document_type === docsFilterCategory);
+  }, [projectDocuments, docsFilterCategory]);
+
+  const allowedTabs = new Set(["overview", "financial", "tasks", "documents"]);
   const tabFromUrl = searchParams.get("tab");
-  const [tabValue, setTabValue] = useState(tabFromUrl ?? "overview");
+  const [tabValue, setTabValue] = useState(
+    tabFromUrl && allowedTabs.has(tabFromUrl) ? tabFromUrl : "overview"
+  );
 
   useEffect(() => {
     // Sync state when the URL changes via navigation/back/forward.
-    setTabValue(tabFromUrl ?? "overview");
+    setTabValue(tabFromUrl && allowedTabs.has(tabFromUrl) ? tabFromUrl : "overview");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabFromUrl]);
 
@@ -427,6 +467,7 @@ export default function ProjectTabsClient({
   }, [pendingDocsRefresh, pendingDocUploads]);
 
   function setTab(next: string) {
+    if (!allowedTabs.has(next)) return;
     setTabValue(next);
     const params = new URLSearchParams(searchParams.toString());
     if (next === "overview") params.delete("tab");
@@ -437,10 +478,10 @@ export default function ProjectTabsClient({
     });
   }
 
-  async function uploadProjectDocuments(files: FileList | null) {
+  async function uploadProjectDocuments(files: File[], category: string) {
     if (!files || files.length === 0) return;
     setDocsUploading(true);
-    const fileList = Array.from(files);
+    const fileList = files;
     setPendingDocUploads(
       fileList.map((f) => ({ name: f.name, status: "uploading", documentId: null }))
     );
@@ -457,7 +498,7 @@ export default function ProjectTabsClient({
         const form = new FormData();
         form.set("project_id", overview.id);
         form.set("file", file);
-        if (docsTag.trim()) form.set("tag", docsTag.trim());
+        if (category.trim()) form.set("category", category.trim());
 
         toast.loading(`מעלה קבצים... (${i + 1}/${total})`, { id: toastId });
 
@@ -492,7 +533,6 @@ export default function ProjectTabsClient({
       }
 
       toast.loading("העלאה הושלמה — מעדכן רשימה...", { id: toastId });
-      setDocsTag("");
       setPendingDocsRefresh(true);
       router.refresh();
     } catch (e: any) {
@@ -505,6 +545,26 @@ export default function ProjectTabsClient({
       setDocsUploading(false);
       if (docsFileInputRef.current) docsFileInputRef.current.value = "";
     }
+  }
+
+  async function startUploadDocs() {
+    if (docsUploading) return;
+    if (uploadDocsFiles.length === 0) return;
+
+    const category =
+      uploadDocsCategoryMode === "new"
+        ? uploadDocsNewCategory.trim()
+        : uploadDocsCategory.trim();
+
+    const files = uploadDocsFiles;
+
+    setUploadDocsOpen(false);
+    setUploadDocsFiles([]);
+    setUploadDocsCategory("");
+    setUploadDocsNewCategory("");
+    setUploadDocsCategoryMode("existing");
+
+    await uploadProjectDocuments(files, category);
   }
 
   function openEditTag(documentId: string) {
@@ -584,27 +644,70 @@ export default function ProjectTabsClient({
 
   const [addExpenseOpen, setAddExpenseOpen] = useState(false);
   const [addIncomeOpen, setAddIncomeOpen] = useState(false);
-  const totalTasks = toNumber(tasks?.total_tasks) ?? 0;
-  const completedTasks = toNumber(tasks?.completed_tasks) ?? 0;
-  const openTasks = toNumber(tasks?.open_tasks) ?? 0;
+  const [updateActualPriceOpen, setUpdateActualPriceOpen] = useState(false);
+  const [updateActualPriceSaving, setUpdateActualPriceSaving] = useState(false);
+  const [updateActualPriceValue, setUpdateActualPriceValue] = useState<string>("");
+  const completedFromList = projectTasksUi.filter(
+    (t) => getFirstString(t, ["status"]) === "done"
+  ).length;
+  const openFromList = projectTasksUi.filter((t) => {
+    const s = getFirstString(t, ["status"]);
+    return s !== "done" && s !== "cancelled";
+  }).length;
+  const totalFromList = projectTasksUi.length;
+
+  const totalTasks =
+    totalFromList > 0 ? totalFromList : toNumber(tasks?.total_tasks) ?? 0;
+  const completedTasks =
+    totalFromList > 0 ? completedFromList : toNumber(tasks?.completed_tasks) ?? 0;
+  const openTasks =
+    totalFromList > 0 ? openFromList : toNumber(tasks?.open_tasks) ?? 0;
   const completion =
     totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   const agreedBasePrice =
     toNumber(financials?.agreed_base_price ?? overview.agreed_base_price) ?? null;
-  const actualPrice =
-    toNumber(financials?.actual_price ?? overview.actual_price) ?? null;
+  const [actualPriceUi, setActualPriceUi] = useState<number | null>(
+    toNumber(financials?.actual_price ?? overview.actual_price) ?? null
+  );
+
+  useEffect(() => {
+    setActualPriceUi(toNumber(financials?.actual_price ?? overview.actual_price) ?? null);
+  }, [financials?.actual_price, overview.actual_price]);
+
+  const effectiveActualPrice = actualPriceUi ?? agreedBasePrice;
+
+  useEffect(() => {
+    if (!updateActualPriceOpen) return;
+    const v = actualPriceUi ?? agreedBasePrice;
+    setUpdateActualPriceValue(v === null ? "" : String(v));
+  }, [updateActualPriceOpen, actualPriceUi, agreedBasePrice]);
+
+  const updateActualPriceNumber = Number(updateActualPriceValue);
+  const updateActualPriceError =
+    updateActualPriceValue.trim() === ""
+      ? "שדה חובה"
+      : !Number.isFinite(updateActualPriceNumber)
+        ? "חייב להיות מספר"
+        : updateActualPriceNumber <= 0
+          ? "חייב להיות גדול מ-0"
+          : null;
+  const canSaveActualPrice = !updateActualPriceError;
   const totalExpenses = toNumber(financials?.total_expenses) ?? null;
   const grossProfit = toNumber(financials?.gross_profit) ?? null;
 
   const expenseCount = toNumber(expenseSummary?.expense_count);
   const includedExpenses = toNumber(expenseSummary?.expenses_included);
   const billedExpenses = toNumber(expenseSummary?.expenses_billed);
-  const paymentsTotal = payments.reduce((sum, p) => sum + (toNumber(p.amount_total) ?? 0), 0);
-  const expensesTotal = expenses.reduce((sum, item) => sum + (toNumber(item.expense?.amount) ?? 0), 0);
+  const paymentsTotal = paymentsUi.reduce(
+    (sum, p) => sum + (toNumber(p.amount_total) ?? 0),
+    0
+  );
+  const expensesTotal = expensesUi.reduce((sum, item) => sum + (toNumber(item.expense?.amount) ?? 0), 0);
+  const interimProfit = paymentsTotal - expensesTotal;
 
   const tasksSorted = useMemo(() => {
-    const copy = [...projectTasks];
+    const copy = [...projectTasksUi];
     copy.sort((a, b) => {
       const ad =
         getFirstDate(a, ["due_date", "deadline", "task_date", "created_at", "updated_at"]) ??
@@ -617,7 +720,7 @@ export default function ProjectTabsClient({
       return bt - at;
     });
     return copy;
-  }, [projectTasks]);
+  }, [projectTasksUi]);
 
   const usersById = useMemo(() => {
     const map = new Map<string, AssignableUser>();
@@ -626,7 +729,7 @@ export default function ProjectTabsClient({
   }, [assignableUsers]);
 
   const cashFlow = (() => {
-    const incomeEvents: CashFlowEvent[] = payments.map((p) => {
+    const incomeEvents: CashFlowEvent[] = paymentsUi.map((p) => {
       const date = p.payment_date ?? p.created_at ?? null;
       const amount = toNumber(p.amount_total);
       const reference = p.reference_number ?? "";
@@ -646,7 +749,7 @@ export default function ProjectTabsClient({
       };
     });
 
-    const expenseEvents: CashFlowEvent[] = expenses.map((item, idx) => {
+    const expenseEvents: CashFlowEvent[] = expensesUi.map((item, idx) => {
       const expenseId = getString(item.project_expense, "expense_id") ?? String(idx);
       const date =
         getString(item.expense, "expense_date") ??
@@ -692,17 +795,54 @@ export default function ProjectTabsClient({
     return all;
   })();
 
+  async function updateActualPrice(next: number | null) {
+    setUpdateActualPriceSaving(true);
+    const toastId = "update-actual-price";
+    toast.loading("מעדכן מחיר בפועל...", { id: toastId });
+    try {
+      const res = await fetch("/api/projects/update-actual-price", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          project_id: overview.id,
+          actual_price: next,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error("שגיאה בעדכון מחיר בפועל", { id: toastId, description: json?.error ?? "" });
+        return;
+      }
+
+      const updatedActual =
+        json?.project && typeof json.project.actual_price !== "undefined"
+          ? toNumber(json.project.actual_price)
+          : null;
+
+      setActualPriceUi(updatedActual);
+      toast.success("מחיר בפועל עודכן", { id: toastId });
+      setUpdateActualPriceOpen(false);
+      startTransition(() => router.refresh());
+    } catch (e: any) {
+      toast.error("שגיאה בעדכון מחיר בפועל", { id: toastId, description: e?.message ?? "" });
+    } finally {
+      setUpdateActualPriceSaving(false);
+    }
+  }
+
   return (
     <ClientOnly
       fallback={<div className="text-muted-foreground text-base">טוען…</div>}
     >
+      {isPending ? (
+        <div className="mb-2 text-xs text-muted-foreground">מעדכן נתונים…</div>
+      ) : null}
       <Tabs value={tabValue} onValueChange={setTab} dir="rtl">
       <TabsList>
         <TabsTrigger value="overview">סקירה</TabsTrigger>
         <TabsTrigger value="financial">פיננסי</TabsTrigger>
         <TabsTrigger value="tasks">משימות</TabsTrigger>
         <TabsTrigger value="documents">מסמכים</TabsTrigger>
-        <TabsTrigger value="payments">תשלומים</TabsTrigger>
       </TabsList>
 
       <TabsContent value="overview">
@@ -718,7 +858,23 @@ export default function ProjectTabsClient({
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-muted-foreground">מחיר בפועל</span>
-                <span>{formatIls(actualPrice)}</span>
+                <span>{formatIls(effectiveActualPrice)}</span>
+              </div>
+              {actualPriceUi === null && agreedBasePrice !== null ? (
+                <div className="text-xs text-muted-foreground">
+                  ברירת מחדל: מחיר בפועל = מחיר בסיס
+                </div>
+              ) : null}
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setUpdateActualPriceOpen(true)}
+                  disabled={agreedBasePrice === null && actualPriceUi === null}
+                >
+                  עדכון מחיר בפועל
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -729,14 +885,27 @@ export default function ProjectTabsClient({
             </CardHeader>
             <CardContent className="text-sm space-y-2">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">הוצאות</span>
-                <span>{formatIls(totalExpenses)}</span>
+                <span className="text-muted-foreground">הכנסות (בינתיים)</span>
+                <span>{formatIls(paymentsTotal)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">רווח גולמי</span>
+                <span className="text-muted-foreground">הוצאות (בינתיים)</span>
+                <span>{formatIls(expensesTotal)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted-foreground">רווח לבינתיים</span>
+                <span className={interimProfit < 0 ? "text-destructive" : ""}>
+                  {formatIls(interimProfit)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted-foreground">רווח גולמי (מחושב)</span>
                 <span className={grossProfit !== null && grossProfit < 0 ? "text-destructive" : ""}>
                   {formatIls(grossProfit)}
                 </span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                מבוסס על הכנסות/הוצאות שנרשמו (לא בהכרח חופף לרווח הגולמי המחושב).
               </div>
             </CardContent>
           </Card>
@@ -794,7 +963,7 @@ export default function ProjectTabsClient({
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-muted-foreground">מחיר בפועל</span>
-                <span>{formatIls(actualPrice)}</span>
+                <span>{formatIls(effectiveActualPrice)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-muted-foreground">הוצאות</span>
@@ -888,11 +1057,11 @@ export default function ProjectTabsClient({
                 <div className="text-destructive text-sm">
                   שגיאה בטעינת הוצאות: {expensesError}
                 </div>
-              ) : expenses.length === 0 ? (
+              ) : expensesUi.length === 0 ? (
                 <div className="text-muted-foreground">אין הוצאות להצגה.</div>
               ) : (
                 <div className="divide-y">
-                  {expenses.map((item, idx) => {
+                  {expensesUi.map((item, idx) => {
                     const expenseId = getString(item.project_expense, "expense_id");
                     const amount = toNumber(item.expense?.amount);
                     const createdAt =
@@ -952,11 +1121,11 @@ export default function ProjectTabsClient({
                 <div className="text-destructive text-sm">
                   שגיאה בטעינת הכנסות: {paymentsError}
                 </div>
-              ) : payments.length === 0 ? (
+              ) : paymentsUi.length === 0 ? (
                 <div className="text-muted-foreground">אין הכנסות להצגה.</div>
               ) : (
                 <div className="divide-y">
-                  {payments.map((p) => {
+                  {paymentsUi.map((p) => {
                     const amount = toNumber(p.amount_total);
                     const date = p.payment_date ?? p.created_at ?? null;
                     const method = p.payment_method ?? "—";
@@ -1008,7 +1177,16 @@ export default function ProjectTabsClient({
           usersById={usersById}
           assignableUsers={assignableUsers}
           assignableUsersError={assignableUsersError}
-          onChange={() => router.refresh()}
+          onChange={() => startTransition(() => router.refresh())}
+          onTaskUpdated={(id, patch) => {
+            setProjectTasksUi((prev) =>
+              prev.map((row) => {
+                const rowId = getFirstString(row, ["task_id", "id"]);
+                if (rowId !== id) return row;
+                return { ...row, ...patch };
+              })
+            );
+          }}
         />
       </TabsContent>
 
@@ -1019,33 +1197,32 @@ export default function ProjectTabsClient({
           </CardHeader>
           <CardContent className="text-sm space-y-3">
             <div className="flex flex-wrap items-end justify-between gap-3">
-              <div className="min-w-[220px]">
-                <div className="text-xs text-muted-foreground">תגית</div>
-                <Input
-                  value={docsTag}
-                  onChange={(e) => setDocsTag(e.target.value)}
-                  placeholder="למשל: חוזה / חשבונית / תמונות"
-                />
+              <div className="min-w-[240px] space-y-1">
+                <div className="text-xs text-muted-foreground">קטגוריה</div>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={docsFilterCategory}
+                  onChange={(e) => setDocsFilterCategory(e.target.value)}
+                >
+                  <option value="">כל הקטגוריות</option>
+                  {existingCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex items-center gap-2">
-                <input
-                  ref={docsFileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
-                  className="hidden"
-                  onChange={(e) => void uploadProjectDocuments(e.target.files)}
-                />
                 <Button
                   variant="secondary"
                   disabled={docsUploading}
-                  onClick={() => docsFileInputRef.current?.click()}
+                  onClick={() => setUploadDocsOpen(true)}
                 >
                   {docsUploading ? "מעלה..." : "העלאה"}
                 </Button>
                 <div className="text-xs text-muted-foreground">
-                  {projectDocuments.length} קבצים
+                  {filteredProjectDocuments.length} קבצים
                 </div>
               </div>
             </div>
@@ -1105,11 +1282,13 @@ export default function ProjectTabsClient({
                   </div>
                 ) : null}
               </div>
-            ) : projectDocuments.length === 0 ? (
-              <div className="text-muted-foreground">אין מסמכים להצגה.</div>
+            ) : filteredProjectDocuments.length === 0 ? (
+              <div className="text-muted-foreground">
+                {docsFilterCategory ? "אין מסמכים בקטגוריה זו." : "אין מסמכים להצגה."}
+              </div>
             ) : (
               <div className="divide-y rounded-md border">
-                {projectDocuments.map((d) => {
+                {filteredProjectDocuments.map((d) => {
                   const name = d.title ?? d.file_name ?? "document";
                   const kind = inferKindFromFilename(d.file_name ?? d.title);
                   const when = d.uploaded_at ? formatDate(d.uploaded_at) : "—";
@@ -1130,12 +1309,7 @@ export default function ProjectTabsClient({
                         ? "פרויקט"
                         : "—";
 
-                  const kindLabel =
-                    kind === "image"
-                      ? "תמונה"
-                      : kind === "video"
-                        ? "וידאו"
-                        : "קובץ";
+                  // kindLabel intentionally omitted from UI (not very useful vs. filename/preview).
 
                   return (
                     <div
@@ -1159,9 +1333,8 @@ export default function ProjectTabsClient({
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
                           <span>{when}</span>
-                          <span>{where}</span>
-                          {d.document_type ? <span>#{d.document_type}</span> : null}
-                          <span>{kindLabel}</span>
+                          <span>מקושר ל: {where}</span>
+                          {d.document_type ? <span>קטגוריה: {d.document_type}</span> : null}
                         </div>
                       </div>
 
@@ -1172,7 +1345,7 @@ export default function ProjectTabsClient({
                           size="sm"
                           onClick={() => openEditTag(d.document_id)}
                         >
-                          ערוך תגית
+                          ערוך קטגוריה
                         </Button>
                         <Button
                           type="button"
@@ -1193,6 +1366,141 @@ export default function ProjectTabsClient({
       </TabsContent>
 
       <Dialog
+        open={uploadDocsOpen}
+        onOpenChange={(open) => {
+          setUploadDocsOpen(open);
+          if (!open) {
+            setUploadDocsFiles([]);
+            setUploadDocsCategory("");
+            setUploadDocsNewCategory("");
+            setUploadDocsCategoryMode("existing");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>העלאת מסמכים</DialogTitle>
+            <DialogDescription>בחר קטגוריה (אופציונלי) וקבצים להעלאה.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">קטגוריה (אופציונלי)</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={uploadDocsCategoryMode === "new" ? "__new__" : uploadDocsCategory}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "__new__") {
+                      setUploadDocsCategoryMode("new");
+                      setUploadDocsCategory("");
+                    } else {
+                      setUploadDocsCategoryMode("existing");
+                      setUploadDocsCategory(v);
+                      setUploadDocsNewCategory("");
+                    }
+                  }}
+                >
+                  <option value="">ללא קטגוריה</option>
+                  {existingCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  <option value="__new__">קטגוריה חדשה...</option>
+                </select>
+
+                {uploadDocsCategoryMode === "new" ? (
+                  <Input
+                    value={uploadDocsNewCategory}
+                    onChange={(e) => setUploadDocsNewCategory(e.target.value)}
+                    placeholder="שם קטגוריה חדשה"
+                    aria-invalid={!uploadDocsNewCategory.trim()}
+                    className={
+                      !uploadDocsNewCategory.trim()
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    }
+                  />
+                ) : null}
+                {uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim() ? (
+                  <div className="text-xs text-destructive sm:col-span-2">
+                    שדה חובה
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">קבצים</div>
+              <input
+                ref={docsFileInputRef}
+                type="file"
+                multiple
+                accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
+                className="hidden"
+                onChange={(e) => setUploadDocsFiles(Array.from(e.target.files ?? []))}
+              />
+              <div className="flex items-center justify-between gap-2">
+                <Button type="button" variant="secondary" onClick={() => docsFileInputRef.current?.click()}>
+                  בחר קבצים
+                </Button>
+                <div className="text-xs text-muted-foreground">{uploadDocsFiles.length} קבצים</div>
+              </div>
+              {uploadDocsFiles.length > 0 ? (
+                <div className="text-xs text-muted-foreground truncate">
+                  {uploadDocsFiles
+                    .slice(0, 3)
+                    .map((f) => f.name)
+                    .join(", ")}
+                  {uploadDocsFiles.length > 3 ? ` +${uploadDocsFiles.length - 3}` : ""}
+                </div>
+              ) : null}
+              {uploadDocsFiles.length === 0 ? (
+                <div className="text-xs text-destructive">בחר לפחות קובץ אחד</div>
+              ) : null}
+            </div>
+          </div>
+
+          <DialogFooter className="mt-4">
+            {!docsUploading &&
+            (uploadDocsFiles.length === 0 ||
+              (uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim())) ? (
+              <div className="me-auto text-xs text-destructive">
+                לא ניתן להעלות:{" "}
+                {uploadDocsFiles.length === 0 ? "קבצים" : ""}
+                {uploadDocsFiles.length === 0 &&
+                uploadDocsCategoryMode === "new" &&
+                !uploadDocsNewCategory.trim()
+                  ? ", "
+                  : ""}
+                {uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim()
+                  ? "שם קטגוריה"
+                  : ""}
+              </div>
+            ) : (
+              <div className="me-auto" />
+            )}
+            <Button type="button" variant="secondary" disabled={docsUploading} onClick={() => setUploadDocsOpen(false)}>
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                docsUploading ||
+                uploadDocsFiles.length === 0 ||
+                (uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim())
+              }
+              onClick={() => void startUploadDocs()}
+            >
+              {docsUploading ? "מעלה..." : "העלאה"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={editTagOpen}
         onOpenChange={(open) => {
           setEditTagOpen(open);
@@ -1204,12 +1512,12 @@ export default function ProjectTabsClient({
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>ערוך תגית</DialogTitle>
-            <DialogDescription>עדכון תגית למסמך (documents.document_type).</DialogDescription>
+            <DialogTitle>ערוך קטגוריה</DialogTitle>
+            <DialogDescription>עדכון קטגוריה למסמך (documents.document_type).</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
-            <div className="text-sm font-medium">תגית</div>
+            <div className="text-sm font-medium">קטגוריה</div>
             <Input
               value={editTagValue}
               onChange={(e) => setEditTagValue(e.target.value)}
@@ -1271,28 +1579,99 @@ export default function ProjectTabsClient({
         </DialogContent>
       </Dialog>
 
-      <TabsContent value="payments">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">תשלומים</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            הבא: תשלומים לפי project_id + מצב חשבוניות.
-          </CardContent>
-        </Card>
-      </TabsContent>
+      <Dialog
+        open={updateActualPriceOpen}
+        onOpenChange={(open) => {
+          setUpdateActualPriceOpen(open);
+          if (!open) setUpdateActualPriceValue("");
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>עדכון מחיר בפועל</DialogTitle>
+            <DialogDescription>
+              אם לא עודכן מחיר בפועל, המערכת תציג את מחיר הבסיס כברירת מחדל.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium">מחיר בפועל *</div>
+            <Input
+              inputMode="numeric"
+              value={updateActualPriceValue}
+              onChange={(e) => setUpdateActualPriceValue(e.target.value)}
+              placeholder="לדוגמה: 12000"
+              aria-invalid={Boolean(updateActualPriceError)}
+              className={
+                updateActualPriceError
+                  ? "border-destructive focus-visible:ring-destructive"
+                  : ""
+              }
+            />
+            {updateActualPriceError ? (
+              <div className="text-xs text-destructive">{updateActualPriceError}</div>
+            ) : null}
+            {agreedBasePrice !== null ? (
+              <div className="text-xs text-muted-foreground">
+                מחיר בסיס: {formatIls(agreedBasePrice)}
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter className="mt-4">
+            {!canSaveActualPrice && !updateActualPriceSaving ? (
+              <div className="me-auto text-xs text-destructive">
+                לא ניתן לשמור: מחיר בפועל
+              </div>
+            ) : (
+              <div className="me-auto" />
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setUpdateActualPriceOpen(false)}
+              disabled={updateActualPriceSaving}
+            >
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void updateActualPrice(null)}
+              disabled={updateActualPriceSaving || agreedBasePrice === null}
+            >
+              איפוס למחיר בסיס
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void updateActualPrice(updateActualPriceNumber)}
+              disabled={updateActualPriceSaving || !canSaveActualPrice}
+            >
+              {updateActualPriceSaving ? "שומר..." : "שמירה"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AddExpenseDialog
         open={addExpenseOpen}
         onOpenChange={setAddExpenseOpen}
         projectId={overview.id}
-        onCreated={() => router.refresh()}
+        onCreated={(created) => {
+          setExpensesUi((prev) => [created, ...prev]);
+          setAddExpenseOpen(false);
+          startTransition(() => router.refresh());
+        }}
       />
       <AddIncomeDialog
         open={addIncomeOpen}
         onOpenChange={setAddIncomeOpen}
         projectId={overview.id}
-        onCreated={() => router.refresh()}
+        onCreated={(created) => {
+          setPaymentsUi((prev) => [created, ...prev]);
+          setAddIncomeOpen(false);
+          startTransition(() => router.refresh());
+        }}
       />
       </Tabs>
     </ClientOnly>
@@ -1311,6 +1690,7 @@ function ProjectTasksTab({
   assignableUsers,
   assignableUsersError,
   onChange,
+  onTaskUpdated,
 }: {
   projectId: string;
   customerId: string;
@@ -1323,6 +1703,7 @@ function ProjectTasksTab({
   assignableUsers: AssignableUser[];
   assignableUsersError: string | null;
   onChange: () => void;
+  onTaskUpdated?: (id: string, patch: Record<string, unknown>) => void;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -1375,6 +1756,18 @@ function ProjectTasksTab({
     Boolean(assignedUserId) &&
     Boolean(effectivePriority) &&
     Boolean(effectiveStatus);
+
+  const subjectError = !subject.trim();
+  const dueDateError = !dueDate;
+  const assignedUserError = !assignedUserId;
+  const createTaskValidationMessage = (() => {
+    if (creating || canSubmit) return "";
+    const missing: string[] = [];
+    if (subjectError) missing.push("כותרת");
+    if (dueDateError) missing.push("תאריך יעד");
+    if (assignedUserError) missing.push("שיוך למשתמש");
+    return missing.length > 0 ? `חסרים שדות חובה: ${missing.join(", ")}` : "";
+  })();
 
   async function createTask() {
     if (!canSubmit) return;
@@ -1464,6 +1857,7 @@ function ProjectTasksTab({
           return { ...row, status };
         })
       );
+      onTaskUpdated?.(id, { status });
       onChange();
       return true;
     } catch (e: any) {
@@ -1495,6 +1889,7 @@ function ProjectTasksTab({
           return { ...row, priority };
         })
       );
+      onTaskUpdated?.(id, { priority });
       onChange();
       return true;
     } catch (e: any) {
@@ -1808,7 +2203,14 @@ function ProjectTasksTab({
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 placeholder="לדוגמה: להתקשר לספק"
+                aria-invalid={subjectError}
+                className={
+                  subjectError ? "border-destructive focus-visible:ring-destructive" : ""
+                }
               />
+              {subjectError ? (
+                <div className="text-xs text-destructive">שדה חובה</div>
+              ) : null}
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">תיאור (אופציונלי)</div>
@@ -1824,7 +2226,14 @@ function ProjectTasksTab({
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
+                aria-invalid={dueDateError}
+                className={
+                  dueDateError ? "border-destructive focus-visible:ring-destructive" : ""
+                }
               />
+              {dueDateError ? (
+                <div className="text-xs text-destructive">שדה חובה</div>
+              ) : null}
             </div>
 
             <div className="space-y-1">
@@ -1835,7 +2244,10 @@ function ProjectTasksTab({
                 </div>
               ) : (
                 <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className={
+                    "h-10 w-full rounded-md border border-input bg-background px-3 text-sm " +
+                    (assignedUserError ? "border-destructive" : "")
+                  }
                   value={assignedUserId}
                   onChange={(e) => setAssignedUserId(e.target.value)}
                 >
@@ -1849,6 +2261,9 @@ function ProjectTasksTab({
                     ))}
                 </select>
               )}
+              {!assignableUsersError && assignedUserError ? (
+                <div className="text-xs text-destructive">שדה חובה</div>
+              ) : null}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1920,6 +2335,13 @@ function ProjectTasksTab({
             </div>
 
             <DialogFooter className="mt-6">
+              {!canSubmit && !creating ? (
+                <div className="me-auto text-xs text-destructive">
+                  {createTaskValidationMessage}
+                </div>
+              ) : (
+                <div className="me-auto" />
+              )}
               <Button
                 type="button"
                 variant="secondary"
@@ -2057,7 +2479,7 @@ function AddExpenseDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
-  onCreated: () => void;
+  onCreated: (created: ExpenseListItem) => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [amount, setAmount] = useState("");
@@ -2072,7 +2494,24 @@ function AddExpenseDialog({
     Number.isFinite(Number(amount)) &&
     Number(amount) > 0 &&
     Boolean(category.trim()) &&
-    Boolean(expenseDate);
+    Boolean(expenseDate) &&
+    Boolean(businessDomain.trim());
+
+  const amountNumber = Number(amount);
+  const amountError =
+    !amount.trim() ? "שדה חובה" : !Number.isFinite(amountNumber) ? "חייב להיות מספר" : amountNumber <= 0 ? "חייב להיות גדול מ-0" : null;
+  const categoryError = !category.trim() ? "שדה חובה" : null;
+  const businessDomainError = !businessDomain.trim() ? "שדה חובה" : null;
+  const expenseDateError = !expenseDate ? "שדה חובה" : null;
+  const addExpenseValidationMessage = (() => {
+    if (submitting || canSubmit) return "";
+    const missing: string[] = [];
+    if (amountError) missing.push("סכום");
+    if (categoryError) missing.push("קטגוריה");
+    if (businessDomainError) missing.push("תחום");
+    if (expenseDateError) missing.push("תאריך");
+    return missing.length > 0 ? `לא ניתן לשמור: ${missing.join(", ")}` : "";
+  })();
 
   async function submit() {
     const amountNumber = Number(amount);
@@ -2090,7 +2529,7 @@ function AddExpenseDialog({
           amount: amountNumber,
           category,
           description: description.trim() ? description : undefined,
-          business_domain: businessDomain.trim() ? businessDomain : undefined,
+          business_domain: businessDomain,
           notes: notes.trim() ? notes : undefined,
           expense_date: expenseDate ? expenseDate : null,
           included_in_base_price: includedInBase,
@@ -2103,7 +2542,6 @@ function AddExpenseDialog({
         return;
       }
       toast.success("ההוצאה נוספה");
-      onOpenChange(false);
       setAmount("");
       setCategory("");
       setDescription("");
@@ -2112,7 +2550,26 @@ function AddExpenseDialog({
       setNotes("");
       setIncludedInBase(false);
       setBilledToCustomer(false);
-      onCreated();
+
+      const createdExpense = json?.expense as Record<string, unknown> | undefined;
+      const createdExpenseId =
+        createdExpense && typeof createdExpense["id"] === "string"
+          ? (createdExpense["id"] as string)
+          : null;
+
+      if (!createdExpenseId) {
+        toast.error("שגיאה בהוספת הוצאה", { description: "Missing expense id" });
+        return;
+      }
+
+      onCreated({
+        project_expense: {
+          expense_id: createdExpenseId,
+          included_in_base_price: includedInBase,
+          billed_to_customer: billedToCustomer,
+        },
+        expense: createdExpense ?? null,
+      });
     } catch (e: any) {
       toast.error("שגיאה בהוספת הוצאה", { description: e?.message ?? "" });
     } finally {
@@ -2143,7 +2600,14 @@ function AddExpenseDialog({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="לדוגמה: 250"
+                aria-invalid={Boolean(amountError)}
+                className={
+                  amountError ? "border-destructive focus-visible:ring-destructive" : ""
+                }
               />
+              {amountError ? (
+                <div className="text-xs text-destructive">{amountError}</div>
+              ) : null}
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">קטגוריה *</div>
@@ -2151,7 +2615,14 @@ function AddExpenseDialog({
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 placeholder="לדוגמה: דלק"
+                aria-invalid={Boolean(categoryError)}
+                className={
+                  categoryError ? "border-destructive focus-visible:ring-destructive" : ""
+                }
               />
+              {categoryError ? (
+                <div className="text-xs text-destructive">{categoryError}</div>
+              ) : null}
             </div>
           </div>
 
@@ -2166,12 +2637,27 @@ function AddExpenseDialog({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <div className="text-sm font-medium">תחום (אופציונלי)</div>
-              <Input
+              <div className="text-sm font-medium">תחום *</div>
+              <select
+                className={
+                  "h-10 w-full rounded-md border border-input bg-background px-3 text-sm " +
+                  (businessDomainError ? "border-destructive" : "")
+                }
                 value={businessDomain}
-                onChange={(e) => setBusinessDomain(e.target.value)}
-                placeholder="לדוגמה: לוגיסטיקה"
-              />
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setBusinessDomain(next);
+                }}
+              >
+                <option value="">בחר תחום...</option>
+                <option value="home">בית</option>
+                <option value="logistics">לוגיסטיקה</option>
+                <option value="sales">מכירות</option>
+                <option value="asset_management">ניהול נכסים והובלות</option>
+              </select>
+              {businessDomainError ? (
+                <div className="text-xs text-destructive">{businessDomainError}</div>
+              ) : null}
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">תאריך *</div>
@@ -2179,7 +2665,14 @@ function AddExpenseDialog({
                 type="date"
                 value={expenseDate}
                 onChange={(e) => setExpenseDate(e.target.value)}
+                aria-invalid={Boolean(expenseDateError)}
+                className={
+                  expenseDateError ? "border-destructive focus-visible:ring-destructive" : ""
+                }
               />
+              {expenseDateError ? (
+                <div className="text-xs text-destructive">{expenseDateError}</div>
+              ) : null}
             </div>
           </div>
 
@@ -2212,6 +2705,13 @@ function AddExpenseDialog({
           </div>
 
           <DialogFooter className="mt-6">
+            {!canSubmit && !submitting ? (
+              <div className="me-auto text-xs text-destructive">
+                {addExpenseValidationMessage}
+              </div>
+            ) : (
+              <div className="me-auto" />
+            )}
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
               ביטול
             </Button>
@@ -2237,7 +2737,7 @@ function AddIncomeDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
-  onCreated: () => void;
+  onCreated: (created: PaymentRow) => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [amount, setAmount] = useState("");
@@ -2250,6 +2750,20 @@ function AddIncomeDialog({
     Number(amount) > 0 &&
     Boolean(paymentDate) &&
     Boolean(paymentMethod.trim());
+
+  const amountNumber = Number(amount);
+  const amountError =
+    !amount.trim() ? "שדה חובה" : !Number.isFinite(amountNumber) ? "חייב להיות מספר" : amountNumber <= 0 ? "חייב להיות גדול מ-0" : null;
+  const paymentDateError = !paymentDate ? "שדה חובה" : null;
+  const paymentMethodError = !paymentMethod.trim() ? "שדה חובה" : null;
+  const addIncomeValidationMessage = (() => {
+    if (submitting || canSubmit) return "";
+    const missing: string[] = [];
+    if (amountError) missing.push("סכום");
+    if (paymentDateError) missing.push("תאריך");
+    if (paymentMethodError) missing.push("אמצעי תשלום");
+    return missing.length > 0 ? `לא ניתן לשמור: ${missing.join(", ")}` : "";
+  })();
 
   async function submit() {
     const amountNumber = Number(amount);
@@ -2277,14 +2791,24 @@ function AddIncomeDialog({
         toast.error("שגיאה בהוספת הכנסה", { description: json?.error ?? "" });
         return;
       }
+      const createdPayment = json?.payment as PaymentRow | undefined;
+      const createdPaymentId =
+        createdPayment && typeof createdPayment.id === "string"
+          ? createdPayment.id
+          : null;
+
+      if (!createdPayment || !createdPaymentId) {
+        toast.error("שגיאה בהוספת הכנסה", { description: "Missing payment id" });
+        return;
+      }
+
       toast.success("ההכנסה נוספה");
-      onOpenChange(false);
       setAmount("");
       setPaymentDate("");
       setPaymentMethod("");
       setReferenceNumber("");
       setNotes("");
-      onCreated();
+      onCreated(createdPayment);
     } catch (e: any) {
       toast.error("שגיאה בהוספת הכנסה", { description: e?.message ?? "" });
     } finally {
@@ -2315,7 +2839,14 @@ function AddIncomeDialog({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="לדוגמה: 5000"
+                aria-invalid={Boolean(amountError)}
+                className={
+                  amountError ? "border-destructive focus-visible:ring-destructive" : ""
+                }
               />
+              {amountError ? (
+                <div className="text-xs text-destructive">{amountError}</div>
+              ) : null}
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">תאריך *</div>
@@ -2323,7 +2854,16 @@ function AddIncomeDialog({
                 type="date"
                 value={paymentDate}
                 onChange={(e) => setPaymentDate(e.target.value)}
+                aria-invalid={Boolean(paymentDateError)}
+                className={
+                  paymentDateError
+                    ? "border-destructive focus-visible:ring-destructive"
+                    : ""
+                }
               />
+              {paymentDateError ? (
+                <div className="text-xs text-destructive">{paymentDateError}</div>
+              ) : null}
             </div>
           </div>
 
@@ -2334,7 +2874,16 @@ function AddIncomeDialog({
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
                 placeholder="לדוגמה: העברה בנקאית"
+                aria-invalid={Boolean(paymentMethodError)}
+                className={
+                  paymentMethodError
+                    ? "border-destructive focus-visible:ring-destructive"
+                    : ""
+                }
               />
+              {paymentMethodError ? (
+                <div className="text-xs text-destructive">{paymentMethodError}</div>
+              ) : null}
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">אסמכתא (אופציונלי)</div>
@@ -2356,6 +2905,13 @@ function AddIncomeDialog({
           </div>
 
           <DialogFooter className="mt-6">
+            {!canSubmit && !submitting ? (
+              <div className="me-auto text-xs text-destructive">
+                {addIncomeValidationMessage}
+              </div>
+            ) : (
+              <div className="me-auto" />
+            )}
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
               ביטול
             </Button>

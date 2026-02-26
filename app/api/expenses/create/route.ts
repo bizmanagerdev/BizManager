@@ -9,6 +9,7 @@ export async function POST(req: Request) {
       category?: string;
       description?: string;
       business_domain?: string;
+      business_domain_details?: string;
       notes?: string;
       expense_date?: string | null;
       included_in_base_price?: boolean;
@@ -21,9 +22,7 @@ export async function POST(req: Request) {
     const description =
       typeof body.description === "string" ? body.description.trim() : null;
     const businessDomain =
-      typeof body.business_domain === "string"
-        ? body.business_domain.trim()
-        : null;
+      typeof body.business_domain === "string" ? body.business_domain.trim() : "";
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
 
     const includedInBasePrice = Boolean(body.included_in_base_price);
@@ -57,6 +56,24 @@ export async function POST(req: Request) {
       );
     }
 
+    // Keep DB values aligned with the existing Postgres check constraint.
+    // UI shows Hebrew labels, but the stored values are stable "codes".
+    const allowedBusinessDomains = new Set([
+      "home",
+      "logistics",
+      "sales",
+      "asset_management",
+    ]);
+
+    if (!businessDomain || !allowedBusinessDomains.has(businessDomain)) {
+      return NextResponse.json(
+        { error: "Missing or invalid business_domain" },
+        { status: 400 }
+      );
+    }
+
+    const finalNotes = notes;
+
     const supabase = await createSupabaseRouteClient();
     const {
       data: { user },
@@ -78,7 +95,7 @@ export async function POST(req: Request) {
         category,
         description,
         business_domain: businessDomain,
-        notes,
+        notes: finalNotes,
         recorded_by: user.id,
       })
       .select("id,expense_date,amount,category,description,business_domain,notes,recorded_by,created_at,updated_at")
