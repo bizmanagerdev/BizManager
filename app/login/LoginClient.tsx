@@ -16,6 +16,8 @@ export default function LoginClient() {
   const [loading, setLoading] = useState<boolean>(false);
 
   async function signIn() {
+    if (loading) return;
+
     setErr(null);
     setShowSignUpPrompt(false);
     setLoading(true);
@@ -89,8 +91,10 @@ export default function LoginClient() {
       <button type="submit" disabled={loading}>
         {loading ? "מתחבר..." : "התחבר/י"}
       </button>
+      {loading && <p style={{ margin: 0, color: "#555" }}>Signing in...</p>}
 
       <button
+        type="button"
         onClick={() =>
           router.push(
             `/forgot-password${
@@ -104,6 +108,7 @@ export default function LoginClient() {
       </button>
 
       <button
+        type="button"
         onClick={() =>
           router.push(
             `/register${

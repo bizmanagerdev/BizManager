@@ -31,6 +31,8 @@ export default function RegisterClient() {
   }
 
   async function register() {
+    if (loading) return;
+
     setErr(null);
     setInfo(null);
     setLoading(true);
@@ -136,6 +138,7 @@ export default function RegisterClient() {
       <button onClick={register} disabled={loading}>
         {loading ? "יוצר חשבון..." : "יצירת חשבון"}
       </button>
+      {loading && <p style={{ margin: 0, color: "#555" }}>Creating account...</p>}
 
       <button
         onClick={() =>
