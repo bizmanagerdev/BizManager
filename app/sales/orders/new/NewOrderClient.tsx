@@ -1,0 +1,861 @@
+﻿"use client";
+
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+type Row = Record<string, unknown>;
+
+type OrderLine = {
+  product_id: string;
+  product_name: string;
+  quantity_ordered: number;
+  unit_price: number;
+  discount_amount: number;
+  notes: string;
+};
+
+type CustomerOption = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  city: string | null;
+  address: string | null;
+};
+
+function getString(row: Row, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function getNumber(row: Row, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("he-IL", {
+    style: "currency",
+    currency: "ILS",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function normalizePhone(value: string) {
+  return value.replace(/[^\d+]/g, "");
+}
+
+function extractCityFromAddress(address: string | null) {
+  if (!address) return null;
+  const normalized = address.trim();
+  if (!normalized) return null;
+  const first = normalized.split("|")[0]?.trim() ?? "";
+  return first || null;
+}
+
+const CITY_OPTIONS = [
+  "ירושלים",
+  "בני ברק",
+  "אלעד",
+  "ביתר עילית",
+  "בית שמש",
+  "אשדוד",
+  "דימונה",
+  "מירון",
+  "פתח תקווה",
+  "תל אביב",
+  "חיפה",
+  "נתניה",
+  "באר שבע",
+  "ראשון לציון",
+  "אחר",
+];
+
+export default function NewOrderClient({
+  customers,
+  products,
+  customersError,
+  productsError,
+}: {
+  customers: Row[];
+  products: Row[];
+  customersError: string | null;
+  productsError: string | null;
+}) {
+  const router = useRouter();
+
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [customerId, setCustomerId] = useState("");
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
+  const [status, setStatus] = useState("draft");
+  const [paymentStatus, setPaymentStatus] = useState("unpaid");
+  const [orderDiscount, setOrderDiscount] = useState("0");
+  const [notes, setNotes] = useState("");
+
+  const [productQuery, setProductQuery] = useState("");
+  const [lines, setLines] = useState<OrderLine[]>([]);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
+  const [createCustomerName, setCreateCustomerName] = useState("");
+  const [createCustomerPhone, setCreateCustomerPhone] = useState("");
+  const [createCustomerEmail, setCreateCustomerEmail] = useState("");
+  const [createCustomerCity, setCreateCustomerCity] = useState("");
+  const [createCustomerCityOther, setCreateCustomerCityOther] = useState("");
+  const [createCustomerAddress, setCreateCustomerAddress] = useState("");
+  const [createCustomerNotes, setCreateCustomerNotes] = useState("");
+  const [createCustomerError, setCreateCustomerError] = useState<string | null>(null);
+  const [createCustomerSubmitting, setCreateCustomerSubmitting] = useState(false);
+
+  const initialCustomerOptions = useMemo(
+    () =>
+      customers
+        .map((row) => ({
+          id: getString(row, ["id"]) ?? "",
+          name:
+            getString(row, ["name", "name_for_invoice", "email", "phone"]) ??
+            "לקוח",
+          phone: getString(row, ["phone", "mobile", "tel"]),
+          email: getString(row, ["email"]),
+          address: getString(row, ["address"]),
+          city: extractCityFromAddress(getString(row, ["address"])),
+        }))
+        .filter((row) => row.id),
+    [customers]
+  );
+
+  const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>(initialCustomerOptions);
+
+  const productOptions = useMemo(
+    () =>
+      products
+        .map((row) => {
+          const id = getString(row, ["id"]) ?? "";
+          const name = getString(row, ["name", "product_name", "title", "sku"]) ?? "מוצר";
+          const code = getString(row, ["sku", "code", "barcode"]);
+          const unitPrice =
+            getNumber(row, ["sale_price", "selling_price", "price", "unit_price", "retail_price"]) ??
+            0;
+          const stock = getNumber(row, ["stock", "quantity", "available_quantity", "in_stock"]);
+          return { id, name, code, unitPrice, stock };
+        })
+        .filter((row) => row.id),
+    [products]
+  );
+
+  const filteredProducts = useMemo(() => {
+    const q = productQuery.trim().toLowerCase();
+    if (!q) return productOptions.slice(0, 80);
+    return productOptions
+      .filter((p) => p.name.toLowerCase().includes(q) || (p.code ?? "").toLowerCase().includes(q))
+      .slice(0, 80);
+  }, [productOptions, productQuery]);
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerQuery.trim().toLowerCase();
+    const qPhone = normalizePhone(customerQuery);
+    if (!q && !qPhone) return customerOptions.slice(0, 50);
+
+    return customerOptions
+      .filter((customer) => {
+        const byName = customer.name.toLowerCase().includes(q);
+        const byEmail = (customer.email ?? "").toLowerCase().includes(q);
+        const byPhone = (customer.phone ? normalizePhone(customer.phone) : "").includes(qPhone);
+        const byCity = (customer.city ?? "").toLowerCase().includes(q);
+        return byName || byEmail || byCity || (qPhone ? byPhone : false);
+      })
+      .slice(0, 50);
+  }, [customerOptions, customerQuery]);
+
+  const subtotal = useMemo(
+    () =>
+      lines.reduce(
+        (sum, line) => sum + line.quantity_ordered * line.unit_price - line.discount_amount,
+        0
+      ),
+    [lines]
+  );
+
+  const orderDiscountNumber = Number(orderDiscount || 0);
+  const totalAmount = subtotal - (Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0);
+
+  const selectedCustomer = customerOptions.find((c) => c.id === customerId) ?? null;
+
+  function addProduct(productId: string) {
+    const product = productOptions.find((p) => p.id === productId);
+    if (!product) return;
+
+    setLines((prev) => {
+      const existing = prev.find((line) => line.product_id === productId);
+      if (existing) {
+        return prev.map((line) =>
+          line.product_id === productId
+            ? { ...line, quantity_ordered: line.quantity_ordered + 1 }
+            : line
+        );
+      }
+
+      return [
+        ...prev,
+        {
+          product_id: product.id,
+          product_name: product.name,
+          quantity_ordered: 1,
+          unit_price: product.unitPrice,
+          discount_amount: 0,
+          notes: "",
+        },
+      ];
+    });
+  }
+
+  function updateLine(index: number, patch: Partial<OrderLine>) {
+    setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+  }
+
+  function removeLine(index: number) {
+    setLines((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function createCustomer() {
+    setCreateCustomerError(null);
+
+    const name = createCustomerName.trim();
+    const email = createCustomerEmail.trim();
+    const city =
+      createCustomerCity === "אחר"
+        ? createCustomerCityOther.trim()
+        : createCustomerCity.trim();
+    const address = createCustomerAddress.trim();
+    if (!name) {
+      setCreateCustomerError("יש להזין שם לקוח.");
+      return;
+    }
+    if (!email) {
+      setCreateCustomerError("יש להזין אימייל לקוח עבור קבלה.");
+      return;
+    }
+    if (!city) {
+      setCreateCustomerError("יש להזין עיר למשלוח.");
+      return;
+    }
+    if (!address) {
+      setCreateCustomerError("יש להזין כתובת למשלוח.");
+      return;
+    }
+
+    setCreateCustomerSubmitting(true);
+    try {
+      const res = await fetch("/api/customers/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name,
+          phone: createCustomerPhone.trim() || null,
+          email,
+          city,
+          address,
+          notes: createCustomerNotes.trim() || null,
+        }),
+      });
+
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        customer?: Row;
+      };
+
+      if (!res.ok || !json.customer) {
+        setCreateCustomerError(json.error ?? "יצירת לקוח נכשלה.");
+        return;
+      }
+
+      const newCustomer: CustomerOption = {
+        id: getString(json.customer, ["id"]) ?? "",
+        name: getString(json.customer, ["name", "name_for_invoice"]) ?? name,
+        phone: getString(json.customer, ["phone", "mobile", "tel"]),
+        email: getString(json.customer, ["email"]),
+        address: getString(json.customer, ["address"]),
+        city: extractCityFromAddress(getString(json.customer, ["address"])),
+      };
+
+      if (newCustomer.id) {
+        setCustomerOptions((prev) => [newCustomer, ...prev]);
+        setCustomerId(newCustomer.id);
+        setCustomerQuery(newCustomer.name);
+      }
+
+      setCreateCustomerOpen(false);
+      setCreateCustomerName("");
+      setCreateCustomerPhone("");
+      setCreateCustomerEmail("");
+      setCreateCustomerCity("");
+      setCreateCustomerCityOther("");
+      setCreateCustomerAddress("");
+      setCreateCustomerNotes("");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "שגיאה לא ידועה";
+      setCreateCustomerError(message);
+    } finally {
+      setCreateCustomerSubmitting(false);
+    }
+  }
+
+  async function submitOrder() {
+    setSubmitError(null);
+
+    if (!customerId) {
+      setSubmitError("יש לבחור לקוח.");
+      return;
+    }
+    if (!orderDate) {
+      setSubmitError("יש להזין תאריך הזמנה.");
+      return;
+    }
+    if (lines.length === 0) {
+      setSubmitError("יש להוסיף לפחות מוצר אחד.");
+      return;
+    }
+
+    const invalidLine = lines.find(
+      (line) =>
+        !line.product_id ||
+        !Number.isFinite(line.quantity_ordered) ||
+        line.quantity_ordered <= 0 ||
+        !Number.isFinite(line.unit_price)
+    );
+
+    if (invalidLine) {
+      setSubmitError("אחת משורות ההזמנה אינה תקינה.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/orders/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          customer_id: customerId,
+          order_date: orderDate,
+          status,
+          payment_status: paymentStatus,
+          discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
+          notes: notes.trim() || null,
+          items: lines.map((line) => ({
+            product_id: line.product_id,
+            quantity_ordered: line.quantity_ordered,
+            unit_price: line.unit_price,
+            discount_amount: line.discount_amount,
+            notes: line.notes.trim() || null,
+          })),
+        }),
+      });
+
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        order_id?: string;
+      };
+
+      if (!res.ok || !json.order_id) {
+        setSubmitError(json.error ?? "יצירת ההזמנה נכשלה.");
+        return;
+      }
+
+      router.push(`/sales/orders/${json.order_id}`);
+      router.refresh();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "שגיאה לא ידועה";
+      setSubmitError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 text-sm">
+        <div className={step === 1 ? "font-semibold" : "text-muted-foreground"}>1. לקוח</div>
+        <div className="text-muted-foreground">/</div>
+        <div className={step === 2 ? "font-semibold" : "text-muted-foreground"}>
+          2. פרטי הזמנה
+        </div>
+        <div className="text-muted-foreground">/</div>
+        <div className={step === 3 ? "font-semibold" : "text-muted-foreground"}>3. מוצרים</div>
+        <div className="text-muted-foreground">/</div>
+        <div className={step === 4 ? "font-semibold" : "text-muted-foreground"}>4. סקירה</div>
+      </div>
+
+      {customersError ? <p className="text-sm text-destructive">שגיאת לקוחות: {customersError}</p> : null}
+      {productsError ? <p className="text-sm text-destructive">שגיאת מוצרים: {productsError}</p> : null}
+
+      {step === 1 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>בחירת לקוח</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">חיפוש לקוח לפי שם / טלפון / אימייל / עיר *</label>
+              <Input
+                value={customerQuery}
+                onChange={(e) => setCustomerQuery(e.target.value)}
+                placeholder="לדוגמה: יוסי כהן, 0501234567 או תל אביב"
+              />
+            </div>
+
+            {selectedCustomer ? (
+              <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                <p className="font-medium">לקוח נבחר: {selectedCustomer.name}</p>
+                <p className="text-muted-foreground">
+                  {selectedCustomer.phone ? `טלפון: ${selectedCustomer.phone}` : "טלפון: -"}
+                  {selectedCustomer.email ? ` | אימייל: ${selectedCustomer.email}` : ""}
+                </p>
+                <p className="text-muted-foreground">
+                  {selectedCustomer.city ? `עיר: ${selectedCustomer.city}` : "עיר: -"}
+                  {selectedCustomer.address ? ` | כתובת: ${selectedCustomer.address}` : ""}
+                </p>
+              </div>
+            ) : null}
+
+            <div className="max-h-64 space-y-2 overflow-auto rounded-md border p-2">
+              {filteredCustomers.map((customer) => (
+                <button
+                  key={customer.id}
+                  type="button"
+                  onClick={() => {
+                    setCustomerId(customer.id);
+                    setCustomerQuery(customer.name);
+                  }}
+                  className={`w-full rounded-md border p-2 text-right text-sm transition-colors ${
+                    customer.id === customerId
+                      ? "border-primary bg-primary/5"
+                      : "hover:bg-muted/50"
+                  }`}
+                >
+                  <div className="font-medium">{customer.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {customer.phone ? `טלפון: ${customer.phone}` : "טלפון: -"}
+                    {customer.email ? ` | אימייל: ${customer.email}` : ""}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {customer.city ? `עיר: ${customer.city}` : "עיר: -"}
+                    {customer.address ? ` | כתובת: ${customer.address}` : ""}
+                  </div>
+                </button>
+              ))}
+
+              {filteredCustomers.length === 0 ? (
+                <div className="space-y-2 p-2 text-sm">
+                  <p className="text-muted-foreground">לא נמצאו לקוחות לחיפוש הזה.</p>
+                  <Button type="button" variant="outline" onClick={() => setCreateCustomerOpen(true)}>
+                    הוספת לקוח חדש
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <Button type="button" variant="secondary" asChild>
+                <Link href="/sales">ביטול</Link>
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" onClick={() => setCreateCustomerOpen(true)}>
+                  לקוח חדש
+                </Button>
+                <Button type="button" onClick={() => setStep(2)} disabled={!customerId}>
+                  המשך לפרטי הזמנה
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {step === 2 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>פרטי הזמנה</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">תאריך הזמנה *</label>
+                <Input
+                  type="date"
+                  value={orderDate}
+                  onChange={(e) => setOrderDate(e.target.value)}
+                  placeholder="בחר תאריך הזמנה"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium">סטטוס הזמנה</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="draft">טיוטה</option>
+                  <option value="confirmed">מאושרת</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">סטטוס תשלום</label>
+              <select
+                value={paymentStatus}
+                onChange={(e) => setPaymentStatus(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="unpaid">לא שולם</option>
+                <option value="partial">שולם חלקית</option>
+                <option value="paid">שולם</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <Button type="button" variant="secondary" onClick={() => setStep(1)}>
+                חזרה
+              </Button>
+              <Button type="button" onClick={() => setStep(3)} disabled={!orderDate}>
+                המשך למוצרים
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {step === 3 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>הוספת מוצרים</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">חיפוש מוצר</label>
+              <Input
+                value={productQuery}
+                onChange={(e) => setProductQuery(e.target.value)}
+                placeholder="חיפוש לפי שם או מק״ט"
+              />
+            </div>
+
+            <div className="max-h-60 space-y-2 overflow-auto rounded-md border p-2">
+              {filteredProducts.map((product) => (
+                <div key={product.id} className="flex items-center justify-between gap-3 rounded-md border p-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{product.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {product.code ? `קוד: ${product.code} | ` : ""}
+                      מחיר: {formatCurrency(product.unitPrice)}
+                      {product.stock !== null ? ` | מלאי: ${product.stock}` : ""}
+                    </p>
+                  </div>
+                  <Button type="button" size="sm" onClick={() => addProduct(product.id)}>
+                    הוסף
+                  </Button>
+                </div>
+              ))}
+              {filteredProducts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">לא נמצאו מוצרים.</p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">מוצרים שנבחרו ({lines.length})</p>
+              {lines.length === 0 ? <p className="text-sm text-muted-foreground">עדיין לא נוספו מוצרים.</p> : null}
+              {lines.map((line, index) => {
+                const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
+                return (
+                  <div key={`${line.product_id}-${index}`} className="space-y-2 rounded-md border p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium">{line.product_name}</p>
+                      <Button type="button" size="sm" variant="outline" onClick={() => removeLine(index)}>
+                        הסר
+                      </Button>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-4">
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">כמות</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.quantity_ordered}
+                          onChange={(e) => updateLine(index, { quantity_ordered: Number(e.target.value || 0) })}
+                          placeholder="כמות"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">מחיר יחידה</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.unit_price}
+                          onChange={(e) => updateLine(index, { unit_price: Number(e.target.value || 0) })}
+                          placeholder="מחיר יחידה"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">הנחת שורה</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.discount_amount}
+                          onChange={(e) => updateLine(index, { discount_amount: Number(e.target.value || 0) })}
+                          placeholder="הנחת שורה"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">סה״כ שורה</label>
+                        <div className="flex h-10 items-center rounded-md border px-3 text-sm">
+                          {formatCurrency(lineTotal)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">הערה לשורה</label>
+                      <Input
+                        value={line.notes}
+                        onChange={(e) => updateLine(index, { notes: e.target.value })}
+                        placeholder="הערה לשורה (אופציונלי)"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <Button type="button" variant="secondary" onClick={() => setStep(2)}>
+                חזרה
+              </Button>
+              <Button type="button" onClick={() => setStep(4)} disabled={lines.length === 0}>
+                המשך לסקירה
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {step === 4 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>סקירת הזמנה</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">לקוח</span>
+                <span>{selectedCustomer?.name || "-"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">עיר לקוח</span>
+                <span>{selectedCustomer?.city || "-"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">תאריך</span>
+                <span>{orderDate}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">סטטוס הזמנה</span>
+                <span>{status === "confirmed" ? "מאושרת" : "טיוטה"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">סטטוס תשלום</span>
+                <span>
+                  {paymentStatus === "paid"
+                    ? "שולם"
+                    : paymentStatus === "partial"
+                      ? "שולם חלקית"
+                      : "לא שולם"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">פריטים</span>
+                <span>{lines.length}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">סכום ביניים</span>
+                <span>{formatCurrency(subtotal)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">הנחת הזמנה</label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={orderDiscount}
+                onChange={(e) => setOrderDiscount(e.target.value)}
+                placeholder="הזן סכום הנחה"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">הערות</label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                placeholder="הערות להזמנה (אופציונלי)"
+              />
+            </div>
+
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span>סכום סופי</span>
+                <span className="text-base font-semibold">{formatCurrency(totalAmount)}</span>
+              </div>
+            </div>
+
+            {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
+
+            <div className="flex items-center justify-between gap-2">
+              <Button type="button" variant="secondary" onClick={() => setStep(3)}>
+                חזרה
+              </Button>
+              <Button type="button" onClick={() => void submitOrder()} disabled={submitting}>
+                {submitting ? "שולח..." : "יצירת הזמנה"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Dialog open={createCustomerOpen} onOpenChange={setCreateCustomerOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>הוספת לקוח חדש</DialogTitle>
+            <DialogDescription>
+              הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, אימייל, עיר וכתובת.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void createCustomer();
+            }}
+          >
+            <div className="space-y-1">
+              <label className="text-sm font-medium">שם לקוח *</label>
+              <Input
+                value={createCustomerName}
+                onChange={(e) => setCreateCustomerName(e.target.value)}
+                placeholder="שם מלא או שם חברה"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">טלפון</label>
+              <Input
+                value={createCustomerPhone}
+                onChange={(e) => setCreateCustomerPhone(e.target.value)}
+                placeholder="0501234567"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">אימייל *</label>
+              <Input
+                value={createCustomerEmail}
+                onChange={(e) => setCreateCustomerEmail(e.target.value)}
+                placeholder="name@example.com"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">עיר *</label>
+              <select
+                value={createCustomerCity}
+                onChange={(e) => setCreateCustomerCity(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">בחר עיר...</option>
+                {CITY_OPTIONS.map((city) => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {createCustomerCity === "אחר" ? (
+              <div className="space-y-1">
+                <label className="text-sm font-medium">עיר (הקלדה חופשית) *</label>
+                <Input
+                  value={createCustomerCityOther}
+                  onChange={(e) => setCreateCustomerCityOther(e.target.value)}
+                  placeholder="הזן עיר"
+                />
+              </div>
+            ) : null}
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">כתובת *</label>
+              <Input
+                value={createCustomerAddress}
+                onChange={(e) => setCreateCustomerAddress(e.target.value)}
+                placeholder="רחוב, מספר בית, דירה"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">הערות</label>
+              <Textarea
+                value={createCustomerNotes}
+                onChange={(e) => setCreateCustomerNotes(e.target.value)}
+                rows={3}
+                placeholder="הערות על הלקוח (אופציונלי)"
+              />
+            </div>
+
+            {createCustomerError ? (
+              <p className="text-sm text-destructive">{createCustomerError}</p>
+            ) : null}
+
+            <DialogFooter>
+              <Button type="button" variant="secondary" onClick={() => setCreateCustomerOpen(false)}>
+                ביטול
+              </Button>
+              <Button type="submit" disabled={createCustomerSubmitting}>
+                {createCustomerSubmitting ? "שומר..." : "שמירת לקוח"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

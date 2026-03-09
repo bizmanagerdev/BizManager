@@ -1657,6 +1657,7 @@ export default function ProjectTabsClient({
         open={addExpenseOpen}
         onOpenChange={setAddExpenseOpen}
         projectId={overview.id}
+        projectType={overview.project_type}
         onCreated={(created) => {
           setExpensesUi((prev) => [created, ...prev]);
           setAddExpenseOpen(false);
@@ -2470,51 +2471,112 @@ function PriorityDropdown({
   );
 }
 
+function mapProjectTypeToBusinessDomain(projectType: string) {
+  switch (projectType) {
+    case "logistics":
+      return "logistics";
+    case "renovation":
+      return "home";
+    case "event":
+      return "sales";
+    case "asset_management":
+      return "asset_management";
+    default:
+      return null;
+  }
+}
+
+function businessDomainLabel(value: string | null) {
+  switch (value) {
+    case "home":
+      return "\u05d1\u05d9\u05ea";
+    case "logistics":
+      return "\u05dc\u05d5\u05d2\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4";
+    case "sales":
+      return "\u05de\u05db\u05d9\u05e8\u05d5\u05ea";
+    case "asset_management":
+      return "\u05e0\u05d9\u05d4\u05d5\u05dc \u05e0\u05db\u05e1\u05d9\u05dd \u05d5\u05d4\u05d5\u05d1\u05dc\u05d5\u05ea";
+    default:
+      return "\u05dc\u05d0 \u05de\u05d5\u05d2\u05d3\u05e8";
+  }
+}
+
 function AddExpenseDialog({
   open,
   onOpenChange,
   projectId,
+  projectType,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
+  projectType: string;
   onCreated: (created: ExpenseListItem) => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [amountTouched, setAmountTouched] = useState(false);
+  const [categoryTouched, setCategoryTouched] = useState(false);
+  const [expenseDateTouched, setExpenseDateTouched] = useState(false);
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
-  const [businessDomain, setBusinessDomain] = useState("");
   const [expenseDate, setExpenseDate] = useState("");
   const [notes, setNotes] = useState("");
   const [includedInBase, setIncludedInBase] = useState(false);
   const [billedToCustomer, setBilledToCustomer] = useState(false);
+  const businessDomain = mapProjectTypeToBusinessDomain(projectType);
   const canSubmit =
     Number.isFinite(Number(amount)) &&
     Number(amount) > 0 &&
     Boolean(category.trim()) &&
-    Boolean(expenseDate) &&
-    Boolean(businessDomain.trim());
+    Boolean(expenseDate);
 
   const amountNumber = Number(amount);
   const amountError =
-    !amount.trim() ? "שדה חובה" : !Number.isFinite(amountNumber) ? "חייב להיות מספר" : amountNumber <= 0 ? "חייב להיות גדול מ-0" : null;
-  const categoryError = !category.trim() ? "שדה חובה" : null;
-  const businessDomainError = !businessDomain.trim() ? "שדה חובה" : null;
-  const expenseDateError = !expenseDate ? "שדה חובה" : null;
+    !amount.trim()
+      ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4"
+      : !Number.isFinite(amountNumber)
+      ? "\u05d7\u05d9\u05d9\u05d1 \u05dc\u05d4\u05d9\u05d5\u05ea \u05de\u05e1\u05e4\u05e8"
+      : amountNumber <= 0
+      ? "\u05d7\u05d9\u05d9\u05d1 \u05dc\u05d4\u05d9\u05d5\u05ea \u05d2\u05d3\u05d5\u05dc \u05de-0"
+      : null;
+  const categoryError = !category.trim() ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
+  const expenseDateError = !expenseDate ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
+  const showAmountError = (submitAttempted || amountTouched) && Boolean(amountError);
+  const showCategoryError = (submitAttempted || categoryTouched) && Boolean(categoryError);
+  const showExpenseDateError = (submitAttempted || expenseDateTouched) && Boolean(expenseDateError);
   const addExpenseValidationMessage = (() => {
-    if (submitting || canSubmit) return "";
+    if (!submitAttempted || submitting || canSubmit) return "";
     const missing: string[] = [];
-    if (amountError) missing.push("סכום");
-    if (categoryError) missing.push("קטגוריה");
-    if (businessDomainError) missing.push("תחום");
-    if (expenseDateError) missing.push("תאריך");
-    return missing.length > 0 ? `לא ניתן לשמור: ${missing.join(", ")}` : "";
+    if (amountError) missing.push("\u05e1\u05db\u05d5\u05dd");
+    if (categoryError) missing.push("\u05e4\u05d9\u05e8\u05d5\u05d8");
+    if (expenseDateError) missing.push("\u05ea\u05d0\u05e8\u05d9\u05da");
+    return missing.length > 0
+      ? `\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e9\u05de\u05d5\u05e8: ${missing.join(", ")}`
+      : "";
   })();
 
+  useEffect(() => {
+    if (open) {
+      setSubmitAttempted(false);
+      setAmountTouched(false);
+      setCategoryTouched(false);
+      setExpenseDateTouched(false);
+    }
+  }, [open]);
+
   async function submit() {
+    setSubmitAttempted(true);
+
     const amountNumber = Number(amount);
+    if (!businessDomain) {
+      toast.error(
+        "\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e7\u05d1\u05d5\u05e2 \u05ea\u05d7\u05d5\u05dd \u05de\u05e1\u05d5\u05d2 \u05d4\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8"
+      );
+      return;
+    }
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) return;
     if (!category.trim()) return;
     if (!expenseDate) return;
@@ -2538,14 +2600,15 @@ function AddExpenseDialog({
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error("שגיאה בהוספת הוצאה", { description: json?.error ?? "" });
+        toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4", {
+          description: json?.error ?? "",
+        });
         return;
       }
-      toast.success("ההוצאה נוספה");
+      toast.success("\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05d5\u05e1\u05e4\u05d4");
       setAmount("");
       setCategory("");
       setDescription("");
-      setBusinessDomain("");
       setExpenseDate("");
       setNotes("");
       setIncludedInBase(false);
@@ -2558,7 +2621,9 @@ function AddExpenseDialog({
           : null;
 
       if (!createdExpenseId) {
-        toast.error("שגיאה בהוספת הוצאה", { description: "Missing expense id" });
+        toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4", {
+          description: "Missing expense id",
+        });
         return;
       }
 
@@ -2571,7 +2636,9 @@ function AddExpenseDialog({
         expense: createdExpense ?? null,
       });
     } catch (e: any) {
-      toast.error("שגיאה בהוספת הוצאה", { description: e?.message ?? "" });
+      toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4", {
+        description: e?.message ?? "",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -2581,8 +2648,10 @@ function AddExpenseDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>הוספת הוצאה</DialogTitle>
-          <DialogDescription>ההוצאה תקושר לפרויקט ותופיע בפיננסי.</DialogDescription>
+          <DialogTitle>{"\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4"}</DialogTitle>
+          <DialogDescription>
+            {"\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05ea\u05e7\u05d5\u05e9\u05e8 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d5\u05ea\u05d5\u05e4\u05d9\u05e2 \u05d1\u05e4\u05d9\u05e0\u05e0\u05e1\u05d9."}
+          </DialogDescription>
         </DialogHeader>
 
         <form
@@ -2592,88 +2661,92 @@ function AddExpenseDialog({
             void submit();
           }}
         >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="text-xs text-muted-foreground">
+            {"\u05e9\u05d3\u05d5\u05ea \u05d4\u05de\u05e1\u05d5\u05de\u05e0\u05d9\u05dd \u05d1-* \u05d4\u05dd \u05e9\u05d3\u05d5\u05ea \u05d7\u05d5\u05d1\u05d4."}
+          </div>
+
+          <div className="text-xs text-muted-foreground">
+            {"\u05ea\u05d7\u05d5\u05dd \u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05d9\u05d9\u05e7\u05d1\u05e2 \u05d0\u05d5\u05d8\u05d5\u05de\u05d8\u05d9\u05ea \u05dc\u05e4\u05d9 \u05e1\u05d5\u05d2 \u05d4\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8: "}
+            <span className="font-medium">{businessDomainLabel(businessDomain)}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <div className="text-sm font-medium">סכום *</div>
+              <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
               <Input
                 inputMode="numeric"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="לדוגמה: 250"
-                aria-invalid={Boolean(amountError)}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setAmountTouched(true);
+                }}
+                onBlur={() => setAmountTouched(true)}
+                placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: 250"}
+                aria-invalid={showAmountError}
                 className={
-                  amountError ? "border-destructive focus-visible:ring-destructive" : ""
+                  showAmountError
+                    ? "border-destructive focus-visible:ring-destructive"
+                    : ""
                 }
               />
-              {amountError ? (
+              {showAmountError ? (
                 <div className="text-xs text-destructive">{amountError}</div>
               ) : null}
             </div>
             <div className="space-y-1">
-              <div className="text-sm font-medium">קטגוריה *</div>
+              <div className="text-sm font-medium">{"\u05e4\u05d9\u05e8\u05d5\u05d8 *"}</div>
               <Input
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="לדוגמה: דלק"
-                aria-invalid={Boolean(categoryError)}
+                onChange={(e) => {
+                  setCategory(e.target.value);
+                  setCategoryTouched(true);
+                }}
+                onBlur={() => setCategoryTouched(true)}
+                placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: \u05d3\u05dc\u05e7"}
+                aria-invalid={showCategoryError}
                 className={
-                  categoryError ? "border-destructive focus-visible:ring-destructive" : ""
+                  showCategoryError
+                    ? "border-destructive focus-visible:ring-destructive"
+                    : ""
                 }
               />
-              {categoryError ? (
+              {showCategoryError ? (
                 <div className="text-xs text-destructive">{categoryError}</div>
               ) : null}
             </div>
           </div>
 
           <div className="space-y-1">
-            <div className="text-sm font-medium">תיאור (אופציונלי)</div>
+            <div className="text-sm font-medium">{"\u05ea\u05d9\u05d0\u05d5\u05e8 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="לדוגמה: נסיעה לאתר"
+              placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: \u05e0\u05e1\u05d9\u05e2\u05d4 \u05dc\u05d0\u05ea\u05e8"}
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <div className="text-sm font-medium">תחום *</div>
-              <select
-                className={
-                  "h-10 w-full rounded-md border border-input bg-background px-3 text-sm " +
-                  (businessDomainError ? "border-destructive" : "")
-                }
-                value={businessDomain}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setBusinessDomain(next);
-                }}
-              >
-                <option value="">בחר תחום...</option>
-                <option value="home">בית</option>
-                <option value="logistics">לוגיסטיקה</option>
-                <option value="sales">מכירות</option>
-                <option value="asset_management">ניהול נכסים והובלות</option>
-              </select>
-              {businessDomainError ? (
-                <div className="text-xs text-destructive">{businessDomainError}</div>
-              ) : null}
-            </div>
-            <div className="space-y-1">
-              <div className="text-sm font-medium">תאריך *</div>
+              <div className="text-sm font-medium">{"\u05ea\u05d0\u05e8\u05d9\u05da *"}</div>
               <Input
                 type="date"
                 value={expenseDate}
-                onChange={(e) => setExpenseDate(e.target.value)}
-                aria-invalid={Boolean(expenseDateError)}
+                onChange={(e) => {
+                  setExpenseDate(e.target.value);
+                  setExpenseDateTouched(true);
+                }}
+                onBlur={() => setExpenseDateTouched(true)}
+                aria-invalid={showExpenseDateError}
                 className={
-                  expenseDateError ? "border-destructive focus-visible:ring-destructive" : ""
+                  showExpenseDateError
+                    ? "border-destructive focus-visible:ring-destructive"
+                    : ""
                 }
               />
-              {expenseDateError ? (
+              {showExpenseDateError ? (
                 <div className="text-xs text-destructive">{expenseDateError}</div>
               ) : null}
             </div>
+            <div />
           </div>
 
           <div className="flex flex-col gap-2 text-sm">
@@ -2683,7 +2756,7 @@ function AddExpenseDialog({
                 checked={includedInBase}
                 onChange={(e) => setIncludedInBase(e.target.checked)}
               />
-              <span>נכלל בבסיס</span>
+              <span>{"\u05e0\u05db\u05dc\u05dc \u05d1\u05d1\u05e1\u05d9\u05e1"}</span>
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -2691,35 +2764,30 @@ function AddExpenseDialog({
                 checked={billedToCustomer}
                 onChange={(e) => setBilledToCustomer(e.target.checked)}
               />
-              <span>לחיוב לקוח</span>
+              <span>{"\u05dc\u05d7\u05d9\u05d5\u05d1 \u05dc\u05e7\u05d5\u05d7"}</span>
             </label>
           </div>
 
           <div className="space-y-1">
-            <div className="text-sm font-medium">הערות (אופציונלי)</div>
+            <div className="text-sm font-medium">{"\u05d4\u05e2\u05e8\u05d5\u05ea (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="הערות פנימיות..."
+              placeholder={"\u05d4\u05e2\u05e8\u05d5\u05ea \u05e4\u05e0\u05d9\u05de\u05d9\u05d5\u05ea..."}
             />
           </div>
 
           <DialogFooter className="mt-6">
             {!canSubmit && !submitting ? (
-              <div className="me-auto text-xs text-destructive">
-                {addExpenseValidationMessage}
-              </div>
+              <div className="me-auto text-xs text-destructive">{addExpenseValidationMessage}</div>
             ) : (
               <div className="me-auto" />
             )}
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-              ביטול
+              {"\u05d1\u05d9\u05d8\u05d5\u05dc"}
             </Button>
-            <Button
-              type="submit"
-              disabled={submitting || !canSubmit}
-            >
-              {submitting ? "שומר..." : "שמירה"}
+            <Button type="submit" disabled={submitting || !canSubmit}>
+              {submitting ? "\u05e9\u05d5\u05de\u05e8..." : "\u05e9\u05de\u05d9\u05e8\u05d4"}
             </Button>
           </DialogFooter>
         </form>
@@ -2727,7 +2795,6 @@ function AddExpenseDialog({
     </Dialog>
   );
 }
-
 function AddIncomeDialog({
   open,
   onOpenChange,
@@ -2740,6 +2807,10 @@ function AddIncomeDialog({
   onCreated: (created: PaymentRow) => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [amountTouched, setAmountTouched] = useState(false);
+  const [paymentDateTouched, setPaymentDateTouched] = useState(false);
+  const [paymentMethodTouched, setPaymentMethodTouched] = useState(false);
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -2753,19 +2824,45 @@ function AddIncomeDialog({
 
   const amountNumber = Number(amount);
   const amountError =
-    !amount.trim() ? "שדה חובה" : !Number.isFinite(amountNumber) ? "חייב להיות מספר" : amountNumber <= 0 ? "חייב להיות גדול מ-0" : null;
-  const paymentDateError = !paymentDate ? "שדה חובה" : null;
-  const paymentMethodError = !paymentMethod.trim() ? "שדה חובה" : null;
+    !amount.trim()
+      ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4"
+      : !Number.isFinite(amountNumber)
+      ? "\u05d7\u05d9\u05d9\u05d1 \u05dc\u05d4\u05d9\u05d5\u05ea \u05de\u05e1\u05e4\u05e8"
+      : amountNumber <= 0
+      ? "\u05d7\u05d9\u05d9\u05d1 \u05dc\u05d4\u05d9\u05d5\u05ea \u05d2\u05d3\u05d5\u05dc \u05de-0"
+      : null;
+  const paymentDateError = !paymentDate ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
+  const paymentMethodError = !paymentMethod.trim() ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
+
+  const showAmountError = (submitAttempted || amountTouched) && Boolean(amountError);
+  const showPaymentDateError =
+    (submitAttempted || paymentDateTouched) && Boolean(paymentDateError);
+  const showPaymentMethodError =
+    (submitAttempted || paymentMethodTouched) && Boolean(paymentMethodError);
+
   const addIncomeValidationMessage = (() => {
-    if (submitting || canSubmit) return "";
+    if (!submitAttempted || submitting || canSubmit) return "";
     const missing: string[] = [];
-    if (amountError) missing.push("סכום");
-    if (paymentDateError) missing.push("תאריך");
-    if (paymentMethodError) missing.push("אמצעי תשלום");
-    return missing.length > 0 ? `לא ניתן לשמור: ${missing.join(", ")}` : "";
+    if (amountError) missing.push("\u05e1\u05db\u05d5\u05dd");
+    if (paymentDateError) missing.push("\u05ea\u05d0\u05e8\u05d9\u05da");
+    if (paymentMethodError) missing.push("\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd");
+    return missing.length > 0
+      ? `\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e9\u05de\u05d5\u05e8: ${missing.join(", ")}`
+      : "";
   })();
 
+  useEffect(() => {
+    if (open) {
+      setSubmitAttempted(false);
+      setAmountTouched(false);
+      setPaymentDateTouched(false);
+      setPaymentMethodTouched(false);
+    }
+  }, [open]);
+
   async function submit() {
+    setSubmitAttempted(true);
+
     const amountNumber = Number(amount);
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) return;
     if (!paymentDate) return;
@@ -2788,21 +2885,23 @@ function AddIncomeDialog({
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error("שגיאה בהוספת הכנסה", { description: json?.error ?? "" });
+        toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4", {
+          description: json?.error ?? "",
+        });
         return;
       }
       const createdPayment = json?.payment as PaymentRow | undefined;
       const createdPaymentId =
-        createdPayment && typeof createdPayment.id === "string"
-          ? createdPayment.id
-          : null;
+        createdPayment && typeof createdPayment.id === "string" ? createdPayment.id : null;
 
       if (!createdPayment || !createdPaymentId) {
-        toast.error("שגיאה בהוספת הכנסה", { description: "Missing payment id" });
+        toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4", {
+          description: "Missing payment id",
+        });
         return;
       }
 
-      toast.success("ההכנסה נוספה");
+      toast.success("\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05d5\u05e1\u05e4\u05d4");
       setAmount("");
       setPaymentDate("");
       setPaymentMethod("");
@@ -2810,7 +2909,9 @@ function AddIncomeDialog({
       setNotes("");
       onCreated(createdPayment);
     } catch (e: any) {
-      toast.error("שגיאה בהוספת הכנסה", { description: e?.message ?? "" });
+      toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4", {
+        description: e?.message ?? "",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -2820,8 +2921,10 @@ function AddIncomeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>הוספת הכנסה</DialogTitle>
-          <DialogDescription>ההכנסה תירשם כתקבול לפרויקט.</DialogDescription>
+          <DialogTitle>{"\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4"}</DialogTitle>
+          <DialogDescription>
+            {"\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05ea\u05d9\u05e8\u05e9\u05dd \u05db\u05ea\u05e7\u05d1\u05d5\u05dc \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8."}
+          </DialogDescription>
         </DialogHeader>
 
         <form
@@ -2831,37 +2934,49 @@ function AddIncomeDialog({
             void submit();
           }}
         >
+          <div className="text-xs text-muted-foreground">
+            {"\u05e9\u05d3\u05d5\u05ea \u05d4\u05de\u05e1\u05d5\u05de\u05e0\u05d9\u05dd \u05d1-* \u05d4\u05dd \u05e9\u05d3\u05d5\u05ea \u05d7\u05d5\u05d1\u05d4."}
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <div className="text-sm font-medium">סכום *</div>
+              <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
               <Input
                 inputMode="numeric"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="לדוגמה: 5000"
-                aria-invalid={Boolean(amountError)}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setAmountTouched(true);
+                }}
+                onBlur={() => setAmountTouched(true)}
+                placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: 5000"}
+                aria-invalid={showAmountError}
                 className={
-                  amountError ? "border-destructive focus-visible:ring-destructive" : ""
+                  showAmountError ? "border-destructive focus-visible:ring-destructive" : ""
                 }
               />
-              {amountError ? (
+              {showAmountError ? (
                 <div className="text-xs text-destructive">{amountError}</div>
               ) : null}
             </div>
             <div className="space-y-1">
-              <div className="text-sm font-medium">תאריך *</div>
+              <div className="text-sm font-medium">{"\u05ea\u05d0\u05e8\u05d9\u05da *"}</div>
               <Input
                 type="date"
                 value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-                aria-invalid={Boolean(paymentDateError)}
+                onChange={(e) => {
+                  setPaymentDate(e.target.value);
+                  setPaymentDateTouched(true);
+                }}
+                onBlur={() => setPaymentDateTouched(true)}
+                aria-invalid={showPaymentDateError}
                 className={
-                  paymentDateError
+                  showPaymentDateError
                     ? "border-destructive focus-visible:ring-destructive"
                     : ""
                 }
               />
-              {paymentDateError ? (
+              {showPaymentDateError ? (
                 <div className="text-xs text-destructive">{paymentDateError}</div>
               ) : null}
             </div>
@@ -2869,57 +2984,56 @@ function AddIncomeDialog({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <div className="text-sm font-medium">אמצעי תשלום *</div>
+              <div className="text-sm font-medium">{"\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd *"}</div>
               <Input
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-                placeholder="לדוגמה: העברה בנקאית"
-                aria-invalid={Boolean(paymentMethodError)}
+                onChange={(e) => {
+                  setPaymentMethod(e.target.value);
+                  setPaymentMethodTouched(true);
+                }}
+                onBlur={() => setPaymentMethodTouched(true)}
+                placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: \u05d4\u05e2\u05d1\u05e8\u05d4 \u05d1\u05e0\u05e7\u05d0\u05d9\u05ea"}
+                aria-invalid={showPaymentMethodError}
                 className={
-                  paymentMethodError
+                  showPaymentMethodError
                     ? "border-destructive focus-visible:ring-destructive"
                     : ""
                 }
               />
-              {paymentMethodError ? (
+              {showPaymentMethodError ? (
                 <div className="text-xs text-destructive">{paymentMethodError}</div>
               ) : null}
             </div>
             <div className="space-y-1">
-              <div className="text-sm font-medium">אסמכתא (אופציונלי)</div>
+              <div className="text-sm font-medium">{"\u05d0\u05e1\u05de\u05db\u05ea\u05d0 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
               <Input
                 value={referenceNumber}
                 onChange={(e) => setReferenceNumber(e.target.value)}
-                placeholder="מספר קבלה/העברה"
+                placeholder={"\u05de\u05e1\u05e4\u05e8 \u05e7\u05d1\u05dc\u05d4/\u05d4\u05e2\u05d1\u05e8\u05d4"}
               />
             </div>
           </div>
 
           <div className="space-y-1">
-            <div className="text-sm font-medium">הערות (אופציונלי)</div>
+            <div className="text-sm font-medium">{"\u05d4\u05e2\u05e8\u05d5\u05ea (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="הערות..."
+              placeholder={"\u05d4\u05e2\u05e8\u05d5\u05ea..."}
             />
           </div>
 
           <DialogFooter className="mt-6">
             {!canSubmit && !submitting ? (
-              <div className="me-auto text-xs text-destructive">
-                {addIncomeValidationMessage}
-              </div>
+              <div className="me-auto text-xs text-destructive">{addIncomeValidationMessage}</div>
             ) : (
               <div className="me-auto" />
             )}
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-              ביטול
+              {"\u05d1\u05d9\u05d8\u05d5\u05dc"}
             </Button>
-            <Button
-              type="submit"
-              disabled={submitting || !canSubmit}
-            >
-              {submitting ? "שומר..." : "שמירה"}
+            <Button type="submit" disabled={submitting || !canSubmit}>
+              {submitting ? "\u05e9\u05d5\u05de\u05e8..." : "\u05e9\u05de\u05d9\u05e8\u05d4"}
             </Button>
           </DialogFooter>
         </form>
