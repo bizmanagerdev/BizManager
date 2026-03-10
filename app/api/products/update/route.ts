@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
+const DEFAULT_PRODUCT_CATEGORY_ID = "18caa32d-3639-4c42-9b26-5ddcb5504fed";
+
 type UpdateProductPayload = {
   id?: string;
   name?: string;
-  code?: string | null;
+  sku?: string | null;
+  barcode?: string | null;
   unit_price?: number | string | null;
-  stock?: number | string | null;
-  notes?: string | null;
+  base_cost?: number | string | null;
+  purchased_amount?: number | string | null;
+  description?: string | null;
   active?: boolean;
 };
 
@@ -20,94 +24,32 @@ function toNumber(value: unknown) {
   return NaN;
 }
 
-function isColumnError(message: string) {
-  const m = message.toLowerCase();
-  return (
-    m.includes("column") ||
-    m.includes("schema cache") ||
-    m.includes("could not find") ||
-    m.includes("does not exist")
-  );
-}
-
-function candidatePayloads(input: {
-  name: string;
-  code: string | null;
-  unitPrice: number | null;
-  stock: number | null;
-  notes: string | null;
-  active: boolean;
-}) {
-  const base = [
-    { name: input.name },
-    { product_name: input.name },
-    { title: input.name },
-  ] as Array<Record<string, unknown>>;
-
-  const variants = [
-    {
-      codeField: "sku",
-      priceField: "sale_price",
-      stockField: "stock",
-    },
-    {
-      codeField: "code",
-      priceField: "price",
-      stockField: "quantity",
-    },
-    {
-      codeField: "barcode",
-      priceField: "unit_price",
-      stockField: "available_quantity",
-    },
-    {
-      codeField: "sku",
-      priceField: "selling_price",
-      stockField: "in_stock",
-    },
-    {
-      codeField: "sku",
-      priceField: "retail_price",
-      stockField: "stock",
-    },
-  ];
-
-  const result: Array<Record<string, unknown>> = [];
-
-  for (const b of base) {
-    result.push({ ...b });
-    for (const v of variants) {
-      const payload: Record<string, unknown> = { ...b };
-      if (input.code !== null) payload[v.codeField] = input.code;
-      if (input.unitPrice !== null) payload[v.priceField] = input.unitPrice;
-      if (input.stock !== null) payload[v.stockField] = input.stock;
-      payload.active = input.active;
-      payload.notes = input.notes;
-      result.push(payload);
-    }
-  }
-
-  return result;
-}
-
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as UpdateProductPayload;
 
     const id = typeof body.id === "string" ? body.id.trim() : "";
     const name = typeof body.name === "string" ? body.name.trim() : "";
-    const code = typeof body.code === "string" ? body.code.trim() : null;
-    const notes = typeof body.notes === "string" ? body.notes.trim() : null;
+    const sku = typeof body.sku === "string" ? body.sku.trim() : null;
+    const barcode = typeof body.barcode === "string" ? body.barcode.trim() : null;
+    const description = typeof body.description === "string" ? body.description.trim() : null;
     const unitPriceRaw = body.unit_price;
-    const stockRaw = body.stock;
+    const baseCostRaw = body.base_cost;
+    const purchasedAmountRaw = body.purchased_amount;
     const active = typeof body.active === "boolean" ? body.active : true;
 
     const unitPrice =
       unitPriceRaw === undefined || unitPriceRaw === null || unitPriceRaw === ""
         ? null
         : toNumber(unitPriceRaw);
-    const stock =
-      stockRaw === undefined || stockRaw === null || stockRaw === "" ? null : toNumber(stockRaw);
+    const baseCost =
+      baseCostRaw === undefined || baseCostRaw === null || baseCostRaw === ""
+        ? null
+        : toNumber(baseCostRaw);
+    const purchasedAmount =
+      purchasedAmountRaw === undefined || purchasedAmountRaw === null || purchasedAmountRaw === ""
+        ? 0
+        : toNumber(purchasedAmountRaw);
 
     if (!id) {
       return NextResponse.json({ error: "מזהה מוצר חסר." }, { status: 400 });
@@ -118,35 +60,60 @@ export async function POST(req: Request) {
     if (unitPrice !== null && (!Number.isFinite(unitPrice) || unitPrice < 0)) {
       return NextResponse.json({ error: "מחיר מוצר אינו תקין." }, { status: 400 });
     }
-    if (stock !== null && !Number.isFinite(stock)) {
-      return NextResponse.json({ error: "כמות מלאי אינה תקינה." }, { status: 400 });
+    if (baseCost !== null && (!Number.isFinite(baseCost) || baseCost < 0)) {
+      return NextResponse.json({ error: "עלות בסיס אינה תקינה." }, { status: 400 });
+    }
+    if (!Number.isFinite(purchasedAmount) || purchasedAmount < 0) {
+      return NextResponse.json({ error: "כמות שנרכשה אינה תקינה." }, { status: 400 });
     }
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase } = access.value;
+    const { supabase, user } = access.value;
 
-    let lastError = "עדכון מוצר נכשל.";
-    for (const payload of candidatePayloads({ name, code, unitPrice, stock, notes, active })) {
-      const { data, error } = await supabase
-        .from("products")
-        .update(payload)
-        .eq("id", id)
-        .select("*")
-        .maybeSingle();
-      if (!error && data) {
-        return NextResponse.json({ product: data });
-      }
-      if (error && !isColumnError(error.message)) {
-        return NextResponse.json({ error: `עדכון מוצר נכשל: ${error.message}` }, { status: 400 });
-      }
-      if (error) lastError = error.message;
+    const { data, error } = await supabase
+      .from("products")
+      .update({
+        name,
+        sku: sku || null,
+        barcode: barcode || null,
+        category_id: DEFAULT_PRODUCT_CATEGORY_ID,
+        description: description || null,
+        base_price: unitPrice ?? 0,
+        base_cost: baseCost ?? 0,
+        active,
+      })
+      .eq("id", id)
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      return NextResponse.json({ error: `עדכון מוצר נכשל: ${error.message}` }, { status: 400 });
+    }
+    if (!data) {
+      return NextResponse.json({ error: "עדכון מוצר נכשל." }, { status: 400 });
     }
 
-    return NextResponse.json(
-      { error: `עדכון מוצר נכשל. בדקו את מבנה טבלת products. פירוט: ${lastError}` },
-      { status: 400 }
-    );
+    if (purchasedAmount > 0) {
+      const { error: movementError } = await supabase.from("inventory_movements").insert({
+        product_id: id,
+        movement_type: "in",
+        quantity: purchasedAmount,
+        source_type: "manual_product",
+        source_id: id,
+        performed_by: user.id,
+        notes: "Purchased amount update",
+      });
+
+      if (movementError) {
+        return NextResponse.json(
+          { error: `המוצר עודכן אך הוספת כמות שנרכשה נכשלה: ${movementError.message}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    return NextResponse.json({ product: data });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "שגיאה לא ידועה";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -28,6 +28,47 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function formatDate(value: string | null) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("he-IL", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
+}
+
+function formatOrderStatus(status: string | null) {
+  switch ((status ?? "").toLowerCase()) {
+    case "draft":
+      return "טיוטה";
+    case "confirmed":
+      return "מאושרת";
+    case "cancelled":
+      return "בוטלה";
+    case "completed":
+      return "הושלמה";
+    default:
+      return status ?? "-";
+  }
+}
+
+function formatPaymentStatus(status: string | null) {
+  switch ((status ?? "").toLowerCase()) {
+    case "unpaid":
+      return "לא שולם";
+    case "partial":
+      return "שולם חלקית";
+    case "paid":
+      return "שולם";
+    case "refunded":
+      return "הוחזר";
+    default:
+      return status ?? "-";
+  }
+}
+
 function extractCityFromAddress(address: string | null) {
   if (!address) return null;
   const normalized = address.trim();
@@ -133,15 +174,15 @@ export default async function SalesOrderPage({
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">תאריך הזמנה</span>
-                <span>{getString(order as Row, "order_date") ?? "-"}</span>
+                <span>{formatDate(getString(order as Row, "order_date"))}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">סטטוס</span>
-                <span>{getString(order as Row, "status") ?? "-"}</span>
+                <span className="text-muted-foreground">סטטוס הזמנה</span>
+                <span>{formatOrderStatus(getString(order as Row, "status"))}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סטטוס תשלום</span>
-                <span>{getString(order as Row, "payment_status") ?? "-"}</span>
+                <span>{formatPaymentStatus(getString(order as Row, "payment_status"))}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סכום כולל</span>

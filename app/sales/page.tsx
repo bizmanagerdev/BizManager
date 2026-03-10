@@ -6,6 +6,7 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import SalesOrdersClient from "@/app/sales/SalesOrdersClient";
 import SalesTabsNav from "@/app/sales/SalesTabsNav";
 import PriceListClient from "@/app/sales/PriceListClient";
+import SalesInventoryClient from "@/app/sales/SalesInventoryClient";
 
 type Row = Record<string, unknown>;
 
@@ -59,6 +60,7 @@ function productCode(row: Row) {
 
 function productUnitPrice(row: Row) {
   return (
+    getNumber(row, "base_price") ??
     getNumber(row, "sale_price") ??
     getNumber(row, "selling_price") ??
     getNumber(row, "price") ??
@@ -82,6 +84,7 @@ export default async function SalesPage({
     { data: orders, error: ordersError },
     { data: customers, error: customersError },
     { data: movements, error: movementsError },
+    { data: inventoryRows, error: inventoryError },
     { data: products, error: productsError },
   ] = await Promise.all([
     supabase
@@ -97,7 +100,11 @@ export default async function SalesPage({
       .from("inventory_movements")
       .select("id,product_id,movement_type,quantity,source_type,source_id,performed_by,notes,created_at")
       .order("created_at", { ascending: false })
-      .limit(300),
+      .limit(5000),
+    supabase
+      .from("inventory")
+      .select("product_id,quantity_on_hand,quantity_reserved,updated_at")
+      .limit(5000),
     supabase.from("products").select("*").limit(5000),
   ]);
 
@@ -142,6 +149,17 @@ export default async function SalesPage({
     }, new Map<string, typeof deliveries>())
   ).sort((a, b) => a[0].localeCompare(b[0], "he"));
 
+  const purchasedByProductId = new Map<string, number>();
+  ((movements ?? []) as Row[]).forEach((row) => {
+    const movementType = getString(row, "movement_type") ?? "";
+    if (movementType.toLowerCase() !== "in") return;
+    const productId = getString(row, "product_id");
+    if (!productId) return;
+    const qty = getNumber(row, "quantity") ?? 0;
+    if (!Number.isFinite(qty)) return;
+    purchasedByProductId.set(productId, (purchasedByProductId.get(productId) ?? 0) + qty);
+  });
+
   const productRows = ((products ?? []) as Row[])
     .map((row) => ({
       id: getString(row, "id") ?? "",
@@ -153,7 +171,8 @@ export default async function SalesPage({
         getNumber(row, "quantity") ??
         getNumber(row, "available_quantity") ??
         getNumber(row, "in_stock"),
-      notes: getString(row, "notes"),
+      purchasedAmount: purchasedByProductId.get(getString(row, "id") ?? "") ?? 0,
+      description: getString(row, "description") ?? getString(row, "notes"),
       active: row.active === false ? false : true,
     }))
     .filter((row) => row.id)
@@ -195,44 +214,16 @@ export default async function SalesPage({
 
         {activeTab === "inventory" ? (
           <>
-            {movementsError ? (
+            {inventoryError ? (
+              <p className="text-sm text-destructive">שגיאה בטעינת מלאי: {inventoryError.message}</p>
+            ) : movementsError ? (
               <p className="text-sm text-destructive">שגיאה בטעינת תנועות מלאי: {movementsError.message}</p>
-            ) : (movements ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין תנועות מלאי להצגה.</p>
             ) : (
-              <div className="overflow-x-auto rounded-md border">
-                <table className="min-w-[1000px] w-full text-sm">
-                  <thead className="bg-muted/50 text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2 text-right font-medium">מוצר</th>
-                      <th className="px-3 py-2 text-right font-medium">סוג תנועה</th>
-                      <th className="px-3 py-2 text-right font-medium">כמות</th>
-                      <th className="px-3 py-2 text-right font-medium">מקור</th>
-                      <th className="px-3 py-2 text-right font-medium">מזהה מקור</th>
-                      <th className="px-3 py-2 text-right font-medium">בוצע על ידי</th>
-                      <th className="px-3 py-2 text-right font-medium">תאריך</th>
-                      <th className="px-3 py-2 text-right font-medium">הערות</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {(movements as Row[]).map((row, index) => {
-                      const id = getString(row, "id") ?? `movement-${index}`;
-                      return (
-                        <tr key={id} className="hover:bg-muted/30">
-                          <td className="px-3 py-2">{getString(row, "product_id") ?? "-"}</td>
-                          <td className="px-3 py-2">{getString(row, "movement_type") ?? "-"}</td>
-                          <td className="px-3 py-2">{getNumber(row, "quantity") ?? "-"}</td>
-                          <td className="px-3 py-2">{getString(row, "source_type") ?? "-"}</td>
-                          <td className="px-3 py-2">{getString(row, "source_id") ?? "-"}</td>
-                          <td className="px-3 py-2">{getString(row, "performed_by") ?? "-"}</td>
-                          <td className="px-3 py-2">{getString(row, "created_at") ?? "-"}</td>
-                          <td className="px-3 py-2">{getString(row, "notes") ?? "-"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <SalesInventoryClient
+                products={(products ?? []) as Row[]}
+                inventoryRows={(inventoryRows ?? []) as Row[]}
+                movements={(movements ?? []) as Row[]}
+              />
             )}
           </>
         ) : null}

@@ -20,7 +20,8 @@ type ProductRow = {
   code: string | null;
   unitPrice: number | null;
   stock: number | null;
-  notes?: string | null;
+  purchasedAmount: number;
+  description?: string | null;
   active?: boolean;
 };
 
@@ -43,8 +44,9 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
   const [createName, setCreateName] = useState("");
   const [createCode, setCreateCode] = useState("");
   const [createPrice, setCreatePrice] = useState("");
-  const [createStock, setCreateStock] = useState("");
-  const [createNotes, setCreateNotes] = useState("");
+  const [createCost, setCreateCost] = useState("");
+  const [createPurchasedAmount, setCreatePurchasedAmount] = useState("");
+  const [createDescription, setCreateDescription] = useState("");
   const [createActive, setCreateActive] = useState(true);
 
   const [editOpen, setEditOpen] = useState(false);
@@ -54,9 +56,14 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
   const [editName, setEditName] = useState("");
   const [editCode, setEditCode] = useState("");
   const [editPrice, setEditPrice] = useState("");
-  const [editStock, setEditStock] = useState("");
-  const [editNotes, setEditNotes] = useState("");
+  const [editCost, setEditCost] = useState("");
+  const [editPurchasedAmount, setEditPurchasedAmount] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [editActive, setEditActive] = useState(true);
+  const [deleteLoadingId, setDeleteLoadingId] = useState("");
+  const [tableError, setTableError] = useState("");
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ProductRow | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -72,6 +79,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
 
   async function addProduct() {
     if (createLoading) return;
+    setTableError("");
     setCreateError("");
 
     if (!createName.trim()) {
@@ -80,13 +88,18 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
     }
 
     const unitPrice = createPrice.trim() ? Number(createPrice) : null;
-    const stock = createStock.trim() ? Number(createStock) : null;
+    const baseCost = createCost.trim() ? Number(createCost) : null;
+    const purchasedAmount = createPurchasedAmount.trim() ? Number(createPurchasedAmount) : 0;
     if (unitPrice !== null && (!Number.isFinite(unitPrice) || unitPrice < 0)) {
       setCreateError("מחיר מוצר אינו תקין.");
       return;
     }
-    if (stock !== null && !Number.isFinite(stock)) {
-      setCreateError("כמות מלאי אינה תקינה.");
+    if (baseCost !== null && (!Number.isFinite(baseCost) || baseCost < 0)) {
+      setCreateError("עלות בסיס אינה תקינה.");
+      return;
+    }
+    if (!Number.isFinite(purchasedAmount) || purchasedAmount < 0) {
+      setCreateError("כמות שנרכשה אינה תקינה.");
       return;
     }
 
@@ -97,10 +110,11 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name: createName.trim(),
-          code: createCode.trim() || null,
+          sku: createCode.trim() || null,
           unit_price: unitPrice,
-          stock,
-          notes: createNotes.trim() || null,
+          base_cost: baseCost,
+          purchased_amount: purchasedAmount,
+          description: createDescription.trim() || null,
           active: createActive,
         }),
       });
@@ -126,6 +140,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
           (typeof json.product.barcode === "string" && json.product.barcode) ||
           (createCode.trim() || null),
         unitPrice:
+          (typeof json.product.base_price === "number" ? json.product.base_price : null) ??
           (typeof json.product.sale_price === "number" ? json.product.sale_price : null) ??
           (typeof json.product.selling_price === "number" ? json.product.selling_price : null) ??
           (typeof json.product.price === "number" ? json.product.price : null) ??
@@ -139,20 +154,28 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
             ? json.product.available_quantity
             : null) ??
           (typeof json.product.in_stock === "number" ? json.product.in_stock : null) ??
-          stock,
-        notes:
-          (typeof json.product.notes === "string" ? json.product.notes : null) ||
-          (createNotes.trim() || null),
+          null,
+        description:
+          (typeof json.product.description === "string" ? json.product.description : null) ||
+          (createDescription.trim() || null),
         active: typeof json.product.active === "boolean" ? json.product.active : createActive,
       };
 
-      setRows((prev) => normalizeProducts([created, ...prev]));
+      const nextRows = normalizeProducts([created, ...rows]);
+      const wasAdded = nextRows.some((row) => row.id === created.id);
+      setRows(nextRows);
+      if (!wasAdded) {
+        setCreateError("המוצר נשמר אך לא עודכן ברשימה. נסו לרענן.");
+        return;
+      }
+
       setCreateOpen(false);
       setCreateName("");
       setCreateCode("");
       setCreatePrice("");
-      setCreateStock("");
-      setCreateNotes("");
+      setCreateCost("");
+      setCreatePurchasedAmount("");
+      setCreateDescription("");
       setCreateActive(true);
     } catch (err: unknown) {
       setCreateError(err instanceof Error ? err.message : "שגיאה לא ידועה");
@@ -167,27 +190,34 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
     setEditName(row.name);
     setEditCode(row.code ?? "");
     setEditPrice(row.unitPrice !== null ? String(row.unitPrice) : "");
-    setEditStock(row.stock !== null ? String(row.stock) : "");
-    setEditNotes(row.notes ?? "");
+    setEditCost("");
+    setEditPurchasedAmount("");
+    setEditDescription(row.description ?? "");
     setEditActive(row.active !== false);
     setEditOpen(true);
   }
 
   async function saveEdit() {
     if (editLoading) return;
+    setTableError("");
     setEditError("");
 
     if (!editId) return setEditError("מזהה מוצר חסר.");
     if (!editName.trim()) return setEditError("שם מוצר הוא שדה חובה.");
 
     const unitPrice = editPrice.trim() ? Number(editPrice) : null;
-    const stock = editStock.trim() ? Number(editStock) : null;
+    const baseCost = editCost.trim() ? Number(editCost) : null;
+    const purchasedAmount = editPurchasedAmount.trim() ? Number(editPurchasedAmount) : 0;
     if (unitPrice !== null && (!Number.isFinite(unitPrice) || unitPrice < 0)) {
       setEditError("מחיר מוצר אינו תקין.");
       return;
     }
-    if (stock !== null && !Number.isFinite(stock)) {
-      setEditError("כמות מלאי אינה תקינה.");
+    if (baseCost !== null && (!Number.isFinite(baseCost) || baseCost < 0)) {
+      setEditError("עלות בסיס אינה תקינה.");
+      return;
+    }
+    if (!Number.isFinite(purchasedAmount) || purchasedAmount < 0) {
+      setEditError("כמות שנרכשה אינה תקינה.");
       return;
     }
 
@@ -199,10 +229,11 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
         body: JSON.stringify({
           id: editId,
           name: editName.trim(),
-          code: editCode.trim() || null,
+          sku: editCode.trim() || null,
           unit_price: unitPrice,
-          stock,
-          notes: editNotes.trim() || null,
+          base_cost: baseCost,
+          purchased_amount: purchasedAmount,
+          description: editDescription.trim() || null,
           active: editActive,
         }),
       });
@@ -228,6 +259,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
           (typeof json.product.barcode === "string" && json.product.barcode) ||
           (editCode.trim() || null),
         unitPrice:
+          (typeof json.product.base_price === "number" ? json.product.base_price : null) ??
           (typeof json.product.sale_price === "number" ? json.product.sale_price : null) ??
           (typeof json.product.selling_price === "number" ? json.product.selling_price : null) ??
           (typeof json.product.price === "number" ? json.product.price : null) ??
@@ -241,19 +273,71 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
             ? json.product.available_quantity
             : null) ??
           (typeof json.product.in_stock === "number" ? json.product.in_stock : null) ??
-          stock,
-        notes:
-          (typeof json.product.notes === "string" ? json.product.notes : null) ||
-          (editNotes.trim() || null),
+          null,
+        description:
+          (typeof json.product.description === "string" ? json.product.description : null) ||
+          (editDescription.trim() || null),
         active: typeof json.product.active === "boolean" ? json.product.active : editActive,
       };
 
-      setRows((prev) => normalizeProducts(prev.map((r) => (r.id === editId ? updated : r))));
+      let didUpdate = false;
+      const nextRows = normalizeProducts(
+        rows.map((r) => {
+          if (r.id !== editId) return r;
+          didUpdate = true;
+          return updated;
+        })
+      );
+      setRows(nextRows);
+      if (!didUpdate) {
+        setEditError("השינוי נשמר אך לא עודכן בשורה. נסו לרענן.");
+        return;
+      }
+
       setEditOpen(false);
     } catch (err: unknown) {
       setEditError(err instanceof Error ? err.message : "שגיאה לא ידועה");
     } finally {
       setEditLoading(false);
+    }
+  }
+
+  function openDeleteDialog(row: ProductRow) {
+    setPendingDelete(row);
+    setDeleteConfirmOpen(true);
+  }
+
+  async function confirmDeleteProduct() {
+    if (!pendingDelete) return;
+    if (deleteLoadingId) return;
+
+    setTableError("");
+    setDeleteLoadingId(pendingDelete.id);
+    try {
+      const res = await fetch("/api/products/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: pendingDelete.id }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setTableError(json.error ?? "מחיקת מוצר נכשלה.");
+        return;
+      }
+      const nextRows = rows.filter((item) => item.id !== pendingDelete.id);
+      const wasRemoved = nextRows.length < rows.length;
+      setRows(nextRows);
+      if (!wasRemoved) {
+        setTableError("המחיקה בוצעה אך השורה לא ירדה מהרשימה. נסו לרענן.");
+        return;
+      }
+
+      setDeleteConfirmOpen(false);
+      setPendingDelete(null);
+    } catch (err: unknown) {
+      setTableError(err instanceof Error ? err.message : "שגיאה לא ידועה");
+    } finally {
+      setDeleteLoadingId("");
     }
   }
 
@@ -282,6 +366,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
                 <th className="px-3 py-2 text-right font-medium">קוד</th>
                 <th className="px-3 py-2 text-right font-medium">מחיר</th>
                 <th className="px-3 py-2 text-right font-medium">מלאי נוכחי</th>
+                <th className="px-3 py-2 text-right font-medium">כמות שנרכשה</th>
                 <th className="px-3 py-2 text-right font-medium">סטטוס</th>
                 <th className="px-3 py-2 text-right font-medium">פעולות</th>
               </tr>
@@ -293,11 +378,23 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
                   <td className="px-3 py-2">{product.code ?? "-"}</td>
                   <td className="px-3 py-2">{formatCurrency(product.unitPrice)}</td>
                   <td className="px-3 py-2">{product.stock ?? "-"}</td>
+                  <td className="px-3 py-2">{product.purchasedAmount}</td>
                   <td className="px-3 py-2">{product.active === false ? "לא פעיל" : "פעיל"}</td>
                   <td className="px-3 py-2">
-                    <Button type="button" size="sm" variant="outline" onClick={() => openEdit(product)}>
-                      עריכה
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" size="sm" variant="outline" onClick={() => openEdit(product)}>
+                        עריכה
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={deleteLoadingId === product.id}
+                        onClick={() => openDeleteDialog(product)}
+                      >
+                        {deleteLoadingId === product.id ? "מוחק..." : "מחיקה"}
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -305,6 +402,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
           </table>
         </div>
       )}
+      {tableError ? <p className="text-sm text-destructive">{tableError}</p> : null}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-lg">
@@ -329,12 +427,20 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
               <Field label="מחיר מכירה">
                 <Input value={createPrice} onChange={(e) => setCreatePrice(e.target.value)} inputMode="decimal" />
               </Field>
-              <Field label="מלאי התחלתי">
-                <Input value={createStock} onChange={(e) => setCreateStock(e.target.value)} inputMode="decimal" />
+              <Field label="עלות בסיס">
+                <Input value={createCost} onChange={(e) => setCreateCost(e.target.value)} inputMode="decimal" />
               </Field>
             </div>
-            <Field label="הערות">
-              <Textarea value={createNotes} onChange={(e) => setCreateNotes(e.target.value)} rows={3} />
+            <Field label="כמות שנרכשה">
+              <Input
+                value={createPurchasedAmount}
+                onChange={(e) => setCreatePurchasedAmount(e.target.value)}
+                inputMode="decimal"
+                placeholder="לדוגמה: 25"
+              />
+            </Field>
+            <Field label="תיאור">
+              <Textarea value={createDescription} onChange={(e) => setCreateDescription(e.target.value)} rows={3} />
             </Field>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -380,12 +486,20 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
               <Field label="מחיר מכירה">
                 <Input value={editPrice} onChange={(e) => setEditPrice(e.target.value)} inputMode="decimal" />
               </Field>
-              <Field label="מלאי נוכחי">
-                <Input value={editStock} onChange={(e) => setEditStock(e.target.value)} inputMode="decimal" />
+              <Field label="עלות בסיס">
+                <Input value={editCost} onChange={(e) => setEditCost(e.target.value)} inputMode="decimal" />
               </Field>
             </div>
-            <Field label="הערות">
-              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={3} />
+            <Field label="כמות שנרכשה">
+              <Input
+                value={editPurchasedAmount}
+                onChange={(e) => setEditPurchasedAmount(e.target.value)}
+                inputMode="decimal"
+                placeholder={`כמות קיימת: ${String(rows.find((row) => row.id === editId)?.purchasedAmount ?? 0)}`}
+              />
+            </Field>
+            <Field label="תיאור">
+              <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} />
             </Field>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -405,6 +519,37 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>אישור מחיקה</DialogTitle>
+            <DialogDescription>
+              האם למחוק את המוצר {pendingDelete ? `"${pendingDelete.name}"` : ""}? פעולה זו אינה הפיכה.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setPendingDelete(null);
+              }}
+            >
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!pendingDelete || deleteLoadingId === pendingDelete.id}
+              onClick={() => void confirmDeleteProduct()}
+            >
+              {pendingDelete && deleteLoadingId === pendingDelete.id ? "מוחק..." : "מחיקה"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

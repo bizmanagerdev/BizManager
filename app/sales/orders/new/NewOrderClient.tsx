@@ -56,6 +56,11 @@ function getNumber(row: Row, keys: string[]) {
   return null;
 }
 
+function toPositiveInt(value: number) {
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(1, Math.round(value));
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
@@ -113,7 +118,6 @@ export default function NewOrderClient({
   const [customerId, setCustomerId] = useState("");
   const [customerQuery, setCustomerQuery] = useState("");
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
-  const [status, setStatus] = useState("draft");
   const [paymentStatus, setPaymentStatus] = useState("unpaid");
   const [orderDiscount, setOrderDiscount] = useState("0");
   const [notes, setNotes] = useState("");
@@ -180,7 +184,14 @@ export default function NewOrderClient({
           const name = getString(row, ["name", "product_name", "title", "sku"]) ?? "מוצר";
           const code = getString(row, ["sku", "code", "barcode"]);
           const unitPrice =
-            getNumber(row, ["sale_price", "selling_price", "price", "unit_price", "retail_price"]) ??
+            getNumber(row, [
+              "base_price",
+              "sale_price",
+              "selling_price",
+              "price",
+              "unit_price",
+              "retail_price",
+            ]) ??
             0;
           const stock = getNumber(row, ["stock", "quantity", "available_quantity", "in_stock"]);
           return { id, name, code, unitPrice, stock };
@@ -221,6 +232,10 @@ export default function NewOrderClient({
       ),
     [lines]
   );
+  const totalUnits = useMemo(
+    () => lines.reduce((sum, line) => sum + line.quantity_ordered, 0),
+    [lines]
+  );
 
   const orderDiscountNumber = Number(orderDiscount || 0);
   const totalAmount = subtotal - (Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0);
@@ -256,7 +271,16 @@ export default function NewOrderClient({
   }
 
   function updateLine(index: number, patch: Partial<OrderLine>) {
-    setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+    setLines((prev) =>
+      prev.map((line, i) => {
+        if (i !== index) return line;
+        const next = { ...line, ...patch };
+        return {
+          ...next,
+          quantity_ordered: toPositiveInt(next.quantity_ordered),
+        };
+      })
+    );
   }
 
   function removeLine(index: number) {
@@ -385,7 +409,7 @@ export default function NewOrderClient({
         body: JSON.stringify({
           customer_id: customerId,
           order_date: orderDate,
-          status,
+          status: "draft",
           payment_status: paymentStatus,
           discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
           notes: notes.trim() || null,
@@ -539,14 +563,7 @@ export default function NewOrderClient({
 
               <div className="space-y-1">
                 <label className="text-sm font-medium">סטטוס הזמנה</label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="draft">טיוטה</option>
-                  <option value="confirmed">מאושרת</option>
-                </select>
+                <Input value="טיוטה" readOnly />
               </div>
             </div>
 
@@ -629,11 +646,15 @@ export default function NewOrderClient({
                         <label className="text-xs text-muted-foreground">כמות</label>
                         <Input
                           type="number"
-                          min="0"
-                          step="0.01"
+                          min="1"
+                          step="1"
                           value={line.quantity_ordered}
                           disabled={actionLocked}
-                          onChange={(e) => updateLine(index, { quantity_ordered: Number(e.target.value || 0) })}
+                          onChange={(e) =>
+                            updateLine(index, {
+                              quantity_ordered: toPositiveInt(Number(e.target.value || 1)),
+                            })
+                          }
                           placeholder="כמות"
                         />
                       </div>
@@ -715,7 +736,7 @@ export default function NewOrderClient({
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סטטוס הזמנה</span>
-                <span>{status === "confirmed" ? "מאושרת" : "טיוטה"}</span>
+                <span>טיוטה</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סטטוס תשלום</span>
@@ -729,7 +750,7 @@ export default function NewOrderClient({
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">פריטים</span>
-                <span>{lines.length}</span>
+                <span>{totalUnits}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סכום ביניים</span>
