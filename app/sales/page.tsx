@@ -1,22 +1,163 @@
 ﻿import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import SalesOrdersClient from "@/app/sales/SalesOrdersClient";
+import SalesTabsNav from "@/app/sales/SalesTabsNav";
+import PriceListClient from "@/app/sales/PriceListClient";
 
 type Row = Record<string, unknown>;
 
-export default async function SalesPage() {
+export const revalidate = 30;
+
+function getString(row: Row, key: string) {
+  const value = row[key];
+  return typeof value === "string" ? value : null;
+}
+
+function getNumber(row: Row, key: string) {
+  const value = row[key];
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function extractCityFromAddress(address: string | null) {
+  if (!address) return null;
+  const normalized = address.trim();
+  if (!normalized) return null;
+  const first = normalized.split("|")[0]?.trim() ?? "";
+  return first || null;
+}
+
+function formatCurrency(value: number | null) {
+  if (value === null) return "-";
+  return new Intl.NumberFormat("he-IL", {
+    style: "currency",
+    currency: "ILS",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function productName(row: Row) {
+  return (
+    getString(row, "name") ??
+    getString(row, "product_name") ??
+    getString(row, "title") ??
+    getString(row, "sku") ??
+    "מוצר"
+  );
+}
+
+function productCode(row: Row) {
+  return getString(row, "sku") ?? getString(row, "code") ?? getString(row, "barcode") ?? null;
+}
+
+function productUnitPrice(row: Row) {
+  return (
+    getNumber(row, "sale_price") ??
+    getNumber(row, "selling_price") ??
+    getNumber(row, "price") ??
+    getNumber(row, "unit_price") ??
+    getNumber(row, "retail_price")
+  );
+}
+
+export default async function SalesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ tab?: string }>;
+}) {
+  const { tab } = (await searchParams) ?? {};
+  const activeTab =
+    tab === "inventory" || tab === "price-list" || tab === "deliveries" ? tab : "orders";
+
   const { profile, supabase } = await requireProfile();
 
-  const [{ data: orders, error: ordersError }, { data: customers, error: customersError }] =
-    await Promise.all([
-      supabase.from("orders").select("*").order("order_date", { ascending: false }).limit(1000),
-      supabase
-        .from("customers")
-        .select("id,name,name_for_invoice,registration_number,phone,email,address,active,notes")
-        .limit(5000),
-    ]);
+  const [
+    { data: orders, error: ordersError },
+    { data: customers, error: customersError },
+    { data: movements, error: movementsError },
+    { data: products, error: productsError },
+  ] = await Promise.all([
+    supabase
+      .from("orders")
+      .select("id,customer_id,order_date,status,payment_status,total_amount,notes")
+      .order("order_date", { ascending: false })
+      .limit(1000),
+    supabase
+      .from("customers")
+      .select("id,name,name_for_invoice,phone,email,address")
+      .limit(5000),
+    supabase
+      .from("inventory_movements")
+      .select("id,product_id,movement_type,quantity,source_type,source_id,performed_by,notes,created_at")
+      .order("created_at", { ascending: false })
+      .limit(300),
+    supabase.from("products").select("*").limit(5000),
+  ]);
+
+  const customerById = new Map<string, Row>();
+  ((customers ?? []) as Row[]).forEach((row) => {
+    const id = getString(row, "id");
+    if (id) customerById.set(id, row);
+  });
+
+  const deliveryStatuses = new Set(["confirmed", "processing", "out_for_delivery"]);
+  const deliveries = ((orders ?? []) as Row[])
+    .filter((order) => deliveryStatuses.has(getString(order, "status") ?? ""))
+    .map((order) => {
+      const customerId = getString(order, "customer_id") ?? "";
+      const customer = customerById.get(customerId) ?? null;
+      const customerName =
+        (customer ? getString(customer, "name") ?? getString(customer, "name_for_invoice") : null) ??
+        customerId;
+      const customerPhone = customer ? getString(customer, "phone") : null;
+      const address = customer ? getString(customer, "address") : null;
+      const city = extractCityFromAddress(address);
+      return {
+        id: getString(order, "id") ?? "",
+        orderDate: getString(order, "order_date"),
+        status: getString(order, "status") ?? "-",
+        totalAmount: getNumber(order, "total_amount"),
+        notes: getString(order, "notes"),
+        customerName,
+        customerPhone,
+        city: city ?? "ללא עיר",
+        address: address ?? "-",
+      };
+    })
+    .filter((row) => row.id);
+
+  const deliveriesByCity = Array.from(
+    deliveries.reduce((map, delivery) => {
+      const list = map.get(delivery.city) ?? [];
+      list.push(delivery);
+      map.set(delivery.city, list);
+      return map;
+    }, new Map<string, typeof deliveries>())
+  ).sort((a, b) => a[0].localeCompare(b[0], "he"));
+
+  const productRows = ((products ?? []) as Row[])
+    .map((row) => ({
+      id: getString(row, "id") ?? "",
+      name: productName(row),
+      code: productCode(row),
+      unitPrice: productUnitPrice(row),
+      stock:
+        getNumber(row, "stock") ??
+        getNumber(row, "quantity") ??
+        getNumber(row, "available_quantity") ??
+        getNumber(row, "in_stock"),
+      notes: getString(row, "notes"),
+      active: row.active === false ? false : true,
+    }))
+    .filter((row) => row.id)
+    .sort((a, b) => a.name.localeCompare(b.name, "he"));
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
@@ -25,29 +166,137 @@ export default async function SalesPage() {
           <div>
             <h1 className="text-2xl font-semibold">מכירות</h1>
             <p className="text-sm text-muted-foreground">
-              ניהול הזמנות, מעקב הזמנות פעילות וסינון לפי לקוח ועיר.
+              הזמנות, מלאי, מחירון ותכנון משלוחים לפי עיר.
             </p>
           </div>
 
-          <div>
-            <Button asChild>
-              <Link href="/sales/orders/new">הזמנה חדשה</Link>
-            </Button>
-          </div>
+          <Button asChild>
+            <Link href="/sales/orders/new">הזמנה חדשה</Link>
+          </Button>
         </div>
 
-        {ordersError ? (
-          <p className="text-sm text-destructive">שגיאת הזמנות: {ordersError.message}</p>
-        ) : null}
-        {customersError ? (
-          <p className="text-sm text-destructive">שגיאת לקוחות: {customersError.message}</p>
+        <SalesTabsNav activeTab={activeTab} />
+
+        {activeTab === "orders" ? (
+          <>
+            {ordersError ? (
+              <p className="text-sm text-destructive">שגיאת הזמנות: {ordersError.message}</p>
+            ) : null}
+            {customersError ? (
+              <p className="text-sm text-destructive">שגיאת לקוחות: {customersError.message}</p>
+            ) : null}
+
+            <SalesOrdersClient
+              orders={(orders ?? []) as Row[]}
+              customers={(customers ?? []) as Row[]}
+            />
+          </>
         ) : null}
 
-        <SalesOrdersClient
-          orders={(orders ?? []) as Row[]}
-          customers={(customers ?? []) as Row[]}
-        />
+        {activeTab === "inventory" ? (
+          <>
+            {movementsError ? (
+              <p className="text-sm text-destructive">שגיאה בטעינת תנועות מלאי: {movementsError.message}</p>
+            ) : (movements ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">אין תנועות מלאי להצגה.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-md border">
+                <table className="min-w-[1000px] w-full text-sm">
+                  <thead className="bg-muted/50 text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-right font-medium">מוצר</th>
+                      <th className="px-3 py-2 text-right font-medium">סוג תנועה</th>
+                      <th className="px-3 py-2 text-right font-medium">כמות</th>
+                      <th className="px-3 py-2 text-right font-medium">מקור</th>
+                      <th className="px-3 py-2 text-right font-medium">מזהה מקור</th>
+                      <th className="px-3 py-2 text-right font-medium">בוצע על ידי</th>
+                      <th className="px-3 py-2 text-right font-medium">תאריך</th>
+                      <th className="px-3 py-2 text-right font-medium">הערות</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {(movements as Row[]).map((row, index) => {
+                      const id = getString(row, "id") ?? `movement-${index}`;
+                      return (
+                        <tr key={id} className="hover:bg-muted/30">
+                          <td className="px-3 py-2">{getString(row, "product_id") ?? "-"}</td>
+                          <td className="px-3 py-2">{getString(row, "movement_type") ?? "-"}</td>
+                          <td className="px-3 py-2">{getNumber(row, "quantity") ?? "-"}</td>
+                          <td className="px-3 py-2">{getString(row, "source_type") ?? "-"}</td>
+                          <td className="px-3 py-2">{getString(row, "source_id") ?? "-"}</td>
+                          <td className="px-3 py-2">{getString(row, "performed_by") ?? "-"}</td>
+                          <td className="px-3 py-2">{getString(row, "created_at") ?? "-"}</td>
+                          <td className="px-3 py-2">{getString(row, "notes") ?? "-"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        ) : null}
+
+        {activeTab === "price-list" ? (
+          <>
+            {productsError ? (
+              <p className="text-sm text-destructive">שגיאה בטעינת מחירון: {productsError.message}</p>
+            ) : (
+              <PriceListClient initialProducts={productRows} />
+            )}
+          </>
+        ) : null}
+
+        {activeTab === "deliveries" ? (
+          <>
+            {ordersError || customersError ? (
+              <p className="text-sm text-destructive">
+                שגיאה בטעינת משלוחים: {(ordersError?.message ?? customersError?.message) ?? ""}
+              </p>
+            ) : deliveries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">אין כרגע משלוחים פתוחים.</p>
+            ) : (
+              <div className="space-y-3">
+                {deliveriesByCity.map(([city, cityDeliveries]) => (
+                  <Card key={city}>
+                    <CardContent className="space-y-3 p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-base font-semibold">{city}</h3>
+                        <span className="text-sm text-muted-foreground">
+                          {cityDeliveries.length} משלוחים
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {cityDeliveries.map((delivery) => (
+                          <div key={delivery.id} className="rounded-md border p-3 text-sm">
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="font-medium">
+                                הזמנה #{delivery.id.slice(0, 8)} | {delivery.customerName}
+                              </div>
+                              <div className="text-muted-foreground">
+                                {delivery.orderDate ?? "-"} | {delivery.status}
+                              </div>
+                            </div>
+                            <div className="mt-1 text-muted-foreground">
+                              טלפון: {delivery.customerPhone ?? "-"} | כתובת: {delivery.address}
+                            </div>
+                            <div className="mt-1 text-muted-foreground">
+                              סכום: {formatCurrency(delivery.totalAmount)}
+                              {delivery.notes ? ` | הערות: ${delivery.notes}` : ""}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
+        ) : null}
       </div>
     </AppShell>
   );
 }
+

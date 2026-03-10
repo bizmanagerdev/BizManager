@@ -103,6 +103,7 @@ export default function RegisterClient() {
         value={fullName}
         onChange={onChange(setFullName)}
         autoComplete="name"
+        disabled={loading}
       />
 
       <input
@@ -111,6 +112,7 @@ export default function RegisterClient() {
         value={email}
         onChange={onChange(setEmail)}
         autoComplete="email"
+        disabled={loading}
       />
 
       <input
@@ -118,6 +120,7 @@ export default function RegisterClient() {
         value={phone}
         onChange={onChange(setPhone)}
         autoComplete="tel"
+        disabled={loading}
       />
 
       <input
@@ -126,6 +129,7 @@ export default function RegisterClient() {
         value={password}
         onChange={onChange(setPassword)}
         autoComplete="new-password"
+        disabled={loading}
       />
 
       <textarea
@@ -133,12 +137,13 @@ export default function RegisterClient() {
         value={notes}
         onChange={onChange(setNotes)}
         rows={3}
+        disabled={loading}
       />
 
       <button onClick={register} disabled={loading}>
         {loading ? "יוצר חשבון..." : "יצירת חשבון"}
       </button>
-      {loading && <p style={{ margin: 0, color: "#555" }}>Creating account...</p>}
+      {loading && <p style={{ margin: 0, color: "#555" }}>יוצר חשבון, נא להמתין...</p>}
 
       <button
         onClick={() =>

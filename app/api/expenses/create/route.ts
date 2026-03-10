@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { createSupabaseRouteClient } from "@/lib/supabase/route";
+﻿import { NextResponse } from "next/server";
+import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 export async function POST(req: Request) {
   try {
@@ -8,8 +8,6 @@ export async function POST(req: Request) {
       amount?: number | string;
       category?: string;
       description?: string;
-      business_domain?: string;
-      business_domain_details?: string;
       notes?: string;
       expense_date?: string | null;
       included_in_base_price?: boolean;
@@ -19,73 +17,43 @@ export async function POST(req: Request) {
 
     const projectId = typeof body.project_id === "string" ? body.project_id : "";
     const category = typeof body.category === "string" ? body.category.trim() : "";
-    const description =
-      typeof body.description === "string" ? body.description.trim() : null;
-    const businessDomain =
-      typeof body.business_domain === "string" ? body.business_domain.trim() : "";
+    const description = typeof body.description === "string" ? body.description.trim() : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
 
     const includedInBasePrice = Boolean(body.included_in_base_price);
     const billedToCustomer = Boolean(body.billed_to_customer);
-    const projectExpenseNotes =
-      typeof body.project_expense_notes === "string"
-        ? body.project_expense_notes.trim()
-        : null;
+    const projectExpenseNotes = typeof body.project_expense_notes === "string" ? body.project_expense_notes.trim() : null;
 
     const amountNumber =
-      typeof body.amount === "number"
-        ? body.amount
-        : typeof body.amount === "string"
-          ? Number(body.amount)
-          : NaN;
+      typeof body.amount === "number" ? body.amount : typeof body.amount === "string" ? Number(body.amount) : NaN;
 
     if (!projectId || !category || !Number.isFinite(amountNumber)) {
-      return NextResponse.json(
-        { error: "Missing project_id, category, or amount" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing project_id, category, or amount" }, { status: 400 });
     }
 
-    const expenseDate =
-      typeof body.expense_date === "string" ? body.expense_date : null;
-
+    const expenseDate = typeof body.expense_date === "string" ? body.expense_date : null;
     if (!expenseDate) {
-      return NextResponse.json(
-        { error: "Missing expense_date" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing expense_date" }, { status: 400 });
     }
 
-    // Keep DB values aligned with the existing Postgres check constraint.
-    // UI shows Hebrew labels, but the stored values are stable "codes".
-    const allowedBusinessDomains = new Set([
-      "home",
-      "logistics",
-      "sales",
-      "asset_management",
-    ]);
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user } = access.value;
 
-    if (!businessDomain || !allowedBusinessDomains.has(businessDomain)) {
-      return NextResponse.json(
-        { error: "Missing or invalid business_domain" },
-        { status: 400 }
-      );
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("id,project_type")
+      .eq("id", projectId)
+      .maybeSingle();
+
+    if (projectError) {
+      return NextResponse.json({ error: projectError.message }, { status: 400 });
+    }
+    if (!project || typeof project.project_type !== "string" || !project.project_type.trim()) {
+      return NextResponse.json({ error: "Invalid project_id or missing project_type" }, { status: 400 });
     }
 
-    const finalNotes = notes;
-
-    const supabase = await createSupabaseRouteClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      return NextResponse.json({ error: userError.message }, { status: 400 });
-    }
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const businessDomain = project.project_type.trim();
 
     const { data: expense, error: expenseError } = await supabase
       .from("expenses")
@@ -95,21 +63,14 @@ export async function POST(req: Request) {
         category,
         description,
         business_domain: businessDomain,
-        notes: finalNotes,
+        notes,
         recorded_by: user.id,
       })
       .select("id,expense_date,amount,category,description,business_domain,notes,recorded_by,created_at,updated_at")
       .maybeSingle();
 
-    if (expenseError) {
-      return NextResponse.json({ error: expenseError.message }, { status: 400 });
-    }
-    if (!expense?.id) {
-      return NextResponse.json(
-        { error: "Failed to create expense" },
-        { status: 500 }
-      );
-    }
+    if (expenseError) return NextResponse.json({ error: expenseError.message }, { status: 400 });
+    if (!expense?.id) return NextResponse.json({ error: "Failed to create expense" }, { status: 500 });
 
     const { error: linkError } = await supabase.from("project_expenses").insert({
       project_id: projectId,
@@ -125,10 +86,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ expense });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message ?? "Unknown error" },
-      { status: 500 }
-    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

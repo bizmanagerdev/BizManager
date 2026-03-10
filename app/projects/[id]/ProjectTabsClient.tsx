@@ -27,6 +27,7 @@ import { ClientOnly } from "@/components/ClientOnly";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 
 type ProjectOverview = {
   id: string;
@@ -468,6 +469,7 @@ export default function ProjectTabsClient({
 
   function setTab(next: string) {
     if (!allowedTabs.has(next)) return;
+    emitNavigationStart();
     setTabValue(next);
     const params = new URLSearchParams(searchParams.toString());
     if (next === "overview") params.delete("tab");
@@ -2471,33 +2473,20 @@ function PriorityDropdown({
   );
 }
 
-function mapProjectTypeToBusinessDomain(projectType: string) {
-  switch (projectType) {
-    case "logistics":
-      return "logistics";
-    case "renovation":
-      return "home";
-    case "event":
-      return "sales";
-    case "asset_management":
-      return "asset_management";
-    default:
-      return null;
-  }
-}
-
-function businessDomainLabel(value: string | null) {
+function projectTypeLabel(value: string) {
   switch (value) {
-    case "home":
-      return "\u05d1\u05d9\u05ea";
     case "logistics":
       return "\u05dc\u05d5\u05d2\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4";
-    case "sales":
-      return "\u05de\u05db\u05d9\u05e8\u05d5\u05ea";
-    case "asset_management":
-      return "\u05e0\u05d9\u05d4\u05d5\u05dc \u05e0\u05db\u05e1\u05d9\u05dd \u05d5\u05d4\u05d5\u05d1\u05dc\u05d5\u05ea";
+    case "construction":
+      return "\u05d1\u05e0\u05d9\u05d9\u05d4";
+    case "moving":
+      return "\u05d4\u05d5\u05d1\u05dc\u05d4";
+    case "other":
+      return "\u05d0\u05d7\u05e8";
+    case "home":
+      return "\u05d1\u05d9\u05ea";
     default:
-      return "\u05dc\u05d0 \u05de\u05d5\u05d2\u05d3\u05e8";
+      return value;
   }
 }
 
@@ -2514,6 +2503,7 @@ function AddExpenseDialog({
   projectType: string;
   onCreated: (created: ExpenseListItem) => void;
 }) {
+  const getTodayDate = () => new Date().toISOString().slice(0, 10);
   const [submitting, setSubmitting] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [amountTouched, setAmountTouched] = useState(false);
@@ -2522,11 +2512,10 @@ function AddExpenseDialog({
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
-  const [expenseDate, setExpenseDate] = useState("");
+  const [expenseDate, setExpenseDate] = useState(getTodayDate());
   const [notes, setNotes] = useState("");
   const [includedInBase, setIncludedInBase] = useState(false);
   const [billedToCustomer, setBilledToCustomer] = useState(false);
-  const businessDomain = mapProjectTypeToBusinessDomain(projectType);
   const canSubmit =
     Number.isFinite(Number(amount)) &&
     Number(amount) > 0 &&
@@ -2564,6 +2553,7 @@ function AddExpenseDialog({
       setAmountTouched(false);
       setCategoryTouched(false);
       setExpenseDateTouched(false);
+      setExpenseDate((prev) => prev || getTodayDate());
     }
   }, [open]);
 
@@ -2571,12 +2561,6 @@ function AddExpenseDialog({
     setSubmitAttempted(true);
 
     const amountNumber = Number(amount);
-    if (!businessDomain) {
-      toast.error(
-        "\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e7\u05d1\u05d5\u05e2 \u05ea\u05d7\u05d5\u05dd \u05de\u05e1\u05d5\u05d2 \u05d4\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8"
-      );
-      return;
-    }
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) return;
     if (!category.trim()) return;
     if (!expenseDate) return;
@@ -2591,7 +2575,6 @@ function AddExpenseDialog({
           amount: amountNumber,
           category,
           description: description.trim() ? description : undefined,
-          business_domain: businessDomain,
           notes: notes.trim() ? notes : undefined,
           expense_date: expenseDate ? expenseDate : null,
           included_in_base_price: includedInBase,
@@ -2609,7 +2592,7 @@ function AddExpenseDialog({
       setAmount("");
       setCategory("");
       setDescription("");
-      setExpenseDate("");
+      setExpenseDate(getTodayDate());
       setNotes("");
       setIncludedInBase(false);
       setBilledToCustomer(false);
@@ -2667,7 +2650,7 @@ function AddExpenseDialog({
 
           <div className="text-xs text-muted-foreground">
             {"\u05ea\u05d7\u05d5\u05dd \u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05d9\u05d9\u05e7\u05d1\u05e2 \u05d0\u05d5\u05d8\u05d5\u05de\u05d8\u05d9\u05ea \u05dc\u05e4\u05d9 \u05e1\u05d5\u05d2 \u05d4\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8: "}
-            <span className="font-medium">{businessDomainLabel(businessDomain)}</span>
+            <span className="font-medium">{projectTypeLabel(projectType)}</span>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
@@ -2806,13 +2789,14 @@ function AddIncomeDialog({
   projectId: string;
   onCreated: (created: PaymentRow) => void;
 }) {
+  const getTodayDate = () => new Date().toISOString().slice(0, 10);
   const [submitting, setSubmitting] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [amountTouched, setAmountTouched] = useState(false);
   const [paymentDateTouched, setPaymentDateTouched] = useState(false);
   const [paymentMethodTouched, setPaymentMethodTouched] = useState(false);
   const [amount, setAmount] = useState("");
-  const [paymentDate, setPaymentDate] = useState("");
+  const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
@@ -2857,6 +2841,7 @@ function AddIncomeDialog({
       setAmountTouched(false);
       setPaymentDateTouched(false);
       setPaymentMethodTouched(false);
+      setPaymentDate((prev) => prev || getTodayDate());
     }
   }, [open]);
 
@@ -2903,7 +2888,7 @@ function AddIncomeDialog({
 
       toast.success("\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05d5\u05e1\u05e4\u05d4");
       setAmount("");
-      setPaymentDate("");
+      setPaymentDate(getTodayDate());
       setPaymentMethod("");
       setReferenceNumber("");
       setNotes("");

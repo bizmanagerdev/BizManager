@@ -1,6 +1,8 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 
+export const revalidate = 60;
+
 export default async function DashboardPage() {
   const { profile } = await requireProfile();
 

@@ -1,7 +1,8 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
-type CreateProjectPayload = {
+type UpdateProjectPayload = {
+  id?: string;
   customer_id?: string;
   name?: string;
   project_type?: string;
@@ -10,7 +11,7 @@ type CreateProjectPayload = {
   actual_price?: number | string;
   expenses_billed_separately?: boolean;
   project_manager_id?: string | null;
-  start_date?: string;
+  start_date?: string | null;
   end_date?: string | null;
   notes?: string | null;
 };
@@ -26,8 +27,9 @@ function toNumber(value: unknown) {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as CreateProjectPayload;
+    const body = (await req.json()) as UpdateProjectPayload;
 
+    const id = typeof body.id === "string" ? body.id : "";
     const customerId = typeof body.customer_id === "string" ? body.customer_id : "";
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const projectType = typeof body.project_type === "string" ? body.project_type : "";
@@ -44,18 +46,12 @@ export async function POST(req: Request) {
         : toNumber(actualPriceRaw);
     const expensesBilledSeparately = Boolean(body.expenses_billed_separately);
     const projectManagerId = typeof body.project_manager_id === "string" ? body.project_manager_id : null;
-    const startDate = typeof body.start_date === "string" ? body.start_date : "";
+    const startDate = typeof body.start_date === "string" ? body.start_date : null;
     const endDate = typeof body.end_date === "string" ? body.end_date : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
-    const allowedProjectTypes = new Set([
-      "logistics",
-      "construction",
-      "moving",
-      "other",
-      "home",
-    ]);
+    const allowedProjectTypes = new Set(["logistics", "construction", "moving", "other", "home"]);
 
-    if (!customerId || !name || !projectType || !status) {
+    if (!id || !customerId || !name || !projectType || !status) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
     if (!allowedProjectTypes.has(projectType)) {
@@ -69,9 +65,9 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase } = access.value;
 
-    const { data: created, error: insertError } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from("projects")
-      .insert({
+      .update({
         customer_id: customerId,
         name,
         project_type: projectType,
@@ -80,18 +76,19 @@ export async function POST(req: Request) {
         actual_price: actualPrice,
         expenses_billed_separately: expensesBilledSeparately,
         project_manager_id: projectManagerId,
-        start_date: startDate || null,
+        start_date: startDate,
         end_date: endDate,
         notes,
       })
+      .eq("id", id)
       .select(
         "id,customer_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,notes,created_at,updated_at"
       )
       .maybeSingle();
 
-    if (insertError) return NextResponse.json({ error: insertError.message }, { status: 400 });
-    if (!created || typeof created.id !== "string") {
-      return NextResponse.json({ error: "Project was not created" }, { status: 400 });
+    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 400 });
+    if (!updated || typeof updated.id !== "string") {
+      return NextResponse.json({ error: "Project was not updated" }, { status: 400 });
     }
 
     const { data: dashboardRow } = await supabase
@@ -99,12 +96,13 @@ export async function POST(req: Request) {
       .select(
         "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at,total_expenses,gross_profit,total_tasks,completed_tasks,open_tasks"
       )
-      .eq("id", created.id)
+      .eq("id", updated.id)
       .maybeSingle();
 
-    return NextResponse.json({ project: dashboardRow ?? created });
+    return NextResponse.json({ project: dashboardRow ?? updated });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+

@@ -5,11 +5,10 @@ import {
   LayoutDashboard,
   FolderKanban,
   ShoppingCart,
-  Boxes,
-  BadgeDollarSign,
   ListTodo,
-  FileText,
-  Settings,
+  Users,
+  Landmark,
+  FolderOpen,
 } from "lucide-react";
 
 export type SidebarNavItem = {
@@ -22,27 +21,26 @@ export function useNavItems() {
   const sidebarItems: SidebarNavItem[] = [
     { title: "דשבורד", url: "/dashboard", icon: LayoutDashboard },
     { title: "פרויקטים", url: "/projects", icon: FolderKanban },
-    { title: "מכירות", url: "/sales", icon: ShoppingCart },
-    { title: "מלאי", url: "/inventory", icon: Boxes },
-    { title: "שכר", url: "/payroll", icon: BadgeDollarSign },
     { title: "משימות", url: "/tasks", icon: ListTodo },
-    { title: "חשבוניות", url: "/invoices", icon: FileText },
-    { title: "הגדרות", url: "/settings", icon: Settings },
+    { title: "מכירות", url: "/sales", icon: ShoppingCart },
+    { title: "לקוחות", url: "/customers", icon: Users },
+    { title: "פיננסי", url: "/financial", icon: Landmark },
+    { title: "מסמכים", url: "/documents", icon: FolderOpen },
   ];
 
   const bottomNavItems: SidebarNavItem[] = [
     { title: "דשבורד", url: "/dashboard", icon: LayoutDashboard },
     { title: "פרויקטים", url: "/projects", icon: FolderKanban },
     { title: "מכירות", url: "/sales", icon: ShoppingCart },
-    { title: "משימות", url: "/tasks", icon: ListTodo },
+    { title: "לקוחות", url: "/customers", icon: Users },
   ];
 
   const bottomNavMoreItems: SidebarNavItem[] = [
-    { title: "מלאי", url: "/inventory", icon: Boxes },
-    { title: "שכר", url: "/payroll", icon: BadgeDollarSign },
-    { title: "חשבוניות", url: "/invoices", icon: FileText },
-    { title: "הגדרות", url: "/settings", icon: Settings },
+    { title: "משימות", url: "/tasks", icon: ListTodo },
+    { title: "פיננסי", url: "/financial", icon: Landmark },
+    { title: "מסמכים", url: "/documents", icon: FolderOpen },
   ];
 
   return { sidebarItems, bottomNavItems, bottomNavMoreItems };
 }
+

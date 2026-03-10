@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { createSupabaseRouteClient } from "@/lib/supabase/route";
+﻿import { NextResponse } from "next/server";
+import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 type CreateOrderItemPayload = {
   product_id?: string;
@@ -35,35 +35,25 @@ export async function POST(req: Request) {
     const customerId = typeof body.customer_id === "string" ? body.customer_id : "";
     const orderDate = typeof body.order_date === "string" ? body.order_date : "";
     const status = typeof body.status === "string" ? body.status : "draft";
-    const paymentStatus =
-      typeof body.payment_status === "string" ? body.payment_status : "unpaid";
+    const paymentStatus = typeof body.payment_status === "string" ? body.payment_status : "unpaid";
     const discountAmount = toNumber(body.discount_amount ?? 0);
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
 
     const items = Array.isArray(body.items) ? body.items : [];
     if (!customerId || !orderDate || items.length === 0) {
-      return NextResponse.json(
-        { error: "חסרים נתוני חובה: לקוח, תאריך הזמנה או פריטים." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing required order fields" }, { status: 400 });
     }
-
     if (!Number.isFinite(discountAmount) || discountAmount < 0) {
-      return NextResponse.json({ error: "הנחת הזמנה אינה תקינה." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid discount amount" }, { status: 400 });
     }
 
-    const normalizedItems = items.map((item) => {
-      const quantityOrdered = toNumber(item.quantity_ordered);
-      const unitPrice = toNumber(item.unit_price);
-      const lineDiscount = toNumber(item.discount_amount ?? 0);
-      return {
-        product_id: typeof item.product_id === "string" ? item.product_id : "",
-        quantity_ordered: quantityOrdered,
-        unit_price: unitPrice,
-        discount_amount: lineDiscount,
-        notes: typeof item.notes === "string" ? item.notes.trim() : null,
-      };
-    });
+    const normalizedItems = items.map((item) => ({
+      product_id: typeof item.product_id === "string" ? item.product_id : "",
+      quantity_ordered: toNumber(item.quantity_ordered),
+      unit_price: toNumber(item.unit_price),
+      discount_amount: toNumber(item.discount_amount ?? 0),
+      notes: typeof item.notes === "string" ? item.notes.trim() : null,
+    }));
 
     const invalidItem = normalizedItems.find(
       (item) =>
@@ -75,23 +65,13 @@ export async function POST(req: Request) {
         !Number.isFinite(item.discount_amount) ||
         item.discount_amount < 0
     );
-
     if (invalidItem) {
-      return NextResponse.json({ error: "אחד מפריטי ההזמנה אינו תקין." }, { status: 400 });
+      return NextResponse.json({ error: "Invalid order item payload" }, { status: 400 });
     }
 
-    const supabase = await createSupabaseRouteClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      return NextResponse.json({ error: `שגיאת אימות משתמש: ${userError.message}` }, { status: 400 });
-    }
-    if (!user) {
-      return NextResponse.json({ error: "אין הרשאה לבצע פעולה זו." }, { status: 401 });
-    }
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user } = access.value;
 
     const subtotal = normalizedItems.reduce(
       (sum, item) => sum + item.quantity_ordered * item.unit_price - item.discount_amount,
@@ -115,19 +95,17 @@ export async function POST(req: Request) {
     if (error) {
       const hint =
         error.message.includes("create_sales_order") || error.message.includes("function")
-          ? "פונקציית מסד נתונים חסרה. יש להריץ את db/sql/create_sales_order_rpc.sql ב-Supabase SQL Editor."
+          ? "Missing DB function create_sales_order. Run db/sql/create_sales_order_rpc.sql"
           : error.message;
       return NextResponse.json({ error: hint }, { status: 400 });
     }
 
     const orderId = typeof data === "string" ? data : null;
-    if (!orderId) {
-      return NextResponse.json({ error: "יצירת ההזמנה נכשלה." }, { status: 500 });
-    }
+    if (!orderId) return NextResponse.json({ error: "Failed to create order" }, { status: 500 });
 
     return NextResponse.json({ order_id: orderId });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "שגיאה לא ידועה";
+    const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

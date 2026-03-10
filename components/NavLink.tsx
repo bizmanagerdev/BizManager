@@ -3,7 +3,9 @@
 import Link, { type LinkProps } from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
+import type { UrlObject } from "url";
 import { cn } from "@/lib/utils";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 
 type Props = Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
   to: LinkProps["href"];
@@ -22,7 +24,13 @@ function isActivePath(pathname: string, to: string, end: boolean) {
 export const NavLink = React.forwardRef<HTMLAnchorElement, Props>(
   ({ className, activeClassName, pendingClassName, to, end = false, ...props }, ref) => {
     const pathname = usePathname() ?? "/";
-    const toPath = typeof to === "string" ? to : (to as any).pathname ?? "/";
+    let toPath = "/";
+    if (typeof to === "string") {
+      toPath = to;
+    } else {
+      const obj = to as UrlObject;
+      if (typeof obj.pathname === "string") toPath = obj.pathname;
+    }
 
     const active = isActivePath(pathname, toPath, end);
     const [pending, setPending] = React.useState(false);
@@ -38,6 +46,7 @@ export const NavLink = React.forwardRef<HTMLAnchorElement, Props>(
     const onClick: React.MouseEventHandler<HTMLAnchorElement> = (e) => {
       props.onClick?.(e);
       if (e.defaultPrevented) return;
+      emitNavigationStart();
       setPending(true);
     };
 

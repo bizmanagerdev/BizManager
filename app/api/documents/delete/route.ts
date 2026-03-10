@@ -1,18 +1,13 @@
-import { NextResponse } from "next/server";
-import { createSupabaseRouteClient } from "@/lib/supabase/route";
+﻿import { NextResponse } from "next/server";
+import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 const BUCKET = "business-documents";
 
 export async function POST(req: Request) {
   try {
-    const supabase = await createSupabaseRouteClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-    if (userError) return NextResponse.json({ error: userError.message }, { status: 400 });
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase } = access.value;
 
     const body = (await req.json()) as { document_id?: string };
     const documentId = typeof body.document_id === "string" ? body.document_id : "";
@@ -26,12 +21,9 @@ export async function POST(req: Request) {
     if (readError) return NextResponse.json({ error: readError.message }, { status: 400 });
     if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const storageKey = typeof (doc as any)?.storage_key === "string" ? (doc as any).storage_key : null;
+    const storageKey = typeof doc.storage_key === "string" ? doc.storage_key : null;
 
-    const { error: linksError } = await supabase
-      .from("document_links")
-      .delete()
-      .eq("document_id", documentId);
+    const { error: linksError } = await supabase.from("document_links").delete().eq("document_id", documentId);
     if (linksError) return NextResponse.json({ error: linksError.message }, { status: 400 });
 
     const { error: docDeleteError } = await supabase.from("documents").delete().eq("id", documentId);
@@ -48,8 +40,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? "Unknown error" }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

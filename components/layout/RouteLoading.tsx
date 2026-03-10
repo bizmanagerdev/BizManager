@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 export function RouteLoading({ title }: { title?: string }) {
   return (
     <AppShell>
-      <div className="space-y-4 animate-pulse">
+      <div data-route-loading="true" className="space-y-4 animate-pulse">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-2">
             <div className="h-7 w-48 bg-muted rounded" />

@@ -1,5 +1,5 @@
 ﻿import { NextResponse } from "next/server";
-import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 type CreateCustomerPayload = {
   name?: string;
@@ -39,18 +39,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "כתובת היא שדה חובה לתיאום משלוחים." }, { status: 400 });
     }
 
-    const supabase = await createSupabaseRouteClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      return NextResponse.json({ error: `שגיאת אימות משתמש: ${userError.message}` }, { status: 400 });
-    }
-    if (!user) {
-      return NextResponse.json({ error: "אין הרשאה לבצע פעולה זו." }, { status: 401 });
-    }
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase } = access.value;
 
     const fullAddress = `${city} | ${address}`;
 

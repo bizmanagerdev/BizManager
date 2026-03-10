@@ -1,5 +1,5 @@
 ﻿import { NextResponse } from "next/server";
-import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 export async function POST(req: Request) {
   try {
@@ -7,21 +7,12 @@ export async function POST(req: Request) {
     const orderId = typeof body.order_id === "string" ? body.order_id : "";
 
     if (!orderId) {
-      return NextResponse.json({ error: "חסר מזהה הזמנה." }, { status: 400 });
+      return NextResponse.json({ error: "Missing order_id" }, { status: 400 });
     }
 
-    const supabase = await createSupabaseRouteClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      return NextResponse.json({ error: `שגיאת אימות משתמש: ${userError.message}` }, { status: 400 });
-    }
-    if (!user) {
-      return NextResponse.json({ error: "אין הרשאה לבצע פעולה זו." }, { status: 401 });
-    }
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user } = access.value;
 
     const { data, error } = await supabase.rpc("delete_sales_order", {
       p_order_id: orderId,
@@ -31,18 +22,16 @@ export async function POST(req: Request) {
     if (error) {
       const hint =
         error.message.includes("delete_sales_order") || error.message.includes("function")
-          ? "פונקציית מחיקה חסרה. יש להריץ db/sql/delete_sales_order_rpc.sql ב-Supabase SQL Editor."
+          ? "Missing DB function delete_sales_order. Run db/sql/delete_sales_order_rpc.sql"
           : error.message;
       return NextResponse.json({ error: hint }, { status: 400 });
     }
 
-    if (data !== true) {
-      return NextResponse.json({ error: "מחיקת הזמנה נכשלה." }, { status: 400 });
-    }
+    if (data !== true) return NextResponse.json({ error: "Delete failed" }, { status: 400 });
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "שגיאה לא ידועה";
+    const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

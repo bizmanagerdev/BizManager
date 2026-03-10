@@ -1,8 +1,8 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,6 +106,8 @@ export default function NewOrderClient({
   productsError: string | null;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const prefillHandled = useRef(false);
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [customerId, setCustomerId] = useState("");
@@ -131,6 +133,7 @@ export default function NewOrderClient({
   const [createCustomerNotes, setCreateCustomerNotes] = useState("");
   const [createCustomerError, setCreateCustomerError] = useState<string | null>(null);
   const [createCustomerSubmitting, setCreateCustomerSubmitting] = useState(false);
+  const actionLocked = submitting || createCustomerSubmitting;
 
   const initialCustomerOptions = useMemo(
     () =>
@@ -150,6 +153,24 @@ export default function NewOrderClient({
   );
 
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>(initialCustomerOptions);
+
+  useEffect(() => {
+    if (prefillHandled.current) return;
+
+    const prefillCustomerId = (searchParams.get("customer_id") ?? "").trim();
+    if (!prefillCustomerId) {
+      prefillHandled.current = true;
+      return;
+    }
+
+    const matched = initialCustomerOptions.find((row) => row.id === prefillCustomerId) ?? null;
+    if (matched) {
+      setCustomerId(matched.id);
+      setCustomerQuery(matched.name);
+    }
+
+    prefillHandled.current = true;
+  }, [initialCustomerOptions, searchParams]);
 
   const productOptions = useMemo(
     () =>
@@ -243,6 +264,7 @@ export default function NewOrderClient({
   }
 
   async function createCustomer() {
+    if (createCustomerSubmitting) return;
     setCreateCustomerError(null);
 
     const name = createCustomerName.trim();
@@ -326,6 +348,7 @@ export default function NewOrderClient({
   }
 
   async function submitOrder() {
+    if (submitting) return;
     setSubmitError(null);
 
     if (!customerId) {
@@ -447,6 +470,7 @@ export default function NewOrderClient({
                 <button
                   key={customer.id}
                   type="button"
+                  disabled={actionLocked}
                   onClick={() => {
                     setCustomerId(customer.id);
                     setCustomerQuery(customer.name);
@@ -472,7 +496,7 @@ export default function NewOrderClient({
               {filteredCustomers.length === 0 ? (
                 <div className="space-y-2 p-2 text-sm">
                   <p className="text-muted-foreground">לא נמצאו לקוחות לחיפוש הזה.</p>
-                  <Button type="button" variant="outline" onClick={() => setCreateCustomerOpen(true)}>
+                  <Button type="button" variant="outline" onClick={() => setCreateCustomerOpen(true)} disabled={actionLocked}>
                     הוספת לקוח חדש
                   </Button>
                 </div>
@@ -480,14 +504,14 @@ export default function NewOrderClient({
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <Button type="button" variant="secondary" asChild>
+              <Button type="button" variant="secondary" asChild disabled={actionLocked}>
                 <Link href="/sales">ביטול</Link>
               </Button>
               <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" onClick={() => setCreateCustomerOpen(true)}>
+                <Button type="button" variant="outline" onClick={() => setCreateCustomerOpen(true)} disabled={actionLocked}>
                   לקוח חדש
                 </Button>
-                <Button type="button" onClick={() => setStep(2)} disabled={!customerId}>
+                <Button type="button" onClick={() => setStep(2)} disabled={!customerId || actionLocked}>
                   המשך לפרטי הזמנה
                 </Button>
               </div>
@@ -540,10 +564,10 @@ export default function NewOrderClient({
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <Button type="button" variant="secondary" onClick={() => setStep(1)}>
+              <Button type="button" variant="secondary" onClick={() => setStep(1)} disabled={actionLocked}>
                 חזרה
               </Button>
-              <Button type="button" onClick={() => setStep(3)} disabled={!orderDate}>
+              <Button type="button" onClick={() => setStep(3)} disabled={!orderDate || actionLocked}>
                 המשך למוצרים
               </Button>
             </div>
@@ -577,7 +601,7 @@ export default function NewOrderClient({
                       {product.stock !== null ? ` | מלאי: ${product.stock}` : ""}
                     </p>
                   </div>
-                  <Button type="button" size="sm" onClick={() => addProduct(product.id)}>
+                  <Button type="button" size="sm" onClick={() => addProduct(product.id)} disabled={actionLocked}>
                     הוסף
                   </Button>
                 </div>
@@ -596,7 +620,7 @@ export default function NewOrderClient({
                   <div key={`${line.product_id}-${index}`} className="space-y-2 rounded-md border p-3">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-medium">{line.product_name}</p>
-                      <Button type="button" size="sm" variant="outline" onClick={() => removeLine(index)}>
+                      <Button type="button" size="sm" variant="outline" onClick={() => removeLine(index)} disabled={actionLocked}>
                         הסר
                       </Button>
                     </div>
@@ -608,6 +632,7 @@ export default function NewOrderClient({
                           min="0"
                           step="0.01"
                           value={line.quantity_ordered}
+                          disabled={actionLocked}
                           onChange={(e) => updateLine(index, { quantity_ordered: Number(e.target.value || 0) })}
                           placeholder="כמות"
                         />
@@ -619,6 +644,7 @@ export default function NewOrderClient({
                           min="0"
                           step="0.01"
                           value={line.unit_price}
+                          disabled={actionLocked}
                           onChange={(e) => updateLine(index, { unit_price: Number(e.target.value || 0) })}
                           placeholder="מחיר יחידה"
                         />
@@ -630,6 +656,7 @@ export default function NewOrderClient({
                           min="0"
                           step="0.01"
                           value={line.discount_amount}
+                          disabled={actionLocked}
                           onChange={(e) => updateLine(index, { discount_amount: Number(e.target.value || 0) })}
                           placeholder="הנחת שורה"
                         />
@@ -645,6 +672,7 @@ export default function NewOrderClient({
                       <label className="text-xs text-muted-foreground">הערה לשורה</label>
                       <Input
                         value={line.notes}
+                        disabled={actionLocked}
                         onChange={(e) => updateLine(index, { notes: e.target.value })}
                         placeholder="הערה לשורה (אופציונלי)"
                       />
@@ -655,10 +683,10 @@ export default function NewOrderClient({
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <Button type="button" variant="secondary" onClick={() => setStep(2)}>
+              <Button type="button" variant="secondary" onClick={() => setStep(2)} disabled={actionLocked}>
                 חזרה
               </Button>
-              <Button type="button" onClick={() => setStep(4)} disabled={lines.length === 0}>
+              <Button type="button" onClick={() => setStep(4)} disabled={lines.length === 0 || actionLocked}>
                 המשך לסקירה
               </Button>
             </div>
@@ -716,6 +744,7 @@ export default function NewOrderClient({
                 min="0"
                 step="0.01"
                 value={orderDiscount}
+                disabled={actionLocked}
                 onChange={(e) => setOrderDiscount(e.target.value)}
                 placeholder="הזן סכום הנחה"
               />
@@ -725,6 +754,7 @@ export default function NewOrderClient({
               <label className="text-sm font-medium">הערות</label>
               <Textarea
                 value={notes}
+                disabled={actionLocked}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
                 placeholder="הערות להזמנה (אופציונלי)"
@@ -741,13 +771,16 @@ export default function NewOrderClient({
             {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
 
             <div className="flex items-center justify-between gap-2">
-              <Button type="button" variant="secondary" onClick={() => setStep(3)}>
+              <Button type="button" variant="secondary" onClick={() => setStep(3)} disabled={actionLocked}>
                 חזרה
               </Button>
               <Button type="button" onClick={() => void submitOrder()} disabled={submitting}>
                 {submitting ? "שולח..." : "יצירת הזמנה"}
               </Button>
             </div>
+            {submitting ? (
+              <p className="text-xs text-muted-foreground">ההזמנה נוצרת כעת, נא להמתין...</p>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}
@@ -853,6 +886,9 @@ export default function NewOrderClient({
                 {createCustomerSubmitting ? "שומר..." : "שמירת לקוח"}
               </Button>
             </DialogFooter>
+            {createCustomerSubmitting ? (
+              <p className="text-xs text-muted-foreground">יוצר לקוח חדש, נא להמתין...</p>
+            ) : null}
           </form>
         </DialogContent>
       </Dialog>

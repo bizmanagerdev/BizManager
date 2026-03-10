@@ -1,20 +1,11 @@
-import { NextResponse } from "next/server";
-import { createSupabaseRouteClient } from "@/lib/supabase/route";
+﻿import { NextResponse } from "next/server";
+import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 const BUCKET = "business-documents";
-const MAX_BYTES = 200 * 1024 * 1024; // 200MB
-
-function sanitizeFilename(name: string) {
-  const base = name.split(/[/\\\\]/).pop() ?? "file";
-  const cleaned = base
-    // keep unicode letters/numbers (Hebrew etc.), spaces and common filename chars
-    .replace(/[^\p{L}\p{N}.\-()+_\s]/gu, "_")
-    .trim();
-  return cleaned || "file";
-}
+const MAX_BYTES = 200 * 1024 * 1024;
 
 function safeExtensionFromFilename(name: string) {
-  const base = name.split(/[/\\\\]/).pop() ?? "";
+  const base = name.split(/[/\\]/).pop() ?? "";
   const parts = base.split(".");
   if (parts.length < 2) return "";
   const ext = (parts.pop() ?? "").toLowerCase();
@@ -23,14 +14,9 @@ function safeExtensionFromFilename(name: string) {
 
 export async function POST(req: Request) {
   try {
-    const supabase = await createSupabaseRouteClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-    if (userError) return NextResponse.json({ error: userError.message }, { status: 400 });
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user } = access.value;
 
     const form = await req.formData();
     const projectId = String(form.get("project_id") ?? "");
@@ -38,20 +24,14 @@ export async function POST(req: Request) {
     const category = String(form.get("category") ?? form.get("tag") ?? "").trim();
 
     if (!projectId) return NextResponse.json({ error: "Missing project_id" }, { status: 400 });
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json({ error: "Missing file" }, { status: 400 });
-    }
+    if (!file || !(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });
     if (file.size <= 0) return NextResponse.json({ error: "Empty file" }, { status: 400 });
-    if (file.size > MAX_BYTES) {
-      return NextResponse.json({ error: `File too large (max ${MAX_BYTES} bytes)` }, { status: 413 });
-    }
+    if (file.size > MAX_BYTES) return NextResponse.json({ error: `File too large (max ${MAX_BYTES} bytes)` }, { status: 413 });
 
     const documentId = crypto.randomUUID();
-    const displayName = (file.name.split(/[/\\\\]/).pop() ?? "file").trim() || "file";
+    const displayName = (file.name.split(/[/\\]/).pop() ?? "file").trim() || "file";
     const ext = safeExtensionFromFilename(displayName);
-    const storagePath = ext
-      ? `projects/${projectId}/${documentId}.${ext}`
-      : `projects/${projectId}/${documentId}`;
+    const storagePath = ext ? `projects/${projectId}/${documentId}.${ext}` : `projects/${projectId}/${documentId}`;
     const uploadedAt = new Date().toISOString();
 
     const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, file, {
@@ -97,7 +77,8 @@ export async function POST(req: Request) {
         uploaded_at: uploadedAt,
       },
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? "Unknown error" }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

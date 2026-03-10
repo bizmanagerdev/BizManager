@@ -78,6 +78,7 @@ export default function LoginClient() {
         value={email}
         onChange={onEmailChange}
         autoComplete="email"
+        disabled={loading}
       />
 
       <input
@@ -86,12 +87,13 @@ export default function LoginClient() {
         value={password}
         onChange={onPasswordChange}
         autoComplete="current-password"
+        disabled={loading}
       />
 
       <button type="submit" disabled={loading}>
         {loading ? "מתחבר..." : "התחבר/י"}
       </button>
-      {loading && <p style={{ margin: 0, color: "#555" }}>Signing in...</p>}
+      {loading && <p style={{ margin: 0, color: "#555" }}>מתחבר, נא להמתין...</p>}
 
       <button
         type="button"

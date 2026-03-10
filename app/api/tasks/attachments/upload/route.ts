@@ -1,19 +1,11 @@
-import { NextResponse } from "next/server";
-import { createSupabaseRouteClient } from "@/lib/supabase/route";
+﻿import { NextResponse } from "next/server";
+import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 const BUCKET = "business-documents";
-const MAX_BYTES = 200 * 1024 * 1024; // 200MB
-
-function sanitizeFilename(name: string) {
-  const base = name.split(/[/\\\\]/).pop() ?? "file";
-  const cleaned = base
-    .replace(/[^\p{L}\p{N}.\-()+_\s]/gu, "_")
-    .trim();
-  return cleaned || "file";
-}
+const MAX_BYTES = 200 * 1024 * 1024;
 
 function safeExtensionFromFilename(name: string) {
-  const base = name.split(/[/\\\\]/).pop() ?? "";
+  const base = name.split(/[/\\]/).pop() ?? "";
   const parts = base.split(".");
   if (parts.length < 2) return "";
   const ext = (parts.pop() ?? "").toLowerCase();
@@ -29,57 +21,30 @@ function kindFromMime(mimeType: string | null) {
 
 export async function POST(req: Request) {
   try {
-    const supabase = await createSupabaseRouteClient();
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-    if (userError) {
-      return NextResponse.json({ error: userError.message }, { status: 400 });
-    }
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user } = access.value;
 
     const form = await req.formData();
     const taskId = String(form.get("task_id") ?? "");
     const file = form.get("file");
 
-    if (!taskId) {
-      return NextResponse.json({ error: "Missing task_id" }, { status: 400 });
-    }
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json({ error: "Missing file" }, { status: 400 });
-    }
-    if (file.size <= 0) {
-      return NextResponse.json({ error: "Empty file" }, { status: 400 });
-    }
-    if (file.size > MAX_BYTES) {
-      return NextResponse.json(
-        { error: `File too large (max ${MAX_BYTES} bytes)` },
-        { status: 413 }
-      );
-    }
+    if (!taskId) return NextResponse.json({ error: "Missing task_id" }, { status: 400 });
+    if (!file || !(file instanceof File)) return NextResponse.json({ error: "Missing file" }, { status: 400 });
+    if (file.size <= 0) return NextResponse.json({ error: "Empty file" }, { status: 400 });
+    if (file.size > MAX_BYTES) return NextResponse.json({ error: `File too large (max ${MAX_BYTES} bytes)` }, { status: 413 });
 
     const documentId = crypto.randomUUID();
-    const displayName = (file.name.split(/[/\\\\]/).pop() ?? "file").trim() || "file";
+    const displayName = (file.name.split(/[/\\]/).pop() ?? "file").trim() || "file";
     const ext = safeExtensionFromFilename(displayName);
-    const storagePath = ext
-      ? `tasks/${taskId}/${documentId}.${ext}`
-      : `tasks/${taskId}/${documentId}`;
+    const storagePath = ext ? `tasks/${taskId}/${documentId}.${ext}` : `tasks/${taskId}/${documentId}`;
     const kind = kindFromMime(file.type || null);
 
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET)
-      .upload(storagePath, file, {
-        contentType: file.type || undefined,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      return NextResponse.json({ error: uploadError.message }, { status: 400 });
-    }
+    const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, file, {
+      contentType: file.type || undefined,
+      upsert: false,
+    });
+    if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 400 });
 
     const uploadedAt = new Date().toISOString();
 
@@ -111,19 +76,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: linkError.message }, { status: 400 });
     }
 
-    // Also link the same document to the parent project (so project-level views/tabs can include it).
     try {
-      const { data: taskRow } = await supabase
-        .from("tasks")
-        .select("id,project_id")
-        .eq("id", taskId)
-        .maybeSingle();
-
-      const projectId =
-        typeof (taskRow as any)?.project_id === "string"
-          ? ((taskRow as any).project_id as string)
-          : null;
-
+      const { data: taskRow } = await supabase.from("tasks").select("id,project_id").eq("id", taskId).maybeSingle();
+      const projectId = typeof taskRow?.project_id === "string" ? taskRow.project_id : null;
       if (projectId) {
         const { data: existingLink } = await supabase
           .from("document_links")
@@ -132,7 +87,6 @@ export async function POST(req: Request) {
           .eq("entity_type", "project")
           .eq("entity_id", projectId)
           .maybeSingle();
-
         if (!existingLink) {
           await supabase.from("document_links").insert({
             document_id: documentId,
@@ -142,7 +96,7 @@ export async function POST(req: Request) {
         }
       }
     } catch {
-      // Non-fatal: task link is enough for the task page.
+      // Non-fatal.
     }
 
     return NextResponse.json({
@@ -156,10 +110,8 @@ export async function POST(req: Request) {
         uploaded_at: uploadedAt,
       },
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message ?? "Unknown error" },
-      { status: 500 }
-    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

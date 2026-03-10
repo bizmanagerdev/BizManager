@@ -1,12 +1,14 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Search, SlidersHorizontal, X } from "lucide-react";
+
+const SALES_FILTERS_OPEN_KEY = "sales_filters_open_v1";
 
 type Row = Record<string, unknown>;
 
@@ -120,7 +122,25 @@ export default function SalesOrdersClient({
   const [statusFilter, setStatusFilter] = useState("all");
   const [activityFilter, setActivityFilter] = useState<"all" | "active" | "closed">("all");
   const [cityFilter, setCityFilter] = useState("all");
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(() => {
+    try {
+      if (typeof window === "undefined") return true;
+      const saved = window.localStorage.getItem(SALES_FILTERS_OPEN_KEY);
+      if (saved === "true") return true;
+      if (saved === "false") return false;
+      return true;
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SALES_FILTERS_OPEN_KEY, String(filtersOpen));
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, [filtersOpen]);
 
   const customerMap = useMemo(() => {
     const map = new Map<string, CustomerInfo>();
@@ -232,16 +252,12 @@ export default function SalesOrdersClient({
               type="button"
               variant="secondary"
               size="sm"
-              className="h-8 gap-1 px-3 lg:hidden"
+              className="h-8 gap-1 px-3"
               onClick={() => setFiltersOpen((prev) => !prev)}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               פילטרים
             </Button>
-            <Badge variant="secondary" className="hidden h-8 gap-1 px-3 lg:flex">
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              פילטרים
-            </Badge>
             {hasActiveFilters ? (
               <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
                 <X className="ml-1 h-4 w-4" />
@@ -251,7 +267,7 @@ export default function SalesOrdersClient({
           </div>
           </div>
 
-          <div className={`${filtersOpen ? "grid" : "hidden"} gap-3 sm:grid-cols-2 lg:grid lg:grid-cols-3`}>
+          <div className={`${filtersOpen ? "grid" : "hidden"} gap-3 sm:grid-cols-2 lg:grid-cols-3`}>
             <div className="space-y-1">
               <label className="text-sm font-medium">מצב הזמנה</label>
               <select
