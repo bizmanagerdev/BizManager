@@ -23,15 +23,15 @@ export function BottomNav({ items, moreItems = [] }: Props) {
 
   return (
     <>
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-card border-t">
-        <div className="flex items-center justify-around h-16 px-2">
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border/80 bg-background/88 backdrop-blur-xl md:hidden">
+        <div className="flex h-16 items-center justify-around px-2">
           {items.map((item) => (
             <NavLink
               key={item.title}
               to={item.url}
               end={item.url === "/"}
-              className="flex flex-col items-center justify-center gap-1 min-w-[4.25rem] py-2 rounded-xl text-muted-foreground transition-colors"
-              activeClassName="text-primary bg-primary/15"
+              className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl py-2 text-muted-foreground transition-all duration-200"
+              activeClassName="bg-gradient-to-t from-primary to-primary/90 text-primary-foreground shadow-lg shadow-primary/20"
               pendingClassName="bg-primary/10 opacity-70"
             >
               <item.icon className="h-6 w-6" />
@@ -44,7 +44,7 @@ export function BottomNav({ items, moreItems = [] }: Props) {
               fallback={
                 <button
                   type="button"
-                  className="flex flex-col items-center justify-center gap-1 min-w-[4.25rem] py-2 rounded-xl text-muted-foreground transition-colors"
+                  className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl py-2 text-muted-foreground transition-colors"
                 >
                   <MoreHorizontal className="h-6 w-6" />
                   <span className="text-xs font-medium">עוד</span>
@@ -55,13 +55,13 @@ export function BottomNav({ items, moreItems = [] }: Props) {
               <SheetTrigger asChild>
                 <button
                   type="button"
-                  className="flex flex-col items-center justify-center gap-1 min-w-[4.25rem] py-2 rounded-xl text-muted-foreground transition-colors"
+                  className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl py-2 text-muted-foreground transition-colors"
                 >
                   <MoreHorizontal className="h-6 w-6" />
                   <span className="text-xs font-medium">עוד</span>
                 </button>
               </SheetTrigger>
-              <SheetContent side="bottom" className="rounded-t-2xl pb-8">
+              <SheetContent side="bottom" className="rounded-t-[2rem] pb-8">
                 <SheetHeader>
                   <SheetTitle>עוד</SheetTitle>
                 </SheetHeader>
@@ -70,8 +70,8 @@ export function BottomNav({ items, moreItems = [] }: Props) {
                       <NavLink
                         key={item.title}
                         to={item.url}
-                        className="flex flex-col items-center gap-1.5 p-3 rounded-xl text-muted-foreground hover:bg-accent transition-colors"
-                        activeClassName="text-primary bg-primary/15"
+                        className="flex flex-col items-center gap-1.5 rounded-2xl p-3 text-muted-foreground transition-colors hover:bg-accent"
+                        activeClassName="bg-primary text-primary-foreground"
                         pendingClassName="bg-primary/10 opacity-70"
                         onClick={() => setMoreOpen(false)}
                       >

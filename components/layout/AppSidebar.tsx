@@ -13,45 +13,45 @@ interface Props {
   logo?: ReactNode;
 }
 
-export function AppSidebar({ items, appName = "BizManager", logo }: Props) {
+export function AppSidebar({ items, appName = "BIZMANAGER", logo }: Props) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
     <aside
       className={cn(
-        "hidden md:flex flex-col border-e bg-sidebar transition-all duration-200 shrink-0",
+        "hidden md:flex shrink-0 flex-col border-e border-sidebar-border/80 bg-sidebar/95 backdrop-blur-xl transition-all duration-200",
         collapsed ? "w-16" : "w-60"
       )}
     >
-      <div className="flex items-center h-14 px-4 border-b border-sidebar-border">
+      <div className="flex h-16 items-center border-b border-sidebar-border/80 px-4">
         <div className="flex items-center gap-2 overflow-hidden">
           {logo ?? (
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-              <span className="text-primary-foreground font-bold text-sm">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-destructive via-destructive to-primary shadow-lg shadow-destructive/20">
+              <span className="text-sm font-black text-primary-foreground">
                 {appName.charAt(0)}
               </span>
             </div>
           )}
           {!collapsed && (
-            <span className="font-semibold text-foreground text-sm whitespace-nowrap">
+            <span className="block whitespace-nowrap text-sm font-semibold text-white">
               {appName}
             </span>
           )}
         </div>
       </div>
 
-      <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
         {items.map((item) => (
           <NavLink
             key={item.title}
             to={item.url}
             end={item.url === "/"}
             className={cn(
-              "flex items-center gap-3 rounded-md px-3 h-11 text-base text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors",
+              "flex h-11 items-center gap-3 rounded-xl px-3 text-base text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-sm",
               collapsed && "justify-center px-0"
             )}
-            activeClassName="bg-primary/15 text-primary font-medium"
-            pendingClassName="bg-primary/10 opacity-70"
+            activeClassName="bg-gradient-to-r from-destructive/95 to-destructive/80 text-white font-medium shadow-lg shadow-destructive/20"
+            pendingClassName="bg-white/10 opacity-70"
           >
             <item.icon className="h-4 w-4 shrink-0" />
             {!collapsed && <span>{item.title}</span>}
@@ -59,12 +59,12 @@ export function AppSidebar({ items, appName = "BizManager", logo }: Props) {
         ))}
       </nav>
 
-      <div className="p-2 border-t border-sidebar-border">
+      <div className="border-t border-sidebar-border/80 p-2">
         <Button
           variant="ghost"
           size="icon-sm"
           onClick={() => setCollapsed(!collapsed)}
-          className="w-full text-sidebar-foreground"
+          className="w-full rounded-xl text-sidebar-foreground hover:bg-sidebar-accent hover:text-white"
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />

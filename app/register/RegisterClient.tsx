@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { AuthScreen } from "@/components/auth/AuthScreen";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function RegisterClient() {
   const router = useRouter();
@@ -93,73 +98,118 @@ export default function RegisterClient() {
   }
 
   return (
-    <div
-      style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 10 }}
+    <AuthScreen
+      title="׳”׳¨׳©׳׳”"
+      description="פתיחת חשבון חדש עם אותה שפה חזותית של שאר המערכת."
+      footer={
+        <>
+          ׳›׳‘׳¨ ׳™׳© ׳—׳©׳‘׳•׳?{" "}
+          <Link
+            className="font-semibold text-destructive hover:underline"
+            href={
+              email.trim()
+                ? `/login?email=${encodeURIComponent(email.trim())}`
+                : "/login"
+            }
+          >
+            ׳”׳×׳—׳‘׳¨׳•׳×
+          </Link>
+        </>
+      }
     >
-      <h1>הרשמה</h1>
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">׳©׳ ׳׳׳</label>
+          <Input
+            placeholder="׳©׳ ׳׳׳"
+            value={fullName}
+            onChange={onChange(setFullName)}
+            autoComplete="name"
+            disabled={loading}
+          />
+        </div>
 
-      <input
-        placeholder="שם מלא"
-        value={fullName}
-        onChange={onChange(setFullName)}
-        autoComplete="name"
-        disabled={loading}
-      />
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">׳׳™׳׳™׳™׳</label>
+          <Input
+            placeholder="name@company.com"
+            type="email"
+            value={email}
+            onChange={onChange(setEmail)}
+            autoComplete="email"
+            disabled={loading}
+          />
+        </div>
 
-      <input
-        placeholder="אימייל"
-        type="email"
-        value={email}
-        onChange={onChange(setEmail)}
-        autoComplete="email"
-        disabled={loading}
-      />
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">׳˜׳׳₪׳•׳</label>
+          <Input
+            placeholder="׳׳•׳₪׳¦׳™׳•׳ ׳׳™"
+            value={phone}
+            onChange={onChange(setPhone)}
+            autoComplete="tel"
+            disabled={loading}
+          />
+        </div>
 
-      <input
-        placeholder="טלפון (אופציונלי)"
-        value={phone}
-        onChange={onChange(setPhone)}
-        autoComplete="tel"
-        disabled={loading}
-      />
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">׳¡׳™׳¡׳׳”</label>
+          <Input
+            placeholder="••••••••"
+            type="password"
+            value={password}
+            onChange={onChange(setPassword)}
+            autoComplete="new-password"
+            disabled={loading}
+          />
+        </div>
 
-      <input
-        placeholder="סיסמה"
-        type="password"
-        value={password}
-        onChange={onChange(setPassword)}
-        autoComplete="new-password"
-        disabled={loading}
-      />
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">׳”׳¢׳¨׳•׳×</label>
+          <Textarea
+            placeholder="׳׳•׳₪׳¦׳™׳•׳ ׳׳™"
+            value={notes}
+            onChange={onChange(setNotes)}
+            rows={3}
+            disabled={loading}
+          />
+        </div>
 
-      <textarea
-        placeholder="הערות (אופציונלי)"
-        value={notes}
-        onChange={onChange(setNotes)}
-        rows={3}
-        disabled={loading}
-      />
+        {info ? (
+          <p className="rounded-xl bg-success/10 px-4 py-3 text-sm text-success">
+            {info}
+          </p>
+        ) : null}
+        {err ? (
+          <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {err}
+          </p>
+        ) : null}
+        {loading ? (
+          <p className="text-sm text-muted-foreground">
+            ׳™׳•׳¦׳¨ ׳—׳©׳‘׳•׳, ׳ ׳ ׳׳”׳׳×׳™׳...
+          </p>
+        ) : null}
 
-      <button onClick={register} disabled={loading}>
-        {loading ? "יוצר חשבון..." : "יצירת חשבון"}
-      </button>
-      {loading && <p style={{ margin: 0, color: "#555" }}>יוצר חשבון, נא להמתין...</p>}
+        <Button onClick={register} className="w-full" disabled={loading}>
+          {loading ? "׳™׳•׳¦׳¨ ׳—׳©׳‘׳•׳..." : "׳™׳¦׳™׳¨׳× ׳—׳©׳‘׳•׳"}
+        </Button>
 
-      <button
-        onClick={() =>
-          router.push(
-            `/login${
-              email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
-            }`
-          )
-        }
-        disabled={loading}
-      >
-        חזרה להתחברות
-      </button>
-
-      {info && <p style={{ color: "#155724" }}>{info}</p>}
-      {err && <p style={{ color: "red" }}>{err}</p>}
-    </div>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() =>
+            router.push(
+              `/login${
+                email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
+              }`
+            )
+          }
+          disabled={loading}
+        >
+          ׳—׳–׳¨׳” ׳׳”׳×׳—׳‘׳¨׳•׳×
+        </Button>
+      </div>
+    </AuthScreen>
   );
 }

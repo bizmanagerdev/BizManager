@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, type ChangeEvent } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { AuthScreen } from "@/components/auth/AuthScreen";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export default function ForgotPasswordClient() {
@@ -50,42 +54,64 @@ export default function ForgotPasswordClient() {
   }
 
   return (
-    <div
-      style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 10 }}
+    <AuthScreen
+      title="׳©׳—׳–׳•׳¨ ׳¡׳™׳¡׳׳”"
+      description="הזינו אימייל ונשלח קישור לאיפוס הסיסמה."
+      footer={
+        <Link
+          className="font-semibold text-destructive hover:underline"
+          href={
+            email.trim()
+              ? `/login?email=${encodeURIComponent(email.trim())}`
+              : "/login"
+          }
+        >
+          ׳—׳–׳¨׳” ׳׳”׳×׳—׳‘׳¨׳•׳×
+        </Link>
+      }
     >
-      <h1>שחזור סיסמה</h1>
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">׳׳™׳׳™׳™׳</label>
+          <Input
+            placeholder="name@company.com"
+            type="email"
+            value={email}
+            onChange={onEmailChange}
+            autoComplete="email"
+          />
+        </div>
 
-      <p style={{ margin: 0, color: "#555" }}>
-        הזן/י אימייל ונשלח קישור לאיפוס סיסמה.
-      </p>
+        {info ? (
+          <p className="rounded-xl bg-success/10 px-4 py-3 text-sm text-success">
+            {info}
+          </p>
+        ) : null}
+        {err ? (
+          <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {err}
+          </p>
+        ) : null}
 
-      <input
-        placeholder="אימייל"
-        type="email"
-        value={email}
-        onChange={onEmailChange}
-        autoComplete="email"
-      />
+        <Button onClick={sendResetEmail} className="w-full" disabled={loading}>
+          {loading ? "׳©׳•׳׳—..." : "׳©׳׳™׳—׳× ׳§׳™׳©׳•׳¨ ׳׳™׳₪׳•׳¡"}
+        </Button>
 
-      <button onClick={sendResetEmail} disabled={loading}>
-        {loading ? "שולח..." : "שליחת קישור איפוס"}
-      </button>
-
-      <button
-        onClick={() =>
-          router.push(
-            `/login${
-              email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
-            }`
-          )
-        }
-        disabled={loading}
-      >
-        חזרה להתחברות
-      </button>
-
-      {info && <p style={{ color: "#155724" }}>{info}</p>}
-      {err && <p style={{ color: "red" }}>{err}</p>}
-    </div>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() =>
+            router.push(
+              `/login${
+                email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
+              }`
+            )
+          }
+          disabled={loading}
+        >
+          ׳—׳–׳¨׳” ׳׳”׳×׳—׳‘׳¨׳•׳×
+        </Button>
+      </div>
+    </AuthScreen>
   );
 }

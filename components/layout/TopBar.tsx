@@ -21,31 +21,31 @@ type Props = {
 };
 
 export function TopBar({
-  appName = "BizManager",
+  appName = "BIZMANAGER",
   logo,
   userName,
   showSearch = true,
 }: Props) {
   return (
-    <header className="flex items-center h-14 px-4 border-b bg-card gap-3 shrink-0">
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-background/78 px-4 backdrop-blur-xl">
       <div className="flex items-center gap-2 md:hidden">
         {logo ?? (
-          <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-xs">
+          <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-destructive to-primary shadow-md shadow-destructive/20">
+            <span className="text-xs font-black text-primary-foreground">
               {appName.charAt(0)}
             </span>
           </div>
         )}
-        <span className="font-semibold text-base text-foreground">{appName}</span>
+        <span className="text-base font-bold tracking-[0.2em] text-primary">{appName}</span>
       </div>
 
       {showSearch && (
-        <div className="hidden sm:flex flex-1 max-w-sm">
+        <div className="hidden max-w-md flex-1 sm:flex">
           <div className="relative w-full">
             <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="חיפוש..."
-              className="ps-9 h-9 bg-muted border-0 focus-visible:ring-1"
+              className="h-10 rounded-xl border-white/50 bg-white/70 ps-9 shadow-sm shadow-primary/5 focus-visible:ring-2"
             />
           </div>
         </div>
@@ -58,7 +58,7 @@ export function TopBar({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="sm:hidden text-muted-foreground"
+            className="rounded-xl text-muted-foreground sm:hidden"
             type="button"
           >
             <Search className="h-4 w-4" />
@@ -67,7 +67,7 @@ export function TopBar({
         <Button
           variant="ghost"
           size="icon-sm"
-          className="relative text-muted-foreground"
+          className="relative rounded-xl text-muted-foreground"
           type="button"
         >
           <Bell className="h-4 w-4" />
@@ -78,10 +78,10 @@ export function TopBar({
             <Button
               variant="ghost"
               size="sm"
-              className="gap-2 text-muted-foreground"
+              className="gap-2 rounded-xl border border-transparent bg-transparent text-muted-foreground hover:border-border/80 hover:bg-card/80"
               type="button"
             >
-              <div className="h-7 w-7 rounded-full bg-secondary flex items-center justify-center">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
                 <User className="h-3.5 w-3.5" />
               </div>
               {userName && <span className="hidden sm:inline text-sm">{userName}</span>}
@@ -91,8 +91,8 @@ export function TopBar({
         >
           <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" type="button">
-              <div className="h-7 w-7 rounded-full bg-secondary flex items-center justify-center">
+            <Button variant="ghost" size="sm" className="gap-2 rounded-xl border border-transparent bg-transparent text-muted-foreground hover:border-border/80 hover:bg-card/80" type="button">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
                 <User className="h-3.5 w-3.5" />
               </div>
               {userName && (
@@ -101,7 +101,7 @@ export function TopBar({
               <ChevronDown className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuContent align="end" className="w-48 rounded-xl">
             <DropdownMenuItem>
               <User className="h-4 w-4 me-2" />
               פרופיל

@@ -2,6 +2,9 @@
 
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { AuthScreen } from "@/components/auth/AuthScreen";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 function getHashParams() {
@@ -104,41 +107,72 @@ export default function ResetPasswordClient() {
   }
 
   if (!ready) {
-    return <div style={{ padding: 24 }}>Loading…</div>;
+    return (
+      <AuthScreen
+        title="׳׳™׳₪׳•׳¡ ׳¡׳™׳¡׳׳”"
+        description="טוען את קישור האיפוס המאובטח."
+      >
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </AuthScreen>
+    );
   }
 
   return (
-    <div
-      style={{ maxWidth: 520, margin: "40px auto", display: "grid", gap: 10 }}
+    <AuthScreen
+      title="׳׳™׳₪׳•׳¡ ׳¡׳™׳¡׳׳”"
+      description="בחרו סיסמה חדשה והמשיכו חזרה למערכת."
     >
-      <h1>איפוס סיסמה</h1>
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">׳¡׳™׳¡׳׳” ׳—׳“׳©׳”</label>
+          <Input
+            placeholder="••••••••"
+            type="password"
+            value={password}
+            onChange={onPasswordChange}
+            autoComplete="new-password"
+          />
+        </div>
 
-      <input
-        placeholder="סיסמה חדשה"
-        type="password"
-        value={password}
-        onChange={onPasswordChange}
-        autoComplete="new-password"
-      />
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">׳׳™׳׳•׳× ׳¡׳™׳¡׳׳”</label>
+          <Input
+            placeholder="••••••••"
+            type="password"
+            value={confirm}
+            onChange={onConfirmChange}
+            autoComplete="new-password"
+          />
+        </div>
 
-      <input
-        placeholder="אימות סיסמה חדשה"
-        type="password"
-        value={confirm}
-        onChange={onConfirmChange}
-        autoComplete="new-password"
-      />
+        {info ? (
+          <p className="rounded-xl bg-success/10 px-4 py-3 text-sm text-success">
+            {info}
+          </p>
+        ) : null}
+        {err ? (
+          <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {err}
+          </p>
+        ) : null}
 
-      <button onClick={updatePassword} disabled={loading || Boolean(err)}>
-        {loading ? "מעדכן..." : "עדכון סיסמה"}
-      </button>
+        <Button
+          onClick={updatePassword}
+          className="w-full"
+          disabled={loading || Boolean(err)}
+        >
+          {loading ? "׳׳¢׳“׳›׳..." : "׳¢׳“׳›׳•׳ ׳¡׳™׳¡׳׳”"}
+        </Button>
 
-      <button onClick={() => router.replace("/login")} disabled={loading}>
-        חזרה להתחברות
-      </button>
-
-      {info && <p style={{ color: "#155724" }}>{info}</p>}
-      {err && <p style={{ color: "red" }}>{err}</p>}
-    </div>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => router.replace("/login")}
+          disabled={loading}
+        >
+          ׳—׳–׳¨׳” ׳׳”׳×׳—׳‘׳¨׳•׳×
+        </Button>
+      </div>
+    </AuthScreen>
   );
 }

@@ -34,13 +34,15 @@ export default function AppShell({
   const more = bottomNavMoreItems ?? defaults.bottomNavMoreItems;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex min-h-screen w-full overflow-hidden bg-transparent">
       <TopNavigationProgress />
       {sidebar.length > 0 && <AppSidebar items={sidebar} appName={appName} />}
       <div className="flex flex-1 flex-col min-w-0">
         <TopBar appName={appName} userName={userName} showSearch={showSearch} />
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 md:p-6 pb-24 md:pb-6">{children}</div>
+          <div className="mx-auto w-full max-w-[1600px] p-4 pb-24 md:p-6 md:pb-6">
+            {children}
+          </div>
         </main>
         {bottom.length > 0 && <BottomNav items={bottom} moreItems={more} />}
       </div>

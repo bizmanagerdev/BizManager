@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; email?: string | null };
@@ -198,6 +199,15 @@ export default function ProjectsClient({
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
   const [editNotes, setEditNotes] = useState("");
+
+  function removeProject(id: string) {
+    setProjects((prev) =>
+      prev.filter((row) => {
+        const rowId = getString(row, "id") ?? "";
+        return rowId !== id;
+      })
+    );
+  }
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -617,10 +627,15 @@ export default function ProjectsClient({
                   </CardContent>
                 </Card>
               </Link>
-              <div className="flex shrink-0 items-center">
+              <div className="flex shrink-0 items-center gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={() => openEditProject(row)}>
                   עריכת פרויקט
                 </Button>
+                <DeleteProjectButton
+                  projectId={id}
+                  projectName={projectDisplayName(row)}
+                  onDeleted={() => removeProject(id)}
+                />
               </div>
             </div>
           );

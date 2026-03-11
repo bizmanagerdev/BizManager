@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
 import ProjectTabsClient from "@/app/projects/[id]/ProjectTabsClient";
 import { Badge } from "@/components/ui/badge";
 
@@ -34,15 +35,15 @@ function projectStatusVariant(status: string) {
 function projectStatusLabel(status: string) {
   switch (status) {
     case "planned":
-      return "מתוכנן";
+      return "׳׳×׳•׳›׳ ׳";
     case "active":
-      return "פעיל";
+      return "׳₪׳¢׳™׳";
     case "on_hold":
-      return "בהמתנה";
+      return "׳‘׳”׳׳×׳ ׳”";
     case "completed":
-      return "הושלם";
+      return "׳”׳•׳©׳׳";
     case "cancelled":
-      return "בוטל";
+      return "׳‘׳•׳˜׳";
     default:
       return status;
   }
@@ -225,7 +226,7 @@ export default async function ProjectPage({
             <h1 className="text-2xl font-semibold">
               {typeof (overview as any)?.name === "string"
                 ? (overview as any).name
-                : "פרויקט"}
+                : "׳₪׳¨׳•׳™׳§׳˜"}
             </h1>
             <p className="text-sm text-muted-foreground">
               {typeof (overview as any)?.customer_name === "string"
@@ -233,9 +234,22 @@ export default async function ProjectPage({
                 : ""}
             </p>
           </div>
-          <Link className="text-sm text-primary" href="/projects">
-            חזרה לפרויקטים
-          </Link>
+          <div className="flex items-center gap-2">
+            {typeof (overview as any)?.id === "string" ? (
+              <DeleteProjectButton
+                projectId={(overview as any).id}
+                projectName={
+                  typeof (overview as any)?.name === "string"
+                    ? (overview as any).name
+                    : undefined
+                }
+                redirectTo="/projects"
+              />
+            ) : null}
+            <Link className="text-sm text-primary" href="/projects">
+              ׳—׳–׳¨׳” ׳׳₪׳¨׳•׳™׳§׳˜׳™׳
+            </Link>
+          </div>
         </div>
 
         {status ? (
@@ -248,7 +262,7 @@ export default async function ProjectPage({
 
         {overviewError ? (
           <div className="text-destructive text-sm">
-            שגיאה בטעינת פרויקט: {overviewError.message}
+            ׳©׳’׳™׳׳” ׳‘׳˜׳¢׳™׳ ׳× ׳₪׳¨׳•׳™׳§׳˜: {overviewError.message}
           </div>
         ) : (
           <ProjectTabsClient
