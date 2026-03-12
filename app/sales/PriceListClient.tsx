@@ -155,6 +155,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
             : null) ??
           (typeof json.product.in_stock === "number" ? json.product.in_stock : null) ??
           null,
+        purchasedAmount,
         description:
           (typeof json.product.description === "string" ? json.product.description : null) ||
           (createDescription.trim() || null),
@@ -274,6 +275,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
             : null) ??
           (typeof json.product.in_stock === "number" ? json.product.in_stock : null) ??
           null,
+        purchasedAmount: rows.find((row) => row.id === editId)?.purchasedAmount ?? 0,
         description:
           (typeof json.product.description === "string" ? json.product.description : null) ||
           (editDescription.trim() || null),

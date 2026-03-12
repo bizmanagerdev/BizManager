@@ -1,0 +1,175 @@
+-- Run this script in Supabase SQL Editor.
+-- Atomic RPC used by POST /api/orders/update.
+
+create or replace function public.update_sales_order(
+  p_order_id uuid,
+  p_customer_id uuid,
+  p_order_date timestamptz,
+  p_subtotal numeric,
+  p_discount_amount numeric,
+  p_total_amount numeric,
+  p_payment_status text,
+  p_updated_by uuid,
+  p_notes text,
+  p_items jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_item jsonb;
+  v_item_id uuid;
+  v_product_id uuid;
+  v_qty numeric;
+  v_unit_price numeric;
+  v_line_discount numeric;
+  v_existing_qty numeric;
+  v_stock_on_hand numeric;
+  v_stock_reserved numeric;
+  v_stock_available numeric;
+begin
+  if p_order_id is null then
+    raise exception 'order_id is required';
+  end if;
+  if p_customer_id is null then
+    raise exception 'customer_id is required';
+  end if;
+  if p_order_date is null then
+    raise exception 'order_date is required';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'items must be a non-empty array';
+  end if;
+
+  if not exists (select 1 from public.orders where id = p_order_id for update) then
+    raise exception 'order not found';
+  end if;
+
+  for v_item in
+    select value
+    from jsonb_array_elements(p_items)
+  loop
+    v_product_id := (v_item->>'product_id')::uuid;
+    v_qty := coalesce((v_item->>'quantity_ordered')::numeric, 0);
+    v_unit_price := coalesce((v_item->>'unit_price')::numeric, 0);
+    v_line_discount := coalesce((v_item->>'discount_amount')::numeric, 0);
+
+    if v_product_id is null or v_qty <= 0 or v_unit_price < 0 or v_line_discount < 0 then
+      raise exception 'Invalid order item payload';
+    end if;
+
+    select coalesce(sum(oi.quantity_ordered), 0)
+    into v_existing_qty
+    from public.order_items oi
+    where oi.order_id = p_order_id
+      and oi.product_id = v_product_id;
+
+    select
+      coalesce(i.quantity_on_hand, 0),
+      coalesce(i.quantity_reserved, 0)
+    into
+      v_stock_on_hand,
+      v_stock_reserved
+    from public.inventory i
+    where i.product_id = v_product_id
+    for update;
+
+    if not found then
+      v_stock_on_hand := 0;
+      v_stock_reserved := 0;
+    end if;
+
+    v_stock_available := greatest(v_stock_on_hand - v_stock_reserved, 0) + v_existing_qty;
+
+    if v_stock_available < v_qty then
+      raise exception
+        'Insufficient available stock for product % (available %, requested %)',
+        v_product_id,
+        v_stock_available,
+        v_qty;
+    end if;
+  end loop;
+
+  delete from public.inventory_movements
+  where source_type = 'order' and source_id = p_order_id;
+
+  delete from public.order_items where order_id = p_order_id;
+
+  update public.orders
+  set customer_id = p_customer_id,
+      order_date = p_order_date,
+      subtotal = coalesce(p_subtotal, 0),
+      discount_amount = coalesce(p_discount_amount, 0),
+      total_amount = coalesce(p_total_amount, 0),
+      payment_status = coalesce(nullif(trim(p_payment_status), ''), 'unpaid'),
+      notes = nullif(trim(coalesce(p_notes, '')), '')
+  where id = p_order_id;
+
+  for v_item in
+    select value
+    from jsonb_array_elements(p_items)
+  loop
+    v_product_id := (v_item->>'product_id')::uuid;
+    v_qty := coalesce((v_item->>'quantity_ordered')::numeric, 0);
+    v_unit_price := coalesce((v_item->>'unit_price')::numeric, 0);
+    v_line_discount := coalesce((v_item->>'discount_amount')::numeric, 0);
+
+    insert into public.order_items (
+      order_id,
+      product_id,
+      quantity_ordered,
+      quantity_delivered,
+      unit_price,
+      discount_amount,
+      notes
+    ) values (
+      p_order_id,
+      v_product_id,
+      v_qty,
+      v_qty,
+      v_unit_price,
+      v_line_discount,
+      nullif(trim(coalesce(v_item->>'notes', '')), '')
+    )
+    returning id into v_item_id;
+
+    insert into public.inventory_movements (
+      product_id,
+      movement_type,
+      quantity,
+      source_type,
+      source_id,
+      performed_by,
+      notes
+    ) values (
+      v_product_id,
+      'out',
+      v_qty,
+      'order',
+      p_order_id,
+      p_updated_by,
+      concat('Sales order item ', v_item_id, ' updated')
+    );
+  end loop;
+
+  return p_order_id;
+exception
+  when others then
+    raise;
+end;
+$$;
+
+grant execute on function public.update_sales_order(
+  uuid,
+  uuid,
+  timestamptz,
+  numeric,
+  numeric,
+  numeric,
+  text,
+  uuid,
+  text,
+  jsonb
+) to authenticated;

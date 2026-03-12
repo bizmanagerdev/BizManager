@@ -36,6 +36,16 @@ type CustomerOption = {
   address: string | null;
 };
 
+type InitialOrder = {
+  id: string;
+  customer_id: string;
+  order_date: string;
+  payment_status: string;
+  discount_amount: number;
+  notes: string;
+  items: OrderLine[];
+};
+
 function getString(row: Row, keys: string[]) {
   for (const key of keys) {
     const value = row[key];
@@ -104,26 +114,34 @@ export default function NewOrderClient({
   products,
   customersError,
   productsError,
+  mode = "create",
+  initialOrder = null,
 }: {
   customers: Row[];
   products: Row[];
   customersError: string | null;
   productsError: string | null;
+  mode?: "create" | "edit";
+  initialOrder?: InitialOrder | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
+  const isEditMode = mode === "edit" && initialOrder !== null;
+  const cancelHref = isEditMode ? `/sales/orders/${initialOrder.id}` : "/sales";
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [customerId, setCustomerId] = useState("");
+  const [customerId, setCustomerId] = useState(initialOrder?.customer_id ?? "");
   const [customerQuery, setCustomerQuery] = useState("");
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 10));
-  const [paymentStatus, setPaymentStatus] = useState("unpaid");
-  const [orderDiscount, setOrderDiscount] = useState("0");
-  const [notes, setNotes] = useState("");
+  const [orderDate, setOrderDate] = useState(
+    initialOrder?.order_date ?? new Date().toISOString().slice(0, 10)
+  );
+  const [paymentStatus, setPaymentStatus] = useState(initialOrder?.payment_status ?? "unpaid");
+  const [orderDiscount, setOrderDiscount] = useState(String(initialOrder?.discount_amount ?? 0));
+  const [notes, setNotes] = useState(initialOrder?.notes ?? "");
 
   const [productQuery, setProductQuery] = useState("");
-  const [lines, setLines] = useState<OrderLine[]>([]);
+  const [lines, setLines] = useState<OrderLine[]>(initialOrder?.items ?? []);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -159,6 +177,23 @@ export default function NewOrderClient({
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>(initialCustomerOptions);
 
   useEffect(() => {
+    setCustomerOptions(initialCustomerOptions);
+  }, [initialCustomerOptions]);
+
+  useEffect(() => {
+    if (prefillHandled.current && !isEditMode) return;
+
+    const selectedId = initialOrder?.customer_id ?? "";
+    if (selectedId) {
+      const matchedInitial = initialCustomerOptions.find((row) => row.id === selectedId) ?? null;
+      if (matchedInitial) {
+        setCustomerId(matchedInitial.id);
+        setCustomerQuery(matchedInitial.name);
+        prefillHandled.current = true;
+        return;
+      }
+    }
+
     if (prefillHandled.current) return;
 
     const prefillCustomerId = (searchParams.get("customer_id") ?? "").trim();
@@ -174,7 +209,7 @@ export default function NewOrderClient({
     }
 
     prefillHandled.current = true;
-  }, [initialCustomerOptions, searchParams]);
+  }, [initialCustomerOptions, initialOrder?.customer_id, isEditMode, searchParams]);
 
   const productOptions = useMemo(
     () =>
@@ -403,10 +438,11 @@ export default function NewOrderClient({
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/orders/create", {
+      const res = await fetch(isEditMode ? "/api/orders/update" : "/api/orders/create", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          order_id: initialOrder?.id,
           customer_id: customerId,
           order_date: orderDate,
           status: "draft",
@@ -429,7 +465,7 @@ export default function NewOrderClient({
       };
 
       if (!res.ok || !json.order_id) {
-        setSubmitError(json.error ?? "יצירת ההזמנה נכשלה.");
+        setSubmitError(json.error ?? (isEditMode ? "עדכון ההזמנה נכשל." : "יצירת ההזמנה נכשלה."));
         return;
       }
 
@@ -529,7 +565,7 @@ export default function NewOrderClient({
 
             <div className="flex items-center justify-between gap-2">
               <Button type="button" variant="secondary" asChild disabled={actionLocked}>
-                <Link href="/sales">ביטול</Link>
+                <Link href={cancelHref}>ביטול</Link>
               </Button>
               <div className="flex items-center gap-2">
                 <Button type="button" variant="outline" onClick={() => setCreateCustomerOpen(true)} disabled={actionLocked}>
@@ -796,12 +832,14 @@ export default function NewOrderClient({
                 חזרה
               </Button>
               <Button type="button" onClick={() => void submitOrder()} disabled={submitting}>
-                {submitting ? "שולח..." : "יצירת הזמנה"}
-              </Button>
-            </div>
-            {submitting ? (
-              <p className="text-xs text-muted-foreground">ההזמנה נוצרת כעת, נא להמתין...</p>
-            ) : null}
+                 {submitting ? "שולח..." : isEditMode ? "שמירת שינויים" : "יצירת הזמנה"}
+               </Button>
+             </div>
+             {submitting ? (
+               <p className="text-xs text-muted-foreground">
+                 {isEditMode ? "ההזמנה מתעדכנת כעת, נא להמתין..." : "ההזמנה נוצרת כעת, נא להמתין..."}
+               </p>
+             ) : null}
           </CardContent>
         </Card>
       ) : null}

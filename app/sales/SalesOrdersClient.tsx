@@ -335,9 +335,14 @@ export default function SalesOrdersClient({
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-3">
                 <CardTitle className="text-base">הזמנה #{row.id.slice(0, 8)}</CardTitle>
-                <Button asChild size="sm" variant="outline">
-                  <Link href={`/sales/orders/${row.id}`}>לפרטי הזמנה</Link>
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/sales/orders/${row.id}/edit`}>עריכה</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/sales/orders/${row.id}`}>לפרטי הזמנה</Link>
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">

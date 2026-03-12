@@ -160,17 +160,20 @@ export default async function SalesPage({
     purchasedByProductId.set(productId, (purchasedByProductId.get(productId) ?? 0) + qty);
   });
 
+  const inventoryByProductId = new Map<string, number | null>();
+  ((inventoryRows ?? []) as Row[]).forEach((row) => {
+    const productId = getString(row, "product_id");
+    if (!productId) return;
+    inventoryByProductId.set(productId, getNumber(row, "quantity_on_hand"));
+  });
+
   const productRows = ((products ?? []) as Row[])
     .map((row) => ({
       id: getString(row, "id") ?? "",
       name: productName(row),
       code: productCode(row),
       unitPrice: productUnitPrice(row),
-      stock:
-        getNumber(row, "stock") ??
-        getNumber(row, "quantity") ??
-        getNumber(row, "available_quantity") ??
-        getNumber(row, "in_stock"),
+      stock: inventoryByProductId.get(getString(row, "id") ?? "") ?? null,
       purchasedAmount: purchasedByProductId.get(getString(row, "id") ?? "") ?? 0,
       description: getString(row, "description") ?? getString(row, "notes"),
       active: row.active === false ? false : true,
