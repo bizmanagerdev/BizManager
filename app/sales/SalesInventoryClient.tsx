@@ -155,8 +155,6 @@ export default function SalesInventoryClient({
     [items]
   );
 
-  const totalOnHand = useMemo(() => items.reduce((sum, item) => sum + item.quantityOnHand, 0), [items]);
-
   const productOptions = useMemo(
     () =>
       products
@@ -251,27 +249,6 @@ export default function SalesInventoryClient({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-3">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">סך מלאי זמין</p>
-            <p className="text-2xl font-semibold">{totalOnHand}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">מוצרים במלאי</p>
-            <p className="text-2xl font-semibold">{items.length}</p>
-          </CardContent>
-        </Card>
-        <Card className={lowStockItems.length > 0 ? "border-red-500/40" : ""}>
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">התראות מלאי נמוך</p>
-            <p className="text-2xl font-semibold">{lowStockItems.length}</p>
-          </CardContent>
-        </Card>
-      </div>
-
       {lowStockItems.length > 0 ? (
         <Card className="border-red-500/40">
           <CardHeader className="pb-2">
@@ -304,7 +281,7 @@ export default function SalesInventoryClient({
                 <thead className="bg-muted/50 text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 text-right font-medium">מוצר</th>
-                    <th className="px-3 py-2 text-right font-medium">מק״ט</th>
+                    <th className="px-3 py-2 text-right font-medium">מק"ט</th>
                     <th className="px-3 py-2 text-right font-medium">במלאי</th>
                     <th className="px-3 py-2 text-right font-medium">שמור</th>
                     <th className="px-3 py-2 text-right font-medium">זמין</th>
@@ -359,69 +336,69 @@ export default function SalesInventoryClient({
       </Card>
 
       <div ref={adjustmentCardRef}>
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">עדכון רכישות / החזרות / התאמות</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-sm font-medium">מוצר</label>
-              <select
-                value={productId}
-                onChange={(e) => setProductId(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">בחרו מוצר...</option>
-                {productOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                    {option.sku ? ` (${option.sku})` : ""}
-                  </option>
-                ))}
-              </select>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">עדכון רכישות / החזרות / התאמות</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="space-y-1 md:col-span-2">
+                <label className="text-sm font-medium">מוצר</label>
+                <select
+                  value={productId}
+                  onChange={(e) => setProductId(e.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="">בחרו מוצר...</option>
+                  {productOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                      {option.sku ? ` (${option.sku})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">סוג פעולה</label>
+                <select
+                  value={adjustmentType}
+                  onChange={(e) => setAdjustmentType(e.target.value as AdjustmentType)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="purchase_in">רכישה (הוספה למלאי)</option>
+                  <option value="customer_return_in">החזרת לקוח (הוספה)</option>
+                  <option value="return_supplier_out">החזרה לספק (הפחתה)</option>
+                  <option value="damage_out">נזק / פחת (הפחתה)</option>
+                  <option value="manual_in">התאמה ידנית (+)</option>
+                  <option value="manual_out">התאמה ידנית (-)</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">כמות</label>
+                <Input
+                  ref={quantityInputRef}
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  inputMode="decimal"
+                />
+              </div>
             </div>
+
             <div className="space-y-1">
-              <label className="text-sm font-medium">סוג פעולה</label>
-              <select
-                value={adjustmentType}
-                onChange={(e) => setAdjustmentType(e.target.value as AdjustmentType)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="purchase_in">רכישה (הוספה למלאי)</option>
-                <option value="customer_return_in">החזרת לקוח (הוספה)</option>
-                <option value="return_supplier_out">החזרה לספק (הפחתה)</option>
-                <option value="damage_out">נזק / פחת (הפחתה)</option>
-                <option value="manual_in">התאמה ידנית (+)</option>
-                <option value="manual_out">התאמה ידנית (-)</option>
-              </select>
+              <label className="text-sm font-medium">הערות</label>
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">כמות</label>
-              <Input
-                ref={quantityInputRef}
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                inputMode="decimal"
-              />
+
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
+
+            <div className="flex justify-end">
+              <Button type="button" disabled={submitting} onClick={() => void adjustInventory()}>
+                {submitting ? "מעדכן..." : "ביצוע התאמה"}
+              </Button>
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium">הערות</label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-          </div>
-
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
-
-          <div className="flex justify-end">
-            <Button type="button" disabled={submitting} onClick={() => void adjustInventory()}>
-              {submitting ? "מעדכן..." : "ביצוע התאמה"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>

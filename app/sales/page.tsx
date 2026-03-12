@@ -114,7 +114,7 @@ export default async function SalesPage({
     if (id) customerById.set(id, row);
   });
 
-  const deliveryStatuses = new Set(["confirmed", "processing", "out_for_delivery"]);
+  const deliveryStatuses = new Set(["draft", "confirmed", "processing", "out_for_delivery"]);
   const deliveries = ((orders ?? []) as Row[])
     .filter((order) => deliveryStatuses.has(getString(order, "status") ?? ""))
     .map((order) => {
@@ -248,7 +248,7 @@ export default async function SalesPage({
                 שגיאה בטעינת משלוחים: {(ordersError?.message ?? customersError?.message) ?? ""}
               </p>
             ) : deliveries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין כרגע משלוחים פתוחים.</p>
+              <p className="text-sm text-muted-foreground">אין כרגע הזמנות מקובצות למשלוחים.</p>
             ) : (
               <div className="space-y-3">
                 {deliveriesByCity.map(([city, cityDeliveries]) => (
