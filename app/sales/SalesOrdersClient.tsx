@@ -1,14 +1,21 @@
-﻿"use client";
+"use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Search, SlidersHorizontal, X } from "lucide-react";
-
-const SALES_FILTERS_OPEN_KEY = "sales_filters_open_v1";
+import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
+import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
+import OrderDetailsDialog from "@/app/sales/orders/OrderDetailsDialog";
+import { formatOrderDate } from "@/lib/orders/format";
+import {
+  derivePaymentStatus,
+  paymentStatusClasses,
+  paymentStatusLabel,
+  sumPayments,
+} from "@/lib/orders/paymentStatus";
 
 type Row = Record<string, unknown>;
 
@@ -32,7 +39,10 @@ type OrderView = {
   orderDate: string | null;
   status: string;
   paymentStatus: string;
-  totalAmount: number | null;
+  totalAmount: number;
+  totalPaid: number;
+  remainingBalance: number;
+  paymentCount: number;
 };
 
 function getString(row: Row, keys: string[]) {
@@ -67,17 +77,13 @@ function formatCurrency(value: number | null) {
 function statusLabel(value: string) {
   switch (value) {
     case "draft":
-      return "טיוטה";
-    case "confirmed":
+      return "פתוחה";
+          case "reserved":
       return "מאושרת";
-    case "processing":
-      return "בטיפול";
-    case "out_for_delivery":
-      return "במשלוח";
     case "delivered":
       return "סופקה";
-    case "completed":
-      return "הושלמה";
+    case "closed":
+      return "סגורה";
     case "cancelled":
       return "בוטלה";
     default:
@@ -85,62 +91,33 @@ function statusLabel(value: string) {
   }
 }
 
-function paymentStatusLabel(value: string) {
-  switch (value) {
-    case "unpaid":
-      return "לא שולם";
-    case "partial":
-      return "שולם חלקית";
-    case "paid":
-      return "שולם";
-    default:
-      return value || "-";
-  }
-}
-
 function isActiveOrder(status: string) {
-  return !["completed", "cancelled", "delivered"].includes(status);
+  return !["closed", "cancelled", "delivered"].includes(status);
 }
 
 function extractCityFromAddress(address: string | null) {
   if (!address) return null;
   const normalized = address.trim();
   if (!normalized) return null;
-  const parts = normalized.split("|");
-  const first = parts[0]?.trim() ?? "";
+  const first = normalized.split("|")[0]?.trim() ?? "";
   return first || null;
 }
 
 export default function SalesOrdersClient({
   orders,
   customers,
+  payments,
 }: {
   orders: Row[];
   customers: Row[];
+  payments: Row[];
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [activityFilter, setActivityFilter] = useState<"all" | "active" | "closed">("all");
   const [cityFilter, setCityFilter] = useState("all");
-  const [filtersOpen, setFiltersOpen] = useState<boolean>(() => {
-    try {
-      if (typeof window === "undefined") return true;
-      const saved = window.localStorage.getItem(SALES_FILTERS_OPEN_KEY);
-      if (saved === "true") return true;
-      if (saved === "false") return false;
-      return true;
-    } catch {
-      return true;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(SALES_FILTERS_OPEN_KEY, String(filtersOpen));
-    } catch {
-      // Ignore storage write errors.
-    }
-  }, [filtersOpen]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [paymentSnapshot, setPaymentSnapshot] = useState(() => new Map<string, number>());
 
   const customerMap = useMemo(() => {
     const map = new Map<string, CustomerInfo>();
@@ -159,6 +136,18 @@ export default function SalesOrdersClient({
     return map;
   }, [customers]);
 
+  const paymentsByOrderId = useMemo(() => {
+    const map = new Map<string, Row[]>();
+    for (const row of payments) {
+      const orderId = getString(row, ["target_id"]);
+      if (!orderId) continue;
+      const current = map.get(orderId) ?? [];
+      current.push(row);
+      map.set(orderId, current);
+    }
+    return map;
+  }, [payments]);
+
   const orderRows = useMemo(() => {
     return orders
       .map((row) => {
@@ -167,6 +156,10 @@ export default function SalesOrdersClient({
         if (!id || !customerId) return null;
 
         const customer = customerMap.get(customerId);
+        const totalAmount = getNumber(row, ["total_amount"]) ?? 0;
+        const paymentRows = paymentsByOrderId.get(id) ?? [];
+        const dbPaidAmount = sumPayments(paymentRows);
+        const totalPaid = paymentSnapshot.has(id) ? paymentSnapshot.get(id) ?? dbPaidAmount : dbPaidAmount;
 
         return {
           id,
@@ -178,12 +171,15 @@ export default function SalesOrdersClient({
           customerAddress: customer?.address ?? null,
           orderDate: getString(row, ["order_date", "created_at"]),
           status: getString(row, ["status"]) ?? "draft",
-          paymentStatus: getString(row, ["payment_status"]) ?? "unpaid",
-          totalAmount: getNumber(row, ["total_amount"]),
+          paymentStatus: derivePaymentStatus(totalAmount, totalPaid),
+          totalAmount,
+          totalPaid,
+          remainingBalance: Math.max(totalAmount - totalPaid, 0),
+          paymentCount: paymentRows.length,
         } as OrderView;
       })
       .filter((row): row is OrderView => row !== null);
-  }, [orders, customerMap]);
+  }, [orders, customerMap, paymentsByOrderId, paymentSnapshot]);
 
   const statuses = useMemo(() => {
     const set = new Set<string>(["draft", "confirmed", "completed", "cancelled"]);
@@ -239,7 +235,7 @@ export default function SalesOrdersClient({
         <CardContent className="space-y-4 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative flex-1">
-              <Search className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2" />
+              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -247,24 +243,24 @@ export default function SalesOrdersClient({
                 className="h-11 pr-10"
               />
             </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="h-8 gap-1 px-3"
-              onClick={() => setFiltersOpen((prev) => !prev)}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              פילטרים
-            </Button>
-            {hasActiveFilters ? (
-              <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
-                <X className="ml-1 h-4 w-4" />
-                ניקוי
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-8 gap-1 px-3"
+                onClick={() => setFiltersOpen((prev) => !prev)}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                פילטרים
               </Button>
-            ) : null}
-          </div>
+              {hasActiveFilters ? (
+                <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+                  <X className="ml-1 h-4 w-4" />
+                  ניקוי
+                </Button>
+              ) : null}
+            </div>
           </div>
 
           <div className={`${filtersOpen ? "grid" : "hidden"} gap-3 sm:grid-cols-2 lg:grid-cols-3`}>
@@ -329,23 +325,66 @@ export default function SalesOrdersClient({
         ) : null}
       </div>
 
-      <div className="grid gap-3">
+      <div className="grid gap-2.5 sm:gap-3">
         {filteredRows.map((row) => (
-          <Card key={row.id}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="text-base">הזמנה #{row.id.slice(0, 8)}</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={`/sales/orders/${row.id}/edit`}>עריכה</Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={`/sales/orders/${row.id}`}>לפרטי הזמנה</Link>
-                  </Button>
+          <Card key={row.id} className={`border-2 ${paymentStatusClasses(row.paymentStatus)}`}>
+            <CardHeader className="p-3 pb-2 sm:p-6 sm:pb-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1.5">
+                  <CardTitle className="text-base">הזמנה #{row.id.slice(0, 8)}</CardTitle>
+                  <div className="hidden flex-wrap items-center gap-2 sm:flex">
+                    <span className={`rounded-full border px-2.5 py-1 text-xs ${paymentStatusClasses(row.paymentStatus)}`}>
+                      {paymentStatusLabel(row.paymentStatus)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {row.customerCity ? `${row.customerCity} | ` : ""}
+                      {row.customerName} | {statusLabel(row.status)}
+                    </span>
+                  </div>
+                  <div className="hidden text-xs text-muted-foreground sm:block">{formatOrderDate(row.orderDate)}</div>
+                  <div className="text-xs text-muted-foreground sm:hidden">
+                    {row.customerCity ? `${row.customerCity} | ` : ""}
+                    {row.customerName} | {statusLabel(row.status)} | {formatOrderDate(row.orderDate)}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+                  <OrderPaymentDialog
+                    orderId={row.id}
+                    totalAmount={row.totalAmount}
+                    paidAmount={row.totalPaid}
+                    onCreated={({ totalPaid }) => {
+                      setPaymentSnapshot((prev) => {
+                        const next = new Map(prev);
+                        next.set(row.id, totalPaid);
+                        return next;
+                      });
+                    }}
+                  />
+                  <OrderEditDialog orderId={row.id} buttonLabel="עריכת הזמנה" />
+                  <OrderEditDialog
+                    orderId={row.id}
+                    buttonLabel="אספקת הזמנה"
+                    title="אספקת הזמנה"
+                    description="אפשר להשלים את ההזמנה, לעדכן פריטים ותשלומים, ולשמור את הסטטוס כהושלמה."
+                    initialStatusOverride="delivered"
+                    allowOrderStatusEdit
+                  />
+                  <OrderDetailsDialog orderId={row.id} />
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+
+            <div className="space-y-1 px-3 pb-3 text-sm sm:hidden">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">סטטוס תשלום</span>
+                <span>
+                  {paymentStatusLabel(row.paymentStatus)} | {formatCurrency(row.totalPaid)} מתוך {formatCurrency(row.totalAmount)}
+                </span>
+              </div>
+            </div>
+
+            <CardContent className="hidden grid-cols-2 gap-x-3 gap-y-2 p-3 pt-0 text-sm sm:grid sm:p-6 sm:pt-0 lg:grid-cols-4">
               <div>
                 <p className="text-muted-foreground">לקוח</p>
                 <p>{row.customerName}</p>
@@ -360,19 +399,31 @@ export default function SalesOrdersClient({
               </div>
               <div>
                 <p className="text-muted-foreground">תאריך</p>
-                <p>{row.orderDate ?? "-"}</p>
+                <p>{formatOrderDate(row.orderDate)}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">סטטוס הזמנה</p>
                 <p>{statusLabel(row.status)}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">סטטוס תשלום</p>
+                <p className="text-muted-foreground">מצב תשלום</p>
                 <p>{paymentStatusLabel(row.paymentStatus)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">שולם</p>
+                <p>{formatCurrency(row.totalPaid)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">יתרה</p>
+                <p>{formatCurrency(row.remainingBalance)}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">סכום</p>
                 <p>{formatCurrency(row.totalAmount)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">מספר תשלומים</p>
+                <p>{row.paymentCount}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">טלפון</p>

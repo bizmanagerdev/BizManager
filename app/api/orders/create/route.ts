@@ -1,5 +1,12 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import {
+  derivePaymentStatus,
+  hasInvalidPaymentEntry,
+  normalizePaymentEntries,
+  sumPayments,
+  validateRequestedPaymentStatus,
+} from "@/lib/orders/paymentStatus";
 
 type CreateOrderItemPayload = {
   product_id?: string;
@@ -15,6 +22,13 @@ type CreateOrderPayload = {
   payment_status?: string;
   discount_amount?: number | string;
   notes?: string | null;
+  payments?: {
+    amount_total?: number | string;
+    payment_date?: string | null;
+    payment_method?: string | null;
+    reference_number?: string | null;
+    notes?: string | null;
+  }[];
   items?: CreateOrderItemPayload[];
 };
 
@@ -37,6 +51,7 @@ export async function POST(req: Request) {
     const paymentStatus = typeof body.payment_status === "string" ? body.payment_status : "unpaid";
     const discountAmount = toNumber(body.discount_amount ?? 0);
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
+    const payments = normalizePaymentEntries(body.payments);
 
     const items = Array.isArray(body.items) ? body.items : [];
     if (!customerId || !orderDate || items.length === 0) {
@@ -44,6 +59,9 @@ export async function POST(req: Request) {
     }
     if (!Number.isFinite(discountAmount) || discountAmount < 0) {
       return NextResponse.json({ error: "Invalid discount amount" }, { status: 400 });
+    }
+    if (hasInvalidPaymentEntry(payments)) {
+      return NextResponse.json({ error: "Invalid payment payload" }, { status: 400 });
     }
 
     const normalizedItems = items.map((item) => ({
@@ -77,6 +95,16 @@ export async function POST(req: Request) {
       0
     );
     const totalAmount = subtotal - discountAmount;
+    const totalPaid = sumPayments(payments);
+
+    const requestedPaymentStatusError = validateRequestedPaymentStatus({
+      requestedStatus: paymentStatus,
+      totalAmount,
+      paidAmount: totalPaid,
+    });
+    if (requestedPaymentStatusError) {
+      return NextResponse.json({ error: requestedPaymentStatusError }, { status: 400 });
+    }
 
     const { data, error } = await supabase.rpc("create_sales_order", {
       p_customer_id: customerId,
@@ -102,7 +130,43 @@ export async function POST(req: Request) {
     const orderId = typeof data === "string" ? data : null;
     if (!orderId) return NextResponse.json({ error: "Failed to create order" }, { status: 500 });
 
-    return NextResponse.json({ order_id: orderId });
+    if (payments.length > 0) {
+      const { error: paymentsInsertError } = await supabase.from("payments").insert(
+        payments.map((payment) => ({
+          target_type: "order",
+          target_id: orderId,
+          payment_date: payment.payment_date,
+          amount_total: payment.amount_total,
+          payment_method: payment.payment_method,
+          reference_number: payment.reference_number,
+          vat_amount: 0,
+          amount_before_vat: payment.amount_total,
+          net_amount: payment.amount_total,
+          notes: payment.notes,
+          recorded_by: user.id,
+        }))
+      );
+
+      if (paymentsInsertError) {
+        return NextResponse.json({ error: paymentsInsertError.message }, { status: 400 });
+      }
+    }
+
+    const derivedPaymentStatus = derivePaymentStatus(totalAmount, totalPaid);
+    const { error: updateError } = await supabase
+      .from("orders")
+      .update({ payment_status: derivedPaymentStatus })
+      .eq("id", orderId);
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      order_id: orderId,
+      payment_status: derivedPaymentStatus,
+      total_paid: totalPaid,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

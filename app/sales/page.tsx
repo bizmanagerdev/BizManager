@@ -83,6 +83,7 @@ export default async function SalesPage({
   const [
     { data: orders, error: ordersError },
     { data: customers, error: customersError },
+    { data: orderPayments, error: orderPaymentsError },
     { data: movements, error: movementsError },
     { data: inventoryRows, error: inventoryError },
     { data: products, error: productsError },
@@ -95,6 +96,11 @@ export default async function SalesPage({
     supabase
       .from("customers")
       .select("id,name,name_for_invoice,phone,email,address")
+      .limit(5000),
+    supabase
+      .from("payments")
+      .select("id,target_type,target_id,payment_date,amount_total,payment_method,reference_number,notes,created_at,updated_at")
+      .eq("target_type", "order")
       .limit(5000),
     supabase
       .from("inventory_movements")
@@ -207,10 +213,14 @@ export default async function SalesPage({
             {customersError ? (
               <p className="text-sm text-destructive">שגיאת לקוחות: {customersError.message}</p>
             ) : null}
+            {orderPaymentsError ? (
+              <p className="text-sm text-destructive">שגיאת תשלומים: {orderPaymentsError.message}</p>
+            ) : null}
 
             <SalesOrdersClient
               orders={(orders ?? []) as Row[]}
               customers={(customers ?? []) as Row[]}
+              payments={(orderPayments ?? []) as Row[]}
             />
           </>
         ) : null}

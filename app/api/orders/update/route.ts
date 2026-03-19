@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import {
+  derivePaymentStatus,
+  hasInvalidPaymentEntry,
+  normalizePaymentEntries,
+  sumPayments,
+  validateRequestedPaymentStatus,
+} from "@/lib/orders/paymentStatus";
 
 type OrderItemPayload = {
   product_id?: string;
@@ -13,9 +20,17 @@ type UpdateOrderPayload = {
   order_id?: string;
   customer_id?: string;
   order_date?: string;
+  status?: string;
   payment_status?: string;
   discount_amount?: number | string;
   notes?: string | null;
+  payments?: {
+    amount_total?: number | string;
+    payment_date?: string | null;
+    payment_method?: string | null;
+    reference_number?: string | null;
+    notes?: string | null;
+  }[];
   items?: OrderItemPayload[];
 };
 
@@ -35,9 +50,11 @@ export async function POST(req: Request) {
     const orderId = typeof body.order_id === "string" ? body.order_id : "";
     const customerId = typeof body.customer_id === "string" ? body.customer_id : "";
     const orderDate = typeof body.order_date === "string" ? body.order_date : "";
+    const status = typeof body.status === "string" ? body.status : "draft";
     const paymentStatus = typeof body.payment_status === "string" ? body.payment_status : "unpaid";
     const discountAmount = toNumber(body.discount_amount ?? 0);
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
+    const payments = normalizePaymentEntries(body.payments);
 
     const items = Array.isArray(body.items) ? body.items : [];
     if (!orderId || !customerId || !orderDate || items.length === 0) {
@@ -45,6 +62,9 @@ export async function POST(req: Request) {
     }
     if (!Number.isFinite(discountAmount) || discountAmount < 0) {
       return NextResponse.json({ error: "Invalid discount amount" }, { status: 400 });
+    }
+    if (hasInvalidPaymentEntry(payments)) {
+      return NextResponse.json({ error: "Invalid payment payload" }, { status: 400 });
     }
 
     const normalizedItems = items.map((item) => ({
@@ -79,10 +99,31 @@ export async function POST(req: Request) {
     );
     const totalAmount = subtotal - discountAmount;
 
+    const { data: existingPayments, error: existingPaymentsError } = await supabase
+      .from("payments")
+      .select("amount_total")
+      .eq("target_type", "order")
+      .eq("target_id", orderId);
+
+    if (existingPaymentsError) {
+      return NextResponse.json({ error: existingPaymentsError.message }, { status: 400 });
+    }
+
+    const totalPaidAfterSave = sumPayments(existingPayments ?? []) + sumPayments(payments);
+    const requestedPaymentStatusError = validateRequestedPaymentStatus({
+      requestedStatus: paymentStatus,
+      totalAmount,
+      paidAmount: totalPaidAfterSave,
+    });
+    if (requestedPaymentStatusError) {
+      return NextResponse.json({ error: requestedPaymentStatusError }, { status: 400 });
+    }
+
     const { data, error } = await supabase.rpc("update_sales_order", {
       p_order_id: orderId,
       p_customer_id: customerId,
       p_order_date: orderDate,
+      p_status: status,
       p_subtotal: subtotal,
       p_discount_amount: discountAmount,
       p_total_amount: totalAmount,
@@ -100,8 +141,44 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: hint }, { status: 400 });
     }
 
+    if (payments.length > 0) {
+      const { error: paymentsInsertError } = await supabase.from("payments").insert(
+        payments.map((payment) => ({
+          target_type: "order",
+          target_id: orderId,
+          payment_date: payment.payment_date,
+          amount_total: payment.amount_total,
+          payment_method: payment.payment_method,
+          reference_number: payment.reference_number,
+          vat_amount: 0,
+          amount_before_vat: payment.amount_total,
+          net_amount: payment.amount_total,
+          notes: payment.notes,
+          recorded_by: user.id,
+        }))
+      );
+
+      if (paymentsInsertError) {
+        return NextResponse.json({ error: paymentsInsertError.message }, { status: 400 });
+      }
+    }
+
+    const derivedPaymentStatus = derivePaymentStatus(totalAmount, totalPaidAfterSave);
+    const { error: updateError } = await supabase
+      .from("orders")
+      .update({ payment_status: derivedPaymentStatus })
+      .eq("id", orderId);
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 400 });
+    }
+
     const updatedOrderId = typeof data === "string" ? data : orderId;
-    return NextResponse.json({ order_id: updatedOrderId });
+    return NextResponse.json({
+      order_id: updatedOrderId,
+      payment_status: derivedPaymentStatus,
+      total_paid: totalPaidAfterSave,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

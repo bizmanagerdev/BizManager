@@ -99,11 +99,11 @@ export default function RegisterClient() {
 
   return (
     <AuthScreen
-      title="׳”׳¨׳©׳׳”"
-      description="פתיחת חשבון חדש עם אותה שפה חזותית של שאר המערכת."
+      title="יצירת חשבון"
+      description="פתיחת חשבון חדש והתחלה מהירה עם BizManager."
       footer={
         <>
-          ׳›׳‘׳¨ ׳™׳© ׳—׳©׳‘׳•׳?{" "}
+          כבר יש לך חשבון?{" "}
           <Link
             className="font-semibold text-destructive hover:underline"
             href={
@@ -112,16 +112,16 @@ export default function RegisterClient() {
                 : "/login"
             }
           >
-            ׳”׳×׳—׳‘׳¨׳•׳×
+            התחברות
           </Link>
         </>
       }
     >
       <div className="space-y-4">
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">׳©׳ ׳׳׳</label>
+          <label className="text-sm font-medium text-foreground">שם מלא</label>
           <Input
-            placeholder="׳©׳ ׳׳׳"
+            placeholder="שם מלא"
             value={fullName}
             onChange={onChange(setFullName)}
             autoComplete="name"
@@ -130,7 +130,7 @@ export default function RegisterClient() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">׳׳™׳׳™׳™׳</label>
+          <label className="text-sm font-medium text-foreground">אימייל</label>
           <Input
             placeholder="name@company.com"
             type="email"
@@ -142,9 +142,9 @@ export default function RegisterClient() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">׳˜׳׳₪׳•׳</label>
+          <label className="text-sm font-medium text-foreground">טלפון</label>
           <Input
-            placeholder="׳׳•׳₪׳¦׳™׳•׳ ׳׳™"
+            placeholder="אופציונלי"
             value={phone}
             onChange={onChange(setPhone)}
             autoComplete="tel"
@@ -153,9 +153,9 @@ export default function RegisterClient() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">׳¡׳™׳¡׳׳”</label>
+          <label className="text-sm font-medium text-foreground">סיסמה</label>
           <Input
-            placeholder="••••••••"
+            placeholder="יצירת סיסמה"
             type="password"
             value={password}
             onChange={onChange(setPassword)}
@@ -165,9 +165,9 @@ export default function RegisterClient() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">׳”׳¢׳¨׳•׳×</label>
+          <label className="text-sm font-medium text-foreground">הערות</label>
           <Textarea
-            placeholder="׳׳•׳₪׳¦׳™׳•׳ ׳׳™"
+            placeholder="אופציונלי"
             value={notes}
             onChange={onChange(setNotes)}
             rows={3}
@@ -187,12 +187,12 @@ export default function RegisterClient() {
         ) : null}
         {loading ? (
           <p className="text-sm text-muted-foreground">
-            ׳™׳•׳¦׳¨ ׳—׳©׳‘׳•׳, ׳ ׳ ׳׳”׳׳×׳™׳...
+            יוצר/ת חשבון...
           </p>
         ) : null}
 
         <Button onClick={register} className="w-full" disabled={loading}>
-          {loading ? "׳™׳•׳¦׳¨ ׳—׳©׳‘׳•׳..." : "׳™׳¦׳™׳¨׳× ׳—׳©׳‘׳•׳"}
+          {loading ? "יוצר/ת חשבון..." : "יצירת חשבון"}
         </Button>
 
         <Button
@@ -207,7 +207,7 @@ export default function RegisterClient() {
           }
           disabled={loading}
         >
-          ׳—׳–׳¨׳” ׳׳”׳×׳—׳‘׳¨׳•׳×
+          חזרה להתחברות
         </Button>
       </div>
     </AuthScreen>

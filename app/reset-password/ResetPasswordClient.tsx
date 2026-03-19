@@ -109,8 +109,8 @@ export default function ResetPasswordClient() {
   if (!ready) {
     return (
       <AuthScreen
-        title="׳׳™׳₪׳•׳¡ ׳¡׳™׳¡׳׳”"
-        description="טוען את קישור האיפוס המאובטח."
+        title="איפוס סיסמה"
+        description="מאמתים את קישור האיפוס המאובטח."
       >
         <p className="text-sm text-muted-foreground">Loading...</p>
       </AuthScreen>
@@ -119,14 +119,14 @@ export default function ResetPasswordClient() {
 
   return (
     <AuthScreen
-      title="׳׳™׳₪׳•׳¡ ׳¡׳™׳¡׳׳”"
-      description="בחרו סיסמה חדשה והמשיכו חזרה למערכת."
+      title="בחירת סיסמה חדשה"
+      description="הגדר/י סיסמה חדשה לחשבון שלך וחזור/י למערכת."
     >
       <div className="space-y-4">
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">׳¡׳™׳¡׳׳” ׳—׳“׳©׳”</label>
+          <label className="text-sm font-medium text-foreground">סיסמה חדשה</label>
           <Input
-            placeholder="••••••••"
+            placeholder="הקלד/י סיסמה חדשה"
             type="password"
             value={password}
             onChange={onPasswordChange}
@@ -135,9 +135,11 @@ export default function ResetPasswordClient() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">׳׳™׳׳•׳× ׳¡׳™׳¡׳׳”</label>
+          <label className="text-sm font-medium text-foreground">
+            אימות סיסמה
+          </label>
           <Input
-            placeholder="••••••••"
+            placeholder="הקלד/י שוב את הסיסמה"
             type="password"
             value={confirm}
             onChange={onConfirmChange}
@@ -161,7 +163,7 @@ export default function ResetPasswordClient() {
           className="w-full"
           disabled={loading || Boolean(err)}
         >
-          {loading ? "׳׳¢׳“׳›׳..." : "׳¢׳“׳›׳•׳ ׳¡׳™׳¡׳׳”"}
+          {loading ? "מעדכן/ת..." : "עדכון סיסמה"}
         </Button>
 
         <Button
@@ -170,7 +172,7 @@ export default function ResetPasswordClient() {
           onClick={() => router.replace("/login")}
           disabled={loading}
         >
-          ׳—׳–׳¨׳” ׳׳”׳×׳—׳‘׳¨׳•׳×
+          חזרה להתחברות
         </Button>
       </div>
     </AuthScreen>

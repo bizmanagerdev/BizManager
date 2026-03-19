@@ -55,24 +55,24 @@ export default function ForgotPasswordClient() {
 
   return (
     <AuthScreen
-      title="׳©׳—׳–׳•׳¨ ׳¡׳™׳¡׳׳”"
-      description="הזינו אימייל ונשלח קישור לאיפוס הסיסמה."
+      title="איפוס סיסמה"
+      description="הזן/י את כתובת האימייל ונשלח קישור לאיפוס הסיסמה."
       footer={
         <Link
           className="font-semibold text-destructive hover:underline"
           href={
             email.trim()
               ? `/login?email=${encodeURIComponent(email.trim())}`
-              : "/login"
+            : "/login"
           }
         >
-          ׳—׳–׳¨׳” ׳׳”׳×׳—׳‘׳¨׳•׳×
+          חזרה להתחברות
         </Link>
       }
     >
       <div className="space-y-4">
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">׳׳™׳׳™׳™׳</label>
+          <label className="text-sm font-medium text-foreground">אימייל</label>
           <Input
             placeholder="name@company.com"
             type="email"
@@ -94,7 +94,7 @@ export default function ForgotPasswordClient() {
         ) : null}
 
         <Button onClick={sendResetEmail} className="w-full" disabled={loading}>
-          {loading ? "׳©׳•׳׳—..." : "׳©׳׳™׳—׳× ׳§׳™׳©׳•׳¨ ׳׳™׳₪׳•׳¡"}
+          {loading ? "שולח/ת..." : "שליחת קישור לאיפוס"}
         </Button>
 
         <Button
@@ -109,7 +109,7 @@ export default function ForgotPasswordClient() {
           }
           disabled={loading}
         >
-          ׳—׳–׳¨׳” ׳׳”׳×׳—׳‘׳¨׳•׳×
+          חזרה להתחברות
         </Button>
       </div>
     </AuthScreen>

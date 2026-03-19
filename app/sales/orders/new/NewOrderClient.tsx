@@ -15,6 +15,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  ORDER_PAYMENT_METHOD_OPTIONS,
+  paymentMethodLabel,
+  paymentStatusLabel,
+  validateRequestedPaymentStatus,
+} from "@/lib/orders/paymentStatus";
 
 type Row = Record<string, unknown>;
 
@@ -40,10 +46,28 @@ type InitialOrder = {
   id: string;
   customer_id: string;
   order_date: string;
+  status: string;
   payment_status: string;
   discount_amount: number;
   notes: string;
   items: OrderLine[];
+};
+
+type PaymentRow = {
+  id: string;
+  payment_date: string | null;
+  amount_total: number;
+  payment_method: string;
+  reference_number: string;
+  notes: string;
+};
+
+type PaymentDraft = {
+  payment_date: string;
+  amount_total: string;
+  payment_method: string;
+  reference_number: string;
+  notes: string;
 };
 
 function getString(row: Row, keys: string[]) {
@@ -79,6 +103,10 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
+function getTodayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function normalizePhone(value: string) {
   return value.replace(/[^\d+]/g, "");
 }
@@ -89,6 +117,27 @@ function extractCityFromAddress(address: string | null) {
   if (!normalized) return null;
   const first = normalized.split("|")[0]?.trim() ?? "";
   return first || null;
+}
+
+function orderStatusLabel(status: string) {
+  switch (status) {
+    case "draft":
+      return "פתוחה";
+    case "confirmed":
+      return "מאושרת";
+    case "processing":
+      return "בטיפול";
+    case "out_for_delivery":
+      return "במשלוח";
+    case "delivered":
+      return "סופקה";
+    case "completed":
+      return "הושלמה";
+    case "cancelled":
+      return "בוטלה";
+    default:
+      return status || "-";
+  }
 }
 
 const CITY_OPTIONS = [
@@ -116,6 +165,12 @@ export default function NewOrderClient({
   productsError,
   mode = "create",
   initialOrder = null,
+  initialPayments = [],
+  embedded = false,
+  onCancel,
+  onSubmitted,
+  initialStatusOverride,
+  allowOrderStatusEdit = false,
 }: {
   customers: Row[];
   products: Row[];
@@ -123,6 +178,12 @@ export default function NewOrderClient({
   productsError: string | null;
   mode?: "create" | "edit";
   initialOrder?: InitialOrder | null;
+  initialPayments?: PaymentRow[];
+  embedded?: boolean;
+  onCancel?: () => void;
+  onSubmitted?: (orderId: string) => void;
+  initialStatusOverride?: string;
+  allowOrderStatusEdit?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -130,11 +191,14 @@ export default function NewOrderClient({
   const isEditMode = mode === "edit" && initialOrder !== null;
   const cancelHref = isEditMode ? `/sales/orders/${initialOrder.id}` : "/sales";
 
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [customerId, setCustomerId] = useState(initialOrder?.customer_id ?? "");
   const [customerQuery, setCustomerQuery] = useState("");
   const [orderDate, setOrderDate] = useState(
     initialOrder?.order_date ?? new Date().toISOString().slice(0, 10)
+  );
+  const [orderStatus, setOrderStatus] = useState(
+    initialStatusOverride ?? initialOrder?.status ?? "draft"
   );
   const [paymentStatus, setPaymentStatus] = useState(initialOrder?.payment_status ?? "unpaid");
   const [orderDiscount, setOrderDiscount] = useState(String(initialOrder?.discount_amount ?? 0));
@@ -142,6 +206,7 @@ export default function NewOrderClient({
 
   const [productQuery, setProductQuery] = useState("");
   const [lines, setLines] = useState<OrderLine[]>(initialOrder?.items ?? []);
+  const [newPayments, setNewPayments] = useState<PaymentDraft[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -274,6 +339,20 @@ export default function NewOrderClient({
 
   const orderDiscountNumber = Number(orderDiscount || 0);
   const totalAmount = subtotal - (Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0);
+  const existingPaidTotal = useMemo(
+    () => initialPayments.reduce((sum, payment) => sum + payment.amount_total, 0),
+    [initialPayments]
+  );
+  const newPaidTotal = useMemo(
+    () =>
+      newPayments.reduce((sum, payment) => {
+        const amount = Number(payment.amount_total || 0);
+        return sum + (Number.isFinite(amount) ? amount : 0);
+      }, 0),
+    [newPayments]
+  );
+  const combinedPaidTotal = existingPaidTotal + newPaidTotal;
+  const remainingBalance = Math.max(totalAmount - combinedPaidTotal, 0);
 
   const selectedCustomer = customerOptions.find((c) => c.id === customerId) ?? null;
 
@@ -320,6 +399,27 @@ export default function NewOrderClient({
 
   function removeLine(index: number) {
     setLines((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function addPaymentDraft() {
+    setNewPayments((prev) => [
+      ...prev,
+      {
+        payment_date: getTodayDate(),
+        amount_total: "",
+        payment_method: "",
+        reference_number: "",
+        notes: "",
+      },
+    ]);
+  }
+
+  function updatePaymentDraft(index: number, patch: Partial<PaymentDraft>) {
+    setNewPayments((prev) => prev.map((payment, i) => (i === index ? { ...payment, ...patch } : payment)));
+  }
+
+  function removePaymentDraft(index: number) {
+    setNewPayments((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function createCustomer() {
@@ -436,6 +536,31 @@ export default function NewOrderClient({
       return;
     }
 
+    const invalidPayment = newPayments.find((payment) => {
+      const amount = Number(payment.amount_total || 0);
+      return (
+        !Number.isFinite(amount) ||
+        amount <= 0 ||
+        !payment.payment_date ||
+        !payment.payment_method
+      );
+    });
+
+    if (invalidPayment) {
+      setSubmitError("יש להשלים לכל תשלום חדש סכום, תאריך ואמצעי תשלום.");
+      return;
+    }
+
+    const paymentStatusError = validateRequestedPaymentStatus({
+      requestedStatus: paymentStatus,
+      totalAmount,
+      paidAmount: combinedPaidTotal,
+    });
+    if (paymentStatusError) {
+      setSubmitError(paymentStatusError);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch(isEditMode ? "/api/orders/update" : "/api/orders/create", {
@@ -445,10 +570,17 @@ export default function NewOrderClient({
           order_id: initialOrder?.id,
           customer_id: customerId,
           order_date: orderDate,
-          status: "draft",
+          status: orderStatus,
           payment_status: paymentStatus,
           discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
           notes: notes.trim() || null,
+          payments: newPayments.map((payment) => ({
+            amount_total: Number(payment.amount_total || 0),
+            payment_date: payment.payment_date,
+            payment_method: payment.payment_method,
+            reference_number: payment.reference_number.trim() || null,
+            notes: payment.notes.trim() || null,
+          })),
           items: lines.map((line) => ({
             product_id: line.product_id,
             quantity_ordered: line.quantity_ordered,
@@ -469,8 +601,13 @@ export default function NewOrderClient({
         return;
       }
 
-      router.push(`/sales/orders/${json.order_id}`);
-      router.refresh();
+      if (embedded) {
+        onSubmitted?.(json.order_id);
+        router.refresh();
+      } else {
+        router.push(`/sales/orders/${json.order_id}`);
+        router.refresh();
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "שגיאה לא ידועה";
       setSubmitError(message);
@@ -484,13 +621,9 @@ export default function NewOrderClient({
       <div className="flex items-center gap-2 text-sm">
         <div className={step === 1 ? "font-semibold" : "text-muted-foreground"}>1. לקוח</div>
         <div className="text-muted-foreground">/</div>
-        <div className={step === 2 ? "font-semibold" : "text-muted-foreground"}>
-          2. פרטי הזמנה
-        </div>
+        <div className={step === 2 ? "font-semibold" : "text-muted-foreground"}>2. מוצרים</div>
         <div className="text-muted-foreground">/</div>
-        <div className={step === 3 ? "font-semibold" : "text-muted-foreground"}>3. מוצרים</div>
-        <div className="text-muted-foreground">/</div>
-        <div className={step === 4 ? "font-semibold" : "text-muted-foreground"}>4. סקירה</div>
+        <div className={step === 3 ? "font-semibold" : "text-muted-foreground"}>3. סקירה</div>
       </div>
 
       {customersError ? <p className="text-sm text-destructive">שגיאת לקוחות: {customersError}</p> : null}
@@ -564,15 +697,21 @@ export default function NewOrderClient({
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <Button type="button" variant="secondary" asChild disabled={actionLocked}>
-                <Link href={cancelHref}>ביטול</Link>
-              </Button>
+              {embedded ? (
+                <Button type="button" variant="secondary" onClick={onCancel} disabled={actionLocked}>
+                  ביטול
+                </Button>
+              ) : (
+                <Button type="button" variant="secondary" asChild disabled={actionLocked}>
+                  <Link href={cancelHref}>ביטול</Link>
+                </Button>
+              )}
               <div className="flex items-center gap-2">
                 <Button type="button" variant="outline" onClick={() => setCreateCustomerOpen(true)} disabled={actionLocked}>
                   לקוח חדש
                 </Button>
                 <Button type="button" onClick={() => setStep(2)} disabled={!customerId || actionLocked}>
-                  המשך לפרטי הזמנה
+                  המשך למוצרים
                 </Button>
               </div>
             </div>
@@ -581,54 +720,6 @@ export default function NewOrderClient({
       ) : null}
 
       {step === 2 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>פרטי הזמנה</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך הזמנה *</label>
-                <Input
-                  type="date"
-                  value={orderDate}
-                  onChange={(e) => setOrderDate(e.target.value)}
-                  placeholder="בחר תאריך הזמנה"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">סטטוס הזמנה</label>
-                <Input value="טיוטה" readOnly />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">סטטוס תשלום</label>
-              <select
-                value={paymentStatus}
-                onChange={(e) => setPaymentStatus(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="unpaid">לא שולם</option>
-                <option value="partial">שולם חלקית</option>
-                <option value="paid">שולם</option>
-              </select>
-            </div>
-
-            <div className="flex items-center justify-between gap-2">
-              <Button type="button" variant="secondary" onClick={() => setStep(1)} disabled={actionLocked}>
-                חזרה
-              </Button>
-              <Button type="button" onClick={() => setStep(3)} disabled={!orderDate || actionLocked}>
-                המשך למוצרים
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {step === 3 ? (
         <Card>
           <CardHeader>
             <CardTitle>הוספת מוצרים</CardTitle>
@@ -740,10 +831,10 @@ export default function NewOrderClient({
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <Button type="button" variant="secondary" onClick={() => setStep(2)} disabled={actionLocked}>
+              <Button type="button" variant="secondary" onClick={() => setStep(1)} disabled={actionLocked}>
                 חזרה
               </Button>
-              <Button type="button" onClick={() => setStep(4)} disabled={lines.length === 0 || actionLocked}>
+              <Button type="button" onClick={() => setStep(3)} disabled={lines.length === 0 || actionLocked}>
                 המשך לסקירה
               </Button>
             </div>
@@ -751,7 +842,7 @@ export default function NewOrderClient({
         </Card>
       ) : null}
 
-      {step === 4 ? (
+      {step === 3 ? (
         <Card>
           <CardHeader>
             <CardTitle>סקירת הזמנה</CardTitle>
@@ -766,23 +857,34 @@ export default function NewOrderClient({
                 <span className="text-muted-foreground">עיר לקוח</span>
                 <span>{selectedCustomer?.city || "-"}</span>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">תאריך</span>
-                <span>{orderDate}</span>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">תאריך הזמנה *</label>
+                <Input
+                  type="date"
+                  value={orderDate}
+                  onChange={(e) => setOrderDate(e.target.value)}
+                  placeholder="בחר תאריך הזמנה"
+                />
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">סטטוס הזמנה</span>
-                <span>טיוטה</span>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">סטטוס הזמנה</label>
+                {allowOrderStatusEdit ? (
+                  <select
+                    value={orderStatus}
+                    onChange={(e) => setOrderStatus(e.target.value)}
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="draft">פתוחה</option>
+                    <option value="closed">סגורה</option>
+                    <option value="delivered">סופקה</option>
+                  </select>
+                ) : (
+                  <Input value={orderStatusLabel(orderStatus)} readOnly />
+                )}
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סטטוס תשלום</span>
-                <span>
-                  {paymentStatus === "paid"
-                    ? "שולם"
-                    : paymentStatus === "partial"
-                      ? "שולם חלקית"
-                      : "לא שולם"}
-                </span>
+                <span>{paymentStatusLabel(paymentStatus)}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">פריטים</span>
@@ -792,6 +894,22 @@ export default function NewOrderClient({
                 <span className="text-muted-foreground">סכום ביניים</span>
                 <span>{formatCurrency(subtotal)}</span>
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">סטטוס תשלום</label>
+              <select
+                value={paymentStatus}
+                onChange={(e) => setPaymentStatus(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="unpaid">לא שולם</option>
+                <option value="partial">שולם חלקית</option>
+                <option value="paid">שולם</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                אם מסמנים שולם או שולם חלקית, צריך להזין כאן גם את התשלומים בפועל עם אמצעי התשלום.
+              </p>
             </div>
 
             <div className="space-y-1">
@@ -818,6 +936,146 @@ export default function NewOrderClient({
               />
             </div>
 
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">תשלומים להזמנה</p>
+                  <p className="text-xs text-muted-foreground">
+                    אפשר לפצל את ההזמנה לכמה תשלומים ובכמה אמצעים שונים.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" onClick={addPaymentDraft} disabled={actionLocked}>
+                  הוסף תשלום
+                </Button>
+              </div>
+
+              {initialPayments.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">תשלומים קיימים</p>
+                  {initialPayments.map((payment) => (
+                    <div key={payment.id} className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-4">
+                      <div>
+                        <div className="text-xs text-muted-foreground">תאריך</div>
+                        <div>{payment.payment_date || "-"}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">אמצעי</div>
+                        <div>{paymentMethodLabel(payment.payment_method)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">סכום</div>
+                        <div>{formatCurrency(payment.amount_total)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">אסמכתא</div>
+                        <div>{payment.reference_number || "-"}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {newPayments.length === 0 ? (
+                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                  עדיין לא הוזנו תשלומים חדשים.
+                </div>
+              ) : null}
+
+              {newPayments.map((payment, index) => (
+                <div key={index} className="space-y-3 rounded-md border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">תשלום חדש #{index + 1}</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => removePaymentDraft(index)}
+                      disabled={actionLocked}
+                    >
+                      הסר
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">סכום *</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={payment.amount_total}
+                        disabled={actionLocked}
+                        onChange={(e) => updatePaymentDraft(index, { amount_total: e.target.value })}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">תאריך *</label>
+                      <Input
+                        type="date"
+                        value={payment.payment_date}
+                        disabled={actionLocked}
+                        onChange={(e) => updatePaymentDraft(index, { payment_date: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">אמצעי תשלום *</label>
+                      <select
+                        value={payment.payment_method}
+                        disabled={actionLocked}
+                        onChange={(e) => updatePaymentDraft(index, { payment_method: e.target.value })}
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="">בחר אמצעי תשלום...</option>
+                        {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">מספר אסמכתא</label>
+                      <Input
+                        value={payment.reference_number}
+                        disabled={actionLocked}
+                        onChange={(e) => updatePaymentDraft(index, { reference_number: e.target.value })}
+                        placeholder="אופציונלי"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">הערות לתשלום</label>
+                    <Input
+                      value={payment.notes}
+                      disabled={actionLocked}
+                      onChange={(e) => updatePaymentDraft(index, { notes: e.target.value })}
+                      placeholder="אופציונלי"
+                    />
+                  </div>
+                </div>
+              ))}
+
+              <div className="grid gap-2 rounded-md bg-muted/30 p-3 text-sm sm:grid-cols-3">
+                <div>
+                  <div className="text-muted-foreground">שולם עד עכשיו</div>
+                  <div className="font-medium">{formatCurrency(existingPaidTotal)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">תשלומים חדשים</div>
+                  <div className="font-medium">{formatCurrency(newPaidTotal)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">יתרה אחרי שמירה</div>
+                  <div className="font-medium">{formatCurrency(remainingBalance)}</div>
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-md border bg-muted/30 p-3 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span>סכום סופי</span>
@@ -828,7 +1086,7 @@ export default function NewOrderClient({
             {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
 
             <div className="flex items-center justify-between gap-2">
-              <Button type="button" variant="secondary" onClick={() => setStep(3)} disabled={actionLocked}>
+              <Button type="button" variant="secondary" onClick={() => setStep(2)} disabled={actionLocked}>
                 חזרה
               </Button>
               <Button type="button" onClick={() => void submitOrder()} disabled={submitting}>

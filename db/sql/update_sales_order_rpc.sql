@@ -5,6 +5,7 @@ create or replace function public.update_sales_order(
   p_order_id uuid,
   p_customer_id uuid,
   p_order_date timestamptz,
+  p_status text,
   p_subtotal numeric,
   p_discount_amount numeric,
   p_total_amount numeric,
@@ -100,6 +101,7 @@ begin
   update public.orders
   set customer_id = p_customer_id,
       order_date = p_order_date,
+      status = coalesce(nullif(trim(p_status), ''), status, 'draft'),
       subtotal = coalesce(p_subtotal, 0),
       discount_amount = coalesce(p_discount_amount, 0),
       total_amount = coalesce(p_total_amount, 0),
@@ -165,6 +167,7 @@ grant execute on function public.update_sales_order(
   uuid,
   uuid,
   timestamptz,
+  text,
   numeric,
   numeric,
   numeric,

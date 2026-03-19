@@ -1,0 +1,110 @@
+import { NextResponse } from "next/server";
+import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import {
+  derivePaymentStatus,
+  normalizePaymentEntries,
+  sumPayments,
+} from "@/lib/orders/paymentStatus";
+
+type CreateOrderPaymentPayload = {
+  order_id?: string;
+  payment_date?: string | null;
+  amount_total?: number | string;
+  payment_method?: string;
+  reference_number?: string;
+  notes?: string;
+};
+
+export async function POST(req: Request) {
+  try {
+    const body = (await req.json()) as CreateOrderPaymentPayload;
+    const orderId = typeof body.order_id === "string" ? body.order_id : "";
+    const [payment] = normalizePaymentEntries([body]);
+
+    if (!orderId) {
+      return NextResponse.json({ error: "Missing order_id" }, { status: 400 });
+    }
+    if (
+      !payment ||
+      !Number.isFinite(payment.amount_total) ||
+      payment.amount_total <= 0 ||
+      !payment.payment_date ||
+      !payment.payment_method
+    ) {
+      return NextResponse.json(
+        { error: "Missing payment amount, date, or method" },
+        { status: 400 }
+      );
+    }
+
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user } = access.value;
+
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("id,total_amount")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (orderError) return NextResponse.json({ error: orderError.message }, { status: 400 });
+    if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+
+    const { data: createdPayment, error: paymentError } = await supabase
+      .from("payments")
+      .insert({
+        target_type: "order",
+        target_id: orderId,
+        payment_date: payment.payment_date,
+        amount_total: payment.amount_total,
+        payment_method: payment.payment_method,
+        reference_number: payment.reference_number,
+        vat_amount: 0,
+        amount_before_vat: payment.amount_total,
+        net_amount: payment.amount_total,
+        notes: payment.notes,
+        recorded_by: user.id,
+      })
+      .select(
+        "id,target_type,target_id,payment_date,amount_total,payment_method,reference_number,vat_amount,amount_before_vat,net_amount,recorded_by,notes,created_at,updated_at"
+      )
+      .maybeSingle();
+
+    if (paymentError) {
+      return NextResponse.json({ error: paymentError.message }, { status: 400 });
+    }
+
+    const { data: paymentRows, error: paymentsError } = await supabase
+      .from("payments")
+      .select("amount_total")
+      .eq("target_type", "order")
+      .eq("target_id", orderId);
+
+    if (paymentsError) {
+      return NextResponse.json({ error: paymentsError.message }, { status: 400 });
+    }
+
+    const totalPaid = sumPayments(paymentRows ?? []);
+    const totalAmount = typeof order.total_amount === "number" ? order.total_amount : Number(order.total_amount ?? 0);
+    const paymentStatus = derivePaymentStatus(totalAmount, totalPaid);
+
+    const { error: updateError } = await supabase
+      .from("orders")
+      .update({ payment_status: paymentStatus })
+      .eq("id", orderId);
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      payment: createdPayment,
+      payment_status: paymentStatus,
+      total_paid: totalPaid,
+      remaining_balance: Math.max(totalAmount - totalPaid, 0),
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

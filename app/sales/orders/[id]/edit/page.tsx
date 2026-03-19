@@ -37,6 +37,7 @@ export default async function EditSalesOrderPage({
     { data: products, error: productsError },
     { data: order, error: orderError },
     { data: orderItems, error: orderItemsError },
+    { data: payments },
   ] = await Promise.all([
     supabase
       .from("customers")
@@ -45,6 +46,12 @@ export default async function EditSalesOrderPage({
     supabase.from("products").select("*").limit(1000),
     supabase.from("orders").select("*").eq("id", id).maybeSingle(),
     supabase.from("order_items").select("*").eq("order_id", id).limit(500),
+    supabase
+      .from("payments")
+      .select("id,payment_date,amount_total,payment_method,reference_number,notes")
+      .eq("target_type", "order")
+      .eq("target_id", id)
+      .order("payment_date", { ascending: false }),
   ]);
 
   const productsById = new Map<string, Row>();
@@ -57,6 +64,7 @@ export default async function EditSalesOrderPage({
         id,
         customer_id: getString(order as Row, ["customer_id"]) ?? "",
         order_date: (getString(order as Row, ["order_date"]) ?? "").slice(0, 10),
+        status: getString(order as Row, ["status"]) ?? "draft",
         payment_status: getString(order as Row, ["payment_status"]) ?? "unpaid",
         discount_amount: getNumber(order as Row, ["discount_amount"]) ?? 0,
         notes: getString(order as Row, ["notes"]) ?? "",
@@ -98,6 +106,14 @@ export default async function EditSalesOrderPage({
             productsError={productsError?.message ?? null}
             mode="edit"
             initialOrder={initialOrder}
+            initialPayments={((payments ?? []) as Row[]).map((payment) => ({
+              id: getString(payment as Row, ["id"]) ?? "",
+              payment_date: getString(payment as Row, ["payment_date"]),
+              amount_total: getNumber(payment as Row, ["amount_total"]) ?? 0,
+              payment_method: getString(payment as Row, ["payment_method"]) ?? "",
+              reference_number: getString(payment as Row, ["reference_number"]) ?? "",
+              notes: getString(payment as Row, ["notes"]) ?? "",
+            }))}
           />
         ) : null}
       </div>

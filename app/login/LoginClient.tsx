@@ -69,11 +69,11 @@ export default function LoginClient() {
 
   return (
     <AuthScreen
-      title="׳”׳×׳—׳‘׳¨׳•׳×"
-      description="גישה מהירה למערכת הניהול עם מראה חדש ועקבי."
+      title="התחברות"
+      description="גישה מהירה למערכת וניהול העסק ממקום אחד."
       footer={
         <>
-          ׳׳“׳©/׳” ׳›׳׳?{" "}
+          אין לך חשבון?{" "}
           <Link
             className="font-semibold text-destructive hover:underline"
             href={
@@ -82,7 +82,7 @@ export default function LoginClient() {
                 : "/register"
             }
           >
-            ׳™׳¦׳™׳¨׳× ׳—׳©׳‘׳•׳
+            יצירת חשבון
           </Link>
         </>
       }
@@ -95,7 +95,7 @@ export default function LoginClient() {
         }}
       >
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">׳׳™׳׳™׳™׳</label>
+          <label className="text-sm font-medium text-foreground">אימייל</label>
           <Input
             placeholder="name@company.com"
             type="email"
@@ -107,9 +107,9 @@ export default function LoginClient() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-foreground">׳¡׳™׳¡׳׳”</label>
+          <label className="text-sm font-medium text-foreground">סיסמה</label>
           <Input
-            placeholder="••••••••"
+            placeholder="הקלד/י סיסמה"
             type="password"
             value={password}
             onChange={onPasswordChange}
@@ -124,13 +124,11 @@ export default function LoginClient() {
           </p>
         ) : null}
         {loading ? (
-          <p className="text-sm text-muted-foreground">
-            ׳׳×׳—׳‘׳¨, ׳ ׳ ׳׳”׳׳×׳™׳...
-          </p>
+          <p className="text-sm text-muted-foreground">מתחבר/ת...</p>
         ) : null}
 
         <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? "׳׳×׳—׳‘׳¨..." : "׳”׳×׳—׳‘׳¨/׳™"}
+          {loading ? "מתחבר/ת..." : "התחברות"}
         </Button>
 
         <div className="grid gap-2 sm:grid-cols-2">
@@ -146,7 +144,7 @@ export default function LoginClient() {
             }
             disabled={loading}
           >
-            ׳©׳›׳—׳× ׳¡׳™׳¡׳׳”?
+            שכחתי סיסמה
           </Button>
 
           <Button
@@ -161,14 +159,14 @@ export default function LoginClient() {
             }
             disabled={loading}
           >
-            ׳™׳¦׳™׳¨׳× ׳—׳©׳‘׳•׳
+            יצירת חשבון
           </Button>
         </div>
       </form>
 
       {showSignUpPrompt ? (
         <p className="rounded-xl bg-muted/70 px-4 py-3 text-sm text-muted-foreground">
-          ׳׳™׳ ׳׳ ׳—׳©׳‘׳•׳?{" "}
+          עדיין אין לך חשבון?{" "}
           <button
             type="button"
             className="font-semibold text-destructive hover:underline"
@@ -177,7 +175,7 @@ export default function LoginClient() {
             }
             disabled={loading}
           >
-            ׳”׳¨׳©׳׳”
+            להרשמה
           </button>
         </p>
       ) : null}

@@ -56,9 +56,9 @@ begin
     p_customer_id,
     p_order_date,
     coalesce(nullif(trim(p_status), ''), 'draft'),
-    0,
+    coalesce(p_subtotal, 0),
     coalesce(p_discount_amount, 0),
-    0,
+    coalesce(p_total_amount, 0),
     coalesce(nullif(trim(p_payment_status), ''), 'unpaid'),
     p_created_by,
     nullif(trim(coalesce(p_notes, '')), '')
