@@ -167,6 +167,19 @@
   ::selection {
     background: hsl(var(--primary) / 0.18);
   }
+
+  a[href],
+  button,
+  [role="button"],
+  summary,
+  select {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
 }
 
 @layer utilities {

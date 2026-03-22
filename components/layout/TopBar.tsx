@@ -1,6 +1,7 @@
 "use client";
 
-import { type ReactNode } from "react";
+import Link from "next/link";
+import { useEffect, useState, type ReactNode } from "react";
 import { Search, Bell, LogOut, User, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClientOnly } from "@/components/ClientOnly";
@@ -20,12 +21,62 @@ type Props = {
   showSearch?: boolean;
 };
 
+type AlertItem = {
+  id: string;
+  title: string;
+  description: string;
+  href: string;
+  count: number;
+  severity: "info" | "warning" | "danger";
+};
+
 export function TopBar({
   appName = "BIZMANAGER",
   logo,
   userName,
   showSearch = true,
 }: Props) {
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAlerts() {
+      setAlertsLoading(true);
+      setAlertsError(null);
+      try {
+        const res = await fetch("/api/alerts", { cache: "no-store" });
+        const json = (await res.json().catch(() => ({}))) as {
+          alerts?: AlertItem[];
+          error?: string;
+        };
+
+        if (!res.ok) {
+          throw new Error(json.error ?? "טעינת התראות נכשלה.");
+        }
+
+        if (!cancelled) {
+          setAlerts(Array.isArray(json.alerts) ? json.alerts : []);
+        }
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setAlertsError(error instanceof Error ? error.message : "טעינת התראות נכשלה.");
+        }
+      } finally {
+        if (!cancelled) setAlertsLoading(false);
+      }
+    }
+
+    void loadAlerts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const alertCount = alerts.reduce((sum, alert) => sum + alert.count, 0);
+
   return (
     <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-background/78 px-4 backdrop-blur-xl">
       <div className="flex items-center gap-2 md:hidden">
@@ -64,14 +115,59 @@ export function TopBar({
             <Search className="h-4 w-4" />
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="relative rounded-xl text-muted-foreground"
-          type="button"
-        >
-          <Bell className="h-4 w-4" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="relative rounded-xl text-muted-foreground"
+              type="button"
+            >
+              <Bell className="h-4 w-4" />
+              {alertCount > 0 ? (
+                <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+                  {alertCount > 99 ? "99+" : alertCount}
+                </span>
+              ) : null}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-80 rounded-2xl p-2">
+            <div className="px-2 py-2">
+              <div className="text-sm font-semibold">התראות</div>
+              <div className="text-xs text-muted-foreground">כל מה שדורש תשומת לב</div>
+            </div>
+            <DropdownMenuSeparator />
+            {alertsLoading ? (
+              <div className="px-3 py-4 text-sm text-muted-foreground">טוען התראות...</div>
+            ) : alertsError ? (
+              <div className="px-3 py-4 text-sm text-destructive">{alertsError}</div>
+            ) : alerts.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-muted-foreground">אין התראות כרגע.</div>
+            ) : (
+              alerts.map((alert) => (
+                <DropdownMenuItem key={alert.id} asChild className="cursor-pointer rounded-xl p-0">
+                  <Link href={alert.href} className="flex items-start justify-between gap-3 px-3 py-3">
+                    <div className="space-y-1">
+                      <div className="font-medium">{alert.title}</div>
+                      <div className="text-xs text-muted-foreground">{alert.description}</div>
+                    </div>
+                    <span
+                      className={
+                        alert.severity === "danger"
+                          ? "rounded-full bg-destructive/12 px-2 py-1 text-xs font-medium text-destructive"
+                          : alert.severity === "warning"
+                            ? "rounded-full bg-warning/15 px-2 py-1 text-xs font-medium text-foreground"
+                            : "rounded-full bg-muted px-2 py-1 text-xs font-medium text-muted-foreground"
+                      }
+                    >
+                      {alert.count}
+                    </span>
+                  </Link>
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <ClientOnly
           fallback={
