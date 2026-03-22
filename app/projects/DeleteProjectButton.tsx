@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
@@ -11,6 +11,8 @@ export default function DeleteProjectButton({
   onDeleted,
   size = "sm",
   className,
+  children,
+  ariaLabel,
 }: {
   projectId: string;
   projectName?: string;
@@ -18,6 +20,8 @@ export default function DeleteProjectButton({
   onDeleted?: () => void;
   size?: "default" | "sm" | "lg" | "icon" | "icon-sm";
   className?: string;
+  children?: ReactNode;
+  ariaLabel?: string;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -78,8 +82,10 @@ export default function DeleteProjectButton({
         onClick={() => void onDelete()}
         disabled={loading}
         className={className}
+        aria-label={ariaLabel}
+        title={ariaLabel}
       >
-        {loading ? "מוחק..." : "מחיקת פרויקט"}
+        {loading ? "מוחק..." : children ?? "מחיקת פרויקט"}
       </Button>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>

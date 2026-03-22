@@ -45,14 +45,14 @@ export default function ProjectsTabsNav({ activeTab }: { activeTab: ProjectsTab 
   }
 
   return (
-    <div className="inline-flex h-11 items-center rounded-md bg-muted p-1 text-sm">
+    <div className="grid w-full grid-cols-2 gap-1 rounded-md bg-muted p-1 text-sm sm:inline-flex sm:h-11 sm:w-auto sm:items-center">
       {tabs.map((tab) => (
         <button
           key={tab.id}
           type="button"
           disabled={locked}
           onClick={() => goToTab(tab.id)}
-          className={`rounded-sm px-4 py-2 transition ${
+          className={`rounded-sm px-4 py-2 text-center transition ${
             selected === tab.id
               ? "bg-background font-medium shadow-sm"
               : "text-muted-foreground hover:text-foreground"
@@ -64,4 +64,3 @@ export default function ProjectsTabsNav({ activeTab }: { activeTab: ProjectsTab 
     </div>
   );
 }
-

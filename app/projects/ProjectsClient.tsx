@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Pencil, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -528,7 +529,7 @@ export default function ProjectsClient({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
         <div className="flex-1">
           <label className="text-sm text-muted-foreground">חיפוש</label>
           <Input
@@ -539,8 +540,8 @@ export default function ProjectsClient({
           />
         </div>
 
-        <div className="flex gap-3">
-          <div className="min-w-[10rem]">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:w-auto">
+          <div className="min-w-0 sm:min-w-[10rem]">
             <label className="text-sm text-muted-foreground">סטטוס</label>
             <select
               value={status}
@@ -556,7 +557,7 @@ export default function ProjectsClient({
             </select>
           </div>
 
-          <div className="min-w-[10rem]">
+          <div className="min-w-0 sm:min-w-[10rem]">
             <label className="text-sm text-muted-foreground">מיון</label>
             <select
               value={sort}
@@ -568,7 +569,7 @@ export default function ProjectsClient({
             </select>
           </div>
 
-          <div className="min-w-[10rem]">
+          <div className="min-w-0 sm:min-w-[10rem]">
             <label className="text-sm text-muted-foreground opacity-0">הוספה</label>
             <Button type="button" className="h-11 w-full" onClick={() => setCreateOpen(true)}>
               הוספת פרויקט
@@ -587,57 +588,73 @@ export default function ProjectsClient({
           const openTasks = getNumber(row, "open_tasks");
 
           return (
-            <div key={id} className="flex items-stretch gap-2">
-              <Link
-                href={`/projects/${id}`}
-                prefetch
-                className="block flex-1"
-                onClick={() => emitNavigationStart()}
-              >
-                <Card className="h-full transition-shadow hover:shadow-md">
-                  <CardContent className="p-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="min-w-0">
-                        <div className="text-base font-semibold">{projectDisplayName(row)}</div>
-                        <div className="text-sm text-muted-foreground">
-                          לקוח: {clientDisplayName(row)}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">סטטוס:</span>
-                          <span>{statusLabel(currentStatus)}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">רווח:</span>
-                          <span className={profit !== null && profit < 0 ? "text-destructive" : ""}>
-                            {profit === null ? "-" : formatIls(profit)}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">משימות פתוחות:</span>
-                          <span>{openTasks === null ? "-" : openTasks}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">סוג:</span>
-                          <span>{projectTypeLabel(getString(row, "project_type") ?? "")}</span>
-                        </div>
+            <Card key={id} className="transition-shadow hover:shadow-md">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <Link
+                    href={`/projects/${id}`}
+                    prefetch
+                    className="min-w-0 flex-1"
+                    onClick={() => emitNavigationStart()}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-base font-semibold">{projectDisplayName(row)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        לקוח: {clientDisplayName(row)}
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </Link>
-              <div className="flex shrink-0 items-center gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => openEditProject(row)}>
-                  עריכת פרויקט
-                </Button>
-                <DeleteProjectButton
-                  projectId={id}
-                  projectName={projectDisplayName(row)}
-                  onDeleted={() => removeProject(id)}
-                />
-              </div>
-            </div>
+                  </Link>
+
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-11 w-11 rounded-xl"
+                      onClick={() => openEditProject(row)}
+                      aria-label="עריכת פרויקט"
+                      title="עריכת פרויקט"
+                    >
+                      <Pencil />
+                    </Button>
+                    <DeleteProjectButton
+                      projectId={id}
+                      projectName={projectDisplayName(row)}
+                      size="icon"
+                      className="h-11 w-11 rounded-xl"
+                      ariaLabel="מחיקת פרויקט"
+                      onDeleted={() => removeProject(id)}
+                    >
+                      <Trash2 />
+                    </DeleteProjectButton>
+                  </div>
+                </div>
+
+                <Link
+                  href={`/projects/${id}`}
+                  prefetch
+                  className="mt-3 block"
+                  onClick={() => emitNavigationStart()}
+                >
+                  <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-muted-foreground">סטטוס:</span>
+                      <span>{statusLabel(currentStatus)}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-muted-foreground">רווח:</span>
+                      <span className={profit !== null && profit < 0 ? "text-destructive" : ""}>
+                        {profit === null ? "-" : formatIls(profit)}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-muted-foreground">משימות פתוחות:</span>
+                      <span>{openTasks === null ? "-" : openTasks}</span>
+                    </div>
+                  </div>
+                </Link>
+              </CardContent>
+            </Card>
           );
         })}
       </div>

@@ -325,15 +325,15 @@ export default function SalesOrdersClient({
         ) : null}
       </div>
 
-      <div className="grid gap-2.5 sm:gap-3">
+      <div className="grid gap-2 sm:gap-2.5">
         {filteredRows.map((row) => (
           <Card key={row.id} className={`border-2 ${paymentStatusClasses(row.paymentStatus)}`}>
-            <CardHeader className="p-3 pb-2 sm:p-6 sm:pb-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1.5">
+            <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2.5">
+              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
                   <CardTitle className="text-base">הזמנה #{row.id.slice(0, 8)}</CardTitle>
-                  <div className="hidden flex-wrap items-center gap-2 sm:flex">
-                    <span className={`rounded-full border px-2.5 py-1 text-xs ${paymentStatusClasses(row.paymentStatus)}`}>
+                  <div className="hidden flex-wrap items-center gap-1.5 sm:flex">
+                    <span className={`rounded-full border px-2 py-0.5 text-xs ${paymentStatusClasses(row.paymentStatus)}`}>
                       {paymentStatusLabel(row.paymentStatus)}
                     </span>
                     <span className="text-xs text-muted-foreground">
@@ -348,7 +348,7 @@ export default function SalesOrdersClient({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+                <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
                   <OrderPaymentDialog
                     orderId={row.id}
                     totalAmount={row.totalAmount}
@@ -382,52 +382,58 @@ export default function SalesOrdersClient({
                   {paymentStatusLabel(row.paymentStatus)} | {formatCurrency(row.totalPaid)} מתוך {formatCurrency(row.totalAmount)}
                 </span>
               </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">יתרה</span>
+                  <span>{formatCurrency(row.remainingBalance)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">תשלומים</span>
+                  <span>{row.paymentCount}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">טלפון</span>
+                  <span>{row.customerPhone ?? "-"}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">כתובת</span>
+                  <span className="truncate">{row.customerAddress ?? "-"}</span>
+                </div>
+              </div>
             </div>
 
-            <CardContent className="hidden grid-cols-2 gap-x-3 gap-y-2 p-3 pt-0 text-sm sm:grid sm:p-6 sm:pt-0 lg:grid-cols-4">
-              <div>
+            <CardContent className="hidden grid-cols-2 gap-x-4 gap-y-1.5 p-3 pt-0 text-sm sm:grid sm:p-4 sm:pt-0 lg:grid-cols-3">
+              <div className="flex items-baseline justify-between gap-3">
                 <p className="text-muted-foreground">לקוח</p>
-                <p>{row.customerName}</p>
+                <p className="text-left">{row.customerName}</p>
               </div>
-              <div>
+              <div className="flex items-baseline justify-between gap-3">
                 <p className="text-muted-foreground">עיר</p>
-                <p>{row.customerCity ?? "-"}</p>
+                <p className="text-left">{row.customerCity ?? "-"}</p>
               </div>
-              <div>
+              <div className="flex items-baseline justify-between gap-3">
                 <p className="text-muted-foreground">כתובת</p>
-                <p>{row.customerAddress ?? "-"}</p>
+                <p className="max-w-[18rem] text-left truncate">{row.customerAddress ?? "-"}</p>
               </div>
-              <div>
-                <p className="text-muted-foreground">תאריך</p>
-                <p>{formatOrderDate(row.orderDate)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">סטטוס הזמנה</p>
-                <p>{statusLabel(row.status)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">מצב תשלום</p>
-                <p>{paymentStatusLabel(row.paymentStatus)}</p>
-              </div>
-              <div>
+              <div className="flex items-baseline justify-between gap-3">
                 <p className="text-muted-foreground">שולם</p>
-                <p>{formatCurrency(row.totalPaid)}</p>
+                <p className="text-left">{formatCurrency(row.totalPaid)}</p>
               </div>
-              <div>
+              <div className="flex items-baseline justify-between gap-3">
                 <p className="text-muted-foreground">יתרה</p>
-                <p>{formatCurrency(row.remainingBalance)}</p>
+                <p className="text-left">{formatCurrency(row.remainingBalance)}</p>
               </div>
-              <div>
+              <div className="flex items-baseline justify-between gap-3">
                 <p className="text-muted-foreground">סכום</p>
-                <p>{formatCurrency(row.totalAmount)}</p>
+                <p className="text-left">{formatCurrency(row.totalAmount)}</p>
               </div>
-              <div>
-                <p className="text-muted-foreground">מספר תשלומים</p>
-                <p>{row.paymentCount}</p>
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-muted-foreground">תשלומים</p>
+                <p className="text-left">{row.paymentCount}</p>
               </div>
-              <div>
+              <div className="flex items-baseline justify-between gap-3">
                 <p className="text-muted-foreground">טלפון</p>
-                <p>{row.customerPhone ?? "-"}</p>
+                <p className="text-left">{row.customerPhone ?? "-"}</p>
               </div>
             </CardContent>
           </Card>
