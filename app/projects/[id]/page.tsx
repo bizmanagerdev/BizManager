@@ -1,10 +1,23 @@
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
-import ProjectTabsClient from "@/app/projects/[id]/ProjectTabsClient";
 import { Badge } from "@/components/ui/badge";
 import { ORDERS_GLOBAL_PROJECT_ID } from "@/lib/orders/globalProject";
+
+const ProjectTabsClient = dynamic(() => import("@/app/projects/[id]/ProjectTabsClient"), {
+  loading: () => (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {Array.from({ length: 6 }, (_, index) => (
+        <div
+          key={index}
+          className="h-40 animate-pulse rounded-2xl border bg-muted/30"
+        />
+      ))}
+    </div>
+  ),
+});
 
 const DOCUMENTS_BUCKET = "business-documents";
 
