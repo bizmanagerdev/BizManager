@@ -1,0 +1,95 @@
+import AppShell from "@/components/layout/AppShell";
+import type { UserProfile } from "@/lib/auth/requireProfile";
+import {
+  getCashFlowSummary,
+  getCashFlowTransactions,
+  getCashFlowTrend,
+  getProjectOptions,
+  type CashFlowFilters as CashFlowFilterValues,
+} from "@/lib/cashflow";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import CashFlowFilters from "@/app/dashboard/cashflow/CashFlowFilters";
+import CashFlowSummaryCards from "@/app/dashboard/cashflow/CashFlowSummaryCards";
+import CashFlowTrend from "@/app/dashboard/cashflow/CashFlowTrend";
+import CashFlowTransactions from "@/app/dashboard/cashflow/CashFlowTransactions";
+
+function firstValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export function normalizeCashFlowSearchParams(
+  searchParams: Record<string, string | string[] | undefined>
+): CashFlowFilterValues {
+  const page = Number(firstValue(searchParams.page) ?? "1");
+
+  return {
+    from: firstValue(searchParams.from) ?? null,
+    to: firstValue(searchParams.to) ?? null,
+    projectId: firstValue(searchParams.projectId) ?? null,
+    type: (firstValue(searchParams.type) as CashFlowFilterValues["type"]) ?? "all",
+    page: Number.isFinite(page) && page > 0 ? page : 1,
+    pageSize: 20,
+  };
+}
+
+function searchParamsForLinks(filters: CashFlowFilterValues) {
+  const params: Record<string, string> = {};
+  if (filters.from) params.from = filters.from;
+  if (filters.to) params.to = filters.to;
+  if (filters.projectId) params.projectId = filters.projectId;
+  if (filters.type && filters.type !== "all") params.type = filters.type;
+  return params;
+}
+
+export default async function CashFlowPageContent({
+  profile,
+  supabase,
+  searchParams,
+  basePath,
+}: {
+  profile: UserProfile;
+  supabase: SupabaseClient;
+  searchParams: Record<string, string | string[] | undefined>;
+  basePath: string;
+}) {
+  const filters = normalizeCashFlowSearchParams(searchParams);
+
+  const [summary, transactions, trend, projectOptions] = await Promise.all([
+    getCashFlowSummary(supabase, filters),
+    getCashFlowTransactions(supabase, filters),
+    getCashFlowTrend(supabase, filters),
+    getProjectOptions(supabase),
+  ]);
+
+  return (
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+      <div className="space-y-4" dir="rtl">
+        <section className="space-y-1 text-right">
+          <h1 className="text-2xl font-semibold">תזרים מזומנים</h1>
+          <p className="text-sm text-muted-foreground">
+            מעקב אחרי כסף שנכנס, כסף שיצא, ויתרת התזרים בפועל.
+          </p>
+        </section>
+
+        <CashFlowFilters
+          actionPath={basePath}
+          from={filters.from ?? ""}
+          to={filters.to ?? ""}
+          projectId={filters.projectId ?? ""}
+          type={filters.type ?? "all"}
+          projects={projectOptions}
+        />
+
+        <CashFlowSummaryCards summary={summary} />
+
+        <CashFlowTrend rows={trend} />
+
+        <CashFlowTransactions
+          basePath={basePath}
+          result={transactions}
+          searchParams={searchParamsForLinks(filters)}
+        />
+      </div>
+    </AppShell>
+  );
+}

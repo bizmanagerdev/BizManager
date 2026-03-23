@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import ProjectsClient from "@/app/projects/ProjectsClient";
 import ProjectsCalendar from "@/app/projects/ProjectsCalendar";
 import ProjectsTabsNav from "@/app/projects/ProjectsTabsNav";
+import { applyEffectiveProjectDashboardRows } from "@/lib/projects/effectiveDashboard";
 
 type Row = Record<string, unknown>;
 
@@ -33,7 +34,7 @@ export default async function ProjectsPage({
     supabase.from("customers").select("id,name,name_for_invoice,phone,email").limit(1000),
   ]);
 
-  const rows = (data ?? []) as Row[];
+  const rows = await applyEffectiveProjectDashboardRows(supabase, (data ?? []) as Row[]);
 
   const scheduleRows = rows
     .map((row) => ({
@@ -119,4 +120,3 @@ export default async function ProjectsPage({
     </AppShell>
   );
 }
-

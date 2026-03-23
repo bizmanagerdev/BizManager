@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ResponsiveTabsRail } from "@/components/layout/page-layout";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 
 type ProjectsTab = "list" | "calendar";
@@ -45,7 +46,7 @@ export default function ProjectsTabsNav({ activeTab }: { activeTab: ProjectsTab 
   }
 
   return (
-    <div className="grid w-full grid-cols-2 gap-1 rounded-md bg-muted p-1 text-sm sm:inline-flex sm:h-11 sm:w-auto sm:items-center">
+    <ResponsiveTabsRail>
       {tabs.map((tab) => (
         <button
           key={tab.id}
@@ -61,6 +62,6 @@ export default function ProjectsTabsNav({ activeTab }: { activeTab: ProjectsTab 
           {tab.label}
         </button>
       ))}
-    </div>
+    </ResponsiveTabsRail>
   );
 }

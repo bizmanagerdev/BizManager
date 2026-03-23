@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AdaptiveStack, AdaptiveWidth } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -28,7 +29,7 @@ function fmtDayNum(d: Date) {
   return new Intl.DateTimeFormat("he-IL", { day: "numeric" }).format(d);
 }
 
-const weekDays = ["×", "×‘", "×’", "×“", "×”", "×•", "×©"];
+const weekDays = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
 
 export default function ProjectsCalendar({ projects }: { projects: CalendarProject[] }) {
   const [monthDate, setMonthDate] = useState(() => {
@@ -38,7 +39,7 @@ export default function ProjectsCalendar({ projects }: { projects: CalendarProje
 
   const calendarDays = useMemo(() => {
     const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-    const startOffset = firstDay.getDay(); // 0=Sunday
+    const startOffset = firstDay.getDay();
     const gridStart = new Date(firstDay);
     gridStart.setDate(firstDay.getDate() - startOffset);
 
@@ -69,34 +70,38 @@ export default function ProjectsCalendar({ projects }: { projects: CalendarProje
   return (
     <Card>
       <CardContent className="space-y-3 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-base font-semibold">×œ×•×— ×–×ž× ×™× ×œ×¤×¨×•×™×§×˜×™×</h2>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full sm:w-auto"
-              onClick={() =>
-                setMonthDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
-              }
-            >
-              ×—×•×“×© ×§×•×“×
-            </Button>
+        <AdaptiveStack variant="sectionHeader">
+          <h2 className="text-base font-semibold">לוח זמנים לפרויקטים</h2>
+          <AdaptiveStack variant="calendarToolbar">
+            <AdaptiveWidth variant="autoFromSmall">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() =>
+                  setMonthDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+                }
+              >
+                חודש קודם
+              </Button>
+            </AdaptiveWidth>
             <div className="min-w-[9rem] text-center text-sm font-medium">{fmtMonth(monthDate)}</div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full sm:w-auto"
-              onClick={() =>
-                setMonthDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
-              }
-            >
-              ×—×•×“×© ×”×‘×
-            </Button>
-          </div>
-        </div>
+            <AdaptiveWidth variant="autoFromSmall">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() =>
+                  setMonthDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+                }
+              >
+                חודש הבא
+              </Button>
+            </AdaptiveWidth>
+          </AdaptiveStack>
+        </AdaptiveStack>
 
         <div className="overflow-x-auto">
           <div className="min-w-[42rem] space-y-2">
@@ -130,7 +135,7 @@ export default function ProjectsCalendar({ projects }: { projects: CalendarProje
                       ))}
                       {dayProjects.length > 2 ? (
                         <div className="text-[11px] text-muted-foreground">
-                          +{dayProjects.length - 2} × ×•×¡×¤×™×
+                          +{dayProjects.length - 2} נוספים
                         </div>
                       ) : null}
                     </div>

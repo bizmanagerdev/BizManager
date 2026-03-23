@@ -12,10 +12,10 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import NewOrderClient from "@/app/sales/orders/new/NewOrderClient";
+import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
@@ -343,7 +343,7 @@ export default function DashboardActions({
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      <AdaptiveGrid variant="quickActions">
         <Button
           type="button"
           variant="outline"
@@ -433,10 +433,10 @@ export default function DashboardActions({
             <span className="text-xs text-muted-foreground">רישום תשלום לפרויקט</span>
           </span>
         </Button>
-      </div>
+      </AdaptiveGrid>
 
       <Dialog open={orderOpen} onOpenChange={setOrderOpen}>
-        <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-5xl overflow-y-auto p-4 sm:p-6">
+        <AdaptiveDialog size="newOrder">
           <DialogHeader>
             <DialogTitle>הזמנה חדשה</DialogTitle>
             <DialogDescription>פתיחת הזמנה מתוך הדשבורד בלי מעבר למסך המכירות.</DialogDescription>
@@ -455,7 +455,7 @@ export default function DashboardActions({
               toast.success("ההזמנה נשמרה");
             }}
           />
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog
@@ -465,13 +465,13 @@ export default function DashboardActions({
           if (!open) resetProjectForm();
         }}
       >
-        <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
+        <AdaptiveDialog size="form2xl">
           <DialogHeader>
             <DialogTitle>פרויקט חדש</DialogTitle>
             <DialogDescription>טופס קצר לפתיחה מהירה של פרויקט חדש.</DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <AdaptiveGrid variant="formTwoLoose">
             <label className="space-y-2 text-sm">
               <span>שם פרויקט</span>
               <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
@@ -574,11 +574,11 @@ export default function DashboardActions({
               />
             </label>
 
-            <label className="space-y-2 text-sm sm:col-span-2">
+            <label className="space-y-2 text-sm col-span-full">
               <span>הערות</span>
               <Textarea value={projectNotes} onChange={(e) => setProjectNotes(e.target.value)} />
             </label>
-          </div>
+          </AdaptiveGrid>
 
           {projectError ? <p className="text-sm text-destructive">{projectError}</p> : null}
 
@@ -590,7 +590,7 @@ export default function DashboardActions({
               {projectSubmitting ? "שומר..." : "שמירת פרויקט"}
             </Button>
           </div>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog
@@ -600,7 +600,7 @@ export default function DashboardActions({
           if (!open) resetTaskForm();
         }}
       >
-        <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
+        <AdaptiveDialog size="formXl">
           <DialogHeader>
             <DialogTitle>משימה חדשה</DialogTitle>
             <DialogDescription>פתיחה מהירה של משימה ושיוך לפרויקט קיים.</DialogDescription>
@@ -628,7 +628,7 @@ export default function DashboardActions({
               <Input value={taskSubject} onChange={(e) => setTaskSubject(e.target.value)} />
             </label>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwoLoose">
               <label className="space-y-2 text-sm">
                 <span>תאריך יעד</span>
                 <Input
@@ -653,9 +653,9 @@ export default function DashboardActions({
                   ))}
                 </select>
               </label>
-            </div>
+            </AdaptiveGrid>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwoLoose">
               <label className="space-y-2 text-sm">
                 <span>עדיפות</span>
                 <select
@@ -684,7 +684,7 @@ export default function DashboardActions({
                   <option value="cancelled">בוטל</option>
                 </select>
               </label>
-            </div>
+            </AdaptiveGrid>
 
             <label className="space-y-2 text-sm">
               <span>תיאור</span>
@@ -702,7 +702,7 @@ export default function DashboardActions({
               {taskSubmitting ? "שומר..." : "שמירת משימה"}
             </Button>
           </div>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog
@@ -712,7 +712,7 @@ export default function DashboardActions({
           if (!open) resetExpenseForm();
         }}
       >
-        <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
+        <AdaptiveDialog size="formXl">
           <DialogHeader>
             <DialogTitle>הוצאה חדשה</DialogTitle>
             <DialogDescription>רישום הוצאה חדשה ושיוך לפרויקט.</DialogDescription>
@@ -735,7 +735,7 @@ export default function DashboardActions({
               </select>
             </label>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwoLoose">
               <label className="space-y-2 text-sm">
                 <span>סכום</span>
                 <Input
@@ -755,7 +755,7 @@ export default function DashboardActions({
                   onChange={(e) => setExpenseDate(e.target.value)}
                 />
               </label>
-            </div>
+            </AdaptiveGrid>
 
             <label className="space-y-2 text-sm">
               <span>קטגוריה</span>
@@ -786,7 +786,7 @@ export default function DashboardActions({
               {expenseSubmitting ? "שומר..." : "שמירת הוצאה"}
             </Button>
           </div>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog
@@ -796,7 +796,7 @@ export default function DashboardActions({
           if (!open) resetIncomeForm();
         }}
       >
-        <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
+        <AdaptiveDialog size="formXl">
           <DialogHeader>
             <DialogTitle>הכנסה חדשה</DialogTitle>
             <DialogDescription>רישום הכנסה חדשה כתשלום לפרויקט.</DialogDescription>
@@ -819,7 +819,7 @@ export default function DashboardActions({
               </select>
             </label>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwoLoose">
               <label className="space-y-2 text-sm">
                 <span>סכום</span>
                 <Input
@@ -839,9 +839,9 @@ export default function DashboardActions({
                   onChange={(e) => setIncomeDate(e.target.value)}
                 />
               </label>
-            </div>
+            </AdaptiveGrid>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwoLoose">
               <label className="space-y-2 text-sm">
                 <span>אמצעי תשלום</span>
                 <select
@@ -864,7 +864,7 @@ export default function DashboardActions({
                   onChange={(e) => setIncomeReference(e.target.value)}
                 />
               </label>
-            </div>
+            </AdaptiveGrid>
 
             <label className="space-y-2 text-sm">
               <span>הערות</span>
@@ -882,7 +882,7 @@ export default function DashboardActions({
               {incomeSubmitting ? "שומר..." : "שמירת הכנסה"}
             </Button>
           </div>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
     </>
   );

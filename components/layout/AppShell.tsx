@@ -40,7 +40,7 @@ export default function AppShell({
       <div className="flex flex-1 flex-col min-w-0">
         <TopBar appName={appName} userName={userName} showSearch={showSearch} />
         <main className="flex-1">
-          <div className="mx-auto w-full max-w-[1600px] p-4 pb-24 md:p-6 md:pb-6">
+          <div className="mx-auto w-full max-w-[1600px] p-4 pb-24 md:p-6 md:pb-6 lg:p-8 lg:pb-8">
             {children}
           </div>
         </main>

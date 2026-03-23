@@ -7,9 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+import { AdaptiveCell, AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -707,6 +707,9 @@ export default function ProjectTabsClient({
   );
   const expensesTotal = expensesUi.reduce((sum, item) => sum + (toNumber(item.expense?.amount) ?? 0), 0);
   const interimProfit = paymentsTotal - expensesTotal;
+  const hasRecordedFinancialActivity = paymentsUi.length > 0 || expensesUi.length > 0;
+  const effectiveDisplayedExpenses = hasRecordedFinancialActivity ? expensesTotal : totalExpenses;
+  const effectiveDisplayedGrossProfit = hasRecordedFinancialActivity ? interimProfit : grossProfit;
 
   const tasksSorted = useMemo(() => {
     const copy = [...projectTasksUi];
@@ -848,7 +851,7 @@ export default function ProjectTabsClient({
       </TabsList>
 
       <TabsContent value="overview">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <AdaptiveGrid variant="projectOverview">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">מחירים</CardTitle>
@@ -902,8 +905,14 @@ export default function ProjectTabsClient({
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-muted-foreground">רווח גולמי (מחושב)</span>
-                <span className={grossProfit !== null && grossProfit < 0 ? "text-destructive" : ""}>
-                  {formatIls(grossProfit)}
+                <span
+                  className={
+                    effectiveDisplayedGrossProfit !== null && effectiveDisplayedGrossProfit < 0
+                      ? "text-destructive"
+                      : ""
+                  }
+                >
+                  {formatIls(effectiveDisplayedGrossProfit)}
                 </span>
               </div>
               <div className="text-xs text-muted-foreground">
@@ -934,11 +943,13 @@ export default function ProjectTabsClient({
             </CardContent>
           </Card>
 
-          <Card className="md:col-span-2 xl:col-span-3">
+          <AdaptiveCell variant="projectOverviewWide">
+          <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">תאריכים</CardTitle>
             </CardHeader>
-            <CardContent className="text-sm grid gap-2 sm:grid-cols-2">
+            <CardContent>
+              <AdaptiveGrid variant="projectSummary" className="text-sm">
               <div className="flex items-center justify-between gap-4">
                 <span className="text-muted-foreground">תאריך התחלה</span>
                 <span>{formatDate(overview.start_date)}</span>
@@ -947,13 +958,15 @@ export default function ProjectTabsClient({
                 <span className="text-muted-foreground">תאריך סיום</span>
                 <span>{formatDate(overview.end_date)}</span>
               </div>
+              </AdaptiveGrid>
             </CardContent>
           </Card>
-        </div>
+          </AdaptiveCell>
+        </AdaptiveGrid>
       </TabsContent>
 
       <TabsContent value="financial">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <AdaptiveGrid variant="projectOverview">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">סיכום</CardTitle>
@@ -969,18 +982,18 @@ export default function ProjectTabsClient({
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-muted-foreground">הוצאות</span>
-                <span>{formatIls(totalExpenses)}</span>
+                <span>{formatIls(effectiveDisplayedExpenses)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-muted-foreground">רווח גולמי</span>
                 <span
                   className={
-                    grossProfit !== null && grossProfit < 0
+                    effectiveDisplayedGrossProfit !== null && effectiveDisplayedGrossProfit < 0
                       ? "text-destructive"
                       : ""
                   }
                 >
-                  {formatIls(grossProfit)}
+                  {formatIls(effectiveDisplayedGrossProfit)}
                 </span>
               </div>
               <div className="text-muted-foreground text-sm pt-2">
@@ -1042,7 +1055,8 @@ export default function ProjectTabsClient({
             </CardContent>
           </Card>
 
-          <Card className="md:col-span-2 xl:col-span-3">
+          <AdaptiveCell variant="projectOverviewWide">
+          <Card>
             <CardHeader className="pb-3 flex-row items-center justify-between">
               <CardTitle className="text-base">הוצאות</CardTitle>
               <Button
@@ -1105,8 +1119,10 @@ export default function ProjectTabsClient({
               </div>
             </CardContent>
           </Card>
+          </AdaptiveCell>
 
-          <Card className="md:col-span-2 xl:col-span-3">
+          <AdaptiveCell variant="projectOverviewWide">
+          <Card>
             <CardHeader className="pb-3 flex-row items-center justify-between">
               <CardTitle className="text-base">הכנסות</CardTitle>
               <Button
@@ -1164,7 +1180,8 @@ export default function ProjectTabsClient({
               </div>
             </CardContent>
           </Card>
-        </div>
+          </AdaptiveCell>
+        </AdaptiveGrid>
       </TabsContent>
 
       <TabsContent value="tasks">
@@ -1379,7 +1396,7 @@ export default function ProjectTabsClient({
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <AdaptiveDialog size="formMd">
           <DialogHeader>
             <DialogTitle>העלאת מסמכים</DialogTitle>
             <DialogDescription>בחר קטגוריה (אופציונלי) וקבצים להעלאה.</DialogDescription>
@@ -1388,7 +1405,7 @@ export default function ProjectTabsClient({
           <div className="space-y-4">
             <div className="space-y-1">
               <div className="text-sm font-medium">קטגוריה (אופציונלי)</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <AdaptiveGrid variant="formTwo" className="gap-2">
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={uploadDocsCategoryMode === "new" ? "__new__" : uploadDocsCategory}
@@ -1427,12 +1444,12 @@ export default function ProjectTabsClient({
                   />
                 ) : null}
                 {uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim() ? (
-                  <div className="text-xs text-destructive sm:col-span-2">
+                  <div className="text-xs text-destructive">
                     שדה חובה
                   </div>
                 ) : null}
-              </div>
-            </div>
+            </AdaptiveGrid>
+          </div>
 
             <div className="space-y-1">
               <div className="text-sm font-medium">קבצים</div>
@@ -1499,7 +1516,7 @@ export default function ProjectTabsClient({
               {docsUploading ? "מעלה..." : "העלאה"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog
@@ -1512,7 +1529,7 @@ export default function ProjectTabsClient({
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <AdaptiveDialog size="formMd">
           <DialogHeader>
             <DialogTitle>ערוך קטגוריה</DialogTitle>
             <DialogDescription>עדכון קטגוריה למסמך (documents.document_type).</DialogDescription>
@@ -1535,7 +1552,7 @@ export default function ProjectTabsClient({
               {editTagSaving ? "שומר..." : "שמירה"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog
@@ -1548,7 +1565,7 @@ export default function ProjectTabsClient({
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <AdaptiveDialog size="formMd">
           <DialogHeader>
             <DialogTitle>מחיקת מסמך</DialogTitle>
             <DialogDescription>
@@ -1578,7 +1595,7 @@ export default function ProjectTabsClient({
               {deleteDocDeleting ? "מוחק..." : "מחיקה"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog
@@ -1588,7 +1605,7 @@ export default function ProjectTabsClient({
           if (!open) setUpdateActualPriceValue("");
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <AdaptiveDialog size="formMd">
           <DialogHeader>
             <DialogTitle>עדכון מחיר בפועל</DialogTitle>
             <DialogDescription>
@@ -1652,7 +1669,7 @@ export default function ProjectTabsClient({
               {updateActualPriceSaving ? "שומר..." : "שמירה"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <AddExpenseDialog
@@ -2108,7 +2125,7 @@ function ProjectTasksTab({
       </Card>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="sm:max-w-md">
+        <AdaptiveDialog size="formMd">
           <DialogHeader>
             <DialogTitle>אישור שינוי סטטוס</DialogTitle>
             <DialogDescription>
@@ -2139,14 +2156,14 @@ function ProjectTasksTab({
               {savingStatus ? "מעדכן..." : "אישור"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog
         open={confirmPriorityOpen}
         onOpenChange={setConfirmPriorityOpen}
       >
-        <DialogContent className="sm:max-w-md">
+        <AdaptiveDialog size="formMd">
           <DialogHeader>
             <DialogTitle>אישור שינוי עדיפות</DialogTitle>
             <DialogDescription>
@@ -2177,7 +2194,7 @@ function ProjectTasksTab({
               {savingPriority ? "מעדכן..." : "אישור"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog
@@ -2187,7 +2204,7 @@ function ProjectTasksTab({
           if (!open) setCreateFiles([]);
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <AdaptiveDialog size="formLg">
           <DialogHeader>
             <DialogTitle>הוספת משימה</DialogTitle>
             <DialogDescription>משימה תתווסף לפרויקט ותופיע ברשימה.</DialogDescription>
@@ -2269,7 +2286,7 @@ function ProjectTasksTab({
               ) : null}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <div className="text-sm font-medium">עדיפות *</div>
                 <select
@@ -2298,7 +2315,7 @@ function ProjectTasksTab({
                   ))}
                 </select>
               </div>
-            </div>
+            </AdaptiveGrid>
 
             <div className="space-y-1">
               <div className="text-sm font-medium">
@@ -2357,7 +2374,7 @@ function ProjectTasksTab({
               </Button>
             </DialogFooter>
           </form>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
     </>
   );
@@ -2629,7 +2646,7 @@ function AddExpenseDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <AdaptiveDialog size="formLg">
         <DialogHeader>
           <DialogTitle>{"\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4"}</DialogTitle>
           <DialogDescription>
@@ -2652,7 +2669,7 @@ function AddExpenseDialog({
             {"\u05ea\u05d7\u05d5\u05dd \u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05d9\u05d9\u05e7\u05d1\u05e2 \u05d0\u05d5\u05d8\u05d5\u05de\u05d8\u05d9\u05ea \u05dc\u05e4\u05d9 \u05e1\u05d5\u05d2 \u05d4\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8: "}
             <span className="font-medium">{projectTypeLabel(projectType)}</span>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
               <Input
@@ -2696,7 +2713,7 @@ function AddExpenseDialog({
                 <div className="text-xs text-destructive">{categoryError}</div>
               ) : null}
             </div>
-          </div>
+          </AdaptiveGrid>
 
           <div className="space-y-1">
             <div className="text-sm font-medium">{"\u05ea\u05d9\u05d0\u05d5\u05e8 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
@@ -2707,7 +2724,7 @@ function AddExpenseDialog({
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05ea\u05d0\u05e8\u05d9\u05da *"}</div>
               <Input
@@ -2730,7 +2747,7 @@ function AddExpenseDialog({
               ) : null}
             </div>
             <div />
-          </div>
+          </AdaptiveGrid>
 
           <div className="flex flex-col gap-2 text-sm">
             <label className="flex items-center gap-2">
@@ -2774,7 +2791,7 @@ function AddExpenseDialog({
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
+      </AdaptiveDialog>
     </Dialog>
   );
 }
@@ -2904,7 +2921,7 @@ function AddIncomeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <AdaptiveDialog size="formLg">
         <DialogHeader>
           <DialogTitle>{"\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4"}</DialogTitle>
           <DialogDescription>
@@ -2923,7 +2940,7 @@ function AddIncomeDialog({
             {"\u05e9\u05d3\u05d5\u05ea \u05d4\u05de\u05e1\u05d5\u05de\u05e0\u05d9\u05dd \u05d1-* \u05d4\u05dd \u05e9\u05d3\u05d5\u05ea \u05d7\u05d5\u05d1\u05d4."}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
               <Input
@@ -2965,9 +2982,9 @@ function AddIncomeDialog({
                 <div className="text-xs text-destructive">{paymentDateError}</div>
               ) : null}
             </div>
-          </div>
+          </AdaptiveGrid>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd *"}</div>
               <Input
@@ -2997,7 +3014,7 @@ function AddIncomeDialog({
                 placeholder={"\u05de\u05e1\u05e4\u05e8 \u05e7\u05d1\u05dc\u05d4/\u05d4\u05e2\u05d1\u05e8\u05d4"}
               />
             </div>
-          </div>
+          </AdaptiveGrid>
 
           <div className="space-y-1">
             <div className="text-sm font-medium">{"\u05d4\u05e2\u05e8\u05d5\u05ea (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
@@ -3022,7 +3039,7 @@ function AddIncomeDialog({
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
+      </AdaptiveDialog>
     </Dialog>
   );
 }

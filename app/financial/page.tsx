@@ -1,18 +1,22 @@
-import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import CashFlowPageContent from "@/app/financial/CashFlowPageContent";
 
-export default async function FinancialPage() {
-  const { profile } = await requireProfile();
+export const revalidate = 60;
+
+export default async function FinancialPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { profile, supabase } = await requireProfile();
+  const resolvedSearchParams = (await searchParams) ?? {};
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">פיננסי</h1>
-        <p className="text-sm text-muted-foreground">
-          מסך פיננסי מרכזי. אפשר להמשיך מכאן לדוחות, הכנסות, הוצאות ותזרים.
-        </p>
-      </div>
-    </AppShell>
+    <CashFlowPageContent
+      profile={profile}
+      supabase={supabase}
+      searchParams={resolvedSearchParams}
+      basePath="/financial"
+    />
   );
 }
-

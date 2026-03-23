@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
+import { AdaptiveGrid, PageStack, ResponsiveMetricValue } from "@/components/layout/page-layout";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import DashboardActions from "@/app/dashboard/DashboardActions";
 import { Badge } from "@/components/ui/badge";
@@ -301,7 +302,7 @@ export default async function DashboardPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
-      <div className="space-y-4">
+      <PageStack>
         <section className="flex items-center justify-start">
           <Badge variant="outline" className="w-fit text-sm">
             {new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" }).format(today)}
@@ -316,7 +317,7 @@ export default async function DashboardPage() {
           </Card>
         ) : null}
 
-        <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <AdaptiveGrid variant="dashboardMetrics">
           <MetricCard title="הכנסות" value={formatCurrency(monthlyRevenue)} subtitle={formatDelta(monthlyRevenue, previousRevenue)} />
           <MetricCard title="הוצאות" value={formatCurrency(monthlyExpenses)} subtitle={formatDelta(monthlyExpenses, previousExpenses)} />
           <MetricCard title="פרויקטים פתוחים" value={formatCount(projects.length)} subtitle="פעילים עכשיו" />
@@ -325,9 +326,9 @@ export default async function DashboardPage() {
             value={formatCount(tasks.length)}
             subtitle={overdueTasks.length > 0 ? `${formatCount(overdueTasks.length)} באיחור` : "ללא איחור"}
           />
-        </section>
+        </AdaptiveGrid>
 
-        <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <AdaptiveGrid variant="dashboardMain">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">פעולות מהירות</CardTitle>
@@ -365,8 +366,8 @@ export default async function DashboardPage() {
               ))}
             </CardContent>
           </Card>
-        </section>
-      </div>
+        </AdaptiveGrid>
+      </PageStack>
     </AppShell>
   );
 }
@@ -384,7 +385,7 @@ function MetricCard({
     <Card>
       <CardContent className="p-4">
         <div className="text-sm text-muted-foreground">{title}</div>
-        <div className="mt-2 text-xl font-semibold md:text-2xl">{value}</div>
+        <ResponsiveMetricValue>{value}</ResponsiveMetricValue>
         <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
       </CardContent>
     </Card>

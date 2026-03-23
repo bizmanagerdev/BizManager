@@ -5,13 +5,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Pencil, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import {
+  AdaptiveDialog,
+  AdaptiveGrid,
+  AdaptiveStack,
+  PageStack,
+} from "@/components/layout/page-layout";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -528,8 +533,8 @@ export default function ProjectsClient({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+    <PageStack>
+      <AdaptiveStack variant="toolbar">
         <div className="flex-1">
           <label className="text-sm text-muted-foreground">חיפוש</label>
           <Input
@@ -540,8 +545,8 @@ export default function ProjectsClient({
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:w-auto">
-          <div className="min-w-0 sm:min-w-[10rem]">
+        <AdaptiveGrid variant="projectsToolbarControls">
+          <div className="min-w-0">
             <label className="text-sm text-muted-foreground">סטטוס</label>
             <select
               value={status}
@@ -557,7 +562,7 @@ export default function ProjectsClient({
             </select>
           </div>
 
-          <div className="min-w-0 sm:min-w-[10rem]">
+          <div className="min-w-0">
             <label className="text-sm text-muted-foreground">מיון</label>
             <select
               value={sort}
@@ -569,14 +574,14 @@ export default function ProjectsClient({
             </select>
           </div>
 
-          <div className="min-w-0 sm:min-w-[10rem]">
+          <div className="min-w-0">
             <label className="text-sm text-muted-foreground opacity-0">הוספה</label>
             <Button type="button" className="h-11 w-full" onClick={() => setCreateOpen(true)}>
               הוספת פרויקט
             </Button>
           </div>
-        </div>
-      </div>
+        </AdaptiveGrid>
+      </AdaptiveStack>
 
       <div className="text-sm text-muted-foreground">נמצאו {rows.length} פרויקטים</div>
 
@@ -636,7 +641,7 @@ export default function ProjectsClient({
                   className="mt-3 block"
                   onClick={() => emitNavigationStart()}
                 >
-                  <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2 xl:grid-cols-3">
+                  <AdaptiveGrid variant="projectCardMeta">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-muted-foreground">סטטוס:</span>
                       <span>{statusLabel(currentStatus)}</span>
@@ -651,7 +656,7 @@ export default function ProjectsClient({
                       <span className="text-muted-foreground">משימות פתוחות:</span>
                       <span>{openTasks === null ? "-" : openTasks}</span>
                     </div>
-                  </div>
+                  </AdaptiveGrid>
                 </Link>
               </CardContent>
             </Card>
@@ -660,7 +665,7 @@ export default function ProjectsClient({
       </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <AdaptiveDialog size="form2xl">
           <DialogHeader>
             <DialogTitle>הוספת פרויקט חדש</DialogTitle>
             <DialogDescription>מלאו את השדות הנדרשים ליצירת פרויקט.</DialogDescription>
@@ -673,7 +678,7 @@ export default function ProjectsClient({
               void createProject();
             }}
           >
-            <div className="grid gap-3 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">שם פרויקט *</label>
                 <Input value={createName} onChange={(e) => setCreateName(e.target.value)} />
@@ -742,9 +747,9 @@ export default function ProjectsClient({
                   </Button>
                 </div>
               </div>
-            </div>
+            </AdaptiveGrid>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">סוג פרויקט *</label>
                 <select
@@ -773,7 +778,7 @@ export default function ProjectsClient({
                   ))}
                 </select>
               </div>
-            </div>
+            </AdaptiveGrid>
 
             <div className="space-y-1">
               <label className="text-sm font-medium">מחיר בסיס מוסכם</label>
@@ -785,7 +790,7 @@ export default function ProjectsClient({
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">תאריך התחלה</label>
                 <Input
@@ -802,7 +807,7 @@ export default function ProjectsClient({
                   onChange={(e) => setCreateEndDate(e.target.value)}
                 />
               </div>
-            </div>
+            </AdaptiveGrid>
 
             <div className="space-y-1">
               <label className="text-sm font-medium">מנהל פרויקט</label>
@@ -848,11 +853,11 @@ export default function ProjectsClient({
               <p className="text-xs text-muted-foreground">הפרויקט נוצר כעת, נא להמתין...</p>
             ) : null}
           </form>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <AdaptiveDialog size="form2xl">
           <DialogHeader>
             <DialogTitle>עריכת פרויקט</DialogTitle>
             <DialogDescription>עדכון פרטי פרויקט קיים.</DialogDescription>
@@ -865,7 +870,7 @@ export default function ProjectsClient({
               void saveProjectEdit();
             }}
           >
-            <div className="grid gap-3 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">שם פרויקט *</label>
                 <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
@@ -885,9 +890,9 @@ export default function ProjectsClient({
                   ))}
                 </select>
               </div>
-            </div>
+            </AdaptiveGrid>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">סוג פרויקט *</label>
                 <select
@@ -916,7 +921,7 @@ export default function ProjectsClient({
                   ))}
                 </select>
               </div>
-            </div>
+            </AdaptiveGrid>
 
             <div className="space-y-1">
               <label className="text-sm font-medium">מחיר בסיס מוסכם</label>
@@ -927,7 +932,7 @@ export default function ProjectsClient({
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">תאריך התחלה</label>
                 <Input type="date" value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} />
@@ -936,7 +941,7 @@ export default function ProjectsClient({
                 <label className="text-sm font-medium">תאריך סיום</label>
                 <Input type="date" value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} />
               </div>
-            </div>
+            </AdaptiveGrid>
 
             <div className="space-y-1">
               <label className="text-sm font-medium">מנהל פרויקט</label>
@@ -979,11 +984,11 @@ export default function ProjectsClient({
               </Button>
             </DialogFooter>
           </form>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
 
       <Dialog open={createCustomerOpen} onOpenChange={setCreateCustomerOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <AdaptiveDialog size="formLg">
           <DialogHeader>
             <DialogTitle>הוספת לקוח חדש</DialogTitle>
             <DialogDescription>
@@ -1087,9 +1092,9 @@ export default function ProjectsClient({
               <p className="text-xs text-muted-foreground">הלקוח נוצר כעת, נא להמתין...</p>
             ) : null}
           </form>
-        </DialogContent>
+        </AdaptiveDialog>
       </Dialog>
-    </div>
+    </PageStack>
   );
 }
 

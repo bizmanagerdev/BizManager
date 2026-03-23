@@ -79,7 +79,7 @@ export function TopBar({
 
   return (
     <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-background/78 px-4 backdrop-blur-xl">
-      <div className="flex items-center gap-2 md:hidden">
+      <div className="flex items-center gap-2 lg:hidden">
         {logo ?? (
           <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-destructive to-primary shadow-md shadow-destructive/20">
             <span className="text-xs font-black text-primary-foreground">
@@ -91,7 +91,7 @@ export function TopBar({
       </div>
 
       {showSearch && (
-        <div className="hidden max-w-md flex-1 sm:flex">
+        <div className="hidden max-w-md flex-1 lg:flex">
           <div className="relative w-full">
             <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -102,14 +102,14 @@ export function TopBar({
         </div>
       )}
 
-      <div className="flex-1 sm:flex-none" />
+      <div className="flex-1 lg:flex-none" />
 
       <div className="flex items-center gap-1">
         {showSearch && (
           <Button
             variant="ghost"
             size="icon-sm"
-            className="rounded-xl text-muted-foreground sm:hidden"
+            className="rounded-xl text-muted-foreground lg:hidden"
             type="button"
           >
             <Search className="h-4 w-4" />
@@ -180,7 +180,7 @@ export function TopBar({
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
                 <User className="h-3.5 w-3.5" />
               </div>
-              {userName && <span className="hidden sm:inline text-sm">{userName}</span>}
+              {userName && <span className="hidden lg:inline text-sm">{userName}</span>}
               <ChevronDown className="h-3 w-3" />
             </Button>
           }
@@ -192,7 +192,7 @@ export function TopBar({
                 <User className="h-3.5 w-3.5" />
               </div>
               {userName && (
-                <span className="hidden sm:inline text-sm">{userName}</span>
+                <span className="hidden lg:inline text-sm">{userName}</span>
               )}
               <ChevronDown className="h-3 w-3" />
             </Button>

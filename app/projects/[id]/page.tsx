@@ -4,6 +4,7 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
 import ProjectTabsClient from "@/app/projects/[id]/ProjectTabsClient";
 import { Badge } from "@/components/ui/badge";
+import { ORDERS_GLOBAL_PROJECT_ID } from "@/lib/orders/globalProject";
 
 const DOCUMENTS_BUCKET = "business-documents";
 
@@ -35,15 +36,15 @@ function projectStatusVariant(status: string) {
 function projectStatusLabel(status: string) {
   switch (status) {
     case "planned":
-      return "׳׳×׳•׳›׳ ׳";
+      return "מתוכנן";
     case "active":
-      return "׳₪׳¢׳™׳";
+      return "פעיל";
     case "on_hold":
-      return "׳‘׳”׳׳×׳ ׳”";
+      return "בהמתנה";
     case "completed":
-      return "׳”׳•׳©׳׳";
+      return "הושלם";
     case "cancelled":
-      return "׳‘׳•׳˜׳";
+      return "בוטל";
     default:
       return status;
   }
@@ -89,9 +90,7 @@ export default async function ProjectPage({
 
   const { data: expenseSummary, error: expenseSummaryError } = await supabase
     .from("project_expenses_summary_view")
-    .select(
-      "project_id,expense_count,total_expenses,expenses_included,expenses_billed"
-    )
+    .select("project_id,expense_count,total_expenses,expenses_included,expenses_billed")
     .eq("project_id", id)
     .maybeSingle();
 
@@ -104,9 +103,7 @@ export default async function ProjectPage({
   const expenseIds = Array.from(
     new Set(
       (projectExpenses ?? [])
-        .map((row: any) =>
-          typeof row?.expense_id === "string" ? row.expense_id : null
-        )
+        .map((row: any) => (typeof row?.expense_id === "string" ? row.expense_id : null))
         .filter(Boolean)
     )
   ) as string[];
@@ -129,39 +126,53 @@ export default async function ProjectPage({
   const expenseList = (projectExpenses ?? [])
     .map((pe: any) => ({
       project_expense: pe,
-      expense:
-        typeof pe?.expense_id === "string"
-          ? expensesById.get(pe.expense_id) ?? null
-          : null,
+      expense: typeof pe?.expense_id === "string" ? expensesById.get(pe.expense_id) ?? null : null,
     }))
     .sort((a, b) => {
-      const ad = (a.expense?.expense_date ?? a.expense?.created_at) as
-        | string
-        | undefined;
-      const bd = (b.expense?.expense_date ?? b.expense?.created_at) as
-        | string
-        | undefined;
+      const ad = (a.expense?.expense_date ?? a.expense?.created_at) as string | undefined;
+      const bd = (b.expense?.expense_date ?? b.expense?.created_at) as string | undefined;
       const at = ad ? new Date(ad).getTime() : 0;
       const bt = bd ? new Date(bd).getTime() : 0;
       return bt - at;
     });
 
-  const { data: payments, error: paymentsError } = await supabase
-    .from("payments")
-    .select(
-      "id,target_type,target_id,payment_date,amount_total,payment_method,reference_number,vat_amount,amount_before_vat,net_amount,recorded_by,notes,created_at,updated_at"
-    )
-    .eq("target_type", "project")
-    .eq("target_id", id)
-    .order("payment_date", { ascending: false })
-    .limit(100);
+  const paymentSelect =
+    "id,target_type,target_id,payment_date,amount_total,payment_method,reference_number,vat_amount,amount_before_vat,net_amount,recorded_by,notes,created_at,updated_at";
 
-  const { data: projectDocumentsRaw, error: projectDocumentsError } =
-    await supabase
-      .from("project_documents_view")
-      .select("*")
-      .eq("project_id", id)
-      .limit(500);
+  const [projectPaymentsResult, orderPaymentsResult] = await Promise.all([
+    supabase
+      .from("payments")
+      .select(paymentSelect)
+      .eq("target_type", "project")
+      .eq("target_id", id)
+      .order("payment_date", { ascending: false })
+      .limit(100),
+    id === ORDERS_GLOBAL_PROJECT_ID
+      ? supabase
+          .from("payments")
+          .select(paymentSelect)
+          .eq("target_type", "order")
+          .order("payment_date", { ascending: false })
+          .limit(500)
+      : Promise.resolve({ data: [], error: null as any }),
+  ]);
+
+  const paymentsError =
+    projectPaymentsResult.error?.message ?? orderPaymentsResult.error?.message ?? null;
+
+  const payments = [...(projectPaymentsResult.data ?? []), ...(orderPaymentsResult.data ?? [])]
+    .sort((a: any, b: any) => {
+      const ad = typeof a?.payment_date === "string" ? new Date(a.payment_date).getTime() : 0;
+      const bd = typeof b?.payment_date === "string" ? new Date(b.payment_date).getTime() : 0;
+      return bd - ad;
+    })
+    .slice(0, 500);
+
+  const { data: projectDocumentsRaw, error: projectDocumentsError } = await supabase
+    .from("project_documents_view")
+    .select("*")
+    .eq("project_id", id)
+    .limit(500);
 
   const projectDocuments = await Promise.all(
     (projectDocumentsRaw ?? []).map(async (row: any) => {
@@ -175,9 +186,7 @@ export default async function ProjectPage({
       const uploadedAt = getFirstString(row, ["uploaded_at", "created_at"]);
 
       const { data: signed, error: signError } = storageKey
-        ? await supabase.storage
-            .from(DOCUMENTS_BUCKET)
-            .createSignedUrl(storageKey, 60 * 60)
+        ? await supabase.storage.from(DOCUMENTS_BUCKET).createSignedUrl(storageKey, 60 * 60)
         : { data: null as any, error: null as any };
 
       const url =
@@ -215,8 +224,7 @@ export default async function ProjectPage({
     url: string | null;
   }>;
 
-  const status =
-    typeof (overview as any)?.status === "string" ? (overview as any).status : "";
+  const status = typeof (overview as any)?.status === "string" ? (overview as any).status : "";
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
@@ -224,9 +232,7 @@ export default async function ProjectPage({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">
-              {typeof (overview as any)?.name === "string"
-                ? (overview as any).name
-                : "׳₪׳¨׳•׳™׳§׳˜"}
+              {typeof (overview as any)?.name === "string" ? (overview as any).name : "פרויקט"}
             </h1>
             <p className="text-sm text-muted-foreground">
               {typeof (overview as any)?.customer_name === "string"
@@ -239,30 +245,26 @@ export default async function ProjectPage({
               <DeleteProjectButton
                 projectId={(overview as any).id}
                 projectName={
-                  typeof (overview as any)?.name === "string"
-                    ? (overview as any).name
-                    : undefined
+                  typeof (overview as any)?.name === "string" ? (overview as any).name : undefined
                 }
                 redirectTo="/projects"
               />
             ) : null}
             <Link className="text-sm text-primary" href="/projects">
-              ׳—׳–׳¨׳” ׳׳₪׳¨׳•׳™׳§׳˜׳™׳
+              חזרה לפרויקטים
             </Link>
           </div>
         </div>
 
         {status ? (
           <div>
-            <Badge variant={projectStatusVariant(status)}>
-              {projectStatusLabel(status)}
-            </Badge>
+            <Badge variant={projectStatusVariant(status)}>{projectStatusLabel(status)}</Badge>
           </div>
         ) : null}
 
         {overviewError ? (
           <div className="text-destructive text-sm">
-            ׳©׳’׳™׳׳” ׳‘׳˜׳¢׳™׳ ׳× ׳₪׳¨׳•׳™׳§׳˜: {overviewError.message}
+            שגיאה בטעינת פרויקט: {overviewError.message}
           </div>
         ) : (
           <ProjectTabsClient
@@ -278,9 +280,7 @@ export default async function ProjectPage({
             expenseSummary={(expenseSummary as any) ?? null}
             expenseSummaryError={expenseSummaryError?.message ?? null}
             expenses={expenseList as any}
-            expensesError={
-              projectExpensesError?.message ?? expensesError?.message ?? null
-            }
+            expensesError={projectExpensesError?.message ?? expensesError?.message ?? null}
             payments={(payments as any) ?? []}
             paymentsError={paymentsError?.message ?? null}
           />

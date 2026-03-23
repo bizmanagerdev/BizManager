@@ -2,13 +2,18 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import {
+  AdaptiveCell,
+  AdaptiveDialog,
+  AdaptiveGrid,
+  PageStack,
+} from "@/components/layout/page-layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -317,9 +322,9 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
   }
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 lg:grid-cols-8">
-        <div className="space-y-1 lg:col-span-4">
+    <PageStack>
+      <AdaptiveGrid variant="customersToolbar">
+        <AdaptiveCell variant="customersPrimary">
           <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
           <Input
             value={query}
@@ -327,8 +332,8 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
             placeholder="שם, טלפון, אימייל או כתובת"
             className="h-11"
           />
-        </div>
-        <div className="lg:col-span-2">
+        </AdaptiveCell>
+        <AdaptiveCell variant="customersSecondary">
           <label className="text-sm text-muted-foreground opacity-0">מסננים</label>
           <Button
             type="button"
@@ -338,17 +343,17 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
           >
             {filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
           </Button>
-        </div>
-        <div className="lg:col-span-2">
+        </AdaptiveCell>
+        <AdaptiveCell variant="customersSecondary">
           <label className="text-sm text-muted-foreground opacity-0">לקוח חדש</label>
           <Button type="button" className="h-11 w-full" onClick={() => setCreateOpen(true)}>
             הוספת לקוח
           </Button>
-        </div>
-      </div>
+        </AdaptiveCell>
+      </AdaptiveGrid>
 
       {filtersOpen ? (
-        <div className="grid gap-3 lg:grid-cols-4">
+        <AdaptiveGrid variant="customersFilters">
           <FilterSelect
             label="פרויקטים"
             value={withProjects}
@@ -377,7 +382,7 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
             yes="פעילים"
             no="לא פעילים"
           />
-        </div>
+        </AdaptiveGrid>
       ) : null}
 
       <div className="text-sm text-muted-foreground">נמצאו {filtered.length} לקוחות</div>
@@ -388,7 +393,8 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
           const customerName = s(row, "customer_name") || "לקוח";
           return (
             <Card key={id || customerName} className="overflow-hidden">
-              <CardContent className="grid gap-3 p-3 md:grid-cols-[1fr_auto] md:items-center">
+              <CardContent>
+                <AdaptiveGrid variant="customerCard">
                 <button
                   type="button"
                   className="min-w-0 text-right"
@@ -426,6 +432,7 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
                     פרטי לקוח
                   </Button>
                 </div>
+                </AdaptiveGrid>
               </CardContent>
             </Card>
           );
@@ -505,14 +512,14 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
         <Field label="ח.פ / ת.ז">
           <Input value={editReg} onChange={(e) => setEditReg(e.target.value)} />
         </Field>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <AdaptiveGrid variant="formTwo">
           <Field label="טלפון">
             <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
           </Field>
           <Field label="אימייל *">
             <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
           </Field>
-        </div>
+        </AdaptiveGrid>
         <Field label="כתובת *">
           <Input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} />
         </Field>
@@ -544,14 +551,14 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
         <Field label="תפקיד">
           <Input value={contactRole} onChange={(e) => setContactRole(e.target.value)} />
         </Field>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <AdaptiveGrid variant="formTwo">
           <Field label="טלפון">
             <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
           </Field>
           <Field label="וואטסאפ">
             <Input value={contactWhatsapp} onChange={(e) => setContactWhatsapp(e.target.value)} />
           </Field>
-        </div>
+        </AdaptiveGrid>
         <Field label="אימייל">
           <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
         </Field>
@@ -579,7 +586,7 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
           <span>פעיל</span>
         </label>
       </CustomerDialog>
-    </div>
+    </PageStack>
   );
 }
 
@@ -651,7 +658,7 @@ function CustomerDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+      <AdaptiveDialog size="details4xl">
         <DialogHeader>
           <DialogTitle>{name}</DialogTitle>
           <DialogDescription>פרטי לקוח, אנשי קשר וקישורים מהירים.</DialogDescription>
@@ -659,14 +666,14 @@ function CustomerDetailsDialog({
 
         {row ? (
           <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <AdaptiveGrid variant="customerStats">
               <Stat label="הזמנות" value={`${n(row, "orders_count")}`} />
               <Stat label="פרויקטים" value={`${n(row, "projects_count")}`} />
               <Stat label='סה"כ מכירות' value={ils(n(row, "total_sales"))} />
               <Stat label="יתרה פתוחה" value={ils(n(row, "open_balance"))} />
-            </div>
+            </AdaptiveGrid>
 
-            <div className="grid gap-4 lg:grid-cols-2">
+            <AdaptiveGrid variant="customerPanels">
               <div className="space-y-2 rounded-md border bg-background p-3 text-sm">
                 <div className="font-semibold">פרטי לקוח</div>
                 <div>
@@ -738,7 +745,7 @@ function CustomerDetailsDialog({
                   </div>
                 ) : null}
               </div>
-            </div>
+            </AdaptiveGrid>
 
             <div className="flex flex-wrap gap-2">
               <Button asChild variant="outline" size="sm">
@@ -756,7 +763,7 @@ function CustomerDetailsDialog({
             </div>
           </div>
         ) : null}
-      </DialogContent>
+      </AdaptiveDialog>
     </Dialog>
   );
 }
@@ -782,7 +789,7 @@ function CustomerDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <AdaptiveDialog size="formLg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -803,7 +810,7 @@ function CustomerDialog({
             <Button type="submit">{submitLabel}</Button>
           </DialogFooter>
         </form>
-      </DialogContent>
+      </AdaptiveDialog>
     </Dialog>
   );
 }

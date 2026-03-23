@@ -14,13 +14,13 @@ interface Props {
 }
 
 export function AppSidebar({ items, appName = "BIZMANAGER", logo }: Props) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   return (
     <aside
       className={cn(
         "sticky top-0 hidden h-screen self-start md:flex shrink-0 flex-col border-e border-sidebar-border/80 bg-sidebar/95 backdrop-blur-xl transition-all duration-200",
-        collapsed ? "w-16" : "w-60"
+        collapsed ? "w-16 lg:w-60" : "w-60"
       )}
     >
       <div className="flex h-16 items-center border-b border-sidebar-border/80 px-4">
@@ -32,11 +32,14 @@ export function AppSidebar({ items, appName = "BIZMANAGER", logo }: Props) {
               </span>
             </div>
           )}
-          {!collapsed && (
-            <span className="block whitespace-nowrap text-sm font-semibold text-white">
-              {appName}
-            </span>
-          )}
+          <span
+            className={cn(
+              "block whitespace-nowrap text-sm font-semibold text-white",
+              collapsed ? "hidden lg:inline" : "inline"
+            )}
+          >
+            {appName}
+          </span>
         </div>
       </div>
 
@@ -48,18 +51,18 @@ export function AppSidebar({ items, appName = "BIZMANAGER", logo }: Props) {
             end={item.url === "/"}
             className={cn(
               "flex h-11 items-center gap-3 rounded-xl px-3 text-base text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-sm",
-              collapsed && "justify-center px-0"
+              collapsed && "justify-center px-0 lg:justify-start lg:px-3"
             )}
             activeClassName="bg-gradient-to-r from-destructive/95 to-destructive/80 text-white font-medium shadow-lg shadow-destructive/20"
             pendingClassName="bg-white/10 opacity-70"
           >
             <item.icon className="h-4 w-4 shrink-0" />
-            {!collapsed && <span>{item.title}</span>}
+            <span className={cn(collapsed ? "hidden lg:inline" : "inline")}>{item.title}</span>
           </NavLink>
         ))}
       </nav>
 
-      <div className="border-t border-sidebar-border/80 p-2">
+      <div className="border-t border-sidebar-border/80 p-2 lg:hidden">
         <Button
           variant="ghost"
           size="icon-sm"
