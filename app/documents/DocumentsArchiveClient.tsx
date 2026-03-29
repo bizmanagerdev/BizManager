@@ -1,0 +1,706 @@
+"use client";
+
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { useDeferredValue, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ExternalLink,
+  FileText,
+  FolderOpen,
+  ImageIcon,
+  Package,
+  Search,
+  Tag,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
+import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
+export type DocumentArchiveFilters = {
+  customer_id: string;
+  project_id: string;
+  entity_type: string;
+  type: string;
+  q: string;
+};
+
+export type ArchiveRelation = {
+  id: string;
+  label: string;
+};
+
+export type ArchiveLinkedEntity = {
+  type: string;
+  id: string;
+  label: string;
+  href: string | null;
+};
+
+export type DocumentArchiveItem = {
+  id: string;
+  title: string;
+  file_name: string | null;
+  document_type: string | null;
+  file_kind: string;
+  storage_key: string | null;
+  uploaded_at: string | null;
+  created_at: string | null;
+  url: string | null;
+  entity_types: string[];
+  linked_entities: ArchiveLinkedEntity[];
+  customers: ArchiveRelation[];
+  projects: ArchiveRelation[];
+  tasks: ArchiveRelation[];
+  orders: ArchiveRelation[];
+  search_text: string;
+};
+
+function normalizeText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("he-IL", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function entityTypeLabel(value: string) {
+  switch (value) {
+    case "project":
+      return "פרויקט";
+    case "task":
+      return "משימה";
+    case "customer":
+      return "לקוח";
+    case "order":
+      return "הזמנה";
+    case "unlinked":
+      return "ללא שיוך";
+    default:
+      return value || "ללא שיוך";
+  }
+}
+
+function fileKindLabel(value: string) {
+  switch (value) {
+    case "pdf":
+      return "PDF";
+    case "image":
+      return "תמונה";
+    case "document":
+      return "מסמך";
+    case "spreadsheet":
+      return "גיליון";
+    case "presentation":
+      return "מצגת";
+    case "video":
+      return "וידאו";
+    case "archive":
+      return "ארכיון";
+    default:
+      return "אחר";
+  }
+}
+
+function fileKindIcon(value: string) {
+  switch (value) {
+    case "image":
+      return ImageIcon;
+    case "archive":
+      return Package;
+    default:
+      return FileText;
+  }
+}
+
+function groupLabel(groupBy: string, doc: DocumentArchiveItem) {
+  if (groupBy === "entity") {
+    if (doc.linked_entities.length === 0) return "ללא שיוך";
+    if (doc.entity_types.length === 1) return entityTypeLabel(doc.entity_types[0] ?? "");
+    return "מסמכים משויכים למספר ישויות";
+  }
+
+  if (groupBy === "type") return doc.document_type || "ללא קטגוריה";
+  if (groupBy === "kind") return fileKindLabel(doc.file_kind);
+  if (groupBy === "customer") return doc.customers[0]?.label || "ללא לקוח";
+  if (groupBy === "project") return doc.projects[0]?.label || "ללא פרויקט";
+  return "כל המסמכים";
+}
+
+function SelectField({
+  value,
+  onChange,
+  children,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+  ariaLabel: string;
+}) {
+  return (
+    <select
+      className="flex h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm transition-all duration-200 focus-visible:border-destructive/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      aria-label={ariaLabel}
+    >
+      {children}
+    </select>
+  );
+}
+
+export default function DocumentsArchiveClient({
+  documents,
+  error,
+  initialFilters,
+  totalDocuments,
+  isTruncated,
+}: {
+  documents: DocumentArchiveItem[];
+  error: string | null;
+  initialFilters: DocumentArchiveFilters;
+  totalDocuments: number;
+  isTruncated: boolean;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [query, setQuery] = useState(initialFilters.q);
+  const [entityType, setEntityType] = useState(initialFilters.entity_type);
+  const [documentType, setDocumentType] = useState(initialFilters.type);
+  const [customerId, setCustomerId] = useState(initialFilters.customer_id);
+  const [projectId, setProjectId] = useState(initialFilters.project_id);
+  const [fileKind, setFileKind] = useState("");
+  const [groupBy, setGroupBy] = useState("entity");
+  const [editDialogDoc, setEditDialogDoc] = useState<DocumentArchiveItem | null>(null);
+  const [editTagValue, setEditTagValue] = useState("");
+  const [deleteDialogDoc, setDeleteDialogDoc] = useState<DocumentArchiveItem | null>(null);
+
+  const deferredQuery = useDeferredValue(query);
+  const normalizedQuery = normalizeText(deferredQuery);
+
+  const customerOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const doc of documents) {
+      for (const customer of doc.customers) {
+        if (!map.has(customer.id)) map.set(customer.id, customer.label);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "he"));
+  }, [documents]);
+
+  const projectOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const doc of documents) {
+      for (const project of doc.projects) {
+        if (!map.has(project.id)) map.set(project.id, project.label);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "he"));
+  }, [documents]);
+
+  const documentTypeOptions = useMemo(() => {
+    return Array.from(
+      new Set(documents.map((doc) => doc.document_type).filter((value): value is string => Boolean(value)))
+    ).sort((a, b) => a.localeCompare(b, "he"));
+  }, [documents]);
+
+  const filteredDocuments = useMemo(() => {
+    return documents.filter((doc) => {
+      if (normalizedQuery && !doc.search_text.includes(normalizedQuery)) return false;
+      if (entityType === "unlinked" && doc.linked_entities.length > 0) return false;
+      if (entityType && entityType !== "unlinked" && !doc.entity_types.includes(entityType)) return false;
+      if (documentType && (doc.document_type ?? "") !== documentType) return false;
+      if (customerId && !doc.customers.some((customer) => customer.id === customerId)) return false;
+      if (projectId && !doc.projects.some((project) => project.id === projectId)) return false;
+      if (fileKind && doc.file_kind !== fileKind) return false;
+      return true;
+    });
+  }, [customerId, documentType, documents, entityType, fileKind, normalizedQuery, projectId]);
+
+  const groupedDocuments = useMemo(() => {
+    const map = new Map<string, DocumentArchiveItem[]>();
+    for (const doc of filteredDocuments) {
+      const label = groupLabel(groupBy, doc);
+      const items = map.get(label) ?? [];
+      items.push(doc);
+      map.set(label, items);
+    }
+
+    return Array.from(map.entries())
+      .map(([label, items]) => ({ label, items }))
+      .sort((a, b) => {
+        if (a.label === "ללא שיוך" || a.label === "ללא קטגוריה") return 1;
+        if (b.label === "ללא שיוך" || b.label === "ללא קטגוריה") return -1;
+        return a.label.localeCompare(b.label, "he");
+      });
+  }, [filteredDocuments, groupBy]);
+
+  const linkedCount = useMemo(
+    () => documents.filter((doc) => doc.linked_entities.length > 0).length,
+    [documents]
+  );
+
+  const categorizedCount = useMemo(
+    () => documents.filter((doc) => Boolean(doc.document_type)).length,
+    [documents]
+  );
+
+  function resetFilters() {
+    setQuery("");
+    setEntityType("");
+    setDocumentType("");
+    setCustomerId("");
+    setProjectId("");
+    setFileKind("");
+    setGroupBy("entity");
+  }
+
+  async function saveTag() {
+    if (!editDialogDoc) return;
+    const nextValue = editTagValue.trim();
+    if (!nextValue) {
+      toast.error("יש להזין קטגוריה");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/documents/tag", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            document_id: editDialogDoc.id,
+            document_type: nextValue,
+          }),
+        });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          toast.error("שגיאה בעדכון הקטגוריה", { description: json?.error ?? "" });
+          return;
+        }
+        toast.success("הקטגוריה עודכנה");
+        setEditDialogDoc(null);
+        setEditTagValue("");
+        router.refresh();
+      } catch (errorValue: unknown) {
+        const description = errorValue instanceof Error ? errorValue.message : "Unknown error";
+        toast.error("שגיאה בעדכון הקטגוריה", { description });
+      }
+    });
+  }
+
+  async function deleteDocument() {
+    if (!deleteDialogDoc) return;
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/documents/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ document_id: deleteDialogDoc.id }),
+        });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          toast.error("שגיאה במחיקת המסמך", { description: json?.error ?? "" });
+          return;
+        }
+        toast.success("המסמך נמחק");
+        setDeleteDialogDoc(null);
+        router.refresh();
+      } catch (errorValue: unknown) {
+        const description = errorValue instanceof Error ? errorValue.message : "Unknown error";
+        toast.error("שגיאה במחיקת המסמך", { description });
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <CardTitle className="text-2xl">מסמכים</CardTitle>
+              <CardDescription>
+                ארכיון דיגיטלי מרכזי למסמכים עסקיים עם שיוך ללקוחות, פרויקטים, משימות והזמנות.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">{filteredDocuments.length} מוצגים</Badge>
+              <Badge variant="secondary">{linkedCount} משויכים</Badge>
+              <Badge variant="secondary">{categorizedCount} עם קטגוריה</Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <AdaptiveGrid variant="formTwoLoose">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">חיפוש</div>
+              <div className="relative">
+                <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pe-10"
+                  placeholder="חיפוש לפי שם קובץ, קטגוריה, לקוח, פרויקט..."
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">קיבוץ</div>
+              <SelectField value={groupBy} onChange={setGroupBy} ariaLabel="קיבוץ מסמכים">
+                <option value="entity">לפי ישות משויכת</option>
+                <option value="type">לפי קטגוריית מסמך</option>
+                <option value="kind">לפי סוג קובץ</option>
+                <option value="customer">לפי לקוח</option>
+                <option value="project">לפי פרויקט</option>
+              </SelectField>
+            </div>
+          </AdaptiveGrid>
+
+          <AdaptiveGrid variant="customersFilters">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">ישות</div>
+              <SelectField value={entityType} onChange={setEntityType} ariaLabel="סינון לפי ישות">
+                <option value="">הכול</option>
+                <option value="project">פרויקטים</option>
+                <option value="task">משימות</option>
+                <option value="customer">לקוחות</option>
+                <option value="order">הזמנות</option>
+                <option value="unlinked">ללא שיוך</option>
+              </SelectField>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">קטגוריה</div>
+              <SelectField
+                value={documentType}
+                onChange={setDocumentType}
+                ariaLabel="סינון לפי קטגוריה"
+              >
+                <option value="">כל הקטגוריות</option>
+                {documentTypeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">לקוח</div>
+              <SelectField value={customerId} onChange={setCustomerId} ariaLabel="סינון לפי לקוח">
+                <option value="">כל הלקוחות</option>
+                {customerOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">פרויקט</div>
+              <SelectField value={projectId} onChange={setProjectId} ariaLabel="סינון לפי פרויקט">
+                <option value="">כל הפרויקטים</option>
+                {projectOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          </AdaptiveGrid>
+
+          <AdaptiveGrid variant="formTwoLoose">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">סוג קובץ</div>
+              <SelectField value={fileKind} onChange={setFileKind} ariaLabel="סינון לפי סוג קובץ">
+                <option value="">כל הסוגים</option>
+                <option value="pdf">PDF</option>
+                <option value="image">תמונות</option>
+                <option value="document">מסמכים</option>
+                <option value="spreadsheet">גיליונות</option>
+                <option value="presentation">מצגות</option>
+                <option value="video">וידאו</option>
+                <option value="archive">ארכיונים</option>
+                <option value="other">אחר</option>
+              </SelectField>
+            </div>
+
+            <div className="flex items-end justify-between gap-3">
+              <div className="text-xs text-muted-foreground">
+                {isTruncated
+                  ? `מוצגים ${documents.length} מתוך ${totalDocuments} מסמכים. כדאי להוסיף בהמשך עימוד אם הארכיון ממשיך לגדול.`
+                  : `נטענו ${totalDocuments} מסמכים לארכיון.`}
+              </div>
+              <Button variant="outline" onClick={resetFilters}>
+                איפוס סינונים
+              </Button>
+            </div>
+          </AdaptiveGrid>
+        </CardContent>
+      </Card>
+
+      {error ? (
+        <Card>
+          <CardContent className="pt-6 text-sm text-destructive">
+            שגיאה בטעינת ארכיון המסמכים: {error}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {groupedDocuments.length === 0 ? (
+        <Card>
+          <CardContent className="flex min-h-40 flex-col items-center justify-center gap-3 pt-6 text-center">
+            <FolderOpen className="h-8 w-8 text-muted-foreground" />
+            <div className="space-y-1">
+              <div className="font-medium">לא נמצאו מסמכים לסינון שבחרת</div>
+              <div className="text-sm text-muted-foreground">
+                נסה להרחיב את החיפוש או לאפס את הסינונים.
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        groupedDocuments.map((group) => (
+          <Card key={group.label}>
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-lg">{group.label}</CardTitle>
+                  <CardDescription>{group.items.length} מסמכים</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {group.items.map((doc) => {
+                const KindIcon = fileKindIcon(doc.file_kind);
+                return (
+                  <div
+                    key={doc.id}
+                    className="rounded-2xl border border-border/70 bg-background/70 p-4"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-2xl bg-muted p-3 text-muted-foreground">
+                            <KindIcon className="h-5 w-5" />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="font-medium">{doc.title}</div>
+                              <Badge variant="outline">{fileKindLabel(doc.file_kind)}</Badge>
+                              {doc.document_type ? (
+                                <Badge variant="secondary">{doc.document_type}</Badge>
+                              ) : (
+                                <Badge variant="outline">ללא קטגוריה</Badge>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                              <span>הועלה: {formatDate(doc.uploaded_at)}</span>
+                              {doc.file_name ? <span>קובץ: {doc.file_name}</span> : null}
+                              {doc.storage_key ? <span>נתיב: {doc.storage_key}</span> : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          {doc.linked_entities.length > 0 ? (
+                            doc.linked_entities.map((entity) =>
+                              entity.href ? (
+                                <Link
+                                  key={`${entity.type}:${entity.id}`}
+                                  href={entity.href}
+                                  className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background px-3 py-1 text-foreground hover:bg-accent"
+                                >
+                                  <span>{entityTypeLabel(entity.type)}:</span>
+                                  <span>{entity.label}</span>
+                                </Link>
+                              ) : (
+                                <span
+                                  key={`${entity.type}:${entity.id}`}
+                                  className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background px-3 py-1"
+                                >
+                                  <span>{entityTypeLabel(entity.type)}:</span>
+                                  <span>{entity.label}</span>
+                                </span>
+                              )
+                            )
+                          ) : (
+                            <span className="inline-flex items-center rounded-full border border-dashed px-3 py-1 text-muted-foreground">
+                              ללא שיוך
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
+                          <div>
+                            <span className="font-medium text-foreground">לקוחות:</span>{" "}
+                            {doc.customers.length > 0
+                              ? doc.customers.map((item) => item.label).join(", ")
+                              : "—"}
+                          </div>
+                          <div>
+                            <span className="font-medium text-foreground">פרויקטים:</span>{" "}
+                            {doc.projects.length > 0
+                              ? doc.projects.map((item) => item.label).join(", ")
+                              : "—"}
+                          </div>
+                          <div>
+                            <span className="font-medium text-foreground">משימות:</span>{" "}
+                            {doc.tasks.length > 0 ? doc.tasks.map((item) => item.label).join(", ") : "—"}
+                          </div>
+                          <div>
+                            <span className="font-medium text-foreground">הזמנות:</span>{" "}
+                            {doc.orders.length > 0
+                              ? doc.orders.map((item) => item.label).join(", ")
+                              : "—"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        {doc.url ? (
+                          <Button asChild variant="outline" size="sm">
+                            <a href={doc.url} target="_blank" rel="noreferrer">
+                              <ExternalLink className="h-4 w-4" />
+                              פתיחה
+                            </a>
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditDialogDoc(doc);
+                            setEditTagValue(doc.document_type ?? "");
+                          }}
+                        >
+                          <Tag className="h-4 w-4" />
+                          קטגוריה
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDeleteDialogDoc(doc)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          מחיקה
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        ))
+      )}
+
+      <Dialog
+        open={Boolean(editDialogDoc)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditDialogDoc(null);
+            setEditTagValue("");
+          }
+        }}
+      >
+        <AdaptiveDialog size="formMd">
+          <DialogHeader>
+            <DialogTitle>עדכון קטגוריית מסמך</DialogTitle>
+            <DialogDescription>
+              שינוי הערך של `documents.document_type` עבור המסמך הנבחר.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-3">
+            <div className="text-sm font-medium">{editDialogDoc?.title ?? "מסמך"}</div>
+            <Input
+              value={editTagValue}
+              onChange={(event) => setEditTagValue(event.target.value)}
+              placeholder="לדוגמה: חשבונית, חוזה, תעודת משלוח"
+              aria-label="קטגוריית מסמך"
+            />
+          </div>
+          <DialogFooter className="mt-6">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setEditDialogDoc(null);
+                setEditTagValue("");
+              }}
+            >
+              ביטול
+            </Button>
+            <Button type="button" onClick={() => void saveTag()} disabled={isPending}>
+              {isPending ? "שומר..." : "שמירה"}
+            </Button>
+          </DialogFooter>
+        </AdaptiveDialog>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteDialogDoc)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteDialogDoc(null);
+        }}
+      >
+        <AdaptiveDialog size="formMd">
+          <DialogHeader>
+            <DialogTitle>מחיקת מסמך</DialogTitle>
+            <DialogDescription>
+              הפעולה תמחק את קובץ האחסון ואת כל הקישורים של המסמך.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 text-sm">
+            האם למחוק את <span className="font-medium">{deleteDialogDoc?.title ?? "המסמך"}</span>?
+          </div>
+          <DialogFooter className="mt-6">
+            <Button type="button" variant="secondary" onClick={() => setDeleteDialogDoc(null)}>
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void deleteDocument()}
+              disabled={isPending}
+            >
+              {isPending ? "מוחק..." : "מחיקה"}
+            </Button>
+          </DialogFooter>
+        </AdaptiveDialog>
+      </Dialog>
+    </div>
+  );
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -35,7 +35,9 @@ export default function AppShell({
 
   return (
     <div className="flex min-h-screen w-full bg-transparent">
-      <TopNavigationProgress />
+      <Suspense fallback={null}>
+        <TopNavigationProgress />
+      </Suspense>
       {sidebar.length > 0 && <AppSidebar items={sidebar} appName={appName} />}
       <div className="flex flex-1 flex-col min-w-0">
         <TopBar appName={appName} userName={userName} showSearch={showSearch} />

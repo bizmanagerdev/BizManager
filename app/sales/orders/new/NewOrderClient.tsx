@@ -396,7 +396,7 @@ export default function NewOrderClient({
           if (!res.ok) throw new Error(json.error ?? "Product search failed");
 
           const remoteProducts = (json.products ?? [])
-            .map((row) => {
+            .map((row): ProductOption => {
               const id = getString(row, ["id"]) ?? "";
               const name = getString(row, ["name", "product_name", "title", "sku"]) ?? "מוצר";
               const code = getString(row, ["sku", "code", "barcode"]);

@@ -22,13 +22,47 @@ export type OrderPaymentRow = {
 };
 
 export const ORDER_PAYMENT_METHOD_OPTIONS = [
-  { value: "cash", label: "מזומן" },
-  { value: "bank_transfer", label: "העברה בנקאית" },
-  { value: "credit_card", label: "כרטיס אשראי" },
-  { value: "check", label: "צ'ק" },
-  { value: "bit", label: "ביט" },
-  { value: "other", label: "אחר" },
+  { value: "cash", label: "Cash" },
+  { value: "bank_transfer", label: "Bank transfer" },
+  { value: "credit_card", label: "Credit card" },
+  { value: "check", label: "Check" },
+  { value: "bit", label: "Bit" },
+  { value: "other", label: "Other" },
 ] as const;
+
+function normalizePaymentMethodValue(method: string | null | undefined) {
+  const raw = typeof method === "string" ? method.trim() : "";
+  if (!raw) return "";
+
+  const normalized = raw.toLowerCase();
+
+  if (normalized === "cash" || raw.includes("מזומן")) return "cash";
+  if (
+    normalized === "bank_transfer" ||
+    normalized === "bank transfer" ||
+    raw.includes("העברה בנקאית")
+  ) {
+    return "bank_transfer";
+  }
+  if (
+    normalized === "credit_card" ||
+    normalized === "credit card" ||
+    raw.includes("אשראי") ||
+    raw.includes("כרטיס")
+  ) {
+    return "credit_card";
+  }
+  if (normalized === "check" || normalized === "cheque" || raw.includes("צ'ק")) {
+    return "check";
+  }
+  if (normalized === "bit" || raw.includes("ביט")) return "bit";
+  if (raw.includes("העביר דרך חבר")) return "friend_transfer";
+  if (raw.includes("דלק")) return "fuel";
+  if (raw.includes("עבד")) return "labor";
+  if (normalized === "other" || raw.includes("אחר")) return "other";
+
+  return raw;
+}
 
 export function toNumber(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
@@ -91,21 +125,27 @@ export function paymentStatusLabel(status: string) {
 }
 
 export function paymentMethodLabel(method: string | null | undefined) {
-  switch (method) {
+  switch (normalizePaymentMethodValue(method)) {
     case "cash":
-      return "מזומן";
+      return "Cash";
     case "bank_transfer":
-      return "העברה בנקאית";
+      return "Bank transfer";
     case "credit_card":
-      return "כרטיס אשראי";
+      return "Credit card";
     case "check":
-      return "צ'ק";
+      return "Check";
     case "bit":
-      return "ביט";
+      return "Bit";
+    case "friend_transfer":
+      return "Transferred via friend";
+    case "fuel":
+      return "Fuel";
+    case "labor":
+      return "Labor";
     case "other":
-      return "אחר";
+      return "Other";
     default:
-      return method || "-";
+      return normalizePaymentMethodValue(method) || "-";
   }
 }
 

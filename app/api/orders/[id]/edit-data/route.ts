@@ -115,7 +115,7 @@ export async function GET(
     new Map(
       [selectedCustomer, ...((baseCustomers ?? []) as Row[])]
         .filter(Boolean)
-        .map((row) => [getString(row as Row, ["customer_id", "id"]) ?? "", row as Row])
+        .map((row) => [getString(row as Row, ["customer_id", "id"]) ?? "", row as Row] as const)
         .filter(([key]) => key)
     ).values()
   );

@@ -310,7 +310,22 @@ export default async function ProjectPage({
           url,
         };
       })
-      .filter(Boolean)
+  );
+
+  const normalizedProjectDocuments = projectDocumentsUnique.filter(
+    (
+      document
+    ): document is {
+      document_id: string;
+      storage_key: string | null;
+      file_name: string | null;
+      title: string | null;
+      document_type: string | null;
+      entity_type: string | null;
+      entity_id: string | null;
+      uploaded_at: string | null;
+      url: string | null;
+    } => Boolean(document)
   );
 
   const status = typeof overview?.status === "string" ? overview.status : "";
@@ -398,6 +413,8 @@ export default async function ProjectPage({
           <div className="text-destructive text-sm">
             שגיאה בטעינת פרויקט: {overviewError.message}
           </div>
+        ) : !overview ? (
+          <div className="text-sm text-muted-foreground">הפרויקט לא נמצא.</div>
         ) : (
           <ProjectTabsClient
             overview={overview}
@@ -405,14 +422,14 @@ export default async function ProjectPage({
             tasks={tasks ?? null}
             projectTasks={projectTasks ?? []}
             projectTasksError={projectTasksError?.message ?? null}
-            projectDocuments={projectDocumentsUnique}
+            projectDocuments={normalizedProjectDocuments}
             projectDocumentsError={projectDocumentsErrorMessage}
             assignableUsers={(assignableUsers as AssignableUser[] | null) ?? []}
             assignableUsersError={assignableUsersError?.message ?? null}
             expenses={expenseList}
             expensesError={projectExpensesError?.message ?? expensesError?.message ?? null}
             payments={payments}
-            paymentsError={paymentsError?.message ?? null}
+            paymentsError={paymentsError}
           />
         )}
       </div>

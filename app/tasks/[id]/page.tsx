@@ -133,7 +133,7 @@ export default async function TaskPage({
           );
 
           const resolved = await Promise.all(
-            (links as DocumentLinkRow[]).map(async (l) => {
+            (links as DocumentLinkRow[]).map(async (l): Promise<Attachment | null> => {
               const docId = typeof l.document_id === "string" ? l.document_id : "";
               const doc = docById.get(docId);
               if (!doc) return null;

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
 import { formatOrderDate } from "@/lib/orders/format";
+import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 
 type Row = Record<string, unknown>;
 
@@ -71,23 +72,6 @@ function formatPaymentStatus(status: string | null) {
       return "הוחזר";
     default:
       return status ?? "-";
-  }
-}
-
-function formatPaymentMethod(method: string | null) {
-  switch ((method ?? "").toLowerCase()) {
-    case "cash":
-      return "מזומן";
-    case "bank_transfer":
-      return "העברה בנקאית";
-    case "credit_card":
-      return "כרטיס אשראי";
-    case "check":
-      return "צ׳ק";
-    case "bit":
-      return "ביט";
-    default:
-      return method ?? "-";
   }
 }
 
@@ -240,7 +224,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                         </span>
                       </div>
                       <div className="mt-1 text-muted-foreground">
-                        אמצעי: {formatPaymentMethod(getString(payment, "payment_method"))}
+                        אמצעי: {paymentMethodLabel(getString(payment, "payment_method"))}
                         {getString(payment, "reference_number")
                           ? ` | אסמכתא: ${getString(payment, "reference_number")}`
                           : ""}

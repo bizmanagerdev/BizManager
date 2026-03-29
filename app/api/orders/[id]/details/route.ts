@@ -3,14 +3,14 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 type Row = Record<string, unknown>;
 
-function getString(row: Row, key: string) {
-  const value = row[key];
+function getString(row: Row | null | undefined, key: string) {
+  const value = row?.[key];
   return typeof value === "string" ? value : null;
 }
 
-function getNumber(row: Row, key: string) {
-  const value = row[key];
-  if (typeof value === "number") return value;
+function getNumber(row: Row | null | undefined, key: string) {
+  const value = row?.[key];
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "string") {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
@@ -105,14 +105,12 @@ export async function GET(
     return NextResponse.json({ error: productsError.message }, { status: 400 });
   }
 
-  const totalAmount = getNumber((financials as Row | null) ?? undefined, "total_amount") ?? 0;
-  const totalPaid = getNumber((financials as Row | null) ?? undefined, "total_paid") ?? 0;
-  const paymentStatus =
-    getString((financials as Row | null) ?? undefined, "payment_status") ?? "unpaid";
-  const paymentCount =
-    getNumber((financials as Row | null) ?? undefined, "payment_count") ?? (payments ?? []).length;
-  const remainingBalance =
-    getNumber((financials as Row | null) ?? undefined, "remaining_balance") ?? 0;
+  const financialRow = (financials as Row | null) ?? null;
+  const totalAmount = getNumber(financialRow, "total_amount") ?? 0;
+  const totalPaid = getNumber(financialRow, "total_paid") ?? 0;
+  const paymentStatus = getString(financialRow, "payment_status") ?? "unpaid";
+  const paymentCount = getNumber(financialRow, "payment_count") ?? (payments ?? []).length;
+  const remainingBalance = getNumber(financialRow, "remaining_balance") ?? 0;
 
   return NextResponse.json({
     order,

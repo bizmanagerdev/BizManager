@@ -1,6 +1,8 @@
 import AppShell from "@/components/layout/AppShell";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import {
+  getCashFlowCumulativeTrend,
+  getCashFlowProjectBreakdown,
   getCashFlowSummary,
   getCashFlowTransactions,
   getCashFlowTrend,
@@ -9,6 +11,8 @@ import {
 } from "@/lib/cashflow";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import CashFlowFilters from "@/app/dashboard/cashflow/CashFlowFilters";
+import CashFlowBalanceChart from "@/app/dashboard/cashflow/CashFlowBalanceChart";
+import CashFlowProjectBreakdown from "@/app/dashboard/cashflow/CashFlowProjectBreakdown";
 import CashFlowSummaryCards from "@/app/dashboard/cashflow/CashFlowSummaryCards";
 import CashFlowTrend from "@/app/dashboard/cashflow/CashFlowTrend";
 import CashFlowTransactions from "@/app/dashboard/cashflow/CashFlowTransactions";
@@ -54,10 +58,12 @@ export default async function CashFlowPageContent({
 }) {
   const filters = normalizeCashFlowSearchParams(searchParams);
 
-  const [summary, transactions, trend, projectOptions] = await Promise.all([
+  const [summary, transactions, trend, cumulativeTrend, projectBreakdown, projectOptions] = await Promise.all([
     getCashFlowSummary(supabase, filters),
     getCashFlowTransactions(supabase, filters),
     getCashFlowTrend(supabase, filters),
+    getCashFlowCumulativeTrend(supabase, filters),
+    getCashFlowProjectBreakdown(supabase, filters),
     getProjectOptions(supabase),
   ]);
 
@@ -82,7 +88,12 @@ export default async function CashFlowPageContent({
 
         <CashFlowSummaryCards summary={summary} />
 
-        <CashFlowTrend rows={trend} />
+        <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <CashFlowTrend rows={trend} />
+          <CashFlowBalanceChart rows={cumulativeTrend} />
+        </section>
+
+        <CashFlowProjectBreakdown rows={projectBreakdown} />
 
         <CashFlowTransactions
           basePath={basePath}

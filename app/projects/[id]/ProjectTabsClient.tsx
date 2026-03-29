@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 
 export type ProjectOverview = {
   id: string;
@@ -740,10 +741,10 @@ export default function ProjectTabsClient({
       const date = p.payment_date ?? p.created_at ?? null;
       const amount = toNumber(p.amount_total);
       const reference = p.reference_number ?? "";
-      const method = p.payment_method ?? "";
+      const method = paymentMethodLabel(p.payment_method);
 
       const meta: string[] = [];
-      if (method) meta.push(method);
+      if (method && method !== "-") meta.push(method);
       if (reference) meta.push(`אסמכתא: ${reference}`);
 
       return {
@@ -1163,7 +1164,7 @@ export default function ProjectTabsClient({
                   {paymentsUi.map((p) => {
                     const amount = toNumber(p.amount_total);
                     const date = p.payment_date ?? p.created_at ?? null;
-                    const method = p.payment_method ?? "—";
+                    const method = paymentMethodLabel(p.payment_method);
                     const reference = p.reference_number ?? "";
 
                     return (

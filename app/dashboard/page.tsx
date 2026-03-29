@@ -3,8 +3,10 @@ import AppShell from "@/components/layout/AppShell";
 import { AdaptiveGrid, PageStack, ResponsiveMetricValue } from "@/components/layout/page-layout";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import DashboardActions from "@/app/dashboard/DashboardActions";
+import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { getCashFlowTrend, type CashFlowTrendPoint } from "@/lib/cashflow";
 
 type Row = Record<string, unknown>;
 
@@ -88,6 +90,8 @@ export default async function DashboardPage() {
   const { profile, supabase } = await requireProfile();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const recentCashFlowFrom = new Date(today);
+  recentCashFlowFrom.setMonth(recentCashFlowFrom.getMonth() - 5);
 
   const [
     { data: dashboardRow, error: dashboardError },
@@ -96,6 +100,7 @@ export default async function DashboardPage() {
     { data: productRows, error: productError },
     { data: customerRows, error: customerError },
     { data: userRows, error: userError },
+    cashFlowOverviewResult,
   ] = await Promise.all([
     supabase
       .from("operations_dashboard_view")
@@ -125,6 +130,15 @@ export default async function DashboardPage() {
       .order("customer_name", { ascending: true })
       .range(0, 49),
     supabase.from("users").select("id,full_name,email,active").order("full_name", { ascending: true }).range(0, 499),
+    getCashFlowTrend(supabase, {
+      from: recentCashFlowFrom.toISOString().slice(0, 10),
+      to: today.toISOString().slice(0, 10),
+    })
+      .then((rows) => ({ data: rows, error: null as string | null }))
+      .catch((error: { message?: string }) => ({
+        data: [] as CashFlowTrendPoint[],
+        error: error?.message ?? "שגיאה בטעינת נתוני תזרים",
+      })),
   ]);
 
   const monthlyRevenue = getNumber((dashboardRow as Row | null) ?? undefined, "monthly_revenue") ?? 0;
@@ -190,6 +204,7 @@ export default async function DashboardPage() {
     productError ? `מוצרים: ${productError.message}` : null,
     customerError ? `לקוחות: ${customerError.message}` : null,
     userError ? `משתמשים: ${userError.message}` : null,
+    cashFlowOverviewResult.error ? `תזרים: ${cashFlowOverviewResult.error}` : null,
   ].filter(Boolean) as string[];
 
   const alertItems = [
@@ -260,9 +275,7 @@ export default async function DashboardPage() {
           <MetricCard
             title="משימות פתוחות"
             value={formatCount(openTasksCount)}
-            subtitle={
-              overdueTasksCount > 0 ? `${formatCount(overdueTasksCount)} באיחור` : "ללא איחור"
-            }
+            subtitle={overdueTasksCount > 0 ? `${formatCount(overdueTasksCount)} באיחור` : "ללא איחור"}
           />
         </AdaptiveGrid>
 
@@ -283,6 +296,10 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
+          <CashFlowOverviewCard rows={cashFlowOverviewResult.data} />
+        </AdaptiveGrid>
+
+        <AdaptiveGrid variant="dashboardMain">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">התראות</CardTitle>

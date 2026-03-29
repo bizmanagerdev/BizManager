@@ -849,11 +849,11 @@ export default function DashboardActions({
                   value={incomeMethod}
                   onChange={(e) => setIncomeMethod(e.target.value)}
                 >
-                  <option value="bank_transfer">העברה בנקאית</option>
-                  <option value="cash">מזומן</option>
-                  <option value="credit_card">כרטיס אשראי</option>
-                  <option value="check">צ&apos;ק</option>
-                  <option value="other">אחר</option>
+                  <option value="bank_transfer">Bank transfer</option>
+                  <option value="cash">Cash</option>
+                  <option value="credit_card">Credit card</option>
+                  <option value="check">Check</option>
+                  <option value="other">Other</option>
                 </select>
               </label>
 

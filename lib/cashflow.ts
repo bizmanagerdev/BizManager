@@ -64,6 +64,18 @@ export type CashFlowTrendPoint = {
   net: number;
 };
 
+export type CashFlowCumulativePoint = CashFlowTrendPoint & {
+  balance: number;
+};
+
+export type CashFlowProjectBreakdownPoint = {
+  projectId: string | null;
+  projectName: string;
+  inflow: number;
+  outflow: number;
+  net: number;
+};
+
 export type ProjectOption = {
   id: string;
   name: string;
@@ -200,7 +212,7 @@ async function scanCashFlowEntries<T extends Record<string, unknown>>(
 
     if (error) throw error;
 
-    const rows = (data ?? []) as T[];
+    const rows = (data ?? []) as unknown as T[];
     if (rows.length === 0) break;
 
     await onChunk(rows);
@@ -317,6 +329,65 @@ export async function getCashFlowTrend(
   );
 
   return [...grouped.values()].sort((a, b) => a.period.localeCompare(b.period));
+}
+
+export async function getCashFlowCumulativeTrend(
+  supabase: SupabaseClient,
+  filters: CashFlowFilters
+): Promise<CashFlowCumulativePoint[]> {
+  const trend = await getCashFlowTrend(supabase, filters);
+
+  let balance = 0;
+  return trend.map((point) => {
+    balance += point.net;
+    return {
+      ...point,
+      balance,
+    };
+  });
+}
+
+type CashFlowProjectScanRow = {
+  project_id: string | null;
+  project_name: string | null;
+  type: CashFlowEntryRow["type"];
+  amount: CashFlowEntryRow["amount"];
+};
+
+export async function getCashFlowProjectBreakdown(
+  supabase: SupabaseClient,
+  filters: CashFlowFilters
+): Promise<CashFlowProjectBreakdownPoint[]> {
+  const grouped = new Map<string, CashFlowProjectBreakdownPoint>();
+
+  await scanCashFlowEntries<CashFlowProjectScanRow>(
+    supabase,
+    filters,
+    "project_id,project_name,type,amount",
+    (rows) => {
+      rows.forEach((row) => {
+        const key = row.project_id ?? "__unassigned__";
+        const current = grouped.get(key) ?? {
+          projectId: row.project_id,
+          projectName: row.project_name?.trim() || "ללא פרויקט",
+          inflow: 0,
+          outflow: 0,
+          net: 0,
+        };
+
+        const amount = Math.abs(toNumber(row.amount));
+        if (row.type === "income") current.inflow += amount;
+        if (row.type === "expense") current.outflow += amount;
+        current.net = current.inflow - current.outflow;
+
+        grouped.set(key, current);
+      });
+    }
+  );
+
+  return [...grouped.values()]
+    .sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || b.inflow + b.outflow - (a.inflow + a.outflow))
+    .slice(0, 8);
 }
 
 export async function getProjectOptions(
