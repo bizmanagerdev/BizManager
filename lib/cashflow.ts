@@ -1,16 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getDerivedPaymentProjectId } from "@/lib/orders/globalProject";
-
-/**
- * Schema decision summary
- * - source for inflow: `financial_payments_view`
- * - source for outflow: `financial_expenses_view`
- * - source for unified list: normalized union built in this module because `cash_flow_view`
- *   does not currently expose a confirmed normalized shape for date/project/amount/type/reference
- * - date field used: `payment_date` for inflow, `expense_date` for outflow
- * - amount sign conventions used: source amounts are treated as positive values; outflow is
- *   negated internally for net/trend math and displayed as an absolute value in the UI
- */
 
 export type CashFlowType = "inflow" | "outflow";
 
@@ -23,25 +11,27 @@ export type CashFlowFilters = {
   pageSize?: number;
 };
 
-type PaymentRow = {
+type CashFlowEntryRow = {
   id: string;
-  payment_date: string;
-  amount_total: number | string;
-  payment_method: string | null;
-  target_type: string | null;
-  target_id: string | null;
-  customer_id: string | null;
-  order_id: string | null;
-};
-
-type ExpenseRow = {
-  expense_id: string;
-  expense_date: string;
-  amount: number | string;
-  category: string | null;
-  description: string | null;
+  entry_date: string;
+  type: "income" | "expense";
+  amount: number | string | null;
+  signed_amount: number | string | null;
   project_id: string | null;
   project_name: string | null;
+  description: string | null;
+  reference: string | null;
+};
+
+type CashFlowSummaryScanRow = {
+  type: CashFlowEntryRow["type"];
+  amount: CashFlowEntryRow["amount"];
+};
+
+type CashFlowTrendScanRow = {
+  entry_date: string;
+  type: CashFlowEntryRow["type"];
+  amount: CashFlowEntryRow["amount"];
 };
 
 type ProjectOptionRow = {
@@ -87,6 +77,10 @@ export type CashFlowTransactionsResult = {
   hasNextPage: boolean;
 };
 
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+const SCAN_CHUNK_SIZE = 500;
+
 function toNumber(value: number | string | null | undefined) {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : 0;
@@ -126,16 +120,8 @@ function normalizePage(value: number | string | null | undefined) {
 function normalizePageSize(value: number | string | null | undefined) {
   const parsed =
     typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-  if (!Number.isFinite(parsed) || parsed <= 0) return 20;
-  return Math.min(Math.floor(parsed), 100);
-}
-
-function sortByDateDesc<T extends { date: string }>(rows: T[]) {
-  return [...rows].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-}
-
-function clampToEndOfDay(date: string) {
-  return `${date}T23:59:59.999`;
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_PAGE_SIZE;
+  return Math.min(Math.floor(parsed), MAX_PAGE_SIZE);
 }
 
 function monthPeriod(date: Date) {
@@ -146,160 +132,102 @@ function dayPeriod(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-function labelForPayment(row: PaymentRow) {
-  const parts = [
-    row.payment_method?.trim() || null,
-    row.order_id ? `הזמנה ${row.order_id.slice(0, 8)}` : null,
-  ].filter(Boolean);
-
-  return parts.length > 0 ? parts.join(" - ") : "תשלום שהתקבל";
+function normalizeEntryType(value: CashFlowEntryRow["type"]): CashFlowType {
+  return value === "income" ? "inflow" : "outflow";
 }
 
-function labelForExpense(row: ExpenseRow) {
-  const parts = [row.category?.trim() || null, row.description?.trim() || null].filter(Boolean);
-  return parts.length > 0 ? parts.join(" - ") : "הוצאה";
-}
+function normalizeCashFlowEntry(row: CashFlowEntryRow): CashFlowTransaction | null {
+  if (!row.id || !row.entry_date) return null;
 
-async function getProjectMap(supabase: SupabaseClient, projectIds?: string[]) {
-  let query = supabase.from("project_dashboard_view").select("id,name").limit(500);
+  const type = normalizeEntryType(row.type);
+  const amount = Math.abs(toNumber(row.amount));
+  const signedAmount =
+    row.signed_amount === null || row.signed_amount === undefined
+      ? type === "inflow"
+        ? amount
+        : -amount
+      : toNumber(row.signed_amount);
 
-  if (projectIds && projectIds.length > 0) {
-    query = query.in("id", projectIds);
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-
-  return new Map(
-    ((data ?? []) as ProjectOptionRow[])
-      .filter((row) => row.id)
-      .map((row) => [row.id, row.name?.trim() || "פרויקט"])
-  );
-}
-
-async function getPaymentRows(supabase: SupabaseClient, filters: CashFlowFilters) {
-  if (normalizeType(filters.type) === "outflow") {
-    return [] as PaymentRow[];
-  }
-
-  let query = supabase
-    .from("financial_payments_view")
-    .select("id,payment_date,amount_total,payment_method,target_type,target_id,customer_id,order_id")
-    .order("payment_date", { ascending: false })
-    .limit(5000);
-
-  const from = normalizeDateInput(filters.from);
-  const to = normalizeDateInput(filters.to);
-
-  if (from) query = query.gte("payment_date", from);
-  if (to) query = query.lte("payment_date", clampToEndOfDay(to));
-
-  const { data, error } = await query;
-  if (error) throw error;
-
-  const rows = (data ?? []) as PaymentRow[];
-  const projectId = normalizeProjectId(filters.projectId);
-
-  if (!projectId) return rows;
-
-  return rows.filter(
-    (row) =>
-      getDerivedPaymentProjectId({
-        targetType: row.target_type,
-        targetId: row.target_id,
-      }) === projectId
-  );
-}
-
-async function getExpenseRows(supabase: SupabaseClient, filters: CashFlowFilters) {
-  if (normalizeType(filters.type) === "inflow") {
-    return [] as ExpenseRow[];
-  }
-
-  let query = supabase
-    .from("financial_expenses_view")
-    .select("expense_id,expense_date,amount,category,description,project_id,project_name")
-    .order("expense_date", { ascending: false })
-    .limit(5000);
-
-  const from = normalizeDateInput(filters.from);
-  const to = normalizeDateInput(filters.to);
-  const projectId = normalizeProjectId(filters.projectId);
-
-  if (from) query = query.gte("expense_date", from);
-  if (to) query = query.lte("expense_date", clampToEndOfDay(to));
-  if (projectId) query = query.eq("project_id", projectId);
-
-  const { data, error } = await query;
-  if (error) throw error;
-
-  return (data ?? []) as ExpenseRow[];
-}
-
-async function getUnifiedTransactions(supabase: SupabaseClient, filters: CashFlowFilters) {
-  const [paymentRows, expenseRows] = await Promise.all([
-    getPaymentRows(supabase, filters),
-    getExpenseRows(supabase, filters),
-  ]);
-
-  const paymentProjectIds = paymentRows
-    .map((row) =>
-      getDerivedPaymentProjectId({
-        targetType: row.target_type,
-        targetId: row.target_id,
-      })
-    )
-    .filter((value): value is string => Boolean(value));
-
-  const projectMap = await getProjectMap(supabase, Array.from(new Set(paymentProjectIds)));
-
-  const inflowRows: CashFlowTransaction[] = paymentRows.map((row) => {
-    const projectId = getDerivedPaymentProjectId({
-      targetType: row.target_type,
-      targetId: row.target_id,
-    });
-
-    return {
-      id: `payment:${row.id}`,
-      date: row.payment_date,
-      amount: toNumber(row.amount_total),
-      signedAmount: toNumber(row.amount_total),
-      type: "inflow",
-      project_id: projectId,
-      project_name:
-        projectId && projectMap.has(projectId) ? projectMap.get(projectId) ?? "פרויקט" : null,
-      description: labelForPayment(row),
-      reference: row.order_id ?? row.customer_id ?? row.target_id ?? null,
-    };
-  });
-
-  const outflowRows: CashFlowTransaction[] = expenseRows.map((row) => ({
-    id: `expense:${row.expense_id}`,
-    date: row.expense_date,
-    amount: toNumber(row.amount),
-    signedAmount: -Math.abs(toNumber(row.amount)),
-    type: "outflow",
-    project_id: row.project_id,
+  return {
+    id: row.id,
+    date: row.entry_date,
+    amount,
+    signedAmount,
+    type,
+    project_id: normalizeProjectId(row.project_id),
     project_name: row.project_name?.trim() || null,
-    description: labelForExpense(row),
-    reference: row.expense_id,
-  }));
+    description: row.description?.trim() || null,
+    reference: row.reference?.trim() || null,
+  };
+}
 
-  return sortByDateDesc([...inflowRows, ...outflowRows]);
+function applyCashFlowFilters<TQuery extends {
+  gte: (column: string, value: string) => TQuery;
+  lte: (column: string, value: string) => TQuery;
+  eq: (column: string, value: string) => TQuery;
+}>(query: TQuery, filters: CashFlowFilters) {
+  const from = normalizeDateInput(filters.from);
+  const to = normalizeDateInput(filters.to);
+  const projectId = normalizeProjectId(filters.projectId);
+  const typeFilter = normalizeType(filters.type);
+
+  let nextQuery = query;
+
+  if (from) nextQuery = nextQuery.gte("entry_date", from);
+  if (to) nextQuery = nextQuery.lte("entry_date", to);
+  if (projectId) nextQuery = nextQuery.eq("project_id", projectId);
+  if (typeFilter === "inflow") nextQuery = nextQuery.eq("type", "income");
+  if (typeFilter === "outflow") nextQuery = nextQuery.eq("type", "expense");
+
+  return nextQuery;
+}
+
+async function scanCashFlowEntries<T extends Record<string, unknown>>(
+  supabase: SupabaseClient,
+  filters: CashFlowFilters,
+  selectColumns: string,
+  onChunk: (rows: T[]) => void | Promise<void>
+) {
+  for (let from = 0; ; from += SCAN_CHUNK_SIZE) {
+    const to = from + SCAN_CHUNK_SIZE - 1;
+    let query = supabase.from("cash_flow_entries_view").select(selectColumns);
+    query = applyCashFlowFilters(query, filters);
+
+    const { data, error } = await query
+      .order("entry_date", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+
+    const rows = (data ?? []) as T[];
+    if (rows.length === 0) break;
+
+    await onChunk(rows);
+
+    if (rows.length < SCAN_CHUNK_SIZE) break;
+  }
 }
 
 export async function getCashFlowSummary(
   supabase: SupabaseClient,
   filters: CashFlowFilters
 ): Promise<CashFlowSummary> {
-  const rows = await getUnifiedTransactions(supabase, filters);
+  let totalInflow = 0;
+  let totalOutflow = 0;
 
-  const totalInflow = rows
-    .filter((row) => row.type === "inflow")
-    .reduce((sum, row) => sum + row.amount, 0);
-  const totalOutflow = rows
-    .filter((row) => row.type === "outflow")
-    .reduce((sum, row) => sum + row.amount, 0);
+  await scanCashFlowEntries<CashFlowSummaryScanRow>(
+    supabase,
+    filters,
+    "type,amount",
+    (rows) => {
+      rows.forEach((row) => {
+        const amount = Math.abs(toNumber(row.amount));
+        if (row.type === "income") totalInflow += amount;
+        if (row.type === "expense") totalOutflow += amount;
+      });
+    }
+  );
 
   return {
     totalInflow,
@@ -314,16 +242,34 @@ export async function getCashFlowTransactions(
 ): Promise<CashFlowTransactionsResult> {
   const page = normalizePage(filters.page);
   const pageSize = normalizePageSize(filters.pageSize);
-  const rows = await getUnifiedTransactions(supabase, filters);
-  const start = (page - 1) * pageSize;
-  const pagedRows = rows.slice(start, start + pageSize);
+  const from = (page - 1) * pageSize;
+  const to = page * pageSize - 1;
+
+  let query = supabase.from("cash_flow_entries_view").select(
+    "id,entry_date,type,amount,signed_amount,project_id,project_name,description,reference",
+    { count: "estimated" }
+  );
+  query = applyCashFlowFilters(query, filters);
+
+  const { data, error, count } = await query
+    .order("entry_date", { ascending: false })
+    .order("id", { ascending: false })
+    .range(from, to);
+
+  if (error) throw error;
+
+  const rows = ((data ?? []) as CashFlowEntryRow[])
+    .map((row) => normalizeCashFlowEntry(row))
+    .filter((row): row is CashFlowTransaction => Boolean(row));
+
+  const totalCount = typeof count === "number" ? count : rows.length;
 
   return {
-    rows: pagedRows,
-    totalCount: rows.length,
+    rows,
+    totalCount,
     page,
     pageSize,
-    hasNextPage: start + pageSize < rows.length,
+    hasNextPage: typeof count === "number" ? to + 1 < count : rows.length === pageSize,
   };
 }
 
@@ -331,7 +277,6 @@ export async function getCashFlowTrend(
   supabase: SupabaseClient,
   filters: CashFlowFilters
 ): Promise<CashFlowTrendPoint[]> {
-  const rows = await getUnifiedTransactions(supabase, filters);
   const from = normalizeDateInput(filters.from);
   const to = normalizeDateInput(filters.to);
 
@@ -342,24 +287,34 @@ export async function getCashFlowTrend(
 
   const grouped = new Map<string, CashFlowTrendPoint>();
 
-  rows.forEach((row) => {
-    const date = new Date(row.date);
-    if (Number.isNaN(date.getTime())) return;
+  await scanCashFlowEntries<CashFlowTrendScanRow>(
+    supabase,
+    filters,
+    "entry_date,type,amount",
+    (rows) => {
+      rows.forEach((row) => {
+        if (!row.entry_date) return;
 
-    const period = useDailyGrouping ? dayPeriod(date) : monthPeriod(date);
-    const current = grouped.get(period) ?? {
-      period,
-      inflow: 0,
-      outflow: 0,
-      net: 0,
-    };
+        const date = new Date(row.entry_date);
+        if (Number.isNaN(date.getTime())) return;
 
-    if (row.type === "inflow") current.inflow += row.amount;
-    if (row.type === "outflow") current.outflow += row.amount;
-    current.net = current.inflow - current.outflow;
+        const period = useDailyGrouping ? dayPeriod(date) : monthPeriod(date);
+        const current = grouped.get(period) ?? {
+          period,
+          inflow: 0,
+          outflow: 0,
+          net: 0,
+        };
 
-    grouped.set(period, current);
-  });
+        const amount = Math.abs(toNumber(row.amount));
+        if (row.type === "income") current.inflow += amount;
+        if (row.type === "expense") current.outflow += amount;
+        current.net = current.inflow - current.outflow;
+
+        grouped.set(period, current);
+      });
+    }
+  );
 
   return [...grouped.values()].sort((a, b) => a.period.localeCompare(b.period));
 }
@@ -371,7 +326,7 @@ export async function getProjectOptions(
     .from("project_dashboard_view")
     .select("id,name")
     .order("name", { ascending: true })
-    .limit(500);
+    .range(0, 49);
 
   if (error) throw error;
 

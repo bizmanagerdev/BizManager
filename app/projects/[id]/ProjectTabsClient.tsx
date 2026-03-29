@@ -29,7 +29,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 
-type ProjectOverview = {
+export type ProjectOverview = {
   id: string;
   name: string;
   status: string;
@@ -47,7 +47,7 @@ type ProjectOverview = {
   updated_at: string;
 };
 
-type ProjectFinancials = {
+export type ProjectFinancials = {
   id: string;
   agreed_base_price: string | number | null;
   actual_price: string | number | null;
@@ -55,14 +55,14 @@ type ProjectFinancials = {
   gross_profit: string | number | null;
 } | null;
 
-type ProjectTaskProgress = {
+export type ProjectTaskProgress = {
   project_id: string;
   total_tasks: number | string | null;
   completed_tasks: number | string | null;
   open_tasks: number | string | null;
 } | null;
 
-type ProjectExpenseSummary = {
+export type ProjectExpenseSummary = {
   project_id: string;
   expense_count: number | string | null;
   total_expenses: number | string | null;
@@ -70,12 +70,12 @@ type ProjectExpenseSummary = {
   expenses_billed: number | string | null;
 } | null;
 
-type ExpenseListItem = {
+export type ExpenseListItem = {
   project_expense: Record<string, unknown>;
   expense: Record<string, unknown> | null;
 };
 
-type PaymentRow = {
+export type PaymentRow = {
   id: string;
   target_type: string;
   target_id: string;
@@ -90,7 +90,7 @@ type PaymentRow = {
   created_at: string | null;
 };
 
-type AssignableUser = {
+export type AssignableUser = {
   id: string;
   full_name: string | null;
   email: string;
@@ -98,7 +98,6 @@ type AssignableUser = {
   active: boolean | null;
 };
 
-type ProjectStatus = "planned" | "active" | "on_hold" | "completed" | "cancelled";
 type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
 type TaskPriority = "low" | "medium" | "high" | "urgent";
 
@@ -125,25 +124,6 @@ function formatDate(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("he-IL").format(date);
-}
-
-function inferKindFromFilename(name: string | null) {
-  const value = (name ?? "").toLowerCase();
-  const ext = value.includes(".") ? value.split(".").pop() ?? "" : "";
-  const imageExts = new Set([
-    "jpg",
-    "jpeg",
-    "png",
-    "gif",
-    "webp",
-    "bmp",
-    "svg",
-    "heic",
-  ]);
-  const videoExts = new Set(["mp4", "mov", "webm", "mkv", "avi", "m4v"]);
-  if (imageExts.has(ext)) return "image";
-  if (videoExts.has(ext)) return "video";
-  return "file";
 }
 
 function getString(row: Record<string, unknown> | null, key: string) {
@@ -264,8 +244,6 @@ export default function ProjectTabsClient({
   projectDocumentsError,
   assignableUsers,
   assignableUsersError,
-  expenseSummary,
-  expenseSummaryError,
   expenses,
   expensesError,
   payments,
@@ -290,8 +268,6 @@ export default function ProjectTabsClient({
   projectDocumentsError: string | null;
   assignableUsers: AssignableUser[];
   assignableUsersError: string | null;
-  expenseSummary: ProjectExpenseSummary;
-  expenseSummaryError: string | null;
   expenses: ExpenseListItem[];
   expensesError: string | null;
   payments: PaymentRow[];
@@ -537,8 +513,8 @@ export default function ProjectTabsClient({
       toast.loading("העלאה הושלמה — מעדכן רשימה...", { id: toastId });
       setPendingDocsRefresh(true);
       router.refresh();
-    } catch (e: any) {
-      toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: getErrorMessage(e) });
       setPendingDocsRefresh(false);
       setPendingDocsStuck(false);
       setPendingDocUploads((prev) => prev.map((p) => ({ ...p, status: "error" })));
@@ -603,8 +579,8 @@ export default function ProjectTabsClient({
       setEditTagDocumentId(null);
       setEditTagValue("");
       router.refresh();
-    } catch (e: any) {
-      toast.error("שגיאה בעדכון תג", { description: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.error("שגיאה בעדכון תג", { description: getErrorMessage(e) });
     } finally {
       setEditTagSaving(false);
     }
@@ -637,8 +613,8 @@ export default function ProjectTabsClient({
       setDeleteDocId(null);
       setDeleteDocName("");
       router.refresh();
-    } catch (e: any) {
-      toast.error("שגיאה במחיקה", { description: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.error("שגיאה במחיקה", { description: getErrorMessage(e) });
     } finally {
       setDeleteDocDeleting(false);
     }
@@ -698,9 +674,6 @@ export default function ProjectTabsClient({
   const totalExpenses = toNumber(financials?.total_expenses) ?? null;
   const grossProfit = toNumber(financials?.gross_profit) ?? null;
 
-  const expenseCount = toNumber(expenseSummary?.expense_count);
-  const includedExpenses = toNumber(expenseSummary?.expenses_included);
-  const billedExpenses = toNumber(expenseSummary?.expenses_billed);
   const paymentsTotal = paymentsUi.reduce(
     (sum, p) => sum + (toNumber(p.amount_total) ?? 0),
     0
@@ -710,6 +683,35 @@ export default function ProjectTabsClient({
   const hasRecordedFinancialActivity = paymentsUi.length > 0 || expensesUi.length > 0;
   const effectiveDisplayedExpenses = hasRecordedFinancialActivity ? expensesTotal : totalExpenses;
   const effectiveDisplayedGrossProfit = hasRecordedFinancialActivity ? interimProfit : grossProfit;
+  const summaryItems = [
+    {
+      label: "מחיר בפועל",
+      value: formatIls(effectiveActualPrice),
+      tone: "text-foreground",
+      meta: agreedBasePrice !== null ? `מחיר בסיס: ${formatIls(agreedBasePrice)}` : undefined,
+    },
+    {
+      label: "רווח גולמי",
+      value: formatIls(effectiveDisplayedGrossProfit),
+      tone:
+        effectiveDisplayedGrossProfit !== null && effectiveDisplayedGrossProfit < 0
+          ? "text-destructive"
+          : "text-foreground",
+      meta: hasRecordedFinancialActivity ? "מבוסס על פעילות שנרשמה" : "מבוסס על נתוני הפרויקט",
+    },
+    {
+      label: "התקדמות משימות",
+      value: `${completion}%`,
+      tone: "text-foreground",
+      meta: `${completedTasks}/${totalTasks} הושלמו`,
+    },
+    {
+      label: "מסמכים",
+      value: String(projectDocuments.length),
+      tone: "text-foreground",
+      meta: docsFilterCategory ? "מוצג לפי סינון פעיל" : "כל הקבצים המשויכים",
+    },
+  ] as const;
 
   const tasksSorted = useMemo(() => {
     const copy = [...projectTasksUi];
@@ -828,8 +830,8 @@ export default function ProjectTabsClient({
       toast.success("מחיר בפועל עודכן", { id: toastId });
       setUpdateActualPriceOpen(false);
       startTransition(() => router.refresh());
-    } catch (e: any) {
-      toast.error("שגיאה בעדכון מחיר בפועל", { id: toastId, description: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.error("שגיאה בעדכון מחיר בפועל", { id: toastId, description: getErrorMessage(e) });
     } finally {
       setUpdateActualPriceSaving(false);
     }
@@ -843,7 +845,22 @@ export default function ProjectTabsClient({
         <div className="mb-2 text-xs text-muted-foreground">מעדכן נתונים…</div>
       ) : null}
       <Tabs value={tabValue} onValueChange={setTab} dir="rtl">
-      <TabsList>
+        <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {summaryItems.map((item) => (
+            <Card key={item.label} className="border-border/70 bg-background/80 shadow-sm">
+              <CardContent className="p-4">
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  {item.label}
+                </div>
+                <div className={`mt-2 text-2xl font-semibold ${item.tone}`}>{item.value}</div>
+                {item.meta ? (
+                  <div className="mt-1 text-xs text-muted-foreground">{item.meta}</div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      <TabsList className="h-auto flex-wrap gap-2 overflow-visible border-none bg-transparent p-0 shadow-none [&>*]:min-w-[7.5rem] [&>*]:flex-1 sm:[&>*]:flex-none">
         <TabsTrigger value="overview">סקירה</TabsTrigger>
         <TabsTrigger value="financial">פיננסי</TabsTrigger>
         <TabsTrigger value="tasks">משימות</TabsTrigger>
@@ -1309,7 +1326,6 @@ export default function ProjectTabsClient({
               <div className="divide-y rounded-md border">
                 {filteredProjectDocuments.map((d) => {
                   const name = d.title ?? d.file_name ?? "document";
-                  const kind = inferKindFromFilename(d.file_name ?? d.title);
                   const when = d.uploaded_at ? formatDate(d.uploaded_at) : "—";
 
                   const sourceType =
@@ -1849,8 +1865,8 @@ function ProjectTasksTab({
       setStatus("");
       setCreateFiles([]);
       onChange();
-    } catch (e: any) {
-      toast.error("שגיאה ביצירת משימה", { description: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.error("שגיאה ביצירת משימה", { description: getErrorMessage(e) });
     } finally {
       setCreating(false);
     }
@@ -1880,8 +1896,8 @@ function ProjectTasksTab({
       onTaskUpdated?.(id, { status });
       onChange();
       return true;
-    } catch (e: any) {
-      toast.error("שגיאה בעדכון סטטוס", { description: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.error("שגיאה בעדכון סטטוס", { description: getErrorMessage(e) });
       return false;
     } finally {
       setUpdatingId(null);
@@ -1912,8 +1928,8 @@ function ProjectTasksTab({
       onTaskUpdated?.(id, { priority });
       onChange();
       return true;
-    } catch (e: any) {
-      toast.error("שגיאה בעדכון עדיפות", { description: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.error("שגיאה בעדכון עדיפות", { description: getErrorMessage(e) });
       return false;
     } finally {
       setUpdatingId(null);
@@ -2507,6 +2523,10 @@ function projectTypeLabel(value: string) {
   }
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "";
+}
+
 function AddExpenseDialog({
   open,
   onOpenChange,
@@ -2635,9 +2655,9 @@ function AddExpenseDialog({
         },
         expense: createdExpense ?? null,
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4", {
-        description: e?.message ?? "",
+        description: getErrorMessage(e),
       });
     } finally {
       setSubmitting(false);
@@ -2910,9 +2930,9 @@ function AddIncomeDialog({
       setReferenceNumber("");
       setNotes("");
       onCreated(createdPayment);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4", {
-        description: e?.message ?? "",
+        description: getErrorMessage(e),
       });
     } finally {
       setSubmitting(false);

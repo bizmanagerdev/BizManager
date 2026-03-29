@@ -4,10 +4,8 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import DeleteOrderButton from "@/app/sales/orders/[id]/DeleteOrderButton";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import {
-  derivePaymentStatus,
   paymentMethodLabel,
   paymentStatusClasses,
-  sumPayments,
 } from "@/lib/orders/paymentStatus";
 
 type Row = Record<string, unknown>;
@@ -96,16 +94,29 @@ export default async function SalesOrderPage({
     { data: order, error: orderError },
     { data: orderItems, error: itemsError },
     { data: payments, error: paymentsError },
+    { data: financials, error: financialsError },
   ] =
     await Promise.all([
-      supabase.from("orders").select("*").eq("id", id).maybeSingle(),
-      supabase.from("order_items").select("*").eq("order_id", id).limit(500),
+      supabase
+        .from("orders")
+        .select("id,customer_id,order_date,status,payment_status,discount_amount,notes")
+        .eq("id", id)
+        .maybeSingle(),
+      supabase
+        .from("order_items")
+        .select("id,order_id,product_id,quantity_ordered,unit_price,discount_amount,line_total,notes")
+        .eq("order_id", id),
       supabase
         .from("payments")
         .select("id,payment_date,amount_total,payment_method,reference_number,notes,created_at")
         .eq("target_type", "order")
         .eq("target_id", id)
         .order("payment_date", { ascending: false }),
+      supabase
+        .from("order_financials_view")
+        .select("id,total_amount,total_paid,remaining_balance,payment_count,payment_status")
+        .eq("id", id)
+        .maybeSingle(),
     ]);
 
   const customerId =
@@ -132,7 +143,10 @@ export default async function SalesOrderPage({
 
   const { data: products } =
     productIds.length > 0
-      ? await supabase.from("products").select("*").in("id", productIds)
+      ? await supabase
+          .from("products")
+          .select("id,name,sku,barcode")
+          .in("id", productIds)
       : { data: [] as Row[] };
 
   const productMap = new Map<string, Row>();
@@ -142,9 +156,11 @@ export default async function SalesOrderPage({
     }
   });
 
-  const totalAmount = getNumber((order as Row) ?? {}, "total_amount") ?? 0;
-  const totalPaid = sumPayments((payments as Row[] | null) ?? []);
-  const derivedPayment = derivePaymentStatus(totalAmount, totalPaid);
+  const totalAmount = getNumber((financials as Row) ?? {}, "total_amount") ?? 0;
+  const totalPaid = getNumber((financials as Row) ?? {}, "total_paid") ?? 0;
+  const remainingBalance = getNumber((financials as Row) ?? {}, "remaining_balance") ?? 0;
+  const paymentCount = getNumber((financials as Row) ?? {}, "payment_count") ?? (payments ?? []).length;
+  const paymentStatus = getString((financials as Row) ?? {}, "payment_status") ?? "unpaid";
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
@@ -179,6 +195,9 @@ export default async function SalesOrderPage({
         {paymentsError ? (
           <p className="text-sm text-destructive">שגיאת תשלומים: {paymentsError.message}</p>
         ) : null}
+        {financialsError && !financialsError.message.includes("order_financials_view") ? (
+          <p className="text-sm text-destructive">שגיאת סיכום הזמנה: {financialsError.message}</p>
+        ) : null}
 
         {order ? (
           <div className="rounded-md border p-4 text-sm">
@@ -210,17 +229,13 @@ export default async function SalesOrderPage({
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סטטוס תשלום</span>
-                <span className={`rounded-full border px-2.5 py-1 text-xs ${paymentStatusClasses(derivedPayment)}`}>
-                  {formatPaymentStatus(derivedPayment)}
+                <span className={`rounded-full border px-2.5 py-1 text-xs ${paymentStatusClasses(paymentStatus)}`}>
+                  {formatPaymentStatus(paymentStatus)}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סכום כולל</span>
-                <span>
-                  {getNumber(order as Row, "total_amount") === null
-                    ? "-"
-                    : formatCurrency(getNumber(order as Row, "total_amount") as number)}
-                </span>
+                <span>{formatCurrency(totalAmount)}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">שולם</span>
@@ -228,7 +243,11 @@ export default async function SalesOrderPage({
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">יתרה</span>
-                <span>{formatCurrency(Math.max(totalAmount - totalPaid, 0))}</span>
+                <span>{formatCurrency(remainingBalance)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">מספר תשלומים</span>
+                <span>{paymentCount}</span>
               </div>
             </div>
           </div>

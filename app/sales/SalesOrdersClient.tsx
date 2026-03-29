@@ -14,19 +14,9 @@ import {
   derivePaymentStatus,
   paymentStatusClasses,
   paymentStatusLabel,
-  sumPayments,
 } from "@/lib/orders/paymentStatus";
 
 type Row = Record<string, unknown>;
-
-type CustomerInfo = {
-  id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  city: string | null;
-  address: string | null;
-};
 
 type OrderView = {
   id: string;
@@ -78,7 +68,7 @@ function statusLabel(value: string) {
   switch (value) {
     case "draft":
       return "פתוחה";
-          case "reserved":
+    case "reserved":
       return "מאושרת";
     case "delivered":
       return "סופקה";
@@ -95,23 +85,7 @@ function isActiveOrder(status: string) {
   return !["closed", "cancelled", "delivered"].includes(status);
 }
 
-function extractCityFromAddress(address: string | null) {
-  if (!address) return null;
-  const normalized = address.trim();
-  if (!normalized) return null;
-  const first = normalized.split("|")[0]?.trim() ?? "";
-  return first || null;
-}
-
-export default function SalesOrdersClient({
-  orders,
-  customers,
-  payments,
-}: {
-  orders: Row[];
-  customers: Row[];
-  payments: Row[];
-}) {
+export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [activityFilter, setActivityFilter] = useState<"all" | "active" | "closed">("all");
@@ -119,67 +93,43 @@ export default function SalesOrdersClient({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [paymentSnapshot, setPaymentSnapshot] = useState(() => new Map<string, number>());
 
-  const customerMap = useMemo(() => {
-    const map = new Map<string, CustomerInfo>();
-    for (const row of customers) {
-      const id = getString(row, ["id"]);
-      if (!id) continue;
-      map.set(id, {
-        id,
-        name: getString(row, ["name", "name_for_invoice"]) ?? "לקוח",
-        email: getString(row, ["email"]),
-        phone: getString(row, ["phone", "mobile", "tel"]),
-        address: getString(row, ["address"]),
-        city: extractCityFromAddress(getString(row, ["address"])),
-      });
-    }
-    return map;
-  }, [customers]);
-
-  const paymentsByOrderId = useMemo(() => {
-    const map = new Map<string, Row[]>();
-    for (const row of payments) {
-      const orderId = getString(row, ["target_id"]);
-      if (!orderId) continue;
-      const current = map.get(orderId) ?? [];
-      current.push(row);
-      map.set(orderId, current);
-    }
-    return map;
-  }, [payments]);
-
   const orderRows = useMemo(() => {
     return orders
       .map((row) => {
-        const id = getString(row, ["id"]);
+        const id = getString(row, ["order_id", "id"]);
         const customerId = getString(row, ["customer_id"]);
         if (!id || !customerId) return null;
 
-        const customer = customerMap.get(customerId);
         const totalAmount = getNumber(row, ["total_amount"]) ?? 0;
-        const paymentRows = paymentsByOrderId.get(id) ?? [];
-        const dbPaidAmount = sumPayments(paymentRows);
-        const totalPaid = paymentSnapshot.has(id) ? paymentSnapshot.get(id) ?? dbPaidAmount : dbPaidAmount;
+        const dbPaidAmount = getNumber(row, ["total_paid"]) ?? 0;
+        const totalPaid =
+          paymentSnapshot.has(id) ? paymentSnapshot.get(id) ?? dbPaidAmount : dbPaidAmount;
+        const dbRemainingBalance =
+          getNumber(row, ["remaining_balance"]) ?? Math.max(totalAmount - totalPaid, 0);
+        const dbPaymentStatus = getString(row, ["payment_status"]);
+        const dbPaymentCount = getNumber(row, ["payment_count"]) ?? 0;
 
         return {
           id,
           customerId,
-          customerName: customer?.name ?? customerId,
-          customerEmail: customer?.email ?? null,
-          customerPhone: customer?.phone ?? null,
-          customerCity: customer?.city ?? null,
-          customerAddress: customer?.address ?? null,
+          customerName: getString(row, ["customer_name"]) ?? customerId,
+          customerEmail: getString(row, ["customer_email"]),
+          customerPhone: getString(row, ["customer_phone"]),
+          customerCity: getString(row, ["customer_city"]),
+          customerAddress: getString(row, ["customer_address"]),
           orderDate: getString(row, ["order_date", "created_at"]),
           status: getString(row, ["status"]) ?? "draft",
-          paymentStatus: derivePaymentStatus(totalAmount, totalPaid),
+          paymentStatus: dbPaymentStatus ?? derivePaymentStatus(totalAmount, totalPaid),
           totalAmount,
           totalPaid,
-          remainingBalance: Math.max(totalAmount - totalPaid, 0),
-          paymentCount: paymentRows.length,
+          remainingBalance: paymentSnapshot.has(id)
+            ? Math.max(totalAmount - totalPaid, 0)
+            : dbRemainingBalance,
+          paymentCount: dbPaymentCount,
         } as OrderView;
       })
       .filter((row): row is OrderView => row !== null);
-  }, [orders, customerMap, paymentsByOrderId, paymentSnapshot]);
+  }, [orders, paymentSnapshot]);
 
   const statuses = useMemo(() => {
     const set = new Set<string>(["draft", "confirmed", "completed", "cancelled"]);

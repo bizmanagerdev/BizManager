@@ -43,7 +43,7 @@ export async function POST(req: Request) {
         priority,
         status,
       })
-      .select("*")
+      .select("id,project_id,customer_id,assigned_user_id,subject,description,due_date,priority,status,created_at,updated_at")
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });

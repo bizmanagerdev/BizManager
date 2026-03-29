@@ -5,6 +5,54 @@ import TaskDetailClient from "@/app/tasks/[id]/TaskDetailClient";
 
 const DOCUMENTS_BUCKET = "business-documents";
 
+type TaskOverviewRow = {
+  task_id: string;
+  subject: string | null;
+  status: string | null;
+  priority: string | null;
+  due_date: string | null;
+  project_id: string | null;
+  project_name: string | null;
+  assigned_user_name: string | null;
+};
+
+type TaskRow = {
+  id: string;
+  description: string | null;
+  notes: string | null;
+  project_id: string | null;
+  customer_id: string | null;
+};
+
+type DocumentLinkRow = {
+  document_id: string | null;
+  created_at: string | null;
+};
+
+type DocumentRow = {
+  id: string;
+  document_type: string | null;
+  file_name: string | null;
+  storage_key: string | null;
+  uploaded_at: string | null;
+};
+
+type ProjectLookupRow = {
+  id: string;
+  name: string | null;
+  customer_name: string | null;
+};
+
+type Attachment = {
+  id: string;
+  kind: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  original_name: string | null;
+  created_at: string;
+  url: string | null;
+};
+
 function inferKindFromFilename(name: string | null) {
   const value = (name ?? "").toLowerCase();
   const ext = value.includes(".") ? value.split(".").pop() ?? "" : "";
@@ -50,63 +98,55 @@ export default async function TaskPage({
       "task_id,subject,status,priority,due_date,project_id,project_name,assigned_user_id,assigned_user_name,created_at,updated_at"
     )
     .eq("task_id", id)
-    .maybeSingle();
+    .maybeSingle<TaskOverviewRow>();
 
   const { data: taskRow, error: taskError } = await supabase
     .from("tasks")
     .select("id,description,notes,project_id,customer_id")
     .eq("id", id)
-    .maybeSingle();
+    .maybeSingle<TaskRow>();
 
-  let attachments: Array<{
-    id: string;
-    kind: string;
-    mime_type: string | null;
-    size_bytes: number | null;
-    original_name: string | null;
-    created_at: string;
-    url: string | null;
-  }> = [];
+  let attachments: Attachment[] = [];
 
   try {
-    const { data: links, error: linksError } = await supabase
-      .from("document_links")
-      .select("document_id,created_at")
+      const { data: links, error: linksError } = await supabase
+        .from("document_links")
+        .select("document_id,created_at")
       .eq("entity_type", "task")
       .eq("entity_id", id)
       .order("created_at", { ascending: false })
-      .limit(50);
+        .range(0, 49);
 
-    if (!linksError && links && links.length > 0) {
-      const docIds = links
-        .map((l: any) => (typeof l.document_id === "string" ? l.document_id : null))
-        .filter(Boolean) as string[];
+      if (!linksError && links && links.length > 0) {
+        const docIds = (links as DocumentLinkRow[])
+          .map((l) => (typeof l.document_id === "string" ? l.document_id : null))
+          .filter((value): value is string => Boolean(value));
 
-      const { data: docs, error: docsError } = await supabase
-        .from("documents")
-        .select("id,document_type,file_name,storage_key,uploaded_at")
-        .in("id", docIds);
+        const { data: docs, error: docsError } = await supabase
+          .from("documents")
+          .select("id,document_type,file_name,storage_key,uploaded_at")
+          .in("id", docIds);
 
-      if (!docsError && docs) {
-        const docById = new Map<string, any>(
-          docs.map((d: any) => [String(d.id), d])
-        );
+        if (!docsError && docs) {
+          const docById = new Map<string, DocumentRow>(
+            (docs as DocumentRow[]).map((d) => [String(d.id), d])
+          );
 
-        const resolved = await Promise.all(
-          links.map(async (l: any) => {
-            const docId = typeof l.document_id === "string" ? l.document_id : "";
-            const doc = docById.get(docId);
-            if (!doc) return null;
+          const resolved = await Promise.all(
+            (links as DocumentLinkRow[]).map(async (l) => {
+              const docId = typeof l.document_id === "string" ? l.document_id : "";
+              const doc = docById.get(docId);
+              if (!doc) return null;
 
             const key = typeof doc.storage_key === "string" ? doc.storage_key : "";
             const name = typeof doc.file_name === "string" ? doc.file_name : null;
             const kind = inferKindFromFilename(name);
 
-            const { data: signed, error: signError } = key
-              ? await supabase.storage
-                  .from(DOCUMENTS_BUCKET)
-                  .createSignedUrl(key, 60 * 60)
-              : { data: null as any, error: null as any };
+              const { data: signed, error: signError } = key
+                ? await supabase.storage
+                    .from(DOCUMENTS_BUCKET)
+                    .createSignedUrl(key, 60 * 60)
+                : { data: null, error: null };
 
             return {
               id: docId,
@@ -120,21 +160,21 @@ export default async function TaskPage({
               url: signError ? null : signed?.signedUrl ?? null,
             };
           })
-        );
+          );
 
-        attachments = resolved.filter(Boolean) as any;
+          attachments = resolved.filter((value): value is Attachment => value !== null);
+        }
       }
-    }
   } catch {
     // If the table/bucket isn't created yet, don't break the task page render.
     attachments = [];
   }
 
   const projectId =
-    typeof (taskRow as any)?.project_id === "string"
-      ? ((taskRow as any).project_id as string)
-      : typeof (overview as any)?.project_id === "string"
-        ? ((overview as any).project_id as string)
+    typeof taskRow?.project_id === "string"
+      ? taskRow.project_id
+      : typeof overview?.project_id === "string"
+        ? overview.project_id
         : null;
 
   const { data: projectOverview } = projectId
@@ -142,8 +182,8 @@ export default async function TaskPage({
         .from("project_overview_view")
         .select("id,name,customer_name")
         .eq("id", projectId)
-        .maybeSingle()
-    : { data: null as any };
+        .maybeSingle<ProjectLookupRow>()
+    : { data: null as ProjectLookupRow | null };
 
   const error =
     overviewError?.message ?? taskError?.message ?? null;
@@ -176,10 +216,10 @@ export default async function TaskPage({
             priority={overview.priority ?? null}
             dueDate={overview.due_date ?? null}
             assignedUserName={overview.assigned_user_name ?? null}
-            projectName={(projectOverview as any)?.name ?? overview.project_name ?? null}
-            customerName={(projectOverview as any)?.customer_name ?? null}
-            description={(taskRow as any)?.description ?? null}
-            notes={(taskRow as any)?.notes ?? null}
+            projectName={projectOverview?.name ?? overview.project_name ?? null}
+            customerName={projectOverview?.customer_name ?? null}
+            description={taskRow?.description ?? null}
+            notes={taskRow?.notes ?? null}
             attachments={attachments}
           />
         )}

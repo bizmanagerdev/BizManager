@@ -81,7 +81,7 @@ export async function POST(req: Request) {
         active,
         notes,
       })
-      .select("*")
+      .select("id,customer_id,full_name,role,phone,email,whatsapp,is_primary,active,notes")
       .maybeSingle();
 
     if (error) {

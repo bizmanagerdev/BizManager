@@ -21,7 +21,6 @@ export const requireProfile = cache(async () => {
     data: { session: fastSession },
   } = await supabase.auth.getSession();
 
-  const activeSession = fastSession;
   const userId = fastSession?.user?.id;
 
   if (!userId) redirect("/login");

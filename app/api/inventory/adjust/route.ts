@@ -78,7 +78,7 @@ export async function POST(req: Request) {
         performed_by: user.id,
         notes: notes || `Manual ${direction} adjustment`,
       })
-      .select("*")
+      .select("id,product_id,movement_type,quantity,source_type,source_id,performed_by,notes,created_at")
       .maybeSingle();
 
     if (movementError) {

@@ -10,10 +10,15 @@ export default async function NewSalesOrderPage() {
   const [{ data: customers, error: customersError }, { data: products, error: productsError }] =
     await Promise.all([
       supabase
-        .from("customers")
-        .select("id,name,name_for_invoice,registration_number,phone,email,address,active,notes")
-        .limit(5000),
-      supabase.from("products").select("*").limit(1000),
+        .from("customer_overview_view")
+        .select("customer_id,customer_name,phone,email,address")
+        .order("customer_name", { ascending: true })
+        .range(0, 49),
+      supabase
+        .from("products")
+        .select("id,name,sku,barcode,description,base_price,base_cost,active")
+        .order("name", { ascending: true })
+        .range(0, 49),
     ]);
 
   return (

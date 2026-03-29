@@ -18,17 +18,6 @@ function getNumber(row: Row, key: string) {
   return null;
 }
 
-function sumPayments(rows: Row[]) {
-  return rows.reduce((sum, row) => sum + (getNumber(row, "amount_total") ?? 0), 0);
-}
-
-function derivePaymentStatus(totalAmount: number, totalPaid: number) {
-  if (totalAmount <= 0) return "unpaid";
-  if (totalPaid <= 0) return "unpaid";
-  if (totalPaid >= totalAmount) return "paid";
-  return "partial";
-}
-
 export async function GET(
   _req: Request,
   context: { params: Promise<{ id: string }> }
@@ -43,15 +32,28 @@ export async function GET(
     { data: order, error: orderError },
     { data: orderItems, error: itemsError },
     { data: payments, error: paymentsError },
+    { data: financials, error: financialsError },
   ] = await Promise.all([
-    supabase.from("orders").select("*").eq("id", id).maybeSingle(),
-    supabase.from("order_items").select("*").eq("order_id", id).limit(500),
+    supabase
+      .from("orders")
+      .select("id,customer_id,order_date,status,payment_status,discount_amount,notes")
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("order_items")
+      .select("id,order_id,product_id,quantity_ordered,unit_price,discount_amount,line_total,notes")
+      .eq("order_id", id),
     supabase
       .from("payments")
       .select("id,payment_date,amount_total,payment_method,reference_number,notes,created_at")
       .eq("target_type", "order")
       .eq("target_id", id)
       .order("payment_date", { ascending: false }),
+    supabase
+      .from("order_financials_view")
+      .select("id,total_amount,total_paid,remaining_balance,payment_count,payment_status")
+      .eq("id", id)
+      .maybeSingle(),
   ]);
 
   if (orderError) {
@@ -62,6 +64,12 @@ export async function GET(
   }
   if (paymentsError) {
     return NextResponse.json({ error: paymentsError.message }, { status: 400 });
+  }
+  if (financialsError) {
+    const missingView = financialsError.message.includes("order_financials_view");
+    if (!missingView) {
+      return NextResponse.json({ error: financialsError.message }, { status: 400 });
+    }
   }
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
@@ -90,15 +98,21 @@ export async function GET(
 
   const { data: products, error: productsError } =
     productIds.length > 0
-      ? await supabase.from("products").select("*").in("id", productIds)
+      ? await supabase.from("products").select("id,name,sku,barcode").in("id", productIds)
       : { data: [], error: null };
 
   if (productsError) {
     return NextResponse.json({ error: productsError.message }, { status: 400 });
   }
 
-  const totalAmount = getNumber(order as Row, "total_amount") ?? 0;
-  const totalPaid = sumPayments(((payments ?? []) as Row[]) ?? []);
+  const totalAmount = getNumber((financials as Row | null) ?? undefined, "total_amount") ?? 0;
+  const totalPaid = getNumber((financials as Row | null) ?? undefined, "total_paid") ?? 0;
+  const paymentStatus =
+    getString((financials as Row | null) ?? undefined, "payment_status") ?? "unpaid";
+  const paymentCount =
+    getNumber((financials as Row | null) ?? undefined, "payment_count") ?? (payments ?? []).length;
+  const remainingBalance =
+    getNumber((financials as Row | null) ?? undefined, "remaining_balance") ?? 0;
 
   return NextResponse.json({
     order,
@@ -108,6 +122,8 @@ export async function GET(
     products: products ?? [],
     totalAmount,
     totalPaid,
-    paymentStatus: derivePaymentStatus(totalAmount, totalPaid),
+    remainingBalance,
+    paymentCount,
+    paymentStatus,
   });
 }

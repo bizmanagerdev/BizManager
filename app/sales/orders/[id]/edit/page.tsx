@@ -33,26 +33,79 @@ export default async function EditSalesOrderPage({
   const { profile, supabase } = await requireProfile();
 
   const [
-    { data: customers, error: customersError },
-    { data: products, error: productsError },
     { data: order, error: orderError },
     { data: orderItems, error: orderItemsError },
     { data: payments },
+    { data: baseCustomers, error: customersError },
+    { data: baseProducts, error: productsError },
   ] = await Promise.all([
     supabase
-      .from("customers")
-      .select("id,name,name_for_invoice,registration_number,phone,email,address,active,notes")
-      .limit(5000),
-    supabase.from("products").select("*").limit(1000),
-    supabase.from("orders").select("*").eq("id", id).maybeSingle(),
-    supabase.from("order_items").select("*").eq("order_id", id).limit(500),
+      .from("orders")
+      .select("id,customer_id,order_date,status,payment_status,discount_amount,notes")
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("order_items")
+      .select("id,order_id,product_id,quantity_ordered,unit_price,discount_amount,notes")
+      .eq("order_id", id),
     supabase
       .from("payments")
       .select("id,payment_date,amount_total,payment_method,reference_number,notes")
       .eq("target_type", "order")
       .eq("target_id", id)
       .order("payment_date", { ascending: false }),
+    supabase
+      .from("customer_overview_view")
+      .select("customer_id,customer_name,phone,email,address")
+      .order("customer_name", { ascending: true })
+      .range(0, 49),
+    supabase
+      .from("products")
+      .select("id,name,sku,barcode,description,base_price,base_cost,active")
+      .order("name", { ascending: true })
+      .range(0, 49),
   ]);
+
+  const selectedCustomerId = getString((order ?? {}) as Row, ["customer_id"]);
+  const selectedProductIds = Array.from(
+    new Set(
+      (orderItems ?? [])
+        .map((item) => getString(item as Row, ["product_id"]))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const [{ data: selectedCustomer }, { data: selectedProducts }] = await Promise.all([
+    selectedCustomerId
+      ? supabase
+          .from("customer_overview_view")
+          .select("customer_id,customer_name,phone,email,address")
+          .eq("customer_id", selectedCustomerId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    selectedProductIds.length > 0
+      ? supabase
+          .from("products")
+          .select("id,name,sku,barcode,description,base_price,base_cost,active")
+          .in("id", selectedProductIds)
+      : Promise.resolve({ data: [] as Row[] }),
+  ]);
+
+  const customers = Array.from(
+    new Map(
+      [selectedCustomer, ...((baseCustomers ?? []) as Row[])]
+        .filter(Boolean)
+        .map((row) => [getString(row as Row, ["customer_id", "id"]) ?? "", row as Row])
+        .filter(([key]) => key)
+    ).values()
+  );
+  const products = Array.from(
+    new Map(
+      [...((selectedProducts ?? []) as Row[]), ...((baseProducts ?? []) as Row[])]
+        .map((row) => [getString(row as Row, ["id"]) ?? "", row] as const)
+        .filter(([key]) => key)
+    ).values()
+  );
 
   const productsById = new Map<string, Row>();
   (products ?? []).forEach((row) => {

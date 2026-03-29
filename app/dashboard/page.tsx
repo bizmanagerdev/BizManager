@@ -33,34 +33,12 @@ function getNumber(row: Row | null | undefined, key: string) {
   return null;
 }
 
-function getDateValue(row: Row | null | undefined, keys: string[]) {
-  for (const key of keys) {
-    const value = getString(row, key);
-    if (!value) continue;
-    const date = new Date(value);
-    if (!Number.isNaN(date.getTime())) return date;
-  }
-  return null;
-}
-
 function firstString(row: Row | null | undefined, keys: string[], fallback: string) {
   for (const key of keys) {
     const value = getString(row, key);
     if (value && value.trim()) return value;
   }
   return fallback;
-}
-
-function firstNumber(row: Row | null | undefined, keys: string[]) {
-  for (const key of keys) {
-    const value = getNumber(row, key);
-    if (value !== null) return value;
-  }
-  return null;
-}
-
-function monthKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function formatCurrency(value: number | null) {
@@ -79,37 +57,20 @@ function formatDelta(current: number, previous: number) {
   return `${rounded > 0 ? "+" : ""}${rounded}%`;
 }
 
-function isProjectActive(status: string | null) {
-  const normalized = (status ?? "").toLowerCase();
-  return !["done", "completed", "cancelled", "canceled", "archived", "closed"].includes(
-    normalized
-  );
-}
-
-function isTaskOpen(status: string | null) {
-  const normalized = (status ?? "").toLowerCase();
-  return !["done", "completed", "cancelled", "canceled"].includes(normalized);
-}
-
-function isTaskOverdue(row: Row, today: Date) {
-  if (row.is_overdue === true) return true;
-  const dueDate = getDateValue(row, ["due_date"]);
-  if (!dueDate) return false;
-  const status = getString(row, "status");
-  return isTaskOpen(status) && dueDate.getTime() < today.getTime();
-}
-
-function isInvoiceUnpaid(row: Row, today: Date) {
+function isInvoiceUnpaid(row: Row) {
   const paymentStatus = (getString(row, "payment_status") ?? "").toLowerCase();
   const status = (getString(row, "status") ?? "").toLowerCase();
-  const balanceDue = firstNumber(row, ["balance_due", "amount_due", "open_amount", "remaining_amount"]);
+  const balanceDue =
+    getNumber(row, "balance_due") ??
+    getNumber(row, "amount_due") ??
+    getNumber(row, "open_amount") ??
+    getNumber(row, "remaining_amount");
+
   if (balanceDue !== null) return balanceDue > 0;
-  if (["unpaid", "partial", "overdue", "open", "pending"].includes(paymentStatus)) return true;
-  if (["unpaid", "partial", "overdue", "open", "pending"].includes(status)) return true;
-  const dueDate = getDateValue(row, ["due_date"]);
-  const totalAmount = firstNumber(row, ["total_amount", "invoice_total", "amount_total"]);
-  const paidAmount = firstNumber(row, ["paid_amount", "amount_paid"]);
-  return Boolean(dueDate && dueDate < today && (totalAmount ?? 0) > (paidAmount ?? 0));
+  return (
+    ["unpaid", "partial", "overdue", "open", "pending"].includes(paymentStatus) ||
+    ["unpaid", "partial", "overdue", "open", "pending"].includes(status)
+  );
 }
 
 function badgeVariantForAlert(kind: "danger" | "warning" | "info") {
@@ -129,111 +90,67 @@ export default async function DashboardPage() {
   today.setHours(0, 0, 0, 0);
 
   const [
-    { data: revenueRows, error: revenueError },
-    { data: expenseRows, error: expenseError },
+    { data: dashboardRow, error: dashboardError },
     { data: projectRows, error: projectError },
-    { data: taskRows, error: taskError },
     { data: invoiceRows, error: invoiceError },
-    { data: inventoryRows, error: inventoryError },
     { data: productRows, error: productError },
     { data: customerRows, error: customerError },
     { data: userRows, error: userError },
   ] = await Promise.all([
-    supabase.from("sales_financials_view").select("*").limit(120),
-    supabase.from("financial_expenses_view").select("*").limit(120),
+    supabase
+      .from("operations_dashboard_view")
+      .select(
+        "monthly_revenue,previous_month_revenue,monthly_expenses,previous_month_expenses,active_projects_count,open_tasks_count,overdue_tasks_count,low_inventory_count"
+      )
+      .limit(1)
+      .maybeSingle(),
     supabase
       .from("project_dashboard_view")
       .select("id,name,status,customer_id,customer_name,open_tasks,updated_at")
       .order("updated_at", { ascending: false })
-      .limit(100),
+      .range(0, 99),
     supabase
-      .from("task_overview_view")
-      .select(
-        "task_id,subject,status,priority,due_date,project_id,project_name,assigned_user_name,is_overdue,updated_at"
-      )
-      .order("due_date", { ascending: true })
-      .limit(200),
-    supabase.from("invoices").select("*").limit(200),
-    supabase.from("inventory").select("product_id,quantity_on_hand,quantity_reserved").limit(500),
-    supabase.from("products").select("*").limit(1000),
+      .from("invoices")
+      .select("id,payment_status,status,balance_due,amount_due,open_amount,remaining_amount")
+      .order("created_at", { ascending: false })
+      .range(0, 199),
     supabase
-      .from("customers")
-      .select("id,name,name_for_invoice,registration_number,phone,email,address,active,notes")
-      .limit(5000),
-    supabase.from("users").select("id,full_name,email,active").limit(1000),
+      .from("products")
+      .select("id,name,sku,barcode,description,base_price,base_cost,active")
+      .order("name", { ascending: true })
+      .range(0, 49),
+    supabase
+      .from("customer_overview_view")
+      .select("customer_id,customer_name,phone,email,address")
+      .order("customer_name", { ascending: true })
+      .range(0, 49),
+    supabase.from("users").select("id,full_name,email,active").order("full_name", { ascending: true }).range(0, 499),
   ]);
 
-  const revenueByMonth = new Map<string, number>();
-  ((revenueRows ?? []) as Row[]).forEach((row) => {
-    const date = getDateValue(row, ["month", "month_date", "date", "order_date", "created_at"]);
-    if (!date) return;
-    const amount = firstNumber(row, [
-      "monthly_revenue",
-      "revenue",
-      "net_revenue",
-      "gross_revenue",
-      "total_revenue",
-      "amount_total",
-      "total_amount",
-    ]);
-    if (amount === null) return;
-    const key = monthKey(date);
-    revenueByMonth.set(key, (revenueByMonth.get(key) ?? 0) + amount);
-  });
-
-  const expensesByMonth = new Map<string, number>();
-  ((expenseRows ?? []) as Row[]).forEach((row) => {
-    const date = getDateValue(row, ["month", "expense_date", "date", "created_at"]);
-    if (!date) return;
-    const amount = firstNumber(row, ["monthly_expenses", "expenses", "total_expenses", "amount"]);
-    if (amount === null) return;
-    const key = monthKey(date);
-    expensesByMonth.set(key, (expensesByMonth.get(key) ?? 0) + amount);
-  });
-
-  const currentMonth = monthKey(today);
-  const previousMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-  const previousMonth = monthKey(previousMonthDate);
-
-  const monthlyRevenue = revenueByMonth.get(currentMonth) ?? 0;
-  const previousRevenue = revenueByMonth.get(previousMonth) ?? 0;
-  const monthlyExpenses = expensesByMonth.get(currentMonth) ?? 0;
-  const previousExpenses = expensesByMonth.get(previousMonth) ?? 0;
-
-  const projects = ((projectRows ?? []) as Row[]).filter((row) =>
-    isProjectActive(getString(row, "status"))
-  );
-  const tasks = ((taskRows ?? []) as Row[]).filter((row) => isTaskOpen(getString(row, "status")));
-  const overdueTasks = tasks.filter((row) => isTaskOverdue(row, today));
-
-  const productsById = new Map<string, Row>();
-  ((productRows ?? []) as Row[]).forEach((row) => {
-    const id = getString(row, "id");
-    if (id) productsById.set(id, row);
-  });
-
-  const lowInventory = ((inventoryRows ?? []) as Row[])
-    .map((row) => {
-      const productId = getString(row, "product_id") ?? "";
-      const product = productsById.get(productId) ?? null;
-      const onHand = getNumber(row, "quantity_on_hand") ?? 0;
-      const reserved = getNumber(row, "quantity_reserved") ?? 0;
-      return {
-        productId,
-        name: firstString(product, ["name", "sku"], "מוצר"),
-        available: onHand - reserved,
-      };
-    })
-    .filter((row) => row.productId && row.available <= 5);
+  const monthlyRevenue = getNumber((dashboardRow as Row | null) ?? undefined, "monthly_revenue") ?? 0;
+  const previousRevenue =
+    getNumber((dashboardRow as Row | null) ?? undefined, "previous_month_revenue") ?? 0;
+  const monthlyExpenses =
+    getNumber((dashboardRow as Row | null) ?? undefined, "monthly_expenses") ?? 0;
+  const previousExpenses =
+    getNumber((dashboardRow as Row | null) ?? undefined, "previous_month_expenses") ?? 0;
+  const activeProjectsCount =
+    getNumber((dashboardRow as Row | null) ?? undefined, "active_projects_count") ?? 0;
+  const openTasksCount =
+    getNumber((dashboardRow as Row | null) ?? undefined, "open_tasks_count") ?? 0;
+  const overdueTasksCount =
+    getNumber((dashboardRow as Row | null) ?? undefined, "overdue_tasks_count") ?? 0;
+  const lowInventoryCount =
+    getNumber((dashboardRow as Row | null) ?? undefined, "low_inventory_count") ?? 0;
 
   const invoiceSourceMissing =
     invoiceError?.message?.includes("Could not find the table 'public.invoices'") ?? false;
 
   const unpaidInvoices = invoiceSourceMissing
     ? []
-    : ((invoiceRows ?? []) as Row[]).filter((row) => isInvoiceUnpaid(row, today));
+    : ((invoiceRows ?? []) as Row[]).filter((row) => isInvoiceUnpaid(row));
 
-  const activeProjectOptions = projects
+  const activeProjectOptions = ((projectRows ?? []) as Row[])
     .map((row) => ({
       id: getString(row, "id") ?? "",
       name: firstString(row, ["name"], "פרויקט"),
@@ -256,13 +173,20 @@ export default async function DashboardPage() {
     .filter((row) => row.id && row.label && row.active !== false)
     .map((row) => ({ id: row.id, label: row.label }));
 
+  const customerOptions = ((customerRows ?? []) as Row[])
+    .map((row) => ({
+      id: getString(row, "customer_id") ?? "",
+      name: firstString(row, ["customer_name"], "לקוח"),
+      phone: getString(row, "phone"),
+      email: getString(row, "email"),
+      address: getString(row, "address"),
+    }))
+    .filter((row) => row.id);
+
   const dashboardErrors = [
-    revenueError ? `הכנסות: ${revenueError.message}` : null,
-    expenseError ? `הוצאות: ${expenseError.message}` : null,
+    dashboardError ? `דשבורד: ${dashboardError.message}` : null,
     projectError ? `פרויקטים: ${projectError.message}` : null,
-    taskError ? `משימות: ${taskError.message}` : null,
     invoiceError && !invoiceSourceMissing ? `חשבוניות: ${invoiceError.message}` : null,
-    inventoryError ? `מלאי: ${inventoryError.message}` : null,
     productError ? `מוצרים: ${productError.message}` : null,
     customerError ? `לקוחות: ${customerError.message}` : null,
     userError ? `משתמשים: ${userError.message}` : null,
@@ -286,17 +210,17 @@ export default async function DashboardPage() {
     },
     {
       title: "מלאי נמוך",
-      count: lowInventory.length,
-      description: lowInventory.length > 0 ? "יש פריטים מתחת לסף" : "תקין",
+      count: lowInventoryCount,
+      description: lowInventoryCount > 0 ? "יש פריטים מתחת לסף" : "תקין",
       href: "/inventory",
-      kind: lowInventory.length > 0 ? ("warning" as const) : ("info" as const),
+      kind: lowInventoryCount > 0 ? ("warning" as const) : ("info" as const),
     },
     {
       title: "משימות באיחור",
-      count: overdueTasks.length,
-      description: overdueTasks.length > 0 ? "יש משימות לטיפול" : "אין איחורים",
+      count: overdueTasksCount,
+      description: overdueTasksCount > 0 ? "יש משימות לטיפול" : "אין איחורים",
       href: "/tasks",
-      kind: overdueTasks.length > 0 ? ("danger" as const) : ("info" as const),
+      kind: overdueTasksCount > 0 ? ("danger" as const) : ("info" as const),
     },
   ];
 
@@ -318,13 +242,27 @@ export default async function DashboardPage() {
         ) : null}
 
         <AdaptiveGrid variant="dashboardMetrics">
-          <MetricCard title="הכנסות" value={formatCurrency(monthlyRevenue)} subtitle={formatDelta(monthlyRevenue, previousRevenue)} />
-          <MetricCard title="הוצאות" value={formatCurrency(monthlyExpenses)} subtitle={formatDelta(monthlyExpenses, previousExpenses)} />
-          <MetricCard title="פרויקטים פתוחים" value={formatCount(projects.length)} subtitle="פעילים עכשיו" />
+          <MetricCard
+            title="הכנסות"
+            value={formatCurrency(monthlyRevenue)}
+            subtitle={formatDelta(monthlyRevenue, previousRevenue)}
+          />
+          <MetricCard
+            title="הוצאות"
+            value={formatCurrency(monthlyExpenses)}
+            subtitle={formatDelta(monthlyExpenses, previousExpenses)}
+          />
+          <MetricCard
+            title="פרויקטים פתוחים"
+            value={formatCount(activeProjectsCount)}
+            subtitle="פעילים עכשיו"
+          />
           <MetricCard
             title="משימות פתוחות"
-            value={formatCount(tasks.length)}
-            subtitle={overdueTasks.length > 0 ? `${formatCount(overdueTasks.length)} באיחור` : "ללא איחור"}
+            value={formatCount(openTasksCount)}
+            subtitle={
+              overdueTasksCount > 0 ? `${formatCount(overdueTasksCount)} באיחור` : "ללא איחור"
+            }
           />
         </AdaptiveGrid>
 
@@ -336,7 +274,7 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent>
               <DashboardActions
-                customers={(customerRows ?? []) as Row[]}
+                customers={customerOptions as Row[]}
                 products={(productRows ?? []) as Row[]}
                 projects={activeProjectOptions}
                 users={activeUsers}

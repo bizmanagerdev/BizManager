@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -122,6 +123,17 @@ type TaskAttachment = {
   url: string | null;
 };
 
+type NoteEntry = {
+  raw: string;
+  stamp: string | null;
+  author: string | null;
+  message: string | null;
+};
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "";
+}
+
 type Props = {
   taskId: string;
   subject: string;
@@ -164,7 +176,7 @@ export default function TaskDetailClient(props: Props) {
           author: match[2] ?? null,
           message: match[3] ?? null,
         };
-      });
+      }) as NoteEntry[];
   }, [props.notes]);
 
   async function addComment() {
@@ -186,9 +198,9 @@ export default function TaskDetailClient(props: Props) {
       toast.success("\u05D4\u05D4\u05E2\u05E8\u05D4 \u05E0\u05D5\u05E1\u05E4\u05D4");
       setMessage("");
       router.refresh();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error("\u05E9\u05D2\u05D9\u05D0\u05D4 \u05D1\u05D4\u05D5\u05E1\u05E4\u05EA \u05D4\u05E2\u05E8\u05D4", {
-        description: e?.message ?? "",
+        description: getErrorMessage(e),
       });
     } finally {
       setSubmitting(false);
@@ -219,9 +231,9 @@ export default function TaskDetailClient(props: Props) {
 
       toast.success("\u05D4\u05E7\u05D1\u05E6\u05D9\u05DD \u05D4\u05D5\u05E2\u05DC\u05D5");
       router.refresh();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error("\u05E9\u05D2\u05D9\u05D0\u05D4 \u05D1\u05D4\u05E2\u05DC\u05D0\u05EA \u05E7\u05D5\u05D1\u05E5", {
-        description: e?.message ?? "",
+        description: getErrorMessage(e),
       });
     } finally {
       setUploading(false);
@@ -254,8 +266,8 @@ export default function TaskDetailClient(props: Props) {
       setDeleteId(null);
       setDeleteName("");
       router.refresh();
-    } catch (e: any) {
-      toast.error("שגיאה במחיקה", { description: e?.message ?? "" });
+    } catch (e: unknown) {
+      toast.error("שגיאה במחיקה", { description: getErrorMessage(e) });
     } finally {
       setDeleting(false);
     }
@@ -353,9 +365,12 @@ export default function TaskDetailClient(props: Props) {
                   <div key={a.id} className="rounded-md border bg-card p-2">
                     {a.url && a.kind === "image" ? (
                       <a href={a.url} target="_blank" rel="noreferrer">
-                        <img
+                        <Image
                           src={a.url}
                           alt={a.original_name ?? "image"}
+                          width={1200}
+                          height={704}
+                          unoptimized
                           className="h-44 w-full rounded-md object-cover"
                         />
                       </a>
@@ -456,7 +471,7 @@ export default function TaskDetailClient(props: Props) {
             </div>
           ) : (
             <div className="space-y-2">
-              {entries.map((e: any, idx) => (
+              {entries.map((e, idx) => (
                 <div key={idx} className="rounded-md border bg-card p-3">
                   {e.stamp && e.author ? (
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">

@@ -3,6 +3,8 @@ import { ORDERS_GLOBAL_PROJECT_ID } from "@/lib/orders/globalProject";
 
 type Row = Record<string, unknown>;
 
+const PAYMENTS_SCAN_CHUNK = 500;
+
 function getString(row: Row | null | undefined, key: string) {
   const value = row?.[key];
   return typeof value === "string" ? value : null;
@@ -19,23 +21,35 @@ function getNumber(row: Row | null | undefined, key: string) {
 }
 
 async function getOrderPaymentsTotal(supabase: SupabaseClient) {
-  const { data, error } = await supabase
-    .from("payments")
-    .select("amount_total")
-    .eq("target_type", "order")
-    .limit(10000);
+  let total = 0;
 
-  if (error) throw error;
+  for (let from = 0; ; from += PAYMENTS_SCAN_CHUNK) {
+    const to = from + PAYMENTS_SCAN_CHUNK - 1;
+    const { data, error } = await supabase
+      .from("payments")
+      .select("amount_total")
+      .eq("target_type", "order")
+      .order("payment_date", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to);
 
-  return ((data ?? []) as Array<{ amount_total?: number | string | null }>).reduce((sum, row) => {
-    const amount =
-      typeof row.amount_total === "number"
-        ? row.amount_total
-        : typeof row.amount_total === "string"
-          ? Number(row.amount_total)
-          : 0;
-    return sum + (Number.isFinite(amount) ? amount : 0);
-  }, 0);
+    if (error) throw error;
+
+    const rows = (data ?? []) as Array<{ amount_total?: number | string | null }>;
+    rows.forEach((row) => {
+      const amount =
+        typeof row.amount_total === "number"
+          ? row.amount_total
+          : typeof row.amount_total === "string"
+            ? Number(row.amount_total)
+            : 0;
+      total += Number.isFinite(amount) ? amount : 0;
+    });
+
+    if (rows.length < PAYMENTS_SCAN_CHUNK) break;
+  }
+
+  return total;
 }
 
 export async function applyEffectiveProjectDashboardRows<T extends Row>(

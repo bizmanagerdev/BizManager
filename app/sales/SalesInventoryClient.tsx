@@ -281,7 +281,7 @@ export default function SalesInventoryClient({
                 <thead className="bg-muted/50 text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 text-right font-medium">מוצר</th>
-                    <th className="px-3 py-2 text-right font-medium">מק"ט</th>
+                    <th className="px-3 py-2 text-right font-medium">מק&quot;ט</th>
                     <th className="px-3 py-2 text-right font-medium">במלאי</th>
                     <th className="px-3 py-2 text-right font-medium">שמור</th>
                     <th className="px-3 py-2 text-right font-medium">זמין</th>

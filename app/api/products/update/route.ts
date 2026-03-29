@@ -84,7 +84,7 @@ export async function POST(req: Request) {
         active,
       })
       .eq("id", id)
-      .select("*")
+      .select("id,name,sku,barcode,description,base_price,base_cost,active")
       .maybeSingle();
 
     if (error) {
@@ -119,4 +119,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

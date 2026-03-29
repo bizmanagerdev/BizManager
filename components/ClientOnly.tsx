@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useSyncExternalStore } from "react";
 
 export function ClientOnly({
   children,
@@ -9,11 +9,11 @@ export function ClientOnly({
   children: ReactNode;
   fallback?: ReactNode;
 }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
   if (!mounted) return fallback;
   return children;

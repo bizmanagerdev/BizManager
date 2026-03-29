@@ -42,6 +42,14 @@ type CustomerOption = {
   address: string | null;
 };
 
+type ProductOption = {
+  id: string;
+  name: string;
+  code: string | null;
+  unitPrice: number;
+  stock: number | null;
+};
+
 type InitialOrder = {
   id: string;
   customer_id: string;
@@ -240,6 +248,8 @@ export default function NewOrderClient({
   );
 
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>(initialCustomerOptions);
+  const [customerSearchError, setCustomerSearchError] = useState<string | null>(null);
+  const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
 
   useEffect(() => {
     setCustomerOptions(initialCustomerOptions);
@@ -276,29 +286,147 @@ export default function NewOrderClient({
     prefillHandled.current = true;
   }, [initialCustomerOptions, initialOrder?.customer_id, isEditMode, searchParams]);
 
-  const productOptions = useMemo(
+  const initialProductOptions = useMemo(
     () =>
       products
         .map((row) => {
           const id = getString(row, ["id"]) ?? "";
           const name = getString(row, ["name", "product_name", "title", "sku"]) ?? "מוצר";
           const code = getString(row, ["sku", "code", "barcode"]);
-          const unitPrice =
-            getNumber(row, [
-              "base_price",
-              "sale_price",
-              "selling_price",
-              "price",
-              "unit_price",
-              "retail_price",
-            ]) ??
-            0;
+          const unitPrice = getNumber(row, ["base_price"]) ?? 0;
           const stock = getNumber(row, ["stock", "quantity", "available_quantity", "in_stock"]);
           return { id, name, code, unitPrice, stock };
         })
-        .filter((row) => row.id),
+        .filter((row): row is ProductOption => Boolean(row.id)),
     [products]
   );
+
+  const [productOptions, setProductOptions] = useState<ProductOption[]>(initialProductOptions);
+  const [productSearchError, setProductSearchError] = useState<string | null>(null);
+  const [productSearchLoading, setProductSearchLoading] = useState(false);
+
+  useEffect(() => {
+    setProductOptions(initialProductOptions);
+  }, [initialProductOptions]);
+
+  useEffect(() => {
+    const q = customerQuery.trim();
+    const qPhone = normalizePhone(customerQuery);
+
+    if (!q && !qPhone) {
+      setCustomerOptions(initialCustomerOptions);
+      setCustomerSearchError(null);
+      setCustomerSearchLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      setCustomerSearchLoading(true);
+      setCustomerSearchError(null);
+
+      void fetch(`/api/customers/search?q=${encodeURIComponent(customerQuery)}&limit=50`, {
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          const json = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            customers?: Array<Record<string, unknown>>;
+          };
+          if (!res.ok) throw new Error(json.error ?? "Customer search failed");
+
+          const remoteCustomers = (json.customers ?? [])
+            .map((row) => ({
+              id: typeof row.id === "string" ? row.id : "",
+              name:
+                (typeof row.name === "string" && row.name.trim() ? row.name.trim() : null) ??
+                "לקוח",
+              phone: typeof row.phone === "string" ? row.phone : null,
+              email: typeof row.email === "string" ? row.email : null,
+              address: typeof row.address === "string" ? row.address : null,
+              city:
+                typeof row.address === "string" ? extractCityFromAddress(row.address) : null,
+            }))
+            .filter((row) => row.id);
+
+          setCustomerOptions((prev) => {
+            const selected = prev.find((row) => row.id === customerId);
+            return Array.from(
+              new Map([selected, ...remoteCustomers].filter(Boolean).map((row) => [row!.id, row!])).values()
+            );
+          });
+        })
+        .catch((error: unknown) => {
+          if (error instanceof Error && error.name === "AbortError") return;
+          setCustomerSearchError(error instanceof Error ? error.message : "שגיאת חיפוש לקוחות");
+        })
+        .finally(() => setCustomerSearchLoading(false));
+
+    }, 250);
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [customerId, customerQuery, initialCustomerOptions]);
+
+  useEffect(() => {
+    const q = productQuery.trim();
+
+    if (!q) {
+      setProductOptions(initialProductOptions);
+      setProductSearchError(null);
+      setProductSearchLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      setProductSearchLoading(true);
+      setProductSearchError(null);
+
+      void fetch(`/api/products/search?q=${encodeURIComponent(productQuery)}&limit=50`, {
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          const json = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            products?: Row[];
+          };
+          if (!res.ok) throw new Error(json.error ?? "Product search failed");
+
+          const remoteProducts = (json.products ?? [])
+            .map((row) => {
+              const id = getString(row, ["id"]) ?? "";
+              const name = getString(row, ["name", "product_name", "title", "sku"]) ?? "מוצר";
+              const code = getString(row, ["sku", "code", "barcode"]);
+              const unitPrice = getNumber(row, ["base_price"]) ?? 0;
+              return { id, name, code, unitPrice, stock: null };
+            })
+            .filter((row): row is ProductOption => Boolean(row.id));
+
+          setProductOptions((prev) => {
+            const selectedProducts = lines
+              .map((line) => prev.find((row) => row.id === line.product_id))
+              .filter((row): row is ProductOption => Boolean(row));
+            return Array.from(
+              new Map([...selectedProducts, ...remoteProducts].map((row) => [row.id, row])).values()
+            );
+          });
+        })
+        .catch((error: unknown) => {
+          if (error instanceof Error && error.name === "AbortError") return;
+          setProductSearchError(error instanceof Error ? error.message : "שגיאת חיפוש מוצרים");
+        })
+        .finally(() => setProductSearchLoading(false));
+
+    }, 250);
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [initialProductOptions, lines, productQuery]);
 
   const filteredProducts = useMemo(() => {
     const q = productQuery.trim().toLowerCase();
@@ -628,6 +756,8 @@ export default function NewOrderClient({
 
       {customersError ? <p className="text-sm text-destructive">שגיאת לקוחות: {customersError}</p> : null}
       {productsError ? <p className="text-sm text-destructive">שגיאת מוצרים: {productsError}</p> : null}
+      {customerSearchError ? <p className="text-sm text-destructive">שגיאת חיפוש לקוחות: {customerSearchError}</p> : null}
+      {productSearchError ? <p className="text-sm text-destructive">שגיאת חיפוש מוצרים: {productSearchError}</p> : null}
 
       {step === 1 ? (
         <Card>
@@ -642,6 +772,9 @@ export default function NewOrderClient({
                 onChange={(e) => setCustomerQuery(e.target.value)}
                 placeholder="לדוגמה: יוסי כהן, 0501234567 או תל אביב"
               />
+              {customerSearchLoading ? (
+                <p className="text-xs text-muted-foreground">מחפש לקוחות...</p>
+              ) : null}
             </div>
 
             {selectedCustomer ? (
@@ -732,6 +865,9 @@ export default function NewOrderClient({
                 onChange={(e) => setProductQuery(e.target.value)}
                 placeholder="חיפוש לפי שם או מק״ט"
               />
+              {productSearchLoading ? (
+                <p className="text-xs text-muted-foreground">מחפש מוצרים...</p>
+              ) : null}
             </div>
 
             <div className="max-h-60 space-y-2 overflow-auto rounded-md border p-2">

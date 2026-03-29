@@ -58,7 +58,7 @@ export async function POST(req: Request) {
         active,
       })
       .eq("id", id)
-      .select("*")
+      .select("id,name,name_for_invoice,registration_number,phone,email,address,active,notes")
       .maybeSingle();
 
     if (error) {

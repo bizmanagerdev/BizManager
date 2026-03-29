@@ -140,13 +140,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
           (typeof json.product.barcode === "string" && json.product.barcode) ||
           (createCode.trim() || null),
         unitPrice:
-          (typeof json.product.base_price === "number" ? json.product.base_price : null) ??
-          (typeof json.product.sale_price === "number" ? json.product.sale_price : null) ??
-          (typeof json.product.selling_price === "number" ? json.product.selling_price : null) ??
-          (typeof json.product.price === "number" ? json.product.price : null) ??
-          (typeof json.product.unit_price === "number" ? json.product.unit_price : null) ??
-          (typeof json.product.retail_price === "number" ? json.product.retail_price : null) ??
-          unitPrice,
+          (typeof json.product.base_price === "number" ? json.product.base_price : null) ?? unitPrice,
         stock:
           (typeof json.product.stock === "number" ? json.product.stock : null) ??
           (typeof json.product.quantity === "number" ? json.product.quantity : null) ??
@@ -260,13 +254,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
           (typeof json.product.barcode === "string" && json.product.barcode) ||
           (editCode.trim() || null),
         unitPrice:
-          (typeof json.product.base_price === "number" ? json.product.base_price : null) ??
-          (typeof json.product.sale_price === "number" ? json.product.sale_price : null) ??
-          (typeof json.product.selling_price === "number" ? json.product.selling_price : null) ??
-          (typeof json.product.price === "number" ? json.product.price : null) ??
-          (typeof json.product.unit_price === "number" ? json.product.unit_price : null) ??
-          (typeof json.product.retail_price === "number" ? json.product.retail_price : null) ??
-          unitPrice,
+          (typeof json.product.base_price === "number" ? json.product.base_price : null) ?? unitPrice,
         stock:
           (typeof json.product.stock === "number" ? json.product.stock : null) ??
           (typeof json.product.quantity === "number" ? json.product.quantity : null) ??

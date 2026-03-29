@@ -19,7 +19,7 @@ export async function POST(req: Request) {
       .from("tasks")
       .update({ priority })
       .eq("id", id)
-      .select("*")
+      .select("id,priority,updated_at")
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
