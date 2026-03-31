@@ -6,6 +6,14 @@ import { Toaster } from "@/components/ui/sonner";
 export const metadata: Metadata = {
   title: "BIZMANAGER",
   description: "מערכת ניהול עסק",
+  icons: {
+    icon: [
+      { url: "/favicon.ico?v=3", sizes: "any" },
+      { url: "/icon.svg?v=3", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon.ico?v=3",
+    apple: "/icon.svg?v=3",
+  },
 };
 
 export default function RootLayout({

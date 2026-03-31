@@ -1,0 +1,17 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bizmanager-b" x1="40" y1="32" x2="212" y2="224" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E13B4B"/>
+      <stop offset="0.55" stop-color="#E13B4B"/>
+      <stop offset="1" stop-color="#1F346D"/>
+    </linearGradient>
+    <filter id="shadow" x="8" y="12" width="240" height="236" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#E13B4B" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+  <rect width="256" height="256" rx="64" fill="#F5F7FB"/>
+  <g filter="url(#shadow)">
+    <rect x="32" y="28" width="192" height="192" rx="42" fill="url(#bizmanager-b)"/>
+  </g>
+  <path d="M97 67H142.5C172.047 67 189 80.6036 189 104.5C189 121.391 180.533 132.631 164.46 137.266C184.273 140.718 195 153.042 195 172.5C195 199.777 176.54 214 143.5 214H97V67ZM124.5 125.5H141.5C154.621 125.5 161.5 119.915 161.5 109C161.5 98.2192 154.758 92.5 141.5 92.5H124.5V125.5ZM124.5 188.5H143.5C157.945 188.5 165.5 182.398 165.5 170.5C165.5 158.736 157.945 152.5 143.5 152.5H124.5V188.5Z" fill="white"/>
+</svg>
