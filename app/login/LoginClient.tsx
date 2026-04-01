@@ -26,13 +26,15 @@ export default function LoginClient() {
     setShowSignUpPrompt(false);
     setLoading(true);
 
-    try {
-      const trimmedEmail = email.trim();
+    const trimmedEmail = email.trim();
 
-      if (!trimmedEmail || !password) {
-        setErr("Email and password are required.");
-        return;
-      }
+    if (!trimmedEmail || !password) {
+      setErr("Email and password are required.");
+      setLoading(false);
+      return;
+    }
+
+    try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -49,12 +51,14 @@ export default function LoginClient() {
         setShowSignUpPrompt(
           message.toLowerCase().includes("invalid email or password")
         );
+        setLoading(false);
         return;
       }
 
       router.replace("/dashboard");
       router.refresh();
-    } finally {
+    } catch {
+      setErr("Sign in failed.");
       setLoading(false);
     }
   }

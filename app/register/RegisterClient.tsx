@@ -47,12 +47,13 @@ export default function RegisterClient() {
     const trimmedPhone = phone.trim();
     const trimmedNotes = notes.trim();
 
-    try {
-      if (!trimmedEmail || !password) {
-        setErr("Email and password are required.");
-        return;
-      }
+    if (!trimmedEmail || !password) {
+      setErr("Email and password are required.");
+      setLoading(false);
+      return;
+    }
 
+    try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -79,6 +80,7 @@ export default function RegisterClient() {
         }
 
         setErr(data.error ?? "Registration failed.");
+        setLoading(false);
         return;
       }
 
@@ -92,7 +94,8 @@ export default function RegisterClient() {
 
       router.replace("/dashboard");
       router.refresh();
-    } finally {
+    } catch {
+      setErr("Registration failed.");
       setLoading(false);
     }
   }
