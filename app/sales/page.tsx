@@ -74,10 +74,12 @@ function pageRange(page: number) {
 function buildSalesHref(
   activeTab: string,
   pageKey: "ordersPage" | "inventoryPage" | "pricePage" | "deliveriesPage",
-  page: number
+  page: number,
+  customerId: string | null
 ) {
   const params = new URLSearchParams();
   if (activeTab !== "orders") params.set("tab", activeTab);
+  if (customerId) params.set("customer_id", customerId);
   if (page > 1) params.set(pageKey, String(page));
   const query = params.toString();
   return query ? `/sales?${query}` : "/sales";
@@ -157,6 +159,7 @@ export default async function SalesPage({
 }: {
   searchParams?: Promise<{
     tab?: string;
+    customer_id?: string;
     ordersPage?: string;
     inventoryPage?: string;
     pricePage?: string;
@@ -164,6 +167,10 @@ export default async function SalesPage({
   }>;
 }) {
   const params = (await searchParams) ?? {};
+  const customerId =
+    typeof params.customer_id === "string" && params.customer_id.trim()
+      ? params.customer_id.trim()
+      : null;
   const activeTab =
     params.tab === "inventory" || params.tab === "price-list" || params.tab === "deliveries"
       ? params.tab
@@ -180,14 +187,15 @@ export default async function SalesPage({
 
   if (activeTab === "orders") {
     const { from, to } = pageRange(ordersPage);
-    const { data, error, count } = await supabase
+    let ordersQuery = supabase
       .from("order_overview_view")
       .select(
         "order_id,customer_id,customer_name,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,payment_count",
         { count: "estimated" }
       )
-      .order("order_date", { ascending: false })
-      .range(from, to);
+      .order("order_date", { ascending: false });
+    if (customerId) ordersQuery = ordersQuery.eq("customer_id", customerId);
+    const { data, error, count } = await ordersQuery.range(from, to);
 
     const totalCount = typeof count === "number" ? count : ((data ?? []) as Row[]).length;
     const hasPreviousPage = ordersPage > 1;
@@ -207,7 +215,7 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "ordersPage", ordersPage - 1)}>הקודם</Link>
+                    <Link href={buildSalesHref(activeTab, "ordersPage", ordersPage - 1, customerId)}>הקודם</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -216,7 +224,7 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "ordersPage", ordersPage + 1)}>הבא</Link>
+                    <Link href={buildSalesHref(activeTab, "ordersPage", ordersPage + 1, customerId)}>הבא</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -283,7 +291,7 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "pricePage", pricePage - 1)}>הקודם</Link>
+                    <Link href={buildSalesHref(activeTab, "pricePage", pricePage - 1, customerId)}>הקודם</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -292,7 +300,7 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "pricePage", pricePage + 1)}>הבא</Link>
+                    <Link href={buildSalesHref(activeTab, "pricePage", pricePage + 1, customerId)}>הבא</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -333,7 +341,7 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "inventoryPage", inventoryPage - 1)}>
+                    <Link href={buildSalesHref(activeTab, "inventoryPage", inventoryPage - 1, customerId)}>
                       הקודם
                     </Link>
                   </Button>
@@ -344,7 +352,7 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "inventoryPage", inventoryPage + 1)}>
+                    <Link href={buildSalesHref(activeTab, "inventoryPage", inventoryPage + 1, customerId)}>
                       הבא
                     </Link>
                   </Button>
@@ -363,14 +371,15 @@ export default async function SalesPage({
 
   if (activeTab === "deliveries") {
     const { from, to } = pageRange(deliveriesPage);
-    const { data, error, count } = await supabase
+    let deliveriesQuery = supabase
       .from("delivery_overview_view")
       .select(
         "order_id,customer_id,customer_name,customer_phone,customer_address,customer_city,order_date,created_at,status,total_amount,notes",
         { count: "estimated" }
       )
-      .order("order_date", { ascending: false })
-      .range(from, to);
+      .order("order_date", { ascending: false });
+    if (customerId) deliveriesQuery = deliveriesQuery.eq("customer_id", customerId);
+    const { data, error, count } = await deliveriesQuery.range(from, to);
 
     const deliveries = ((data ?? []) as Row[])
       .map((row) => ({
@@ -450,7 +459,7 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "deliveriesPage", deliveriesPage - 1)}>
+                    <Link href={buildSalesHref(activeTab, "deliveriesPage", deliveriesPage - 1, customerId)}>
                       הקודם
                     </Link>
                   </Button>
@@ -461,7 +470,7 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "deliveriesPage", deliveriesPage + 1)}>
+                    <Link href={buildSalesHref(activeTab, "deliveriesPage", deliveriesPage + 1, customerId)}>
                       הבא
                     </Link>
                   </Button>

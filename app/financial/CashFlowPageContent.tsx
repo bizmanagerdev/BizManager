@@ -29,6 +29,7 @@ export function normalizeCashFlowSearchParams(
   return {
     from: firstValue(searchParams.from) ?? null,
     to: firstValue(searchParams.to) ?? null,
+    customerId: firstValue(searchParams.customer_id) ?? null,
     projectId: firstValue(searchParams.projectId) ?? null,
     type: (firstValue(searchParams.type) as CashFlowFilterValues["type"]) ?? "all",
     page: Number.isFinite(page) && page > 0 ? page : 1,
@@ -40,6 +41,7 @@ function searchParamsForLinks(filters: CashFlowFilterValues) {
   const params: Record<string, string> = {};
   if (filters.from) params.from = filters.from;
   if (filters.to) params.to = filters.to;
+  if (filters.customerId) params.customer_id = filters.customerId;
   if (filters.projectId) params.projectId = filters.projectId;
   if (filters.type && filters.type !== "all") params.type = filters.type;
   return params;
@@ -81,6 +83,7 @@ export default async function CashFlowPageContent({
           actionPath={basePath}
           from={filters.from ?? ""}
           to={filters.to ?? ""}
+          customerId={filters.customerId ?? ""}
           projectId={filters.projectId ?? ""}
           type={filters.type ?? "all"}
           projects={projectOptions}

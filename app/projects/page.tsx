@@ -22,9 +22,10 @@ function parsePage(value: string | undefined) {
   return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
 }
 
-function buildProjectsHref(page: number, activeTab: string) {
+function buildProjectsHref(page: number, activeTab: string, customerId: string | null) {
   const params = new URLSearchParams();
   if (activeTab === "calendar") params.set("tab", "calendar");
+  if (customerId) params.set("customer_id", customerId);
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `/projects?${query}` : "/projects";
@@ -33,11 +34,15 @@ function buildProjectsHref(page: number, activeTab: string) {
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ tab?: string; page?: string }>;
+  searchParams?: Promise<{ tab?: string; page?: string; customer_id?: string }>;
 }) {
   const params = (await searchParams) ?? {};
   const activeTab = params.tab === "calendar" ? "calendar" : "list";
   const page = parsePage(params.page);
+  const customerId =
+    typeof params.customer_id === "string" && params.customer_id.trim()
+      ? params.customer_id.trim()
+      : null;
   const from = (page - 1) * PROJECTS_PAGE_SIZE;
   const to = page * PROJECTS_PAGE_SIZE - 1;
 
@@ -48,14 +53,17 @@ export default async function ProjectsPage({
     { data: users },
     { data: customers },
   ] = await Promise.all([
-    supabase
-      .from("project_dashboard_view")
-      .select(
-        "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at,total_expenses,gross_profit,total_tasks,completed_tasks,open_tasks",
-        { count: "estimated" }
-      )
-      .order("updated_at", { ascending: false })
-      .range(from, to),
+    (() => {
+      let query = supabase
+        .from("project_dashboard_view")
+        .select(
+          "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at,total_expenses,gross_profit,total_tasks,completed_tasks,open_tasks",
+          { count: "estimated" }
+        )
+        .order("updated_at", { ascending: false });
+      if (customerId) query = query.eq("customer_id", customerId);
+      return query.range(from, to);
+    })(),
     supabase
       .from("users")
       .select("id,full_name,email,active")
@@ -155,7 +163,7 @@ export default async function ProjectsPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildProjectsHref(page - 1, activeTab)}>הקודם</Link>
+                    <Link href={buildProjectsHref(page - 1, activeTab, customerId)}>הקודם</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -164,7 +172,7 @@ export default async function ProjectsPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildProjectsHref(page + 1, activeTab)}>הבא</Link>
+                    <Link href={buildProjectsHref(page + 1, activeTab, customerId)}>הבא</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>

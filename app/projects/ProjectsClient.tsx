@@ -280,7 +280,7 @@ export default function ProjectsClient({
     const prefillCustomerId = (searchParams.get("customer_id") ?? "").trim();
     const shouldOpenCreate = (searchParams.get("create") ?? "").trim() === "1";
 
-    if (prefillCustomerId) {
+    if (prefillCustomerId && shouldOpenCreate) {
       const matched = customerOptionsState.find((row) => row.id === prefillCustomerId) ?? null;
       setCreateCustomerId(prefillCustomerId);
       setCreateCustomerQuery(matched?.label ?? "");

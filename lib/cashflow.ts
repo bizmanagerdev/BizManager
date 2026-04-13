@@ -5,6 +5,7 @@ export type CashFlowType = "inflow" | "outflow";
 export type CashFlowFilters = {
   from?: string | null;
   to?: string | null;
+  customerId?: string | null;
   projectId?: string | null;
   type?: CashFlowType | "all" | null;
   page?: number;
@@ -119,6 +120,12 @@ function normalizeProjectId(value: string | null | undefined) {
   return trimmed ? trimmed : null;
 }
 
+function normalizeCustomerId(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
 function normalizeType(value: string | null | undefined) {
   return value === "inflow" || value === "outflow" ? value : "all";
 }
@@ -173,13 +180,33 @@ function normalizeCashFlowEntry(row: CashFlowEntryRow): CashFlowTransaction | nu
   };
 }
 
+async function resolveCustomerProjectIds(
+  supabase: SupabaseClient,
+  customerId: string | null
+) {
+  if (!customerId) return [] as string[];
+
+  const { data, error } = await supabase.from("projects").select("id").eq("customer_id", customerId);
+  if (error) throw error;
+
+  return ((data ?? []) as Array<{ id?: string | null }>)
+    .map((row) => (typeof row.id === "string" ? row.id : null))
+    .filter((value): value is string => Boolean(value));
+}
+
 function applyCashFlowFilters<TQuery extends {
   gte: (column: string, value: string) => TQuery;
   lte: (column: string, value: string) => TQuery;
   eq: (column: string, value: string) => TQuery;
-}>(query: TQuery, filters: CashFlowFilters) {
+  or: (filters: string) => TQuery;
+}>(
+  query: TQuery,
+  filters: CashFlowFilters,
+  customerProjectIds: string[] = []
+) {
   const from = normalizeDateInput(filters.from);
   const to = normalizeDateInput(filters.to);
+  const customerId = normalizeCustomerId(filters.customerId);
   const projectId = normalizeProjectId(filters.projectId);
   const typeFilter = normalizeType(filters.type);
 
@@ -188,6 +215,12 @@ function applyCashFlowFilters<TQuery extends {
   if (from) nextQuery = nextQuery.gte("entry_date", from);
   if (to) nextQuery = nextQuery.lte("entry_date", to);
   if (projectId) nextQuery = nextQuery.eq("project_id", projectId);
+  if (customerId) {
+    nextQuery =
+      customerProjectIds.length > 0
+        ? nextQuery.or(`customer_id.eq.${customerId},project_id.in.(${customerProjectIds.join(",")})`)
+        : nextQuery.eq("customer_id", customerId);
+  }
   if (typeFilter === "inflow") nextQuery = nextQuery.eq("type", "income");
   if (typeFilter === "outflow") nextQuery = nextQuery.eq("type", "expense");
 
@@ -200,10 +233,15 @@ async function scanCashFlowEntries<T extends Record<string, unknown>>(
   selectColumns: string,
   onChunk: (rows: T[]) => void | Promise<void>
 ) {
+  const customerProjectIds = await resolveCustomerProjectIds(
+    supabase,
+    normalizeCustomerId(filters.customerId)
+  );
+
   for (let from = 0; ; from += SCAN_CHUNK_SIZE) {
     const to = from + SCAN_CHUNK_SIZE - 1;
     let query = supabase.from("cash_flow_entries_view").select(selectColumns);
-    query = applyCashFlowFilters(query, filters);
+    query = applyCashFlowFilters(query, filters, customerProjectIds);
 
     const { data, error } = await query
       .order("entry_date", { ascending: false })
@@ -257,11 +295,16 @@ export async function getCashFlowTransactions(
   const from = (page - 1) * pageSize;
   const to = page * pageSize - 1;
 
+  const customerProjectIds = await resolveCustomerProjectIds(
+    supabase,
+    normalizeCustomerId(filters.customerId)
+  );
+
   let query = supabase.from("cash_flow_entries_view").select(
     "id,entry_date,type,amount,signed_amount,project_id,project_name,description,reference",
     { count: "estimated" }
   );
-  query = applyCashFlowFilters(query, filters);
+  query = applyCashFlowFilters(query, filters, customerProjectIds);
 
   const { data, error, count } = await query
     .order("entry_date", { ascending: false })

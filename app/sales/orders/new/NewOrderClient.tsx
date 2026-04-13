@@ -234,9 +234,9 @@ export default function NewOrderClient({
     () =>
       customers
         .map((row) => ({
-          id: getString(row, ["id"]) ?? "",
+          id: getString(row, ["id", "customer_id"]) ?? "",
           name:
-            getString(row, ["name", "name_for_invoice", "email", "phone"]) ??
+            getString(row, ["name", "customer_name", "name_for_invoice", "email", "phone"]) ??
             "לקוח",
           phone: getString(row, ["phone", "mobile", "tel"]),
           email: getString(row, ["email"]),
@@ -281,6 +281,7 @@ export default function NewOrderClient({
     if (matched) {
       setCustomerId(matched.id);
       setCustomerQuery(matched.name);
+      setStep(2);
     }
 
     prefillHandled.current = true;

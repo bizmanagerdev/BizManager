@@ -7,6 +7,7 @@ type Props = {
   actionPath: string;
   from: string;
   to: string;
+  customerId: string;
   projectId: string;
   type: string;
   projects: ProjectOption[];
@@ -16,6 +17,7 @@ export default function CashFlowFilters({
   actionPath,
   from,
   to,
+  customerId,
   projectId,
   type,
   projects,
@@ -30,6 +32,7 @@ export default function CashFlowFilters({
       </CardHeader>
       <CardContent>
         <form action={actionPath} method="get" className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          {customerId ? <input type="hidden" name="customer_id" value={customerId} /> : null}
           <div className="grid gap-3 sm:grid-cols-2 lg:flex lg:flex-1">
             <label className="grid gap-1.5 text-sm text-right">
               <span className="font-medium">מתאריך</span>
@@ -82,7 +85,9 @@ export default function CashFlowFilters({
               החל סינון
             </Button>
             <Button asChild type="button" variant="outline" className="flex-1 lg:flex-none">
-              <Link href={actionPath}>איפוס</Link>
+              <Link href={customerId ? `${actionPath}?customer_id=${encodeURIComponent(customerId)}` : actionPath}>
+                איפוס
+              </Link>
             </Button>
           </div>
         </form>

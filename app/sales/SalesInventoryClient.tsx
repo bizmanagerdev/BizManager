@@ -1,10 +1,17 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type Row = Record<string, unknown>;
 
@@ -139,6 +146,7 @@ export default function SalesInventoryClient({
   });
 
   const [movementRows, setMovementRows] = useState<Row[]>(movements);
+  const [adjustmentOpen, setAdjustmentOpen] = useState(false);
   const [productId, setProductId] = useState("");
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("purchase_in");
   const [quantity, setQuantity] = useState("");
@@ -146,7 +154,6 @@ export default function SalesInventoryClient({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const adjustmentCardRef = useRef<HTMLDivElement | null>(null);
   const quantityInputRef = useRef<HTMLInputElement | null>(null);
 
   const lowStockThreshold = 10;
@@ -171,6 +178,26 @@ export default function SalesInventoryClient({
         .sort((a, b) => a.label.localeCompare(b.label, "he")),
     [products]
   );
+
+  useEffect(() => {
+    if (!adjustmentOpen) return;
+    const timeout = setTimeout(() => quantityInputRef.current?.focus(), 120);
+    return () => clearTimeout(timeout);
+  }, [adjustmentOpen]);
+
+  function resetAdjustmentForm(nextProductId = "") {
+    setProductId(nextProductId);
+    setAdjustmentType("purchase_in");
+    setQuantity("");
+    setNotes("");
+    setError("");
+  }
+
+  function openAdjustmentDialog(nextProductId: string) {
+    setSuccess("");
+    resetAdjustmentForm(nextProductId);
+    setAdjustmentOpen(true);
+  }
 
   async function adjustInventory() {
     if (submitting) return;
@@ -238,8 +265,8 @@ export default function SalesInventoryClient({
       }
 
       setSuccess("התאמת מלאי בוצעה בהצלחה.");
-      setQuantity("");
-      setNotes("");
+      setAdjustmentOpen(false);
+      resetAdjustmentForm();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "שגיאה לא ידועה");
     } finally {
@@ -281,7 +308,7 @@ export default function SalesInventoryClient({
                 <thead className="bg-muted/50 text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 text-right font-medium">מוצר</th>
-                    <th className="px-3 py-2 text-right font-medium">מק&quot;ט</th>
+                    <th className="px-3 py-2 text-right font-medium">מק"ט</th>
                     <th className="px-3 py-2 text-right font-medium">במלאי</th>
                     <th className="px-3 py-2 text-right font-medium">שמור</th>
                     <th className="px-3 py-2 text-right font-medium">זמין</th>
@@ -308,19 +335,7 @@ export default function SalesInventoryClient({
                             type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              setProductId(item.productId);
-                              setAdjustmentType("purchase_in");
-                              setQuantity("");
-                              setNotes("");
-                              setError("");
-                              setSuccess("");
-                              adjustmentCardRef.current?.scrollIntoView({
-                                behavior: "smooth",
-                                block: "center",
-                              });
-                              setTimeout(() => quantityInputRef.current?.focus(), 120);
-                            }}
+                            onClick={() => openAdjustmentDialog(item.productId)}
                           >
                             עדכון
                           </Button>
@@ -335,12 +350,23 @@ export default function SalesInventoryClient({
         </CardContent>
       </Card>
 
-      <div ref={adjustmentCardRef}>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">עדכון רכישות / החזרות / התאמות</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+      {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
+
+      <Dialog
+        open={adjustmentOpen}
+        onOpenChange={(open) => {
+          setAdjustmentOpen(open);
+          if (!open && !submitting) {
+            resetAdjustmentForm();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>עדכון רכישות / החזרות / התאמות</DialogTitle>
+            <DialogDescription>בחירת מוצר, סוג פעולה, כמות והערות לעדכון המלאי.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
             <div className="grid gap-3 md:grid-cols-4">
               <div className="space-y-1 md:col-span-2">
                 <label className="text-sm font-medium">מוצר</label>
@@ -390,16 +416,18 @@ export default function SalesInventoryClient({
             </div>
 
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
 
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" disabled={submitting} onClick={() => setAdjustmentOpen(false)}>
+                ביטול
+              </Button>
               <Button type="button" disabled={submitting} onClick={() => void adjustInventory()}>
                 {submitting ? "מעדכן..." : "ביצוע התאמה"}
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader className="pb-2">
