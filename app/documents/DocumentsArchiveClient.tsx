@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useDeferredValue, useMemo, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ExternalLink,
@@ -10,6 +10,7 @@ import {
   FolderOpen,
   ImageIcon,
   Package,
+  Upload,
   Search,
   Tag,
   Trash2,
@@ -45,6 +46,11 @@ export type DocumentArchiveFilters = {
 };
 
 export type ArchiveRelation = {
+  id: string;
+  label: string;
+};
+
+export type UploadProjectOption = {
   id: string;
   label: string;
 };
@@ -186,12 +192,14 @@ export default function DocumentsArchiveClient({
   documents,
   error,
   initialFilters,
+  projectOptions,
   totalDocuments,
   isTruncated,
 }: {
   documents: DocumentArchiveItem[];
   error: string | null;
   initialFilters: DocumentArchiveFilters;
+  projectOptions: UploadProjectOption[];
   totalDocuments: number;
   isTruncated: boolean;
 }) {
@@ -206,6 +214,15 @@ export default function DocumentsArchiveClient({
   const [projectId, setProjectId] = useState(initialFilters.project_id);
   const [fileKind, setFileKind] = useState("");
   const [groupBy, setGroupBy] = useState("entity");
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadCategoryMode, setUploadCategoryMode] = useState<"existing" | "new">("existing");
+  const [uploadCategory, setUploadCategory] = useState("");
+  const [uploadNewCategory, setUploadNewCategory] = useState("");
+  const [uploadProjectId, setUploadProjectId] = useState(initialFilters.project_id);
+  const [uploadProjectOptions, setUploadProjectOptions] = useState<UploadProjectOption[]>(projectOptions);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [editDialogDoc, setEditDialogDoc] = useState<DocumentArchiveItem | null>(null);
   const [editTagValue, setEditTagValue] = useState("");
   const [deleteDialogDoc, setDeleteDialogDoc] = useState<DocumentArchiveItem | null>(null);
@@ -226,7 +243,7 @@ export default function DocumentsArchiveClient({
       .sort((a, b) => a.label.localeCompare(b.label, "he"));
   }, [customerId, customerName, documents]);
 
-  const projectOptions = useMemo(() => {
+  const projectFilterOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const doc of documents) {
       for (const project of doc.projects) {
@@ -243,6 +260,44 @@ export default function DocumentsArchiveClient({
       new Set(documents.map((doc) => doc.document_type).filter((value): value is string => Boolean(value)))
     ).sort((a, b) => a.localeCompare(b, "he"));
   }, [documents]);
+
+  const uploadCategoryOptions = useMemo(() => documentTypeOptions, [documentTypeOptions]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProjectOptions() {
+      try {
+        const response = await fetch("/api/projects/options", { cache: "no-store" });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) return;
+
+        const nextOptions = Array.isArray(json?.projects)
+          ? (json.projects as Array<{ id?: string; label?: string }>)
+              .filter(
+                (item): item is { id: string; label: string } =>
+                  typeof item?.id === "string" &&
+                  item.id.length > 0 &&
+                  typeof item?.label === "string" &&
+                  item.label.length > 0
+              )
+              .sort((a, b) => a.label.localeCompare(b.label, "he"))
+          : [];
+
+        if (!cancelled && nextOptions.length > 0) {
+          setUploadProjectOptions(nextOptions);
+        }
+      } catch {
+        // Keep initial server-provided options.
+      }
+    }
+
+    void loadProjectOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredDocuments = useMemo(() => {
     return documents.filter((doc) => {
@@ -293,6 +348,68 @@ export default function DocumentsArchiveClient({
     setProjectId("");
     setFileKind("");
     setGroupBy("entity");
+  }
+
+  async function startUpload() {
+    if (uploading || uploadFiles.length === 0) return;
+
+    const category =
+      uploadCategoryMode === "new" ? uploadNewCategory.trim() : uploadCategory.trim();
+    const projectId = uploadProjectId.trim();
+
+    if (uploadCategoryMode === "new" && !category) {
+      toast.error("יש להזין קטגוריה חדשה");
+      return;
+    }
+    if (!projectId) {
+      toast.error("יש לבחור פרויקט");
+      return;
+    }
+
+    setUploading(true);
+    const files = uploadFiles;
+    const toastId = toast.loading("מעלה קבצים...");
+
+    try {
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i]!;
+        const form = new FormData();
+        form.set("file", file);
+        form.set("project_id", projectId);
+        if (category) form.set("category", category);
+
+        toast.loading(`מעלה קבצים... (${i + 1}/${files.length})`, { id: toastId });
+
+        const response = await fetch("/api/documents/upload", {
+          method: "POST",
+          body: form,
+        });
+        const json = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          toast.error("שגיאה בהעלאת קובץ", {
+            id: toastId,
+            description: json?.error ?? "",
+          });
+          return;
+        }
+      }
+
+      toast.success("הקבצים הועלו", { id: toastId });
+      setUploadDialogOpen(false);
+      setUploadCategory("");
+      setUploadNewCategory("");
+      setUploadCategoryMode("existing");
+      setUploadProjectId(initialFilters.project_id);
+      setUploadFiles([]);
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
+      router.refresh();
+    } catch (errorValue: unknown) {
+      const description = errorValue instanceof Error ? errorValue.message : "Unknown error";
+      toast.error("שגיאה בהעלאת קובץ", { id: toastId, description });
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function saveTag() {
@@ -367,6 +484,10 @@ export default function DocumentsArchiveClient({
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button variant="default" onClick={() => setUploadDialogOpen(true)}>
+                <Upload className="h-4 w-4" />
+                העלאת קבצים
+              </Button>
               {customerId ? (
                 <Button asChild variant="outline">
                   <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>חזרה ללקוח</Link>
@@ -450,7 +571,7 @@ export default function DocumentsArchiveClient({
               <div className="text-sm font-medium">פרויקט</div>
               <SelectField value={projectId} onChange={setProjectId} ariaLabel="סינון לפי פרויקט">
                 <option value="">כל הפרויקטים</option>
-                {projectOptions.map((option) => (
+                {uploadProjectOptions.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.label}
                   </option>
@@ -644,6 +765,131 @@ export default function DocumentsArchiveClient({
           </Card>
         ))
       )}
+
+      <Dialog
+        open={uploadDialogOpen}
+        onOpenChange={(open) => {
+          setUploadDialogOpen(open);
+          if (!open) {
+            setUploadCategory("");
+            setUploadNewCategory("");
+            setUploadCategoryMode("existing");
+            setUploadProjectId(initialFilters.project_id);
+            setUploadFiles([]);
+            if (uploadInputRef.current) uploadInputRef.current.value = "";
+          }
+        }}
+      >
+        <AdaptiveDialog size="formMd">
+          <DialogHeader>
+            <DialogTitle>העלאת קבצים</DialogTitle>
+            <DialogDescription>בחירת קבצים להוספה לארכיון המסמכים המרכזי.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-4">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">פרויקט</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={uploadProjectId}
+                onChange={(event) => setUploadProjectId(event.target.value)}
+              >
+                <option value="">בחר פרויקט</option>
+                {uploadProjectOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {!uploadProjectId.trim() ? (
+                <div className="text-xs text-destructive">יש לבחור פרויקט לקישור הקבצים</div>
+              ) : null}
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">קטגוריה (אופציונלי)</div>
+              <AdaptiveGrid variant="formTwo" className="gap-2">
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={uploadCategoryMode === "new" ? "__new__" : uploadCategory}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === "__new__") {
+                      setUploadCategoryMode("new");
+                      setUploadCategory("");
+                    } else {
+                      setUploadCategoryMode("existing");
+                      setUploadCategory(value);
+                      setUploadNewCategory("");
+                    }
+                  }}
+                >
+                  <option value="">ללא קטגוריה</option>
+                  {uploadCategoryOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                  <option value="__new__">קטגוריה חדשה...</option>
+                </select>
+                {uploadCategoryMode === "new" ? (
+                  <Input
+                    value={uploadNewCategory}
+                    onChange={(event) => setUploadNewCategory(event.target.value)}
+                    placeholder="שם קטגוריה חדשה"
+                    aria-invalid={!uploadNewCategory.trim()}
+                    className={!uploadNewCategory.trim() ? "border-destructive focus-visible:ring-destructive" : ""}
+                  />
+                ) : null}
+              </AdaptiveGrid>
+              {uploadCategoryMode === "new" && !uploadNewCategory.trim() ? (
+                <div className="text-xs text-destructive">יש להזין שם קטגוריה</div>
+              ) : null}
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-sm font-medium">קבצים</div>
+              <input
+                ref={uploadInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(event) => setUploadFiles(Array.from(event.target.files ?? []))}
+              />
+              <div className="flex items-center justify-between gap-2">
+                <Button type="button" variant="secondary" onClick={() => uploadInputRef.current?.click()}>
+                  בחר קבצים
+                </Button>
+                <div className="text-xs text-muted-foreground">{uploadFiles.length} קבצים</div>
+              </div>
+              {uploadFiles.length > 0 ? (
+                <div className="text-xs text-muted-foreground truncate">
+                  {uploadFiles.slice(0, 3).map((file) => file.name).join(", ")}
+                  {uploadFiles.length > 3 ? ` +${uploadFiles.length - 3}` : ""}
+                </div>
+              ) : (
+                <div className="text-xs text-destructive">בחר לפחות קובץ אחד</div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="mt-6">
+            <Button type="button" variant="secondary" disabled={uploading} onClick={() => setUploadDialogOpen(false)}>
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                uploading ||
+                uploadFiles.length === 0 ||
+                !uploadProjectId.trim() ||
+                (uploadCategoryMode === "new" && !uploadNewCategory.trim())
+              }
+              onClick={() => void startUpload()}
+            >
+              {uploading ? "מעלה..." : "העלאה"}
+            </Button>
+          </DialogFooter>
+        </AdaptiveDialog>
+      </Dialog>
 
       <Dialog
         open={Boolean(editDialogDoc)}

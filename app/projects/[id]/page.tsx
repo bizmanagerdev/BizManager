@@ -289,7 +289,8 @@ export default async function ProjectPage({
         const documentType = getFirstString(row, ["document_type"]);
         const entityType = getFirstString(link, ["entity_type"]);
         const entityId = getFirstString(link, ["entity_id"]);
-        const uploadedAt = getFirstString(row, ["uploaded_at", "created_at"]);
+        const uploadedAt =
+          getFirstString(row, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]);
 
         const { data: signed, error: signError } = storageKey
           ? await supabase.storage.from(DOCUMENTS_BUCKET).createSignedUrl(storageKey, 60 * 60)

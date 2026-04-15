@@ -42,6 +42,11 @@ type ProjectLookupRow = {
   customer_name: string | null;
 };
 
+type ProjectUploadRow = {
+  id: string;
+  name: string | null;
+};
+
 type TaskLookupRow = {
   task_id: string;
   subject: string | null;
@@ -73,6 +78,11 @@ type LinkedEntity = {
   id: string;
   label: string;
   href: string | null;
+};
+
+type UploadProjectOption = {
+  id: string;
+  label: string;
 };
 
 function normalizeString(value: unknown) {
@@ -178,13 +188,13 @@ export default async function DocumentsPage({
     if (entityType === "order") orderIds.add(entityId);
   }
 
-  const [projectsResult, tasksOverviewResult, tasksMetaResult, ordersResult] = await Promise.all([
-    projectIds.size > 0
-      ? supabase
-          .from("project_overview_view")
-          .select("id,name,customer_id,customer_name")
-          .in("id", Array.from(projectIds))
-      : Promise.resolve({ data: [] as ProjectLookupRow[], error: null }),
+  const [allProjectsResult, uploadProjectsResult, tasksOverviewResult, tasksMetaResult, ordersResult] = await Promise.all([
+    supabase.from("project_overview_view").select("id,name,customer_id,customer_name"),
+    supabase
+      .from("project_dashboard_view")
+      .select("id,name")
+      .order("name", { ascending: true })
+      .range(0, 999),
     taskIds.size > 0
       ? supabase
           .from("task_overview_view")
@@ -218,9 +228,16 @@ export default async function DocumentsPage({
       : { data: [] as CustomerLookupRow[], error: null };
 
   const projectsById = new Map<string, ProjectLookupRow>();
-  ((projectsResult.data ?? []) as ProjectLookupRow[]).forEach((row) => {
+  ((allProjectsResult.data ?? []) as ProjectLookupRow[]).forEach((row) => {
     projectsById.set(row.id, row);
   });
+
+  const uploadProjectOptions: UploadProjectOption[] = ((uploadProjectsResult.data ?? []) as ProjectUploadRow[])
+    .map((row) => ({
+      id: row.id,
+      label: normalizeString(row.name) || `פרויקט ${row.id.slice(0, 8)}`,
+    }))
+    .sort(compareByLabel);
 
   const tasksOverviewById = new Map<string, TaskLookupRow>();
   ((tasksOverviewResult.data ?? []) as TaskLookupRow[]).forEach((row) => {
@@ -417,7 +434,8 @@ export default async function DocumentsPage({
   const errorMessage =
     documentsError?.message ??
     linksError?.message ??
-    projectsResult.error?.message ??
+    allProjectsResult.error?.message ??
+    uploadProjectsResult.error?.message ??
     tasksOverviewResult.error?.message ??
     tasksMetaResult.error?.message ??
     customersResult.error?.message ??
@@ -430,6 +448,7 @@ export default async function DocumentsPage({
         documents={archiveItems}
         error={errorMessage}
         initialFilters={initialFilters}
+        projectOptions={uploadProjectOptions}
         totalDocuments={typeof count === "number" ? count : archiveItems.length}
         isTruncated={typeof count === "number" ? count > archiveItems.length : false}
       />

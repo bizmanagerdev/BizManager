@@ -1,14 +1,14 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import AppShell from "@/components/layout/AppShell";
+import SalesInventoryClient from "@/app/sales/SalesInventoryClient";
+import SalesOrdersClient from "@/app/sales/SalesOrdersClient";
+import PriceListClient from "@/app/sales/PriceListClient";
+import SalesTabsNav from "@/app/sales/SalesTabsNav";
+import { requireProfile } from "@/lib/auth/requireProfile";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { requireProfile } from "@/lib/auth/requireProfile";
-import SalesOrdersClient from "@/app/sales/SalesOrdersClient";
-import SalesTabsNav from "@/app/sales/SalesTabsNav";
-import PriceListClient from "@/app/sales/PriceListClient";
-import SalesInventoryClient from "@/app/sales/SalesInventoryClient";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Row = Record<string, unknown>;
 
@@ -145,10 +145,7 @@ async function loadProductPageData(supabase: SupabaseClient, page: number) {
   };
 }
 
-async function loadInventoryPageData(
-  supabase: SupabaseClient,
-  page: number
-) {
+async function loadInventoryPageData(supabase: SupabaseClient, page: number) {
   const productPage = await loadProductPageData(supabase, page);
   const productIds = productPage.products
     .map((row) => getString(row, "id"))
@@ -220,28 +217,41 @@ export default async function SalesPage({
         { count: "estimated" }
       )
       .order("order_date", { ascending: false });
-    if (customerId) ordersQuery = ordersQuery.eq("customer_id", customerId);
-    const { data, error, count } = await ordersQuery.range(from, to);
 
-    const totalCount = typeof count === "number" ? count : ((data ?? []) as Row[]).length;
+    if (customerId) ordersQuery = ordersQuery.eq("customer_id", customerId);
+
+    const { data, error, count } = await ordersQuery.range(from, to);
+    const rows = (data ?? []) as Row[];
+    const totalCount = typeof count === "number" ? count : rows.length;
     const hasPreviousPage = ordersPage > 1;
-    const hasNextPage = typeof count === "number" ? to + 1 < count : ((data ?? []) as Row[]).length === PAGE_SIZE;
+    const hasNextPage = typeof count === "number" ? to + 1 < count : rows.length === PAGE_SIZE;
 
     content = (
       <>
         {error ? (
-          <p className="text-sm text-destructive">שגיאת הזמנות: {error.message}</p>
+          <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error.message}</p>
         ) : (
           <>
-            <SalesOrdersClient orders={(data ?? []) as Row[]} />
+            <SalesOrdersClient orders={rows} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
-                עמוד {ordersPage} • מוצגים {((data ?? []) as Row[]).length} מתוך {totalCount}
+                עמוד {ordersPage} • מוצגים {rows.length} מתוך {totalCount}
               </div>
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "ordersPage", ordersPage - 1, customerId, customerName, customerPage)}>הקודם</Link>
+                    <Link
+                      href={buildSalesHref(
+                        activeTab,
+                        "ordersPage",
+                        ordersPage - 1,
+                        customerId,
+                        customerName,
+                        customerPage
+                      )}
+                    >
+                      הקודם
+                    </Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -250,7 +260,18 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "ordersPage", ordersPage + 1, customerId, customerName, customerPage)}>הבא</Link>
+                    <Link
+                      href={buildSalesHref(
+                        activeTab,
+                        "ordersPage",
+                        ordersPage + 1,
+                        customerId,
+                        customerName,
+                        customerPage
+                      )}
+                    >
+                      הבא
+                    </Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -317,7 +338,18 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "pricePage", pricePage - 1, customerId, customerName, customerPage)}>הקודם</Link>
+                    <Link
+                      href={buildSalesHref(
+                        activeTab,
+                        "pricePage",
+                        pricePage - 1,
+                        customerId,
+                        customerName,
+                        customerPage
+                      )}
+                    >
+                      הקודם
+                    </Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -326,7 +358,18 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "pricePage", pricePage + 1, customerId, customerName, customerPage)}>הבא</Link>
+                    <Link
+                      href={buildSalesHref(
+                        activeTab,
+                        "pricePage",
+                        pricePage + 1,
+                        customerId,
+                        customerName,
+                        customerPage
+                      )}
+                    >
+                      הבא
+                    </Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -355,11 +398,7 @@ export default async function SalesPage({
           <p className="text-sm text-destructive">שגיאה בטעינת מלאי: {loadError}</p>
         ) : (
           <>
-            <SalesInventoryClient
-              products={products}
-              inventoryRows={inventoryRows}
-              movements={movements}
-            />
+            <SalesInventoryClient products={products} inventoryRows={inventoryRows} movements={movements} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {inventoryPage} • מוצגים {products.length} מתוך {count}
@@ -367,7 +406,16 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "inventoryPage", inventoryPage - 1, customerId, customerName, customerPage)}>
+                    <Link
+                      href={buildSalesHref(
+                        activeTab,
+                        "inventoryPage",
+                        inventoryPage - 1,
+                        customerId,
+                        customerName,
+                        customerPage
+                      )}
+                    >
                       הקודם
                     </Link>
                   </Button>
@@ -378,7 +426,16 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "inventoryPage", inventoryPage + 1, customerId, customerName, customerPage)}>
+                    <Link
+                      href={buildSalesHref(
+                        activeTab,
+                        "inventoryPage",
+                        inventoryPage + 1,
+                        customerId,
+                        customerName,
+                        customerPage
+                      )}
+                    >
                       הבא
                     </Link>
                   </Button>
@@ -404,12 +461,15 @@ export default async function SalesPage({
         { count: "estimated" }
       )
       .order("order_date", { ascending: false });
+
     if (customerId) deliveriesQuery = deliveriesQuery.eq("customer_id", customerId);
+
     const { data, error, count } = await deliveriesQuery.range(from, to);
 
     const deliveries = ((data ?? []) as Row[])
       .map((row) => ({
         id: getString(row, "order_id") ?? "",
+        customerId: getString(row, "customer_id") ?? "",
         orderDate: getString(row, "order_date") ?? getString(row, "created_at"),
         status: getString(row, "status") ?? "-",
         totalAmount: getNumber(row, "total_amount"),
@@ -430,6 +490,30 @@ export default async function SalesPage({
       }, new Map<string, typeof deliveries>())
     ).sort((a, b) => a[0].localeCompare(b[0], "he"));
 
+    const deliveriesByCityAndCustomer = deliveriesByCity.map(([city, cityDeliveries]) => {
+      const customerGroups = Array.from(
+        cityDeliveries.reduce((map, delivery) => {
+          const customerKey =
+            delivery.customerId || `${delivery.customerName}|${delivery.address}|${delivery.customerPhone ?? ""}`;
+          const existing = map.get(customerKey);
+          if (existing) {
+            existing.orders.push(delivery);
+            return map;
+          }
+
+          map.set(customerKey, {
+            customerName: delivery.customerName,
+            customerPhone: delivery.customerPhone,
+            address: delivery.address,
+            orders: [delivery],
+          });
+          return map;
+        }, new Map<string, { customerName: string; customerPhone: string | null; address: string; orders: typeof deliveries }>())
+      );
+
+      return [city, customerGroups] as const;
+    });
+
     const totalCount = typeof count === "number" ? count : deliveries.length;
     const hasPreviousPage = deliveriesPage > 1;
     const hasNextPage = typeof count === "number" ? to + 1 < count : deliveries.length === PAGE_SIZE;
@@ -443,33 +527,42 @@ export default async function SalesPage({
         ) : (
           <>
             <div className="space-y-3">
-              {deliveriesByCity.map(([city, cityDeliveries]) => (
+              {deliveriesByCityAndCustomer.map(([city, customerGroups]) => (
                 <Card key={city}>
                   <CardContent className="space-y-3 p-4">
                     <div className="flex items-center justify-between gap-2">
                       <h3 className="text-base font-semibold">{city}</h3>
                       <span className="text-sm text-muted-foreground">
-                        {cityDeliveries.length} משלוחים
+                        {customerGroups.length} לקוחות •{" "}
+                        {customerGroups.reduce((sum, [, group]) => sum + group.orders.length, 0)} משלוחים
                       </span>
                     </div>
 
                     <div className="space-y-2">
-                      {cityDeliveries.map((delivery) => (
-                        <div key={delivery.id} className="rounded-md border p-3 text-sm">
+                      {customerGroups.map(([customerKey, group]) => (
+                        <div key={customerKey} className="rounded-md border p-3 text-sm">
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="font-medium">
-                              הזמנה #{delivery.id.slice(0, 8)} | {delivery.customerName}
-                            </div>
-                            <div className="text-muted-foreground">
-                              {delivery.orderDate ?? "-"} | {delivery.status}
-                            </div>
+                            <div className="font-medium">{group.customerName}</div>
+                            <div className="text-muted-foreground">{group.orders.length} משלוחים</div>
                           </div>
                           <div className="mt-1 text-muted-foreground">
-                            טלפון: {delivery.customerPhone ?? "-"} | כתובת: {delivery.address}
+                            טלפון: {group.customerPhone ?? "-"} | כתובת: {group.address}
                           </div>
-                          <div className="mt-1 text-muted-foreground">
-                            סכום: {formatCurrency(delivery.totalAmount)}
-                            {delivery.notes ? ` | הערות: ${delivery.notes}` : ""}
+                          <div className="mt-3 space-y-2">
+                            {group.orders.map((delivery) => (
+                              <div key={delivery.id} className="rounded-md bg-muted/40 p-3">
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                  <div className="font-medium">הזמנה #{delivery.id.slice(0, 8)}</div>
+                                  <div className="text-muted-foreground">
+                                    {delivery.orderDate ?? "-"} | {delivery.status}
+                                  </div>
+                                </div>
+                                <div className="mt-1 text-muted-foreground">
+                                  סכום: {formatCurrency(delivery.totalAmount)}
+                                  {delivery.notes ? ` | הערות: ${delivery.notes}` : ""}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       ))}
@@ -485,7 +578,16 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "deliveriesPage", deliveriesPage - 1, customerId, customerName, customerPage)}>
+                    <Link
+                      href={buildSalesHref(
+                        activeTab,
+                        "deliveriesPage",
+                        deliveriesPage - 1,
+                        customerId,
+                        customerName,
+                        customerPage
+                      )}
+                    >
                       הקודם
                     </Link>
                   </Button>
@@ -496,7 +598,16 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "deliveriesPage", deliveriesPage + 1, customerId, customerName, customerPage)}>
+                    <Link
+                      href={buildSalesHref(
+                        activeTab,
+                        "deliveriesPage",
+                        deliveriesPage + 1,
+                        customerId,
+                        customerName,
+                        customerPage
+                      )}
+                    >
                       הבא
                     </Link>
                   </Button>
@@ -521,14 +632,16 @@ export default async function SalesPage({
             <h1 className="text-2xl font-semibold">מכירות</h1>
             {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
             <p className="text-sm text-muted-foreground">
-              הזמנות, מלאי, מחירון ותכנון משלוחים לפי עיר.
+              הזמנות, מלאי, מחירון ומעקב משלוחים לכל עיר.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
             {customerId ? (
               <Button asChild variant="outline">
-                <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>חזרה ללקוח</Link>
+                <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>
+                  חזרה ללקוח
+                </Link>
               </Button>
             ) : null}
             <Button asChild>
