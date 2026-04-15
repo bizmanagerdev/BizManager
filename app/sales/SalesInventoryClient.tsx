@@ -75,6 +75,57 @@ function getAdjustmentMeta(adjustmentType: AdjustmentType) {
   }
 }
 
+function formatMovementType(value: string | null) {
+  switch ((value ?? "").toLowerCase()) {
+    case "in":
+      return "כניסה";
+    case "out":
+      return "יציאה";
+    default:
+      return value ?? "-";
+  }
+}
+
+function formatSourceType(value: string | null) {
+  switch ((value ?? "").toLowerCase()) {
+    case "order":
+      return "הזמנה";
+    case "manual_adjustment":
+      return "התאמת מלאי";
+    case "manual_product":
+      return "יצירת מוצר";
+    default:
+      return value ?? "-";
+  }
+}
+
+function formatMovementNotes(value: string | null) {
+  if (!value) return "-";
+
+  const trimmed = value.trim();
+  const updatedMatch = /^Sales order item ([a-f0-9-]+) updated$/i.exec(trimmed);
+  if (updatedMatch) {
+    return `פריט הזמנה ${updatedMatch[1]} עודכן`;
+  }
+
+  const orderItemMatch = /^Sales order item ([a-f0-9-]+)$/i.exec(trimmed);
+  if (orderItemMatch) {
+    return `פריט הזמנה ${orderItemMatch[1]}`;
+  }
+
+  return value;
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("he-IL", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
 export default function SalesInventoryClient({
   products,
   inventoryRows,
@@ -178,6 +229,15 @@ export default function SalesInventoryClient({
         .sort((a, b) => a.label.localeCompare(b.label, "he")),
     [products]
   );
+
+  const productNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    products.forEach((row) => {
+      const id = getString(row, "id");
+      if (id) map.set(id, productName(row));
+    });
+    return map;
+  }, [products]);
 
   useEffect(() => {
     if (!adjustmentOpen) return;
@@ -452,14 +512,17 @@ export default function SalesInventoryClient({
                 <tbody className="divide-y">
                   {movementRows.map((row, index) => {
                     const id = getString(row, "id") ?? `movement-${index}`;
+                    const movementProductId = getString(row, "product_id");
                     return (
                       <tr key={id} className="hover:bg-muted/30">
-                        <td className="px-3 py-2">{getString(row, "product_id") ?? "-"}</td>
-                        <td className="px-3 py-2">{getString(row, "movement_type") ?? "-"}</td>
+                        <td className="px-3 py-2">
+                          {(movementProductId && productNameById.get(movementProductId)) ?? movementProductId ?? "-"}
+                        </td>
+                        <td className="px-3 py-2">{formatMovementType(getString(row, "movement_type"))}</td>
                         <td className="px-3 py-2">{getNumber(row, "quantity") ?? "-"}</td>
-                        <td className="px-3 py-2">{getString(row, "source_type") ?? "-"}</td>
-                        <td className="px-3 py-2">{getString(row, "created_at") ?? "-"}</td>
-                        <td className="px-3 py-2">{getString(row, "notes") ?? "-"}</td>
+                        <td className="px-3 py-2">{formatSourceType(getString(row, "source_type"))}</td>
+                        <td className="px-3 py-2">{formatDateTime(getString(row, "created_at"))}</td>
+                        <td className="px-3 py-2">{formatMovementNotes(getString(row, "notes"))}</td>
                       </tr>
                     );
                   })}

@@ -22,12 +22,11 @@ export type OrderPaymentRow = {
 };
 
 export const ORDER_PAYMENT_METHOD_OPTIONS = [
-  { value: "cash", label: "Cash" },
-  { value: "bank_transfer", label: "Bank transfer" },
-  { value: "credit_card", label: "Credit card" },
-  { value: "check", label: "Check" },
-  { value: "bit", label: "Bit" },
-  { value: "other", label: "Other" },
+  { value: "cash", label: "מזומן" },
+  { value: "bank_transfer", label: "העברה בנקאית" },
+  { value: "credit_card", label: "כרטיס אשראי" },
+  { value: "check", label: "צ'ק" },
+  { value: "other", label: "אחר" },
 ] as const;
 
 function normalizePaymentMethodValue(method: string | null | undefined) {
@@ -127,23 +126,23 @@ export function paymentStatusLabel(status: string) {
 export function paymentMethodLabel(method: string | null | undefined) {
   switch (normalizePaymentMethodValue(method)) {
     case "cash":
-      return "Cash";
+      return "מזומן";
     case "bank_transfer":
-      return "Bank transfer";
+      return "העברה בנקאית";
     case "credit_card":
-      return "Credit card";
+      return "כרטיס אשראי";
     case "check":
-      return "Check";
+      return "צ'ק";
     case "bit":
-      return "Bit";
+      return "ביט";
     case "friend_transfer":
-      return "Transferred via friend";
+      return "הועבר דרך חבר";
     case "fuel":
-      return "Fuel";
+      return "דלק";
     case "labor":
-      return "Labor";
+      return "עבודה";
     case "other":
-      return "Other";
+      return "אחר";
     default:
       return normalizePaymentMethodValue(method) || "-";
   }

@@ -64,14 +64,52 @@ function formatCurrency(value: number | null) {
   }).format(value);
 }
 
+function normalizeOrderStatus(value: string | null) {
+  switch ((value ?? "").trim().toLowerCase()) {
+    case "פתוחה":
+    case "draft":
+      return "draft";
+    case "מאושרת":
+    case "reserved":
+    case "confirmed":
+      return "confirmed";
+    case "בטיפול":
+    case "processing":
+      return "processing";
+    case "במשלוח":
+    case "out_for_delivery":
+      return "out_for_delivery";
+    case "סופקה":
+    case "delivered":
+      return "delivered";
+    case "הושלמה":
+    case "completed":
+      return "completed";
+    case "סגורה":
+    case "closed":
+      return "closed";
+    case "בוטלה":
+    case "cancelled":
+      return "cancelled";
+    default:
+      return value?.trim() || "draft";
+  }
+}
+
 function statusLabel(value: string) {
-  switch (value) {
+  switch (normalizeOrderStatus(value)) {
     case "draft":
       return "פתוחה";
-    case "reserved":
+    case "confirmed":
       return "מאושרת";
+    case "processing":
+      return "בטיפול";
+    case "out_for_delivery":
+      return "במשלוח";
     case "delivered":
       return "סופקה";
+    case "completed":
+      return "הושלמה";
     case "closed":
       return "סגורה";
     case "cancelled":
@@ -82,7 +120,7 @@ function statusLabel(value: string) {
 }
 
 function isActiveOrder(status: string) {
-  return !["closed", "cancelled", "delivered"].includes(status);
+  return !["closed", "cancelled", "delivered", "completed"].includes(normalizeOrderStatus(status));
 }
 
 export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
@@ -118,7 +156,7 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
           customerCity: getString(row, ["customer_city"]),
           customerAddress: getString(row, ["customer_address"]),
           orderDate: getString(row, ["order_date", "created_at"]),
-          status: getString(row, ["status"]) ?? "draft",
+          status: normalizeOrderStatus(getString(row, ["status"])),
           paymentStatus: dbPaymentStatus ?? derivePaymentStatus(totalAmount, totalPaid),
           totalAmount,
           totalPaid,
@@ -132,7 +170,7 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
   }, [orders, paymentSnapshot]);
 
   const statuses = useMemo(() => {
-    const set = new Set<string>(["draft", "confirmed", "completed", "cancelled"]);
+    const set = new Set<string>();
     orderRows.forEach((row) => set.add(row.status));
     return Array.from(set).sort();
   }, [orderRows]);
