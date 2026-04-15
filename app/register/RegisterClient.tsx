@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,7 @@ export default function RegisterClient() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
+  const [navLoading, setNavLoading] = useState(false);
 
   useEffect(() => {
     if (prefillEmail) setEmail(prefillEmail);
@@ -33,6 +35,17 @@ export default function RegisterClient() {
   function onChange(setter: (v: string) => void) {
     return (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setter(e.target.value);
+  }
+
+  function navigateToLogin() {
+    if (loading || navLoading) return;
+    setNavLoading(true);
+    emitNavigationStart();
+    router.push(
+      `/login${
+        email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
+      }`
+    );
   }
 
   async function register() {
@@ -75,6 +88,7 @@ export default function RegisterClient() {
         const msg = data.error?.toLowerCase() ?? "";
         if (msg.includes("already registered") || msg.includes("already exists")) {
           setInfo("That email already has an account. Please sign in.");
+          emitNavigationStart();
           router.replace(`/login?email=${encodeURIComponent(trimmedEmail)}`);
           return;
         }
@@ -88,10 +102,12 @@ export default function RegisterClient() {
         setInfo(
           "Account created. Check your email to confirm your account, then sign in."
         );
+        emitNavigationStart();
         router.replace(`/login?email=${encodeURIComponent(trimmedEmail)}`);
         return;
       }
 
+      emitNavigationStart();
       router.replace("/dashboard");
       router.refresh();
     } catch {
@@ -194,21 +210,15 @@ export default function RegisterClient() {
           </p>
         ) : null}
 
-        <Button onClick={register} className="w-full" disabled={loading}>
+        <Button onClick={register} className="w-full" disabled={loading || navLoading}>
           {loading ? "יוצר/ת חשבון..." : "יצירת חשבון"}
         </Button>
 
         <Button
           variant="outline"
           className="w-full"
-          onClick={() =>
-            router.push(
-              `/login${
-                email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
-              }`
-            )
-          }
-          disabled={loading}
+          onClick={navigateToLogin}
+          disabled={loading || navLoading}
         >
           חזרה להתחברות
         </Button>

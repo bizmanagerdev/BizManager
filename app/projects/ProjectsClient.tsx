@@ -842,7 +842,7 @@ export default function ProjectsClient({
             {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
 
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>
+              <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
                 ביטול
               </Button>
               <Button type="submit" disabled={createSubmitting}>
@@ -976,7 +976,7 @@ export default function ProjectsClient({
             {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
 
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setEditOpen(false)}>
+              <Button type="button" variant="secondary" onClick={() => setEditOpen(false)} disabled={editSubmitting}>
                 ביטול
               </Button>
               <Button type="submit" disabled={editSubmitting}>
@@ -1081,7 +1081,7 @@ export default function ProjectsClient({
             ) : null}
 
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setCreateCustomerOpen(false)}>
+              <Button type="button" variant="secondary" onClick={() => setCreateCustomerOpen(false)} disabled={createCustomerSubmitting}>
                 ביטול
               </Button>
               <Button type="submit" disabled={createCustomerSubmitting}>

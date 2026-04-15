@@ -3,6 +3,7 @@
 import { useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ export default function ForgotPasswordClient() {
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [navLoading, setNavLoading] = useState(false);
 
   function onEmailChange(e: ChangeEvent<HTMLInputElement>) {
     setEmail(e.target.value);
@@ -100,14 +102,17 @@ export default function ForgotPasswordClient() {
         <Button
           variant="outline"
           className="w-full"
-          onClick={() =>
+          onClick={() => {
+            if (loading || navLoading) return;
+            setNavLoading(true);
+            emitNavigationStart();
             router.push(
               `/login${
                 email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
               }`
-            )
-          }
-          disabled={loading}
+            );
+          }}
+          disabled={loading || navLoading}
         >
           חזרה להתחברות
         </Button>

@@ -2,6 +2,7 @@
 
 import { type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
 
 export default function DeleteProjectButton({
@@ -58,6 +59,7 @@ export default function DeleteProjectButton({
       onDeleted?.();
 
       if (redirectTo) {
+        emitNavigationStart();
         router.push(redirectTo);
       }
 

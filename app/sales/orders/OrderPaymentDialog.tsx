@@ -258,7 +258,7 @@ export default function OrderPaymentDialog({
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>
               ביטול
             </Button>
             <Button type="button" onClick={() => void submitPayment()} disabled={submitting}>

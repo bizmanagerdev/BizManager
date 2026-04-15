@@ -22,10 +22,30 @@ function parsePage(value: string | undefined) {
   return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
 }
 
-function buildProjectsHref(page: number, activeTab: string, customerId: string | null) {
+function buildCustomerReturnHref(
+  customerId: string | null,
+  customerName: string | null,
+  customerPage: string | null
+) {
+  if (!customerId) return "/customers";
+  const params = new URLSearchParams({ customer_id: customerId });
+  if (customerName) params.set("customer_name", customerName);
+  if (customerPage) params.set("page", customerPage);
+  return `/customers?${params.toString()}`;
+}
+
+function buildProjectsHref(
+  page: number,
+  activeTab: string,
+  customerId: string | null,
+  customerName: string | null,
+  customerPage: string | null
+) {
   const params = new URLSearchParams();
   if (activeTab === "calendar") params.set("tab", "calendar");
   if (customerId) params.set("customer_id", customerId);
+  if (customerName) params.set("customer_name", customerName);
+  if (customerPage) params.set("customer_page", customerPage);
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `/projects?${query}` : "/projects";
@@ -34,7 +54,13 @@ function buildProjectsHref(page: number, activeTab: string, customerId: string |
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ tab?: string; page?: string; customer_id?: string }>;
+  searchParams?: Promise<{
+    tab?: string;
+    page?: string;
+    customer_id?: string;
+    customer_name?: string;
+    customer_page?: string;
+  }>;
 }) {
   const params = (await searchParams) ?? {};
   const activeTab = params.tab === "calendar" ? "calendar" : "list";
@@ -42,6 +68,14 @@ export default async function ProjectsPage({
   const customerId =
     typeof params.customer_id === "string" && params.customer_id.trim()
       ? params.customer_id.trim()
+      : null;
+  const customerName =
+    typeof params.customer_name === "string" && params.customer_name.trim()
+      ? params.customer_name.trim()
+      : null;
+  const customerPage =
+    typeof params.customer_page === "string" && params.customer_page.trim()
+      ? params.customer_page.trim()
       : null;
   const from = (page - 1) * PROJECTS_PAGE_SIZE;
   const to = page * PROJECTS_PAGE_SIZE - 1;
@@ -137,9 +171,19 @@ export default async function ProjectsPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold">פרויקטים</h1>
-          <p className="text-muted-foreground text-sm">ניהול פרויקטים ותפעול</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">פרויקטים</h1>
+            {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
+            <p className="text-muted-foreground text-sm">
+              ניהול פרויקטים ותפעול
+            </p>
+          </div>
+          {customerId ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>חזרה ללקוח</Link>
+            </Button>
+          ) : null}
         </div>
 
         <ProjectsTabsNav activeTab={activeTab} />
@@ -163,7 +207,7 @@ export default async function ProjectsPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildProjectsHref(page - 1, activeTab, customerId)}>הקודם</Link>
+                    <Link href={buildProjectsHref(page - 1, activeTab, customerId, customerName, customerPage)}>הקודם</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -172,7 +216,7 @@ export default async function ProjectsPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildProjectsHref(page + 1, activeTab, customerId)}>הבא</Link>
+                    <Link href={buildProjectsHref(page + 1, activeTab, customerId, customerName, customerPage)}>הבא</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>

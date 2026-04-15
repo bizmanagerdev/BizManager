@@ -36,6 +36,8 @@ import { Input } from "@/components/ui/input";
 
 export type DocumentArchiveFilters = {
   customer_id: string;
+  customer_name: string;
+  customer_page: string;
   project_id: string;
   entity_type: string;
   type: string;
@@ -72,6 +74,13 @@ export type DocumentArchiveItem = {
   orders: ArchiveRelation[];
   search_text: string;
 };
+
+function buildCustomerReturnHref(customerId: string, customerName: string, customerPage: string) {
+  const params = new URLSearchParams({ customer_id: customerId });
+  if (customerName) params.set("customer_name", customerName);
+  if (customerPage) params.set("page", customerPage);
+  return `/customers?${params.toString()}`;
+}
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase();
@@ -192,6 +201,8 @@ export default function DocumentsArchiveClient({
   const [entityType, setEntityType] = useState(initialFilters.entity_type);
   const [documentType, setDocumentType] = useState(initialFilters.type);
   const [customerId, setCustomerId] = useState(initialFilters.customer_id);
+  const customerName = initialFilters.customer_name;
+  const customerPage = initialFilters.customer_page;
   const [projectId, setProjectId] = useState(initialFilters.project_id);
   const [fileKind, setFileKind] = useState("");
   const [groupBy, setGroupBy] = useState("entity");
@@ -204,6 +215,7 @@ export default function DocumentsArchiveClient({
 
   const customerOptions = useMemo(() => {
     const map = new Map<string, string>();
+    if (customerId && customerName) map.set(customerId, customerName);
     for (const doc of documents) {
       for (const customer of doc.customers) {
         if (!map.has(customer.id)) map.set(customer.id, customer.label);
@@ -212,7 +224,7 @@ export default function DocumentsArchiveClient({
     return Array.from(map.entries())
       .map(([id, label]) => ({ id, label }))
       .sort((a, b) => a.label.localeCompare(b.label, "he"));
-  }, [documents]);
+  }, [customerId, customerName, documents]);
 
   const projectOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -349,11 +361,17 @@ export default function DocumentsArchiveClient({
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
               <CardTitle className="text-2xl">מסמכים</CardTitle>
+              {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
               <CardDescription>
                 ארכיון דיגיטלי מרכזי למסמכים עסקיים עם שיוך ללקוחות, פרויקטים, משימות והזמנות.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
+              {customerId ? (
+                <Button asChild variant="outline">
+                  <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>חזרה ללקוח</Link>
+                </Button>
+              ) : null}
               <Badge variant="outline">{filteredDocuments.length} מוצגים</Badge>
               <Badge variant="secondary">{linkedCount} משויכים</Badge>
               <Badge variant="secondary">{categorizedCount} עם קטגוריה</Badge>

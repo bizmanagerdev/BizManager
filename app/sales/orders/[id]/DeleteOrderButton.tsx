@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
 
 export default function DeleteOrderButton({ orderId }: { orderId: string }) {
@@ -32,6 +33,7 @@ export default function DeleteOrderButton({ orderId }: { orderId: string }) {
         return;
       }
 
+      emitNavigationStart();
       router.push("/sales");
       router.refresh();
     } catch (e: unknown) {

@@ -10,6 +10,8 @@ const MAX_DOCUMENTS = 1000;
 
 type DocumentsSearchParams = {
   customer_id?: string;
+  customer_name?: string;
+  customer_page?: string;
   project_id?: string;
   entity_type?: string;
   type?: string;
@@ -404,6 +406,8 @@ export default async function DocumentsPage({
 
   const initialFilters: DocumentArchiveFilters = {
     customer_id: normalizeString(params.customer_id) || "",
+    customer_name: normalizeString(params.customer_name) || "",
+    customer_page: normalizeString(params.customer_page) || "",
     project_id: normalizeString(params.project_id) || "",
     entity_type: normalizeString(params.entity_type) || "",
     type: normalizeString(params.type) || "",

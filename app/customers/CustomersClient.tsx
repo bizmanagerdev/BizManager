@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   AdaptiveCell,
   AdaptiveDialog,
@@ -60,9 +61,15 @@ const dateText = (v: string) => {
   return Number.isNaN(d.getTime()) ? v : new Intl.DateTimeFormat("he-IL").format(d);
 };
 
-export default function CustomersClient({ initialRows }: { initialRows: Row[] }) {
+export default function CustomersClient({
+  initialRows,
+  initialDetailsCustomerId = "",
+}: {
+  initialRows: Row[];
+  initialDetailsCustomerId?: string;
+}) {
   const [rows, setRows] = useState(initialRows);
-  const [detailsCustomerId, setDetailsCustomerId] = useState("");
+  const [detailsCustomerId, setDetailsCustomerId] = useState(initialDetailsCustomerId);
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [withProjects, setWithProjects] = useState<FilterMode>("all");
@@ -136,6 +143,11 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
     () => rows.find((row) => s(row, "customer_id") === detailsCustomerId) ?? null,
     [rows, detailsCustomerId]
   );
+
+  useEffect(() => {
+    if (!initialDetailsCustomerId) return;
+    setDetailsCustomerId((current) => current || initialDetailsCustomerId);
+  }, [initialDetailsCustomerId]);
 
   async function createCustomer() {
     if (createLoading) return;
@@ -457,6 +469,7 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
         submitLabel={createLoading ? "יוצר..." : "יצירת לקוח"}
         onSubmit={() => void createCustomer()}
         error={createErr}
+        submitting={createLoading}
       >
         <Field label="שם לקוח *">
           <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -502,6 +515,7 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
         submitLabel={editLoading ? "שומר..." : "שמירת שינויים"}
         onSubmit={() => void saveEdit()}
         error={editErr}
+        submitting={editLoading}
       >
         <Field label="שם לקוח *">
           <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
@@ -544,6 +558,7 @@ export default function CustomersClient({ initialRows }: { initialRows: Row[] })
         submitLabel={contactLoading ? "יוצר..." : "יצירת איש קשר"}
         onSubmit={() => void createContact()}
         error={contactErr}
+        submitting={contactLoading}
       >
         <Field label="שם מלא *">
           <Input value={contactName} onChange={(e) => setContactName(e.target.value)} />
@@ -650,10 +665,28 @@ function CustomerDetailsDialog({
   onEdit: (row: Row) => void;
   onAddContact: (row: Row) => void;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isNavigating, startNavigation] = useTransition();
+  const [navigationTarget, setNavigationTarget] = useState<"projects" | "sales" | "financial" | "documents" | "">("");
   const contacts = row ? contactsOf(row) : [];
   const activeContacts = contacts.filter((c) => c.active !== false);
   const inactiveContacts = contacts.filter((c) => c.active === false);
   const id = row ? s(row, "customer_id") : "";
+
+  function navigateToCustomerPage(
+    target: "projects" | "sales" | "financial" | "documents",
+    path: string
+  ) {
+    if (!id) return;
+    setNavigationTarget(target);
+    startNavigation(() => {
+      router.push(path);
+    });
+  }
+
+  const customerNameParam = row ? s(row, "customer_name").trim() : "";
+  const customerPageParam = (searchParams.get("page") ?? "").trim();
   const name = row ? s(row, "customer_name") || "לקוח" : "לקוח";
 
   return (
@@ -748,17 +781,77 @@ function CustomerDetailsDialog({
             </AdaptiveGrid>
 
             <div className="flex flex-wrap gap-2">
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/projects?customer_id=${encodeURIComponent(id)}`}>צפייה בפרויקטים</Link>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!id || isNavigating}
+                onClick={() =>
+                  navigateToCustomerPage(
+                    "projects",
+                    `/projects?customer_id=${encodeURIComponent(id)}${
+                      customerNameParam
+                        ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                        : ""
+                    }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                  )
+                }
+              >
+                {isNavigating && navigationTarget === "projects" ? "פותח פרויקטים..." : "צפייה בפרויקטים"}
               </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/sales?customer_id=${encodeURIComponent(id)}`}>צפייה בהזמנות</Link>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!id || isNavigating}
+                onClick={() =>
+                  navigateToCustomerPage(
+                    "sales",
+                    `/sales?customer_id=${encodeURIComponent(id)}${
+                      customerNameParam
+                        ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                        : ""
+                    }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                  )
+                }
+              >
+                {isNavigating && navigationTarget === "sales" ? "פותח הזמנות..." : "צפייה בהזמנות"}
               </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/financial?customer_id=${encodeURIComponent(id)}`}>מידע פיננסי</Link>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!id || isNavigating}
+                onClick={() =>
+                  navigateToCustomerPage(
+                    "financial",
+                    `/financial?customer_id=${encodeURIComponent(id)}${
+                      customerNameParam
+                        ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                        : ""
+                    }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                  )
+                }
+              >
+                {isNavigating && navigationTarget === "financial" ? "פותח מידע פיננסי..." : "מידע פיננסי"}
               </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/documents?customer_id=${encodeURIComponent(id)}`}>קבלות ומסמכים</Link>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!id || isNavigating}
+                onClick={() =>
+                  navigateToCustomerPage(
+                    "documents",
+                    `/documents?customer_id=${encodeURIComponent(id)}${
+                      customerNameParam
+                        ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                        : ""
+                    }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                  )
+                }
+              >
+                {isNavigating && navigationTarget === "documents" ? "פותח מסמכים..." : "קבלות ומסמכים"}
               </Button>
             </div>
           </div>
@@ -776,6 +869,7 @@ function CustomerDialog({
   submitLabel,
   onSubmit,
   error,
+  submitting = false,
   children,
 }: {
   open: boolean;
@@ -785,6 +879,7 @@ function CustomerDialog({
   submitLabel: string;
   onSubmit: () => void;
   error: string;
+  submitting?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -801,14 +896,17 @@ function CustomerDialog({
             onSubmit();
           }}
         >
-          {children}
+          <fieldset disabled={submitting} className="space-y-3">
+            {children}
+          </fieldset>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={submitting}>
               ביטול
             </Button>
-            <Button type="submit">{submitLabel}</Button>
+            <Button type="submit" disabled={submitting}>{submitLabel}</Button>
           </DialogFooter>
+          {submitting ? <p className="text-xs text-muted-foreground">שומר, נא להמתין...</p> : null}
         </form>
       </AdaptiveDialog>
     </Dialog>

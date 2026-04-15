@@ -12,6 +12,7 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import NewOrderClient from "@/app/sales/orders/new/NewOrderClient";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -115,6 +116,7 @@ export default function DashboardActions({
   const [incomeMethod, setIncomeMethod] = useState("bank_transfer");
   const [incomeReference, setIncomeReference] = useState("");
   const [incomeNotes, setIncomeNotes] = useState("");
+  const [financeNavLoading, setFinanceNavLoading] = useState(false);
 
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
@@ -393,7 +395,13 @@ export default function DashboardActions({
           type="button"
           variant="outline"
           className="aspect-square h-auto min-h-24 flex-col items-start justify-between rounded-2xl p-3 text-right"
-          onClick={() => router.push("/financial")}
+          onClick={() => {
+            if (financeNavLoading) return;
+            setFinanceNavLoading(true);
+            emitNavigationStart();
+            router.push("/financial");
+          }}
+          disabled={financeNavLoading}
         >
           <span className="rounded-xl bg-primary/10 p-2 text-primary">
             <Landmark className="h-5 w-5" />
@@ -471,6 +479,7 @@ export default function DashboardActions({
             <DialogDescription>טופס קצר לפתיחה מהירה של פרויקט חדש.</DialogDescription>
           </DialogHeader>
 
+          <fieldset disabled={projectSubmitting} className="contents">
           <AdaptiveGrid variant="formTwoLoose">
             <label className="space-y-2 text-sm">
               <span>שם פרויקט</span>
@@ -579,11 +588,12 @@ export default function DashboardActions({
               <Textarea value={projectNotes} onChange={(e) => setProjectNotes(e.target.value)} />
             </label>
           </AdaptiveGrid>
+          </fieldset>
 
           {projectError ? <p className="text-sm text-destructive">{projectError}</p> : null}
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setProjectOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => setProjectOpen(false)} disabled={projectSubmitting}>
               ביטול
             </Button>
             <Button type="button" onClick={() => void createProject()} disabled={projectSubmitting}>
@@ -606,6 +616,7 @@ export default function DashboardActions({
             <DialogDescription>פתיחה מהירה של משימה ושיוך לפרויקט קיים.</DialogDescription>
           </DialogHeader>
 
+          <fieldset disabled={taskSubmitting} className="contents">
           <div className="grid gap-4">
             <label className="space-y-2 text-sm">
               <span>פרויקט</span>
@@ -691,11 +702,12 @@ export default function DashboardActions({
               <Textarea value={taskDescription} onChange={(e) => setTaskDescription(e.target.value)} />
             </label>
           </div>
+          </fieldset>
 
           {taskError ? <p className="text-sm text-destructive">{taskError}</p> : null}
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setTaskOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => setTaskOpen(false)} disabled={taskSubmitting}>
               ביטול
             </Button>
             <Button type="button" onClick={() => void createTask()} disabled={taskSubmitting}>
@@ -718,6 +730,7 @@ export default function DashboardActions({
             <DialogDescription>רישום הוצאה חדשה ושיוך לפרויקט.</DialogDescription>
           </DialogHeader>
 
+          <fieldset disabled={expenseSubmitting} className="contents">
           <div className="grid gap-4">
             <label className="space-y-2 text-sm">
               <span>פרויקט</span>
@@ -775,11 +788,12 @@ export default function DashboardActions({
               <Textarea value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} />
             </label>
           </div>
+          </fieldset>
 
           {expenseError ? <p className="text-sm text-destructive">{expenseError}</p> : null}
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setExpenseOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => setExpenseOpen(false)} disabled={expenseSubmitting}>
               ביטול
             </Button>
             <Button type="button" onClick={() => void createExpense()} disabled={expenseSubmitting}>
@@ -802,6 +816,7 @@ export default function DashboardActions({
             <DialogDescription>רישום הכנסה חדשה כתשלום לפרויקט.</DialogDescription>
           </DialogHeader>
 
+          <fieldset disabled={incomeSubmitting} className="contents">
           <div className="grid gap-4">
             <label className="space-y-2 text-sm">
               <span>פרויקט</span>
@@ -871,11 +886,12 @@ export default function DashboardActions({
               <Textarea value={incomeNotes} onChange={(e) => setIncomeNotes(e.target.value)} />
             </label>
           </div>
+          </fieldset>
 
           {incomeError ? <p className="text-sm text-destructive">{incomeError}</p> : null}
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setIncomeOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => setIncomeOpen(false)} disabled={incomeSubmitting}>
               ביטול
             </Button>
             <Button type="button" onClick={() => void createIncome()} disabled={incomeSubmitting}>

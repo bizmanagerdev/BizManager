@@ -3,6 +3,7 @@
 import { useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,14 @@ export default function LoginClient() {
   const [err, setErr] = useState<string | null>(null);
   const [showSignUpPrompt, setShowSignUpPrompt] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
+  const [navTarget, setNavTarget] = useState<"forgot" | "register" | null>(null);
+
+  function navigateWithProgress(href: string, target: "forgot" | "register") {
+    if (loading) return;
+    setNavTarget(target);
+    emitNavigationStart();
+    router.push(href);
+  }
 
   async function signIn() {
     if (loading) return;
@@ -55,6 +64,7 @@ export default function LoginClient() {
         return;
       }
 
+      emitNavigationStart();
       router.replace("/dashboard");
       router.refresh();
     } catch {
@@ -140,13 +150,14 @@ export default function LoginClient() {
             type="button"
             variant="outline"
             onClick={() =>
-              router.push(
+              navigateWithProgress(
                 `/forgot-password${
                   email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
-                }`
+                }`,
+                "forgot"
               )
             }
-            disabled={loading}
+            disabled={loading || navTarget !== null}
           >
             שכחתי סיסמה
           </Button>
@@ -155,13 +166,14 @@ export default function LoginClient() {
             type="button"
             variant="secondary"
             onClick={() =>
-              router.push(
+              navigateWithProgress(
                 `/register${
                   email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
-                }`
+                }`,
+                "register"
               )
             }
-            disabled={loading}
+            disabled={loading || navTarget !== null}
           >
             יצירת חשבון
           </Button>
@@ -174,10 +186,8 @@ export default function LoginClient() {
           <button
             type="button"
             className="font-semibold text-destructive hover:underline"
-            onClick={() =>
-              router.push(`/register?email=${encodeURIComponent(email.trim())}`)
-            }
-            disabled={loading}
+            onClick={() => navigateWithProgress(`/register?email=${encodeURIComponent(email.trim())}`, "register")}
+            disabled={loading || navTarget !== null}
           >
             להרשמה
           </button>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,7 @@ export default function ResetPasswordClient() {
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [navLoading, setNavLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +101,7 @@ export default function ResetPasswordClient() {
 
       setInfo("Password updated. Please sign in with your new password.");
       await supabase.auth.signOut();
+      emitNavigationStart();
       router.replace("/login");
       router.refresh();
     } finally {
@@ -161,7 +164,7 @@ export default function ResetPasswordClient() {
         <Button
           onClick={updatePassword}
           className="w-full"
-          disabled={loading || Boolean(err)}
+          disabled={loading || navLoading || Boolean(err)}
         >
           {loading ? "מעדכן/ת..." : "עדכון סיסמה"}
         </Button>
@@ -169,8 +172,13 @@ export default function ResetPasswordClient() {
         <Button
           variant="outline"
           className="w-full"
-          onClick={() => router.replace("/login")}
-          disabled={loading}
+          onClick={() => {
+            if (loading || navLoading) return;
+            setNavLoading(true);
+            emitNavigationStart();
+            router.replace("/login");
+          }}
+          disabled={loading || navLoading}
         >
           חזרה להתחברות
         </Button>

@@ -442,7 +442,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
             </label>
             {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>
+              <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} disabled={createLoading}>
                 ביטול
               </Button>
               <Button type="submit" disabled={createLoading}>
@@ -501,7 +501,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
             </label>
             {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setEditOpen(false)}>
+              <Button type="button" variant="secondary" onClick={() => setEditOpen(false)} disabled={editLoading}>
                 ביטול
               </Button>
               <Button type="submit" disabled={editLoading}>

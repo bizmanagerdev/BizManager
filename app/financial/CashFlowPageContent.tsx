@@ -1,3 +1,4 @@
+import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import {
@@ -47,6 +48,18 @@ function searchParamsForLinks(filters: CashFlowFilterValues) {
   return params;
 }
 
+function buildCustomerReturnHref(
+  customerId: string | null,
+  customerName: string | null,
+  customerPage: string | null
+) {
+  if (!customerId) return "/customers";
+  const params = new URLSearchParams({ customer_id: customerId });
+  if (customerName) params.set("customer_name", customerName);
+  if (customerPage) params.set("page", customerPage);
+  return `/customers?${params.toString()}`;
+}
+
 export default async function CashFlowPageContent({
   profile,
   supabase,
@@ -59,6 +72,8 @@ export default async function CashFlowPageContent({
   basePath: string;
 }) {
   const filters = normalizeCashFlowSearchParams(searchParams);
+  const customerName = firstValue(searchParams.customer_name)?.trim() ?? "";
+  const customerPage = firstValue(searchParams.customer_page)?.trim() ?? "";
 
   const [summary, transactions, trend, cumulativeTrend, projectBreakdown, projectOptions] = await Promise.all([
     getCashFlowSummary(supabase, filters),
@@ -72,11 +87,22 @@ export default async function CashFlowPageContent({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
       <div className="space-y-4" dir="rtl">
-        <section className="space-y-1 text-right">
-          <h1 className="text-2xl font-semibold">תזרים מזומנים</h1>
-          <p className="text-sm text-muted-foreground">
-            מעקב אחרי כסף שנכנס, כסף שיצא, ויתרת התזרים בפועל.
-          </p>
+        <section className="flex flex-col gap-3 text-right sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold">תזרים מזומנים</h1>
+            {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
+            <p className="text-sm text-muted-foreground">
+              מעקב אחרי כסף שנכנס, כסף שיצא, ויתרת התזרים בפועל.
+            </p>
+          </div>
+          {filters.customerId ? (
+            <Link
+              href={buildCustomerReturnHref(filters.customerId, customerName || null, customerPage || null)}
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-input bg-background px-4 text-sm font-medium shadow-sm transition-all duration-200 hover:bg-accent"
+            >
+              חזרה ללקוח
+            </Link>
+          ) : null}
         </section>
 
         <CashFlowFilters
@@ -84,6 +110,8 @@ export default async function CashFlowPageContent({
           from={filters.from ?? ""}
           to={filters.to ?? ""}
           customerId={filters.customerId ?? ""}
+          customerName={customerName}
+          customerPage={customerPage}
           projectId={filters.projectId ?? ""}
           type={filters.type ?? "all"}
           projects={projectOptions}

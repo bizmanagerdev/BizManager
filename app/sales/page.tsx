@@ -71,15 +71,31 @@ function pageRange(page: number) {
   };
 }
 
+function buildCustomerReturnHref(
+  customerId: string | null,
+  customerName: string | null,
+  customerPage: string | null
+) {
+  if (!customerId) return "/customers";
+  const params = new URLSearchParams({ customer_id: customerId });
+  if (customerName) params.set("customer_name", customerName);
+  if (customerPage) params.set("page", customerPage);
+  return `/customers?${params.toString()}`;
+}
+
 function buildSalesHref(
   activeTab: string,
   pageKey: "ordersPage" | "inventoryPage" | "pricePage" | "deliveriesPage",
   page: number,
-  customerId: string | null
+  customerId: string | null,
+  customerName: string | null,
+  customerPage: string | null
 ) {
   const params = new URLSearchParams();
   if (activeTab !== "orders") params.set("tab", activeTab);
   if (customerId) params.set("customer_id", customerId);
+  if (customerName) params.set("customer_name", customerName);
+  if (customerPage) params.set("customer_page", customerPage);
   if (page > 1) params.set(pageKey, String(page));
   const query = params.toString();
   return query ? `/sales?${query}` : "/sales";
@@ -160,6 +176,8 @@ export default async function SalesPage({
   searchParams?: Promise<{
     tab?: string;
     customer_id?: string;
+    customer_name?: string;
+    customer_page?: string;
     ordersPage?: string;
     inventoryPage?: string;
     pricePage?: string;
@@ -170,6 +188,14 @@ export default async function SalesPage({
   const customerId =
     typeof params.customer_id === "string" && params.customer_id.trim()
       ? params.customer_id.trim()
+      : null;
+  const customerName =
+    typeof params.customer_name === "string" && params.customer_name.trim()
+      ? params.customer_name.trim()
+      : null;
+  const customerPage =
+    typeof params.customer_page === "string" && params.customer_page.trim()
+      ? params.customer_page.trim()
       : null;
   const activeTab =
     params.tab === "inventory" || params.tab === "price-list" || params.tab === "deliveries"
@@ -215,7 +241,7 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "ordersPage", ordersPage - 1, customerId)}>הקודם</Link>
+                    <Link href={buildSalesHref(activeTab, "ordersPage", ordersPage - 1, customerId, customerName, customerPage)}>הקודם</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -224,7 +250,7 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "ordersPage", ordersPage + 1, customerId)}>הבא</Link>
+                    <Link href={buildSalesHref(activeTab, "ordersPage", ordersPage + 1, customerId, customerName, customerPage)}>הבא</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -291,7 +317,7 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "pricePage", pricePage - 1, customerId)}>הקודם</Link>
+                    <Link href={buildSalesHref(activeTab, "pricePage", pricePage - 1, customerId, customerName, customerPage)}>הקודם</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -300,7 +326,7 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "pricePage", pricePage + 1, customerId)}>הבא</Link>
+                    <Link href={buildSalesHref(activeTab, "pricePage", pricePage + 1, customerId, customerName, customerPage)}>הבא</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -341,7 +367,7 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "inventoryPage", inventoryPage - 1, customerId)}>
+                    <Link href={buildSalesHref(activeTab, "inventoryPage", inventoryPage - 1, customerId, customerName, customerPage)}>
                       הקודם
                     </Link>
                   </Button>
@@ -352,7 +378,7 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "inventoryPage", inventoryPage + 1, customerId)}>
+                    <Link href={buildSalesHref(activeTab, "inventoryPage", inventoryPage + 1, customerId, customerName, customerPage)}>
                       הבא
                     </Link>
                   </Button>
@@ -459,7 +485,7 @@ export default async function SalesPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "deliveriesPage", deliveriesPage - 1, customerId)}>
+                    <Link href={buildSalesHref(activeTab, "deliveriesPage", deliveriesPage - 1, customerId, customerName, customerPage)}>
                       הקודם
                     </Link>
                   </Button>
@@ -470,7 +496,7 @@ export default async function SalesPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildSalesHref(activeTab, "deliveriesPage", deliveriesPage + 1, customerId)}>
+                    <Link href={buildSalesHref(activeTab, "deliveriesPage", deliveriesPage + 1, customerId, customerName, customerPage)}>
                       הבא
                     </Link>
                   </Button>
@@ -490,17 +516,25 @@ export default async function SalesPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold">מכירות</h1>
+            {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
             <p className="text-sm text-muted-foreground">
               הזמנות, מלאי, מחירון ותכנון משלוחים לפי עיר.
             </p>
           </div>
 
-          <Button asChild>
-            <Link href="/sales/orders/new">הזמנה חדשה</Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {customerId ? (
+              <Button asChild variant="outline">
+                <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>חזרה ללקוח</Link>
+              </Button>
+            ) : null}
+            <Button asChild>
+              <Link href="/sales/orders/new">הזמנה חדשה</Link>
+            </Button>
+          </div>
         </div>
 
         <SalesTabsNav activeTab={activeTab} />

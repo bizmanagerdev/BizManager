@@ -28,7 +28,7 @@ function rowId(row: Row) {
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ page?: string }>;
+  searchParams?: Promise<{ page?: string; customer_id?: string }>;
 }) {
   const params = (await searchParams) ?? {};
   const page = parsePage(params.page);
@@ -92,7 +92,14 @@ export default async function CustomersPage({
           <p className="text-sm text-destructive">שגיאה בטעינת לקוחות: {loadError}</p>
         ) : (
           <>
-            <CustomersClient initialRows={rowsWithContacts} />
+            <CustomersClient
+              initialRows={rowsWithContacts}
+              initialDetailsCustomerId={
+                typeof params.customer_id === "string" && params.customer_id.trim()
+                  ? params.customer_id.trim()
+                  : ""
+              }
+            />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {page} • מוצגים {rowsWithContacts.length} מתוך {totalCount}
