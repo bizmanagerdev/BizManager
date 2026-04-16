@@ -5,8 +5,10 @@ import {
   hasInvalidPaymentEntry,
   normalizePaymentEntries,
   sumPayments,
-  validateRequestedPaymentStatus,
 } from "@/lib/orders/paymentStatus";
+
+const BUCKET = "business-documents";
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 type OrderItemPayload = {
   product_id?: string;
@@ -31,7 +33,19 @@ type UpdateOrderPayload = {
     reference_number?: string | null;
     notes?: string | null;
   }[];
+  refunds?: {
+    amount_total?: number | string;
+    payment_date?: string | null;
+    payment_method?: string | null;
+    reference_number?: string | null;
+    notes?: string | null;
+  }[];
   items?: OrderItemPayload[];
+};
+
+type UploadedDocument = {
+  documentId: string;
+  storagePath: string;
 };
 
 function toNumber(value: unknown) {
@@ -43,18 +57,75 @@ function toNumber(value: unknown) {
   return NaN;
 }
 
+function toNonNegativeInt(value: unknown) {
+  const parsed = toNumber(value);
+  if (!Number.isFinite(parsed)) return NaN;
+  return Math.max(0, Math.round(parsed));
+}
+
+function toPositiveInt(value: unknown) {
+  const parsed = toNumber(value);
+  if (!Number.isFinite(parsed)) return NaN;
+  return Math.max(1, Math.round(parsed));
+}
+
+function safeExtensionFromFilename(name: string) {
+  const base = name.split(/[/\\]/).pop() ?? "";
+  const parts = base.split(".");
+  if (parts.length < 2) return "";
+  const ext = (parts.pop() ?? "").toLowerCase();
+  return ext.replace(/[^a-z0-9]/g, "").slice(0, 10);
+}
+
+async function cleanupUploadedDocument(supabase: any, uploaded: UploadedDocument[]) {
+  if (uploaded.length === 0) return;
+
+  for (const document of uploaded) {
+    await supabase.from("document_links").delete().eq("document_id", document.documentId);
+    await supabase.from("documents").delete().eq("id", document.documentId);
+    await supabase.storage.from(BUCKET).remove([document.storagePath]);
+  }
+}
+
+function hasInvalidRefundEntry(entries: ReturnType<typeof normalizePaymentEntries>) {
+  return entries.some(
+    (entry) =>
+      !Number.isFinite(entry.amount_total) ||
+      entry.amount_total <= 0 ||
+      !entry.payment_date ||
+      !entry.payment_method
+  );
+}
+
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as UpdateOrderPayload;
+    const contentType = req.headers.get("content-type") ?? "";
+    let body: UpdateOrderPayload;
+    let deliveryImages: File[] = [];
+
+    if (contentType.includes("multipart/form-data")) {
+      const form = await req.formData();
+      const payload = form.get("payload");
+      const rawFiles = form.getAll("delivery_images");
+
+      if (typeof payload !== "string") {
+        return NextResponse.json({ error: "Missing payload" }, { status: 400 });
+      }
+
+      body = JSON.parse(payload) as UpdateOrderPayload;
+      deliveryImages = rawFiles.filter((file): file is File => file instanceof File && file.size > 0);
+    } else {
+      body = (await req.json()) as UpdateOrderPayload;
+    }
 
     const orderId = typeof body.order_id === "string" ? body.order_id : "";
     const customerId = typeof body.customer_id === "string" ? body.customer_id : "";
     const orderDate = typeof body.order_date === "string" ? body.order_date : "";
     const status = typeof body.status === "string" ? body.status : "draft";
-    const paymentStatus = typeof body.payment_status === "string" ? body.payment_status : "unpaid";
-    const discountAmount = toNumber(body.discount_amount ?? 0);
+    const discountAmount = toNonNegativeInt(body.discount_amount ?? 0);
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
     const payments = normalizePaymentEntries(body.payments);
+    const refunds = normalizePaymentEntries(body.refunds);
 
     const items = Array.isArray(body.items) ? body.items : [];
     if (!orderId || !customerId || !orderDate || items.length === 0) {
@@ -66,12 +137,23 @@ export async function POST(req: Request) {
     if (hasInvalidPaymentEntry(payments)) {
       return NextResponse.json({ error: "Invalid payment payload" }, { status: 400 });
     }
+    if (hasInvalidRefundEntry(refunds)) {
+      return NextResponse.json({ error: "Invalid refund payload" }, { status: 400 });
+    }
+    const invalidDeliveryImage = deliveryImages.find((file) => !file.type.startsWith("image/"));
+    if (invalidDeliveryImage) {
+      return NextResponse.json({ error: "Delivery attachment must be an image" }, { status: 400 });
+    }
+    const oversizedDeliveryImage = deliveryImages.find((file) => file.size > MAX_IMAGE_BYTES);
+    if (oversizedDeliveryImage) {
+      return NextResponse.json({ error: `Image too large (max ${MAX_IMAGE_BYTES} bytes)` }, { status: 413 });
+    }
 
     const normalizedItems = items.map((item) => ({
       product_id: typeof item.product_id === "string" ? item.product_id : "",
-      quantity_ordered: toNumber(item.quantity_ordered),
-      unit_price: toNumber(item.unit_price),
-      discount_amount: toNumber(item.discount_amount ?? 0),
+      quantity_ordered: toPositiveInt(item.quantity_ordered),
+      unit_price: toNonNegativeInt(item.unit_price),
+      discount_amount: toNonNegativeInt(item.discount_amount ?? 0),
       notes: typeof item.notes === "string" ? item.notes.trim() : null,
     }));
 
@@ -92,6 +174,7 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
+    let uploadedDocuments: UploadedDocument[] = [];
 
     const subtotal = normalizedItems.reduce(
       (sum, item) => sum + item.quantity_ordered * item.unit_price - item.discount_amount,
@@ -109,14 +192,59 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: existingPaymentsError.message }, { status: 400 });
     }
 
-    const totalPaidAfterSave = sumPayments(existingPayments ?? []) + sumPayments(payments);
-    const requestedPaymentStatusError = validateRequestedPaymentStatus({
-      requestedStatus: paymentStatus,
-      totalAmount,
-      paidAmount: totalPaidAfterSave,
-    });
-    if (requestedPaymentStatusError) {
-      return NextResponse.json({ error: requestedPaymentStatusError }, { status: 400 });
+    const totalPaidAfterSave =
+      sumPayments(existingPayments ?? []) + sumPayments(payments) - sumPayments(refunds);
+    const paymentStatus = derivePaymentStatus(totalAmount, totalPaidAfterSave);
+
+    if (deliveryImages.length > 0) {
+      for (const deliveryImage of deliveryImages) {
+        const documentId = crypto.randomUUID();
+        const displayName = (deliveryImage.name.split(/[/\\]/).pop() ?? "delivery-image").trim() || "delivery-image";
+        const ext = safeExtensionFromFilename(displayName);
+        const storagePath = ext ? `orders/${orderId}/${documentId}.${ext}` : `orders/${orderId}/${documentId}`;
+        const uploadedAt = new Date().toISOString();
+
+        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, deliveryImage, {
+          contentType: deliveryImage.type || undefined,
+          upsert: false,
+        });
+        if (uploadError) {
+          await cleanupUploadedDocument(supabase, uploadedDocuments);
+          return NextResponse.json({ error: uploadError.message }, { status: 400 });
+        }
+
+        const { error: docError } = await supabase.from("documents").insert({
+          id: documentId,
+          document_type: "order_delivery_image",
+          title: displayName,
+          file_name: displayName,
+          storage_key: storagePath,
+          uploaded_by: user.id,
+          uploaded_at: uploadedAt,
+          notes: null,
+        });
+
+        if (docError) {
+          await supabase.storage.from(BUCKET).remove([storagePath]);
+          await cleanupUploadedDocument(supabase, uploadedDocuments);
+          return NextResponse.json({ error: docError.message }, { status: 400 });
+        }
+
+        const { error: linkError } = await supabase.from("document_links").insert({
+          document_id: documentId,
+          entity_type: "order",
+          entity_id: orderId,
+        });
+
+        if (linkError) {
+          await supabase.from("documents").delete().eq("id", documentId);
+          await supabase.storage.from(BUCKET).remove([storagePath]);
+          await cleanupUploadedDocument(supabase, uploadedDocuments);
+          return NextResponse.json({ error: linkError.message }, { status: 400 });
+        }
+
+        uploadedDocuments.push({ documentId, storagePath });
+      }
     }
 
     const { data, error } = await supabase.rpc("update_sales_order", {
@@ -134,6 +262,7 @@ export async function POST(req: Request) {
     });
 
     if (error) {
+      await cleanupUploadedDocument(supabase, uploadedDocuments);
       const hint =
         error.message.includes("update_sales_order") || error.message.includes("function")
           ? "Missing DB function update_sales_order. Run db/sql/update_sales_order_rpc.sql"
@@ -159,7 +288,37 @@ export async function POST(req: Request) {
       );
 
       if (paymentsInsertError) {
+        await cleanupUploadedDocument(supabase, uploadedDocuments);
         return NextResponse.json({ error: paymentsInsertError.message }, { status: 400 });
+      }
+    }
+
+    if (refunds.length > 0) {
+      const { error: refundsInsertError } = await supabase.from("payments").insert(
+        refunds.map((refund) => ({
+          target_type: "order",
+          target_id: orderId,
+          payment_date: refund.payment_date,
+          amount_total: refund.amount_total * -1,
+          payment_method: refund.payment_method,
+          reference_number: refund.reference_number,
+          vat_amount: 0,
+          amount_before_vat: refund.amount_total * -1,
+          net_amount: refund.amount_total * -1,
+          notes: refund.notes ? `Refund: ${refund.notes}` : "Refund",
+          recorded_by: user.id,
+        }))
+      );
+
+      if (refundsInsertError) {
+        await cleanupUploadedDocument(supabase, uploadedDocuments);
+        const message =
+          refundsInsertError.message.includes("payments_amount_total_check") ||
+          refundsInsertError.message.includes("payments_net_amount_check") ||
+          refundsInsertError.message.includes("payments_amount_before_vat_check")
+          ? "הטבלה payments עדיין לא מאפשרת החזרים. יש להריץ db/sql/allow_order_refunds_in_payments.sql"
+          : refundsInsertError.message;
+        return NextResponse.json({ error: message }, { status: 400 });
       }
     }
 
@@ -170,6 +329,7 @@ export async function POST(req: Request) {
       .eq("id", orderId);
 
     if (updateError) {
+      await cleanupUploadedDocument(supabase, uploadedDocuments);
       return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
 

@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
+import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import { formatOrderDate } from "@/lib/orders/format";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 
@@ -147,7 +147,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
         className="w-full sm:w-auto"
         onClick={() => setOpen(true)}
       >
-        לפרטי הזמנה
+        פרטי הזמנה
       </Button>
       <DialogContent className="max-h-[90svh] w-[calc(100vw-1rem)] max-w-3xl overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
@@ -208,34 +208,37 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                 <p className="text-sm text-muted-foreground">עדיין לא הוזנו תשלומים.</p>
               ) : (
                 <div className="space-y-2">
-                  {data.payments.map((payment, index) => (
-                    <div
-                      key={getString(payment, "id") ?? `payment-${index}`}
-                      className="rounded-md border p-3 text-sm"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium">
-                          {formatCurrency(getNumber(payment, "amount_total") ?? 0)}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {formatOrderDate(
-                            getString(payment, "payment_date") ?? getString(payment, "created_at")
-                          )}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-muted-foreground">
-                        אמצעי: {paymentMethodLabel(getString(payment, "payment_method"))}
-                        {getString(payment, "reference_number")
-                          ? ` | אסמכתא: ${getString(payment, "reference_number")}`
-                          : ""}
-                      </div>
-                      {getString(payment, "notes") ? (
-                        <div className="mt-1 text-muted-foreground">
-                          הערות: {getString(payment, "notes")}
+                  {data.payments.map((payment, index) => {
+                    const amount = getNumber(payment, "amount_total") ?? 0;
+                    const isRefund = amount < 0;
+
+                    return (
+                      <div
+                        key={getString(payment, "id") ?? `payment-${index}`}
+                        className="rounded-md border p-3 text-sm"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`font-medium ${isRefund ? "text-amber-700" : ""}`}>
+                            {isRefund ? `החזר ${formatCurrency(Math.abs(amount))}` : formatCurrency(amount)}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {formatOrderDate(
+                              getString(payment, "payment_date") ?? getString(payment, "created_at")
+                            )}
+                          </span>
                         </div>
-                      ) : null}
-                    </div>
-                  ))}
+                        <div className="mt-1 text-muted-foreground">
+                          {isRefund ? "אמצעי החזר" : "אמצעי"}: {paymentMethodLabel(getString(payment, "payment_method"))}
+                          {getString(payment, "reference_number")
+                            ? ` | אסמכתא: ${getString(payment, "reference_number")}`
+                            : ""}
+                        </div>
+                        {getString(payment, "notes") ? (
+                          <div className="mt-1 text-muted-foreground">הערות: {getString(payment, "notes")}</div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -279,7 +282,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
         ) : null}
 
         <DialogFooter>
-          <OrderEditDialog orderId={orderId} buttonLabel="עריכת הזמנה" />
+          <OrderConfirmDialog orderId={orderId} buttonLabel="אישור / עדכון הזמנה" />
           <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
             סגירה
           </Button>

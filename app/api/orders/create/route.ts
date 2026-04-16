@@ -5,7 +5,6 @@ import {
   hasInvalidPaymentEntry,
   normalizePaymentEntries,
   sumPayments,
-  validateRequestedPaymentStatus,
 } from "@/lib/orders/paymentStatus";
 
 type CreateOrderItemPayload = {
@@ -41,6 +40,18 @@ function toNumber(value: unknown) {
   return NaN;
 }
 
+function toNonNegativeInt(value: unknown) {
+  const parsed = toNumber(value);
+  if (!Number.isFinite(parsed)) return NaN;
+  return Math.max(0, Math.round(parsed));
+}
+
+function toPositiveInt(value: unknown) {
+  const parsed = toNumber(value);
+  if (!Number.isFinite(parsed)) return NaN;
+  return Math.max(1, Math.round(parsed));
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as CreateOrderPayload;
@@ -48,8 +59,7 @@ export async function POST(req: Request) {
     const customerId = typeof body.customer_id === "string" ? body.customer_id : "";
     const orderDate = typeof body.order_date === "string" ? body.order_date : "";
     const status = "draft";
-    const paymentStatus = typeof body.payment_status === "string" ? body.payment_status : "unpaid";
-    const discountAmount = toNumber(body.discount_amount ?? 0);
+    const discountAmount = toNonNegativeInt(body.discount_amount ?? 0);
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
     const payments = normalizePaymentEntries(body.payments);
 
@@ -66,9 +76,9 @@ export async function POST(req: Request) {
 
     const normalizedItems = items.map((item) => ({
       product_id: typeof item.product_id === "string" ? item.product_id : "",
-      quantity_ordered: toNumber(item.quantity_ordered),
-      unit_price: toNumber(item.unit_price),
-      discount_amount: toNumber(item.discount_amount ?? 0),
+      quantity_ordered: toPositiveInt(item.quantity_ordered),
+      unit_price: toNonNegativeInt(item.unit_price),
+      discount_amount: toNonNegativeInt(item.discount_amount ?? 0),
       notes: typeof item.notes === "string" ? item.notes.trim() : null,
     }));
 
@@ -96,15 +106,7 @@ export async function POST(req: Request) {
     );
     const totalAmount = subtotal - discountAmount;
     const totalPaid = sumPayments(payments);
-
-    const requestedPaymentStatusError = validateRequestedPaymentStatus({
-      requestedStatus: paymentStatus,
-      totalAmount,
-      paidAmount: totalPaid,
-    });
-    if (requestedPaymentStatusError) {
-      return NextResponse.json({ error: requestedPaymentStatusError }, { status: 400 });
-    }
+    const paymentStatus = derivePaymentStatus(totalAmount, totalPaid);
 
     const { data, error } = await supabase.rpc("create_sales_order", {
       p_customer_id: customerId,

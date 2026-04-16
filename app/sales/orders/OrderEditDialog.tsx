@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import NewOrderClient from "@/app/sales/orders/new/NewOrderClient";
+import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 
 type Row = Record<string, unknown>;
 
@@ -59,6 +60,18 @@ export default function OrderEditDialog({
   initialStatusOverride?: string;
   allowOrderStatusEdit?: boolean;
 }) {
+  if (allowOrderStatusEdit || initialStatusOverride === "delivered") {
+    return (
+      <OrderConfirmDialog
+        orderId={orderId}
+        buttonLabel={buttonLabel}
+        title={title}
+        description={description}
+        defaultStatus={initialStatusOverride ?? "delivered"}
+      />
+    );
+  }
+
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);

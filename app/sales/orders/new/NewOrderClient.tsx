@@ -18,9 +18,9 @@ import {
 } from "@/components/ui/dialog";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
+  derivePaymentStatus,
   paymentMethodLabel,
   paymentStatusLabel,
-  validateRequestedPaymentStatus,
 } from "@/lib/orders/paymentStatus";
 
 type Row = Record<string, unknown>;
@@ -104,6 +104,11 @@ function toPositiveInt(value: number) {
   return Math.max(1, Math.round(value));
 }
 
+function toNonNegativeInt(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.round(value));
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
@@ -118,6 +123,20 @@ function getTodayDate() {
 
 function normalizePhone(value: string) {
   return value.replace(/[^\d+]/g, "");
+}
+
+function mapCustomerSearchResult(row: Record<string, unknown>): CustomerOption | null {
+  const id = typeof row.id === "string" ? row.id : "";
+  if (!id) return null;
+
+  return {
+    id,
+    name: (typeof row.name === "string" && row.name.trim() ? row.name.trim() : null) ?? "לקוח",
+    phone: typeof row.phone === "string" ? row.phone : null,
+    email: typeof row.email === "string" ? row.email : null,
+    address: typeof row.address === "string" ? row.address : null,
+    city: typeof row.address === "string" ? extractCityFromAddress(row.address) : null,
+  };
 }
 
 function extractCityFromAddress(address: string | null) {
@@ -209,7 +228,6 @@ export default function NewOrderClient({
   const [orderStatus, setOrderStatus] = useState(
     initialStatusOverride ?? initialOrder?.status ?? "draft"
   );
-  const [paymentStatus, setPaymentStatus] = useState(initialOrder?.payment_status ?? "unpaid");
   const [orderDiscount, setOrderDiscount] = useState(String(initialOrder?.discount_amount ?? 0));
   const [notes, setNotes] = useState(initialOrder?.notes ?? "");
 
@@ -316,10 +334,45 @@ export default function NewOrderClient({
     const qPhone = normalizePhone(customerQuery);
 
     if (!q && !qPhone) {
-      setCustomerOptions(initialCustomerOptions);
+      if (initialCustomerOptions.length > 0) {
+        setCustomerOptions(initialCustomerOptions);
+        setCustomerSearchError(null);
+        setCustomerSearchLoading(false);
+        return;
+      }
+
+      const controller = new AbortController();
+      setCustomerSearchLoading(true);
       setCustomerSearchError(null);
-      setCustomerSearchLoading(false);
-      return;
+
+      void fetch("/api/customers/search?limit=50", {
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          const json = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            customers?: Array<Record<string, unknown>>;
+          };
+          if (!res.ok) throw new Error(json.error ?? "Customer search failed");
+
+          const remoteCustomers = (json.customers ?? [])
+            .map(mapCustomerSearchResult)
+            .filter((row): row is CustomerOption => Boolean(row));
+
+          setCustomerOptions((prev) => {
+            const selected = prev.find((row) => row.id === customerId);
+            return Array.from(
+              new Map([selected, ...remoteCustomers].filter(Boolean).map((row) => [row!.id, row!])).values()
+            );
+          });
+        })
+        .catch((error: unknown) => {
+          if (error instanceof Error && error.name === "AbortError") return;
+          setCustomerSearchError(error instanceof Error ? error.message : "שגיאת חיפוש לקוחות");
+        })
+        .finally(() => setCustomerSearchLoading(false));
+
+      return () => controller.abort();
     }
 
     const controller = new AbortController();
@@ -338,18 +391,8 @@ export default function NewOrderClient({
           if (!res.ok) throw new Error(json.error ?? "Customer search failed");
 
           const remoteCustomers = (json.customers ?? [])
-            .map((row) => ({
-              id: typeof row.id === "string" ? row.id : "",
-              name:
-                (typeof row.name === "string" && row.name.trim() ? row.name.trim() : null) ??
-                "לקוח",
-              phone: typeof row.phone === "string" ? row.phone : null,
-              email: typeof row.email === "string" ? row.email : null,
-              address: typeof row.address === "string" ? row.address : null,
-              city:
-                typeof row.address === "string" ? extractCityFromAddress(row.address) : null,
-            }))
-            .filter((row) => row.id);
+            .map(mapCustomerSearchResult)
+            .filter((row): row is CustomerOption => Boolean(row));
 
           setCustomerOptions((prev) => {
             const selected = prev.find((row) => row.id === customerId);
@@ -483,6 +526,7 @@ export default function NewOrderClient({
   );
   const combinedPaidTotal = existingPaidTotal + newPaidTotal;
   const remainingBalance = Math.max(totalAmount - combinedPaidTotal, 0);
+  const paymentStatus = derivePaymentStatus(totalAmount, combinedPaidTotal);
 
   const selectedCustomer = customerOptions.find((c) => c.id === customerId) ?? null;
 
@@ -522,6 +566,8 @@ export default function NewOrderClient({
         return {
           ...next,
           quantity_ordered: toPositiveInt(next.quantity_ordered),
+          unit_price: toNonNegativeInt(next.unit_price),
+          discount_amount: toNonNegativeInt(next.discount_amount),
         };
       })
     );
@@ -678,16 +724,6 @@ export default function NewOrderClient({
 
     if (invalidPayment) {
       setSubmitError("יש להשלים לכל תשלום חדש סכום, תאריך ואמצעי תשלום.");
-      return;
-    }
-
-    const paymentStatusError = validateRequestedPaymentStatus({
-      requestedStatus: paymentStatus,
-      totalAmount,
-      paidAmount: combinedPaidTotal,
-    });
-    if (paymentStatusError) {
-      setSubmitError(paymentStatusError);
       return;
     }
 
@@ -929,10 +965,12 @@ export default function NewOrderClient({
                         <Input
                           type="number"
                           min="0"
-                          step="0.01"
+                          step="1"
                           value={line.unit_price}
                           disabled={actionLocked}
-                          onChange={(e) => updateLine(index, { unit_price: Number(e.target.value || 0) })}
+                          onChange={(e) =>
+                            updateLine(index, { unit_price: toNonNegativeInt(Number(e.target.value || 0)) })
+                          }
                           placeholder="מחיר יחידה"
                         />
                       </div>
@@ -941,10 +979,14 @@ export default function NewOrderClient({
                         <Input
                           type="number"
                           min="0"
-                          step="0.01"
+                          step="1"
                           value={line.discount_amount}
                           disabled={actionLocked}
-                          onChange={(e) => updateLine(index, { discount_amount: Number(e.target.value || 0) })}
+                          onChange={(e) =>
+                            updateLine(index, {
+                              discount_amount: toNonNegativeInt(Number(e.target.value || 0)),
+                            })
+                          }
                           placeholder="הנחת שורה"
                         />
                       </div>
@@ -1037,17 +1079,9 @@ export default function NewOrderClient({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">סטטוס תשלום</label>
-              <select
-                value={paymentStatus}
-                onChange={(e) => setPaymentStatus(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="unpaid">לא שולם</option>
-                <option value="partial">שולם חלקית</option>
-                <option value="paid">שולם</option>
-              </select>
+              <Input value={paymentStatusLabel(paymentStatus)} readOnly />
               <p className="text-xs text-muted-foreground">
-                אם מסמנים שולם או שולם חלקית, צריך להזין כאן גם את התשלומים בפועל עם אמצעי התשלום.
+                הסטטוס מחושב אוטומטית לפי סכום ההזמנה מול התשלומים בפועל.
               </p>
             </div>
 
@@ -1056,10 +1090,10 @@ export default function NewOrderClient({
               <Input
                 type="number"
                 min="0"
-                step="0.01"
+                step="1"
                 value={orderDiscount}
                 disabled={actionLocked}
-                onChange={(e) => setOrderDiscount(e.target.value)}
+                onChange={(e) => setOrderDiscount(String(toNonNegativeInt(Number(e.target.value || 0))))}
                 placeholder="הזן סכום הנחה"
               />
             </div>

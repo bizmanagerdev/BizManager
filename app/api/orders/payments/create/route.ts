@@ -13,6 +13,7 @@ type CreateOrderPaymentPayload = {
   payment_method?: string;
   reference_number?: string;
   notes?: string;
+  entry_type?: string;
 };
 
 export async function POST(req: Request) {
@@ -20,16 +21,17 @@ export async function POST(req: Request) {
     const body = (await req.json()) as CreateOrderPaymentPayload;
     const orderId = typeof body.order_id === "string" ? body.order_id : "";
     const [payment] = normalizePaymentEntries([body]);
+    const entryType = body.entry_type === "refund" ? "refund" : "payment";
 
     if (!orderId) {
       return NextResponse.json({ error: "Missing order_id" }, { status: 400 });
     }
     if (
       !payment ||
-      !Number.isFinite(payment.amount_total) ||
-      payment.amount_total <= 0 ||
-      !payment.payment_date ||
-      !payment.payment_method
+        !Number.isFinite(payment.amount_total) ||
+        payment.amount_total <= 0 ||
+        !payment.payment_date ||
+        !payment.payment_method
     ) {
       return NextResponse.json(
         { error: "Missing payment amount, date, or method" },
@@ -50,19 +52,22 @@ export async function POST(req: Request) {
     if (orderError) return NextResponse.json({ error: orderError.message }, { status: 400 });
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
+    const signedAmount = entryType === "refund" ? payment.amount_total * -1 : payment.amount_total;
+    const notePrefix = entryType === "refund" ? "Refund" : "";
+
     const { data: createdPayment, error: paymentError } = await supabase
       .from("payments")
       .insert({
         target_type: "order",
         target_id: orderId,
         payment_date: payment.payment_date,
-        amount_total: payment.amount_total,
+        amount_total: signedAmount,
         payment_method: payment.payment_method,
         reference_number: payment.reference_number,
         vat_amount: 0,
-        amount_before_vat: payment.amount_total,
-        net_amount: payment.amount_total,
-        notes: payment.notes,
+        amount_before_vat: signedAmount,
+        net_amount: signedAmount,
+        notes: payment.notes ? (notePrefix ? `${notePrefix}: ${payment.notes}` : payment.notes) : notePrefix || null,
         recorded_by: user.id,
       })
       .select(
@@ -71,7 +76,14 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (paymentError) {
-      return NextResponse.json({ error: paymentError.message }, { status: 400 });
+      const message =
+        (paymentError.message.includes("payments_amount_total_check") ||
+          paymentError.message.includes("payments_net_amount_check") ||
+          paymentError.message.includes("payments_amount_before_vat_check")) &&
+        entryType === "refund"
+          ? "הטבלה payments עדיין לא מאפשרת החזרים. יש להריץ db/sql/allow_order_refunds_in_payments.sql"
+          : paymentError.message;
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
     const { data: paymentRows, error: paymentsError } = await supabase

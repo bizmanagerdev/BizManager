@@ -60,6 +60,9 @@ export default function OrderPaymentDialog({
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [entryType, setEntryType] = useState<"payment" | "refund">(
+    paidAmount > totalAmount ? "refund" : "payment"
+  );
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -67,32 +70,36 @@ export default function OrderPaymentDialog({
   const [notes, setNotes] = useState("");
 
   const remainingBefore = Math.max(totalAmount - paidAmount, 0);
+  const refundBefore = Math.max(paidAmount - totalAmount, 0);
   const amountNumber = Number(amount);
 
   const preview = useMemo(() => {
     const safeAmount = Number.isFinite(amountNumber) && amountNumber > 0 ? amountNumber : 0;
-    const nextPaid = paidAmount + safeAmount;
+    const signedAmount = entryType === "refund" ? safeAmount * -1 : safeAmount;
+    const nextPaid = paidAmount + signedAmount;
+
     return {
       nextPaid,
       nextRemaining: Math.max(totalAmount - nextPaid, 0),
+      nextRefund: Math.max(nextPaid - totalAmount, 0),
       nextStatus: derivePaymentStatus(totalAmount, nextPaid),
     };
-  }, [amountNumber, paidAmount, totalAmount]);
+  }, [amountNumber, entryType, paidAmount, totalAmount]);
 
   async function submitPayment() {
     if (submitting) return;
     setError(null);
 
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      setError("יש להזין סכום תשלום גדול מ-0.");
+      setError(entryType === "refund" ? "יש להזין סכום החזר גדול מ-0." : "יש להזין סכום תשלום גדול מ-0.");
       return;
     }
     if (!paymentDate) {
-      setError("יש לבחור תאריך תשלום.");
+      setError(entryType === "refund" ? "יש לבחור תאריך החזר." : "יש לבחור תאריך תשלום.");
       return;
     }
     if (!paymentMethod) {
-      setError("יש לבחור אמצעי תשלום.");
+      setError(entryType === "refund" ? "יש לבחור אמצעי החזר." : "יש לבחור אמצעי תשלום.");
       return;
     }
 
@@ -103,6 +110,7 @@ export default function OrderPaymentDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           order_id: orderId,
+          entry_type: entryType,
           amount_total: amountNumber,
           payment_date: paymentDate,
           payment_method: paymentMethod,
@@ -119,17 +127,18 @@ export default function OrderPaymentDialog({
       };
 
       if (!res.ok) {
-        setError(json.error ?? "עדכון התשלום נכשל.");
+        setError(json.error ?? (entryType === "refund" ? "רישום ההחזר נכשל." : "עדכון התשלום נכשל."));
         return;
       }
 
       onCreated?.({
         payment: json.payment ?? null,
-        paymentStatus: json.payment_status ?? derivePaymentStatus(totalAmount, preview.nextPaid),
+        paymentStatus: json.payment_status ?? preview.nextStatus,
         totalPaid: typeof json.total_paid === "number" ? json.total_paid : preview.nextPaid,
       });
 
       setAmount("");
+      setEntryType(preview.nextRefund > 0 ? "refund" : "payment");
       setPaymentDate(getTodayDate());
       setPaymentMethod("");
       setReferenceNumber("");
@@ -155,12 +164,22 @@ export default function OrderPaymentDialog({
         עדכון תשלום
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (nextOpen) {
+            setEntryType(paidAmount > totalAmount ? "refund" : "payment");
+          }
+        }}
+      >
         <DialogContent className="max-h-[90svh] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>עדכון תשלום</DialogTitle>
+            <DialogTitle>{entryType === "refund" ? "רישום החזר" : "עדכון תשלום"}</DialogTitle>
             <DialogDescription>
-              אפשר להוסיף תשלום נוסף להזמנה, גם אם היא משולמת בכמה חלקים ובכמה אמצעים.
+              {entryType === "refund"
+                ? "אפשר לרשום החזר ללקוח ולעדכן את יתרת ההזמנה."
+                : "אפשר להוסיף תשלום נוסף להזמנה, גם אם היא משולמת בכמה חלקים ובכמה אמצעים."}
             </DialogDescription>
           </DialogHeader>
 
@@ -175,14 +194,28 @@ export default function OrderPaymentDialog({
                 <div className="font-medium">{formatCurrency(paidAmount)}</div>
               </div>
               <div>
-                <div className="text-muted-foreground">נותר לגבייה</div>
-                <div className="font-medium">{formatCurrency(remainingBefore)}</div>
+                <div className="text-muted-foreground">{refundBefore > 0 ? "החזר פתוח" : "נותר לגבייה"}</div>
+                <div className={`font-medium ${refundBefore > 0 ? "text-amber-700" : ""}`}>
+                  {formatCurrency(refundBefore > 0 ? refundBefore : remainingBefore)}
+                </div>
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">סוג פעולה</label>
+              <select
+                value={entryType}
+                onChange={(e) => setEntryType(e.target.value === "refund" ? "refund" : "payment")}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="payment">תשלום</option>
+                <option value="refund">החזר</option>
+              </select>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <label className="text-sm font-medium">סכום תשלום *</label>
+                <label className="text-sm font-medium">{entryType === "refund" ? "סכום החזר *" : "סכום תשלום *"}</label>
                 <Input
                   type="number"
                   min="0"
@@ -193,23 +226,19 @@ export default function OrderPaymentDialog({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך תשלום *</label>
-                <Input
-                  type="date"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                />
+                <label className="text-sm font-medium">{entryType === "refund" ? "תאריך החזר *" : "תאריך תשלום *"}</label>
+                <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
               </div>
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm font-medium">אמצעי תשלום *</label>
+              <label className="text-sm font-medium">{entryType === "refund" ? "אמצעי החזר *" : "אמצעי תשלום *"}</label>
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
-                <option value="">בחר אמצעי תשלום...</option>
+                <option value="">{entryType === "refund" ? "בחר אמצעי החזר..." : "בחר אמצעי תשלום..."}</option>
                 {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
@@ -220,7 +249,7 @@ export default function OrderPaymentDialog({
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <label className="text-sm font-medium">מספר אסמכתא</label>
+                <label className="text-sm font-medium">{entryType === "refund" ? "מספר אסמכתא להחזר" : "מספר אסמכתא"}</label>
                 <Input
                   value={referenceNumber}
                   onChange={(e) => setReferenceNumber(e.target.value)}
@@ -228,12 +257,8 @@ export default function OrderPaymentDialog({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm font-medium">הערות</label>
-                <Input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="אופציונלי"
-                />
+                <label className="text-sm font-medium">{entryType === "refund" ? "הערות להחזר" : "הערות"}</label>
+                <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="אופציונלי" />
               </div>
             </div>
 
@@ -245,12 +270,14 @@ export default function OrderPaymentDialog({
                 </span>
               </div>
               <div className="mt-2 flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">סכום שולם</span>
+                <span className="text-muted-foreground">שולם נטו</span>
                 <span>{formatCurrency(preview.nextPaid)}</span>
               </div>
               <div className="mt-1 flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">יתרה</span>
-                <span>{formatCurrency(preview.nextRemaining)}</span>
+                <span className="text-muted-foreground">{preview.nextRefund > 0 ? "החזר" : "יתרה"}</span>
+                <span className={preview.nextRefund > 0 ? "text-amber-700" : ""}>
+                  {formatCurrency(preview.nextRefund > 0 ? preview.nextRefund : preview.nextRemaining)}
+                </span>
               </div>
             </div>
 
@@ -262,7 +289,7 @@ export default function OrderPaymentDialog({
               ביטול
             </Button>
             <Button type="button" onClick={() => void submitPayment()} disabled={submitting}>
-              {submitting ? "שומר..." : "שמירת תשלום"}
+              {submitting ? "שומר..." : entryType === "refund" ? "שמירת החזר" : "שמירת תשלום"}
             </Button>
           </DialogFooter>
         </DialogContent>

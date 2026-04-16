@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import DeleteOrderButton from "@/app/sales/orders/[id]/DeleteOrderButton";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
+import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import {
   paymentMethodLabel,
   paymentStatusClasses,
@@ -95,6 +96,7 @@ export default async function SalesOrderPage({
     { data: orderItems, error: itemsError },
     { data: payments, error: paymentsError },
     { data: financials, error: financialsError },
+    { data: deliveryLinks, error: deliveryLinksError },
   ] =
     await Promise.all([
       supabase
@@ -117,6 +119,11 @@ export default async function SalesOrderPage({
         .select("id,total_amount,total_paid,remaining_balance,payment_count,payment_status")
         .eq("id", id)
         .maybeSingle(),
+      supabase
+        .from("document_links")
+        .select("document_id,created_at")
+        .eq("entity_type", "order")
+        .eq("entity_id", id),
     ]);
 
   const customerId =
@@ -162,6 +169,52 @@ export default async function SalesOrderPage({
   const paymentCount = getNumber((financials as Row) ?? {}, "payment_count") ?? (payments ?? []).length;
   const paymentStatus = getString((financials as Row) ?? {}, "payment_status") ?? "unpaid";
 
+  const deliveryDocumentIds = Array.from(
+    new Set(
+      ((deliveryLinks ?? []) as Row[])
+        .map((row) => getString(row as Row, "document_id"))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { data: deliveryDocuments } =
+    deliveryDocumentIds.length > 0
+      ? await supabase
+          .from("documents")
+          .select("id,file_name,storage_key,uploaded_at,document_type")
+          .in("id", deliveryDocumentIds)
+      : { data: [] as Row[] };
+
+  const deliveryDocumentMap = new Map<string, Row>();
+  ((deliveryDocuments ?? []) as Row[]).forEach((row) => {
+    const documentId = getString(row as Row, "id");
+    if (documentId) deliveryDocumentMap.set(documentId, row as Row);
+  });
+
+  const deliveryImages = await Promise.all(
+    ((deliveryLinks ?? []) as Row[]).map(async (link) => {
+      const documentId = getString(link as Row, "document_id");
+      if (!documentId) return null;
+      const document = deliveryDocumentMap.get(documentId);
+      if (!document) return null;
+      if (getString(document, "document_type") !== "order_delivery_image") return null;
+
+      const storageKey = getString(document, "storage_key");
+      const { data: signed } = storageKey
+        ? await supabase.storage.from("business-documents").createSignedUrl(storageKey, 60 * 60)
+        : { data: null };
+
+      return {
+        id: documentId,
+        file_name: getString(document, "file_name"),
+        uploaded_at: getString(document, "uploaded_at") ?? getString(link as Row, "created_at"),
+        url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
+      };
+    })
+  );
+
+  const deliveryImagesResolved = deliveryImages.filter((row): row is NonNullable<typeof row> => Boolean(row));
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
       <div className="space-y-4">
@@ -172,6 +225,7 @@ export default async function SalesOrderPage({
           </div>
           <div className="flex items-center gap-2">
             <DeleteOrderButton orderId={id} />
+            <OrderConfirmDialog orderId={id} />
             <OrderPaymentDialog orderId={id} totalAmount={totalAmount} paidAmount={totalPaid} />
             <Link href={`/sales/orders/${id}/edit`} className="text-sm text-primary">
               עריכת הזמנה
@@ -197,6 +251,9 @@ export default async function SalesOrderPage({
         ) : null}
         {financialsError && !financialsError.message.includes("order_financials_view") ? (
           <p className="text-sm text-destructive">שגיאת סיכום הזמנה: {financialsError.message}</p>
+        ) : null}
+        {deliveryLinksError ? (
+          <p className="text-sm text-destructive">שגיאת תמונות אספקה: {deliveryLinksError.message}</p>
         ) : null}
 
         {order ? (
@@ -260,30 +317,40 @@ export default async function SalesOrderPage({
           ) : (
             <div className="space-y-2">
               {(payments ?? []).map((payment, index) => (
-                <div
-                  key={getString(payment as Row, "id") ?? `payment-${index}`}
-                  className="rounded-md border p-3 text-sm"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">
-                      {formatCurrency(getNumber(payment as Row, "amount_total") ?? 0)}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {formatDate(getString(payment as Row, "payment_date") ?? getString(payment as Row, "created_at"))}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-muted-foreground">
-                    אמצעי: {paymentMethodLabel(getString(payment as Row, "payment_method"))}
-                    {getString(payment as Row, "reference_number")
-                      ? ` | אסמכתא: ${getString(payment as Row, "reference_number")}`
-                      : ""}
-                  </div>
-                  {getString(payment as Row, "notes") ? (
-                    <div className="mt-1 text-muted-foreground">
-                      הערות: {getString(payment as Row, "notes")}
+                (() => {
+                  const amount = getNumber(payment as Row, "amount_total") ?? 0;
+                  const isRefund = amount < 0;
+
+                  return (
+                    <div
+                      key={getString(payment as Row, "id") ?? `payment-${index}`}
+                      className="rounded-md border p-3 text-sm"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`font-medium ${isRefund ? "text-amber-700" : ""}`}>
+                          {isRefund ? `החזר ${formatCurrency(Math.abs(amount))}` : formatCurrency(amount)}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {formatDate(
+                            getString(payment as Row, "payment_date") ?? getString(payment as Row, "created_at")
+                          )}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-muted-foreground">
+                        {isRefund ? "אמצעי החזר" : "אמצעי"}:{" "}
+                        {paymentMethodLabel(getString(payment as Row, "payment_method"))}
+                        {getString(payment as Row, "reference_number")
+                          ? ` | אסמכתא: ${getString(payment as Row, "reference_number")}`
+                          : ""}
+                      </div>
+                      {getString(payment as Row, "notes") ? (
+                        <div className="mt-1 text-muted-foreground">
+                          הערות: {getString(payment as Row, "notes")}
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
-                </div>
+                  );
+                })()
               ))}
             </div>
           )}
@@ -322,6 +389,35 @@ export default async function SalesOrderPage({
               <p className="text-sm text-muted-foreground">לא נמצאו פריטים להזמנה זו.</p>
             ) : null}
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <h2 className="text-lg font-medium">תמונות אספקה</h2>
+          {deliveryImagesResolved.length === 0 ? (
+            <p className="text-sm text-muted-foreground">עדיין לא הועלתה תמונת אספקה להזמנה זו.</p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {deliveryImagesResolved.map((image) => (
+                <a
+                  key={image.id}
+                  href={image.url ?? "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-md border p-2 text-sm"
+                >
+                  {image.url ? (
+                    <img
+                      src={image.url}
+                      alt={image.file_name ?? "Delivery image"}
+                      className="mb-2 h-48 w-full rounded object-cover"
+                    />
+                  ) : null}
+                  <div className="font-medium">{image.file_name ?? "תמונה"}</div>
+                  <div className="text-xs text-muted-foreground">{formatDate(image.uploaded_at)}</div>
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </AppShell>

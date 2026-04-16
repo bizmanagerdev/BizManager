@@ -39,6 +39,7 @@ export async function GET(
     { data: payments, error: paymentsError },
     { data: baseCustomers, error: customersError },
     { data: baseProducts, error: productsError },
+    { data: deliveryLinks, error: deliveryLinksError },
   ] = await Promise.all([
     supabase
       .from("orders")
@@ -65,6 +66,11 @@ export async function GET(
       .select("id,name,sku,barcode,description,base_price,base_cost,active")
       .order("name", { ascending: true })
       .range(0, 49),
+    supabase
+      .from("document_links")
+      .select("document_id,created_at")
+      .eq("entity_type", "order")
+      .eq("entity_id", id),
   ]);
 
   if (customersError) {
@@ -81,6 +87,9 @@ export async function GET(
   }
   if (paymentsError) {
     return NextResponse.json({ error: paymentsError.message }, { status: 400 });
+  }
+  if (deliveryLinksError) {
+    return NextResponse.json({ error: deliveryLinksError.message }, { status: 400 });
   }
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
@@ -164,10 +173,56 @@ export async function GET(
     notes: getString(payment as Row, ["notes"]) ?? "",
   }));
 
+  const deliveryDocumentIds = Array.from(
+    new Set(
+      ((deliveryLinks ?? []) as Row[])
+        .map((row) => getString(row as Row, ["document_id"]))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { data: deliveryDocuments } =
+    deliveryDocumentIds.length > 0
+      ? await supabase
+          .from("documents")
+          .select("id,file_name,storage_key,uploaded_at,document_type")
+          .in("id", deliveryDocumentIds)
+      : { data: [] as Row[] };
+
+  const deliveryDocumentMap = new Map<string, Row>();
+  ((deliveryDocuments ?? []) as Row[]).forEach((row) => {
+    const documentId = getString(row, ["id"]);
+    if (documentId) deliveryDocumentMap.set(documentId, row);
+  });
+
+  const deliveryImages = await Promise.all(
+    ((deliveryLinks ?? []) as Row[]).map(async (link) => {
+      const documentId = getString(link as Row, ["document_id"]);
+      if (!documentId) return null;
+
+      const row = deliveryDocumentMap.get(documentId);
+      if (!row) return null;
+      if (getString(row, ["document_type"]) !== "order_delivery_image") return null;
+
+      const storageKey = getString(row, ["storage_key"]);
+      const { data: signed } = storageKey
+        ? await supabase.storage.from("business-documents").createSignedUrl(storageKey, 60 * 60)
+        : { data: null };
+
+      return {
+        id: documentId,
+        file_name: getString(row, ["file_name"]),
+        uploaded_at: getString(row, ["uploaded_at"]) ?? getString(link as Row, ["created_at"]),
+        url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
+      };
+    })
+  );
+
   return NextResponse.json({
     customers,
     products,
     initialOrder,
     initialPayments: normalizedPayments,
+    deliveryImages: deliveryImages.filter((row): row is NonNullable<typeof row> => Boolean(row)),
   });
 }

@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Search, SlidersHorizontal, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, SlidersHorizontal, X } from "lucide-react";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
+import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderDetailsDialog from "@/app/sales/orders/OrderDetailsDialog";
 import { formatOrderDate } from "@/lib/orders/format";
 import {
@@ -32,6 +33,7 @@ type OrderView = {
   totalAmount: number;
   totalPaid: number;
   remainingBalance: number;
+  refundDue: number;
   paymentCount: number;
 };
 
@@ -142,10 +144,8 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
         const dbPaidAmount = getNumber(row, ["total_paid"]) ?? 0;
         const totalPaid =
           paymentSnapshot.has(id) ? paymentSnapshot.get(id) ?? dbPaidAmount : dbPaidAmount;
-        const dbRemainingBalance =
-          getNumber(row, ["remaining_balance"]) ?? Math.max(totalAmount - totalPaid, 0);
-        const dbPaymentStatus = getString(row, ["payment_status"]);
-        const dbPaymentCount = getNumber(row, ["payment_count"]) ?? 0;
+        const remainingBalance = Math.max(totalAmount - totalPaid, 0);
+        const refundDue = Math.max(totalPaid - totalAmount, 0);
 
         return {
           id,
@@ -157,13 +157,12 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
           customerAddress: getString(row, ["customer_address"]),
           orderDate: getString(row, ["order_date", "created_at"]),
           status: normalizeOrderStatus(getString(row, ["status"])),
-          paymentStatus: dbPaymentStatus ?? derivePaymentStatus(totalAmount, totalPaid),
+          paymentStatus: derivePaymentStatus(totalAmount, totalPaid),
           totalAmount,
           totalPaid,
-          remainingBalance: paymentSnapshot.has(id)
-            ? Math.max(totalAmount - totalPaid, 0)
-            : dbRemainingBalance,
-          paymentCount: dbPaymentCount,
+          remainingBalance,
+          refundDue,
+          paymentCount: getNumber(row, ["payment_count"]) ?? 0,
         } as OrderView;
       })
       .filter((row): row is OrderView => row !== null);
@@ -191,7 +190,6 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
       if (activityFilter === "active" && !isActiveOrder(row.status)) return false;
       if (activityFilter === "closed" && isActiveOrder(row.status)) return false;
       if (cityFilter !== "all" && (row.customerCity ?? "") !== cityFilter) return false;
-
       if (!q) return true;
 
       return (
@@ -329,7 +327,9 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
                       {row.customerName} | {statusLabel(row.status)}
                     </span>
                   </div>
-                  <div className="hidden text-xs text-muted-foreground sm:block">{formatOrderDate(row.orderDate)}</div>
+                  <div className="hidden text-xs text-muted-foreground sm:block">
+                    {formatOrderDate(row.orderDate)}
+                  </div>
                   <div className="text-xs text-muted-foreground sm:hidden">
                     {row.customerCity ? `${row.customerCity} | ` : ""}
                     {row.customerName} | {statusLabel(row.status)} | {formatOrderDate(row.orderDate)}
@@ -350,14 +350,7 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
                     }}
                   />
                   <OrderEditDialog orderId={row.id} buttonLabel="עריכת הזמנה" />
-                  <OrderEditDialog
-                    orderId={row.id}
-                    buttonLabel="אספקת הזמנה"
-                    title="אספקת הזמנה"
-                    description="אפשר להשלים את ההזמנה, לעדכן פריטים ותשלומים, ולשמור את הסטטוס כהושלמה."
-                    initialStatusOverride="delivered"
-                    allowOrderStatusEdit
-                  />
+                  <OrderConfirmDialog orderId={row.id} />
                   <OrderDetailsDialog orderId={row.id} />
                 </div>
               </div>
@@ -367,13 +360,16 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סטטוס תשלום</span>
                 <span>
-                  {paymentStatusLabel(row.paymentStatus)} | {formatCurrency(row.totalPaid)} מתוך {formatCurrency(row.totalAmount)}
+                  {paymentStatusLabel(row.paymentStatus)} | {formatCurrency(row.totalPaid)} מתוך{" "}
+                  {formatCurrency(row.totalAmount)}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">יתרה</span>
-                  <span>{formatCurrency(row.remainingBalance)}</span>
+                  <span className="text-muted-foreground">{row.refundDue > 0 ? "החזר" : "יתרה"}</span>
+                  <span className={row.refundDue > 0 ? "text-amber-700" : ""}>
+                    {formatCurrency(row.refundDue > 0 ? row.refundDue : row.remainingBalance)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">תשלומים</span>
@@ -408,8 +404,10 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
                 <p className="text-left">{formatCurrency(row.totalPaid)}</p>
               </div>
               <div className="flex items-baseline justify-between gap-3">
-                <p className="text-muted-foreground">יתרה</p>
-                <p className="text-left">{formatCurrency(row.remainingBalance)}</p>
+                <p className="text-muted-foreground">{row.refundDue > 0 ? "החזר" : "יתרה"}</p>
+                <p className={`text-left ${row.refundDue > 0 ? "text-amber-700" : ""}`}>
+                  {formatCurrency(row.refundDue > 0 ? row.refundDue : row.remainingBalance)}
+                </p>
               </div>
               <div className="flex items-baseline justify-between gap-3">
                 <p className="text-muted-foreground">סכום</p>
