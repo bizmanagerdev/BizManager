@@ -225,11 +225,8 @@ export default async function SalesOrderPage({
           </div>
           <div className="flex items-center gap-2">
             <DeleteOrderButton orderId={id} />
-            <OrderConfirmDialog orderId={id} />
+            <OrderConfirmDialog orderId={id} buttonLabel="אישור אספקה" />
             <OrderPaymentDialog orderId={id} totalAmount={totalAmount} paidAmount={totalPaid} />
-            <Link href={`/sales/orders/${id}/edit`} className="text-sm text-primary">
-              עריכת הזמנה
-            </Link>
             <Link href="/sales/orders/new" className="text-sm text-primary">
               הזמנה חדשה
             </Link>

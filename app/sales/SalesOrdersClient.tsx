@@ -6,9 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
-import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
-import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderDetailsDialog from "@/app/sales/orders/OrderDetailsDialog";
 import { formatOrderDate } from "@/lib/orders/format";
 import {
@@ -32,9 +29,6 @@ type OrderView = {
   paymentStatus: string;
   totalAmount: number;
   totalPaid: number;
-  remainingBalance: number;
-  refundDue: number;
-  paymentCount: number;
 };
 
 function getString(row: Row, keys: string[]) {
@@ -121,6 +115,24 @@ function statusLabel(value: string) {
   }
 }
 
+function orderStatusClasses(status: string) {
+  switch (normalizeOrderStatus(status)) {
+    case "confirmed":
+    case "completed":
+      return "border-transparent bg-emerald-100 text-emerald-800";
+    case "processing":
+    case "out_for_delivery":
+      return "border-transparent bg-amber-100 text-amber-800";
+    case "delivered":
+    case "closed":
+      return "border-transparent bg-slate-200 text-slate-800";
+    case "cancelled":
+      return "border-transparent bg-rose-100 text-rose-800";
+    default:
+      return "border-transparent bg-sky-100 text-sky-800";
+  }
+}
+
 function isActiveOrder(status: string) {
   return !["closed", "cancelled", "delivered", "completed"].includes(normalizeOrderStatus(status));
 }
@@ -144,8 +156,6 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
         const dbPaidAmount = getNumber(row, ["total_paid"]) ?? 0;
         const totalPaid =
           paymentSnapshot.has(id) ? paymentSnapshot.get(id) ?? dbPaidAmount : dbPaidAmount;
-        const remainingBalance = Math.max(totalAmount - totalPaid, 0);
-        const refundDue = Math.max(totalPaid - totalAmount, 0);
 
         return {
           id,
@@ -160,9 +170,6 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
           paymentStatus: derivePaymentStatus(totalAmount, totalPaid),
           totalAmount,
           totalPaid,
-          remainingBalance,
-          refundDue,
-          paymentCount: getNumber(row, ["payment_count"]) ?? 0,
         } as OrderView;
       })
       .filter((row): row is OrderView => row !== null);
@@ -311,115 +318,49 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
         ) : null}
       </div>
 
+      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[180px_220px_minmax(320px,1fr)_320px] md:items-center md:gap-4 sm:px-4">
+        <div>הזמנה</div>
+        <div>סטטוס</div>
+        <div className="grid grid-cols-3 gap-3">
+          <div>לקוח</div>
+          <div>סכום</div>
+          <div>שולם</div>
+        </div>
+        <div>פעולות</div>
+      </div>
+
       <div className="grid gap-2 sm:gap-2.5">
         {filteredRows.map((row) => (
           <Card key={row.id} className={`border-2 ${paymentStatusClasses(row.paymentStatus)}`}>
-            <CardHeader className="p-3 pb-2 sm:p-4 sm:pb-2.5">
-              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex flex-col gap-3 md:grid md:grid-cols-[180px_220px_minmax(320px,1fr)_320px] md:items-center md:gap-4">
                 <div className="space-y-1">
-                  <CardTitle className="text-base">הזמנה #{row.id.slice(0, 8)}</CardTitle>
-                  <div className="hidden flex-wrap items-center gap-1.5 sm:flex">
-                    <span className={`rounded-full border px-2 py-0.5 text-xs ${paymentStatusClasses(row.paymentStatus)}`}>
-                      {paymentStatusLabel(row.paymentStatus)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {row.customerCity ? `${row.customerCity} | ` : ""}
-                      {row.customerName} | {statusLabel(row.status)}
-                    </span>
+                  
+                    <CardTitle className="text-base">הזמנה #{row.id.slice(0, 8)}</CardTitle>
+                    <div className="text-xs text-muted-foreground">{formatOrderDate(row.orderDate)}</div>
                   </div>
-                  <div className="hidden text-xs text-muted-foreground sm:block">
-                    {formatOrderDate(row.orderDate)}
-                  </div>
-                  <div className="text-xs text-muted-foreground sm:hidden">
-                    {row.customerCity ? `${row.customerCity} | ` : ""}
-                    {row.customerName} | {statusLabel(row.status)} | {formatOrderDate(row.orderDate)}
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
-                  <OrderPaymentDialog
-                    orderId={row.id}
-                    totalAmount={row.totalAmount}
-                    paidAmount={row.totalPaid}
-                    onCreated={({ totalPaid }) => {
-                      setPaymentSnapshot((prev) => {
-                        const next = new Map(prev);
-                        next.set(row.id, totalPaid);
-                        return next;
-                      });
-                    }}
-                  />
-                  <OrderEditDialog orderId={row.id} buttonLabel="עריכת הזמנה" />
-                  <OrderConfirmDialog orderId={row.id} />
+                  <div className="flex flex-wrap items-center gap-2 md:min-w-0">
+                    <Badge className={orderStatusClasses(row.status)}>{statusLabel(row.status)}</Badge>
+                    <Badge className={paymentStatusClasses(row.paymentStatus)}>
+                      {paymentStatusLabel(row.paymentStatus)}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 text-sm md:min-w-0">
+                    <div className="min-w-0">
+                      <div className="truncate">{row.customerName}</div>
+                    </div>
+                    <div className="min-w-0">
+                      <div>{formatCurrency(row.totalAmount)}</div>
+                    </div>
+                    <div className="min-w-0">
+                      <div>{formatCurrency(row.totalPaid)}</div>
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center md:justify-start md:gap-2">
                   <OrderDetailsDialog orderId={row.id} />
                 </div>
-              </div>
-            </CardHeader>
-
-            <div className="space-y-1 px-3 pb-3 text-sm sm:hidden">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">סטטוס תשלום</span>
-                <span>
-                  {paymentStatusLabel(row.paymentStatus)} | {formatCurrency(row.totalPaid)} מתוך{" "}
-                  {formatCurrency(row.totalAmount)}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">{row.refundDue > 0 ? "החזר" : "יתרה"}</span>
-                  <span className={row.refundDue > 0 ? "text-amber-700" : ""}>
-                    {formatCurrency(row.refundDue > 0 ? row.refundDue : row.remainingBalance)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">תשלומים</span>
-                  <span>{row.paymentCount}</span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">טלפון</span>
-                  <span>{row.customerPhone ?? "-"}</span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">כתובת</span>
-                  <span className="truncate">{row.customerAddress ?? "-"}</span>
-                </div>
-              </div>
-            </div>
-
-            <CardContent className="hidden grid-cols-2 gap-x-4 gap-y-1.5 p-3 pt-0 text-sm sm:grid sm:p-4 sm:pt-0 lg:grid-cols-3">
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="text-muted-foreground">לקוח</p>
-                <p className="text-left">{row.customerName}</p>
-              </div>
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="text-muted-foreground">עיר</p>
-                <p className="text-left">{row.customerCity ?? "-"}</p>
-              </div>
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="text-muted-foreground">כתובת</p>
-                <p className="max-w-[18rem] text-left truncate">{row.customerAddress ?? "-"}</p>
-              </div>
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="text-muted-foreground">שולם</p>
-                <p className="text-left">{formatCurrency(row.totalPaid)}</p>
-              </div>
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="text-muted-foreground">{row.refundDue > 0 ? "החזר" : "יתרה"}</p>
-                <p className={`text-left ${row.refundDue > 0 ? "text-amber-700" : ""}`}>
-                  {formatCurrency(row.refundDue > 0 ? row.refundDue : row.remainingBalance)}
-                </p>
-              </div>
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="text-muted-foreground">סכום</p>
-                <p className="text-left">{formatCurrency(row.totalAmount)}</p>
-              </div>
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="text-muted-foreground">תשלומים</p>
-                <p className="text-left">{row.paymentCount}</p>
-              </div>
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="text-muted-foreground">טלפון</p>
-                <p className="text-left">{row.customerPhone ?? "-"}</p>
               </div>
             </CardContent>
           </Card>

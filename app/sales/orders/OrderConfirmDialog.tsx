@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -97,7 +98,7 @@ function shouldApplyDefaultStatus(currentStatus: string, defaultStatus: string |
 
 export default function OrderConfirmDialog({
   orderId,
-  buttonLabel = "אישור הזמנה",
+  buttonLabel = "אישור אספקה",
   title = "אישור / אספקת הזמנה",
   description = "עדכון כמויות, סטטוס, תשלום ותמונת אספקה במסך אחד.",
   defaultStatus = "delivered",
@@ -128,6 +129,7 @@ export default function OrderConfirmDialog({
   const [refundNotes, setRefundNotes] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [deliveryImages, setDeliveryImages] = useState<File[]>([]);
+  const [openSection, setOpenSection] = useState<"items" | "payment" | "delivery">("items");
   const deliveryImage = deliveryImages[0] ?? null;
 
   useEffect(() => {
@@ -181,6 +183,7 @@ export default function OrderConfirmDialog({
     setRefundNotes("");
     setDeliveryNotes(data.initialOrder.notes ?? "");
     setDeliveryImages([]);
+    setOpenSection("items");
     setError(null);
   }, [data, defaultStatus]);
 
@@ -217,6 +220,10 @@ export default function OrderConfirmDialog({
         lineIndex === index ? { ...line, quantity_ordered: normalizeQty(nextValue) } : line
       )
     );
+  }
+
+  function toggleSection(section: "items" | "payment" | "delivery") {
+    setOpenSection(section);
   }
 
   async function submit() {
@@ -344,18 +351,19 @@ export default function OrderConfirmDialog({
       <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => setOpen(true)}>
         {buttonLabel}
       </Button>
-      <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-4xl overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="flex max-h-[92svh] w-[calc(100vw-1rem)] max-w-4xl flex-col overflow-hidden p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogDescription>{description ? "" : ""}</DialogDescription>
         </DialogHeader>
 
-        {loading ? <p className="text-sm text-muted-foreground">טוען נתוני הזמנה...</p> : null}
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          {loading ? <p className="text-sm text-muted-foreground">טוען נתוני הזמנה...</p> : null}
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-        {data ? (
-          <div className="space-y-5">
-            <div className="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-4">
+          {data ? (
+            <div className="space-y-5">
+            <div className="hidden grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-4">
               <div>
                 <div className="text-muted-foreground">תאריך הזמנה</div>
                 <div className="font-medium">{formatDate(data.initialOrder.order_date)}</div>
@@ -376,7 +384,7 @@ export default function OrderConfirmDialog({
                       {`נבחרו ${deliveryImages.length} תמונות: ${deliveryImages.map((image) => image.name).join(", ")}`}
                     </p>
                   ) : null}
-                  {!deliveryImage ? <p className="text-xs text-muted-foreground">אפשר לצרף כמה תמונות אספקה בכל שמירה.</p> : null}
+                  {!deliveryImage ? null : null}
                 </div>
                 <div className={`font-medium ${refundDue > 0 ? "text-amber-700" : ""}`}>
                   {formatCurrency(refundDue > 0 ? refundDue : projectedRemaining)}
@@ -384,12 +392,20 @@ export default function OrderConfirmDialog({
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
+            <div className="rounded-md border p-4">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 text-right"
+                onClick={() => toggleSection("items")}
+              >
                 <h3 className="text-sm font-semibold">כמויות פריטים</h3>
-                <span className="text-xs text-muted-foreground">ערוך רק את הכמות שנמסרה בפועל</span>
-              </div>
-              <div className="space-y-2">
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                    openSection === "items" ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              {openSection === "items" ? <div className="mt-4 space-y-2">
                 {lines.map((line, index) => {
                   const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
                   return (
@@ -419,11 +435,23 @@ export default function OrderConfirmDialog({
                     </div>
                   );
                 })}
-              </div>
+              </div> : null}
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="space-y-3 rounded-md border p-4">
+            <div className="rounded-md border p-4">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 text-right"
+                onClick={() => toggleSection("payment")}
+              >
+                  <h3 className="text-sm font-semibold">סטטוס ותשלום</h3>
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                      openSection === "payment" ? "rotate-180" : ""
+                    }`}
+                  />
+              </button>
+              {openSection === "payment" ? <div className="mt-4 space-y-3 rounded-md border p-4">
                 <h3 className="text-sm font-semibold">סטטוס ותשלום</h3>
 
                 <div className="space-y-1">
@@ -445,16 +473,22 @@ export default function OrderConfirmDialog({
 
                 <div className="space-y-1">
                   <label className="text-sm font-medium">סטטוס תשלום</label>
-                  <Input value={paymentStatusLabel(finalPaymentStatus)} readOnly />
-                  <p className="text-xs text-muted-foreground">
+                  <div>
+                    <span
+                      className={`inline-flex rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(finalPaymentStatus)}`}
+                    >
+                      {paymentStatusLabel(finalPaymentStatus)}
+                    </span>
+                  </div>
+                  <p className="hidden text-xs text-muted-foreground">
                     הסטטוס מחושב אוטומטית לפי הסכום ששולם בפועל אחרי תשלומים והחזרים.
                   </p>
                   {deliveryImages.length > 1 ? (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="hidden text-xs text-muted-foreground">
                       {`נבחרו ${deliveryImages.length} תמונות: ${deliveryImages.map((image) => image.name).join(", ")}`}
                     </p>
                   ) : null}
-                  {!deliveryImage ? <p className="text-xs text-muted-foreground">אפשר לצרף כמה תמונות אספקה בכל שמירה.</p> : null}
+                  {!deliveryImage ? null : null}
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -626,9 +660,23 @@ export default function OrderConfirmDialog({
                     )}
                   </div>
                 ) : null}
-              </div>
+              </div> : null}
+            </div>
 
-              <div className="space-y-3 rounded-md border p-4">
+            <div className="rounded-md border p-4">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 text-right"
+                onClick={() => toggleSection("delivery")}
+              >
+                  <h3 className="text-sm font-semibold">אספקה</h3>
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                      openSection === "delivery" ? "rotate-180" : ""
+                    }`}
+                  />
+              </button>
+              {openSection === "delivery" ? <div className="mt-4 space-y-3 rounded-md border p-4">
                 <h3 className="text-sm font-semibold">תמונת אספקה</h3>
 
                 <div className="space-y-1">
@@ -639,7 +687,7 @@ export default function OrderConfirmDialog({
                     multiple
                     onChange={(e) => setDeliveryImages(Array.from(e.target.files ?? []))}
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p className="hidden text-xs text-muted-foreground">
                     {deliveryImage ? `נבחר קובץ: ${deliveryImage.name}` : "אפשר לצרף תמונת אספקה אחת בכל שמירה."}
                   </p>
                 </div>
@@ -680,42 +728,14 @@ export default function OrderConfirmDialog({
                     </div>
                   </div>
                 ) : null}
-              </div>
+              </div> : null}
             </div>
 
-            {(data.initialPayments ?? []).length > 0 ? (
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold">תשלומים קיימים</h3>
-                <div className="space-y-2">
-                  {data.initialPayments.map((payment) => (
-                    (() => {
-                      const isRefund = payment.amount_total < 0;
+            </div>
+          ) : null}
+        </div>
 
-                      return (
-                        <div key={payment.id} className="rounded-md border p-3 text-sm">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className={`font-medium ${isRefund ? "text-amber-700" : ""}`}>
-                              {isRefund
-                                ? `החזר ${formatCurrency(Math.abs(payment.amount_total))}`
-                                : formatCurrency(payment.amount_total)}
-                            </span>
-                            <span className="text-muted-foreground">{formatDate(payment.payment_date)}</span>
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {isRefund ? "אמצעי החזר" : "אמצעי"}: {paymentMethodLabel(payment.payment_method)}
-                            {payment.reference_number ? ` | ${payment.reference_number}` : ""}
-                          </div>
-                        </div>
-                      );
-                    })()
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        <DialogFooter>
+        <DialogFooter className="border-t pt-4">
           <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>
             ביטול
           </Button>
