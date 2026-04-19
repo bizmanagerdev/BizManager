@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import ProjectsClient from "@/app/projects/ProjectsClient";
 import ProjectsCalendar from "@/app/projects/ProjectsCalendar";
 import ProjectsTabsNav from "@/app/projects/ProjectsTabsNav";
-import { applyEffectiveProjectDashboardRows } from "@/lib/projects/effectiveDashboard";
 
 type Row = Record<string, unknown>;
 
@@ -110,7 +109,7 @@ export default async function ProjectsPage({
       .range(0, OPTIONS_PAGE_SIZE - 1),
   ]);
 
-  const rows = await applyEffectiveProjectDashboardRows(supabase, (data ?? []) as Row[]);
+  const rows = (data ?? []) as Row[];
 
   const scheduleRows = rows
     .map((row) => ({

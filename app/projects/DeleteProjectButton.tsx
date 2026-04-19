@@ -4,6 +4,14 @@ import { type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function DeleteProjectButton({
   projectId,
@@ -25,15 +33,12 @@ export default function DeleteProjectButton({
   ariaLabel?: string;
 }) {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function onDelete() {
     if (loading) return;
-
-    const label = projectName?.trim() || "הפרויקט";
-    const confirmed = window.confirm(`למחוק את ${label}? הפעולה אינה הפיכה.`);
-    if (!confirmed) return;
 
     setError(null);
     setLoading(true);
@@ -56,6 +61,7 @@ export default function DeleteProjectButton({
         return;
       }
 
+      setOpen(false);
       onDeleted?.();
 
       if (redirectTo) {
@@ -75,20 +81,40 @@ export default function DeleteProjectButton({
     }
   }
 
+  const label = projectName?.trim() || "הפרויקט";
+
   return (
     <div className="space-y-1">
-      <Button
-        type="button"
-        variant="destructive"
-        size={size}
-        onClick={() => void onDelete()}
-        disabled={loading}
-        className={className}
-        aria-label={ariaLabel}
-        title={ariaLabel}
-      >
-        {loading ? "מוחק..." : children ?? "מחיקת פרויקט"}
-      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <Button
+          type="button"
+          variant="destructive"
+          size={size}
+          onClick={() => setOpen(true)}
+          disabled={loading}
+          className={className}
+          aria-label={ariaLabel}
+          title={ariaLabel}
+        >
+          {loading ? "מוחק..." : children ?? "מחיקת פרויקט"}
+        </Button>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>מחיקת פרויקט</DialogTitle>
+            <DialogDescription>
+              {`למחוק את ${label}? הפעולה אינה הפיכה.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+              ביטול
+            </Button>
+            <Button type="button" variant="destructive" onClick={() => void onDelete()} disabled={loading}>
+              {loading ? "מוחק..." : "מחק פרויקט"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

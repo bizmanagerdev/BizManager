@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
-import { applyEffectiveProjectDashboardRow } from "@/lib/projects/effectiveDashboard";
-
 type UpdateProjectPayload = {
   id?: string;
   customer_id?: string;
@@ -101,12 +99,7 @@ export async function POST(req: Request) {
       .eq("id", updated.id)
       .maybeSingle();
 
-    const effectiveDashboardRow = await applyEffectiveProjectDashboardRow(
-      supabase,
-      (dashboardRow ?? null) as Record<string, unknown> | null
-    );
-
-    return NextResponse.json({ project: effectiveDashboardRow ?? updated });
+    return NextResponse.json({ project: dashboardRow ?? updated });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

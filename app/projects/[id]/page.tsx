@@ -6,7 +6,6 @@ import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
 import type {
   AssignableUser,
   ExpenseListItem,
-  PaymentRow,
   ProjectFinancials,
   ProjectOverview,
   ProjectTaskProgress,
@@ -15,7 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ChevronRight } from "lucide-react";
-import { ORDERS_GLOBAL_PROJECT_ID } from "@/lib/orders/globalProject";
 
 const ProjectTabsClient = dynamic(() => import("@/app/projects/[id]/ProjectTabsClient"), {
   loading: () => (
@@ -213,34 +211,15 @@ export default async function ProjectPage({
   const paymentSelect =
     "id,target_type,target_id,payment_date,amount_total,payment_method,reference_number,vat_amount,amount_before_vat,net_amount,recorded_by,notes,created_at,updated_at";
 
-  const [projectPaymentsResult, orderPaymentsResult] = await Promise.all([
-    supabase
-      .from("payments")
-      .select(paymentSelect)
-      .eq("target_type", "project")
-      .eq("target_id", id)
-      .order("payment_date", { ascending: false })
-      .range(0, 99),
-    id === ORDERS_GLOBAL_PROJECT_ID
-      ? supabase
-          .from("payments")
-          .select(paymentSelect)
-          .eq("target_type", "order")
-          .order("payment_date", { ascending: false })
-          .range(0, 199)
-      : Promise.resolve({ data: [] as PaymentRow[], error: null }),
-  ]);
+  const { data: payments, error: paymentsQueryError } = await supabase
+    .from("payments")
+    .select(paymentSelect)
+    .eq("target_type", "project")
+    .eq("target_id", id)
+    .order("payment_date", { ascending: false })
+    .range(0, 99);
 
-  const paymentsError =
-    projectPaymentsResult.error?.message ?? orderPaymentsResult.error?.message ?? null;
-
-  const payments = [...(projectPaymentsResult.data ?? []), ...(orderPaymentsResult.data ?? [])]
-    .sort((a, b) => {
-      const ad = typeof a.payment_date === "string" ? new Date(a.payment_date).getTime() : 0;
-      const bd = typeof b.payment_date === "string" ? new Date(b.payment_date).getTime() : 0;
-      return bd - ad;
-    })
-    .slice(0, 500);
+  const paymentsError = paymentsQueryError?.message ?? null;
 
   const { data: projectDocumentLinks, error: projectDocumentsError } = await supabase
     .from("document_links")
@@ -429,7 +408,7 @@ export default async function ProjectPage({
             assignableUsersError={assignableUsersError?.message ?? null}
             expenses={expenseList}
             expensesError={projectExpensesError?.message ?? expensesError?.message ?? null}
-            payments={payments}
+            payments={payments ?? []}
             paymentsError={paymentsError}
           />
         )}
