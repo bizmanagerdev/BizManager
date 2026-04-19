@@ -2,11 +2,7 @@ import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import {
-  getCashFlowCumulativeTrend,
-  getCashFlowProjectBreakdown,
-  getCashFlowSummary,
-  getCashFlowTransactions,
-  getCashFlowTrend,
+  getCashFlowPageData,
   getProjectOptions,
   type CashFlowFilters as CashFlowFilterValues,
 } from "@/lib/cashflow";
@@ -75,12 +71,8 @@ export default async function CashFlowPageContent({
   const customerName = firstValue(searchParams.customer_name)?.trim() ?? "";
   const customerPage = firstValue(searchParams.customer_page)?.trim() ?? "";
 
-  const [summary, transactions, trend, cumulativeTrend, projectBreakdown, projectOptions] = await Promise.all([
-    getCashFlowSummary(supabase, filters),
-    getCashFlowTransactions(supabase, filters),
-    getCashFlowTrend(supabase, filters),
-    getCashFlowCumulativeTrend(supabase, filters),
-    getCashFlowProjectBreakdown(supabase, filters),
+  const [{ summary, transactions, trend, cumulativeTrend, projectBreakdown }, projectOptions] = await Promise.all([
+    getCashFlowPageData(supabase, filters),
     getProjectOptions(supabase),
   ]);
 
