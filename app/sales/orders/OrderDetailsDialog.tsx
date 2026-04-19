@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ChevronDown,
   CreditCard,
   FileText,
   MapPin,
@@ -23,7 +24,7 @@ import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import { formatOrderDate } from "@/lib/orders/format";
-import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { paymentMethodLabel, paymentStatusClasses } from "@/lib/orders/paymentStatus";
 
 type Row = Record<string, unknown>;
 
@@ -98,6 +99,39 @@ function formatPaymentStatus(status: string | null) {
   }
 }
 
+function normalizeOrderStatus(value: string | null) {
+  switch ((value ?? "").toLowerCase()) {
+    case "approved":
+      return "confirmed";
+    case "in_progress":
+      return "processing";
+    case "ready":
+      return "out_for_delivery";
+    case "done":
+      return "completed";
+    default:
+      return (value ?? "").toLowerCase();
+  }
+}
+
+function orderStatusClasses(status: string) {
+  switch (normalizeOrderStatus(status)) {
+    case "delivered":
+    case "completed":
+    case "closed":
+      return "border-transparent bg-emerald-100 text-black";
+    case "draft":
+    case "confirmed":
+    case "processing":
+    case "out_for_delivery":
+      return "border-transparent bg-orange-100 text-black";
+    case "cancelled":
+      return "border-transparent bg-rose-100 text-black";
+    default:
+      return "border-transparent bg-orange-100 text-black";
+  }
+}
+
 function SummaryRow({
   label,
   value,
@@ -119,17 +153,19 @@ function SectionCard({
   title,
   subtitle,
   icon,
+  iconClassName = "bg-sky-50 text-sky-700 border border-sky-200",
   children,
 }: {
   title: string;
   subtitle?: string;
   icon: ReactNode;
+  iconClassName?: string;
   children: ReactNode;
 }) {
   return (
     <section className="rounded-2xl border border-border/70 bg-card/70 p-4">
       <div className="mb-3 flex items-start gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-background/85 text-foreground shadow-sm">
+        <div className={`flex h-9 w-9 items-center justify-center rounded-xl shadow-sm ${iconClassName}`}>
           {icon}
         </div>
         <div>
@@ -146,19 +182,21 @@ function ExpandableSection({
   title,
   count,
   icon,
+  iconClassName = "bg-sky-50 text-sky-700 border border-sky-200",
   children,
 }: {
   title: string;
   count: number;
   icon: ReactNode;
+  iconClassName?: string;
   children: ReactNode;
 }) {
   return (
-    <details className="rounded-2xl border border-border/70 bg-card/70 p-4">
+    <details className="group rounded-2xl border border-border/70 bg-card/70 p-4">
       <summary className="cursor-pointer list-none">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-background/85 text-foreground shadow-sm">
+            <div className={`flex h-9 w-9 items-center justify-center rounded-xl shadow-sm ${iconClassName}`}>
               {icon}
             </div>
             <div>
@@ -166,7 +204,7 @@ function ExpandableSection({
               <div className="text-xs text-muted-foreground">{count} רשומות</div>
             </div>
           </div>
-          <span className="text-xs text-muted-foreground">הצג</span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
         </div>
       </summary>
       <div className="mt-4">{children}</div>
@@ -282,11 +320,16 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                 title="סיכום הזמנה"
                 subtitle={`${summary.itemCount} פריטים`}
                 icon={<FileText className="h-4 w-4" />}
+                iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
               >
                 <div className="space-y-3">
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{formatOrderStatus(getString(data.order, "status"))}</Badge>
-                    <Badge variant="outline">{formatPaymentStatus(data.paymentStatus)}</Badge>
+                    <Badge className={orderStatusClasses(getString(data.order, "status") ?? "")}>
+                      {formatOrderStatus(getString(data.order, "status"))}
+                    </Badge>
+                    <Badge className={paymentStatusClasses(data.paymentStatus)}>
+                      {formatPaymentStatus(data.paymentStatus)}
+                    </Badge>
                   </div>
                   <SummaryRow label="סכום ביניים" value={formatCurrency(summary.subtotal)} />
                   {summary.discount > 0 ? (
@@ -305,6 +348,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
               <SectionCard
                 title="לקוח"
                 icon={<UserRound className="h-4 w-4" />}
+                iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
               >
                 <div className="space-y-1 text-sm">
                   <div className="font-medium">{customerName}</div>
@@ -317,6 +361,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
               <SectionCard
                 title="כתובת למשלוח"
                 icon={<MapPin className="h-4 w-4" />}
+                iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
               >
                 <div className="space-y-3 text-sm">
                   <div className="leading-6">{fullAddress}</div>
@@ -332,6 +377,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
               <SectionCard
                 title="תשלום"
                 icon={<CreditCard className="h-4 w-4" />}
+                iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
               >
                 <div className="space-y-1 text-sm">
                   <div className="font-medium">
@@ -356,6 +402,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
               title="פריטי הזמנה"
               count={summary.itemCount}
               icon={<Package className="h-4 w-4" />}
+              iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
             >
               {(data.orderItems ?? []).length === 0 ? (
                 <p className="text-sm text-muted-foreground">לא נמצאו פריטים להזמנה זו.</p>
@@ -395,6 +442,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
               title="פעילות"
               count={summary.activityCount}
               icon={<ScrollText className="h-4 w-4" />}
+              iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
             >
               {(data.payments ?? []).length === 0 ? (
                 <p className="text-sm text-muted-foreground">עדיין לא הוזנו תשלומים.</p>

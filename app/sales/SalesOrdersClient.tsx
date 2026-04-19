@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -115,21 +115,39 @@ function statusLabel(value: string) {
   }
 }
 
-function orderStatusClasses(status: string) {
+function orderStatusBadgeClasses(status: string) {
   switch (normalizeOrderStatus(status)) {
-    case "confirmed":
+    case "delivered":
     case "completed":
-      return "border-transparent bg-emerald-100 text-emerald-800";
+    case "closed":
+      return "border-transparent bg-emerald-100 text-black";
+    case "draft":
+    case "confirmed":
     case "processing":
     case "out_for_delivery":
-      return "border-transparent bg-amber-100 text-amber-800";
-    case "delivered":
-    case "closed":
-      return "border-transparent bg-slate-200 text-slate-800";
+      return "border-transparent bg-orange-100 text-black";
     case "cancelled":
-      return "border-transparent bg-rose-100 text-rose-800";
+      return "border-transparent bg-rose-100 text-black";
     default:
-      return "border-transparent bg-sky-100 text-sky-800";
+      return "border-transparent bg-orange-100 text-black";
+  }
+}
+
+function orderStatusBorderClasses(status: string) {
+  switch (normalizeOrderStatus(status)) {
+    case "delivered":
+    case "completed":
+    case "closed":
+      return "border-emerald-300";
+    case "draft":
+    case "confirmed":
+    case "processing":
+    case "out_for_delivery":
+      return "border-orange-300";
+    case "cancelled":
+      return "border-rose-300";
+    default:
+      return "border-orange-300";
   }
 }
 
@@ -139,10 +157,8 @@ function isActiveOrder(status: string) {
 
 export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [activityFilter, setActivityFilter] = useState<"all" | "active" | "closed">("all");
+  const [activityFilter, setActivityFilter] = useState<"all" | "active" | "inactive">("all");
   const [cityFilter, setCityFilter] = useState("all");
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [paymentSnapshot, setPaymentSnapshot] = useState(() => new Map<string, number>());
 
   const orderRows = useMemo(() => {
@@ -175,12 +191,6 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
       .filter((row): row is OrderView => row !== null);
   }, [orders, paymentSnapshot]);
 
-  const statuses = useMemo(() => {
-    const set = new Set<string>();
-    orderRows.forEach((row) => set.add(row.status));
-    return Array.from(set).sort();
-  }, [orderRows]);
-
   const cities = useMemo(() => {
     const set = new Set<string>();
     orderRows.forEach((row) => {
@@ -193,9 +203,8 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
     const q = query.trim().toLowerCase();
 
     return orderRows.filter((row) => {
-      if (statusFilter !== "all" && row.status !== statusFilter) return false;
       if (activityFilter === "active" && !isActiveOrder(row.status)) return false;
-      if (activityFilter === "closed" && isActiveOrder(row.status)) return false;
+      if (activityFilter === "inactive" && isActiveOrder(row.status)) return false;
       if (cityFilter !== "all" && (row.customerCity ?? "") !== cityFilter) return false;
       if (!q) return true;
 
@@ -207,17 +216,15 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
         (row.customerCity ?? "").toLowerCase().includes(q)
       );
     });
-  }, [orderRows, query, statusFilter, activityFilter, cityFilter]);
+  }, [orderRows, query, activityFilter, cityFilter]);
 
   const hasActiveFilters =
     query.trim().length > 0 ||
-    statusFilter !== "all" ||
     activityFilter !== "all" ||
     cityFilter !== "all";
 
   function clearFilters() {
     setQuery("");
-    setStatusFilter("all");
     setActivityFilter("all");
     setCityFilter("all");
   }
@@ -236,62 +243,40 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
                 className="h-11 pr-10"
               />
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-8 gap-1 px-3"
-                onClick={() => setFiltersOpen((prev) => !prev)}
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                פילטרים
-              </Button>
-              {hasActiveFilters ? (
-                <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
-                  <X className="ml-1 h-4 w-4" />
-                  ניקוי
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="inline-flex rounded-lg border border-input bg-background p-1">
+                <Button
+                  type="button"
+                  variant={activityFilter === "all" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-8 px-3"
+                  onClick={() => setActivityFilter("all")}
+                >
+                  הכל
                 </Button>
-              ) : null}
-            </div>
-          </div>
-
-          <div className={`${filtersOpen ? "grid" : "hidden"} gap-3 sm:grid-cols-2 lg:grid-cols-3`}>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">מצב הזמנה</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="all">הכל</option>
-                {statuses.map((status) => (
-                  <option key={status} value={status}>
-                    {statusLabel(status)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">פעילות הזמנה</label>
-              <select
-                value={activityFilter}
-                onChange={(e) => setActivityFilter(e.target.value as "all" | "active" | "closed")}
-                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="all">הכל</option>
-                <option value="active">פעילות</option>
-                <option value="closed">סגורות</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">עיר לקוח</label>
+                <Button
+                  type="button"
+                  variant={activityFilter === "active" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-8 px-3"
+                  onClick={() => setActivityFilter("active")}
+                >
+                  פעילות
+                </Button>
+                <Button
+                  type="button"
+                  variant={activityFilter === "inactive" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-8 px-3"
+                  onClick={() => setActivityFilter("inactive")}
+                >
+                  לא פעילות
+                </Button>
+              </div>
               <select
                 value={cityFilter}
                 onChange={(e) => setCityFilter(e.target.value)}
-                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="h-11 min-w-[170px] rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="all">כל הערים</option>
                 {cities.map((city) => (
@@ -300,6 +285,18 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
                   </option>
                 ))}
               </select>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className={hasActiveFilters ? "" : "invisible pointer-events-none"}
+                aria-hidden={!hasActiveFilters}
+                tabIndex={hasActiveFilters ? 0 : -1}
+              >
+                <X className="ml-1 h-4 w-4" />
+                ניקוי
+              </Button>
             </div>
           </div>
 
@@ -311,11 +308,13 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
 
       <div className="flex items-center justify-between gap-2">
         <div className="text-sm text-muted-foreground">נמצאו {filteredRows.length} הזמנות</div>
-        {hasActiveFilters ? (
-          <Badge variant="outline" className="text-xs">
-            מוצג לפי סינון
-          </Badge>
-        ) : null}
+        <Badge
+          variant="outline"
+          className={`text-xs ${hasActiveFilters ? "" : "invisible pointer-events-none"}`}
+          aria-hidden={!hasActiveFilters}
+        >
+          מוצג לפי סינון
+        </Badge>
       </div>
 
       <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[180px_220px_minmax(320px,1fr)_320px] md:items-center md:gap-4 sm:px-4">
@@ -331,7 +330,7 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
 
       <div className="grid gap-2 sm:gap-2.5">
         {filteredRows.map((row) => (
-          <Card key={row.id} className={`border-2 ${paymentStatusClasses(row.paymentStatus)}`}>
+          <Card key={row.id} className={`border-2 ${orderStatusBorderClasses(row.status)}`}>
             <CardContent className="p-3 sm:p-4">
               <div className="flex flex-col gap-3 md:grid md:grid-cols-[180px_220px_minmax(320px,1fr)_320px] md:items-center md:gap-4">
                 <div className="space-y-1">
@@ -341,7 +340,7 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 md:min-w-0">
-                    <Badge className={orderStatusClasses(row.status)}>{statusLabel(row.status)}</Badge>
+                    <Badge className={orderStatusBadgeClasses(row.status)}>{statusLabel(row.status)}</Badge>
                     <Badge className={paymentStatusClasses(row.paymentStatus)}>
                       {paymentStatusLabel(row.paymentStatus)}
                     </Badge>
