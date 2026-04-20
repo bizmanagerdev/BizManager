@@ -46,8 +46,7 @@ export async function GET(
     supabase
       .from("payments")
       .select("id,payment_date,amount_total,payment_method,reference_number,notes,created_at")
-      .eq("target_type", "order")
-      .eq("target_id", id)
+      .eq("order_id", id)
       .order("payment_date", { ascending: false }),
     supabase
       .from("order_financials_view")

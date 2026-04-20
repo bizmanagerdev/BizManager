@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import {
   derivePaymentStatus,
   normalizePaymentEntries,
@@ -58,21 +59,18 @@ export async function POST(req: Request) {
     const { data: createdPayment, error: paymentError } = await supabase
       .from("payments")
       .insert({
-        target_type: "order",
-        target_id: orderId,
-        payment_date: payment.payment_date,
-        amount_total: signedAmount,
-        payment_method: payment.payment_method,
-        reference_number: payment.reference_number,
-        vat_amount: 0,
-        amount_before_vat: signedAmount,
-        net_amount: signedAmount,
-        notes: payment.notes ? (notePrefix ? `${notePrefix}: ${payment.notes}` : payment.notes) : notePrefix || null,
-        recorded_by: user.id,
+        ...buildPaymentInsert({
+          amountTotal: signedAmount,
+          businessDomain: "sales",
+          orderId,
+          paymentDate: payment.payment_date!,
+          paymentMethod: payment.payment_method!,
+          referenceNumber: payment.reference_number,
+          notes: payment.notes ? (notePrefix ? `${notePrefix}: ${payment.notes}` : payment.notes) : notePrefix || null,
+          recordedBy: user.id,
+        }),
       })
-      .select(
-        "id,target_type,target_id,payment_date,amount_total,payment_method,reference_number,vat_amount,amount_before_vat,net_amount,recorded_by,notes,created_at,updated_at"
-      )
+      .select(PAYMENT_SELECT)
       .maybeSingle();
 
     if (paymentError) {
@@ -89,8 +87,7 @@ export async function POST(req: Request) {
     const { data: paymentRows, error: paymentsError } = await supabase
       .from("payments")
       .select("amount_total")
-      .eq("target_type", "order")
-      .eq("target_id", orderId);
+      .eq("order_id", orderId);
 
     if (paymentsError) {
       return NextResponse.json({ error: paymentsError.message }, { status: 400 });

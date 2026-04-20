@@ -29,6 +29,12 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import type { PaymentRow } from "@/lib/payments";
+import {
+  EXPENSE_BUSINESS_DOMAINS,
+  mapProjectTypeToExpenseDomain,
+  type ExpenseBusinessDomain,
+} from "@/lib/expenses";
 
 export type ProjectOverview = {
   id: string;
@@ -74,21 +80,6 @@ export type ProjectExpenseSummary = {
 export type ExpenseListItem = {
   project_expense: Record<string, unknown>;
   expense: Record<string, unknown> | null;
-};
-
-export type PaymentRow = {
-  id: string;
-  target_type: string;
-  target_id: string;
-  payment_date: string | null;
-  amount_total: number | string | null;
-  payment_method: string | null;
-  reference_number: string | null;
-  vat_amount: number | string | null;
-  amount_before_vat: number | string | null;
-  net_amount: number | string | null;
-  notes: string | null;
-  created_at: string | null;
 };
 
 export type AssignableUser = {
@@ -1704,6 +1695,7 @@ export default function ProjectTabsClient({
         open={addIncomeOpen}
         onOpenChange={setAddIncomeOpen}
         projectId={overview.id}
+        projectType={overview.project_type}
         onCreated={(created) => {
           setPaymentsUi((prev) => [created, ...prev]);
           setAddIncomeOpen(false);
@@ -2528,6 +2520,15 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "";
 }
 
+const expenseBusinessDomainLabels: Record<ExpenseBusinessDomain, string> = {
+  home: "Home",
+  charity: "Charity",
+  general: "General",
+  logistics: "Logistics",
+  sales: "Sales",
+  property_managment: "Property management",
+};
+
 function AddExpenseDialog({
   open,
   onOpenChange,
@@ -2547,6 +2548,9 @@ function AddExpenseDialog({
   const [amountTouched, setAmountTouched] = useState(false);
   const [categoryTouched, setCategoryTouched] = useState(false);
   const [expenseDateTouched, setExpenseDateTouched] = useState(false);
+  const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain>(
+    mapProjectTypeToExpenseDomain(projectType)
+  );
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
@@ -2557,6 +2561,7 @@ function AddExpenseDialog({
   const canSubmit =
     Number.isFinite(Number(amount)) &&
     Number(amount) > 0 &&
+    Boolean(businessDomain) &&
     Boolean(category.trim()) &&
     Boolean(expenseDate);
 
@@ -2571,6 +2576,7 @@ function AddExpenseDialog({
       : null;
   const categoryError = !category.trim() ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
   const expenseDateError = !expenseDate ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
+  const businessDomainError = !businessDomain ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
   const showAmountError = (submitAttempted || amountTouched) && Boolean(amountError);
   const showCategoryError = (submitAttempted || categoryTouched) && Boolean(categoryError);
   const showExpenseDateError = (submitAttempted || expenseDateTouched) && Boolean(expenseDateError);
@@ -2578,6 +2584,7 @@ function AddExpenseDialog({
     if (!submitAttempted || submitting || canSubmit) return "";
     const missing: string[] = [];
     if (amountError) missing.push("\u05e1\u05db\u05d5\u05dd");
+    if (businessDomainError) missing.push("\u05ea\u05d7\u05d5\u05dd");
     if (categoryError) missing.push("\u05e4\u05d9\u05e8\u05d5\u05d8");
     if (expenseDateError) missing.push("\u05ea\u05d0\u05e8\u05d9\u05da");
     return missing.length > 0
@@ -2591,15 +2598,17 @@ function AddExpenseDialog({
       setAmountTouched(false);
       setCategoryTouched(false);
       setExpenseDateTouched(false);
+      setBusinessDomain(mapProjectTypeToExpenseDomain(projectType));
       setExpenseDate((prev) => prev || getTodayDate());
     }
-  }, [open]);
+  }, [open, projectType]);
 
   async function submit() {
     setSubmitAttempted(true);
 
     const amountNumber = Number(amount);
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) return;
+    if (!businessDomain) return;
     if (!category.trim()) return;
     if (!expenseDate) return;
 
@@ -2610,6 +2619,7 @@ function AddExpenseDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           project_id: projectId,
+          business_domain: businessDomain,
           amount: amountNumber,
           category,
           description: description.trim() ? description : undefined,
@@ -2630,6 +2640,7 @@ function AddExpenseDialog({
       setAmount("");
       setCategory("");
       setDescription("");
+      setBusinessDomain(mapProjectTypeToExpenseDomain(projectType));
       setExpenseDate(getTodayDate());
       setNotes("");
       setIncludedInBase(false);
@@ -2687,8 +2698,21 @@ function AddExpenseDialog({
           </div>
 
           <div className="text-xs text-muted-foreground">
-            {"\u05ea\u05d7\u05d5\u05dd \u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05d9\u05d9\u05e7\u05d1\u05e2 \u05d0\u05d5\u05d8\u05d5\u05de\u05d8\u05d9\u05ea \u05dc\u05e4\u05d9 \u05e1\u05d5\u05d2 \u05d4\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8: "}
-            <span className="font-medium">{projectTypeLabel(projectType)}</span>
+            {"\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05ea\u05d9\u05e9\u05de\u05e8 \u05e2\u05dd \u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d4\u05e0\u05d5\u05db\u05d7\u05d9. \u05e0\u05d9\u05ea\u05df \u05dc\u05d1\u05d7\u05d5\u05e8 \u05d0\u05ea \u05d4\u05ea\u05d7\u05d5\u05dd \u05d4\u05e2\u05e1\u05e7\u05d9 \u05d1\u05d0\u05d5\u05e4\u05df \u05d9\u05d3\u05e0\u05d9."}
+          </div>
+          <div className="space-y-1">
+            <div className="text-sm font-medium">{"\u05ea\u05d7\u05d5\u05dd \u05e2\u05e1\u05e7\u05d9 *"}</div>
+            <select
+              value={businessDomain}
+              onChange={(e) => setBusinessDomain(e.target.value as ExpenseBusinessDomain)}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                <option key={domain} value={domain}>
+                  {expenseBusinessDomainLabels[domain]}
+                </option>
+              ))}
+            </select>
           </div>
           <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
@@ -2820,11 +2844,13 @@ function AddIncomeDialog({
   open,
   onOpenChange,
   projectId,
+  projectType,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
+  projectType: string | null;
   onCreated: (created: PaymentRow) => void;
 }) {
   const getTodayDate = () => new Date().toISOString().slice(0, 10);
@@ -2897,8 +2923,8 @@ function AddIncomeDialog({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          target_type: "project",
-          target_id: projectId,
+          business_domain: mapProjectTypeToExpenseDomain(projectType),
+          project_id: projectId,
           amount_total: amountNumber,
           payment_date: paymentDate ? paymentDate : null,
           payment_method: paymentMethod.trim() ? paymentMethod : undefined,

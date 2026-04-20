@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { buildPaymentInsert } from "@/lib/payments";
 import {
   derivePaymentStatus,
   hasInvalidPaymentEntry,
@@ -135,17 +136,16 @@ export async function POST(req: Request) {
     if (payments.length > 0) {
       const { error: paymentsInsertError } = await supabase.from("payments").insert(
         payments.map((payment) => ({
-          target_type: "order",
-          target_id: orderId,
-          payment_date: payment.payment_date,
-          amount_total: payment.amount_total,
-          payment_method: payment.payment_method,
-          reference_number: payment.reference_number,
-          vat_amount: 0,
-          amount_before_vat: payment.amount_total,
-          net_amount: payment.amount_total,
-          notes: payment.notes,
-          recorded_by: user.id,
+          ...buildPaymentInsert({
+            amountTotal: payment.amount_total,
+            businessDomain: "sales",
+            orderId,
+            paymentDate: payment.payment_date!,
+            paymentMethod: payment.payment_method!,
+            referenceNumber: payment.reference_number,
+            notes: payment.notes,
+            recordedBy: user.id,
+          }),
         }))
       );
 

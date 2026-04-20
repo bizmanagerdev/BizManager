@@ -14,13 +14,15 @@ export type CashFlowFilters = {
 
 type PaymentRow = {
   id: string;
-  target_type: string | null;
-  target_id: string | null;
   payment_date: string | null;
   amount_total: number | string | null;
   payment_method: string | null;
   reference_number: string | null;
+  business_domain: string | null;
   notes: string | null;
+  project_id: string | null;
+  order_id: string | null;
+  property_id: string | null;
 };
 
 type ExpenseRow = {
@@ -29,7 +31,11 @@ type ExpenseRow = {
   amount: number | string | null;
   category: string | null;
   description: string | null;
+  business_domain: string | null;
   notes: string | null;
+  project_id: string | null;
+  order_id: string | null;
+  property_id: string | null;
 };
 
 type OrderRow = {
@@ -43,9 +49,14 @@ type ProjectRow = {
   customer_id: string | null;
 };
 
-type ProjectExpenseLinkRow = {
-  expense_id: string | null;
-  project_id: string | null;
+type PropertyRow = {
+  id: string;
+  address: string | null;
+};
+
+type LeaseAgreementRow = {
+  property_id: string | null;
+  customer_id: string | null;
 };
 
 export type CashFlowTransaction = {
@@ -276,85 +287,109 @@ async function fetchOrdersByIds(supabase: SupabaseClient, ids: string[]) {
   return map;
 }
 
-async function fetchExpenseProjectLinks(supabase: SupabaseClient, expenseIds: string[]) {
-  const map = new Map<string, string>();
-  const chunks = chunkStrings(uniqueStrings(expenseIds), ID_CHUNK_SIZE);
+async function fetchPropertiesByIds(supabase: SupabaseClient, ids: string[]) {
+  const map = new Map<string, PropertyRow>();
+  const chunks = chunkStrings(uniqueStrings(ids), ID_CHUNK_SIZE);
 
   for (const chunk of chunks) {
     const { data, error } = await supabase
-      .from("project_expenses")
-      .select("expense_id,project_id")
-      .in("expense_id", chunk);
+      .from("properties")
+      .select("id,address")
+      .in("id", chunk);
 
     if (error) throw error;
 
-    ((data ?? []) as ProjectExpenseLinkRow[]).forEach((row) => {
-      if (row.expense_id && row.project_id && !map.has(row.expense_id)) {
-        map.set(row.expense_id, row.project_id);
-      }
+    ((data ?? []) as PropertyRow[]).forEach((row) => {
+      if (row.id) map.set(row.id, row);
     });
   }
 
   return map;
 }
 
-function matchesPaymentFilters(
-  row: PaymentRow,
-  filters: CashFlowFilters,
-  projectCustomerId: string | null,
-  orderCustomerId: string | null,
-  customerProjectIds: Set<string>
-) {
-  const projectId = normalizeProjectId(filters.projectId);
-  const customerId = normalizeCustomerId(filters.customerId);
-  const targetType = row.target_type?.trim() ?? "";
-  const targetId = normalizeProjectId(row.target_id);
+async function fetchPropertyCustomerLinks(supabase: SupabaseClient, propertyIds: string[]) {
+  const map = new Map<string, Set<string>>();
+  const chunks = chunkStrings(uniqueStrings(propertyIds), ID_CHUNK_SIZE);
 
-  if (projectId) {
-    if (targetType !== "project") return false;
-    if (targetId !== projectId) return false;
+  for (const chunk of chunks) {
+    const { data, error } = await supabase
+      .from("lease_agreements")
+      .select("property_id,customer_id")
+      .in("property_id", chunk);
+
+    if (error) throw error;
+
+    ((data ?? []) as LeaseAgreementRow[]).forEach((row) => {
+      if (!row.property_id || !row.customer_id) return;
+      const current = map.get(row.property_id) ?? new Set<string>();
+      current.add(row.customer_id);
+      map.set(row.property_id, current);
+    });
   }
+
+  return map;
+}
+
+function matchesCustomerFilter(args: {
+  customerId: string | null;
+  customerProjectIds: Set<string>;
+  projectId: string | null;
+  orderCustomerId: string | null;
+  propertyCustomerIds: Set<string> | null;
+  projectCustomerId: string | null;
+}) {
+  const {
+    customerId,
+    customerProjectIds,
+    projectId,
+    orderCustomerId,
+    propertyCustomerIds,
+    projectCustomerId,
+  } = args;
 
   if (!customerId) return true;
 
-  if (targetType === "project" && targetId) {
-    return projectCustomerId === customerId || customerProjectIds.has(targetId);
+  if (projectId) {
+    return projectCustomerId === customerId || customerProjectIds.has(projectId);
   }
 
-  if (targetType === "order") {
+  if (orderCustomerId) {
     return orderCustomerId === customerId;
+  }
+
+  if (propertyCustomerIds) {
+    return propertyCustomerIds.has(customerId);
   }
 
   return false;
 }
 
-function matchesExpenseFilters(
-  filters: CashFlowFilters,
-  linkedProjectId: string | null,
-  projectCustomerId: string | null,
-  customerProjectIds: Set<string>
-) {
-  const projectId = normalizeProjectId(filters.projectId);
-  const customerId = normalizeCustomerId(filters.customerId);
-
-  if (projectId && linkedProjectId !== projectId) return false;
-  if (!customerId) return true;
-  if (!linkedProjectId) return false;
-
-  return projectCustomerId === customerId || customerProjectIds.has(linkedProjectId);
-}
-
-function buildPaymentSourceLabel(row: PaymentRow, projectName: string | null) {
-  const targetType = row.target_type?.trim() ?? "";
-
-  if (targetType === "project" && projectName) return projectName;
-  if (targetType === "order") return "Sales order";
-  if (projectName) return projectName;
+function buildPaymentSourceLabel(args: {
+  projectName: string | null;
+  orderId: string | null;
+  propertyAddress: string | null;
+  businessDomain: string | null;
+}) {
+  if (args.projectName) return args.projectName;
+  if (args.propertyAddress) return args.propertyAddress;
+  if (args.orderId) return `Sales order ${args.orderId.slice(0, 8)}`;
+  if (args.businessDomain === "property_managment") return "Property income";
+  if (args.businessDomain === "sales") return "Sales income";
   return "Other income";
 }
 
-function buildExpenseSourceLabel(projectName: string | null) {
-  return projectName || "General expense";
+function buildExpenseSourceLabel(args: {
+  projectName: string | null;
+  orderId: string | null;
+  propertyAddress: string | null;
+  businessDomain: string | null;
+}) {
+  if (args.projectName) return args.projectName;
+  if (args.propertyAddress) return args.propertyAddress;
+  if (args.orderId) return `Sales order ${args.orderId.slice(0, 8)}`;
+  if (args.businessDomain === "property_managment") return "Property expense";
+  if (args.businessDomain === "sales") return "Sales expense";
+  return "General expense";
 }
 
 function buildPaymentDescription(row: PaymentRow) {
@@ -374,8 +409,9 @@ function buildPaymentReference(row: PaymentRow) {
   const referenceNumber = row.reference_number?.trim();
   if (referenceNumber) return referenceNumber;
 
-  const targetId = row.target_id?.trim();
-  if (targetId) return targetId;
+  if (row.project_id?.trim()) return row.project_id.trim();
+  if (row.order_id?.trim()) return row.order_id.trim();
+  if (row.property_id?.trim()) return row.property_id.trim();
 
   return row.id;
 }
@@ -397,6 +433,10 @@ function buildExpenseReference(row: ExpenseRow) {
   const category = row.category?.trim();
   if (category) return category;
 
+  if (row.project_id?.trim()) return row.project_id.trim();
+  if (row.order_id?.trim()) return row.order_id.trim();
+  if (row.property_id?.trim()) return row.property_id.trim();
+
   return row.id;
 }
 
@@ -413,10 +453,8 @@ async function loadCashFlowEntries(
   filters: CashFlowFilters
 ): Promise<CashFlowTransaction[]> {
   const typeFilter = normalizeType(filters.type);
-  const customerProjectIds = await resolveCustomerProjectIds(
-    supabase,
-    normalizeCustomerId(filters.customerId)
-  );
+  const customerId = normalizeCustomerId(filters.customerId);
+  const customerProjectIds = await resolveCustomerProjectIds(supabase, customerId);
   const customerProjectSet = new Set(customerProjectIds);
 
   const [paymentRows, expenseRows] = await Promise.all([
@@ -425,7 +463,7 @@ async function loadCashFlowEntries(
       : scanRows<PaymentRow>(
           supabase,
           "payments",
-          "id,target_type,target_id,payment_date,amount_total,payment_method,reference_number,notes",
+          "id,payment_date,amount_total,payment_method,reference_number,business_domain,notes,project_id,order_id,property_id",
           "payment_date",
           filters
         ),
@@ -434,49 +472,54 @@ async function loadCashFlowEntries(
       : scanRows<ExpenseRow>(
           supabase,
           "expenses",
-          "id,expense_date,amount,category,description,notes",
+          "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id",
           "expense_date",
           filters
         ),
   ]);
 
-  const paymentProjectIds = uniqueStrings(
-    paymentRows
-      .filter((row) => (row.target_type?.trim() ?? "") === "project")
-      .map((row) => row.target_id)
-  );
-  const paymentOrderIds = uniqueStrings(
-    paymentRows
-      .filter((row) => (row.target_type?.trim() ?? "") === "order")
-      .map((row) => row.target_id)
-  );
-  const expenseIds = uniqueStrings(expenseRows.map((row) => row.id));
-  const expenseProjectLinks = await fetchExpenseProjectLinks(supabase, expenseIds);
-  const expenseProjectIds = uniqueStrings(expenseIds.map((expenseId) => expenseProjectLinks.get(expenseId) ?? null));
+  const filterProjectId = normalizeProjectId(filters.projectId);
 
-  const [projectsById, ordersById] = await Promise.all([
-    fetchProjectsByIds(supabase, [...paymentProjectIds, ...expenseProjectIds]),
-    fetchOrdersByIds(supabase, paymentOrderIds),
+  const projectIds = uniqueStrings([
+    ...paymentRows.map((row) => row.project_id),
+    ...expenseRows.map((row) => row.project_id),
+  ]);
+  const orderIds = uniqueStrings([
+    ...paymentRows.map((row) => row.order_id),
+    ...expenseRows.map((row) => row.order_id),
+  ]);
+  const propertyIds = uniqueStrings([
+    ...paymentRows.map((row) => row.property_id),
+    ...expenseRows.map((row) => row.property_id),
+  ]);
+
+  const [projectsById, ordersById, propertiesById, propertyCustomersById] = await Promise.all([
+    fetchProjectsByIds(supabase, projectIds),
+    fetchOrdersByIds(supabase, orderIds),
+    fetchPropertiesByIds(supabase, propertyIds),
+    fetchPropertyCustomerLinks(supabase, propertyIds),
   ]);
 
   const paymentEntries = paymentRows.flatMap((row) => {
     if (!row.id || !row.payment_date) return [];
+    if (filterProjectId && row.project_id !== filterProjectId) return [];
 
-    const targetType = row.target_type?.trim() ?? "";
-    const targetId = row.target_id?.trim() ?? null;
-    const linkedProject =
-      targetType === "project" && targetId ? projectsById.get(targetId) ?? null : null;
-    const linkedOrder =
-      targetType === "order" && targetId ? ordersById.get(targetId) ?? null : null;
+    const linkedProject = row.project_id ? projectsById.get(row.project_id) ?? null : null;
+    const linkedOrder = row.order_id ? ordersById.get(row.order_id) ?? null : null;
+    const linkedProperty = row.property_id ? propertiesById.get(row.property_id) ?? null : null;
+    const propertyCustomers = row.property_id
+      ? propertyCustomersById.get(row.property_id) ?? null
+      : null;
 
     if (
-      !matchesPaymentFilters(
-        row,
-        filters,
-        linkedProject?.customer_id ?? null,
-        linkedOrder?.customer_id ?? null,
-        customerProjectSet
-      )
+      !matchesCustomerFilter({
+        customerId,
+        customerProjectIds: customerProjectSet,
+        projectId: row.project_id,
+        orderCustomerId: linkedOrder?.customer_id ?? null,
+        propertyCustomerIds: propertyCustomers,
+        projectCustomerId: linkedProject?.customer_id ?? null,
+      })
     ) {
       return [];
     }
@@ -490,8 +533,13 @@ async function loadCashFlowEntries(
         amount,
         signedAmount: amount,
         type: "inflow" as const,
-        project_id: linkedProject?.id ?? null,
-        project_name: buildPaymentSourceLabel(row, linkedProject?.name?.trim() || null),
+        project_id: row.project_id ?? null,
+        project_name: buildPaymentSourceLabel({
+          projectName: linkedProject?.name?.trim() || null,
+          orderId: row.order_id,
+          propertyAddress: linkedProperty?.address?.trim() || null,
+          businessDomain: row.business_domain,
+        }),
         description: buildPaymentDescription(row),
         reference: buildPaymentReference(row),
       },
@@ -500,17 +548,24 @@ async function loadCashFlowEntries(
 
   const expenseEntries = expenseRows.flatMap((row) => {
     if (!row.id || !row.expense_date) return [];
+    if (filterProjectId && row.project_id !== filterProjectId) return [];
 
-    const linkedProjectId = expenseProjectLinks.get(row.id) ?? null;
-    const linkedProject = linkedProjectId ? projectsById.get(linkedProjectId) ?? null : null;
+    const linkedProject = row.project_id ? projectsById.get(row.project_id) ?? null : null;
+    const linkedOrder = row.order_id ? ordersById.get(row.order_id) ?? null : null;
+    const linkedProperty = row.property_id ? propertiesById.get(row.property_id) ?? null : null;
+    const propertyCustomers = row.property_id
+      ? propertyCustomersById.get(row.property_id) ?? null
+      : null;
 
     if (
-      !matchesExpenseFilters(
-        filters,
-        linkedProjectId,
-        linkedProject?.customer_id ?? null,
-        customerProjectSet
-      )
+      !matchesCustomerFilter({
+        customerId,
+        customerProjectIds: customerProjectSet,
+        projectId: row.project_id,
+        orderCustomerId: linkedOrder?.customer_id ?? null,
+        propertyCustomerIds: propertyCustomers,
+        projectCustomerId: linkedProject?.customer_id ?? null,
+      })
     ) {
       return [];
     }
@@ -524,8 +579,13 @@ async function loadCashFlowEntries(
         amount,
         signedAmount: -amount,
         type: "outflow" as const,
-        project_id: linkedProjectId,
-        project_name: buildExpenseSourceLabel(linkedProject?.name?.trim() || null),
+        project_id: row.project_id ?? null,
+        project_name: buildExpenseSourceLabel({
+          projectName: linkedProject?.name?.trim() || null,
+          orderId: row.order_id,
+          propertyAddress: linkedProperty?.address?.trim() || null,
+          businessDomain: row.business_domain,
+        }),
         description: buildExpenseDescription(row),
         reference: buildExpenseReference(row),
       },

@@ -14,6 +14,11 @@ import {
 import NewOrderClient from "@/app/sales/orders/new/NewOrderClient";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import {
+  EXPENSE_BUSINESS_DOMAINS,
+  mapProjectTypeToExpenseDomain,
+  type ExpenseBusinessDomain,
+} from "@/lib/expenses";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,6 +34,7 @@ type Row = Record<string, unknown>;
 type ProjectOption = {
   id: string;
   name: string;
+  type?: string;
   customerId: string;
   customerName: string;
 };
@@ -36,6 +42,12 @@ type ProjectOption = {
 type UserOption = {
   id: string;
   label: string;
+};
+
+type EntityOption = {
+  id: string;
+  name: string;
+  subtitle?: string;
 };
 
 function getString(row: Row, key: string) {
@@ -56,16 +68,50 @@ function nextMonth(dateString: string) {
 const fieldClass =
   "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
+const expenseBusinessDomainLabels: Record<ExpenseBusinessDomain, string> = {
+  home: "Home",
+  charity: "Charity",
+  general: "General",
+  logistics: "Logistics",
+  sales: "Sales",
+  property_managment: "Property management",
+};
+
+type DerivedExpenseSourceType = "project" | "order" | "property";
+
+const expenseSourceLabels: Record<DerivedExpenseSourceType, string> = {
+  project: "Project",
+  order: "Order",
+  property: "Property",
+};
+
+function getExpenseSourceType(domain: ExpenseBusinessDomain): DerivedExpenseSourceType | null {
+  switch (domain) {
+    case "logistics":
+      return "project";
+    case "sales":
+      return "order";
+    case "property_managment":
+      return "property";
+    default:
+      return null;
+  }
+}
+
 export default function DashboardActions({
   customers,
   products,
   projects,
+  orders,
+  properties,
   users,
   currentUserId,
 }: {
   customers: Row[];
   products: Row[];
   projects: ProjectOption[];
+  orders: EntityOption[];
+  properties: EntityOption[];
   users: UserOption[];
   currentUserId?: string;
 }) {
@@ -101,7 +147,8 @@ export default function DashboardActions({
 
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [expenseError, setExpenseError] = useState<string | null>(null);
-  const [expenseProjectId, setExpenseProjectId] = useState(projects[0]?.id ?? "");
+  const [expenseBusinessDomain, setExpenseBusinessDomain] = useState<ExpenseBusinessDomain>("general");
+  const [expenseSourceId, setExpenseSourceId] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("");
   const [expenseDate, setExpenseDate] = useState(getTodayDate());
@@ -122,6 +169,30 @@ export default function DashboardActions({
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
   );
+
+  const expenseSourceType = getExpenseSourceType(expenseBusinessDomain);
+
+  const expenseSourceOptions = useMemo(() => {
+    if (expenseSourceType === "project") {
+      return projects.map((project) => ({
+        id: project.id,
+        label: `${project.name} | ${project.customerName}`,
+      }));
+    }
+    if (expenseSourceType === "order") {
+      return orders.map((order) => ({
+        id: order.id,
+        label: order.subtitle ? `${order.name} | ${order.subtitle}` : order.name,
+      }));
+    }
+    if (expenseSourceType === "property") {
+      return properties.map((property) => ({
+        id: property.id,
+        label: property.subtitle ? `${property.name} | ${property.subtitle}` : property.name,
+      }));
+    }
+    return [];
+  }, [expenseSourceType, orders, projects, properties]);
 
   function resetProjectForm() {
     setProjectError(null);
@@ -149,7 +220,8 @@ export default function DashboardActions({
 
   function resetExpenseForm() {
     setExpenseError(null);
-    setExpenseProjectId(projects[0]?.id ?? "");
+    setExpenseBusinessDomain("general");
+    setExpenseSourceId("");
     setExpenseAmount("");
     setExpenseCategory("");
     setExpenseDate(getTodayDate());
@@ -254,8 +326,13 @@ export default function DashboardActions({
 
   async function createExpense() {
     setExpenseError(null);
-    if (!expenseProjectId || !expenseCategory.trim() || !expenseDate) {
-      setExpenseError("יש לבחור פרויקט, קטגוריה ותאריך.");
+    if (!expenseBusinessDomain || !expenseCategory.trim() || !expenseDate) {
+      setExpenseError("יש לבחור תחום, קטגוריה ותאריך.");
+      return;
+    }
+
+    if (expenseSourceType && !expenseSourceId) {
+      setExpenseError("יש לבחור רשומה מתאימה למקור שנבחר.");
       return;
     }
 
@@ -271,7 +348,10 @@ export default function DashboardActions({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          project_id: expenseProjectId,
+          business_domain: expenseBusinessDomain,
+          project_id: expenseSourceType === "project" ? expenseSourceId || null : null,
+          order_id: expenseSourceType === "order" ? expenseSourceId || null : null,
+          property_id: expenseSourceType === "property" ? expenseSourceId || null : null,
           amount,
           category: expenseCategory.trim(),
           expense_date: expenseDate,
@@ -316,8 +396,8 @@ export default function DashboardActions({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          target_type: "project",
-          target_id: incomeProjectId,
+          business_domain: mapProjectTypeToExpenseDomain(projectById.get(incomeProjectId)?.type ?? null),
+          project_id: incomeProjectId,
           amount_total: amount,
           payment_date: incomeDate,
           payment_method: incomeMethod,
@@ -732,21 +812,55 @@ export default function DashboardActions({
 
           <fieldset disabled={expenseSubmitting} className="contents">
           <div className="grid gap-4">
-            <label className="space-y-2 text-sm">
-              <span>פרויקט</span>
-              <select
-                className={fieldClass}
-                value={expenseProjectId}
-                onChange={(e) => setExpenseProjectId(e.target.value)}
-              >
-                <option value="">בחרו פרויקט</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name} | {project.customerName}
+            <AdaptiveGrid variant="formTwoLoose">
+              <label className="space-y-2 text-sm">
+                <span>Business domain</span>
+                <select
+                  className={fieldClass}
+                  value={expenseBusinessDomain}
+                  onChange={(e) => {
+                    setExpenseBusinessDomain(e.target.value as ExpenseBusinessDomain);
+                    setExpenseSourceId("");
+                  }}
+                >
+                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                    <option key={domain} value={domain}>
+                      {expenseBusinessDomainLabels[domain]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="space-y-2 text-sm">
+                <span>Linked record</span>
+                <div className="flex h-11 items-center rounded-xl border border-input bg-muted/30 px-4 text-sm text-muted-foreground">
+                  {expenseSourceType ? expenseSourceLabels[expenseSourceType] : "None required"}
+                </div>
+              </div>
+            </AdaptiveGrid>
+            {expenseSourceType ? (
+              <label className="space-y-2 text-sm">
+                <span>{expenseSourceLabels[expenseSourceType]}</span>
+                <select
+                  className={fieldClass}
+                  value={expenseSourceId}
+                  onChange={(e) => setExpenseSourceId(e.target.value)}
+                >
+                  <option value="">
+                    {expenseSourceType === "project"
+                      ? "Choose project"
+                      : expenseSourceType === "order"
+                        ? "Choose order"
+                        : "Choose property"}
                   </option>
-                ))}
-              </select>
-            </label>
+                  {expenseSourceOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
             <AdaptiveGrid variant="formTwoLoose">
               <label className="space-y-2 text-sm">

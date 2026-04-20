@@ -1,10 +1,14 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
-      project_id?: string;
+      project_id?: string | null;
+      order_id?: string | null;
+      property_id?: string | null;
+      business_domain?: string;
       amount?: number | string;
       category?: string;
       description?: string;
@@ -15,20 +19,24 @@ export async function POST(req: Request) {
       project_expense_notes?: string;
     };
 
-    const projectId = typeof body.project_id === "string" ? body.project_id : "";
+    const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
+    const orderId = typeof body.order_id === "string" ? body.order_id.trim() : "";
+    const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
+    const businessDomainInput =
+      typeof body.business_domain === "string" ? body.business_domain.trim() : "";
     const category = typeof body.category === "string" ? body.category.trim() : "";
     const description = typeof body.description === "string" ? body.description.trim() : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
-
     const includedInBasePrice = Boolean(body.included_in_base_price);
     const billedToCustomer = Boolean(body.billed_to_customer);
-    const projectExpenseNotes = typeof body.project_expense_notes === "string" ? body.project_expense_notes.trim() : null;
+    const projectExpenseNotes =
+      typeof body.project_expense_notes === "string" ? body.project_expense_notes.trim() : null;
 
     const amountNumber =
       typeof body.amount === "number" ? body.amount : typeof body.amount === "string" ? Number(body.amount) : NaN;
 
-    if (!projectId || !category || !Number.isFinite(amountNumber)) {
-      return NextResponse.json({ error: "Missing project_id, category, or amount" }, { status: 400 });
+    if (!category || !Number.isFinite(amountNumber)) {
+      return NextResponse.json({ error: "Missing category or amount" }, { status: 400 });
     }
 
     const expenseDate = typeof body.expense_date === "string" ? body.expense_date : null;
@@ -36,24 +44,74 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing expense_date" }, { status: 400 });
     }
 
+    const selectedLinks = [projectId, orderId, propertyId].filter(Boolean);
+    if (selectedLinks.length > 1) {
+      return NextResponse.json(
+        { error: "Only one of project_id, order_id, or property_id can be provided" },
+        { status: 400 }
+      );
+    }
+
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
 
-    const { data: project, error: projectError } = await supabase
-      .from("projects")
-      .select("id,project_type")
-      .eq("id", projectId)
-      .maybeSingle();
+    let businessDomain = businessDomainInput;
 
-    if (projectError) {
-      return NextResponse.json({ error: projectError.message }, { status: 400 });
-    }
-    if (!project || typeof project.project_type !== "string" || !project.project_type.trim()) {
-      return NextResponse.json({ error: "Invalid project_id or missing project_type" }, { status: 400 });
+    if (projectId) {
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("id,project_type")
+        .eq("id", projectId)
+        .maybeSingle();
+
+      if (projectError) {
+        return NextResponse.json({ error: projectError.message }, { status: 400 });
+      }
+      if (!project?.id) {
+        return NextResponse.json({ error: "Invalid project_id" }, { status: 400 });
+      }
+
+      if (!businessDomain) {
+        businessDomain = mapProjectTypeToExpenseDomain(
+          typeof project.project_type === "string" ? project.project_type : null
+        );
+      }
     }
 
-    const businessDomain = project.project_type.trim();
+    if (orderId) {
+      const { data: order, error: orderError } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      if (orderError) {
+        return NextResponse.json({ error: orderError.message }, { status: 400 });
+      }
+      if (!order?.id) {
+        return NextResponse.json({ error: "Invalid order_id" }, { status: 400 });
+      }
+    }
+
+    if (propertyId) {
+      const { data: property, error: propertyError } = await supabase
+        .from("properties")
+        .select("id")
+        .eq("id", propertyId)
+        .maybeSingle();
+
+      if (propertyError) {
+        return NextResponse.json({ error: propertyError.message }, { status: 400 });
+      }
+      if (!property?.id) {
+        return NextResponse.json({ error: "Invalid property_id" }, { status: 400 });
+      }
+    }
+
+    if (!isExpenseBusinessDomain(businessDomain)) {
+      return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
+    }
 
     const { data: expense, error: expenseError } = await supabase
       .from("expenses")
@@ -63,29 +121,44 @@ export async function POST(req: Request) {
         category,
         description,
         business_domain: businessDomain,
+        project_id: projectId || null,
+        order_id: orderId || null,
+        property_id: propertyId || null,
         notes,
         recorded_by: user.id,
       })
-      .select("id,expense_date,amount,category,description,business_domain,notes,recorded_by,created_at,updated_at")
+      .select(
+        "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,created_at,updated_at"
+      )
       .maybeSingle();
 
     if (expenseError) return NextResponse.json({ error: expenseError.message }, { status: 400 });
     if (!expense?.id) return NextResponse.json({ error: "Failed to create expense" }, { status: 500 });
 
-    const { error: linkError } = await supabase.from("project_expenses").insert({
-      project_id: projectId,
-      expense_id: expense.id,
-      included_in_base_price: includedInBasePrice,
-      billed_to_customer: billedToCustomer,
-      notes: projectExpenseNotes,
-    });
+    let projectExpense: Record<string, unknown> | null = null;
 
-    if (linkError) {
-      await supabase.from("expenses").delete().eq("id", expense.id);
-      return NextResponse.json({ error: linkError.message }, { status: 400 });
+    if (projectId) {
+      const { data: link, error: linkError } = await supabase
+        .from("project_expenses")
+        .insert({
+          project_id: projectId,
+          expense_id: expense.id,
+          included_in_base_price: includedInBasePrice,
+          billed_to_customer: billedToCustomer,
+          notes: projectExpenseNotes,
+        })
+        .select("id,project_id,expense_id,included_in_base_price,billed_to_customer,notes")
+        .maybeSingle();
+
+      if (linkError) {
+        await supabase.from("expenses").delete().eq("id", expense.id);
+        return NextResponse.json({ error: linkError.message }, { status: 400 });
+      }
+
+      projectExpense = (link as Record<string, unknown> | null) ?? null;
     }
 
-    return NextResponse.json({ expense });
+    return NextResponse.json({ expense, projectExpense });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

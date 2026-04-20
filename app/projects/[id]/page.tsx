@@ -10,6 +10,7 @@ import type {
   ProjectOverview,
   ProjectTaskProgress,
 } from "@/app/projects/[id]/ProjectTabsClient";
+import { PAYMENT_SELECT } from "@/lib/payments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -208,14 +209,10 @@ export default async function ProjectPage({
       return bt - at;
     });
 
-  const paymentSelect =
-    "id,target_type,target_id,payment_date,amount_total,payment_method,reference_number,vat_amount,amount_before_vat,net_amount,recorded_by,notes,created_at,updated_at";
-
   const { data: payments, error: paymentsQueryError } = await supabase
     .from("payments")
-    .select(paymentSelect)
-    .eq("target_type", "project")
-    .eq("target_id", id)
+    .select(PAYMENT_SELECT)
+    .eq("project_id", id)
     .order("payment_date", { ascending: false })
     .range(0, 99);
 

@@ -112,8 +112,7 @@ export async function POST(req: Request) {
     const { error: paymentsDeleteError } = await supabase
       .from("payments")
       .delete()
-      .eq("target_type", "project")
-      .eq("target_id", id);
+      .eq("project_id", id);
 
     if (paymentsDeleteError) {
       return NextResponse.json({ error: paymentsDeleteError.message }, { status: 400 });

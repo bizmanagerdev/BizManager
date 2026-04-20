@@ -10,8 +10,6 @@ export type OrderPaymentInput = {
 
 export type OrderPaymentRow = {
   id?: string;
-  target_type?: string;
-  target_id?: string;
   payment_date?: string | null;
   amount_total?: number | string | null;
   payment_method?: string | null;

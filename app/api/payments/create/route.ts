@@ -1,68 +1,131 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
+import {
+  isExpenseBusinessDomain,
+  mapProjectTypeToExpenseDomain,
+  type ExpenseBusinessDomain,
+} from "@/lib/expenses";
+
+type CreatePaymentPayload = {
+  business_domain?: string;
+  project_id?: string;
+  order_id?: string;
+  property_id?: string;
+  payment_date?: string | null;
+  amount_total?: number | string;
+  payment_method?: string;
+  reference_number?: string;
+  notes?: string;
+};
+
+function toNumber(value: unknown) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return Number(value);
+  return NaN;
+}
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as {
-      target_type?: string;
-      target_id?: string;
-      payment_date?: string | null;
-      amount_total?: number | string;
-      payment_method?: string;
-      reference_number?: string;
-      vat_amount?: number | string | null;
-      notes?: string;
-    };
-
-    const targetType = typeof body.target_type === "string" ? body.target_type : "";
-    const targetId = typeof body.target_id === "string" ? body.target_id : "";
+    const body = (await req.json()) as CreatePaymentPayload;
     const paymentDate = typeof body.payment_date === "string" ? body.payment_date : null;
-    const paymentMethod = typeof body.payment_method === "string" ? body.payment_method.trim() : "";
-    const referenceNumber = typeof body.reference_number === "string" ? body.reference_number.trim() : null;
-    const vatAmountNumber =
-      body.vat_amount === null || body.vat_amount === undefined
-        ? null
-        : typeof body.vat_amount === "number"
-          ? body.vat_amount
-          : typeof body.vat_amount === "string"
-            ? Number(body.vat_amount)
-            : NaN;
+    const paymentMethod =
+      typeof body.payment_method === "string" ? body.payment_method.trim() : "";
+    const referenceNumber =
+      typeof body.reference_number === "string" ? body.reference_number.trim() : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
+    const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
+    const orderId = typeof body.order_id === "string" ? body.order_id.trim() : "";
+    const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
+    const amountNumber = toNumber(body.amount_total);
 
-    const amountNumber =
-      typeof body.amount_total === "number" ? body.amount_total : typeof body.amount_total === "string" ? Number(body.amount_total) : NaN;
-
-    if (!targetType || !targetId || !Number.isFinite(amountNumber)) {
-      return NextResponse.json({ error: "Missing target_type, target_id, or amount_total" }, { status: 400 });
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      return NextResponse.json({ error: "Missing or invalid amount_total" }, { status: 400 });
     }
     if (!paymentDate || !paymentMethod) {
       return NextResponse.json({ error: "Missing payment_date or payment_method" }, { status: 400 });
     }
 
-    const vatAmount = vatAmountNumber === null ? 0 : Number.isFinite(vatAmountNumber) ? vatAmountNumber : 0;
-    const amountBeforeVat = amountNumber;
-    const netAmount = amountNumber;
+    const linkedIds = [projectId, orderId, propertyId].filter(Boolean);
+    if (linkedIds.length !== 1) {
+      return NextResponse.json(
+        { error: "Exactly one of project_id, order_id, or property_id is required" },
+        { status: 400 }
+      );
+    }
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
 
+    let businessDomain: ExpenseBusinessDomain | null = isExpenseBusinessDomain(body.business_domain)
+      ? body.business_domain
+      : null;
+
+    if (projectId) {
+      const { data: project, error } = await supabase
+        .from("projects")
+        .select("id,project_type")
+        .eq("id", projectId)
+        .maybeSingle();
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+
+      if (!businessDomain) {
+        businessDomain = mapProjectTypeToExpenseDomain(
+          typeof project.project_type === "string" ? project.project_type : null
+        );
+      }
+    }
+
+    if (orderId) {
+      const { data: order, error } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+
+      if (!businessDomain) businessDomain = "sales";
+    }
+
+    if (propertyId) {
+      const { data: property, error } = await supabase
+        .from("properties")
+        .select("id")
+        .eq("id", propertyId)
+        .maybeSingle();
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (!property) return NextResponse.json({ error: "Property not found" }, { status: 404 });
+
+      if (!businessDomain) businessDomain = "property_managment";
+    }
+
+    if (!businessDomain) {
+      return NextResponse.json({ error: "Missing business_domain" }, { status: 400 });
+    }
+
     const { data, error } = await supabase
       .from("payments")
-      .insert({
-        target_type: targetType,
-        target_id: targetId,
-        payment_date: paymentDate,
-        amount_total: amountNumber,
-        payment_method: paymentMethod || null,
-        reference_number: referenceNumber,
-        vat_amount: vatAmount,
-        amount_before_vat: amountBeforeVat,
-        net_amount: netAmount,
-        notes,
-        recorded_by: user.id,
-      })
-      .select("id,target_type,target_id,payment_date,amount_total,payment_method,reference_number,vat_amount,amount_before_vat,net_amount,recorded_by,notes,created_at,updated_at")
+      .insert(
+        buildPaymentInsert({
+          amountTotal: amountNumber,
+          businessDomain,
+          paymentDate,
+          paymentMethod,
+          projectId: projectId || null,
+          orderId: orderId || null,
+          propertyId: propertyId || null,
+          referenceNumber,
+          notes,
+          recordedBy: user.id,
+        })
+      )
+      .select(PAYMENT_SELECT)
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });

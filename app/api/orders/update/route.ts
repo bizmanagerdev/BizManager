@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { buildPaymentInsert } from "@/lib/payments";
 import {
   derivePaymentStatus,
   hasInvalidPaymentEntry,
@@ -185,8 +186,7 @@ export async function POST(req: Request) {
     const { data: existingPayments, error: existingPaymentsError } = await supabase
       .from("payments")
       .select("amount_total")
-      .eq("target_type", "order")
-      .eq("target_id", orderId);
+      .eq("order_id", orderId);
 
     if (existingPaymentsError) {
       return NextResponse.json({ error: existingPaymentsError.message }, { status: 400 });
@@ -273,17 +273,16 @@ export async function POST(req: Request) {
     if (payments.length > 0) {
       const { error: paymentsInsertError } = await supabase.from("payments").insert(
         payments.map((payment) => ({
-          target_type: "order",
-          target_id: orderId,
-          payment_date: payment.payment_date,
-          amount_total: payment.amount_total,
-          payment_method: payment.payment_method,
-          reference_number: payment.reference_number,
-          vat_amount: 0,
-          amount_before_vat: payment.amount_total,
-          net_amount: payment.amount_total,
-          notes: payment.notes,
-          recorded_by: user.id,
+          ...buildPaymentInsert({
+            amountTotal: payment.amount_total,
+            businessDomain: "sales",
+            orderId,
+            paymentDate: payment.payment_date!,
+            paymentMethod: payment.payment_method!,
+            referenceNumber: payment.reference_number,
+            notes: payment.notes,
+            recordedBy: user.id,
+          }),
         }))
       );
 
@@ -296,17 +295,16 @@ export async function POST(req: Request) {
     if (refunds.length > 0) {
       const { error: refundsInsertError } = await supabase.from("payments").insert(
         refunds.map((refund) => ({
-          target_type: "order",
-          target_id: orderId,
-          payment_date: refund.payment_date,
-          amount_total: refund.amount_total * -1,
-          payment_method: refund.payment_method,
-          reference_number: refund.reference_number,
-          vat_amount: 0,
-          amount_before_vat: refund.amount_total * -1,
-          net_amount: refund.amount_total * -1,
-          notes: refund.notes ? `Refund: ${refund.notes}` : "Refund",
-          recorded_by: user.id,
+          ...buildPaymentInsert({
+            amountTotal: refund.amount_total * -1,
+            businessDomain: "sales",
+            orderId,
+            paymentDate: refund.payment_date!,
+            paymentMethod: refund.payment_method!,
+            referenceNumber: refund.reference_number,
+            notes: refund.notes ? `Refund: ${refund.notes}` : "Refund",
+            recordedBy: user.id,
+          }),
         }))
       );
 

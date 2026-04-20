@@ -96,6 +96,8 @@ export default async function DashboardPage() {
   const [
     { data: dashboardRow, error: dashboardError },
     { data: projectRows, error: projectError },
+    { data: orderRows, error: orderError },
+    { data: propertyRows, error: _propertyError },
     { data: invoiceRows, error: invoiceError },
     { data: productRows, error: productError },
     { data: customerRows, error: customerError },
@@ -111,8 +113,19 @@ export default async function DashboardPage() {
       .maybeSingle(),
     supabase
       .from("project_dashboard_view")
-      .select("id,name,status,customer_id,customer_name,open_tasks,updated_at")
+      .select("id,name,project_type,status,customer_id,customer_name,open_tasks,updated_at")
       .order("updated_at", { ascending: false })
+      .range(0, 99),
+    supabase
+      .from("order_overview_view")
+      .select("order_id,customer_name,order_date,status")
+      .order("order_date", { ascending: false })
+      .range(0, 99),
+    supabase
+      .from("properties")
+      .select("id,address,is_active")
+      .eq("is_active", true)
+      .order("address", { ascending: true })
       .range(0, 99),
     supabase
       .from("invoices")
@@ -167,11 +180,28 @@ export default async function DashboardPage() {
   const activeProjectOptions = ((projectRows ?? []) as Row[])
     .map((row) => ({
       id: getString(row, "id") ?? "",
+      type: getString(row, "project_type") ?? "",
       name: firstString(row, ["name"], "פרויקט"),
       customerId: getString(row, "customer_id") ?? "",
       customerName: firstString(row, ["customer_name"], "לקוח"),
     }))
     .filter((row) => row.id && row.customerId);
+
+  const orderOptions = ((orderRows ?? []) as Row[])
+    .map((row) => ({
+      id: getString(row, "order_id") ?? "",
+      name: firstString(row, ["customer_name"], "Order"),
+      subtitle: getString(row, "status") ?? "",
+    }))
+    .filter((row) => row.id);
+
+  const propertyOptions = ((propertyRows ?? []) as Row[])
+    .map((row) => ({
+      id: getString(row, "id") ?? "",
+      name: firstString(row, ["address"], "Property"),
+      subtitle: "",
+    }))
+    .filter((row) => row.id);
 
   const activeUsers = ((userRows ?? []) as Row[])
     .map((row) => {
@@ -290,6 +320,8 @@ export default async function DashboardPage() {
                 customers={customerOptions as Row[]}
                 products={(productRows ?? []) as Row[]}
                 projects={activeProjectOptions}
+                orders={orderOptions}
+                properties={propertyOptions}
                 users={activeUsers}
                 currentUserId={profile.id}
               />
