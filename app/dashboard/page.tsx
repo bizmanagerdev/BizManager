@@ -4,19 +4,15 @@ import { AdaptiveGrid, PageStack, ResponsiveMetricValue } from "@/components/lay
 import { requireProfile } from "@/lib/auth/requireProfile";
 import DashboardActions from "@/app/dashboard/DashboardActions";
 import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard";
+import { getAlertsData } from "@/lib/alerts";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCashFlowTrend, type CashFlowTrendPoint } from "@/lib/cashflow";
+import { getCashFlowPageData } from "@/lib/cashflow";
 
 type Row = Record<string, unknown>;
 
 export const revalidate = 60;
-
-const currencyFormatter = new Intl.NumberFormat("he-IL", {
-  style: "currency",
-  currency: "ILS",
-  maximumFractionDigits: 0,
-});
 
 const numberFormatter = new Intl.NumberFormat("he-IL");
 
@@ -43,36 +39,8 @@ function firstString(row: Row | null | undefined, keys: string[], fallback: stri
   return fallback;
 }
 
-function formatCurrency(value: number | null) {
-  if (value === null) return "-";
-  return currencyFormatter.format(value);
-}
-
 function formatCount(value: number) {
   return numberFormatter.format(value);
-}
-
-function formatDelta(current: number, previous: number) {
-  if (previous === 0) return current === 0 ? "0%" : "חדש";
-  const change = ((current - previous) / previous) * 100;
-  const rounded = Math.round(change);
-  return `${rounded > 0 ? "+" : ""}${rounded}%`;
-}
-
-function isInvoiceUnpaid(row: Row) {
-  const paymentStatus = (getString(row, "payment_status") ?? "").toLowerCase();
-  const status = (getString(row, "status") ?? "").toLowerCase();
-  const balanceDue =
-    getNumber(row, "balance_due") ??
-    getNumber(row, "amount_due") ??
-    getNumber(row, "open_amount") ??
-    getNumber(row, "remaining_amount");
-
-  if (balanceDue !== null) return balanceDue > 0;
-  return (
-    ["unpaid", "partial", "overdue", "open", "pending"].includes(paymentStatus) ||
-    ["unpaid", "partial", "overdue", "open", "pending"].includes(status)
-  );
 }
 
 function badgeVariantForAlert(kind: "danger" | "warning" | "info") {
@@ -86,6 +54,10 @@ function badgeVariantForAlert(kind: "danger" | "warning" | "info") {
   }
 }
 
+function countActiveAlerts(unpaidInvoicesCount: number, lowInventoryCount: number, overdueTasksCount: number) {
+  return [unpaidInvoicesCount, lowInventoryCount, overdueTasksCount].filter((count) => count > 0).length;
+}
+
 export default async function DashboardPage() {
   const { profile, supabase } = await requireProfile();
   const today = new Date();
@@ -97,18 +69,16 @@ export default async function DashboardPage() {
     { data: dashboardRow, error: dashboardError },
     { data: projectRows, error: projectError },
     { data: orderRows, error: orderError },
-    { data: propertyRows, error: _propertyError },
-    { data: invoiceRows, error: invoiceError },
+    { data: propertyRows, error: propertyError },
     { data: productRows, error: productError },
     { data: customerRows, error: customerError },
     { data: userRows, error: userError },
     cashFlowOverviewResult,
+    alertsResult,
   ] = await Promise.all([
     supabase
       .from("operations_dashboard_view")
-      .select(
-        "monthly_revenue,previous_month_revenue,monthly_expenses,previous_month_expenses,active_projects_count,open_tasks_count,overdue_tasks_count,low_inventory_count"
-      )
+      .select("active_projects_count,open_tasks_count,overdue_tasks_count,low_inventory_count")
       .limit(1)
       .maybeSingle(),
     supabase
@@ -128,11 +98,6 @@ export default async function DashboardPage() {
       .order("address", { ascending: true })
       .range(0, 99),
     supabase
-      .from("invoices")
-      .select("id,payment_status,status,balance_due,amount_due,open_amount,remaining_amount")
-      .order("created_at", { ascending: false })
-      .range(0, 199),
-    supabase
       .from("products")
       .select("id,name,sku,barcode,description,base_price,base_cost,active")
       .order("name", { ascending: true })
@@ -143,39 +108,25 @@ export default async function DashboardPage() {
       .order("customer_name", { ascending: true })
       .range(0, 49),
     supabase.from("users").select("id,full_name,email,active").order("full_name", { ascending: true }).range(0, 499),
-    getCashFlowTrend(supabase, {
+    getCashFlowPageData(supabase, {
       from: recentCashFlowFrom.toISOString().slice(0, 10),
       to: today.toISOString().slice(0, 10),
+      pageSize: 1,
     })
-      .then((rows) => ({ data: rows, error: null as string | null }))
+      .then((data) => ({ data, error: null as string | null }))
       .catch((error: { message?: string }) => ({
-        data: [] as CashFlowTrendPoint[],
+        data: null,
         error: error?.message ?? "שגיאה בטעינת נתוני תזרים",
       })),
+    getAlertsData(supabase),
   ]);
 
-  const monthlyRevenue = getNumber((dashboardRow as Row | null) ?? undefined, "monthly_revenue") ?? 0;
-  const previousRevenue =
-    getNumber((dashboardRow as Row | null) ?? undefined, "previous_month_revenue") ?? 0;
-  const monthlyExpenses =
-    getNumber((dashboardRow as Row | null) ?? undefined, "monthly_expenses") ?? 0;
-  const previousExpenses =
-    getNumber((dashboardRow as Row | null) ?? undefined, "previous_month_expenses") ?? 0;
   const activeProjectsCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "active_projects_count") ?? 0;
   const openTasksCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "open_tasks_count") ?? 0;
   const overdueTasksCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "overdue_tasks_count") ?? 0;
-  const lowInventoryCount =
-    getNumber((dashboardRow as Row | null) ?? undefined, "low_inventory_count") ?? 0;
-
-  const invoiceSourceMissing =
-    invoiceError?.message?.includes("Could not find the table 'public.invoices'") ?? false;
-
-  const unpaidInvoices = invoiceSourceMissing
-    ? []
-    : ((invoiceRows ?? []) as Row[]).filter((row) => isInvoiceUnpaid(row));
 
   const activeProjectOptions = ((projectRows ?? []) as Row[])
     .map((row) => ({
@@ -227,47 +178,29 @@ export default async function DashboardPage() {
     }))
     .filter((row) => row.id);
 
+  const cashFlowDomainBreakdown = cashFlowOverviewResult.data?.domainBreakdown ?? [];
+  const recentTransactionCount = cashFlowOverviewResult.data?.transactions.totalCount ?? 0;
+  const activeDomainCount = cashFlowDomainBreakdown.length;
+  const topDomainName = cashFlowDomainBreakdown[0]?.domainName ?? "אין פעילות";
+  const alertItems = alertsResult.alerts;
+  const attentionCount = countActiveAlerts(
+    alertItems.find((alert) => alert.id === "unpaid-invoices")?.count ?? 0,
+    alertItems.find((alert) => alert.id === "low-inventory")?.count ?? 0,
+    alertItems.find((alert) => alert.id === "overdue-tasks")?.count ?? 0
+  );
+
   const dashboardErrors = [
     dashboardError ? `דשבורד: ${dashboardError.message}` : null,
     projectError ? `פרויקטים: ${projectError.message}` : null,
-    invoiceError && !invoiceSourceMissing ? `חשבוניות: ${invoiceError.message}` : null,
+    orderError ? `הזמנות: ${orderError.message}` : null,
+    propertyError ? `נכסים: ${propertyError.message}` : null,
     productError ? `מוצרים: ${productError.message}` : null,
     customerError ? `לקוחות: ${customerError.message}` : null,
     userError ? `משתמשים: ${userError.message}` : null,
     cashFlowOverviewResult.error ? `תזרים: ${cashFlowOverviewResult.error}` : null,
+    alertsResult.errors.dashboard ? `התראות: ${alertsResult.errors.dashboard}` : null,
+    alertsResult.errors.invoices ? `התראות חשבוניות: ${alertsResult.errors.invoices}` : null,
   ].filter(Boolean) as string[];
-
-  const alertItems = [
-    {
-      title: "חשבוניות לא משולמות",
-      count: unpaidInvoices.length,
-      description: invoiceSourceMissing
-        ? "טבלת חשבוניות לא הוגדרה עדיין"
-        : unpaidInvoices.length > 0
-          ? "יש חשבוניות פתוחות"
-          : "אין פתוחות",
-      href: "/invoices",
-      kind: invoiceSourceMissing
-        ? ("info" as const)
-        : unpaidInvoices.length > 0
-          ? ("danger" as const)
-          : ("info" as const),
-    },
-    {
-      title: "מלאי נמוך",
-      count: lowInventoryCount,
-      description: lowInventoryCount > 0 ? "יש פריטים מתחת לסף" : "תקין",
-      href: "/inventory",
-      kind: lowInventoryCount > 0 ? ("warning" as const) : ("info" as const),
-    },
-    {
-      title: "משימות באיחור",
-      count: overdueTasksCount,
-      description: overdueTasksCount > 0 ? "יש משימות לטיפול" : "אין איחורים",
-      href: "/tasks",
-      kind: overdueTasksCount > 0 ? ("danger" as const) : ("info" as const),
-    },
-  ];
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
@@ -288,19 +221,24 @@ export default async function DashboardPage() {
 
         <AdaptiveGrid variant="dashboardMetrics">
           <MetricCard
-            title="הכנסות"
-            value={formatCurrency(monthlyRevenue)}
-            subtitle={formatDelta(monthlyRevenue, previousRevenue)}
+            title="תחומים פעילים"
+            value={formatCount(activeDomainCount)}
+            subtitle={topDomainName !== "אין פעילות" ? `מוביל כרגע: ${topDomainName}` : topDomainName}
           />
           <MetricCard
-            title="הוצאות"
-            value={formatCurrency(monthlyExpenses)}
-            subtitle={formatDelta(monthlyExpenses, previousExpenses)}
+            title="תנועות אחרונות"
+            value={formatCount(recentTransactionCount)}
+            subtitle="לפי תחומים, בלי חשיפת סכומים"
           />
           <MetricCard
             title="פרויקטים פתוחים"
             value={formatCount(activeProjectsCount)}
             subtitle="פעילים עכשיו"
+          />
+          <MetricCard
+            title="דורש תשומת לב"
+            value={formatCount(attentionCount)}
+            subtitle={attentionCount > 0 ? "יש פריטים לבדיקה" : "הכול יציב"}
           />
           <MetricCard
             title="משימות פתוחות"
@@ -328,27 +266,37 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          <CashFlowOverviewCard rows={cashFlowOverviewResult.data} />
+          <CashFlowOverviewCard
+            rows={cashFlowDomainBreakdown}
+            transactionCount={recentTransactionCount}
+          />
         </AdaptiveGrid>
 
         <AdaptiveGrid variant="dashboardMain">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">התראות</CardTitle>
-              <CardDescription>רק מה שדורש תשומת לב.</CardDescription>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg">התראות</CardTitle>
+                  <CardDescription>רק מה שדורש תשומת לב.</CardDescription>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/alerts">לכל ההתראות</Link>
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               {alertItems.map((alert) => (
                 <Link
-                  key={alert.title}
-                  href={alert.href}
+                  key={alert.id}
+                  href="/alerts"
                   className="flex items-center justify-between rounded-2xl border p-4 transition-colors hover:bg-muted/40"
                 >
                   <div className="space-y-1">
                     <div className="font-medium">{alert.title}</div>
                     <div className="text-sm text-muted-foreground">{alert.description}</div>
                   </div>
-                  <Badge variant={badgeVariantForAlert(alert.kind)}>{formatCount(alert.count)}</Badge>
+                  <Badge variant={badgeVariantForAlert(alert.severity)}>{formatCount(alert.count)}</Badge>
                 </Link>
               ))}
             </CardContent>

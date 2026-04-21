@@ -3,7 +3,9 @@ import AppShell from "@/components/layout/AppShell";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import {
   getCashFlowPageData,
-  getProjectOptions,
+  getCashFlowSourceKind,
+  getDomainOptions,
+  getSourceOptions,
   type CashFlowFilters as CashFlowFilterValues,
 } from "@/lib/cashflow";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -27,7 +29,8 @@ export function normalizeCashFlowSearchParams(
     from: firstValue(searchParams.from) ?? null,
     to: firstValue(searchParams.to) ?? null,
     customerId: firstValue(searchParams.customer_id) ?? null,
-    projectId: firstValue(searchParams.projectId) ?? null,
+    domain: firstValue(searchParams.domain) as CashFlowFilterValues["domain"],
+    sourceId: firstValue(searchParams.sourceId) ?? null,
     type: (firstValue(searchParams.type) as CashFlowFilterValues["type"]) ?? "all",
     page: Number.isFinite(page) && page > 0 ? page : 1,
     pageSize: 20,
@@ -39,7 +42,8 @@ function searchParamsForLinks(filters: CashFlowFilterValues) {
   if (filters.from) params.from = filters.from;
   if (filters.to) params.to = filters.to;
   if (filters.customerId) params.customer_id = filters.customerId;
-  if (filters.projectId) params.projectId = filters.projectId;
+  if (filters.domain) params.domain = filters.domain;
+  if (filters.sourceId) params.sourceId = filters.sourceId;
   if (filters.type && filters.type !== "all") params.type = filters.type;
   return params;
 }
@@ -71,10 +75,13 @@ export default async function CashFlowPageContent({
   const customerName = firstValue(searchParams.customer_name)?.trim() ?? "";
   const customerPage = firstValue(searchParams.customer_page)?.trim() ?? "";
 
-  const [{ summary, transactions, trend, cumulativeTrend, projectBreakdown }, projectOptions] = await Promise.all([
-    getCashFlowPageData(supabase, filters),
-    getProjectOptions(supabase),
-  ]);
+  const sourceKind = getCashFlowSourceKind(filters.domain);
+  const [{ summary, transactions, trend, cumulativeTrend, domainBreakdown }, domainOptions, sourceOptions] =
+    await Promise.all([
+      getCashFlowPageData(supabase, filters),
+      Promise.resolve(getDomainOptions()),
+      getSourceOptions(supabase, filters.domain, filters.customerId),
+    ]);
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
@@ -104,9 +111,12 @@ export default async function CashFlowPageContent({
           customerId={filters.customerId ?? ""}
           customerName={customerName}
           customerPage={customerPage}
-          projectId={filters.projectId ?? ""}
+          domain={filters.domain ?? ""}
+          sourceId={filters.sourceId ?? ""}
+          sourceKind={sourceKind}
+          sourceOptions={sourceOptions}
           type={filters.type ?? "all"}
-          projects={projectOptions}
+          projects={domainOptions}
         />
 
         <CashFlowSummaryCards summary={summary} />
@@ -116,7 +126,7 @@ export default async function CashFlowPageContent({
           <CashFlowBalanceChart rows={cumulativeTrend} />
         </section>
 
-        <CashFlowProjectBreakdown rows={projectBreakdown} />
+        <CashFlowProjectBreakdown rows={domainBreakdown} />
 
         <CashFlowTransactions
           basePath={basePath}

@@ -57,7 +57,7 @@ export default function CashFlowTransactions({ basePath, result, searchParams }:
                     <div>
                       <div className="text-sm font-medium">{formatDate(row.date)}</div>
                       <div className="mt-1 text-xs text-muted-foreground">
-                        {row.project_name ?? "ללא שיוך לפרויקט"}
+                        {row.domain_name} | {row.project_name ?? "ללא שיוך לפרויקט"}
                       </div>
                     </div>
                     <Badge variant={typeVariant(row.type)}>
@@ -79,7 +79,7 @@ export default function CashFlowTransactions({ basePath, result, searchParams }:
                   <tr className="border-b">
                     <th className="px-3 py-2 font-medium">תאריך</th>
                     <th className="px-3 py-2 font-medium">סוג</th>
-                    <th className="px-3 py-2 font-medium">פרויקט</th>
+                    <th className="px-3 py-2 font-medium">תחום / פרויקט</th>
                     <th className="px-3 py-2 font-medium">תיאור</th>
                     <th className="px-3 py-2 font-medium">סכום</th>
                   </tr>
@@ -93,7 +93,10 @@ export default function CashFlowTransactions({ basePath, result, searchParams }:
                           {row.type === "inflow" ? "הכנסה" : "הוצאה"}
                         </Badge>
                       </td>
-                      <td className="px-3 py-3">{row.project_name ?? "ללא שיוך לפרויקט"}</td>
+                      <td className="px-3 py-3">
+                        <div>{row.domain_name}</div>
+                        <div className="text-xs text-muted-foreground">{row.project_name ?? "ללא שיוך לפרויקט"}</div>
+                      </td>
                       <td className="px-3 py-3">
                         <div>{row.description ?? "ללא תיאור"}</div>
                         <div className="text-xs text-muted-foreground">

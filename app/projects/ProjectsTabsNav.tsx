@@ -53,10 +53,10 @@ export default function ProjectsTabsNav({ activeTab }: { activeTab: ProjectsTab 
           type="button"
           disabled={locked}
           onClick={() => goToTab(tab.id)}
-          className={`rounded-sm px-4 py-2 text-center transition ${
+          className={`rounded-xl border px-4 py-2 text-center text-sm transition-all duration-200 ${
             selected === tab.id
-              ? "bg-background font-medium shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
+              ? "border-primary/20 bg-gradient-to-r from-primary to-destructive font-medium text-primary-foreground shadow-lg shadow-primary/20"
+              : "border-primary/10 bg-gradient-to-r from-accent to-destructive/15 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md"
           }`}
         >
           {tab.label}

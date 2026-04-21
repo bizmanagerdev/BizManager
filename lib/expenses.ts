@@ -1,10 +1,10 @@
 export const EXPENSE_BUSINESS_DOMAINS = [
   "home",
   "charity",
-  "general",
-  "logistics",
+  "general_business",
+  "logistics_projects",
   "sales",
-  "property_managment",
+  "property_management",
 ] as const;
 
 export type ExpenseBusinessDomain = (typeof EXPENSE_BUSINESS_DOMAINS)[number];
@@ -26,14 +26,24 @@ export function mapProjectTypeToExpenseDomain(value: string | null | undefined):
     case "home":
       return "home";
     case "logistics":
-      return "logistics";
+      return "logistics_projects";
     case "sales":
       return "sales";
-    case "property_managment":
-      return "property_managment";
+    case "property_management":
+      return "property_management";
     case "charity":
       return "charity";
     default:
-      return "general";
+      return "general_business";
   }
+}
+
+export function getBusinessDomainLabel(value: string | null | undefined) {
+  if (value === "general_business") return "כללי";
+  if (value === "property_management") return "ניהול נכסים";
+  if (value === "sales") return "מכירות";
+  if (value === "logistics_projects") return "פרויקטים";
+  if (value === "home") return "בית";
+  if (value === "charity") return "צדקה";
+  return value || "כללי";
 }

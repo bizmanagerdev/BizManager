@@ -46,17 +46,17 @@ export default function SalesTabsNav({ activeTab }: { activeTab: SalesTab }) {
   }
 
   return (
-    <div className="inline-flex h-11 items-center rounded-md bg-muted p-1 text-sm">
+    <div className="inline-flex h-12 items-center rounded-2xl border border-white/60 bg-white/70 p-1 text-sm shadow-sm">
       {tabs.map((tab) => (
         <button
           key={tab.id}
           type="button"
           onClick={() => goToTab(tab.id)}
           disabled={isLoading}
-          className={`rounded-sm px-4 py-2 transition ${
+          className={`rounded-xl border px-4 py-2 transition-all duration-200 ${
             selected === tab.id
-              ? "bg-background font-medium shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
+              ? "border-primary/20 bg-gradient-to-r from-primary to-destructive font-medium text-primary-foreground shadow-lg shadow-primary/20"
+              : "border-primary/10 bg-gradient-to-r from-accent to-destructive/15 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md"
           }`}
         >
           {tab.label}

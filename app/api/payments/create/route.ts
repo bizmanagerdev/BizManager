@@ -102,7 +102,7 @@ export async function POST(req: Request) {
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
       if (!property) return NextResponse.json({ error: "Property not found" }, { status: 404 });
 
-      if (!businessDomain) businessDomain = "property_managment";
+      if (!businessDomain) businessDomain = "property_management";
     }
 
     if (!businessDomain) {

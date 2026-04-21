@@ -23,6 +23,16 @@ import {
 
 type Row = Record<string, unknown>;
 type FilterMode = "all" | "yes" | "no";
+type ContactDraft = {
+  full_name: string;
+  role: string;
+  phone: string;
+  email: string;
+  whatsapp: string;
+  notes: string;
+  is_primary: boolean;
+  active: boolean;
+};
 
 const CITY_OPTIONS = [
   "ירושלים",
@@ -60,6 +70,16 @@ const dateText = (v: string) => {
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? v : new Intl.DateTimeFormat("he-IL").format(d);
 };
+const makeEmptyContactDraft = (): ContactDraft => ({
+  full_name: "",
+  role: "",
+  phone: "",
+  email: "",
+  whatsapp: "",
+  notes: "",
+  is_primary: false,
+  active: true,
+});
 
 export default function CustomersClient({
   initialRows,
@@ -87,6 +107,7 @@ export default function CustomersClient({
   const [cityOther, setCityOther] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
+  const [createContacts, setCreateContacts] = useState<ContactDraft[]>([]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editErr, setEditErr] = useState("");
@@ -149,6 +170,57 @@ export default function CustomersClient({
     setDetailsCustomerId((current) => current || initialDetailsCustomerId);
   }, [initialDetailsCustomerId]);
 
+  function resetCreateForm() {
+    setName("");
+    setEmail("");
+    setPhone("");
+    setCity("");
+    setCityOther("");
+    setAddress("");
+    setNotes("");
+    setCreateContacts([]);
+  }
+
+  function addCreateContact() {
+    setCreateContacts((prev) => {
+      const hasPrimary = prev.some((contact) => contact.is_primary);
+      return [
+        ...prev,
+        {
+          ...makeEmptyContactDraft(),
+          is_primary: prev.length === 0 || !hasPrimary,
+        },
+      ];
+    });
+  }
+
+  function updateCreateContact(index: number, patch: Partial<ContactDraft>) {
+    setCreateContacts((prev) =>
+      prev.map((contact, currentIndex) => {
+        if (currentIndex !== index) {
+          if (patch.is_primary) return { ...contact, is_primary: false };
+          return contact;
+        }
+        const next = { ...contact, ...patch };
+        if (patch.active === false) {
+          next.is_primary = false;
+        }
+        return next;
+      })
+    );
+  }
+
+  function removeCreateContact(index: number) {
+    setCreateContacts((prev) => {
+      const next = prev.filter((_, currentIndex) => currentIndex !== index);
+      if (next.length === 0) return next;
+      if (next.some((contact) => contact.is_primary)) return next;
+      return next.map((contact, currentIndex) =>
+        currentIndex === 0 ? { ...contact, is_primary: true } : contact
+      );
+    });
+  }
+
   async function createCustomer() {
     if (createLoading) return;
     setCreateErr("");
@@ -157,6 +229,35 @@ export default function CustomersClient({
     if (!email.trim()) return setCreateErr("יש למלא אימייל.");
     if (!finalCity) return setCreateErr("יש לבחור עיר.");
     if (!address.trim()) return setCreateErr("יש למלא כתובת.");
+    const preparedContacts = createContacts
+      .map((contact) => ({
+        full_name: contact.full_name.trim(),
+        role: contact.role.trim() || null,
+        phone: contact.phone.trim() || null,
+        email: contact.email.trim() || null,
+        whatsapp: contact.whatsapp.trim() || null,
+        notes: contact.notes.trim() || null,
+        is_primary: contact.active ? contact.is_primary : false,
+        active: contact.active,
+      }))
+      .filter(
+        (contact) =>
+          contact.full_name ||
+          contact.role ||
+          contact.phone ||
+          contact.email ||
+          contact.whatsapp ||
+          contact.notes
+      );
+    const invalidContactIndex = preparedContacts.findIndex((contact) => !contact.full_name);
+    if (invalidContactIndex >= 0) {
+      return setCreateErr(`Contact ${invalidContactIndex + 1} is missing a full name.`);
+    }
+    const hasPrimaryContact = preparedContacts.some((contact) => contact.is_primary);
+    const normalizedContacts = preparedContacts.map((contact, index) => ({
+      ...contact,
+      is_primary: hasPrimaryContact ? contact.is_primary : index === 0,
+    }));
     setCreateLoading(true);
     try {
       const res = await fetch("/api/customers/create", {
@@ -175,32 +276,53 @@ export default function CustomersClient({
       if (!res.ok || !json.customer) return setCreateErr(json.error ?? "יצירת הלקוח נכשלה.");
       const customer = json.customer;
       const newId = s(customer, "id");
-      setRows((prev) => [
-        {
-          customer_id: newId,
-          customer_name: s(customer, "name") || name.trim(),
-          name: s(customer, "name") || name.trim(),
-          email: s(customer, "email") || email.trim(),
-          phone: s(customer, "phone") || phone.trim(),
-          address: s(customer, "address") || `${finalCity}, ${address.trim()}`,
-          active: customer.active !== false,
-          orders_count: 0,
-          projects_count: 0,
-          total_sales: 0,
-          total_paid: 0,
-          open_balance: 0,
-          contacts: [],
-        },
-        ...prev,
-      ]);
+      const customerRow: Row = {
+        customer_id: newId,
+        customer_name: s(customer, "name") || name.trim(),
+        name: s(customer, "name") || name.trim(),
+        email: s(customer, "email") || email.trim(),
+        phone: s(customer, "phone") || phone.trim(),
+        address: s(customer, "address") || `${finalCity}, ${address.trim()}`,
+        active: customer.active !== false,
+        orders_count: 0,
+        projects_count: 0,
+        total_sales: 0,
+        total_paid: 0,
+        open_balance: 0,
+        contacts: [],
+      };
+      const createdContacts: Row[] = [];
+      for (const contact of normalizedContacts) {
+        const contactRes = await fetch("/api/customer-contacts/create", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            customer_id: newId,
+            ...contact,
+          }),
+        });
+        const contactJson = (await contactRes.json().catch(() => ({}))) as {
+          error?: string;
+          contact?: Row;
+        };
+        if (!contactRes.ok || !contactJson.contact) {
+          const detail = contact.full_name || `#${createdContacts.length + 1}`;
+          setRows((prev) => [{ ...customerRow, contacts: createdContacts }, ...prev]);
+          setCreateOpen(false);
+          resetCreateForm();
+          if (typeof window !== "undefined") {
+            window.alert(
+              contactJson.error ??
+                `The customer was created, but contact ${detail} could not be created.`
+            );
+          }
+          return;
+        }
+        createdContacts.push(contactJson.contact);
+      }
+      setRows((prev) => [{ ...customerRow, contacts: createdContacts }, ...prev]);
       setCreateOpen(false);
-      setName("");
-      setEmail("");
-      setPhone("");
-      setCity("");
-      setCityOther("");
-      setAddress("");
-      setNotes("");
+      resetCreateForm();
     } catch (e: unknown) {
       setCreateErr(e instanceof Error ? e.message : "שגיאה לא ידועה");
     } finally {
@@ -463,7 +585,13 @@ export default function CustomersClient({
 
       <CustomerDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(next) => {
+          setCreateOpen(next);
+          if (!next && !createLoading) {
+            setCreateErr("");
+            resetCreateForm();
+          }
+        }}
         title="הוספת לקוח"
         description="שדות חובה: שם, אימייל, עיר וכתובת."
         submitLabel={createLoading ? "יוצר..." : "יצירת לקוח"}
@@ -505,6 +633,106 @@ export default function CustomersClient({
         <Field label="הערות">
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
         </Field>
+        <div className="space-y-3 rounded-md border p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-medium">Contact People</div>
+              <div className="text-xs text-muted-foreground">
+                Add the people we should be able to reach for this customer.
+              </div>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={addCreateContact}>
+              Add Contact
+            </Button>
+          </div>
+          {createContacts.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No contacts added yet.</p>
+          ) : null}
+          {createContacts.map((contact, index) => (
+            <div
+              key={`create-contact-${index}`}
+              className="space-y-3 rounded-md border bg-background p-3"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-medium">Contact {index + 1}</div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeCreateContact(index)}
+                >
+                  Remove
+                </Button>
+              </div>
+              <Field label="Full Name *">
+                <Input
+                  value={contact.full_name}
+                  onChange={(e) =>
+                    updateCreateContact(index, { full_name: e.target.value })
+                  }
+                />
+              </Field>
+              <Field label="Role">
+                <Input
+                  value={contact.role}
+                  onChange={(e) => updateCreateContact(index, { role: e.target.value })}
+                />
+              </Field>
+              <AdaptiveGrid variant="formTwo">
+                <Field label="Phone">
+                  <Input
+                    value={contact.phone}
+                    onChange={(e) => updateCreateContact(index, { phone: e.target.value })}
+                  />
+                </Field>
+                <Field label="WhatsApp">
+                  <Input
+                    value={contact.whatsapp}
+                    onChange={(e) =>
+                      updateCreateContact(index, { whatsapp: e.target.value })
+                    }
+                  />
+                </Field>
+              </AdaptiveGrid>
+              <Field label="Email">
+                <Input
+                  value={contact.email}
+                  onChange={(e) => updateCreateContact(index, { email: e.target.value })}
+                />
+              </Field>
+              <Field label="Notes">
+                <Textarea
+                  value={contact.notes}
+                  onChange={(e) => updateCreateContact(index, { notes: e.target.value })}
+                  rows={2}
+                />
+              </Field>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={contact.is_primary}
+                  onChange={(e) =>
+                    updateCreateContact(index, {
+                      is_primary: e.target.checked,
+                      active: e.target.checked ? true : contact.active,
+                    })
+                  }
+                />
+                <span>Primary Contact</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={contact.active}
+                  onChange={(e) =>
+                    updateCreateContact(index, { active: e.target.checked })
+                  }
+                />
+                <span>Active</span>
+              </label>
+            </div>
+          ))}
+        </div>
       </CustomerDialog>
 
       <CustomerDialog

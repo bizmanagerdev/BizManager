@@ -71,10 +71,10 @@ const fieldClass =
 const expenseBusinessDomainLabels: Record<ExpenseBusinessDomain, string> = {
   home: "בית",
   charity: "צדקה",
-  general: "כללי",
-  logistics: "לוגיסטיקה",
+  general_business: "כללי",
+  logistics_projects: "לוגיסטיקה",
   sales: "מכירות",
-  property_managment: "ניהול נכסים",
+  property_management: "ניהול נכסים",
 };
 
 type DerivedExpenseSourceType = "project" | "order" | "property";
@@ -87,11 +87,11 @@ const expenseSourceLabels: Record<DerivedExpenseSourceType, string> = {
 
 function getExpenseSourceType(domain: ExpenseBusinessDomain): DerivedExpenseSourceType | null {
   switch (domain) {
-    case "logistics":
+    case "logistics_projects":
       return "project";
     case "sales":
       return "order";
-    case "property_managment":
+    case "property_management":
       return "property";
     default:
       return null;
@@ -147,7 +147,7 @@ export default function DashboardActions({
 
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [expenseError, setExpenseError] = useState<string | null>(null);
-  const [expenseBusinessDomain, setExpenseBusinessDomain] = useState<ExpenseBusinessDomain>("general");
+  const [expenseBusinessDomain, setExpenseBusinessDomain] = useState<ExpenseBusinessDomain>("general_business");
   const [expenseSourceId, setExpenseSourceId] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("");
@@ -220,7 +220,7 @@ export default function DashboardActions({
 
   function resetExpenseForm() {
     setExpenseError(null);
-    setExpenseBusinessDomain("general");
+    setExpenseBusinessDomain("general_business");
     setExpenseSourceId("");
     setExpenseAmount("");
     setExpenseCategory("");

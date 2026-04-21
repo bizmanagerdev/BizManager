@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Search, Bell, LogOut, User, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClientOnly } from "@/components/ClientOnly";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -109,7 +110,7 @@ export function TopBar({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="rounded-xl text-muted-foreground lg:hidden"
+            className="rounded-xl border-primary/15 text-accent-foreground shadow-md lg:hidden"
             type="button"
           >
             <Search className="h-4 w-4" />
@@ -120,7 +121,7 @@ export function TopBar({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="relative rounded-xl text-muted-foreground"
+              className="relative rounded-xl border-primary/15 text-accent-foreground shadow-md"
               type="button"
             >
               <Bell className="h-4 w-4" />
@@ -146,7 +147,11 @@ export function TopBar({
             ) : (
               alerts.map((alert) => (
                 <DropdownMenuItem key={alert.id} asChild className="cursor-pointer rounded-xl p-0">
-                  <Link href={alert.href} className="flex items-start justify-between gap-3 px-3 py-3">
+                  <Link
+                    href={alert.href}
+                    className="flex items-start justify-between gap-3 px-3 py-3"
+                    onClick={() => emitNavigationStart()}
+                  >
                     <div className="space-y-1">
                       <div className="font-medium">{alert.title}</div>
                       <div className="text-xs text-muted-foreground">{alert.description}</div>
@@ -166,6 +171,12 @@ export function TopBar({
                 </DropdownMenuItem>
               ))
             )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/alerts" className="justify-center font-medium" onClick={() => emitNavigationStart()}>
+                כל ההתראות
+              </Link>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -174,7 +185,7 @@ export function TopBar({
             <Button
               variant="ghost"
               size="sm"
-              className="gap-2 rounded-xl border border-transparent bg-transparent text-muted-foreground hover:border-border/80 hover:bg-card/80"
+              className="gap-2 rounded-xl border-primary/15 text-accent-foreground shadow-md"
               type="button"
             >
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
@@ -186,32 +197,37 @@ export function TopBar({
           }
         >
           <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-2 rounded-xl border border-transparent bg-transparent text-muted-foreground hover:border-border/80 hover:bg-card/80" type="button">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
-                <User className="h-3.5 w-3.5" />
-              </div>
-              {userName && (
-                <span className="hidden lg:inline text-sm">{userName}</span>
-              )}
-              <ChevronDown className="h-3 w-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 rounded-xl">
-            <DropdownMenuItem>
-              <User className="h-4 w-4 me-2" />
-              פרופיל
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <form action="/api/auth/logout" method="post">
-              <DropdownMenuItem asChild className="text-destructive">
-                <button type="submit" className="w-full flex items-center">
-                  <LogOut className="h-4 w-4 me-2" />
-                  התנתקות
-                </button>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-2 rounded-xl border-primary/15 text-accent-foreground shadow-md" type="button">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
+                  <User className="h-3.5 w-3.5" />
+                </div>
+                {userName && (
+                  <span className="hidden lg:inline text-sm">{userName}</span>
+                )}
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48 rounded-xl">
+              <DropdownMenuItem asChild>
+                <Link href="/profile" className="flex items-center" onClick={() => emitNavigationStart()}>
+                  <User className="h-4 w-4 me-2" />
+                  פרופיל
+                </Link>
               </DropdownMenuItem>
-            </form>
-          </DropdownMenuContent>
+              <DropdownMenuSeparator />
+              <form action="/api/auth/logout" method="post">
+                <DropdownMenuItem asChild className="text-destructive">
+                  <button
+                    type="submit"
+                    className="flex w-full items-center rounded-lg bg-destructive px-3 py-2 text-destructive-foreground"
+                  >
+                    <LogOut className="h-4 w-4 me-2" />
+                    התנתקות
+                  </button>
+                </DropdownMenuItem>
+              </form>
+            </DropdownMenuContent>
           </DropdownMenu>
         </ClientOnly>
       </div>

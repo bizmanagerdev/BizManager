@@ -2523,10 +2523,10 @@ function getErrorMessage(error: unknown) {
 const expenseBusinessDomainLabels: Record<ExpenseBusinessDomain, string> = {
   home: "Home",
   charity: "Charity",
-  general: "General",
-  logistics: "Logistics",
+  general_business: "General",
+  logistics_projects: "Logistics",
   sales: "Sales",
-  property_managment: "Property management",
+  property_management: "Property management",
 };
 
 function AddExpenseDialog({

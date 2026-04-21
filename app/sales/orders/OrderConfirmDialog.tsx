@@ -395,7 +395,7 @@ export default function OrderConfirmDialog({
             <div className="rounded-md border p-4">
               <button
                 type="button"
-                className="flex w-full items-center justify-between gap-2 text-right"
+                className="flex w-full items-center justify-between gap-2 rounded-xl border border-primary/15 bg-gradient-to-r from-accent to-destructive/15 px-3 py-2 text-right text-accent-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
                 onClick={() => toggleSection("items")}
               >
                 <h3 className="text-sm font-semibold">כמויות פריטים</h3>
@@ -441,7 +441,7 @@ export default function OrderConfirmDialog({
             <div className="rounded-md border p-4">
               <button
                 type="button"
-                className="flex w-full items-center justify-between gap-2 text-right"
+                className="flex w-full items-center justify-between gap-2 rounded-xl border border-primary/15 bg-gradient-to-r from-accent to-destructive/15 px-3 py-2 text-right text-accent-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
                 onClick={() => toggleSection("payment")}
               >
                   <h3 className="text-sm font-semibold">סטטוס ותשלום</h3>
@@ -666,7 +666,7 @@ export default function OrderConfirmDialog({
             <div className="rounded-md border p-4">
               <button
                 type="button"
-                className="flex w-full items-center justify-between gap-2 text-right"
+                className="flex w-full items-center justify-between gap-2 rounded-xl border border-primary/15 bg-gradient-to-r from-accent to-destructive/15 px-3 py-2 text-right text-accent-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
                 onClick={() => toggleSection("delivery")}
               >
                   <h3 className="text-sm font-semibold">אספקה</h3>

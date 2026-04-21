@@ -1,4 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  EXPENSE_BUSINESS_DOMAINS,
+  getBusinessDomainLabel,
+  isExpenseBusinessDomain,
+  type ExpenseBusinessDomain,
+} from "@/lib/expenses";
 
 export type CashFlowType = "inflow" | "outflow";
 
@@ -6,7 +12,8 @@ export type CashFlowFilters = {
   from?: string | null;
   to?: string | null;
   customerId?: string | null;
-  projectId?: string | null;
+  domain?: ExpenseBusinessDomain | null;
+  sourceId?: string | null;
   type?: CashFlowType | "all" | null;
   page?: number;
   pageSize?: number;
@@ -65,6 +72,8 @@ export type CashFlowTransaction = {
   amount: number;
   signedAmount: number;
   type: CashFlowType;
+  business_domain: ExpenseBusinessDomain | null;
+  domain_name: string;
   project_id: string | null;
   project_name: string | null;
   description: string | null;
@@ -88,9 +97,9 @@ export type CashFlowCumulativePoint = CashFlowTrendPoint & {
   balance: number;
 };
 
-export type CashFlowProjectBreakdownPoint = {
-  projectId: string | null;
-  projectName: string;
+export type CashFlowDomainBreakdownPoint = {
+  domain: ExpenseBusinessDomain | null;
+  domainName: string;
   inflow: number;
   outflow: number;
   net: number;
@@ -100,6 +109,8 @@ export type ProjectOption = {
   id: string;
   name: string;
 };
+
+export type CashFlowSourceKind = "project" | "property" | "order";
 
 export type CashFlowTransactionsResult = {
   rows: CashFlowTransaction[];
@@ -114,12 +125,7 @@ export type CashFlowPageData = {
   transactions: CashFlowTransactionsResult;
   trend: CashFlowTrendPoint[];
   cumulativeTrend: CashFlowCumulativePoint[];
-  projectBreakdown: CashFlowProjectBreakdownPoint[];
-};
-
-type ProjectOptionRow = {
-  id: string;
-  name: string | null;
+  domainBreakdown: CashFlowDomainBreakdownPoint[];
 };
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -147,13 +153,19 @@ function normalizeDateInput(value: string | null | undefined) {
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
 }
 
-function normalizeProjectId(value: string | null | undefined) {
+function normalizeDomain(value: string | null | undefined): ExpenseBusinessDomain | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return isExpenseBusinessDomain(trimmed) ? trimmed : null;
+}
+
+function normalizeCustomerId(value: string | null | undefined) {
   if (!value) return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
 }
 
-function normalizeCustomerId(value: string | null | undefined) {
+function normalizeSourceId(value: string | null | undefined) {
   if (!value) return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
@@ -373,7 +385,7 @@ function buildPaymentSourceLabel(args: {
   if (args.projectName) return args.projectName;
   if (args.propertyAddress) return args.propertyAddress;
   if (args.orderId) return `Sales order ${args.orderId.slice(0, 8)}`;
-  if (args.businessDomain === "property_managment") return "Property income";
+  if (args.businessDomain === "property_management") return "Property income";
   if (args.businessDomain === "sales") return "Sales income";
   return "Other income";
 }
@@ -387,7 +399,7 @@ function buildExpenseSourceLabel(args: {
   if (args.projectName) return args.projectName;
   if (args.propertyAddress) return args.propertyAddress;
   if (args.orderId) return `Sales order ${args.orderId.slice(0, 8)}`;
-  if (args.businessDomain === "property_managment") return "Property expense";
+  if (args.businessDomain === "property_management") return "Property expense";
   if (args.businessDomain === "sales") return "Sales expense";
   return "General expense";
 }
@@ -478,7 +490,8 @@ async function loadCashFlowEntries(
         ),
   ]);
 
-  const filterProjectId = normalizeProjectId(filters.projectId);
+  const filterDomain = normalizeDomain(filters.domain);
+  const filterSourceId = normalizeSourceId(filters.sourceId);
 
   const projectIds = uniqueStrings([
     ...paymentRows.map((row) => row.project_id),
@@ -502,7 +515,20 @@ async function loadCashFlowEntries(
 
   const paymentEntries = paymentRows.flatMap((row) => {
     if (!row.id || !row.payment_date) return [];
-    if (filterProjectId && row.project_id !== filterProjectId) return [];
+    const businessDomain = normalizeDomain(row.business_domain);
+    if (filterDomain && businessDomain !== filterDomain) return [];
+    if (filterSourceId) {
+      if (businessDomain === "logistics_projects" && row.project_id !== filterSourceId) return [];
+      if (businessDomain === "property_management" && row.property_id !== filterSourceId) return [];
+      if (businessDomain === "sales" && row.order_id !== filterSourceId) return [];
+      if (
+        businessDomain !== "logistics_projects" &&
+        businessDomain !== "property_management" &&
+        businessDomain !== "sales"
+      ) {
+        return [];
+      }
+    }
 
     const linkedProject = row.project_id ? projectsById.get(row.project_id) ?? null : null;
     const linkedOrder = row.order_id ? ordersById.get(row.order_id) ?? null : null;
@@ -533,6 +559,8 @@ async function loadCashFlowEntries(
         amount,
         signedAmount: amount,
         type: "inflow" as const,
+        business_domain: businessDomain,
+        domain_name: getBusinessDomainLabel(businessDomain),
         project_id: row.project_id ?? null,
         project_name: buildPaymentSourceLabel({
           projectName: linkedProject?.name?.trim() || null,
@@ -548,7 +576,20 @@ async function loadCashFlowEntries(
 
   const expenseEntries = expenseRows.flatMap((row) => {
     if (!row.id || !row.expense_date) return [];
-    if (filterProjectId && row.project_id !== filterProjectId) return [];
+    const businessDomain = normalizeDomain(row.business_domain);
+    if (filterDomain && businessDomain !== filterDomain) return [];
+    if (filterSourceId) {
+      if (businessDomain === "logistics_projects" && row.project_id !== filterSourceId) return [];
+      if (businessDomain === "property_management" && row.property_id !== filterSourceId) return [];
+      if (businessDomain === "sales" && row.order_id !== filterSourceId) return [];
+      if (
+        businessDomain !== "logistics_projects" &&
+        businessDomain !== "property_management" &&
+        businessDomain !== "sales"
+      ) {
+        return [];
+      }
+    }
 
     const linkedProject = row.project_id ? projectsById.get(row.project_id) ?? null : null;
     const linkedOrder = row.order_id ? ordersById.get(row.order_id) ?? null : null;
@@ -579,6 +620,8 @@ async function loadCashFlowEntries(
         amount,
         signedAmount: -amount,
         type: "outflow" as const,
+        business_domain: businessDomain,
+        domain_name: getBusinessDomainLabel(businessDomain),
         project_id: row.project_id ?? null,
         project_name: buildExpenseSourceLabel({
           projectName: linkedProject?.name?.trim() || null,
@@ -655,14 +698,14 @@ function buildCumulativeTrend(rows: CashFlowTrendPoint[]): CashFlowCumulativePoi
   });
 }
 
-function buildProjectBreakdown(rows: CashFlowTransaction[]): CashFlowProjectBreakdownPoint[] {
-  const grouped = new Map<string, CashFlowProjectBreakdownPoint>();
+function buildDomainBreakdown(rows: CashFlowTransaction[]): CashFlowDomainBreakdownPoint[] {
+  const grouped = new Map<string, CashFlowDomainBreakdownPoint>();
 
   rows.forEach((row) => {
-    const key = row.project_id ?? row.project_name ?? "__unassigned__";
+    const key = row.business_domain ?? "__unassigned__";
     const current = grouped.get(key) ?? {
-      projectId: row.project_id,
-      projectName: row.project_name?.trim() || "Unassigned",
+      domain: row.business_domain,
+      domainName: row.domain_name,
       inflow: 0,
       outflow: 0,
       net: 0,
@@ -714,7 +757,7 @@ export async function getCashFlowPageData(
     transactions: buildTransactionsResult(rows, filters),
     trend,
     cumulativeTrend: buildCumulativeTrend(trend),
-    projectBreakdown: buildProjectBreakdown(rows),
+    domainBreakdown: buildDomainBreakdown(rows),
   };
 }
 
@@ -746,28 +789,85 @@ export async function getCashFlowCumulativeTrend(
   return (await getCashFlowPageData(supabase, filters)).cumulativeTrend;
 }
 
-export async function getCashFlowProjectBreakdown(
+export async function getCashFlowDomainBreakdown(
   supabase: SupabaseClient,
   filters: CashFlowFilters
-): Promise<CashFlowProjectBreakdownPoint[]> {
-  return (await getCashFlowPageData(supabase, filters)).projectBreakdown;
+): Promise<CashFlowDomainBreakdownPoint[]> {
+  return (await getCashFlowPageData(supabase, filters)).domainBreakdown;
 }
 
-export async function getProjectOptions(
-  supabase: SupabaseClient
+export function getDomainOptions(): ProjectOption[] {
+  return EXPENSE_BUSINESS_DOMAINS.map((domain) => ({
+    id: domain,
+    name: getBusinessDomainLabel(domain),
+  }));
+}
+
+export function getCashFlowSourceKind(domain: ExpenseBusinessDomain | null | undefined): CashFlowSourceKind | null {
+  if (domain === "logistics_projects") return "project";
+  if (domain === "property_management") return "property";
+  if (domain === "sales") return "order";
+  return null;
+}
+
+export async function getSourceOptions(
+  supabase: SupabaseClient,
+  domain: ExpenseBusinessDomain | null | undefined,
+  customerId?: string | null
 ): Promise<ProjectOption[]> {
-  const { data, error } = await supabase
-    .from("project_dashboard_view")
-    .select("id,name")
-    .order("name", { ascending: true })
-    .range(0, 49);
+  const sourceKind = getCashFlowSourceKind(domain);
+  const normalizedCustomerId = normalizeCustomerId(customerId);
 
-  if (error) throw error;
+  if (sourceKind === "project") {
+    let query = supabase.from("projects").select("id,name").order("name", { ascending: true }).range(0, 199);
+    if (normalizedCustomerId) query = query.eq("customer_id", normalizedCustomerId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return ((data ?? []) as Array<{ id: string; name: string | null }>)
+      .filter((row) => row.id)
+      .map((row) => ({ id: row.id, name: row.name?.trim() || "Project" }));
+  }
 
-  return ((data ?? []) as ProjectOptionRow[])
-    .filter((row) => row.id)
-    .map((row) => ({
-      id: row.id,
-      name: row.name?.trim() || "Project",
-    }));
+  if (sourceKind === "property") {
+    if (normalizedCustomerId) {
+      const { data: links, error: linksError } = await supabase
+        .from("lease_agreements")
+        .select("property_id")
+        .eq("customer_id", normalizedCustomerId);
+      if (linksError) throw linksError;
+      const propertyIds = uniqueStrings(((links ?? []) as Array<{ property_id?: string | null }>).map((row) => row.property_id));
+      if (propertyIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("properties")
+        .select("id,address")
+        .in("id", propertyIds)
+        .order("address", { ascending: true });
+      if (error) throw error;
+      return ((data ?? []) as Array<{ id: string; address: string | null }>)
+        .filter((row) => row.id)
+        .map((row) => ({ id: row.id, name: row.address?.trim() || "Property" }));
+    }
+
+    const { data, error } = await supabase
+      .from("properties")
+      .select("id,address")
+      .order("address", { ascending: true })
+      .range(0, 199);
+    if (error) throw error;
+    return ((data ?? []) as Array<{ id: string; address: string | null }>)
+      .filter((row) => row.id)
+      .map((row) => ({ id: row.id, name: row.address?.trim() || "Property" }));
+  }
+
+  if (sourceKind === "order") {
+    let query = supabase.from("orders").select("id,customer_id").order("id", { ascending: false }).range(0, 199);
+    if (normalizedCustomerId) query = query.eq("customer_id", normalizedCustomerId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return ((data ?? []) as Array<{ id: string }>)
+      .filter((row) => row.id)
+      .map((row) => ({ id: row.id, name: `Sales order ${row.id.slice(0, 8)}` }));
+  }
+
+  return [];
 }

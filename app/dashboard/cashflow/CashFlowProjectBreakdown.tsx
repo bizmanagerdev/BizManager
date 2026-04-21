@@ -1,12 +1,12 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { CashFlowProjectBreakdownPoint } from "@/lib/cashflow";
+import type { CashFlowDomainBreakdownPoint } from "@/lib/cashflow";
 import { formatCurrency } from "@/app/dashboard/cashflow/chart-utils";
 import { ChevronDown } from "lucide-react";
 
 export default function CashFlowProjectBreakdown({
   rows,
 }: {
-  rows: CashFlowProjectBreakdownPoint[];
+  rows: CashFlowDomainBreakdownPoint[];
 }) {
   const visibleRows = rows.slice(0, 6);
   const maxAbsNet = visibleRows.reduce((max, row) => Math.max(max, Math.abs(row.net)), 0);
@@ -18,9 +18,9 @@ export default function CashFlowProjectBreakdown({
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1 text-right">
-                <CardTitle className="text-lg text-right">תזרים לפי פרויקט</CardTitle>
+                <CardTitle className="text-lg text-right">תזרים לפי תחום</CardTitle>
                 <CardDescription className="text-right">
-                  מי מביא כסף פנימה, ואיפה הכסף יוצא החוצה יותר מדי.
+                  הצגה של הכנסות והוצאות לפי תחומי העסק, כשהפרויקט נשאר פרט משני בתוך כל תנועה.
                 </CardDescription>
               </div>
               <div className="flex h-9 w-9 items-center justify-center rounded-full border bg-muted/40 transition-transform group-open:rotate-180">
@@ -32,7 +32,7 @@ export default function CashFlowProjectBreakdown({
         <CardContent>
           {visibleRows.length === 0 ? (
             <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-              אין פרויקטים עם תנועות בתקופה הזו.
+              אין תחומים עם תנועות בתקופה הזו.
             </div>
           ) : (
             <div className="space-y-3">
@@ -41,10 +41,10 @@ export default function CashFlowProjectBreakdown({
                 const isPositive = row.net >= 0;
 
                 return (
-                  <div key={`${row.projectId ?? "none"}-${row.projectName}`} className="rounded-2xl border p-4 text-right">
+                  <div key={row.domain ?? "none"} className="rounded-2xl border p-4 text-right">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <div className="font-medium">{row.projectName}</div>
+                        <div className="font-medium">{row.domainName}</div>
                         <div className="mt-1 text-xs text-muted-foreground">
                           הכנסות {formatCurrency(row.inflow)} | הוצאות {formatCurrency(row.outflow)}
                         </div>
