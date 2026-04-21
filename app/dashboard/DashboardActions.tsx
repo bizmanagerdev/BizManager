@@ -69,20 +69,20 @@ const fieldClass =
   "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
 const expenseBusinessDomainLabels: Record<ExpenseBusinessDomain, string> = {
-  home: "Home",
-  charity: "Charity",
-  general: "General",
-  logistics: "Logistics",
-  sales: "Sales",
-  property_managment: "Property management",
+  home: "בית",
+  charity: "צדקה",
+  general: "כללי",
+  logistics: "לוגיסטיקה",
+  sales: "מכירות",
+  property_managment: "ניהול נכסים",
 };
 
 type DerivedExpenseSourceType = "project" | "order" | "property";
 
 const expenseSourceLabels: Record<DerivedExpenseSourceType, string> = {
-  project: "Project",
-  order: "Order",
-  property: "Property",
+  project: "פרויקט",
+  order: "הזמנה",
+  property: "נכס",
 };
 
 function getExpenseSourceType(domain: ExpenseBusinessDomain): DerivedExpenseSourceType | null {
@@ -814,7 +814,7 @@ export default function DashboardActions({
           <div className="grid gap-4">
             <AdaptiveGrid variant="formTwoLoose">
               <label className="space-y-2 text-sm">
-                <span>Business domain</span>
+                <span>תחום עסקי</span>
                 <select
                   className={fieldClass}
                   value={expenseBusinessDomain}
@@ -831,12 +831,6 @@ export default function DashboardActions({
                 </select>
               </label>
 
-              <div className="space-y-2 text-sm">
-                <span>Linked record</span>
-                <div className="flex h-11 items-center rounded-xl border border-input bg-muted/30 px-4 text-sm text-muted-foreground">
-                  {expenseSourceType ? expenseSourceLabels[expenseSourceType] : "None required"}
-                </div>
-              </div>
             </AdaptiveGrid>
             {expenseSourceType ? (
               <label className="space-y-2 text-sm">
@@ -848,10 +842,10 @@ export default function DashboardActions({
                 >
                   <option value="">
                     {expenseSourceType === "project"
-                      ? "Choose project"
+                      ? "בחרו פרויקט"
                       : expenseSourceType === "order"
-                        ? "Choose order"
-                        : "Choose property"}
+                        ? "בחרו הזמנה"
+                        : "בחרו נכס"}
                   </option>
                   {expenseSourceOptions.map((option) => (
                     <option key={option.id} value={option.id}>
