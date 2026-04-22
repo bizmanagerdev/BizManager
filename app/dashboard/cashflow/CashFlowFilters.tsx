@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { CashFlowSourceKind, ProjectOption } from "@/lib/cashflow";
@@ -46,6 +49,32 @@ export default function CashFlowFilters({
   type,
   projects,
 }: Props) {
+  const [fromValue, setFromValue] = useState(from);
+  const [toValue, setToValue] = useState(to);
+  const [domainValue, setDomainValue] = useState(domain);
+  const [sourceIdValue, setSourceIdValue] = useState(sourceId);
+  const [typeValue, setTypeValue] = useState(type);
+
+  useEffect(() => {
+    setFromValue(from);
+  }, [from]);
+
+  useEffect(() => {
+    setToValue(to);
+  }, [to]);
+
+  useEffect(() => {
+    setDomainValue(domain);
+  }, [domain]);
+
+  useEffect(() => {
+    setSourceIdValue(sourceId);
+  }, [sourceId]);
+
+  useEffect(() => {
+    setTypeValue(type);
+  }, [type]);
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -65,7 +94,8 @@ export default function CashFlowFilters({
               <input
                 type="date"
                 name="from"
-                defaultValue={from}
+                value={fromValue}
+                onChange={(event) => setFromValue(event.target.value)}
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm"
               />
             </label>
@@ -74,7 +104,8 @@ export default function CashFlowFilters({
               <input
                 type="date"
                 name="to"
-                defaultValue={to}
+                value={toValue}
+                onChange={(event) => setToValue(event.target.value)}
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm"
               />
             </label>
@@ -82,7 +113,8 @@ export default function CashFlowFilters({
               <span className="font-medium">תחום</span>
               <select
                 name="domain"
-                defaultValue={domain}
+                value={domainValue}
+                onChange={(event) => setDomainValue(event.target.value)}
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">כל התחומים</option>
@@ -98,7 +130,8 @@ export default function CashFlowFilters({
                 <span className="font-medium">{getSourceLabel(sourceKind)}</span>
                 <select
                   name="sourceId"
-                  defaultValue={sourceId}
+                  value={sourceIdValue}
+                  onChange={(event) => setSourceIdValue(event.target.value)}
                   className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="">{getAllSourceLabel(sourceKind)}</option>
@@ -114,7 +147,8 @@ export default function CashFlowFilters({
               <span className="font-medium">סוג תנועה</span>
               <select
                 name="type"
-                defaultValue={type}
+                value={typeValue}
+                onChange={(event) => setTypeValue(event.target.value)}
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="all">הכול</option>
@@ -129,6 +163,13 @@ export default function CashFlowFilters({
             </Button>
             <Button asChild type="button" variant="outline" className="flex-1 lg:flex-none">
               <Link
+                onClick={() => {
+                  setFromValue("");
+                  setToValue("");
+                  setDomainValue("");
+                  setSourceIdValue("");
+                  setTypeValue("all");
+                }}
                 href={
                   customerId
                     ? `${actionPath}?customer_id=${encodeURIComponent(customerId)}${

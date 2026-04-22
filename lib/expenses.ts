@@ -24,8 +24,11 @@ export function isExpenseSourceType(value: string | null | undefined): value is 
 export function mapProjectTypeToExpenseDomain(value: string | null | undefined): ExpenseBusinessDomain {
   switch (value) {
     case "home":
-      return "home";
     case "logistics":
+    case "moving":
+    case "renovation":
+    case "construction":
+    case "other":
       return "logistics_projects";
     case "sales":
       return "sales";
@@ -34,7 +37,7 @@ export function mapProjectTypeToExpenseDomain(value: string | null | undefined):
     case "charity":
       return "charity";
     default:
-      return "general_business";
+      return "logistics_projects";
   }
 }
 

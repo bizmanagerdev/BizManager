@@ -39,7 +39,7 @@ type ContactDraft = {
 };
 
 const defaultStatusOptions = ["planned", "active", "on_hold", "completed", "cancelled"];
-const defaultProjectTypeOptions = ["logistics", "construction", "moving", "other", "home"];
+const defaultProjectTypeOptions = ["logistics", "moving", "renovation"];
 const cityOptions = [
   "ירושלים",
   "בני ברק",
@@ -117,14 +117,10 @@ function projectTypeLabel(value: string) {
   switch (value) {
     case "logistics":
       return "לוגיסטיקה";
-    case "construction":
-      return "בנייה";
     case "moving":
       return "הובלה";
-    case "other":
-      return "אחר";
-    case "home":
-      return "בית";
+    case "renovation":
+      return "שיפוצים";
     default:
       return value;
   }
@@ -272,14 +268,8 @@ export default function ProjectsClient({
   }, [projects]);
 
   const projectTypeOptions = useMemo(() => {
-    const set = new Set<string>();
-    projects.forEach((row) => {
-      const value = getString(row, "project_type");
-      if (value) set.add(value);
-    });
-    defaultProjectTypeOptions.forEach((value) => set.add(value));
-    return Array.from(set).sort();
-  }, [projects]);
+    return defaultProjectTypeOptions;
+  }, []);
 
   const filteredCustomerOptions = useMemo(() => {
     const q = createCustomerQuery.trim().toLowerCase();

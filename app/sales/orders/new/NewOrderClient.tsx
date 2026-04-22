@@ -898,7 +898,7 @@ export default function NewOrderClient({
         router.refresh();
       } else {
         emitNavigationStart();
-        router.push(`/sales/orders/${json.order_id}`);
+        router.push("/sales");
         router.refresh();
       }
     } catch (error: unknown) {

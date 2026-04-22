@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -14,11 +14,7 @@ import {
 import NewOrderClient from "@/app/sales/orders/new/NewOrderClient";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
-import {
-  EXPENSE_BUSINESS_DOMAINS,
-  mapProjectTypeToExpenseDomain,
-  type ExpenseBusinessDomain,
-} from "@/lib/expenses";
+import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -68,35 +64,108 @@ function nextMonth(dateString: string) {
 const fieldClass =
   "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
-const expenseBusinessDomainLabels: Record<ExpenseBusinessDomain, string> = {
-  home: "בית",
-  charity: "צדקה",
-  general_business: "כללי",
-  logistics_projects: "לוגיסטיקה",
-  sales: "מכירות",
-  property_management: "ניהול נכסים",
-};
-
-type DerivedExpenseSourceType = "project" | "order" | "property";
-
-const expenseSourceLabels: Record<DerivedExpenseSourceType, string> = {
-  project: "פרויקט",
-  order: "הזמנה",
-  property: "נכס",
-};
-
-function getExpenseSourceType(domain: ExpenseBusinessDomain): DerivedExpenseSourceType | null {
-  switch (domain) {
-    case "logistics_projects":
-      return "project";
-    case "sales":
-      return "order";
-    case "property_management":
-      return "property";
-    default:
-      return null;
-  }
-}
+const DASHBOARD_EXPENSE_CATEGORY_OPTIONS = [
+  "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3",
+  "\u05e8\u05db\u05e9",
+  "\u05ea\u05d7\u05d1\u05d5\u05e8\u05d4",
+  "\u05d0\u05d5\u05db\u05dc",
+  "\u05d0\u05d7\u05e8",
+] as const;
+const OTHER_EXPENSE_CATEGORY = "\u05d0\u05d7\u05e8";
+const HEBREW = {
+  saveErrorUnknown: "\u05e9\u05d2\u05d9\u05d0\u05d4 \u05dc\u05d0 \u05d9\u05d3\u05d5\u05e2\u05d4",
+  cancel: "\u05d1\u05d9\u05d8\u05d5\u05dc",
+  saving: "\u05e9\u05d5\u05de\u05e8...",
+  customerFallback: "\u05dc\u05e7\u05d5\u05d7",
+  selectCustomer: "\u05d1\u05d7\u05e8\u05d5 \u05dc\u05e7\u05d5\u05d7",
+  selectProject: "\u05d1\u05d7\u05e8\u05d5 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
+  orderNew: "\u05d4\u05d6\u05de\u05e0\u05d4 \u05d7\u05d3\u05e9\u05d4",
+  orderQuickOpen: "\u05e4\u05ea\u05d9\u05d7\u05ea \u05d8\u05d5\u05e4\u05e1 \u05d4\u05d6\u05de\u05e0\u05d4 \u05de\u05d4\u05d9\u05e8\u05d4",
+  orderDialogDescription:
+    "\u05e4\u05ea\u05d9\u05d7\u05ea \u05d4\u05d6\u05de\u05e0\u05d4 \u05de\u05ea\u05d5\u05da \u05d4\u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05d1\u05dc\u05d9 \u05de\u05e2\u05d1\u05e8 \u05dc\u05de\u05e1\u05da \u05d4\u05de\u05db\u05d9\u05e8\u05d5\u05ea.",
+  orderSaved: "\u05d4\u05d4\u05d6\u05de\u05e0\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
+  projectNew: "\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d7\u05d3\u05e9",
+  projectQuickCreate:
+    "\u05d9\u05e6\u05d9\u05e8\u05d4 \u05de\u05d4\u05d9\u05e8\u05d4 \u05d1\u05dc\u05d9 \u05dc\u05e2\u05d6\u05d5\u05d1 \u05d0\u05ea \u05d4\u05d3\u05e9\u05d1\u05d5\u05e8\u05d3",
+  projectDialogDescription:
+    "\u05d8\u05d5\u05e4\u05e1 \u05e7\u05e6\u05e8 \u05dc\u05e4\u05ea\u05d9\u05d7\u05d4 \u05de\u05d4\u05d9\u05e8\u05d4 \u05e9\u05dc \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d7\u05d3\u05e9.",
+  projectName: "\u05e9\u05dd \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
+  customer: "\u05dc\u05e7\u05d5\u05d7",
+  projectType: "\u05e1\u05d5\u05d2 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
+  logistics: "\u05dc\u05d5\u05d2\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4",
+  moving: "\u05d4\u05d5\u05d1\u05dc\u05d4",
+  renovation: "\u05e9\u05d9\u05e4\u05d5\u05e6\u05d9\u05dd",
+  status: "\u05e1\u05d8\u05d8\u05d5\u05e1",
+  statusPlanned: "\u05de\u05ea\u05d5\u05db\u05e0\u05df",
+  statusActive: "\u05e4\u05e2\u05d9\u05dc",
+  statusOnHold: "\u05d1\u05d4\u05de\u05ea\u05e0\u05d4",
+  statusCompleted: "\u05d4\u05d5\u05e9\u05dc\u05dd",
+  statusCancelled: "\u05d1\u05d5\u05d8\u05dc",
+  basePrice: "\u05de\u05d7\u05d9\u05e8 \u05d1\u05e1\u05d9\u05e1",
+  projectManager: "\u05de\u05e0\u05d4\u05dc \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
+  unassigned: "\u05dc\u05dc\u05d0 \u05e9\u05d9\u05d5\u05da",
+  startDate: "\u05ea\u05d0\u05e8\u05d9\u05da \u05d4\u05ea\u05d7\u05dc\u05d4",
+  endDate: "\u05ea\u05d0\u05e8\u05d9\u05da \u05e1\u05d9\u05d5\u05dd",
+  notes: "\u05d4\u05e2\u05e8\u05d5\u05ea",
+  saveProject: "\u05e9\u05de\u05d9\u05e8\u05ea \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
+  projectRequired:
+    "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05dc\u05e7\u05d5\u05d7 \u05d5\u05dc\u05de\u05dc\u05d0 \u05e9\u05dd \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8.",
+  projectCreateFailed: "\u05d9\u05e6\u05d9\u05e8\u05ea \u05d4\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05e0\u05db\u05e9\u05dc\u05d4.",
+  projectSaved: "\u05d4\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05e0\u05e9\u05de\u05e8",
+  taskNew: "\u05de\u05e9\u05d9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4",
+  taskQuickAssign:
+    "\u05e9\u05d9\u05d5\u05da \u05de\u05d4\u05d9\u05e8 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05e7\u05d9\u05d9\u05dd",
+  taskDialogDescription:
+    "\u05e4\u05ea\u05d9\u05d7\u05d4 \u05de\u05d4\u05d9\u05e8\u05d4 \u05e9\u05dc \u05de\u05e9\u05d9\u05de\u05d4 \u05d5\u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05e7\u05d9\u05d9\u05dd.",
+  project: "\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
+  subject: "\u05e0\u05d5\u05e9\u05d0",
+  dueDate: "\u05ea\u05d0\u05e8\u05d9\u05da \u05d9\u05e2\u05d3",
+  assignee: "\u05d0\u05d7\u05e8\u05d0\u05d9",
+  selectAssignee: "\u05d1\u05d7\u05e8\u05d5 \u05d0\u05d7\u05e8\u05d0\u05d9",
+  saveTask: "\u05e9\u05de\u05d9\u05e8\u05ea \u05de\u05e9\u05d9\u05de\u05d4",
+  taskRequired:
+    "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05d0\u05d7\u05e8\u05d0\u05d9, \u05ea\u05d0\u05e8\u05d9\u05da \u05d9\u05e2\u05d3 \u05d5\u05e0\u05d5\u05e9\u05d0.",
+  taskCreateFailed: "\u05d9\u05e6\u05d9\u05e8\u05ea \u05d4\u05de\u05e9\u05d9\u05de\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
+  taskSaved: "\u05d4\u05de\u05e9\u05d9\u05de\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
+  financial: "\u05e4\u05d9\u05e0\u05e0\u05e1\u05d9\u05dd",
+  financialOpen:
+    "\u05de\u05e2\u05d1\u05e8 \u05dc\u05de\u05e1\u05da \u05d4\u05db\u05e1\u05e4\u05d9\u05dd \u05d4\u05de\u05dc\u05d0",
+  expenseNew: "\u05d4\u05d5\u05e6\u05d0\u05d4 \u05d7\u05d3\u05e9\u05d4",
+  expenseQuickRegister: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
+  expenseDialogDescription:
+    "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05d7\u05d3\u05e9\u05d4 \u05d5\u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8.",
+  amount: "\u05e1\u05db\u05d5\u05dd",
+  date: "\u05ea\u05d0\u05e8\u05d9\u05da",
+  category: "\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4",
+  selectCategory: "\u05d1\u05d7\u05e8\u05d5 \u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4",
+  otherCategoryPrompt: "\u05de\u05d4 \u05d4\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4?",
+  description: "\u05ea\u05d9\u05d0\u05d5\u05e8",
+  includedInBase: "\u05e0\u05db\u05dc\u05dc \u05d1\u05d1\u05e1\u05d9\u05e1",
+  billedToCustomer: "\u05dc\u05d7\u05d9\u05d5\u05d1 \u05dc\u05e7\u05d5\u05d7",
+  saveExpense: "\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4",
+  expenseRequired:
+    "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4 \u05d5\u05ea\u05d0\u05e8\u05d9\u05da.",
+  expenseInvalidAmount: "\u05d9\u05e9 \u05dc\u05d4\u05d6\u05d9\u05df \u05e1\u05db\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05ea\u05e7\u05d9\u05df.",
+  expenseCreateFailed: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
+  expenseSaved: "\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
+  incomeNew: "\u05d4\u05db\u05e0\u05e1\u05d4 \u05d7\u05d3\u05e9\u05d4",
+  incomeQuickRegister: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05ea\u05e9\u05dc\u05d5\u05dd \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
+  incomeDialogDescription:
+    "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4 \u05d7\u05d3\u05e9\u05d4 \u05db\u05ea\u05e9\u05dc\u05d5\u05dd \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8.",
+  paymentMethod: "\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd",
+  bankTransfer: "\u05d4\u05e2\u05d1\u05e8\u05d4 \u05d1\u05e0\u05e7\u05d0\u05d9\u05ea",
+  cash: "\u05de\u05d6\u05d5\u05de\u05df",
+  check: "\u05e6'\u05e7",
+  creditCard: "\u05db\u05e8\u05d8\u05d9\u05e1 \u05d0\u05e9\u05e8\u05d0\u05d9",
+  other: "\u05d0\u05d7\u05e8",
+  reference: "\u05d0\u05e1\u05de\u05db\u05ea\u05d0",
+  saveIncome: "\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05db\u05e0\u05e1\u05d4",
+  incomeRequired:
+    "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05ea\u05d0\u05e8\u05d9\u05da \u05d5\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd.",
+  incomeInvalidAmount: "\u05d9\u05e9 \u05dc\u05d4\u05d6\u05d9\u05df \u05e1\u05db\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4 \u05ea\u05e7\u05d9\u05df.",
+  incomeCreateFailed: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
+  incomeSaved: "\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
+} as const;
 
 export default function DashboardActions({
   customers,
@@ -116,6 +185,8 @@ export default function DashboardActions({
   currentUserId?: string;
 }) {
   const router = useRouter();
+  void orders;
+  void properties;
 
   const [orderOpen, setOrderOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
@@ -147,13 +218,15 @@ export default function DashboardActions({
 
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [expenseError, setExpenseError] = useState<string | null>(null);
-  const [expenseBusinessDomain, setExpenseBusinessDomain] = useState<ExpenseBusinessDomain>("general_business");
-  const [expenseSourceId, setExpenseSourceId] = useState("");
+  const [expenseProjectId, setExpenseProjectId] = useState(projects[0]?.id ?? "");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("");
+  const [expenseCategoryOther, setExpenseCategoryOther] = useState("");
   const [expenseDate, setExpenseDate] = useState(getTodayDate());
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseNotes, setExpenseNotes] = useState("");
+  const [expenseIncludedInBase, setExpenseIncludedInBase] = useState(false);
+  const [expenseBilledToCustomer, setExpenseBilledToCustomer] = useState(false);
 
   const [incomeSubmitting, setIncomeSubmitting] = useState(false);
   const [incomeError, setIncomeError] = useState<string | null>(null);
@@ -169,30 +242,6 @@ export default function DashboardActions({
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
   );
-
-  const expenseSourceType = getExpenseSourceType(expenseBusinessDomain);
-
-  const expenseSourceOptions = useMemo(() => {
-    if (expenseSourceType === "project") {
-      return projects.map((project) => ({
-        id: project.id,
-        label: `${project.name} | ${project.customerName}`,
-      }));
-    }
-    if (expenseSourceType === "order") {
-      return orders.map((order) => ({
-        id: order.id,
-        label: order.subtitle ? `${order.name} | ${order.subtitle}` : order.name,
-      }));
-    }
-    if (expenseSourceType === "property") {
-      return properties.map((property) => ({
-        id: property.id,
-        label: property.subtitle ? `${property.name} | ${property.subtitle}` : property.name,
-      }));
-    }
-    return [];
-  }, [expenseSourceType, orders, projects, properties]);
 
   function resetProjectForm() {
     setProjectError(null);
@@ -220,13 +269,15 @@ export default function DashboardActions({
 
   function resetExpenseForm() {
     setExpenseError(null);
-    setExpenseBusinessDomain("general_business");
-    setExpenseSourceId("");
+    setExpenseProjectId(projects[0]?.id ?? "");
     setExpenseAmount("");
     setExpenseCategory("");
+    setExpenseCategoryOther("");
     setExpenseDate(getTodayDate());
     setExpenseDescription("");
     setExpenseNotes("");
+    setExpenseIncludedInBase(false);
+    setExpenseBilledToCustomer(false);
   }
 
   function resetIncomeForm() {
@@ -242,7 +293,7 @@ export default function DashboardActions({
   async function createProject() {
     setProjectError(null);
     if (!projectName.trim() || !projectCustomerId) {
-      setProjectError("יש לבחור לקוח ולמלא שם פרויקט.");
+      setProjectError(HEBREW.projectRequired);
       return;
     }
 
@@ -267,16 +318,16 @@ export default function DashboardActions({
 
       const json = (await res.json().catch(() => ({}))) as { error?: string; project?: Row };
       if (!res.ok || !json.project) {
-        setProjectError(json.error ?? "יצירת הפרויקט נכשלה.");
+        setProjectError(json.error ?? HEBREW.projectCreateFailed);
         return;
       }
 
       setProjectOpen(false);
       resetProjectForm();
       router.refresh();
-      toast.success("הפרויקט נשמר");
+      toast.success(HEBREW.projectSaved);
     } catch (error: unknown) {
-      setProjectError(error instanceof Error ? error.message : "שגיאה לא ידועה");
+      setProjectError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
     } finally {
       setProjectSubmitting(false);
     }
@@ -286,7 +337,7 @@ export default function DashboardActions({
     setTaskError(null);
     const selectedProject = projectById.get(taskProjectId);
     if (!selectedProject || !taskSubject.trim() || !taskAssignedUserId || !taskDueDate) {
-      setTaskError("יש לבחור פרויקט, אחראי, תאריך יעד ונושא.");
+      setTaskError(HEBREW.taskRequired);
       return;
     }
 
@@ -309,16 +360,16 @@ export default function DashboardActions({
 
       const json = (await res.json().catch(() => ({}))) as { error?: string; task?: Row };
       if (!res.ok || !json.task) {
-        setTaskError(json.error ?? "יצירת המשימה נכשלה.");
+        setTaskError(json.error ?? HEBREW.taskCreateFailed);
         return;
       }
 
       setTaskOpen(false);
       resetTaskForm();
       router.refresh();
-      toast.success("המשימה נשמרה");
+      toast.success(HEBREW.taskSaved);
     } catch (error: unknown) {
-      setTaskError(error instanceof Error ? error.message : "שגיאה לא ידועה");
+      setTaskError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
     } finally {
       setTaskSubmitting(false);
     }
@@ -326,19 +377,16 @@ export default function DashboardActions({
 
   async function createExpense() {
     setExpenseError(null);
-    if (!expenseBusinessDomain || !expenseCategory.trim() || !expenseDate) {
-      setExpenseError("יש לבחור תחום, קטגוריה ותאריך.");
-      return;
-    }
-
-    if (expenseSourceType && !expenseSourceId) {
-      setExpenseError("יש לבחור רשומה מתאימה למקור שנבחר.");
+    const finalExpenseCategory =
+      expenseCategory === OTHER_EXPENSE_CATEGORY ? expenseCategoryOther.trim() : expenseCategory.trim();
+    if (!expenseProjectId || !finalExpenseCategory || !expenseDate) {
+      setExpenseError(HEBREW.expenseRequired);
       return;
     }
 
     const amount = Number(expenseAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setExpenseError("יש להזין סכום הוצאה תקין.");
+      setExpenseError(HEBREW.expenseInvalidAmount);
       return;
     }
 
@@ -348,30 +396,29 @@ export default function DashboardActions({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          business_domain: expenseBusinessDomain,
-          project_id: expenseSourceType === "project" ? expenseSourceId || null : null,
-          order_id: expenseSourceType === "order" ? expenseSourceId || null : null,
-          property_id: expenseSourceType === "property" ? expenseSourceId || null : null,
+          project_id: expenseProjectId,
           amount,
-          category: expenseCategory.trim(),
+          category: finalExpenseCategory,
           expense_date: expenseDate,
           description: expenseDescription.trim() || null,
           notes: expenseNotes.trim() || null,
+          included_in_base_price: expenseIncludedInBase,
+          billed_to_customer: expenseBilledToCustomer,
         }),
       });
 
       const json = (await res.json().catch(() => ({}))) as { error?: string; expense?: Row };
       if (!res.ok || !json.expense) {
-        setExpenseError(json.error ?? "הוספת ההוצאה נכשלה.");
+        setExpenseError(json.error ?? HEBREW.expenseCreateFailed);
         return;
       }
 
       setExpenseOpen(false);
       resetExpenseForm();
       router.refresh();
-      toast.success("ההוצאה נשמרה");
+      toast.success(HEBREW.expenseSaved);
     } catch (error: unknown) {
-      setExpenseError(error instanceof Error ? error.message : "שגיאה לא ידועה");
+      setExpenseError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
     } finally {
       setExpenseSubmitting(false);
     }
@@ -380,13 +427,13 @@ export default function DashboardActions({
   async function createIncome() {
     setIncomeError(null);
     if (!incomeProjectId || !incomeDate || !incomeMethod.trim()) {
-      setIncomeError("יש לבחור פרויקט, תאריך ואמצעי תשלום.");
+      setIncomeError(HEBREW.incomeRequired);
       return;
     }
 
     const amount = Number(incomeAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setIncomeError("יש להזין סכום הכנסה תקין.");
+      setIncomeError(HEBREW.incomeInvalidAmount);
       return;
     }
 
@@ -408,16 +455,16 @@ export default function DashboardActions({
 
       const json = (await res.json().catch(() => ({}))) as { error?: string; payment?: Row };
       if (!res.ok || !json.payment) {
-        setIncomeError(json.error ?? "הוספת ההכנסה נכשלה.");
+        setIncomeError(json.error ?? HEBREW.incomeCreateFailed);
         return;
       }
 
       setIncomeOpen(false);
       resetIncomeForm();
       router.refresh();
-      toast.success("ההכנסה נשמרה");
+      toast.success(HEBREW.incomeSaved);
     } catch (error: unknown) {
-      setIncomeError(error instanceof Error ? error.message : "שגיאה לא ידועה");
+      setIncomeError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
     } finally {
       setIncomeSubmitting(false);
     }
@@ -436,8 +483,8 @@ export default function DashboardActions({
             <ShoppingCart className="h-5 w-5" />
           </span>
           <span className="flex flex-col items-start">
-            <span className="font-semibold">הזמנה חדשה</span>
-            <span className="text-xs text-muted-foreground">פתיחת טופס הזמנה מהירה</span>
+            <span className="font-semibold">{HEBREW.orderNew}</span>
+            <span className="text-xs text-muted-foreground">{HEBREW.orderQuickOpen}</span>
           </span>
         </Button>
 
@@ -451,8 +498,8 @@ export default function DashboardActions({
             <FolderKanban className="h-5 w-5" />
           </span>
           <span className="flex flex-col items-start">
-            <span className="font-semibold">פרויקט חדש</span>
-            <span className="text-xs text-muted-foreground">יצירה מהירה בלי לעזוב את הדשבורד</span>
+            <span className="font-semibold">{HEBREW.projectNew}</span>
+            <span className="text-xs text-muted-foreground">{HEBREW.projectQuickCreate}</span>
           </span>
         </Button>
 
@@ -466,8 +513,8 @@ export default function DashboardActions({
             <ListTodo className="h-5 w-5" />
           </span>
           <span className="flex flex-col items-start">
-            <span className="font-semibold">משימה חדשה</span>
-            <span className="text-xs text-muted-foreground">שיוך מהיר לפרויקט קיים</span>
+            <span className="font-semibold">{HEBREW.taskNew}</span>
+            <span className="text-xs text-muted-foreground">{HEBREW.taskQuickAssign}</span>
           </span>
         </Button>
 
@@ -487,8 +534,8 @@ export default function DashboardActions({
             <Landmark className="h-5 w-5" />
           </span>
           <span className="flex flex-col items-start">
-            <span className="font-semibold">פיננסים</span>
-            <span className="text-xs text-muted-foreground">מעבר למסך הכספים המלא</span>
+            <span className="font-semibold">{HEBREW.financial}</span>
+            <span className="text-xs text-muted-foreground">{HEBREW.financialOpen}</span>
           </span>
         </Button>
 
@@ -502,8 +549,8 @@ export default function DashboardActions({
             <ArrowDownCircle className="h-5 w-5" />
           </span>
           <span className="flex flex-col items-start">
-            <span className="font-semibold">הוצאה חדשה</span>
-            <span className="text-xs text-muted-foreground">רישום הוצאה לפרויקט</span>
+            <span className="font-semibold">{HEBREW.expenseNew}</span>
+            <span className="text-xs text-muted-foreground">{HEBREW.expenseQuickRegister}</span>
           </span>
         </Button>
 
@@ -517,8 +564,8 @@ export default function DashboardActions({
             <ArrowUpCircle className="h-5 w-5" />
           </span>
           <span className="flex flex-col items-start">
-            <span className="font-semibold">הכנסה חדשה</span>
-            <span className="text-xs text-muted-foreground">רישום תשלום לפרויקט</span>
+            <span className="font-semibold">{HEBREW.incomeNew}</span>
+            <span className="text-xs text-muted-foreground">{HEBREW.incomeQuickRegister}</span>
           </span>
         </Button>
       </AdaptiveGrid>
@@ -526,8 +573,8 @@ export default function DashboardActions({
       <Dialog open={orderOpen} onOpenChange={setOrderOpen}>
         <AdaptiveDialog size="newOrder">
           <DialogHeader>
-            <DialogTitle>הזמנה חדשה</DialogTitle>
-            <DialogDescription>פתיחת הזמנה מתוך הדשבורד בלי מעבר למסך המכירות.</DialogDescription>
+            <DialogTitle>{HEBREW.orderNew}</DialogTitle>
+            <DialogDescription>{HEBREW.orderDialogDescription}</DialogDescription>
           </DialogHeader>
 
           <NewOrderClient
@@ -540,7 +587,7 @@ export default function DashboardActions({
             onSubmitted={() => {
               setOrderOpen(false);
               router.refresh();
-              toast.success("ההזמנה נשמרה");
+              toast.success(HEBREW.orderSaved);
             }}
           />
         </AdaptiveDialog>
@@ -555,129 +602,127 @@ export default function DashboardActions({
       >
         <AdaptiveDialog size="form2xl">
           <DialogHeader>
-            <DialogTitle>פרויקט חדש</DialogTitle>
-            <DialogDescription>טופס קצר לפתיחה מהירה של פרויקט חדש.</DialogDescription>
+            <DialogTitle>{HEBREW.projectNew}</DialogTitle>
+            <DialogDescription>{HEBREW.projectDialogDescription}</DialogDescription>
           </DialogHeader>
 
           <fieldset disabled={projectSubmitting} className="contents">
-          <AdaptiveGrid variant="formTwoLoose">
-            <label className="space-y-2 text-sm">
-              <span>שם פרויקט</span>
-              <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
-            </label>
+            <AdaptiveGrid variant="formTwoLoose">
+              <label className="space-y-2 text-sm">
+                <span>{HEBREW.projectName}</span>
+                <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+              </label>
 
-            <label className="space-y-2 text-sm">
-              <span>לקוח</span>
-              <select
-                className={fieldClass}
-                value={projectCustomerId}
-                onChange={(e) => setProjectCustomerId(e.target.value)}
-              >
-                <option value="">בחרו לקוח</option>
-                {customers.map((customer) => {
-                  const id = getString(customer, "id");
-                  const name =
-                    getString(customer, "name") ||
-                    getString(customer, "name_for_invoice") ||
-                    "לקוח";
-                  return (
-                    <option key={id} value={id}>
-                      {name}
+              <label className="space-y-2 text-sm">
+                <span>{HEBREW.customer}</span>
+                <select
+                  className={fieldClass}
+                  value={projectCustomerId}
+                  onChange={(e) => setProjectCustomerId(e.target.value)}
+                >
+                  <option value="">{HEBREW.selectCustomer}</option>
+                  {customers.map((customer) => {
+                    const id = getString(customer, "id");
+                    const name =
+                      getString(customer, "name") ||
+                      getString(customer, "name_for_invoice") ||
+                      HEBREW.customerFallback;
+                    return (
+                      <option key={id} value={id}>
+                        {name}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+
+              <label className="space-y-2 text-sm">
+                <span>{HEBREW.projectType}</span>
+                <select
+                  className={fieldClass}
+                  value={projectType}
+                  onChange={(e) => setProjectType(e.target.value)}
+                >
+                  <option value="logistics">{HEBREW.logistics}</option>
+                  <option value="moving">{HEBREW.moving}</option>
+                  <option value="renovation">{HEBREW.renovation}</option>
+                </select>
+              </label>
+
+              <label className="space-y-2 text-sm">
+                <span>{HEBREW.status}</span>
+                <select
+                  className={fieldClass}
+                  value={projectStatus}
+                  onChange={(e) => setProjectStatus(e.target.value)}
+                >
+                  <option value="planned">{HEBREW.statusPlanned}</option>
+                  <option value="active">{HEBREW.statusActive}</option>
+                  <option value="on_hold">{HEBREW.statusOnHold}</option>
+                  <option value="completed">{HEBREW.statusCompleted}</option>
+                  <option value="cancelled">{HEBREW.statusCancelled}</option>
+                </select>
+              </label>
+
+              <label className="space-y-2 text-sm">
+                <span>{HEBREW.basePrice}</span>
+                <Input
+                  type="number"
+                  min="0"
+                  value={projectPrice}
+                  onChange={(e) => setProjectPrice(e.target.value)}
+                />
+              </label>
+
+              <label className="space-y-2 text-sm">
+                <span>{HEBREW.projectManager}</span>
+                <select
+                  className={fieldClass}
+                  value={projectManagerId}
+                  onChange={(e) => setProjectManagerId(e.target.value)}
+                >
+                  <option value="">{HEBREW.unassigned}</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.label}
                     </option>
-                  );
-                })}
-              </select>
-            </label>
+                  ))}
+                </select>
+              </label>
 
-            <label className="space-y-2 text-sm">
-              <span>סוג פרויקט</span>
-              <select
-                className={fieldClass}
-                value={projectType}
-                onChange={(e) => setProjectType(e.target.value)}
-              >
-                <option value="logistics">לוגיסטיקה</option>
-                <option value="construction">בנייה</option>
-                <option value="moving">הובלה</option>
-                <option value="home">בית</option>
-                <option value="other">אחר</option>
-              </select>
-            </label>
+              <label className="space-y-2 text-sm">
+                <span>{HEBREW.startDate}</span>
+                <Input
+                  type="date"
+                  value={projectStartDate}
+                  onChange={(e) => setProjectStartDate(e.target.value)}
+                />
+              </label>
 
-            <label className="space-y-2 text-sm">
-              <span>סטטוס</span>
-              <select
-                className={fieldClass}
-                value={projectStatus}
-                onChange={(e) => setProjectStatus(e.target.value)}
-              >
-                <option value="planned">מתוכנן</option>
-                <option value="active">פעיל</option>
-                <option value="on_hold">בהמתנה</option>
-                <option value="completed">הושלם</option>
-                <option value="cancelled">בוטל</option>
-              </select>
-            </label>
+              <label className="space-y-2 text-sm">
+                <span>{HEBREW.endDate}</span>
+                <Input
+                  type="date"
+                  value={projectEndDate}
+                  onChange={(e) => setProjectEndDate(e.target.value)}
+                />
+              </label>
 
-            <label className="space-y-2 text-sm">
-              <span>מחיר בסיס</span>
-              <Input
-                type="number"
-                min="0"
-                value={projectPrice}
-                onChange={(e) => setProjectPrice(e.target.value)}
-              />
-            </label>
-
-            <label className="space-y-2 text-sm">
-              <span>מנהל פרויקט</span>
-              <select
-                className={fieldClass}
-                value={projectManagerId}
-                onChange={(e) => setProjectManagerId(e.target.value)}
-              >
-                <option value="">ללא שיוך</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-2 text-sm">
-              <span>תאריך התחלה</span>
-              <Input
-                type="date"
-                value={projectStartDate}
-                onChange={(e) => setProjectStartDate(e.target.value)}
-              />
-            </label>
-
-            <label className="space-y-2 text-sm">
-              <span>תאריך סיום</span>
-              <Input
-                type="date"
-                value={projectEndDate}
-                onChange={(e) => setProjectEndDate(e.target.value)}
-              />
-            </label>
-
-            <label className="space-y-2 text-sm col-span-full">
-              <span>הערות</span>
-              <Textarea value={projectNotes} onChange={(e) => setProjectNotes(e.target.value)} />
-            </label>
-          </AdaptiveGrid>
+              <label className="space-y-2 text-sm col-span-full">
+                <span>{HEBREW.notes}</span>
+                <Textarea value={projectNotes} onChange={(e) => setProjectNotes(e.target.value)} />
+              </label>
+            </AdaptiveGrid>
           </fieldset>
 
           {projectError ? <p className="text-sm text-destructive">{projectError}</p> : null}
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setProjectOpen(false)} disabled={projectSubmitting}>
-              ביטול
+              {HEBREW.cancel}
             </Button>
             <Button type="button" onClick={() => void createProject()} disabled={projectSubmitting}>
-              {projectSubmitting ? "שומר..." : "שמירת פרויקט"}
+              {projectSubmitting ? HEBREW.saving : HEBREW.saveProject}
             </Button>
           </div>
         </AdaptiveDialog>
@@ -692,106 +737,70 @@ export default function DashboardActions({
       >
         <AdaptiveDialog size="formXl">
           <DialogHeader>
-            <DialogTitle>משימה חדשה</DialogTitle>
-            <DialogDescription>פתיחה מהירה של משימה ושיוך לפרויקט קיים.</DialogDescription>
+            <DialogTitle>{HEBREW.taskNew}</DialogTitle>
+            <DialogDescription>{HEBREW.taskDialogDescription}</DialogDescription>
           </DialogHeader>
 
           <fieldset disabled={taskSubmitting} className="contents">
-          <div className="grid gap-4">
-            <label className="space-y-2 text-sm">
-              <span>פרויקט</span>
-              <select
-                className={fieldClass}
-                value={taskProjectId}
-                onChange={(e) => setTaskProjectId(e.target.value)}
-              >
-                <option value="">בחרו פרויקט</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name} | {project.customerName}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-2 text-sm">
-              <span>נושא</span>
-              <Input value={taskSubject} onChange={(e) => setTaskSubject(e.target.value)} />
-            </label>
-
-            <AdaptiveGrid variant="formTwoLoose">
+            <div className="grid gap-4">
               <label className="space-y-2 text-sm">
-                <span>תאריך יעד</span>
-                <Input
-                  type="date"
-                  value={taskDueDate}
-                  onChange={(e) => setTaskDueDate(e.target.value)}
-                />
-              </label>
-
-              <label className="space-y-2 text-sm">
-                <span>אחראי</span>
+                <span>{HEBREW.project}</span>
                 <select
                   className={fieldClass}
-                  value={taskAssignedUserId}
-                  onChange={(e) => setTaskAssignedUserId(e.target.value)}
+                  value={taskProjectId}
+                  onChange={(e) => setTaskProjectId(e.target.value)}
                 >
-                  <option value="">בחרו אחראי</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.label}
+                  <option value="">{HEBREW.selectProject}</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name} | {project.customerName}
                     </option>
                   ))}
                 </select>
               </label>
-            </AdaptiveGrid>
-
-            <AdaptiveGrid variant="formTwoLoose">
-              <label className="space-y-2 text-sm">
-                <span>עדיפות</span>
-                <select
-                  className={fieldClass}
-                  value={taskPriority}
-                  onChange={(e) => setTaskPriority(e.target.value)}
-                >
-                  <option value="low">נמוכה</option>
-                  <option value="medium">בינונית</option>
-                  <option value="high">גבוהה</option>
-                  <option value="urgent">דחופה</option>
-                </select>
-              </label>
 
               <label className="space-y-2 text-sm">
-                <span>סטטוס</span>
-                <select
-                  className={fieldClass}
-                  value={taskStatus}
-                  onChange={(e) => setTaskStatus(e.target.value)}
-                >
-                  <option value="todo">לביצוע</option>
-                  <option value="in_progress">בתהליך</option>
-                  <option value="blocked">חסום</option>
-                  <option value="done">בוצע</option>
-                  <option value="cancelled">בוטל</option>
-                </select>
+                <span>{HEBREW.subject}</span>
+                <Input value={taskSubject} onChange={(e) => setTaskSubject(e.target.value)} />
               </label>
-            </AdaptiveGrid>
 
-            <label className="space-y-2 text-sm">
-              <span>תיאור</span>
-              <Textarea value={taskDescription} onChange={(e) => setTaskDescription(e.target.value)} />
-            </label>
-          </div>
+              <AdaptiveGrid variant="formTwoLoose">
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.dueDate}</span>
+                  <Input
+                    type="date"
+                    value={taskDueDate}
+                    onChange={(e) => setTaskDueDate(e.target.value)}
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.assignee}</span>
+                  <select
+                    className={fieldClass}
+                    value={taskAssignedUserId}
+                    onChange={(e) => setTaskAssignedUserId(e.target.value)}
+                  >
+                    <option value="">{HEBREW.selectAssignee}</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </AdaptiveGrid>
+            </div>
           </fieldset>
 
           {taskError ? <p className="text-sm text-destructive">{taskError}</p> : null}
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setTaskOpen(false)} disabled={taskSubmitting}>
-              ביטול
+              {HEBREW.cancel}
             </Button>
             <Button type="button" onClick={() => void createTask()} disabled={taskSubmitting}>
-              {taskSubmitting ? "שומר..." : "שמירת משימה"}
+              {taskSubmitting ? HEBREW.saving : HEBREW.saveTask}
             </Button>
           </div>
         </AdaptiveDialog>
@@ -806,106 +815,118 @@ export default function DashboardActions({
       >
         <AdaptiveDialog size="formXl">
           <DialogHeader>
-            <DialogTitle>הוצאה חדשה</DialogTitle>
-            <DialogDescription>רישום הוצאה חדשה ושיוך לפרויקט.</DialogDescription>
+            <DialogTitle>{HEBREW.expenseNew}</DialogTitle>
+            <DialogDescription>{HEBREW.expenseDialogDescription}</DialogDescription>
           </DialogHeader>
 
           <fieldset disabled={expenseSubmitting} className="contents">
-          <div className="grid gap-4">
-            <AdaptiveGrid variant="formTwoLoose">
+            <div className="grid gap-4">
               <label className="space-y-2 text-sm">
-                <span>תחום עסקי</span>
+                <span>{HEBREW.project}</span>
                 <select
                   className={fieldClass}
-                  value={expenseBusinessDomain}
-                  onChange={(e) => {
-                    setExpenseBusinessDomain(e.target.value as ExpenseBusinessDomain);
-                    setExpenseSourceId("");
-                  }}
+                  value={expenseProjectId}
+                  onChange={(e) => setExpenseProjectId(e.target.value)}
                 >
-                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                    <option key={domain} value={domain}>
-                      {expenseBusinessDomainLabels[domain]}
+                  <option value="">{HEBREW.selectProject}</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name} | {project.customerName}
                     </option>
                   ))}
                 </select>
               </label>
 
-            </AdaptiveGrid>
-            {expenseSourceType ? (
+              <AdaptiveGrid variant="formTwoLoose">
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.amount}</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={expenseAmount}
+                    onChange={(e) => setExpenseAmount(e.target.value)}
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.date}</span>
+                  <Input
+                    type="date"
+                    value={expenseDate}
+                    onChange={(e) => setExpenseDate(e.target.value)}
+                  />
+                </label>
+              </AdaptiveGrid>
+
               <label className="space-y-2 text-sm">
-                <span>{expenseSourceLabels[expenseSourceType]}</span>
+                <span>{HEBREW.category}</span>
                 <select
                   className={fieldClass}
-                  value={expenseSourceId}
-                  onChange={(e) => setExpenseSourceId(e.target.value)}
+                  value={expenseCategory}
+                  onChange={(e) => setExpenseCategory(e.target.value)}
                 >
-                  <option value="">
-                    {expenseSourceType === "project"
-                      ? "בחרו פרויקט"
-                      : expenseSourceType === "order"
-                        ? "בחרו הזמנה"
-                        : "בחרו נכס"}
-                  </option>
-                  {expenseSourceOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
+                  <option value="">{HEBREW.selectCategory}</option>
+                  {DASHBOARD_EXPENSE_CATEGORY_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
                     </option>
                   ))}
                 </select>
               </label>
-            ) : null}
 
-            <AdaptiveGrid variant="formTwoLoose">
+              {expenseCategory === OTHER_EXPENSE_CATEGORY ? (
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.otherCategoryPrompt}</span>
+                  <Input
+                    value={expenseCategoryOther}
+                    onChange={(e) => setExpenseCategoryOther(e.target.value)}
+                  />
+                </label>
+              ) : null}
+
               <label className="space-y-2 text-sm">
-                <span>סכום</span>
+                <span>{HEBREW.description}</span>
                 <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={expenseAmount}
-                  onChange={(e) => setExpenseAmount(e.target.value)}
+                  value={expenseDescription}
+                  onChange={(e) => setExpenseDescription(e.target.value)}
                 />
               </label>
 
+              <div className="flex flex-col gap-2 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={expenseIncludedInBase}
+                    onChange={(e) => setExpenseIncludedInBase(e.target.checked)}
+                  />
+                  <span>{HEBREW.includedInBase}</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={expenseBilledToCustomer}
+                    onChange={(e) => setExpenseBilledToCustomer(e.target.checked)}
+                  />
+                  <span>{HEBREW.billedToCustomer}</span>
+                </label>
+              </div>
+
               <label className="space-y-2 text-sm">
-                <span>תאריך</span>
-                <Input
-                  type="date"
-                  value={expenseDate}
-                  onChange={(e) => setExpenseDate(e.target.value)}
-                />
+                <span>{HEBREW.notes}</span>
+                <Textarea value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} />
               </label>
-            </AdaptiveGrid>
-
-            <label className="space-y-2 text-sm">
-              <span>קטגוריה</span>
-              <Input value={expenseCategory} onChange={(e) => setExpenseCategory(e.target.value)} />
-            </label>
-
-            <label className="space-y-2 text-sm">
-              <span>תיאור</span>
-              <Input
-                value={expenseDescription}
-                onChange={(e) => setExpenseDescription(e.target.value)}
-              />
-            </label>
-
-            <label className="space-y-2 text-sm">
-              <span>הערות</span>
-              <Textarea value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} />
-            </label>
-          </div>
+            </div>
           </fieldset>
 
           {expenseError ? <p className="text-sm text-destructive">{expenseError}</p> : null}
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setExpenseOpen(false)} disabled={expenseSubmitting}>
-              ביטול
+              {HEBREW.cancel}
             </Button>
             <Button type="button" onClick={() => void createExpense()} disabled={expenseSubmitting}>
-              {expenseSubmitting ? "שומר..." : "שמירת הוצאה"}
+              {expenseSubmitting ? HEBREW.saving : HEBREW.saveExpense}
             </Button>
           </div>
         </AdaptiveDialog>
@@ -920,90 +941,90 @@ export default function DashboardActions({
       >
         <AdaptiveDialog size="formXl">
           <DialogHeader>
-            <DialogTitle>הכנסה חדשה</DialogTitle>
-            <DialogDescription>רישום הכנסה חדשה כתשלום לפרויקט.</DialogDescription>
+            <DialogTitle>{HEBREW.incomeNew}</DialogTitle>
+            <DialogDescription>{HEBREW.incomeDialogDescription}</DialogDescription>
           </DialogHeader>
 
           <fieldset disabled={incomeSubmitting} className="contents">
-          <div className="grid gap-4">
-            <label className="space-y-2 text-sm">
-              <span>פרויקט</span>
-              <select
-                className={fieldClass}
-                value={incomeProjectId}
-                onChange={(e) => setIncomeProjectId(e.target.value)}
-              >
-                <option value="">בחרו פרויקט</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name} | {project.customerName}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <AdaptiveGrid variant="formTwoLoose">
+            <div className="grid gap-4">
               <label className="space-y-2 text-sm">
-                <span>סכום</span>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={incomeAmount}
-                  onChange={(e) => setIncomeAmount(e.target.value)}
-                />
-              </label>
-
-              <label className="space-y-2 text-sm">
-                <span>תאריך</span>
-                <Input
-                  type="date"
-                  value={incomeDate}
-                  onChange={(e) => setIncomeDate(e.target.value)}
-                />
-              </label>
-            </AdaptiveGrid>
-
-            <AdaptiveGrid variant="formTwoLoose">
-              <label className="space-y-2 text-sm">
-                <span>אמצעי תשלום</span>
+                <span>{HEBREW.project}</span>
                 <select
                   className={fieldClass}
-                  value={incomeMethod}
-                  onChange={(e) => setIncomeMethod(e.target.value)}
+                  value={incomeProjectId}
+                  onChange={(e) => setIncomeProjectId(e.target.value)}
                 >
-                  <option value="bank_transfer">Bank transfer</option>
-                  <option value="cash">Cash</option>
-                  <option value="credit_card">Credit card</option>
-                  <option value="check">Check</option>
-                  <option value="other">Other</option>
+                  <option value="">{HEBREW.selectProject}</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name} | {project.customerName}
+                    </option>
+                  ))}
                 </select>
               </label>
 
-              <label className="space-y-2 text-sm">
-                <span>אסמכתא</span>
-                <Input
-                  value={incomeReference}
-                  onChange={(e) => setIncomeReference(e.target.value)}
-                />
-              </label>
-            </AdaptiveGrid>
+              <AdaptiveGrid variant="formTwoLoose">
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.amount}</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={incomeAmount}
+                    onChange={(e) => setIncomeAmount(e.target.value)}
+                  />
+                </label>
 
-            <label className="space-y-2 text-sm">
-              <span>הערות</span>
-              <Textarea value={incomeNotes} onChange={(e) => setIncomeNotes(e.target.value)} />
-            </label>
-          </div>
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.date}</span>
+                  <Input
+                    type="date"
+                    value={incomeDate}
+                    onChange={(e) => setIncomeDate(e.target.value)}
+                  />
+                </label>
+              </AdaptiveGrid>
+
+              <AdaptiveGrid variant="formTwoLoose">
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.paymentMethod}</span>
+                  <select
+                    className={fieldClass}
+                    value={incomeMethod}
+                    onChange={(e) => setIncomeMethod(e.target.value)}
+                  >
+                    <option value="bank_transfer">{HEBREW.bankTransfer}</option>
+                    <option value="cash">{HEBREW.cash}</option>
+                    <option value="check">{HEBREW.check}</option>
+                    <option value="credit_card">{HEBREW.creditCard}</option>
+                    <option value="other">{HEBREW.other}</option>
+                  </select>
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.reference}</span>
+                  <Input
+                    value={incomeReference}
+                    onChange={(e) => setIncomeReference(e.target.value)}
+                  />
+                </label>
+              </AdaptiveGrid>
+
+              <label className="space-y-2 text-sm">
+                <span>{HEBREW.notes}</span>
+                <Textarea value={incomeNotes} onChange={(e) => setIncomeNotes(e.target.value)} />
+              </label>
+            </div>
           </fieldset>
 
           {incomeError ? <p className="text-sm text-destructive">{incomeError}</p> : null}
 
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setIncomeOpen(false)} disabled={incomeSubmitting}>
-              ביטול
+              {HEBREW.cancel}
             </Button>
             <Button type="button" onClick={() => void createIncome()} disabled={incomeSubmitting}>
-              {incomeSubmitting ? "שומר..." : "שמירת הכנסה"}
+              {incomeSubmitting ? HEBREW.saving : HEBREW.saveIncome}
             </Button>
           </div>
         </AdaptiveDialog>

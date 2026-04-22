@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,9 +31,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import type { PaymentRow } from "@/lib/payments";
 import {
-  EXPENSE_BUSINESS_DOMAINS,
   mapProjectTypeToExpenseDomain,
-  type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 
 export type ProjectOverview = {
@@ -103,7 +101,7 @@ function toNumber(value: unknown) {
 }
 
 function formatIls(value: number | null) {
-  if (value === null) return "—";
+  if (value === null) return "â€”";
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
     currency: "ILS",
@@ -112,7 +110,7 @@ function formatIls(value: number | null) {
 }
 
 function formatDate(value: string | null) {
-  if (!value) return "—";
+  if (!value) return "â€”";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("he-IL").format(date);
@@ -143,15 +141,15 @@ function getFirstDate(row: Record<string, unknown> | null, keys: string[]) {
 function taskStatusLabel(status: TaskStatus | string) {
   switch (status) {
     case "todo":
-      return "לביצוע";
+      return "×œ×‘×™×¦×•×¢";
     case "in_progress":
-      return "בתהליך";
+      return "×‘×ª×”×œ×™×š";
     case "blocked":
-      return "חסום";
+      return "×—×¡×•×";
     case "done":
-      return "בוצע";
+      return "×‘×•×¦×¢";
     case "cancelled":
-      return "בוטל";
+      return "×‘×•×˜×œ";
     default:
       return status;
   }
@@ -160,13 +158,13 @@ function taskStatusLabel(status: TaskStatus | string) {
 function taskPriorityLabel(priority: TaskPriority | string) {
   switch (priority) {
     case "low":
-      return "נמוכה";
+      return "× ×ž×•×›×”";
     case "medium":
-      return "בינונית";
+      return "×‘×™× ×•× ×™×ª";
     case "high":
-      return "גבוהה";
+      return "×’×‘×•×”×”";
     case "urgent":
-      return "דחופה";
+      return "×“×—×•×¤×”";
     default:
       return priority;
   }
@@ -367,7 +365,7 @@ export default function ProjectTabsClient({
     }
 
     const toastId = docsToastIdRef.current ?? undefined;
-    toast.success("הקבצים נוספו לרשימה", { id: toastId });
+    toast.success("×”×§×‘×¦×™× × ×•×¡×¤×• ×œ×¨×©×™×ž×”", { id: toastId });
     docsToastIdRef.current = null;
     setPendingDocsRefresh(false);
     setPendingDocsStuck(false);
@@ -386,7 +384,7 @@ export default function ProjectTabsClient({
     docsRefreshTimeoutRef.current = setTimeout(() => {
       const toastId = docsToastIdRef.current ?? undefined;
       toast(
-        "העלאה הושלמה, אבל הרשימה לא התעדכנה עדיין. נסה לרענן את הדף/הלשונית.",
+        "×”×¢×œ××” ×”×•×©×œ×ž×”, ××‘×œ ×”×¨×©×™×ž×” ×œ× ×”×ª×¢×“×›× ×” ×¢×“×™×™×Ÿ. × ×¡×” ×œ×¨×¢× ×Ÿ ××ª ×”×“×£/×”×œ×©×•× ×™×ª.",
         { id: toastId }
       );
       docsToastIdRef.current = null;
@@ -458,7 +456,7 @@ export default function ProjectTabsClient({
     setPendingDocsRefresh(false);
     setPendingDocsStuck(false);
 
-    const toastId = toast.loading("מעלה קבצים...");
+    const toastId = toast.loading("×ž×¢×œ×” ×§×‘×¦×™×...");
     docsToastIdRef.current = toastId;
 
     try {
@@ -470,7 +468,7 @@ export default function ProjectTabsClient({
         form.set("file", file);
         if (category.trim()) form.set("category", category.trim());
 
-        toast.loading(`מעלה קבצים... (${i + 1}/${total})`, { id: toastId });
+        toast.loading(`×ž×¢×œ×” ×§×‘×¦×™×... (${i + 1}/${total})`, { id: toastId });
 
         const res = await fetch("/api/projects/documents/upload", {
           method: "POST",
@@ -478,7 +476,7 @@ export default function ProjectTabsClient({
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
-          toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: json?.error ?? "" });
+          toast.error("×©×’×™××” ×‘×”×¢×œ××ª ×§×•×‘×¥", { id: toastId, description: json?.error ?? "" });
           setPendingDocsRefresh(false);
           setPendingDocsStuck(false);
           setPendingDocUploads((prev) =>
@@ -502,11 +500,11 @@ export default function ProjectTabsClient({
         );
       }
 
-      toast.loading("העלאה הושלמה — מעדכן רשימה...", { id: toastId });
+      toast.loading("×”×¢×œ××” ×”×•×©×œ×ž×” â€” ×ž×¢×“×›×Ÿ ×¨×©×™×ž×”...", { id: toastId });
       setPendingDocsRefresh(true);
       router.refresh();
     } catch (e: unknown) {
-      toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: getErrorMessage(e) });
+      toast.error("×©×’×™××” ×‘×”×¢×œ××ª ×§×•×‘×¥", { id: toastId, description: getErrorMessage(e) });
       setPendingDocsRefresh(false);
       setPendingDocsStuck(false);
       setPendingDocUploads((prev) => prev.map((p) => ({ ...p, status: "error" })));
@@ -550,7 +548,7 @@ export default function ProjectTabsClient({
     const value = editTagValue.trim();
     if (!documentId) return;
     if (!value) {
-      toast.error("יש להזין תג");
+      toast.error("×™×© ×œ×”×–×™×Ÿ ×ª×’");
       return;
     }
 
@@ -563,16 +561,16 @@ export default function ProjectTabsClient({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("שגיאה בעדכון תג", { description: json?.error ?? "" });
+        toast.error("×©×’×™××” ×‘×¢×“×›×•×Ÿ ×ª×’", { description: json?.error ?? "" });
         return;
       }
-      toast.success("התג עודכן");
+      toast.success("×”×ª×’ ×¢×•×“×›×Ÿ");
       setEditTagOpen(false);
       setEditTagDocumentId(null);
       setEditTagValue("");
       router.refresh();
     } catch (e: unknown) {
-      toast.error("שגיאה בעדכון תג", { description: getErrorMessage(e) });
+      toast.error("×©×’×™××” ×‘×¢×“×›×•×Ÿ ×ª×’", { description: getErrorMessage(e) });
     } finally {
       setEditTagSaving(false);
     }
@@ -580,7 +578,7 @@ export default function ProjectTabsClient({
 
   function openDeleteDocument(documentId: string) {
     const row = projectDocuments.find((d) => d.document_id === documentId);
-    const name = row?.title ?? row?.file_name ?? "מסמך";
+    const name = row?.title ?? row?.file_name ?? "×ž×¡×ž×š";
     setDeleteDocId(documentId);
     setDeleteDocName(name);
     setDeleteDocOpen(true);
@@ -597,16 +595,16 @@ export default function ProjectTabsClient({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("שגיאה במחיקה", { description: json?.error ?? "" });
+        toast.error("×©×’×™××” ×‘×ž×—×™×§×”", { description: json?.error ?? "" });
         return;
       }
-      toast.success("המסמך נמחק");
+      toast.success("×”×ž×¡×ž×š × ×ž×—×§");
       setDeleteDocOpen(false);
       setDeleteDocId(null);
       setDeleteDocName("");
       router.refresh();
     } catch (e: unknown) {
-      toast.error("שגיאה במחיקה", { description: getErrorMessage(e) });
+      toast.error("×©×’×™××” ×‘×ž×—×™×§×”", { description: getErrorMessage(e) });
     } finally {
       setDeleteDocDeleting(false);
     }
@@ -656,11 +654,11 @@ export default function ProjectTabsClient({
   const updateActualPriceNumber = Number(updateActualPriceValue);
   const updateActualPriceError =
     updateActualPriceValue.trim() === ""
-      ? "שדה חובה"
+      ? "×©×“×” ×—×•×‘×”"
       : !Number.isFinite(updateActualPriceNumber)
-        ? "חייב להיות מספר"
+        ? "×—×™×™×‘ ×œ×”×™×•×ª ×ž×¡×¤×¨"
         : updateActualPriceNumber <= 0
-          ? "חייב להיות גדול מ-0"
+          ? "×—×™×™×‘ ×œ×”×™×•×ª ×’×“×•×œ ×ž-0"
           : null;
   const canSaveActualPrice = !updateActualPriceError;
   const totalExpenses = toNumber(financials?.total_expenses) ?? null;
@@ -677,31 +675,31 @@ export default function ProjectTabsClient({
   const effectiveDisplayedGrossProfit = hasRecordedFinancialActivity ? interimProfit : grossProfit;
   const summaryItems = [
     {
-      label: "מחיר בפועל",
+      label: "×ž×—×™×¨ ×‘×¤×•×¢×œ",
       value: formatIls(effectiveActualPrice),
       tone: "text-foreground",
-      meta: agreedBasePrice !== null ? `מחיר בסיס: ${formatIls(agreedBasePrice)}` : undefined,
+      meta: agreedBasePrice !== null ? `×ž×—×™×¨ ×‘×¡×™×¡: ${formatIls(agreedBasePrice)}` : undefined,
     },
     {
-      label: "רווח גולמי",
+      label: "×¨×•×•×— ×’×•×œ×ž×™",
       value: formatIls(effectiveDisplayedGrossProfit),
       tone:
         effectiveDisplayedGrossProfit !== null && effectiveDisplayedGrossProfit < 0
           ? "text-destructive"
           : "text-foreground",
-      meta: hasRecordedFinancialActivity ? "מבוסס על פעילות שנרשמה" : "מבוסס על נתוני הפרויקט",
+      meta: hasRecordedFinancialActivity ? "×ž×‘×•×¡×¡ ×¢×œ ×¤×¢×™×œ×•×ª ×©× ×¨×©×ž×”" : "×ž×‘×•×¡×¡ ×¢×œ × ×ª×•× ×™ ×”×¤×¨×•×™×§×˜",
     },
     {
-      label: "התקדמות משימות",
+      label: "×”×ª×§×“×ž×•×ª ×ž×©×™×ž×•×ª",
       value: `${completion}%`,
       tone: "text-foreground",
-      meta: `${completedTasks}/${totalTasks} הושלמו`,
+      meta: `${completedTasks}/${totalTasks} ×”×•×©×œ×ž×•`,
     },
     {
-      label: "מסמכים",
+      label: "×ž×¡×ž×›×™×",
       value: String(projectDocuments.length),
       tone: "text-foreground",
-      meta: docsFilterCategory ? "מוצג לפי סינון פעיל" : "כל הקבצים המשויכים",
+      meta: docsFilterCategory ? "×ž×•×¦×’ ×œ×¤×™ ×¡×™× ×•×Ÿ ×¤×¢×™×œ" : "×›×œ ×”×§×‘×¦×™× ×”×ž×©×•×™×›×™×",
     },
   ] as const;
 
@@ -736,14 +734,14 @@ export default function ProjectTabsClient({
 
       const meta: string[] = [];
       if (method && method !== "-") meta.push(method);
-      if (reference) meta.push(`אסמכתא: ${reference}`);
+      if (reference) meta.push(`××¡×ž×›×ª×: ${reference}`);
 
       return {
         type: "income",
         id: p.id,
         date,
         amount,
-        title: "הכנסה",
+        title: "×”×›× ×¡×”",
         meta,
       };
     });
@@ -759,17 +757,17 @@ export default function ProjectTabsClient({
       const category = getString(item.expense, "category");
       const description = getString(item.expense, "description");
       const title =
-        (category && description && `${category} — ${description}`) ||
+        (category && description && `${category} â€” ${description}`) ||
         category ||
         description ||
-        "הוצאה";
+        "×”×•×¦××”";
 
       const includedInBase = Boolean(item.project_expense["included_in_base_price"]);
       const billedToCustomer = Boolean(item.project_expense["billed_to_customer"]);
 
       const meta: string[] = [];
-      if (includedInBase) meta.push("נכלל בבסיס");
-      if (billedToCustomer) meta.push("חויב ללקוח");
+      if (includedInBase) meta.push("× ×›×œ×œ ×‘×‘×¡×™×¡");
+      if (billedToCustomer) meta.push("×—×•×™×‘ ×œ×œ×§×•×—");
 
       return {
         type: "expense",
@@ -797,7 +795,7 @@ export default function ProjectTabsClient({
   async function updateActualPrice(next: number | null) {
     setUpdateActualPriceSaving(true);
     const toastId = "update-actual-price";
-    toast.loading("מעדכן מחיר בפועל...", { id: toastId });
+    toast.loading("×ž×¢×“×›×Ÿ ×ž×—×™×¨ ×‘×¤×•×¢×œ...", { id: toastId });
     try {
       const res = await fetch("/api/projects/update-actual-price", {
         method: "POST",
@@ -809,7 +807,7 @@ export default function ProjectTabsClient({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("שגיאה בעדכון מחיר בפועל", { id: toastId, description: json?.error ?? "" });
+        toast.error("×©×’×™××” ×‘×¢×“×›×•×Ÿ ×ž×—×™×¨ ×‘×¤×•×¢×œ", { id: toastId, description: json?.error ?? "" });
         return;
       }
 
@@ -819,11 +817,11 @@ export default function ProjectTabsClient({
           : null;
 
       setActualPriceUi(updatedActual);
-      toast.success("מחיר בפועל עודכן", { id: toastId });
+      toast.success("×ž×—×™×¨ ×‘×¤×•×¢×œ ×¢×•×“×›×Ÿ", { id: toastId });
       setUpdateActualPriceOpen(false);
       startTransition(() => router.refresh());
     } catch (e: unknown) {
-      toast.error("שגיאה בעדכון מחיר בפועל", { id: toastId, description: getErrorMessage(e) });
+      toast.error("×©×’×™××” ×‘×¢×“×›×•×Ÿ ×ž×—×™×¨ ×‘×¤×•×¢×œ", { id: toastId, description: getErrorMessage(e) });
     } finally {
       setUpdateActualPriceSaving(false);
     }
@@ -831,10 +829,10 @@ export default function ProjectTabsClient({
 
   return (
     <ClientOnly
-      fallback={<div className="text-muted-foreground text-base">טוען…</div>}
+      fallback={<div className="text-muted-foreground text-base">×˜×•×¢×Ÿâ€¦</div>}
     >
       {isPending ? (
-        <div className="mb-2 text-xs text-muted-foreground">מעדכן נתונים…</div>
+        <div className="mb-2 text-xs text-muted-foreground">×ž×¢×“×›×Ÿ × ×ª×•× ×™×â€¦</div>
       ) : null}
       <Tabs value={tabValue} onValueChange={setTab} dir="rtl">
         <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -853,30 +851,30 @@ export default function ProjectTabsClient({
           ))}
         </div>
       <TabsList className="h-auto flex-wrap gap-2 overflow-visible border-none bg-transparent p-0 shadow-none [&>*]:min-w-[7.5rem] [&>*]:flex-1 sm:[&>*]:flex-none">
-        <TabsTrigger value="overview">סקירה</TabsTrigger>
-        <TabsTrigger value="financial">פיננסי</TabsTrigger>
-        <TabsTrigger value="tasks">משימות</TabsTrigger>
-        <TabsTrigger value="documents">מסמכים</TabsTrigger>
+        <TabsTrigger value="overview">×¡×§×™×¨×”</TabsTrigger>
+        <TabsTrigger value="financial">×¤×™× × ×¡×™</TabsTrigger>
+        <TabsTrigger value="tasks">×ž×©×™×ž×•×ª</TabsTrigger>
+        <TabsTrigger value="documents">×ž×¡×ž×›×™×</TabsTrigger>
       </TabsList>
 
       <TabsContent value="overview">
         <AdaptiveGrid variant="projectOverview">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">מחירים</CardTitle>
+              <CardTitle className="text-base">×ž×—×™×¨×™×</CardTitle>
             </CardHeader>
             <CardContent className="text-sm space-y-2">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">מחיר בסיס</span>
+                <span className="text-muted-foreground">×ž×—×™×¨ ×‘×¡×™×¡</span>
                 <span>{formatIls(agreedBasePrice)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">מחיר בפועל</span>
+                <span className="text-muted-foreground">×ž×—×™×¨ ×‘×¤×•×¢×œ</span>
                 <span>{formatIls(effectiveActualPrice)}</span>
               </div>
               {actualPriceUi === null && agreedBasePrice !== null ? (
                 <div className="text-xs text-muted-foreground">
-                  ברירת מחדל: מחיר בפועל = מחיר בסיס
+                  ×‘×¨×™×¨×ª ×ž×—×“×œ: ×ž×—×™×¨ ×‘×¤×•×¢×œ = ×ž×—×™×¨ ×‘×¡×™×¡
                 </div>
               ) : null}
               <div className="pt-1">
@@ -887,7 +885,7 @@ export default function ProjectTabsClient({
                   onClick={() => setUpdateActualPriceOpen(true)}
                   disabled={agreedBasePrice === null && actualPriceUi === null}
                 >
-                  עדכון מחיר בפועל
+                  ×¢×“×›×•×Ÿ ×ž×—×™×¨ ×‘×¤×•×¢×œ
                 </Button>
               </div>
             </CardContent>
@@ -895,25 +893,25 @@ export default function ProjectTabsClient({
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">פיננסים</CardTitle>
+              <CardTitle className="text-base">×¤×™× × ×¡×™×</CardTitle>
             </CardHeader>
             <CardContent className="text-sm space-y-2">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">הכנסות (בינתיים)</span>
+                <span className="text-muted-foreground">×”×›× ×¡×•×ª (×‘×™× ×ª×™×™×)</span>
                 <span>{formatIls(paymentsTotal)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">הוצאות (בינתיים)</span>
+                <span className="text-muted-foreground">×”×•×¦××•×ª (×‘×™× ×ª×™×™×)</span>
                 <span>{formatIls(expensesTotal)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">רווח לבינתיים</span>
+                <span className="text-muted-foreground">×¨×•×•×— ×œ×‘×™× ×ª×™×™×</span>
                 <span className={interimProfit < 0 ? "text-destructive" : ""}>
                   {formatIls(interimProfit)}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">רווח גולמי (מחושב)</span>
+                <span className="text-muted-foreground">×¨×•×•×— ×’×•×œ×ž×™ (×ž×—×•×©×‘)</span>
                 <span
                   className={
                     effectiveDisplayedGrossProfit !== null && effectiveDisplayedGrossProfit < 0
@@ -925,28 +923,28 @@ export default function ProjectTabsClient({
                 </span>
               </div>
               <div className="text-xs text-muted-foreground">
-                מבוסס על הכנסות/הוצאות שנרשמו (לא בהכרח חופף לרווח הגולמי המחושב).
+                ×ž×‘×•×¡×¡ ×¢×œ ×”×›× ×¡×•×ª/×”×•×¦××•×ª ×©× ×¨×©×ž×• (×œ× ×‘×”×›×¨×— ×—×•×¤×£ ×œ×¨×•×•×— ×”×’×•×œ×ž×™ ×”×ž×—×•×©×‘).
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">התקדמות</CardTitle>
+              <CardTitle className="text-base">×”×ª×§×“×ž×•×ª</CardTitle>
             </CardHeader>
             <CardContent className="text-sm space-y-2">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">משימות פתוחות</span>
+                <span className="text-muted-foreground">×ž×©×™×ž×•×ª ×¤×ª×•×—×•×ª</span>
                 <span>{openTasks}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">השלמה</span>
+                <span className="text-muted-foreground">×”×©×œ×ž×”</span>
                 <span>{completion}%</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">מנהל פרויקט</span>
+                <span className="text-muted-foreground">×ž× ×”×œ ×¤×¨×•×™×§×˜</span>
                 <span className="truncate">
-                  {overview.project_manager_name ?? "—"}
+                  {overview.project_manager_name ?? "â€”"}
                 </span>
               </div>
             </CardContent>
@@ -955,16 +953,16 @@ export default function ProjectTabsClient({
           <AdaptiveCell variant="projectOverviewWide">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">תאריכים</CardTitle>
+              <CardTitle className="text-base">×ª××¨×™×›×™×</CardTitle>
             </CardHeader>
             <CardContent>
               <AdaptiveGrid variant="projectSummary" className="text-sm">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">תאריך התחלה</span>
+                <span className="text-muted-foreground">×ª××¨×™×š ×”×ª×—×œ×”</span>
                 <span>{formatDate(overview.start_date)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">תאריך סיום</span>
+                <span className="text-muted-foreground">×ª××¨×™×š ×¡×™×•×</span>
                 <span>{formatDate(overview.end_date)}</span>
               </div>
               </AdaptiveGrid>
@@ -978,23 +976,23 @@ export default function ProjectTabsClient({
         <AdaptiveGrid variant="projectOverview">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">סיכום</CardTitle>
+              <CardTitle className="text-base">×¡×™×›×•×</CardTitle>
             </CardHeader>
             <CardContent className="text-sm space-y-2">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">מחיר בסיס שסוכם</span>
+                <span className="text-muted-foreground">×ž×—×™×¨ ×‘×¡×™×¡ ×©×¡×•×›×</span>
                 <span>{formatIls(agreedBasePrice)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">מחיר בפועל</span>
+                <span className="text-muted-foreground">×ž×—×™×¨ ×‘×¤×•×¢×œ</span>
                 <span>{formatIls(effectiveActualPrice)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">הוצאות</span>
+                <span className="text-muted-foreground">×”×•×¦××•×ª</span>
                 <span>{formatIls(effectiveDisplayedExpenses)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">רווח גולמי</span>
+                <span className="text-muted-foreground">×¨×•×•×— ×’×•×œ×ž×™</span>
                 <span
                   className={
                     effectiveDisplayedGrossProfit !== null && effectiveDisplayedGrossProfit < 0
@@ -1006,18 +1004,18 @@ export default function ProjectTabsClient({
                 </span>
               </div>
               <div className="text-muted-foreground text-sm pt-2">
-                שים לב: הוצאות “נכלל בבסיס” לא אמורות לייצר חיוב נוסף ללקוח.
+                ×©×™× ×œ×‘: ×”×•×¦××•×ª â€œ× ×›×œ×œ ×‘×‘×¡×™×¡â€ ×œ× ××ž×•×¨×•×ª ×œ×™×™×¦×¨ ×—×™×•×‘ × ×•×¡×£ ×œ×œ×§×•×—.
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">תזרים</CardTitle>
+              <CardTitle className="text-base">×ª×–×¨×™×</CardTitle>
             </CardHeader>
             <CardContent className="text-sm space-y-2">
               {cashFlow.length === 0 ? (
-                <div className="text-muted-foreground">אין תנועות להצגה.</div>
+                <div className="text-muted-foreground">××™×Ÿ ×ª× ×•×¢×•×ª ×œ×”×¦×’×”.</div>
               ) : (
                 <div className="divide-y">
                   {cashFlow.map((ev) => {
@@ -1026,7 +1024,7 @@ export default function ProjectTabsClient({
                       ev.amount === null ? null : isIncome ? ev.amount : -ev.amount;
                     const amountText =
                       signedAmount === null
-                        ? "—"
+                        ? "â€”"
                         : formatIls(Math.abs(signedAmount));
 
                     return (
@@ -1067,23 +1065,23 @@ export default function ProjectTabsClient({
           <AdaptiveCell variant="projectOverviewWide">
           <Card>
             <CardHeader className="pb-3 flex-row items-center justify-between">
-              <CardTitle className="text-base">הוצאות</CardTitle>
+              <CardTitle className="text-base">×”×•×¦××•×ª</CardTitle>
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
                 onClick={() => setAddExpenseOpen(true)}
               >
-                הוספת הוצאה
+                ×”×•×¡×¤×ª ×”×•×¦××”
               </Button>
             </CardHeader>
             <CardContent className="text-sm">
               {expensesError ? (
                 <div className="text-destructive text-sm">
-                  שגיאה בטעינת הוצאות: {expensesError}
+                  ×©×’×™××” ×‘×˜×¢×™× ×ª ×”×•×¦××•×ª: {expensesError}
                 </div>
               ) : expensesUi.length === 0 ? (
-                <div className="text-muted-foreground">אין הוצאות להצגה.</div>
+                <div className="text-muted-foreground">××™×Ÿ ×”×•×¦××•×ª ×œ×”×¦×’×”.</div>
               ) : (
                 <div className="divide-y">
                   {expensesUi.map((item, idx) => {
@@ -1098,7 +1096,7 @@ export default function ProjectTabsClient({
                       getString(item.expense, "description") ??
                       getString(item.expense, "vendor_name") ??
                       getString(item.expense, "vendor") ??
-                      (expenseId ? `הוצאה ${expenseId.slice(0, 8)}` : "הוצאה");
+                      (expenseId ? `×”×•×¦××” ${expenseId.slice(0, 8)}` : "×”×•×¦××”");
 
                     const included = Boolean(item.project_expense["included_in_base_price"]);
                     const billed = Boolean(item.project_expense["billed_to_customer"]);
@@ -1109,12 +1107,12 @@ export default function ProjectTabsClient({
                           <div className="font-medium truncate">{title}</div>
                           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
                             <span>{formatDate(createdAt)}</span>
-                            {included ? <span>נכלל בבסיס</span> : <span>לא נכלל בבסיס</span>}
-                            {billed ? <span>חויב ללקוח</span> : <span>לא חויב ללקוח</span>}
+                            {included ? <span>× ×›×œ×œ ×‘×‘×¡×™×¡</span> : <span>×œ× × ×›×œ×œ ×‘×‘×¡×™×¡</span>}
+                            {billed ? <span>×—×•×™×‘ ×œ×œ×§×•×—</span> : <span>×œ× ×—×•×™×‘ ×œ×œ×§×•×—</span>}
                           </div>
                         </div>
                         <div className="shrink-0 font-medium">
-                          {amount === null ? "—" : formatIls(amount)}
+                          {amount === null ? "â€”" : formatIls(amount)}
                         </div>
                       </div>
                     );
@@ -1123,7 +1121,7 @@ export default function ProjectTabsClient({
               )}
 
               <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                <span className="text-muted-foreground">סה״כ הוצאות</span>
+                <span className="text-muted-foreground">×¡×”×´×› ×”×•×¦××•×ª</span>
                 <span className="font-medium">{formatIls(expensesTotal)}</span>
               </div>
             </CardContent>
@@ -1133,23 +1131,23 @@ export default function ProjectTabsClient({
           <AdaptiveCell variant="projectOverviewWide">
           <Card>
             <CardHeader className="pb-3 flex-row items-center justify-between">
-              <CardTitle className="text-base">הכנסות</CardTitle>
+              <CardTitle className="text-base">×”×›× ×¡×•×ª</CardTitle>
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
                 onClick={() => setAddIncomeOpen(true)}
               >
-                הוספת הכנסה
+                ×”×•×¡×¤×ª ×”×›× ×¡×”
               </Button>
             </CardHeader>
             <CardContent className="text-sm">
               {paymentsError ? (
                 <div className="text-destructive text-sm">
-                  שגיאה בטעינת הכנסות: {paymentsError}
+                  ×©×’×™××” ×‘×˜×¢×™× ×ª ×”×›× ×¡×•×ª: {paymentsError}
                 </div>
               ) : paymentsUi.length === 0 ? (
-                <div className="text-muted-foreground">אין הכנסות להצגה.</div>
+                <div className="text-muted-foreground">××™×Ÿ ×”×›× ×¡×•×ª ×œ×”×¦×’×”.</div>
               ) : (
                 <div className="divide-y">
                   {paymentsUi.map((p) => {
@@ -1162,7 +1160,7 @@ export default function ProjectTabsClient({
                       <div key={p.id} className="py-3 flex items-start justify-between gap-4">
                         <div className="min-w-0">
                           <div className="font-medium truncate">
-                            {reference ? `אסמכתא: ${reference}` : "הכנסה"}
+                            {reference ? `××¡×ž×›×ª×: ${reference}` : "×”×›× ×¡×”"}
                           </div>
                           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
                             <span>{formatDate(date)}</span>
@@ -1175,7 +1173,7 @@ export default function ProjectTabsClient({
                           ) : null}
                         </div>
                         <div className="shrink-0 font-medium">
-                          {amount === null ? "—" : formatIls(amount)}
+                          {amount === null ? "â€”" : formatIls(amount)}
                         </div>
                       </div>
                     );
@@ -1184,7 +1182,7 @@ export default function ProjectTabsClient({
               )}
 
               <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                <span className="text-muted-foreground">סה״כ הכנסות</span>
+                <span className="text-muted-foreground">×¡×”×´×› ×”×›× ×¡×•×ª</span>
                 <span className="font-medium">{formatIls(paymentsTotal)}</span>
               </div>
             </CardContent>
@@ -1221,18 +1219,18 @@ export default function ProjectTabsClient({
       <TabsContent value="documents">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">מסמכים</CardTitle>
+            <CardTitle className="text-base">×ž×¡×ž×›×™×</CardTitle>
           </CardHeader>
           <CardContent className="text-sm space-y-3">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div className="min-w-[240px] space-y-1">
-                <div className="text-xs text-muted-foreground">קטגוריה</div>
+                <div className="text-xs text-muted-foreground">×§×˜×’×•×¨×™×”</div>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={docsFilterCategory}
                   onChange={(e) => setDocsFilterCategory(e.target.value)}
                 >
-                  <option value="">כל הקטגוריות</option>
+                  <option value="">×›×œ ×”×§×˜×’×•×¨×™×•×ª</option>
                   {existingCategories.map((c) => (
                     <option key={c} value={c}>
                       {c}
@@ -1247,24 +1245,24 @@ export default function ProjectTabsClient({
                   disabled={docsUploading}
                   onClick={() => setUploadDocsOpen(true)}
                 >
-                  {docsUploading ? "מעלה..." : "העלאה"}
+                  {docsUploading ? "×ž×¢×œ×”..." : "×”×¢×œ××”"}
                 </Button>
                 <div className="text-xs text-muted-foreground">
-                  {filteredProjectDocuments.length} קבצים
+                  {filteredProjectDocuments.length} ×§×‘×¦×™×
                 </div>
               </div>
             </div>
 
             {projectDocumentsError ? (
               <div className="text-destructive text-sm">
-                שגיאה בטעינת מסמכים: {projectDocumentsError}
+                ×©×’×™××” ×‘×˜×¢×™× ×ª ×ž×¡×ž×›×™×: {projectDocumentsError}
               </div>
             ) : pendingDocUploads.length > 0 ? (
               <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
                 <div className="font-medium text-foreground">
                   {pendingDocUploads.every((p) => p.status === "done") && pendingDocsRefresh
-                    ? "מעדכן רשימה..."
-                    : "מעלה קבצים"}
+                    ? "×ž×¢×“×›×Ÿ ×¨×©×™×ž×”..."
+                    : "×ž×¢×œ×” ×§×‘×¦×™×"}
                 </div>
                 <div className="mt-2 space-y-1">
                   {pendingDocUploads.map((p) => (
@@ -1272,10 +1270,10 @@ export default function ProjectTabsClient({
                       <div className="truncate">{p.name}</div>
                       <div className="shrink-0">
                         {p.status === "done"
-                          ? "הועלה"
+                          ? "×”×•×¢×œ×”"
                           : p.status === "error"
-                            ? "שגיאה"
-                            : "מעלה..."}
+                            ? "×©×’×™××”"
+                            : "×ž×¢×œ×”..."}
                       </div>
                     </div>
                   ))}
@@ -1292,7 +1290,7 @@ export default function ProjectTabsClient({
                         setPendingDocUploads([]);
                       }}
                     >
-                      סגירה
+                      ×¡×’×™×¨×”
                     </Button>
                   </div>
                 ) : pendingDocUploads.every((p) => p.status === "done") &&
@@ -1305,20 +1303,20 @@ export default function ProjectTabsClient({
                       size="sm"
                       onClick={() => router.refresh()}
                     >
-                      רענון רשימה
+                      ×¨×¢× ×•×Ÿ ×¨×©×™×ž×”
                     </Button>
                   </div>
                 ) : null}
               </div>
             ) : filteredProjectDocuments.length === 0 ? (
               <div className="text-muted-foreground">
-                {docsFilterCategory ? "אין מסמכים בקטגוריה זו." : "אין מסמכים להצגה."}
+                {docsFilterCategory ? "××™×Ÿ ×ž×¡×ž×›×™× ×‘×§×˜×’×•×¨×™×” ×–×•." : "××™×Ÿ ×ž×¡×ž×›×™× ×œ×”×¦×’×”."}
               </div>
             ) : (
               <div className="divide-y rounded-md border">
                 {filteredProjectDocuments.map((d) => {
                   const name = d.title ?? d.file_name ?? "document";
-                  const when = d.uploaded_at ? formatDate(d.uploaded_at) : "—";
+                  const when = d.uploaded_at ? formatDate(d.uploaded_at) : "â€”";
 
                   const sourceType =
                     d.entity_type ??
@@ -1331,10 +1329,10 @@ export default function ProjectTabsClient({
 
                   const where =
                     sourceType === "task"
-                      ? "משימה"
+                      ? "×ž×©×™×ž×”"
                       : sourceType === "project"
-                        ? "פרויקט"
-                        : "—";
+                        ? "×¤×¨×•×™×§×˜"
+                        : "â€”";
 
                   // kindLabel intentionally omitted from UI (not very useful vs. filename/preview).
 
@@ -1360,8 +1358,8 @@ export default function ProjectTabsClient({
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
                           <span>{when}</span>
-                          <span>מקושר ל: {where}</span>
-                          {d.document_type ? <span>קטגוריה: {d.document_type}</span> : null}
+                          <span>×ž×§×•×©×¨ ×œ: {where}</span>
+                          {d.document_type ? <span>×§×˜×’×•×¨×™×”: {d.document_type}</span> : null}
                         </div>
                       </div>
 
@@ -1372,7 +1370,7 @@ export default function ProjectTabsClient({
                           size="sm"
                           onClick={() => openEditTag(d.document_id)}
                         >
-                          ערוך קטגוריה
+                          ×¢×¨×•×š ×§×˜×’×•×¨×™×”
                         </Button>
                         <Button
                           type="button"
@@ -1380,7 +1378,7 @@ export default function ProjectTabsClient({
                           size="sm"
                           onClick={() => openDeleteDocument(d.document_id)}
                         >
-                          מחיקה
+                          ×ž×—×™×§×”
                         </Button>
                       </div>
                     </div>
@@ -1406,13 +1404,13 @@ export default function ProjectTabsClient({
       >
         <AdaptiveDialog size="formMd">
           <DialogHeader>
-            <DialogTitle>העלאת מסמכים</DialogTitle>
-            <DialogDescription>בחר קטגוריה (אופציונלי) וקבצים להעלאה.</DialogDescription>
+            <DialogTitle>×”×¢×œ××ª ×ž×¡×ž×›×™×</DialogTitle>
+            <DialogDescription>×‘×—×¨ ×§×˜×’×•×¨×™×” (××•×¤×¦×™×•× ×œ×™) ×•×§×‘×¦×™× ×œ×”×¢×œ××”.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-1">
-              <div className="text-sm font-medium">קטגוריה (אופציונלי)</div>
+              <div className="text-sm font-medium">×§×˜×’×•×¨×™×” (××•×¤×¦×™×•× ×œ×™)</div>
               <AdaptiveGrid variant="formTwo" className="gap-2">
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -1429,20 +1427,20 @@ export default function ProjectTabsClient({
                     }
                   }}
                 >
-                  <option value="">ללא קטגוריה</option>
+                  <option value="">×œ×œ× ×§×˜×’×•×¨×™×”</option>
                   {existingCategories.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
                   ))}
-                  <option value="__new__">קטגוריה חדשה...</option>
+                  <option value="__new__">×§×˜×’×•×¨×™×” ×—×“×©×”...</option>
                 </select>
 
                 {uploadDocsCategoryMode === "new" ? (
                   <Input
                     value={uploadDocsNewCategory}
                     onChange={(e) => setUploadDocsNewCategory(e.target.value)}
-                    placeholder="שם קטגוריה חדשה"
+                    placeholder="×©× ×§×˜×’×•×¨×™×” ×—×“×©×”"
                     aria-invalid={!uploadDocsNewCategory.trim()}
                     className={
                       !uploadDocsNewCategory.trim()
@@ -1453,14 +1451,14 @@ export default function ProjectTabsClient({
                 ) : null}
                 {uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim() ? (
                   <div className="text-xs text-destructive">
-                    שדה חובה
+                    ×©×“×” ×—×•×‘×”
                   </div>
                 ) : null}
             </AdaptiveGrid>
           </div>
 
             <div className="space-y-1">
-              <div className="text-sm font-medium">קבצים</div>
+              <div className="text-sm font-medium">×§×‘×¦×™×</div>
               <input
                 ref={docsFileInputRef}
                 type="file"
@@ -1471,9 +1469,9 @@ export default function ProjectTabsClient({
               />
               <div className="flex items-center justify-between gap-2">
                 <Button type="button" variant="secondary" onClick={() => docsFileInputRef.current?.click()}>
-                  בחר קבצים
+                  ×‘×—×¨ ×§×‘×¦×™×
                 </Button>
-                <div className="text-xs text-muted-foreground">{uploadDocsFiles.length} קבצים</div>
+                <div className="text-xs text-muted-foreground">{uploadDocsFiles.length} ×§×‘×¦×™×</div>
               </div>
               {uploadDocsFiles.length > 0 ? (
                 <div className="text-xs text-muted-foreground truncate">
@@ -1485,7 +1483,7 @@ export default function ProjectTabsClient({
                 </div>
               ) : null}
               {uploadDocsFiles.length === 0 ? (
-                <div className="text-xs text-destructive">בחר לפחות קובץ אחד</div>
+                <div className="text-xs text-destructive">×‘×—×¨ ×œ×¤×—×•×ª ×§×•×‘×¥ ××—×“</div>
               ) : null}
             </div>
           </div>
@@ -1495,22 +1493,22 @@ export default function ProjectTabsClient({
             (uploadDocsFiles.length === 0 ||
               (uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim())) ? (
               <div className="me-auto text-xs text-destructive">
-                לא ניתן להעלות:{" "}
-                {uploadDocsFiles.length === 0 ? "קבצים" : ""}
+                ×œ× × ×™×ª×Ÿ ×œ×”×¢×œ×•×ª:{" "}
+                {uploadDocsFiles.length === 0 ? "×§×‘×¦×™×" : ""}
                 {uploadDocsFiles.length === 0 &&
                 uploadDocsCategoryMode === "new" &&
                 !uploadDocsNewCategory.trim()
                   ? ", "
                   : ""}
                 {uploadDocsCategoryMode === "new" && !uploadDocsNewCategory.trim()
-                  ? "שם קטגוריה"
+                  ? "×©× ×§×˜×’×•×¨×™×”"
                   : ""}
               </div>
             ) : (
               <div className="me-auto" />
             )}
             <Button type="button" variant="secondary" disabled={docsUploading} onClick={() => setUploadDocsOpen(false)}>
-              ביטול
+              ×‘×™×˜×•×œ
             </Button>
             <Button
               type="button"
@@ -1521,7 +1519,7 @@ export default function ProjectTabsClient({
               }
               onClick={() => void startUploadDocs()}
             >
-              {docsUploading ? "מעלה..." : "העלאה"}
+              {docsUploading ? "×ž×¢×œ×”..." : "×”×¢×œ××”"}
             </Button>
           </DialogFooter>
         </AdaptiveDialog>
@@ -1539,25 +1537,25 @@ export default function ProjectTabsClient({
       >
         <AdaptiveDialog size="formMd">
           <DialogHeader>
-            <DialogTitle>ערוך קטגוריה</DialogTitle>
-            <DialogDescription>עדכון קטגוריה למסמך (documents.document_type).</DialogDescription>
+            <DialogTitle>×¢×¨×•×š ×§×˜×’×•×¨×™×”</DialogTitle>
+            <DialogDescription>×¢×“×›×•×Ÿ ×§×˜×’×•×¨×™×” ×œ×ž×¡×ž×š (documents.document_type).</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
-            <div className="text-sm font-medium">קטגוריה</div>
+            <div className="text-sm font-medium">×§×˜×’×•×¨×™×”</div>
             <Input
               value={editTagValue}
               onChange={(e) => setEditTagValue(e.target.value)}
-              placeholder="למשל: חוזה / חשבונית / תמונות"
+              placeholder="×œ×ž×©×œ: ×—×•×–×” / ×—×©×‘×•× ×™×ª / ×ª×ž×•× ×•×ª"
             />
           </div>
 
           <DialogFooter className="mt-4">
             <Button type="button" variant="secondary" onClick={() => setEditTagOpen(false)}>
-              ביטול
+              ×‘×™×˜×•×œ
             </Button>
             <Button type="button" disabled={editTagSaving || !editTagValue.trim()} onClick={() => void saveEditTag()}>
-              {editTagSaving ? "שומר..." : "שמירה"}
+              {editTagSaving ? "×©×•×ž×¨..." : "×©×ž×™×¨×”"}
             </Button>
           </DialogFooter>
         </AdaptiveDialog>
@@ -1575,14 +1573,14 @@ export default function ProjectTabsClient({
       >
         <AdaptiveDialog size="formMd">
           <DialogHeader>
-            <DialogTitle>מחיקת מסמך</DialogTitle>
+            <DialogTitle>×ž×—×™×§×ª ×ž×¡×ž×š</DialogTitle>
             <DialogDescription>
-              פעולה זו תמחק את הרשומה ואת הקובץ מ־Storage (אם יש הרשאה).
+              ×¤×¢×•×œ×” ×–×• ×ª×ž×—×§ ××ª ×”×¨×©×•×ž×” ×•××ª ×”×§×•×‘×¥ ×žÖ¾Storage (×× ×™×© ×”×¨×©××”).
             </DialogDescription>
           </DialogHeader>
 
           <div className="text-sm">
-            למחוק את: <span className="font-medium">{deleteDocName || "מסמך"}</span> ?
+            ×œ×ž×—×•×§ ××ª: <span className="font-medium">{deleteDocName || "×ž×¡×ž×š"}</span> ?
           </div>
 
           <DialogFooter className="mt-4">
@@ -1592,7 +1590,7 @@ export default function ProjectTabsClient({
               disabled={deleteDocDeleting}
               onClick={() => setDeleteDocOpen(false)}
             >
-              ביטול
+              ×‘×™×˜×•×œ
             </Button>
             <Button
               type="button"
@@ -1600,7 +1598,7 @@ export default function ProjectTabsClient({
               disabled={deleteDocDeleting || !deleteDocId}
               onClick={() => void confirmDeleteDocument()}
             >
-              {deleteDocDeleting ? "מוחק..." : "מחיקה"}
+              {deleteDocDeleting ? "×ž×•×—×§..." : "×ž×—×™×§×”"}
             </Button>
           </DialogFooter>
         </AdaptiveDialog>
@@ -1615,19 +1613,19 @@ export default function ProjectTabsClient({
       >
         <AdaptiveDialog size="formMd">
           <DialogHeader>
-            <DialogTitle>עדכון מחיר בפועל</DialogTitle>
+            <DialogTitle>×¢×“×›×•×Ÿ ×ž×—×™×¨ ×‘×¤×•×¢×œ</DialogTitle>
             <DialogDescription>
-              אם לא עודכן מחיר בפועל, המערכת תציג את מחיר הבסיס כברירת מחדל.
+              ×× ×œ× ×¢×•×“×›×Ÿ ×ž×—×™×¨ ×‘×¤×•×¢×œ, ×”×ž×¢×¨×›×ª ×ª×¦×™×’ ××ª ×ž×—×™×¨ ×”×‘×¡×™×¡ ×›×‘×¨×™×¨×ª ×ž×—×“×œ.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
-            <div className="text-sm font-medium">מחיר בפועל *</div>
+            <div className="text-sm font-medium">×ž×—×™×¨ ×‘×¤×•×¢×œ *</div>
             <Input
               inputMode="numeric"
               value={updateActualPriceValue}
               onChange={(e) => setUpdateActualPriceValue(e.target.value)}
-              placeholder="לדוגמה: 12000"
+              placeholder="×œ×“×•×’×ž×”: 12000"
               aria-invalid={Boolean(updateActualPriceError)}
               className={
                 updateActualPriceError
@@ -1640,7 +1638,7 @@ export default function ProjectTabsClient({
             ) : null}
             {agreedBasePrice !== null ? (
               <div className="text-xs text-muted-foreground">
-                מחיר בסיס: {formatIls(agreedBasePrice)}
+                ×ž×—×™×¨ ×‘×¡×™×¡: {formatIls(agreedBasePrice)}
               </div>
             ) : null}
           </div>
@@ -1648,7 +1646,7 @@ export default function ProjectTabsClient({
           <DialogFooter className="mt-4">
             {!canSaveActualPrice && !updateActualPriceSaving ? (
               <div className="me-auto text-xs text-destructive">
-                לא ניתן לשמור: מחיר בפועל
+                ×œ× × ×™×ª×Ÿ ×œ×©×ž×•×¨: ×ž×—×™×¨ ×‘×¤×•×¢×œ
               </div>
             ) : (
               <div className="me-auto" />
@@ -1659,7 +1657,7 @@ export default function ProjectTabsClient({
               onClick={() => setUpdateActualPriceOpen(false)}
               disabled={updateActualPriceSaving}
             >
-              ביטול
+              ×‘×™×˜×•×œ
             </Button>
             <Button
               type="button"
@@ -1667,14 +1665,14 @@ export default function ProjectTabsClient({
               onClick={() => void updateActualPrice(null)}
               disabled={updateActualPriceSaving || agreedBasePrice === null}
             >
-              איפוס למחיר בסיס
+              ××™×¤×•×¡ ×œ×ž×—×™×¨ ×‘×¡×™×¡
             </Button>
             <Button
               type="button"
               onClick={() => void updateActualPrice(updateActualPriceNumber)}
               disabled={updateActualPriceSaving || !canSaveActualPrice}
             >
-              {updateActualPriceSaving ? "שומר..." : "שמירה"}
+              {updateActualPriceSaving ? "×©×•×ž×¨..." : "×©×ž×™×¨×”"}
             </Button>
           </DialogFooter>
         </AdaptiveDialog>
@@ -1792,10 +1790,10 @@ function ProjectTasksTab({
   const createTaskValidationMessage = (() => {
     if (creating || canSubmit) return "";
     const missing: string[] = [];
-    if (subjectError) missing.push("כותרת");
-    if (dueDateError) missing.push("תאריך יעד");
-    if (assignedUserError) missing.push("שיוך למשתמש");
-    return missing.length > 0 ? `חסרים שדות חובה: ${missing.join(", ")}` : "";
+    if (subjectError) missing.push("×›×•×ª×¨×ª");
+    if (dueDateError) missing.push("×ª××¨×™×š ×™×¢×“");
+    if (assignedUserError) missing.push("×©×™×•×š ×œ×ž×©×ª×ž×©");
+    return missing.length > 0 ? `×—×¡×¨×™× ×©×“×•×ª ×—×•×‘×”: ${missing.join(", ")}` : "";
   })();
 
   async function createTask() {
@@ -1818,7 +1816,7 @@ function ProjectTasksTab({
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error("שגיאה ביצירת משימה", { description: json?.error ?? "" });
+        toast.error("×©×’×™××” ×‘×™×¦×™×¨×ª ×ž×©×™×ž×”", { description: json?.error ?? "" });
         return;
       }
       const createdTaskId =
@@ -1840,7 +1838,7 @@ function ProjectTasksTab({
           });
           const uploadJson = await uploadRes.json().catch(() => ({}));
           if (!uploadRes.ok) {
-            toast.error("שגיאה בהעלאת קובץ", {
+            toast.error("×©×’×™××” ×‘×”×¢×œ××ª ×§×•×‘×¥", {
               description: uploadJson?.error ?? "",
             });
             break;
@@ -1848,7 +1846,7 @@ function ProjectTasksTab({
         }
       }
 
-      toast.success("המשימה נוצרה");
+      toast.success("×”×ž×©×™×ž×” × ×•×¦×¨×”");
       setCreateOpen(false);
       setSubject("");
       setDescription("");
@@ -1859,7 +1857,7 @@ function ProjectTasksTab({
       setCreateFiles([]);
       onChange();
     } catch (e: unknown) {
-      toast.error("שגיאה ביצירת משימה", { description: getErrorMessage(e) });
+      toast.error("×©×’×™××” ×‘×™×¦×™×¨×ª ×ž×©×™×ž×”", { description: getErrorMessage(e) });
     } finally {
       setCreating(false);
     }
@@ -1875,10 +1873,10 @@ function ProjectTasksTab({
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error("שגיאה בעדכון סטטוס", { description: json?.error ?? "" });
+        toast.error("×©×’×™××” ×‘×¢×“×›×•×Ÿ ×¡×˜×˜×•×¡", { description: json?.error ?? "" });
         return false;
       }
-      toast.success("הסטטוס עודכן");
+      toast.success("×”×¡×˜×˜×•×¡ ×¢×•×“×›×Ÿ");
       setLocalTasks((prev) =>
         prev.map((row) => {
           const rowId = getFirstString(row, ["task_id", "id"]);
@@ -1890,7 +1888,7 @@ function ProjectTasksTab({
       onChange();
       return true;
     } catch (e: unknown) {
-      toast.error("שגיאה בעדכון סטטוס", { description: getErrorMessage(e) });
+      toast.error("×©×’×™××” ×‘×¢×“×›×•×Ÿ ×¡×˜×˜×•×¡", { description: getErrorMessage(e) });
       return false;
     } finally {
       setUpdatingId(null);
@@ -1907,10 +1905,10 @@ function ProjectTasksTab({
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error("שגיאה בעדכון עדיפות", { description: json?.error ?? "" });
+        toast.error("×©×’×™××” ×‘×¢×“×›×•×Ÿ ×¢×“×™×¤×•×ª", { description: json?.error ?? "" });
         return false;
       }
-      toast.success("העדיפות עודכנה");
+      toast.success("×”×¢×“×™×¤×•×ª ×¢×•×“×›× ×”");
       setLocalTasks((prev) =>
         prev.map((row) => {
           const rowId = getFirstString(row, ["task_id", "id"]);
@@ -1922,7 +1920,7 @@ function ProjectTasksTab({
       onChange();
       return true;
     } catch (e: unknown) {
-      toast.error("שגיאה בעדכון עדיפות", { description: getErrorMessage(e) });
+      toast.error("×©×’×™××” ×‘×¢×“×›×•×Ÿ ×¢×“×™×¤×•×ª", { description: getErrorMessage(e) });
       return false;
     } finally {
       setUpdatingId(null);
@@ -1984,48 +1982,48 @@ function ProjectTasksTab({
     <>
       <Card>
         <CardHeader className="pb-3 flex-row items-center justify-between">
-          <CardTitle className="text-base">משימות</CardTitle>
+          <CardTitle className="text-base">×ž×©×™×ž×•×ª</CardTitle>
           <Button
             type="button"
             variant="secondary"
             size="sm"
             onClick={() => setCreateOpen(true)}
           >
-            הוספת משימה
+            ×”×•×¡×¤×ª ×ž×©×™×ž×”
           </Button>
         </CardHeader>
         <CardContent className="text-sm">
           <div className="flex flex-wrap gap-2 mb-3">
             <div className="rounded-md border bg-card px-3 py-2">
-              <div className="text-xs text-muted-foreground">סה״כ</div>
+              <div className="text-xs text-muted-foreground">×¡×”×´×›</div>
               <div className="font-medium">{totalTasks}</div>
             </div>
             <div className="rounded-md border bg-card px-3 py-2">
-              <div className="text-xs text-muted-foreground">פתוחות</div>
+              <div className="text-xs text-muted-foreground">×¤×ª×•×—×•×ª</div>
               <div className="font-medium">{openTasks}</div>
             </div>
             <div className="rounded-md border bg-card px-3 py-2">
-              <div className="text-xs text-muted-foreground">הושלמו</div>
+              <div className="text-xs text-muted-foreground">×”×•×©×œ×ž×•</div>
               <div className="font-medium">{completedTasks}</div>
             </div>
           </div>
 
           {error ? (
             <div className="text-destructive text-sm">
-              שגיאה בטעינת משימות: {error}
+              ×©×’×™××” ×‘×˜×¢×™× ×ª ×ž×©×™×ž×•×ª: {error}
             </div>
           ) : tasks.length === 0 ? (
-            <div className="text-muted-foreground">אין משימות להצגה.</div>
+            <div className="text-muted-foreground">××™×Ÿ ×ž×©×™×ž×•×ª ×œ×”×¦×’×”.</div>
           ) : (
             <div className="rounded-md border overflow-x-auto">
               <table className="min-w-[760px] w-full text-sm">
                 <thead className="bg-muted/50 text-muted-foreground">
                   <tr>
-                    <th className="text-right font-medium px-3 py-2">משימה</th>
-                    <th className="text-right font-medium px-3 py-2">תאריך יעד</th>
-                    <th className="text-right font-medium px-3 py-2">משויך</th>
-                    <th className="text-right font-medium px-3 py-2">עדיפות</th>
-                    <th className="text-right font-medium px-3 py-2">סטטוס</th>
+                    <th className="text-right font-medium px-3 py-2">×ž×©×™×ž×”</th>
+                    <th className="text-right font-medium px-3 py-2">×ª××¨×™×š ×™×¢×“</th>
+                    <th className="text-right font-medium px-3 py-2">×ž×©×•×™×š</th>
+                    <th className="text-right font-medium px-3 py-2">×¢×“×™×¤×•×ª</th>
+                    <th className="text-right font-medium px-3 py-2">×¡×˜×˜×•×¡</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -2039,7 +2037,7 @@ function ProjectTasksTab({
                         "name",
                         "task_title",
                         "summary",
-                      ]) ?? "משימה";
+                      ]) ?? "×ž×©×™×ž×”";
                     const status =
                       (getFirstString(t, ["status", "task_status"]) ??
                         "todo") as TaskStatus;
@@ -2082,10 +2080,10 @@ function ProjectTasksTab({
                           )}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
-                          {due ? formatDate(due) : "—"}
+                          {due ? formatDate(due) : "â€”"}
                         </td>
                         <td className="px-3 py-2">
-                          {assignee ? assignee : "—"}
+                          {assignee ? assignee : "â€”"}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           {priority ? (
@@ -2104,7 +2102,7 @@ function ProjectTasksTab({
                               }}
                             />
                           ) : (
-                            "—"
+                            "â€”"
                           )}
                         </td>
                         <td className="px-3 py-2">
@@ -2136,12 +2134,12 @@ function ProjectTasksTab({
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AdaptiveDialog size="formMd">
           <DialogHeader>
-            <DialogTitle>אישור שינוי סטטוס</DialogTitle>
+            <DialogTitle>××™×©×•×¨ ×©×™× ×•×™ ×¡×˜×˜×•×¡</DialogTitle>
             <DialogDescription>
               {pendingStatus
-                ? `לשנות את הסטטוס של “${pendingStatus.subject}” מ־${taskStatusLabel(
+                ? `×œ×©× ×•×ª ××ª ×”×¡×˜×˜×•×¡ ×©×œ â€œ${pendingStatus.subject}â€ ×žÖ¾${taskStatusLabel(
                     pendingStatus.current
-                  )} ל־${taskStatusLabel(pendingStatus.next)}?`
+                  )} ×œÖ¾${taskStatusLabel(pendingStatus.next)}?`
                 : " "}
             </DialogDescription>
           </DialogHeader>
@@ -2155,14 +2153,14 @@ function ProjectTasksTab({
                 setPendingStatus(null);
               }}
             >
-              ביטול
+              ×‘×™×˜×•×œ
             </Button>
             <Button
               type="button"
               disabled={savingStatus}
               onClick={() => void confirmStatusChange()}
             >
-              {savingStatus ? "מעדכן..." : "אישור"}
+              {savingStatus ? "×ž×¢×“×›×Ÿ..." : "××™×©×•×¨"}
             </Button>
           </DialogFooter>
         </AdaptiveDialog>
@@ -2174,12 +2172,12 @@ function ProjectTasksTab({
       >
         <AdaptiveDialog size="formMd">
           <DialogHeader>
-            <DialogTitle>אישור שינוי עדיפות</DialogTitle>
+            <DialogTitle>××™×©×•×¨ ×©×™× ×•×™ ×¢×“×™×¤×•×ª</DialogTitle>
             <DialogDescription>
               {pendingPriority
-                ? `לשנות את העדיפות של “${pendingPriority.subject}” מ־${taskPriorityLabel(
+                ? `×œ×©× ×•×ª ××ª ×”×¢×“×™×¤×•×ª ×©×œ â€œ${pendingPriority.subject}â€ ×žÖ¾${taskPriorityLabel(
                     pendingPriority.current
-                  )} ל־${taskPriorityLabel(pendingPriority.next)}?`
+                  )} ×œÖ¾${taskPriorityLabel(pendingPriority.next)}?`
                 : " "}
             </DialogDescription>
           </DialogHeader>
@@ -2193,14 +2191,14 @@ function ProjectTasksTab({
                 setPendingPriority(null);
               }}
             >
-              ביטול
+              ×‘×™×˜×•×œ
             </Button>
             <Button
               type="button"
               disabled={savingPriority}
               onClick={() => void confirmPriorityChange()}
             >
-              {savingPriority ? "מעדכן..." : "אישור"}
+              {savingPriority ? "×ž×¢×“×›×Ÿ..." : "××™×©×•×¨"}
             </Button>
           </DialogFooter>
         </AdaptiveDialog>
@@ -2215,8 +2213,8 @@ function ProjectTasksTab({
       >
         <AdaptiveDialog size="formLg">
           <DialogHeader>
-            <DialogTitle>הוספת משימה</DialogTitle>
-            <DialogDescription>משימה תתווסף לפרויקט ותופיע ברשימה.</DialogDescription>
+            <DialogTitle>×”×•×¡×¤×ª ×ž×©×™×ž×”</DialogTitle>
+            <DialogDescription>×ž×©×™×ž×” ×ª×ª×•×•×¡×£ ×œ×¤×¨×•×™×§×˜ ×•×ª×•×¤×™×¢ ×‘×¨×©×™×ž×”.</DialogDescription>
           </DialogHeader>
 
           <form
@@ -2227,30 +2225,30 @@ function ProjectTasksTab({
             }}
           >
             <div className="space-y-1">
-              <div className="text-sm font-medium">כותרת *</div>
+              <div className="text-sm font-medium">×›×•×ª×¨×ª *</div>
               <Input
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                placeholder="לדוגמה: להתקשר לספק"
+                placeholder="×œ×“×•×’×ž×”: ×œ×”×ª×§×©×¨ ×œ×¡×¤×§"
                 aria-invalid={subjectError}
                 className={
                   subjectError ? "border-destructive focus-visible:ring-destructive" : ""
                 }
               />
               {subjectError ? (
-                <div className="text-xs text-destructive">שדה חובה</div>
+                <div className="text-xs text-destructive">×©×“×” ×—×•×‘×”</div>
               ) : null}
             </div>
             <div className="space-y-1">
-              <div className="text-sm font-medium">תיאור (אופציונלי)</div>
+              <div className="text-sm font-medium">×ª×™××•×¨ (××•×¤×¦×™×•× ×œ×™)</div>
               <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="פרטים נוספים..."
+                placeholder="×¤×¨×˜×™× × ×•×¡×¤×™×..."
               />
             </div>
             <div className="space-y-1">
-              <div className="text-sm font-medium">תאריך יעד *</div>
+              <div className="text-sm font-medium">×ª××¨×™×š ×™×¢×“ *</div>
               <Input
                 type="date"
                 value={dueDate}
@@ -2261,15 +2259,15 @@ function ProjectTasksTab({
                 }
               />
               {dueDateError ? (
-                <div className="text-xs text-destructive">שדה חובה</div>
+                <div className="text-xs text-destructive">×©×“×” ×—×•×‘×”</div>
               ) : null}
             </div>
 
             <div className="space-y-1">
-              <div className="text-sm font-medium">שיוך למשתמש *</div>
+              <div className="text-sm font-medium">×©×™×•×š ×œ×ž×©×ª×ž×© *</div>
               {assignableUsersError ? (
                 <div className="text-xs text-destructive">
-                  שגיאה בטעינת משתמשים: {assignableUsersError}
+                  ×©×’×™××” ×‘×˜×¢×™× ×ª ×ž×©×ª×ž×©×™×: {assignableUsersError}
                 </div>
               ) : (
                 <select
@@ -2280,7 +2278,7 @@ function ProjectTasksTab({
                   value={assignedUserId}
                   onChange={(e) => setAssignedUserId(e.target.value)}
                 >
-                  <option value="">בחר משתמש…</option>
+                  <option value="">×‘×—×¨ ×ž×©×ª×ž×©â€¦</option>
                   {assignableUsers
                     .filter((u) => u.active !== false)
                     .map((u) => (
@@ -2291,13 +2289,13 @@ function ProjectTasksTab({
                 </select>
               )}
               {!assignableUsersError && assignedUserError ? (
-                <div className="text-xs text-destructive">שדה חובה</div>
+                <div className="text-xs text-destructive">×©×“×” ×—×•×‘×”</div>
               ) : null}
             </div>
 
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
-                <div className="text-sm font-medium">עדיפות *</div>
+                <div className="text-sm font-medium">×¢×“×™×¤×•×ª *</div>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={effectivePriority}
@@ -2311,7 +2309,7 @@ function ProjectTasksTab({
                 </select>
               </div>
               <div className="space-y-1">
-                <div className="text-sm font-medium">סטטוס *</div>
+                <div className="text-sm font-medium">×¡×˜×˜×•×¡ *</div>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={effectiveStatus}
@@ -2376,10 +2374,10 @@ function ProjectTasksTab({
                 variant="secondary"
                 onClick={() => setCreateOpen(false)}
               >
-                ביטול
+                ×‘×™×˜×•×œ
               </Button>
               <Button type="submit" disabled={creating || !canSubmit}>
-                {creating ? "יוצר..." : "יצירה"}
+                {creating ? "×™×•×¦×¨..." : "×™×¦×™×¨×”"}
               </Button>
             </DialogFooter>
           </form>
@@ -2438,7 +2436,7 @@ function StatusDropdown({
         ))}
         <DropdownMenuSeparator />
         <div className="px-2 py-1 text-xs text-muted-foreground">
-          שינוי סטטוס יעדכן את המשימה
+          ×©×™× ×•×™ ×¡×˜×˜×•×¡ ×™×¢×“×›×Ÿ ××ª ×”×ž×©×™×ž×”
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -2492,7 +2490,7 @@ function PriorityDropdown({
         ))}
         <DropdownMenuSeparator />
         <div className="px-2 py-1 text-xs text-muted-foreground">
-          שינוי עדיפות יעדכן את המשימה
+          ×©×™× ×•×™ ×¢×“×™×¤×•×ª ×™×¢×“×›×Ÿ ××ª ×”×ž×©×™×ž×”
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -2520,14 +2518,14 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "";
 }
 
-const expenseBusinessDomainLabels: Record<ExpenseBusinessDomain, string> = {
-  home: "Home",
-  charity: "Charity",
-  general_business: "General",
-  logistics_projects: "Logistics",
-  sales: "Sales",
-  property_management: "Property management",
-};
+const PROJECT_EXPENSE_CATEGORY_OPTIONS = [
+  "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3",
+  "\u05e8\u05db\u05e9",
+  "\u05ea\u05d7\u05d1\u05d5\u05e8\u05d4",
+  "\u05d0\u05d5\u05db\u05dc",
+  "\u05d0\u05d7\u05e8",
+] as const;
+const OTHER_PROJECT_EXPENSE_CATEGORY = "\u05d0\u05d7\u05e8";
 
 function AddExpenseDialog({
   open,
@@ -2547,22 +2545,22 @@ function AddExpenseDialog({
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [amountTouched, setAmountTouched] = useState(false);
   const [categoryTouched, setCategoryTouched] = useState(false);
+  const [categoryOtherTouched, setCategoryOtherTouched] = useState(false);
   const [expenseDateTouched, setExpenseDateTouched] = useState(false);
-  const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain>(
-    mapProjectTypeToExpenseDomain(projectType)
-  );
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
+  const [categoryOther, setCategoryOther] = useState("");
   const [description, setDescription] = useState("");
   const [expenseDate, setExpenseDate] = useState(getTodayDate());
   const [notes, setNotes] = useState("");
   const [includedInBase, setIncludedInBase] = useState(false);
   const [billedToCustomer, setBilledToCustomer] = useState(false);
+  const finalCategory =
+    category === OTHER_PROJECT_EXPENSE_CATEGORY ? categoryOther.trim() : category.trim();
   const canSubmit =
     Number.isFinite(Number(amount)) &&
     Number(amount) > 0 &&
-    Boolean(businessDomain) &&
-    Boolean(category.trim()) &&
+    Boolean(finalCategory) &&
     Boolean(expenseDate);
 
   const amountNumber = Number(amount);
@@ -2574,18 +2572,21 @@ function AddExpenseDialog({
       : amountNumber <= 0
       ? "\u05d7\u05d9\u05d9\u05d1 \u05dc\u05d4\u05d9\u05d5\u05ea \u05d2\u05d3\u05d5\u05dc \u05de-0"
       : null;
-  const categoryError = !category.trim() ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
+  const categoryError = !category.trim()
+    ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4"
+    : category === OTHER_PROJECT_EXPENSE_CATEGORY && !categoryOther.trim()
+    ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4"
+    : null;
   const expenseDateError = !expenseDate ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
-  const businessDomainError = !businessDomain ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
   const showAmountError = (submitAttempted || amountTouched) && Boolean(amountError);
-  const showCategoryError = (submitAttempted || categoryTouched) && Boolean(categoryError);
+  const showCategoryError =
+    (submitAttempted || categoryTouched || categoryOtherTouched) && Boolean(categoryError);
   const showExpenseDateError = (submitAttempted || expenseDateTouched) && Boolean(expenseDateError);
   const addExpenseValidationMessage = (() => {
     if (!submitAttempted || submitting || canSubmit) return "";
     const missing: string[] = [];
     if (amountError) missing.push("\u05e1\u05db\u05d5\u05dd");
-    if (businessDomainError) missing.push("\u05ea\u05d7\u05d5\u05dd");
-    if (categoryError) missing.push("\u05e4\u05d9\u05e8\u05d5\u05d8");
+    if (categoryError) missing.push("\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4");
     if (expenseDateError) missing.push("\u05ea\u05d0\u05e8\u05d9\u05da");
     return missing.length > 0
       ? `\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e9\u05de\u05d5\u05e8: ${missing.join(", ")}`
@@ -2597,8 +2598,8 @@ function AddExpenseDialog({
       setSubmitAttempted(false);
       setAmountTouched(false);
       setCategoryTouched(false);
+      setCategoryOtherTouched(false);
       setExpenseDateTouched(false);
-      setBusinessDomain(mapProjectTypeToExpenseDomain(projectType));
       setExpenseDate((prev) => prev || getTodayDate());
     }
   }, [open, projectType]);
@@ -2608,8 +2609,7 @@ function AddExpenseDialog({
 
     const amountNumber = Number(amount);
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) return;
-    if (!businessDomain) return;
-    if (!category.trim()) return;
+    if (!finalCategory) return;
     if (!expenseDate) return;
 
     setSubmitting(true);
@@ -2619,9 +2619,8 @@ function AddExpenseDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           project_id: projectId,
-          business_domain: businessDomain,
           amount: amountNumber,
-          category,
+          category: finalCategory,
           description: description.trim() ? description : undefined,
           notes: notes.trim() ? notes : undefined,
           expense_date: expenseDate ? expenseDate : null,
@@ -2639,8 +2638,8 @@ function AddExpenseDialog({
       toast.success("\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05d5\u05e1\u05e4\u05d4");
       setAmount("");
       setCategory("");
+      setCategoryOther("");
       setDescription("");
-      setBusinessDomain(mapProjectTypeToExpenseDomain(projectType));
       setExpenseDate(getTodayDate());
       setNotes("");
       setIncludedInBase(false);
@@ -2698,21 +2697,7 @@ function AddExpenseDialog({
           </div>
 
           <div className="text-xs text-muted-foreground">
-            {"\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05ea\u05d9\u05e9\u05de\u05e8 \u05e2\u05dd \u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d4\u05e0\u05d5\u05db\u05d7\u05d9. \u05e0\u05d9\u05ea\u05df \u05dc\u05d1\u05d7\u05d5\u05e8 \u05d0\u05ea \u05d4\u05ea\u05d7\u05d5\u05dd \u05d4\u05e2\u05e1\u05e7\u05d9 \u05d1\u05d0\u05d5\u05e4\u05df \u05d9\u05d3\u05e0\u05d9."}
-          </div>
-          <div className="space-y-1">
-            <div className="text-sm font-medium">{"\u05ea\u05d7\u05d5\u05dd \u05e2\u05e1\u05e7\u05d9 *"}</div>
-            <select
-              value={businessDomain}
-              onChange={(e) => setBusinessDomain(e.target.value as ExpenseBusinessDomain)}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                <option key={domain} value={domain}>
-                  {expenseBusinessDomainLabels[domain]}
-                </option>
-              ))}
-            </select>
+            {"\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05ea\u05d9\u05e9\u05de\u05e8 \u05e2\u05dd \u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d4\u05e0\u05d5\u05db\u05d7\u05d9."}
           </div>
           <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
@@ -2738,14 +2723,44 @@ function AddExpenseDialog({
               ) : null}
             </div>
             <div className="space-y-1">
-              <div className="text-sm font-medium">{"\u05e4\u05d9\u05e8\u05d5\u05d8 *"}</div>
-              <Input
+              <div className="text-sm font-medium">{"\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4 *"}</div>
+              <select
                 value={category}
                 onChange={(e) => {
                   setCategory(e.target.value);
                   setCategoryTouched(true);
                 }}
                 onBlur={() => setCategoryTouched(true)}
+                aria-invalid={showCategoryError}
+                className={
+                  showCategoryError
+                    ? "border-destructive focus-visible:ring-destructive"
+                    : "h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                }
+              >
+                <option value="">{"\u05d1\u05d7\u05d9\u05e8\u05ea \u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4..."}</option>
+                {PROJECT_EXPENSE_CATEGORY_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              {showCategoryError ? (
+                <div className="text-xs text-destructive">{categoryError}</div>
+              ) : null}
+            </div>
+          </AdaptiveGrid>
+
+          {category === OTHER_PROJECT_EXPENSE_CATEGORY ? (
+            <div className="space-y-1">
+              <div className="text-sm font-medium">{"\u05de\u05d4 \u05d4\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4? *"}</div>
+              <Input
+                value={categoryOther}
+                onChange={(e) => {
+                  setCategoryOther(e.target.value);
+                  setCategoryOtherTouched(true);
+                }}
+                onBlur={() => setCategoryOtherTouched(true)}
                 placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: \u05d3\u05dc\u05e7"}
                 aria-invalid={showCategoryError}
                 className={
@@ -2758,7 +2773,7 @@ function AddExpenseDialog({
                 <div className="text-xs text-destructive">{categoryError}</div>
               ) : null}
             </div>
-          </AdaptiveGrid>
+          ) : null}
 
           <div className="space-y-1">
             <div className="text-sm font-medium">{"\u05ea\u05d9\u05d0\u05d5\u05e8 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
