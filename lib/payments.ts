@@ -31,30 +31,82 @@ type BuildPaymentInsertInput = {
   orderId?: string | null;
   paymentDate: string;
   paymentMethod: string;
+  paymentStatus?: "pending" | "cleared" | "rejected";
   projectId?: string | null;
   propertyId?: string | null;
   recordedBy: string;
   referenceNumber?: string | null;
   notes?: string | null;
+  dueDate?: string | null;
+  requiresSplit?: boolean;
 };
 
+function normalizePaymentMethod(method: string) {
+  return method.trim().toLowerCase();
+}
+
+function defaultPaymentStatusForMethod(method: string) {
+  return normalizePaymentMethod(method) === "check" ? "pending" : "cleared";
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 export function buildPaymentInsert(input: BuildPaymentInsertInput) {
+  const paymentStatus =
+    input.paymentStatus ?? defaultPaymentStatusForMethod(input.paymentMethod);
+  const dueDate =
+    input.dueDate ??
+    (normalizePaymentMethod(input.paymentMethod) === "check" ? input.paymentDate : null);
+  const requiresSplit = input.requiresSplit ?? false;
+  const amountTotal = roundMoney(input.amountTotal);
+  const amountBeforeVat = requiresSplit ? roundMoney(amountTotal / 1.18) : null;
+  const amountIncludingVat = requiresSplit ? amountTotal : null;
+  const netAmount = requiresSplit ? amountBeforeVat : amountTotal;
+
   return {
     payment_date: input.paymentDate,
-    amount_total: input.amountTotal,
+    amount_total: amountTotal,
     payment_method: input.paymentMethod,
     reference_number: input.referenceNumber ?? null,
-    amount_including_vat: input.amountTotal,
-    amount_before_vat: input.amountTotal,
-    net_amount: input.amountTotal,
-    payment_status: "paid",
+    amount_including_vat: amountIncludingVat,
+    amount_before_vat: amountBeforeVat,
+    net_amount: netAmount,
+    payment_status: paymentStatus,
     business_domain: input.businessDomain,
     project_id: input.projectId ?? null,
     order_id: input.orderId ?? null,
     property_id: input.propertyId ?? null,
-    due_date: null,
-    requires_split: false,
+    due_date: dueDate,
+    requires_split: requiresSplit,
     notes: input.notes ?? null,
     recorded_by: input.recordedBy,
   };
+}
+
+export function paymentRecordStatusLabel(status: string | null | undefined) {
+  switch (status) {
+    case "cleared":
+      return "התקבל";
+    case "pending":
+      return "ממתין לפירעון";
+    case "rejected":
+      return "נדחה";
+    default:
+      return status || "-";
+  }
+}
+
+export function paymentRecordStatusClasses(status: string | null | undefined) {
+  switch (status) {
+    case "cleared":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "pending":
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    case "rejected":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "border-slate-200 bg-slate-100 text-slate-700";
+  }
 }

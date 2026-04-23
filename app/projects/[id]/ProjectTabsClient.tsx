@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { AdaptiveCell, AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import {
   Dialog,
   DialogDescription,
@@ -28,8 +28,12 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
-import type { PaymentRow } from "@/lib/payments";
+import { ORDER_PAYMENT_METHOD_OPTIONS, paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import {
+  paymentRecordStatusClasses,
+  paymentRecordStatusLabel,
+  type PaymentRow,
+} from "@/lib/payments";
 import { formatShortDate } from "@/lib/date";
 import {
   mapProjectTypeToExpenseDomain,
@@ -49,6 +53,7 @@ export type ProjectOverview = {
   customer_name: string;
   project_manager_id: string | null;
   project_manager_name: string | null;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -264,7 +269,7 @@ export default function ProjectTabsClient({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [docsUploading, setDocsUploading] = useState(false);
   const docsFileInputRef = useRef<HTMLInputElement | null>(null);
   const [docsFilterCategory, setDocsFilterCategory] = useState<string>("");
@@ -326,8 +331,9 @@ export default function ProjectTabsClient({
     return projectDocuments.filter((d) => d.document_type === docsFilterCategory);
   }, [projectDocuments, docsFilterCategory]);
 
-  const allowedTabs = new Set(["overview", "financial", "tasks", "documents"]);
-  const tabFromUrl = searchParams.get("tab");
+  const allowedTabs = new Set(["overview", "tasks", "documents"]);
+  const rawTabFromUrl = searchParams.get("tab");
+  const tabFromUrl = rawTabFromUrl === "financial" ? "overview" : rawTabFromUrl;
   const [tabValue, setTabValue] = useState(
     tabFromUrl && allowedTabs.has(tabFromUrl) ? tabFromUrl : "overview"
   );
@@ -671,36 +677,6 @@ export default function ProjectTabsClient({
   const hasRecordedFinancialActivity = paymentsUi.length > 0 || expensesUi.length > 0;
   const effectiveDisplayedExpenses = hasRecordedFinancialActivity ? expensesTotal : totalExpenses;
   const effectiveDisplayedGrossProfit = hasRecordedFinancialActivity ? interimProfit : grossProfit;
-  const summaryItems = [
-    {
-      label: "מחיר בפועל",
-      value: formatIls(effectiveActualPrice),
-      tone: "text-foreground",
-      meta: agreedBasePrice !== null ? `מחיר בסיס: ${formatIls(agreedBasePrice)}` : undefined,
-    },
-    {
-      label: "רווח גולמי",
-      value: formatIls(effectiveDisplayedGrossProfit),
-      tone:
-        effectiveDisplayedGrossProfit !== null && effectiveDisplayedGrossProfit < 0
-          ? "text-destructive"
-          : "text-foreground",
-      meta: hasRecordedFinancialActivity ? "מבוסס על פעילות שנרשמה" : "מבוסס על נתוני הפרויקט",
-    },
-    {
-      label: "התקדמות משימות",
-      value: `${completion}%`,
-      tone: "text-foreground",
-      meta: `${completedTasks}/${totalTasks} הושלמו`,
-    },
-    {
-      label: "מסמכים",
-      value: String(projectDocuments.length),
-      tone: "text-foreground",
-      meta: docsFilterCategory ? "מוצג לפי סינון פעיל" : "כל הקבצים המשויכים",
-    },
-  ] as const;
-
   const tasksSorted = useMemo(() => {
     const copy = [...projectTasksUi];
     copy.sort((a, b) => {
@@ -829,152 +805,28 @@ export default function ProjectTabsClient({
     <ClientOnly
       fallback={<div className="text-muted-foreground text-base">טוען…</div>}
     >
-      {isPending ? (
-        <div className="mb-2 text-xs text-muted-foreground">מעדכן נתונים…</div>
-      ) : null}
       <Tabs value={tabValue} onValueChange={setTab} dir="rtl">
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {summaryItems.map((item) => (
-            <Card key={item.label} className="border-border/70 bg-background/80 shadow-sm">
-              <CardContent className="p-4">
-                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  {item.label}
-                </div>
-                <div className={`mt-2 text-2xl font-semibold ${item.tone}`}>{item.value}</div>
-                {item.meta ? (
-                  <div className="mt-1 text-xs text-muted-foreground">{item.meta}</div>
-                ) : null}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      <TabsList className="h-auto flex-wrap gap-2 overflow-visible border-none bg-transparent p-0 shadow-none [&>*]:min-w-[7.5rem] [&>*]:flex-1 sm:[&>*]:flex-none">
-        <TabsTrigger value="overview">סקירה</TabsTrigger>
-        <TabsTrigger value="financial">פיננסי</TabsTrigger>
-        <TabsTrigger value="tasks">משימות</TabsTrigger>
-        <TabsTrigger value="documents">מסמכים</TabsTrigger>
+      <TabsList className="mx-auto flex h-auto w-fit max-w-full flex-wrap justify-center gap-2 overflow-visible border-b-0 bg-transparent p-0 shadow-none [&>*]:min-w-[8.5rem] [&>*]:flex-none [&>*]:rounded-t-xl [&>*]:border [&>*]:border-foreground/25 [&>*]:bg-gradient-to-b [&>*]:from-foreground/10 [&>*]:to-foreground/22 [&>*]:px-5 [&>*]:py-3 [&>*]:text-base [&>*]:font-semibold [&>*]:text-foreground [&>*]:shadow-sm [&>*]:transition-colors [&>*]:hover:border-foreground/40 [&>*]:hover:from-foreground/16 [&>*]:hover:to-foreground/28 [&>*]:hover:text-foreground [&>*]:data-[state=active]:border-foreground [&>*]:data-[state=active]:bg-none [&>*]:data-[state=active]:bg-foreground [&>*]:data-[state=active]:text-background">
+        <TabsTrigger value="overview">כספים</TabsTrigger>
+        <TabsTrigger value="tasks" className="gap-2">
+          <span>משימות</span>
+          <Badge variant="secondary" className="rounded-full px-2 py-0 text-[11px]">
+            {completion}%
+          </Badge>
+        </TabsTrigger>
+        <TabsTrigger value="documents" className="gap-2">
+          <span>מסמכים</span>
+          <Badge variant="secondary" className="rounded-full px-2 py-0 text-[11px]">
+            {projectDocuments.length}
+          </Badge>
+        </TabsTrigger>
       </TabsList>
 
-      <TabsContent value="overview">
-        <AdaptiveGrid variant="projectOverview">
+      <TabsContent value="overview" className="mx-auto mt-4 w-full max-w-6xl">
+        <AdaptiveGrid variant="projectOverview" className="xl:grid-cols-2">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">מחירים</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">מחיר בסיס</span>
-                <span>{formatIls(agreedBasePrice)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">מחיר בפועל</span>
-                <span>{formatIls(effectiveActualPrice)}</span>
-              </div>
-              {actualPriceUi === null && agreedBasePrice !== null ? (
-                <div className="text-xs text-muted-foreground">
-                  ברירת מחדל: מחיר בפועל = מחיר בסיס
-                </div>
-              ) : null}
-              <div className="pt-1">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setUpdateActualPriceOpen(true)}
-                  disabled={agreedBasePrice === null && actualPriceUi === null}
-                >
-                  עדכון מחיר בפועל
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">פיננסים</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">הכנסות (בינתיים)</span>
-                <span>{formatIls(paymentsTotal)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">הוצאות (בינתיים)</span>
-                <span>{formatIls(expensesTotal)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">רווח לבינתיים</span>
-                <span className={interimProfit < 0 ? "text-destructive" : ""}>
-                  {formatIls(interimProfit)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">רווח גולמי (מחושב)</span>
-                <span
-                  className={
-                    effectiveDisplayedGrossProfit !== null && effectiveDisplayedGrossProfit < 0
-                      ? "text-destructive"
-                      : ""
-                  }
-                >
-                  {formatIls(effectiveDisplayedGrossProfit)}
-                </span>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                מבוסס על הכנסות/הוצאות שנרשמו (לא בהכרח חופף לרווח הגולמי המחושב).
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">התקדמות</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">משימות פתוחות</span>
-                <span>{openTasks}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">השלמה</span>
-                <span>{completion}%</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">מנהל פרויקט</span>
-                <span className="truncate">
-                  {overview.project_manager_name ?? "—"}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <AdaptiveCell variant="projectOverviewWide">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">תאריכים</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <AdaptiveGrid variant="projectSummary" className="text-sm">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">תאריך התחלה</span>
-                <span>{formatDate(overview.start_date)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">תאריך סיום</span>
-                <span>{formatDate(overview.end_date)}</span>
-              </div>
-              </AdaptiveGrid>
-            </CardContent>
-          </Card>
-          </AdaptiveCell>
-        </AdaptiveGrid>
-      </TabsContent>
-
-      <TabsContent value="financial">
-        <AdaptiveGrid variant="projectOverview">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">סיכום</CardTitle>
+              <CardTitle className="text-base">סיכום כספי</CardTitle>
             </CardHeader>
             <CardContent className="text-sm space-y-2">
               <div className="flex items-center justify-between gap-4">
@@ -1001,8 +853,24 @@ export default function ProjectTabsClient({
                   {formatIls(effectiveDisplayedGrossProfit)}
                 </span>
               </div>
+              {actualPriceUi === null && agreedBasePrice !== null ? (
+                <div className="text-xs text-muted-foreground">
+                  ברירת מחדל: מחיר בפועל = מחיר בסיס
+                </div>
+              ) : null}
               <div className="text-muted-foreground text-sm pt-2">
                 שים לב: הוצאות “נכלל בבסיס” לא אמורות לייצר חיוב נוסף ללקוח.
+              </div>
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  onClick={() => setUpdateActualPriceOpen(true)}
+                  disabled={agreedBasePrice === null && actualPriceUi === null}
+                >
+                  עדכון מחיר בפועל
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -1011,11 +879,11 @@ export default function ProjectTabsClient({
             <CardHeader className="pb-3">
               <CardTitle className="text-base">תזרים</CardTitle>
             </CardHeader>
-            <CardContent className="text-sm space-y-2">
+            <CardContent className="space-y-2 text-sm xl:flex xl:min-h-[28rem] xl:flex-col">
               {cashFlow.length === 0 ? (
                 <div className="text-muted-foreground">אין תנועות להצגה.</div>
               ) : (
-                <div className="divide-y">
+                <div className="divide-y xl:max-h-[24rem] xl:overflow-y-auto xl:pl-1">
                   {cashFlow.map((ev) => {
                     const isIncome = ev.type === "income";
                     const signedAmount =
@@ -1060,20 +928,19 @@ export default function ProjectTabsClient({
             </CardContent>
           </Card>
 
-          <AdaptiveCell variant="projectOverviewWide">
           <Card>
             <CardHeader className="pb-3 flex-row items-center justify-between">
               <CardTitle className="text-base">הוצאות</CardTitle>
               <Button
                 type="button"
-                variant="secondary"
+                variant="default"
                 size="sm"
                 onClick={() => setAddExpenseOpen(true)}
               >
                 הוספת הוצאה
               </Button>
             </CardHeader>
-            <CardContent className="text-sm">
+            <CardContent className="text-sm xl:flex xl:min-h-[28rem] xl:flex-col">
               {expensesError ? (
                 <div className="text-destructive text-sm">
                   שגיאה בטעינת הוצאות: {expensesError}
@@ -1081,7 +948,7 @@ export default function ProjectTabsClient({
               ) : expensesUi.length === 0 ? (
                 <div className="text-muted-foreground">אין הוצאות להצגה.</div>
               ) : (
-                <div className="divide-y">
+                <div className="divide-y xl:max-h-[24rem] xl:overflow-y-auto xl:pl-1">
                   {expensesUi.map((item, idx) => {
                     const expenseId = getString(item.project_expense, "expense_id");
                     const amount = toNumber(item.expense?.amount);
@@ -1118,28 +985,26 @@ export default function ProjectTabsClient({
                 </div>
               )}
 
-              <div className="mt-3 pt-3 border-t flex items-center justify-between">
+              <div className="mt-3 flex items-center justify-between border-t pt-3 xl:mt-auto">
                 <span className="text-muted-foreground">סה״כ הוצאות</span>
                 <span className="font-medium">{formatIls(expensesTotal)}</span>
               </div>
             </CardContent>
           </Card>
-          </AdaptiveCell>
 
-          <AdaptiveCell variant="projectOverviewWide">
           <Card>
             <CardHeader className="pb-3 flex-row items-center justify-between">
               <CardTitle className="text-base">הכנסות</CardTitle>
               <Button
                 type="button"
-                variant="secondary"
+                variant="default"
                 size="sm"
                 onClick={() => setAddIncomeOpen(true)}
               >
                 הוספת הכנסה
               </Button>
             </CardHeader>
-            <CardContent className="text-sm">
+            <CardContent className="text-sm xl:flex xl:min-h-[28rem] xl:flex-col">
               {paymentsError ? (
                 <div className="text-destructive text-sm">
                   שגיאה בטעינת הכנסות: {paymentsError}
@@ -1147,12 +1012,14 @@ export default function ProjectTabsClient({
               ) : paymentsUi.length === 0 ? (
                 <div className="text-muted-foreground">אין הכנסות להצגה.</div>
               ) : (
-                <div className="divide-y">
+                <div className="divide-y xl:max-h-[24rem] xl:overflow-y-auto xl:pl-1">
                   {paymentsUi.map((p) => {
                     const amount = toNumber(p.amount_total);
                     const date = p.payment_date ?? p.created_at ?? null;
                     const method = paymentMethodLabel(p.payment_method);
                     const reference = p.reference_number ?? "";
+                    const paymentStatus = typeof p.payment_status === "string" ? p.payment_status : "";
+                    const dueDate = typeof p.due_date === "string" ? p.due_date : null;
 
                     return (
                       <div key={p.id} className="py-3 flex items-start justify-between gap-4">
@@ -1163,7 +1030,15 @@ export default function ProjectTabsClient({
                           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
                             <span>{formatDate(date)}</span>
                             <span>{method}</span>
+                            {dueDate ? <span>פירעון: {formatDate(dueDate)}</span> : null}
                           </div>
+                          {paymentStatus ? (
+                            <div className="mt-2">
+                              <Badge className={paymentRecordStatusClasses(paymentStatus)}>
+                                {paymentRecordStatusLabel(paymentStatus)}
+                              </Badge>
+                            </div>
+                          ) : null}
                           {p.notes ? (
                             <div className="text-xs text-muted-foreground mt-1 truncate">
                               {p.notes}
@@ -1179,17 +1054,16 @@ export default function ProjectTabsClient({
                 </div>
               )}
 
-              <div className="mt-3 pt-3 border-t flex items-center justify-between">
+              <div className="mt-3 flex items-center justify-between border-t pt-3 xl:mt-auto">
                 <span className="text-muted-foreground">סה״כ הכנסות</span>
                 <span className="font-medium">{formatIls(paymentsTotal)}</span>
               </div>
             </CardContent>
           </Card>
-          </AdaptiveCell>
         </AdaptiveGrid>
       </TabsContent>
 
-      <TabsContent value="tasks">
+      <TabsContent value="tasks" className="mx-auto mt-4 w-full max-w-6xl">
         <ProjectTasksTab
           projectId={overview.id}
           customerId={overview.customer_id}
@@ -1214,7 +1088,7 @@ export default function ProjectTabsClient({
         />
       </TabsContent>
 
-      <TabsContent value="documents">
+      <TabsContent value="documents" className="mx-auto mt-4 w-full max-w-6xl">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">מסמכים</CardTitle>
@@ -2875,13 +2749,17 @@ function AddIncomeDialog({
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [requiresSplit, setRequiresSplit] = useState(false);
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
+  const requiresDueDate = paymentMethod === "check";
   const canSubmit =
     Number.isFinite(Number(amount)) &&
     Number(amount) > 0 &&
     Boolean(paymentDate) &&
-    Boolean(paymentMethod.trim());
+    Boolean(paymentMethod.trim()) &&
+    (!requiresDueDate || Boolean(dueDate));
 
   const amountNumber = Number(amount);
   const amountError =
@@ -2894,6 +2772,7 @@ function AddIncomeDialog({
       : null;
   const paymentDateError = !paymentDate ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
   const paymentMethodError = !paymentMethod.trim() ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
+  const dueDateError = requiresDueDate && !dueDate ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
 
   const showAmountError = (submitAttempted || amountTouched) && Boolean(amountError);
   const showPaymentDateError =
@@ -2907,6 +2786,7 @@ function AddIncomeDialog({
     if (amountError) missing.push("\u05e1\u05db\u05d5\u05dd");
     if (paymentDateError) missing.push("\u05ea\u05d0\u05e8\u05d9\u05da");
     if (paymentMethodError) missing.push("\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd");
+    if (dueDateError) missing.push("\u05ea\u05d0\u05e8\u05d9\u05da \u05e4\u05d9\u05e8\u05e2\u05d5\u05df");
     return missing.length > 0
       ? `\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e9\u05de\u05d5\u05e8: ${missing.join(", ")}`
       : "";
@@ -2919,6 +2799,7 @@ function AddIncomeDialog({
       setPaymentDateTouched(false);
       setPaymentMethodTouched(false);
       setPaymentDate((prev) => prev || getTodayDate());
+      setRequiresSplit(false);
     }
   }, [open]);
 
@@ -2929,6 +2810,7 @@ function AddIncomeDialog({
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) return;
     if (!paymentDate) return;
     if (!paymentMethod.trim()) return;
+    if (paymentMethod === "check" && !dueDate) return;
 
     setSubmitting(true);
     try {
@@ -2940,6 +2822,8 @@ function AddIncomeDialog({
           project_id: projectId,
           amount_total: amountNumber,
           payment_date: paymentDate ? paymentDate : null,
+          due_date: paymentMethod === "check" ? dueDate : null,
+          requires_split: requiresSplit,
           payment_method: paymentMethod.trim() ? paymentMethod : undefined,
           reference_number: referenceNumber.trim() ? referenceNumber : undefined,
           notes: notes.trim() ? notes : undefined,
@@ -2967,6 +2851,8 @@ function AddIncomeDialog({
       setAmount("");
       setPaymentDate(getTodayDate());
       setPaymentMethod("");
+      setDueDate("");
+      setRequiresSplit(false);
       setReferenceNumber("");
       setNotes("");
       onCreated(createdPayment);
@@ -3047,25 +2933,69 @@ function AddIncomeDialog({
           <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd *"}</div>
-              <Input
+              <select
                 value={paymentMethod}
                 onChange={(e) => {
-                  setPaymentMethod(e.target.value);
+                  const nextMethod = e.target.value;
+                  setPaymentMethod(nextMethod);
+                  if (nextMethod !== "check") setDueDate("");
                   setPaymentMethodTouched(true);
                 }}
                 onBlur={() => setPaymentMethodTouched(true)}
-                placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: \u05d4\u05e2\u05d1\u05e8\u05d4 \u05d1\u05e0\u05e7\u05d0\u05d9\u05ea"}
                 aria-invalid={showPaymentMethodError}
                 className={
                   showPaymentMethodError
-                    ? "border-destructive focus-visible:ring-destructive"
-                    : ""
+                    ? "h-10 w-full rounded-md border border-destructive bg-background px-3 text-sm focus-visible:ring-destructive"
+                    : "h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 }
-              />
+              >
+                <option value="">בחר אמצעי תשלום...</option>
+                {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
               {showPaymentMethodError ? (
                 <div className="text-xs text-destructive">{paymentMethodError}</div>
               ) : null}
+              {requiresDueDate ? (
+                <div className="text-xs text-muted-foreground">
+                  {"צ'ק נשמר כ\"ממתין לפירעון\" עד לתאריך הפירעון."}
+                </div>
+              ) : null}
             </div>
+            <div className="space-y-1">
+              {requiresDueDate ? (
+                <>
+                  <div className="text-sm font-medium">תאריך פירעון *</div>
+                  <Input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    aria-invalid={Boolean(dueDateError)}
+                    className={
+                      dueDateError ? "border-destructive focus-visible:ring-destructive" : ""
+                    }
+                  />
+                  {dueDateError ? (
+                    <div className="text-xs text-destructive">{dueDateError}</div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="text-sm font-medium">{"\u05d0\u05e1\u05de\u05db\u05ea\u05d0 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
+                  <Input
+                    value={referenceNumber}
+                    onChange={(e) => setReferenceNumber(e.target.value)}
+                    placeholder={"\u05de\u05e1\u05e4\u05e8 \u05e7\u05d1\u05dc\u05d4/\u05d4\u05e2\u05d1\u05e8\u05d4"}
+                  />
+                </>
+              )}
+            </div>
+          </AdaptiveGrid>
+
+          {requiresDueDate ? (
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05d0\u05e1\u05de\u05db\u05ea\u05d0 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
               <Input
@@ -3074,7 +3004,16 @@ function AddIncomeDialog({
                 placeholder={"\u05de\u05e1\u05e4\u05e8 \u05e7\u05d1\u05dc\u05d4/\u05d4\u05e2\u05d1\u05e8\u05d4"}
               />
             </div>
-          </AdaptiveGrid>
+          ) : null}
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={requiresSplit}
+              onChange={(e) => setRequiresSplit(e.target.checked)}
+            />
+            <span>כולל מע״מ 18%</span>
+          </label>
 
           <div className="space-y-1">
             <div className="text-sm font-medium">{"\u05d4\u05e2\u05e8\u05d5\u05ea (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>

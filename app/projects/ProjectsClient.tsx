@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Pencil, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import {
   AdaptiveDialog,
   AdaptiveGrid,
@@ -14,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -134,6 +136,65 @@ function profitValue(row: ProjectRow) {
   const expenses = getNumber(row, "total_expenses");
   if (actualPrice !== null && expenses !== null) return actualPrice - expenses;
   return null;
+}
+
+function paymentStatusValue(row: ProjectRow) {
+  const value = getString(row, "payment_status_list");
+  if (value === "paid" || value === "partial" || value === "unpaid" || value === "unpriced") {
+    return value;
+  }
+
+  const paidTotal = getNumber(row, "paid_total") ?? 0;
+  const amountDue = getNumber(row, "amount_due") ?? 0;
+  const actualPrice = getNumber(row, "actual_price");
+  const agreedBasePrice = getNumber(row, "agreed_base_price");
+  const dueBase = actualPrice ?? agreedBasePrice ?? 0;
+
+  if (dueBase <= 0) return "unpriced";
+  if (amountDue <= 0 || paidTotal >= amountDue) return "paid";
+  if (paidTotal > 0) return "partial";
+  return "unpaid";
+}
+
+function paymentStatusLabel(status: "paid" | "partial" | "unpaid" | "unpriced") {
+  switch (status) {
+    case "paid":
+      return "שולם במלואו";
+    case "partial":
+      return "שולם חלקית";
+    case "unpaid":
+      return "לא שולם";
+    case "unpriced":
+      return "לא סוכם תשלום";
+  }
+}
+
+function projectStatusBadgeClasses(status: string) {
+  switch (status) {
+    case "completed":
+      return "border-transparent bg-emerald-100 text-black";
+    case "cancelled":
+      return "border-transparent bg-rose-100 text-black";
+    case "planned":
+    case "active":
+    case "on_hold":
+      return "border-transparent bg-blue-100 text-blue-900";
+    default:
+      return "border-transparent bg-blue-100 text-blue-900";
+  }
+}
+
+function paymentStatusBadgeClasses(status: "paid" | "partial" | "unpaid" | "unpriced") {
+  switch (status) {
+    case "paid":
+      return paymentStatusClasses("paid");
+    case "partial":
+      return paymentStatusClasses("partial");
+    case "unpaid":
+      return paymentStatusClasses("unpaid");
+    case "unpriced":
+      return "border-slate-200 bg-slate-100 text-slate-700";
+  }
 }
 
 function normalizePhone(value: string) {
@@ -700,9 +761,10 @@ export default function ProjectsClient({
 
       <div className="text-sm text-muted-foreground">נמצאו {rows.length} פרויקטים</div>
 
-      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(220px,1.2fr)_140px_180px_160px_140px_140px] md:items-center md:gap-4 sm:px-4">
+      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(220px,1.2fr)_120px_150px_180px_160px_140px_140px] md:items-center md:gap-4 sm:px-4">
         <div>פרויקט</div>
         <div>סטטוס</div>
+        <div>תשלום</div>
         <div>לקוח</div>
         <div>רווח</div>
         <div>משימות פתוחות</div>
@@ -715,11 +777,12 @@ export default function ProjectsClient({
           const profit = profitValue(row);
           const currentStatus = statusValue(row);
           const openTasks = getNumber(row, "open_tasks");
+          const paymentStatus = paymentStatusValue(row);
 
           return (
             <Card key={id} className="transition-shadow hover:shadow-md">
               <CardContent className="p-3 sm:p-4">
-                <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(220px,1.2fr)_140px_180px_160px_140px_140px] md:items-center md:gap-4">
+                <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(220px,1.2fr)_120px_150px_180px_160px_140px_140px] md:items-center md:gap-4">
                   <Link
                     href={`/projects/${id}`}
                     prefetch
@@ -740,7 +803,20 @@ export default function ProjectsClient({
                     className="text-sm"
                     onClick={() => emitNavigationStart()}
                   >
-                    {statusLabel(currentStatus)}
+                    <Badge className={projectStatusBadgeClasses(currentStatus)}>
+                      {statusLabel(currentStatus)}
+                    </Badge>
+                  </Link>
+
+                  <Link
+                    href={`/projects/${id}`}
+                    prefetch
+                    className="text-sm"
+                    onClick={() => emitNavigationStart()}
+                  >
+                    <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
+                      {paymentStatusLabel(paymentStatus)}
+                    </Badge>
                   </Link>
 
                   <Link

@@ -14,6 +14,15 @@ function parsePage(value: string | undefined) {
   return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
 }
 
+function toNumber(value: unknown) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function buildCustomerReturnHref(
   customerId: string | null,
   customerName: string | null,
@@ -99,6 +108,62 @@ export default async function ProjectsPage({
   ]);
 
   const rows = (data ?? []) as Row[];
+  const projectIds = rows
+    .map((row) => (typeof row?.id === "string" ? row.id : ""))
+    .filter(Boolean);
+
+  const [{ data: paymentRows }, { data: projectSettingsRows }] = await Promise.all([
+    projectIds.length > 0
+      ? supabase.from("payments").select("project_id,amount_total").in("project_id", projectIds)
+      : Promise.resolve({ data: [], error: null }),
+    projectIds.length > 0
+      ? supabase.from("projects").select("id,expenses_billed_separately").in("id", projectIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const paidTotalByProjectId = new Map<string, number>();
+  ((paymentRows ?? []) as Row[]).forEach((row) => {
+    const projectId = typeof row?.project_id === "string" ? row.project_id : "";
+    if (!projectId) return;
+    const amount = toNumber(row?.amount_total) ?? 0;
+    paidTotalByProjectId.set(projectId, (paidTotalByProjectId.get(projectId) ?? 0) + amount);
+  });
+
+  const expensesSeparatelyByProjectId = new Map<string, boolean>();
+  ((projectSettingsRows ?? []) as Row[]).forEach((row) => {
+    const projectId = typeof row?.id === "string" ? row.id : "";
+    if (!projectId) return;
+    expensesSeparatelyByProjectId.set(projectId, row?.expenses_billed_separately === true);
+  });
+
+  const rowsWithPaymentStatus = rows.map((row) => {
+    const projectId = typeof row?.id === "string" ? row.id : "";
+    const actualPrice = toNumber(row?.actual_price);
+    const agreedBasePrice = toNumber(row?.agreed_base_price);
+    const totalExpenses = toNumber(row?.total_expenses) ?? 0;
+    const paidTotal = paidTotalByProjectId.get(projectId) ?? 0;
+    const expensesBilledSeparately = expensesSeparatelyByProjectId.get(projectId) ?? false;
+    const dueBase = actualPrice ?? agreedBasePrice ?? 0;
+    const amountDue = dueBase + (expensesBilledSeparately ? totalExpenses : 0);
+    const priceUnset = dueBase <= 0;
+
+    const paymentStatus =
+      priceUnset
+        ? "unpriced"
+        : amountDue <= 0 || paidTotal >= amountDue
+        ? "paid"
+        : paidTotal > 0
+          ? "partial"
+          : "unpaid";
+
+    return {
+      ...row,
+      expenses_billed_separately: expensesBilledSeparately,
+      paid_total: paidTotal,
+      amount_due: amountDue,
+      payment_status_list: paymentStatus,
+    };
+  });
 
   const customerOptions = ((customers ?? []) as Row[])
     .map((row) => {
@@ -166,7 +231,7 @@ export default async function ProjectsPage({
         ) : (
           <>
             <ProjectsClient
-              initialProjects={rows}
+              initialProjects={rowsWithPaymentStatus}
               customerOptions={customerOptionsFinal}
               managerOptions={managerOptions}
               currentUserId={profile.id}

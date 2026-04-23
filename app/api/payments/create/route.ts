@@ -13,7 +13,9 @@ type CreatePaymentPayload = {
   order_id?: string;
   property_id?: string;
   payment_date?: string | null;
+  due_date?: string | null;
   amount_total?: number | string;
+  requires_split?: boolean;
   payment_method?: string;
   reference_number?: string;
   notes?: string;
@@ -29,6 +31,7 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as CreatePaymentPayload;
     const paymentDate = typeof body.payment_date === "string" ? body.payment_date : null;
+    const dueDate = typeof body.due_date === "string" ? body.due_date : null;
     const paymentMethod =
       typeof body.payment_method === "string" ? body.payment_method.trim() : "";
     const referenceNumber =
@@ -38,12 +41,16 @@ export async function POST(req: Request) {
     const orderId = typeof body.order_id === "string" ? body.order_id.trim() : "";
     const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
     const amountNumber = toNumber(body.amount_total);
+    const requiresSplit = body.requires_split === true;
 
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
       return NextResponse.json({ error: "Missing or invalid amount_total" }, { status: 400 });
     }
     if (!paymentDate || !paymentMethod) {
       return NextResponse.json({ error: "Missing payment_date or payment_method" }, { status: 400 });
+    }
+    if (paymentMethod === "check" && !dueDate) {
+      return NextResponse.json({ error: "Missing due_date for check payment" }, { status: 400 });
     }
 
     const linkedIds = [projectId, orderId, propertyId].filter(Boolean);
@@ -117,11 +124,14 @@ export async function POST(req: Request) {
           businessDomain,
           paymentDate,
           paymentMethod,
+          paymentStatus: paymentMethod === "check" ? "pending" : "cleared",
           projectId: projectId || null,
           orderId: orderId || null,
           propertyId: propertyId || null,
           referenceNumber,
           notes,
+          dueDate: paymentMethod === "check" ? dueDate : null,
+          requiresSplit,
           recordedBy: user.id,
         })
       )

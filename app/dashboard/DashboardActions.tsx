@@ -142,6 +142,7 @@ const HEBREW = {
   description: "\u05ea\u05d9\u05d0\u05d5\u05e8",
   includedInBase: "\u05e0\u05db\u05dc\u05dc \u05d1\u05d1\u05e1\u05d9\u05e1",
   billedToCustomer: "\u05dc\u05d7\u05d9\u05d5\u05d1 \u05dc\u05e7\u05d5\u05d7",
+  includesVat: "\u05db\u05d5\u05dc\u05dc \u05de\u05e2\u05f4\u05de 18%",
   saveExpense: "\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4",
   expenseRequired:
     "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4 \u05d5\u05ea\u05d0\u05e8\u05d9\u05da.",
@@ -153,6 +154,7 @@ const HEBREW = {
   incomeDialogDescription:
     "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4 \u05d7\u05d3\u05e9\u05d4 \u05db\u05ea\u05e9\u05dc\u05d5\u05dd \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8.",
   paymentMethod: "\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd",
+  paymentDueDate: "\u05ea\u05d0\u05e8\u05d9\u05da \u05e4\u05d9\u05e8\u05e2\u05d5\u05df",
   bankTransfer: "\u05d4\u05e2\u05d1\u05e8\u05d4 \u05d1\u05e0\u05e7\u05d0\u05d9\u05ea",
   cash: "\u05de\u05d6\u05d5\u05de\u05df",
   check: "\u05e6'\u05e7",
@@ -234,6 +236,8 @@ export default function DashboardActions({
   const [incomeAmount, setIncomeAmount] = useState("");
   const [incomeDate, setIncomeDate] = useState(getTodayDate());
   const [incomeMethod, setIncomeMethod] = useState("bank_transfer");
+  const [incomeDueDate, setIncomeDueDate] = useState("");
+  const [incomeRequiresSplit, setIncomeRequiresSplit] = useState(false);
   const [incomeReference, setIncomeReference] = useState("");
   const [incomeNotes, setIncomeNotes] = useState("");
   const [financeNavLoading, setFinanceNavLoading] = useState(false);
@@ -286,6 +290,8 @@ export default function DashboardActions({
     setIncomeAmount("");
     setIncomeDate(getTodayDate());
     setIncomeMethod("bank_transfer");
+    setIncomeDueDate("");
+    setIncomeRequiresSplit(false);
     setIncomeReference("");
     setIncomeNotes("");
   }
@@ -430,6 +436,10 @@ export default function DashboardActions({
       setIncomeError(HEBREW.incomeRequired);
       return;
     }
+    if (incomeMethod === "check" && !incomeDueDate) {
+      setIncomeError(`${HEBREW.incomeRequired} (${HEBREW.paymentDueDate})`);
+      return;
+    }
 
     const amount = Number(incomeAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -447,6 +457,8 @@ export default function DashboardActions({
           project_id: incomeProjectId,
           amount_total: amount,
           payment_date: incomeDate,
+          due_date: incomeMethod === "check" ? incomeDueDate : null,
+          requires_split: incomeRequiresSplit,
           payment_method: incomeMethod,
           reference_number: incomeReference.trim() || null,
           notes: incomeNotes.trim() || null,
@@ -999,8 +1011,31 @@ export default function DashboardActions({
                     <option value="credit_card">{HEBREW.creditCard}</option>
                     <option value="other">{HEBREW.other}</option>
                   </select>
+                  {incomeMethod === "check" ? (
+                    <span className="block text-xs text-muted-foreground">
+                      {"צ'ק יירשם כממתין לפירעון עד תאריך הפירעון."}
+                    </span>
+                  ) : null}
                 </label>
 
+                <label className="space-y-2 text-sm">
+                  <span>{incomeMethod === "check" ? HEBREW.paymentDueDate : HEBREW.reference}</span>
+                  {incomeMethod === "check" ? (
+                    <Input
+                      type="date"
+                      value={incomeDueDate}
+                      onChange={(e) => setIncomeDueDate(e.target.value)}
+                    />
+                  ) : (
+                    <Input
+                      value={incomeReference}
+                      onChange={(e) => setIncomeReference(e.target.value)}
+                    />
+                  )}
+                </label>
+              </AdaptiveGrid>
+
+              {incomeMethod === "check" ? (
                 <label className="space-y-2 text-sm">
                   <span>{HEBREW.reference}</span>
                   <Input
@@ -1008,7 +1043,16 @@ export default function DashboardActions({
                     onChange={(e) => setIncomeReference(e.target.value)}
                   />
                 </label>
-              </AdaptiveGrid>
+              ) : null}
+
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={incomeRequiresSplit}
+                  onChange={(e) => setIncomeRequiresSplit(e.target.checked)}
+                />
+                <span>{HEBREW.includesVat}</span>
+              </label>
 
               <label className="space-y-2 text-sm">
                 <span>{HEBREW.notes}</span>

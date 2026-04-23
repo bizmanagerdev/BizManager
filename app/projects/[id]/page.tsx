@@ -2,7 +2,7 @@
 import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
+import ProjectDetailsActions from "@/app/projects/[id]/ProjectDetailsActions";
 import type {
   AssignableUser,
   ExpenseListItem,
@@ -145,13 +145,20 @@ export default async function ProjectPage({
   const { id } = await params;
   const { profile, supabase } = await requireProfile();
 
-  const { data: overview, error: overviewError } = await supabase
+  const { data: overviewRaw, error: overviewError } = await supabase
     .from("project_overview_view")
     .select(
       "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,expenses_billed_separately,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at"
     )
     .eq("id", id)
-    .maybeSingle<ProjectOverview>();
+    .maybeSingle<Omit<ProjectOverview, "notes">>();
+
+  const overview: ProjectOverview | null = overviewRaw
+    ? {
+        ...overviewRaw,
+        notes: null,
+      }
+    : null;
 
   const { data: financials } = await supabase
     .from("project_financials_view")
@@ -178,6 +185,12 @@ export default async function ProjectPage({
     .from("users")
     .select("id,full_name,email,role,active")
     .order("full_name", { ascending: true })
+    .range(0, 199);
+
+  const { data: customers } = await supabase
+    .from("customer_overview_view")
+    .select("customer_id,customer_name")
+    .order("customer_name", { ascending: true })
     .range(0, 199);
 
   const { data: projectExpenses, error: projectExpensesError } = await supabase
@@ -336,6 +349,24 @@ export default async function ProjectPage({
       : null;
   const openTasks =
     typeof tasks?.open_tasks === "number" || typeof tasks?.open_tasks === "string" ? tasks.open_tasks : 0;
+  const customerOptions = ((customers ?? []) as UnknownRow[])
+    .map((row) => ({
+      id: typeof row.customer_id === "string" ? row.customer_id : "",
+      label: typeof row.customer_name === "string" ? row.customer_name.trim() : "",
+    }))
+    .filter((row) => row.id && row.label);
+  const managerOptions = ((assignableUsers ?? []) as UnknownRow[])
+    .map((row) => {
+      const fullName = typeof row.full_name === "string" ? row.full_name.trim() : "";
+      const email = typeof row.email === "string" ? row.email.trim() : "";
+      return {
+        id: typeof row.id === "string" ? row.id : "",
+        label: fullName || email,
+        active: row.active,
+      };
+    })
+    .filter((row) => row.id && row.label && row.active !== false)
+    .map((row) => ({ id: row.id, label: row.label }));
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
@@ -368,11 +399,11 @@ export default async function ProjectPage({
                   </div>
                 </div>
 
-                {typeof overview?.id === "string" ? (
-                  <DeleteProjectButton
-                    projectId={overview.id}
-                    projectName={projectName}
-                    redirectTo="/projects"
+                {overview ? (
+                  <ProjectDetailsActions
+                    project={overview}
+                    customerOptions={customerOptions}
+                    managerOptions={managerOptions}
                   />
                 ) : null}
               </div>
