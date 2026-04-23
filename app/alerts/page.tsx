@@ -1,7 +1,9 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
+import ProjectsCalendar from "@/app/projects/ProjectsCalendar";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getAlertsData, type AlertItem } from "@/lib/alerts";
+import { getScheduleEntries } from "@/lib/projectSchedule";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,9 +23,21 @@ function badgeVariantForAlert(severity: AlertItem["severity"]) {
 
 export default async function AlertsPage() {
   const { profile, supabase } = await requireProfile();
-  const { alerts, errors } = await getAlertsData(supabase);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [{ alerts, errors }, projectScheduleResult] = await Promise.all([
+    getAlertsData(supabase),
+    getScheduleEntries(supabase).then(
+      (entries) => ({ entries, error: null as string | null }),
+      (error: { message?: string }) => ({
+        entries: [],
+        error: error?.message ?? "שגיאה בטעינת לוח הזמנים",
+      })
+    ),
+  ]);
   const activeAlertsCount = alerts.filter((alert) => alert.count > 0).length;
-  const pageErrors = [errors.dashboard, errors.invoices].filter(Boolean) as string[];
+  const pageErrors = [errors.dashboard, errors.invoices, projectScheduleResult.error].filter(
+    Boolean
+  ) as string[];
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
@@ -69,7 +83,10 @@ export default async function AlertsPage() {
             ))}
           </CardContent>
         </Card>
+
+        <ProjectsCalendar entries={projectScheduleResult.entries} todayIso={todayIso} />
       </div>
     </AppShell>
   );
 }
+

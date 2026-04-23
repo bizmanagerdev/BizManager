@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import TasksRealtimeBadge from "@/app/tasks/TasksRealtimeBadge";
+import { formatShortDate } from "@/lib/date";
 
 type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
 type TaskPriority = "low" | "medium" | "high" | "urgent";
@@ -164,9 +165,7 @@ export default async function TasksPage({
                         </td>
                         <td className="px-3 py-2">{projectName}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
-                          {dueDate
-                            ? new Intl.DateTimeFormat("he-IL").format(new Date(dueDate))
-                            : "-"}
+                          {formatShortDate(dueDate)}
                         </td>
                         <td className="px-3 py-2">{assignee}</td>
                         <td className="px-3 py-2">

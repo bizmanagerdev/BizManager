@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CashFlowTransaction, CashFlowTransactionsResult } from "@/lib/cashflow";
+import { formatShortDate } from "@/lib/date";
 
 const currencyFormatter = new Intl.NumberFormat("he-IL", {
   style: "currency",
@@ -9,19 +10,12 @@ const currencyFormatter = new Intl.NumberFormat("he-IL", {
   maximumFractionDigits: 2,
 });
 
-const dateFormatter = new Intl.DateTimeFormat("he-IL", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
 function formatCurrency(value: number) {
   return currencyFormatter.format(value);
 }
 
 function formatDate(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date);
+  return formatShortDate(value, value);
 }
 
 function typeVariant(type: CashFlowTransaction["type"]) {

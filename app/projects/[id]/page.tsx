@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ChevronRight } from "lucide-react";
+import { formatShortDate } from "@/lib/date";
 
 const ProjectTabsClient = dynamic(() => import("@/app/projects/[id]/ProjectTabsClient"), {
   loading: () => (
@@ -116,10 +117,24 @@ function projectTypeLabel(type: string | null | undefined) {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("he-IL").format(date);
+  return formatShortDate(value, "—");
+}
+
+function formatIls(value: number | string | null | undefined) {
+  const amount =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value.replace(/,/g, "").trim())
+        : null;
+
+  if (amount === null || !Number.isFinite(amount)) return "—";
+
+  return new Intl.NumberFormat("he-IL", {
+    style: "currency",
+    currency: "ILS",
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 export default async function ProjectPage({
@@ -315,6 +330,12 @@ export default async function ProjectPage({
   const endDate = typeof overview?.end_date === "string" ? overview.end_date : null;
   const projectType =
     typeof overview?.project_type === "string" ? overview.project_type : null;
+  const grossProfit =
+    typeof financials?.gross_profit === "number" || typeof financials?.gross_profit === "string"
+      ? financials.gross_profit
+      : null;
+  const openTasks =
+    typeof tasks?.open_tasks === "number" || typeof tasks?.open_tasks === "string" ? tasks.open_tasks : 0;
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
@@ -356,30 +377,34 @@ export default async function ProjectPage({
                 ) : null}
               </div>
 
-              <div className="grid gap-3 rounded-2xl border border-border/70 bg-background/70 p-4 text-sm sm:grid-cols-2 xl:grid-cols-4">
-                <div className="space-y-1">
-                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                    לקוח
-                  </div>
+              <div className="flex flex-wrap items-start gap-x-8 gap-y-4 rounded-2xl border border-border/70 bg-background/70 p-4 text-sm">
+                <div className="min-w-[10rem] space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">לקוח:</div>
                   <div className="font-medium">{customerName || "—"}</div>
                 </div>
-                <div className="space-y-1">
-                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                    מנהל פרויקט
-                  </div>
-                  <div className="font-medium">{managerName || "לא הוגדר"}</div>
+                <div className="min-w-[8rem] space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">סטטוס:</div>
+                  <div className="font-medium">{status ? projectStatusLabel(status) : "—"}</div>
                 </div>
-                <div className="space-y-1">
-                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                    תאריך התחלה
-                  </div>
+                <div className="min-w-[8rem] space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">רווח:</div>
+                  <div className="font-medium">{formatIls(grossProfit)}</div>
+                </div>
+                <div className="min-w-[8rem] space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">משימות פתוחות:</div>
+                  <div className="font-medium">{openTasks}</div>
+                </div>
+                <div className="min-w-[8rem] space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">התחלה:</div>
                   <div className="font-medium">{formatDate(startDate)}</div>
                 </div>
-                <div className="space-y-1">
-                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                    תאריך סיום
-                  </div>
+                <div className="min-w-[8rem] space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">סיום:</div>
                   <div className="font-medium">{formatDate(endDate)}</div>
+                </div>
+                <div className="min-w-[10rem] space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">מנהל פרויקט:</div>
+                  <div className="font-medium">{managerName || "לא הוגדר"}</div>
                 </div>
               </div>
             </div>
@@ -413,3 +438,4 @@ export default async function ProjectPage({
     </AppShell>
   );
 }
+

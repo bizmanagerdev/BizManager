@@ -8,6 +8,7 @@ import {
   paymentMethodLabel,
   paymentStatusClasses,
 } from "@/lib/orders/paymentStatus";
+import { formatShortDate } from "@/lib/date";
 
 type Row = Record<string, unknown>;
 
@@ -35,14 +36,7 @@ function formatCurrency(value: number) {
 }
 
 function formatDate(value: string | null) {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat("he-IL", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(parsed);
+  return formatShortDate(value);
 }
 
 function formatOrderStatus(status: string | null) {

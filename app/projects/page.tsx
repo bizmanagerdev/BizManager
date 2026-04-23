@@ -1,20 +1,13 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import ProjectsClient from "@/app/projects/ProjectsClient";
-import ProjectsCalendar from "@/app/projects/ProjectsCalendar";
-import ProjectsTabsNav from "@/app/projects/ProjectsTabsNav";
 
 type Row = Record<string, unknown>;
 
 const PROJECTS_PAGE_SIZE = 50;
 const OPTIONS_PAGE_SIZE = 50;
-
-function getString(row: Row, key: string) {
-  const value = row[key];
-  return typeof value === "string" ? value : null;
-}
 
 function parsePage(value: string | undefined) {
   const page = Number(value ?? "1");
@@ -35,13 +28,11 @@ function buildCustomerReturnHref(
 
 function buildProjectsHref(
   page: number,
-  activeTab: string,
   customerId: string | null,
   customerName: string | null,
   customerPage: string | null
 ) {
   const params = new URLSearchParams();
-  if (activeTab === "calendar") params.set("tab", "calendar");
   if (customerId) params.set("customer_id", customerId);
   if (customerName) params.set("customer_name", customerName);
   if (customerPage) params.set("customer_page", customerPage);
@@ -54,7 +45,6 @@ export default async function ProjectsPage({
   searchParams,
 }: {
   searchParams?: Promise<{
-    tab?: string;
     page?: string;
     customer_id?: string;
     customer_name?: string;
@@ -62,7 +52,6 @@ export default async function ProjectsPage({
   }>;
 }) {
   const params = (await searchParams) ?? {};
-  const activeTab = params.tab === "calendar" ? "calendar" : "list";
   const page = parsePage(params.page);
   const customerId =
     typeof params.customer_id === "string" && params.customer_id.trim()
@@ -110,17 +99,6 @@ export default async function ProjectsPage({
   ]);
 
   const rows = (data ?? []) as Row[];
-
-  const scheduleRows = rows
-    .map((row) => ({
-      id: getString(row, "id") ?? "",
-      name: getString(row, "name") ?? "פרויקט",
-      customerName: getString(row, "customer_name") ?? "-",
-      startDate: getString(row, "start_date"),
-      endDate: getString(row, "end_date"),
-      status: getString(row, "status") ?? "-",
-    }))
-    .filter((row) => row.id);
 
   const customerOptions = ((customers ?? []) as Row[])
     .map((row) => {
@@ -174,9 +152,7 @@ export default async function ProjectsPage({
           <div>
             <h1 className="text-2xl font-semibold">פרויקטים</h1>
             {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
-            <p className="text-muted-foreground text-sm">
-              ניהול פרויקטים ותפעול
-            </p>
+            <p className="text-muted-foreground text-sm">ניהול פרויקטים ותפעול</p>
           </div>
           {customerId ? (
             <Button asChild variant="outline" size="sm">
@@ -185,12 +161,8 @@ export default async function ProjectsPage({
           ) : null}
         </div>
 
-        <ProjectsTabsNav activeTab={activeTab} />
-
         {error ? (
           <div className="text-destructive text-sm">שגיאה בטעינת פרויקטים: {error.message}</div>
-        ) : activeTab === "calendar" ? (
-          <ProjectsCalendar projects={scheduleRows} />
         ) : (
           <>
             <ProjectsClient
@@ -201,12 +173,14 @@ export default async function ProjectsPage({
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
-                עמוד {page} • מוצגים {rows.length} מתוך {totalCount}
+                עמוד {page} • מציגים {rows.length} מתוך {totalCount}
               </div>
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildProjectsHref(page - 1, activeTab, customerId, customerName, customerPage)}>הקודם</Link>
+                    <Link href={buildProjectsHref(page - 1, customerId, customerName, customerPage)}>
+                      הקודם
+                    </Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -215,7 +189,9 @@ export default async function ProjectsPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildProjectsHref(page + 1, activeTab, customerId, customerName, customerPage)}>הבא</Link>
+                    <Link href={buildProjectsHref(page + 1, customerId, customerName, customerPage)}>
+                      הבא
+                    </Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -230,3 +206,4 @@ export default async function ProjectsPage({
     </AppShell>
   );
 }
+

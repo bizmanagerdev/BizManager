@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { formatShortDateTime } from "@/lib/date";
 import {
   Dialog,
   DialogContent,
@@ -117,13 +118,7 @@ function formatMovementNotes(value: string | null) {
 }
 
 function formatDateTime(value: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("he-IL", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
+  return formatShortDateTime(value);
 }
 
 export default function SalesInventoryClient({

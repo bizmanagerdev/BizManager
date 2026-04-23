@@ -34,6 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { formatShortDateTime } from "@/lib/date";
 
 export type DocumentArchiveFilters = {
   customer_id: string;
@@ -93,13 +94,7 @@ function normalizeText(value: string) {
 }
 
 function formatDate(value: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("he-IL", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return formatShortDateTime(value, "—");
 }
 
 function entityTypeLabel(value: string) {

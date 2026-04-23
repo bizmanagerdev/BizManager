@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
   Dialog,
   DialogContent,
@@ -85,22 +86,11 @@ function statusToVariant(status: TaskStatus | string) {
 }
 
 function formatDate(value: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("he-IL").format(date);
+  return formatShortDate(value, "—");
 }
 
 function formatIsoStamp(iso: string) {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("he-IL", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return formatShortDateTime(iso, iso);
 }
 
 function formatBytes(value: number | null) {

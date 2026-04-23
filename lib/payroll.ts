@@ -1,3 +1,5 @@
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
+
 export const WORK_SESSIONS_TABLE = "attendance_sessions";
 export const PAYROLL_ADMIN_COOKIE = "payroll_admin_unlocked";
 
@@ -78,24 +80,12 @@ export function formatMinutes(minutes: number | string | null | undefined) {
   return `${hours}:${String(remainder).padStart(2, "0")}`;
 }
 
-export function formatDate(value: string | null | undefined, options?: Intl.DateTimeFormatOptions) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(
-    "he-IL",
-    options ?? { day: "2-digit", month: "2-digit", year: "numeric" }
-  ).format(date);
+export function formatDate(value: string | null | undefined) {
+  return formatShortDate(value);
 }
 
 export function formatDateTime(value: string | null | undefined) {
-  return formatDate(value, {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatShortDateTime(value);
 }
 
 export function monthKeyFromDate(value: string | Date) {
@@ -196,9 +186,7 @@ export function getNextMonthDueText(periodEndDate: string | null | undefined) {
   const end = new Date(periodEndDate);
   if (Number.isNaN(end.getTime())) return "-";
   const due = new Date(end.getFullYear(), end.getMonth() + 1, 10);
-  return new Intl.DateTimeFormat("he-IL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(due);
+  return formatShortDate(
+    `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-${String(due.getDate()).padStart(2, "0")}`
+  );
 }

@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { formatShortDate } from "@/lib/date";
 import {
   Dialog,
   DialogDescription,
@@ -66,9 +67,7 @@ const contactsOf = (row: Row): Row[] => (Array.isArray(row.contacts) ? (row.cont
 const ils = (v: number) =>
   new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(v);
 const dateText = (v: string) => {
-  if (!v) return "-";
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? v : new Intl.DateTimeFormat("he-IL").format(d);
+  return formatShortDate(v);
 };
 const makeEmptyContactDraft = (): ContactDraft => ({
   full_name: "",

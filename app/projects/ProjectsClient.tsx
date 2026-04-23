@@ -700,7 +700,16 @@ export default function ProjectsClient({
 
       <div className="text-sm text-muted-foreground">נמצאו {rows.length} פרויקטים</div>
 
-      <div className="space-y-3">
+      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(220px,1.2fr)_140px_180px_160px_140px_140px] md:items-center md:gap-4 sm:px-4">
+        <div>פרויקט</div>
+        <div>סטטוס</div>
+        <div>לקוח</div>
+        <div>רווח</div>
+        <div>משימות פתוחות</div>
+        <div>פעולות</div>
+      </div>
+
+      <div className="grid gap-2 sm:gap-2.5">
         {rows.map((row) => {
           const id = getString(row, "id") ?? "";
           const profit = profitValue(row);
@@ -709,23 +718,59 @@ export default function ProjectsClient({
 
           return (
             <Card key={id} className="transition-shadow hover:shadow-md">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-3">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(220px,1.2fr)_140px_180px_160px_140px_140px] md:items-center md:gap-4">
                   <Link
                     href={`/projects/${id}`}
                     prefetch
-                    className="min-w-0 flex-1"
+                    className="min-w-0"
                     onClick={() => emitNavigationStart()}
                   >
                     <div className="min-w-0">
                       <div className="text-base font-semibold">{projectDisplayName(row)}</div>
                       <div className="text-sm text-muted-foreground">
-                        לקוח: {clientDisplayName(row)}
+                        #{id.slice(0, 8)}
                       </div>
                     </div>
                   </Link>
 
-                  <div className="flex shrink-0 items-center gap-2">
+                  <Link
+                    href={`/projects/${id}`}
+                    prefetch
+                    className="text-sm"
+                    onClick={() => emitNavigationStart()}
+                  >
+                    {statusLabel(currentStatus)}
+                  </Link>
+
+                  <Link
+                    href={`/projects/${id}`}
+                    prefetch
+                    className="text-sm"
+                    onClick={() => emitNavigationStart()}
+                  >
+                    {clientDisplayName(row)}
+                  </Link>
+
+                  <Link
+                    href={`/projects/${id}`}
+                    prefetch
+                    className={`text-sm ${profit !== null && profit < 0 ? "text-destructive" : ""}`}
+                    onClick={() => emitNavigationStart()}
+                  >
+                    {profit === null ? "-" : formatIls(profit)}
+                  </Link>
+
+                  <Link
+                    href={`/projects/${id}`}
+                    prefetch
+                    className="text-sm"
+                    onClick={() => emitNavigationStart()}
+                  >
+                    {openTasks === null ? "-" : openTasks}
+                  </Link>
+
+                  <div className="flex shrink-0 items-center gap-2 md:justify-start">
                     <Button
                       type="button"
                       variant="outline"
@@ -749,30 +794,6 @@ export default function ProjectsClient({
                     </DeleteProjectButton>
                   </div>
                 </div>
-
-                <Link
-                  href={`/projects/${id}`}
-                  prefetch
-                  className="mt-3 block"
-                  onClick={() => emitNavigationStart()}
-                >
-                  <AdaptiveGrid variant="projectCardMeta">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-muted-foreground">סטטוס:</span>
-                      <span>{statusLabel(currentStatus)}</span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-muted-foreground">רווח:</span>
-                      <span className={profit !== null && profit < 0 ? "text-destructive" : ""}>
-                        {profit === null ? "-" : formatIls(profit)}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-muted-foreground">משימות פתוחות:</span>
-                      <span>{openTasks === null ? "-" : openTasks}</span>
-                    </div>
-                  </AdaptiveGrid>
-                </Link>
               </CardContent>
             </Card>
           );
