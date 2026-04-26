@@ -11,11 +11,15 @@ import type {
   ProjectTaskProgress,
 } from "@/app/projects/[id]/ProjectTabsClient";
 import { PAYMENT_SELECT } from "@/lib/payments";
+import type { FinancialAttachment } from "@/lib/payments";
+import type { WorkSessionRow } from "@/lib/payroll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ChevronRight } from "lucide-react";
 import { formatShortDate } from "@/lib/date";
+import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 
 const ProjectTabsClient = dynamic(() => import("@/app/projects/[id]/ProjectTabsClient"), {
   loading: () => (
@@ -45,6 +49,7 @@ type ExpenseRow = {
   recorded_by: string | null;
   created_at: string | null;
   updated_at: string | null;
+  attachments?: FinancialAttachment[];
 };
 
 type DocumentRow = {
@@ -57,6 +62,8 @@ type DocumentRow = {
   created_at: string | null;
 };
 
+type AttendanceSessionRow = WorkSessionRow;
+
 function getFirstString(obj: UnknownRow | null | undefined, keys: string[]) {
   for (const k of keys) {
     const v = obj?.[k];
@@ -65,38 +72,8 @@ function getFirstString(obj: UnknownRow | null | undefined, keys: string[]) {
   return null;
 }
 
-function projectStatusVariant(status: string) {
-  switch (status) {
-    case "planned":
-      return "secondary" as const;
-    case "active":
-      return "default" as const;
-    case "on_hold":
-      return "warning" as const;
-    case "completed":
-      return "success" as const;
-    case "cancelled":
-      return "outline" as const;
-    default:
-      return "outline" as const;
-  }
-}
-
 function projectStatusLabel(status: string) {
-  switch (status) {
-    case "planned":
-      return "מתוכנן";
-    case "active":
-      return "פעיל";
-    case "on_hold":
-      return "בהמתנה";
-    case "completed":
-      return "הושלם";
-    case "cancelled":
-      return "בוטל";
-    default:
-      return status;
-  }
+  return getProjectStatusLabel(status);
 }
 
 function projectTypeLabel(type: string | null | undefined) {
@@ -162,7 +139,7 @@ export default async function ProjectPage({
 
   const { data: financials } = await supabase
     .from("project_financials_view")
-    .select("id,agreed_base_price,actual_price,total_expenses,gross_profit")
+    .select("id,agreed_base_price,actual_price,total_expenses,expenses_billed,customer_total_price,gross_profit")
     .eq("id", id)
     .maybeSingle<ProjectFinancials extends infer T ? Exclude<T, null> : never>();
 
@@ -224,18 +201,105 @@ export default async function ProjectPage({
     if (typeof e.id === "string") expensesById.set(e.id, e);
   });
 
+  const { data: expenseLinks } =
+    expenseIds.length > 0
+      ? await supabase
+          .from("document_links")
+          .select("document_id,entity_type,entity_id,created_at")
+          .eq("entity_type", "expense")
+          .in("entity_id", expenseIds)
+      : { data: [] as UnknownRow[] };
+
+  const expenseDocumentIds = Array.from(
+    new Set(
+      (expenseLinks ?? [])
+        .map((row) => (typeof row.document_id === "string" ? row.document_id : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { data: expenseDocuments } =
+    expenseDocumentIds.length > 0
+      ? await supabase
+          .from("documents")
+          .select("id,title,file_name,storage_key,uploaded_at,document_type")
+          .in("id", expenseDocumentIds)
+      : { data: [] as UnknownRow[] };
+
+  const expenseDocumentById = new Map<string, UnknownRow>();
+  (expenseDocuments ?? []).forEach((row) => {
+    if (typeof row.id === "string") expenseDocumentById.set(row.id, row);
+  });
+
+  const expenseAttachmentByEntityId = new Map<string, FinancialAttachment[]>();
+  for (const link of expenseLinks ?? []) {
+    const entityId = typeof link.entity_id === "string" ? link.entity_id : null;
+    const documentId = typeof link.document_id === "string" ? link.document_id : null;
+    if (!entityId || !documentId) continue;
+    const doc = expenseDocumentById.get(documentId);
+    const storageKey = getFirstString(doc, ["storage_key"]);
+    const fileName = getFirstString(doc, ["file_name"]);
+    const documentType = getFirstString(doc, ["document_type"]);
+    const uploadedAt = getFirstString(doc, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]);
+    const { data: signed } = storageKey
+      ? await supabase.storage.from(DOCUMENTS_BUCKET).createSignedUrl(storageKey, 60 * 60)
+      : { data: null };
+    const existing = expenseAttachmentByEntityId.get(entityId) ?? [];
+    existing.push({
+      document_id: documentId,
+      file_name: fileName,
+      storage_key: storageKey,
+      uploaded_at: uploadedAt,
+      document_type: documentType,
+      url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
+    });
+    expenseAttachmentByEntityId.set(entityId, existing);
+  }
+
+  expenseAttachmentByEntityId.forEach((attachment, entityId) => {
+    const expense = expensesById.get(entityId);
+    if (!expense) return;
+    expense.attachments = attachment;
+  });
+
   const expenseList = (projectExpenses ?? [])
     .map((pe): ExpenseListItem => ({
+      source_type: "expense",
       project_expense: pe,
       expense: typeof pe.expense_id === "string" ? expensesById.get(pe.expense_id) ?? null : null,
-    }))
-    .sort((a, b) => {
-      const ad = (a.expense?.expense_date ?? a.expense?.created_at) as string | undefined;
-      const bd = (b.expense?.expense_date ?? b.expense?.created_at) as string | undefined;
-      const at = ad ? new Date(ad).getTime() : 0;
-      const bt = bd ? new Date(bd).getTime() : 0;
-      return bt - at;
-    });
+      session: null,
+    }));
+
+  const { data: attendanceSessions, error: attendanceSessionsError } = await supabase
+    .from("attendance_sessions")
+    .select("id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id")
+    .eq("project_id", id)
+    .order("clock_in", { ascending: false })
+    .range(0, 99);
+
+  const combinedExpenseList = [
+    ...expenseList,
+    ...((attendanceSessions ?? []) as AttendanceSessionRow[]).map(
+      (session): ExpenseListItem => ({
+        source_type: "session",
+        project_expense: null,
+        expense: null,
+        session,
+      })
+    ),
+  ].sort((a, b) => {
+    const ad =
+      a.source_type === "session"
+        ? a.session?.clock_in
+        : ((a.expense?.expense_date ?? a.expense?.created_at) as string | undefined);
+    const bd =
+      b.source_type === "session"
+        ? b.session?.clock_in
+        : ((b.expense?.expense_date ?? b.expense?.created_at) as string | undefined);
+    const at = ad ? new Date(ad).getTime() : 0;
+    const bt = bd ? new Date(bd).getTime() : 0;
+    return bt - at;
+  });
 
   const { data: payments, error: paymentsQueryError } = await supabase
     .from("payments")
@@ -243,6 +307,79 @@ export default async function ProjectPage({
     .eq("project_id", id)
     .order("payment_date", { ascending: false })
     .range(0, 99);
+
+  const paymentIds = Array.from(
+    new Set(
+      (payments ?? [])
+        .map((row) => (typeof row.id === "string" ? row.id : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { data: paymentLinks } =
+    paymentIds.length > 0
+      ? await supabase
+          .from("document_links")
+          .select("document_id,entity_type,entity_id,created_at")
+          .eq("entity_type", "payment")
+          .in("entity_id", paymentIds)
+      : { data: [] as UnknownRow[] };
+
+  const paymentDocumentIds = Array.from(
+    new Set(
+      (paymentLinks ?? [])
+        .map((row) => (typeof row.document_id === "string" ? row.document_id : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { data: paymentDocuments } =
+    paymentDocumentIds.length > 0
+      ? await supabase
+          .from("documents")
+          .select("id,title,file_name,storage_key,uploaded_at,document_type")
+          .in("id", paymentDocumentIds)
+      : { data: [] as UnknownRow[] };
+
+  const paymentDocumentById = new Map<string, UnknownRow>();
+  (paymentDocuments ?? []).forEach((row) => {
+    if (typeof row.id === "string") paymentDocumentById.set(row.id, row);
+  });
+
+  const paymentAttachmentByEntityId = new Map<string, FinancialAttachment[]>();
+  for (const link of paymentLinks ?? []) {
+    const entityId = typeof link.entity_id === "string" ? link.entity_id : null;
+    const documentId = typeof link.document_id === "string" ? link.document_id : null;
+    if (!entityId || !documentId) continue;
+    const doc = paymentDocumentById.get(documentId);
+    const storageKey = getFirstString(doc, ["storage_key"]);
+    const fileName = getFirstString(doc, ["file_name"]);
+    const documentType = getFirstString(doc, ["document_type"]);
+    const uploadedAt = getFirstString(doc, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]);
+    const { data: signed } = storageKey
+      ? await supabase.storage.from(DOCUMENTS_BUCKET).createSignedUrl(storageKey, 60 * 60)
+      : { data: null };
+    const existing = paymentAttachmentByEntityId.get(entityId) ?? [];
+    existing.push({
+      document_id: documentId,
+      file_name: fileName,
+      storage_key: storageKey,
+      uploaded_at: uploadedAt,
+      document_type: documentType,
+      url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
+    });
+    paymentAttachmentByEntityId.set(entityId, existing);
+  }
+
+  const paymentsWithPhotos = (payments ?? []).map((payment) => {
+    const attachments = paymentAttachmentByEntityId.get(payment.id);
+    return attachments
+      ? {
+          ...payment,
+          attachments,
+        }
+      : payment;
+  });
 
   const paymentsError = paymentsQueryError?.message ?? null;
 
@@ -266,14 +403,14 @@ export default async function ProjectPage({
     projectDocumentIds.length > 0
       ? await supabase
           .from("documents")
-          .select("id,document_type,title,file_name,storage_key,uploaded_at,created_at")
+          .select("id,document_type,title,file_name,storage_key,uploaded_at")
           .in("id", projectDocumentIds)
       : { data: [] as DocumentRow[], error: null };
 
   const projectDocumentsErrorMessage =
     projectDocumentsError?.message ?? projectDocumentsReadError?.message ?? null;
 
-  const projectDocumentsById = new Map<string, DocumentRow>();
+  const projectDocumentsById = new Map<string, UnknownRow>();
   (projectDocumentsRaw ?? []).forEach((row) => {
     if (typeof row.id === "string") projectDocumentsById.set(row.id, row);
   });
@@ -333,6 +470,7 @@ export default async function ProjectPage({
     } => Boolean(document)
   );
 
+
   const status = typeof overview?.status === "string" ? overview.status : "";
   const projectName = typeof overview?.name === "string" ? overview.name : "פרויקט";
   const customerName =
@@ -343,10 +481,7 @@ export default async function ProjectPage({
   const endDate = typeof overview?.end_date === "string" ? overview.end_date : null;
   const projectType =
     typeof overview?.project_type === "string" ? overview.project_type : null;
-  const grossProfit =
-    typeof financials?.gross_profit === "number" || typeof financials?.gross_profit === "string"
-      ? financials.gross_profit
-      : null;
+  const grossProfit = financials?.gross_profit ?? null;
   const openTasks =
     typeof tasks?.open_tasks === "number" || typeof tasks?.open_tasks === "string" ? tasks.open_tasks : 0;
   const customerOptions = ((customers ?? []) as UnknownRow[])
@@ -384,7 +519,7 @@ export default async function ProjectPage({
                       </Link>
                     </Button>
                     {status ? (
-                      <Badge variant={projectStatusVariant(status)}>{projectStatusLabel(status)}</Badge>
+                      <StatusBadge value={status} type="project" />
                     ) : null}
                     <Badge variant="outline">{projectTypeLabel(projectType)}</Badge>
                   </div>
@@ -459,9 +594,11 @@ export default async function ProjectPage({
             projectDocumentsError={projectDocumentsErrorMessage}
             assignableUsers={(assignableUsers as AssignableUser[] | null) ?? []}
             assignableUsersError={assignableUsersError?.message ?? null}
-            expenses={expenseList}
-            expensesError={projectExpensesError?.message ?? expensesError?.message ?? null}
-            payments={payments ?? []}
+            expenses={combinedExpenseList}
+            expensesError={
+              projectExpensesError?.message ?? expensesError?.message ?? attendanceSessionsError?.message ?? null
+            }
+            payments={paymentsWithPhotos}
             paymentsError={paymentsError}
           />
         )}

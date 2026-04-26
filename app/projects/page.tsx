@@ -121,6 +121,14 @@ export default async function ProjectsPage({
       : Promise.resolve({ data: [], error: null }),
   ]);
 
+  const { data: financialRows } =
+    projectIds.length > 0
+      ? await supabase
+          .from("project_financials_view")
+          .select("id,total_expenses,gross_profit,customer_total_price")
+          .in("id", projectIds)
+      : { data: [] as Row[], error: null };
+
   const paidTotalByProjectId = new Map<string, number>();
   ((paymentRows ?? []) as Row[]).forEach((row) => {
     const projectId = typeof row?.project_id === "string" ? row.project_id : "";
@@ -136,16 +144,28 @@ export default async function ProjectsPage({
     expensesSeparatelyByProjectId.set(projectId, row?.expenses_billed_separately === true);
   });
 
+  const financialByProjectId = new Map<string, Row>();
+  ((financialRows ?? []) as Row[]).forEach((row) => {
+    const projectId = typeof row?.id === "string" ? row.id : "";
+    if (!projectId) return;
+    financialByProjectId.set(projectId, row);
+  });
+
   const rowsWithPaymentStatus = rows.map((row) => {
     const projectId = typeof row?.id === "string" ? row.id : "";
+    const financialRow = financialByProjectId.get(projectId) ?? null;
     const actualPrice = toNumber(row?.actual_price);
     const agreedBasePrice = toNumber(row?.agreed_base_price);
-    const totalExpenses = toNumber(row?.total_expenses) ?? 0;
+    const totalExpenses =
+      toNumber(financialRow?.total_expenses) ?? toNumber(row?.total_expenses) ?? 0;
+    const grossProfit =
+      toNumber(financialRow?.gross_profit) ?? toNumber(row?.gross_profit) ?? null;
+    const customerTotalPrice =
+      toNumber(financialRow?.customer_total_price) ?? actualPrice ?? agreedBasePrice ?? 0;
     const paidTotal = paidTotalByProjectId.get(projectId) ?? 0;
     const expensesBilledSeparately = expensesSeparatelyByProjectId.get(projectId) ?? false;
-    const dueBase = actualPrice ?? agreedBasePrice ?? 0;
-    const amountDue = dueBase + (expensesBilledSeparately ? totalExpenses : 0);
-    const priceUnset = dueBase <= 0;
+    const amountDue = customerTotalPrice;
+    const priceUnset = customerTotalPrice <= 0;
 
     const paymentStatus =
       priceUnset
@@ -158,6 +178,9 @@ export default async function ProjectsPage({
 
     return {
       ...row,
+      total_expenses: totalExpenses,
+      gross_profit: grossProfit,
+      customer_total_price: customerTotalPrice,
       expenses_billed_separately: expensesBilledSeparately,
       paid_total: paidTotal,
       amount_due: amountDue,

@@ -9,6 +9,10 @@ export type WorkSessionRow = {
   clock_in: string;
   clock_out: string | null;
   worked_minutes: number | string | null;
+  labor_cost: number | string | null;
+  is_billable_to_customer: boolean | null;
+  bill_to_customer_amount: number | string | null;
+  billing_status: string | null;
   notes: string | null;
   business_domain: string | null;
   project_id: string | null;

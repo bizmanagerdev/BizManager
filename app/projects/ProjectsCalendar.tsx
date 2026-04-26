@@ -6,6 +6,7 @@ import { AdaptiveStack, AdaptiveWidth } from "@/components/layout/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import type { CalendarEntry } from "@/lib/projectSchedule";
 
 function toDateOnly(value: string | null) {
@@ -51,44 +52,6 @@ function entryKindLabel(kind: CalendarEntry["kind"]) {
 
 function entryKindVariant(kind: CalendarEntry["kind"]) {
   return kind === "task" ? ("warning" as const) : ("secondary" as const);
-}
-
-function priorityLabel(priority: string | null) {
-  switch (priority) {
-    case "low":
-      return "נמוכה";
-    case "medium":
-      return "בינונית";
-    case "high":
-      return "גבוהה";
-    case "urgent":
-      return "דחופה";
-    default:
-      return null;
-  }
-}
-
-function statusLabel(status: string | null) {
-  switch (status) {
-    case "todo":
-      return "לביצוע";
-    case "in_progress":
-      return "בתהליך";
-    case "blocked":
-      return "חסום";
-    case "done":
-      return "בוצע";
-    case "cancelled":
-      return "בוטל";
-    case "planning":
-      return "בתכנון";
-    case "active":
-      return "פעיל";
-    case "completed":
-      return "הושלם";
-    default:
-      return status;
-  }
 }
 
 const weekDays = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
@@ -217,10 +180,15 @@ export default function ProjectsCalendar({
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="font-medium">{entry.title}</div>
                     <Badge variant={entryKindVariant(entry.kind)}>{entryKindLabel(entry.kind)}</Badge>
-                    {priorityLabel(entry.priority) ? (
-                      <Badge variant="outline">{priorityLabel(entry.priority)}</Badge>
+                    {entry.priority ? (
+                      <StatusBadge value={entry.priority} type="priority" />
                     ) : null}
-                    {statusLabel(entry.status) ? <Badge variant="outline">{statusLabel(entry.status)}</Badge> : null}
+                    {entry.status ? (
+                      <StatusBadge
+                        value={entry.status}
+                        type={entry.kind === "task" ? "task" : "project"}
+                      />
+                    ) : null}
                   </div>
                   <div className="mt-1 text-sm text-muted-foreground">{entry.subtitle}</div>
                 </Link>

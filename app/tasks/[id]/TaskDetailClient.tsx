@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
   Dialog,
@@ -17,73 +17,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
-type TaskPriority = "low" | "medium" | "high" | "urgent";
-
-function taskStatusLabel(status: TaskStatus | string) {
-  switch (status) {
-    case "todo":
-      return "\u05DC\u05D1\u05D9\u05E6\u05D5\u05E2";
-    case "in_progress":
-      return "\u05D1\u05EA\u05D4\u05DC\u05D9\u05DA";
-    case "blocked":
-      return "\u05D1\u05D4\u05DE\u05EA\u05E0\u05D4";
-    case "done":
-      return "\u05D1\u05D5\u05E6\u05E2";
-    case "cancelled":
-      return "\u05D1\u05D5\u05D8\u05DC";
-    default:
-      return status;
-  }
-}
-
-function taskPriorityLabel(priority: TaskPriority | string) {
-  switch (priority) {
-    case "low":
-      return "\u05E0\u05DE\u05D5\u05DB\u05D4";
-    case "medium":
-      return "\u05D1\u05D9\u05E0\u05D5\u05E0\u05D9\u05EA";
-    case "high":
-      return "\u05D2\u05D1\u05D5\u05D4\u05D4";
-    case "urgent":
-      return "\u05D3\u05D7\u05D5\u05E4\u05D4";
-    default:
-      return priority;
-  }
-}
-
-function priorityToVariant(priority: TaskPriority | string) {
-  switch (priority) {
-    case "low":
-      return "secondary" as const;
-    case "medium":
-      return "warning" as const;
-    case "high":
-      return "destructive" as const;
-    case "urgent":
-      return "destructive" as const;
-    default:
-      return "outline" as const;
-  }
-}
-
-function statusToVariant(status: TaskStatus | string) {
-  switch (status) {
-    case "done":
-      return "success" as const;
-    case "in_progress":
-      return "warning" as const;
-    case "blocked":
-      return "destructive" as const;
-    case "todo":
-      return "secondary" as const;
-    case "cancelled":
-      return "outline" as const;
-    default:
-      return "outline" as const;
-  }
-}
 
 function formatDate(value: string | null) {
   return formatShortDate(value, "—");
@@ -271,11 +204,9 @@ export default function TaskDetailClient(props: Props) {
         </CardHeader>
         <CardContent className="text-sm">
           <div className="flex flex-wrap gap-2 items-center">
-            <Badge variant={statusToVariant(props.status)}>{taskStatusLabel(props.status)}</Badge>
+            <StatusBadge value={props.status} type="task" />
             {props.priority ? (
-              <Badge variant={priorityToVariant(props.priority)}>
-                {taskPriorityLabel(props.priority)}
-              </Badge>
+              <StatusBadge value={props.priority} type="priority" />
             ) : null}
           </div>
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-muted-foreground">

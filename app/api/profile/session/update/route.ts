@@ -5,13 +5,27 @@ import { minutesBetween, WORK_SESSIONS_TABLE } from "@/lib/payroll";
 
 type UpdateSessionPayload = {
   session_id?: string;
+  user_id?: string | null;
   business_domain?: string | null;
   project_id?: string | null;
   property_id?: string | null;
   notes?: string | null;
   clock_in?: string | null;
   clock_out?: string | null;
+  labor_cost?: number | string | null;
+  is_billable_to_customer?: boolean | null;
+  bill_to_customer_amount?: number | string | null;
+  billing_status?: string | null;
 };
+
+function toPositiveNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
 
 function overlaps(start: string, end: string | null, otherStart: string, otherEnd: string | null) {
   const startMs = new Date(start).getTime();
@@ -29,6 +43,7 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => ({}))) as UpdateSessionPayload;
     const sessionId = typeof body.session_id === "string" ? body.session_id.trim() : "";
+    const selectedUserId = typeof body.user_id === "string" ? body.user_id.trim() : "";
     const businessDomain = isExpenseBusinessDomain(body.business_domain)
       ? body.business_domain
       : null;
@@ -38,6 +53,15 @@ export async function POST(req: Request) {
     const clockIn = typeof body.clock_in === "string" ? body.clock_in.trim() : "";
     const clockOutInput = typeof body.clock_out === "string" ? body.clock_out.trim() : "";
     const clockOut = clockOutInput || null;
+    const laborCost = toPositiveNumber(body.labor_cost);
+    const isBillableToCustomer = body.is_billable_to_customer === true;
+    const billToCustomerAmount = toPositiveNumber(body.bill_to_customer_amount);
+    const billingStatus =
+      typeof body.billing_status === "string" && body.billing_status.trim()
+        ? body.billing_status.trim()
+        : isBillableToCustomer
+          ? "billable"
+          : "not_billable";
 
     if (!sessionId) {
       return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
@@ -45,8 +69,20 @@ export async function POST(req: Request) {
     if (!businessDomain) {
       return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
     }
+    if (!selectedUserId) {
+      return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
+    }
     if (!clockIn) {
       return NextResponse.json({ error: "יש להזין שעת התחלה." }, { status: 400 });
+    }
+    if (laborCost === null || laborCost <= 0) {
+      return NextResponse.json({ error: "Missing or invalid labor_cost" }, { status: 400 });
+    }
+    if (isBillableToCustomer && (billToCustomerAmount === null || billToCustomerAmount <= 0)) {
+      return NextResponse.json(
+        { error: "Missing or invalid bill_to_customer_amount" },
+        { status: 400 }
+      );
     }
     if (businessDomain === "logistics_projects" && !projectId) {
       return NextResponse.json({ error: "יש לבחור פרויקט לתחום פרויקטים." }, { status: 400 });
@@ -66,13 +102,12 @@ export async function POST(req: Request) {
       }
     }
 
-    const { supabase, user } = access.value;
+    const { supabase } = access.value;
 
     const { data: session, error: sessionError } = await supabase
       .from(WORK_SESSIONS_TABLE)
-      .select("id,user_id")
+      .select("id,user_id,project_id")
       .eq("id", sessionId)
-      .eq("user_id", user.id)
       .maybeSingle();
 
     if (sessionError) {
@@ -80,6 +115,22 @@ export async function POST(req: Request) {
     }
     if (!session) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+    if (projectId && session.project_id !== projectId) {
+      return NextResponse.json({ error: "Session not found for project" }, { status: 404 });
+    }
+
+    const { data: selectedUser, error: selectedUserError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("id", selectedUserId)
+      .maybeSingle();
+
+    if (selectedUserError) {
+      return NextResponse.json({ error: selectedUserError.message }, { status: 400 });
+    }
+    if (!selectedUser?.id) {
+      return NextResponse.json({ error: "Selected user not found" }, { status: 404 });
     }
 
     if (businessDomain === "logistics_projects") {
@@ -105,7 +156,7 @@ export async function POST(req: Request) {
     const { data: siblingSessions, error: siblingSessionsError } = await supabase
       .from(WORK_SESSIONS_TABLE)
       .select("id,clock_in,clock_out")
-      .eq("user_id", user.id)
+      .eq("user_id", selectedUserId)
       .neq("id", sessionId)
       .order("clock_in", { ascending: false })
       .limit(500);
@@ -137,17 +188,21 @@ export async function POST(req: Request) {
     const { data, error } = await supabase
       .from(WORK_SESSIONS_TABLE)
       .update({
+        user_id: selectedUserId,
         clock_in: clockIn,
         clock_out: clockOut,
         worked_minutes: clockOut ? minutesBetween(clockIn, clockOut) : null,
+        labor_cost: laborCost,
+        is_billable_to_customer: isBillableToCustomer,
+        bill_to_customer_amount: isBillableToCustomer ? billToCustomerAmount : null,
+        billing_status: billingStatus,
         notes: notes || null,
         business_domain: businessDomain,
         project_id: businessDomain === "logistics_projects" ? projectId : null,
         property_id: businessDomain === "property_management" ? propertyId : null,
       })
       .eq("id", sessionId)
-      .eq("user_id", user.id)
-      .select("id,user_id,clock_in,clock_out,worked_minutes,notes,business_domain,project_id,property_id")
+      .select("id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id")
       .maybeSingle();
 
     if (error) {

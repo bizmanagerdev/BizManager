@@ -123,6 +123,7 @@ export function TopBar({
               size="icon-sm"
               className="relative rounded-xl border-primary/15 text-accent-foreground shadow-md"
               type="button"
+              id="topbar-alerts-trigger"
             >
               <Bell className="h-4 w-4" />
               {alertCount > 0 ? (
@@ -182,12 +183,13 @@ export function TopBar({
 
         <ClientOnly
           fallback={
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-2 rounded-xl border-primary/15 text-accent-foreground shadow-md"
-              type="button"
-            >
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2 rounded-xl border-primary/15 text-accent-foreground shadow-md"
+                type="button"
+                id="topbar-user-trigger-fallback"
+              >
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
                 <User className="h-3.5 w-3.5" />
               </div>
@@ -198,7 +200,13 @@ export function TopBar({
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2 rounded-xl border-primary/15 text-accent-foreground shadow-md" type="button">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2 rounded-xl border-primary/15 text-accent-foreground shadow-md"
+                type="button"
+                id="topbar-user-trigger"
+              >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
                   <User className="h-3.5 w-3.5" />
                 </div>

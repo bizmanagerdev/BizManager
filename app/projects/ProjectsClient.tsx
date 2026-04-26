@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -25,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
+import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; email?: string | null };
@@ -97,22 +99,7 @@ function statusValue(row: ProjectRow) {
 }
 
 function statusLabel(status: string) {
-  switch (status) {
-    case "planned":
-      return "מתוכנן";
-    case "active":
-      return "פעיל";
-    case "on_hold":
-      return "בהמתנה";
-    case "completed":
-      return "הושלם";
-    case "cancelled":
-      return "בוטל";
-    case "unknown":
-      return "לא ידוע";
-    default:
-      return status;
-  }
+  return status === "unknown" ? "לא ידוע" : getProjectStatusLabel(status);
 }
 
 function projectTypeLabel(value: string) {
@@ -145,13 +132,15 @@ function paymentStatusValue(row: ProjectRow) {
   }
 
   const paidTotal = getNumber(row, "paid_total") ?? 0;
-  const amountDue = getNumber(row, "amount_due") ?? 0;
+  const amountDue = getNumber(row, "amount_due");
+  const customerTotalPrice = getNumber(row, "customer_total_price");
   const actualPrice = getNumber(row, "actual_price");
   const agreedBasePrice = getNumber(row, "agreed_base_price");
-  const dueBase = actualPrice ?? agreedBasePrice ?? 0;
+  const dueBase = customerTotalPrice ?? actualPrice ?? agreedBasePrice ?? 0;
+  const effectiveAmountDue = amountDue ?? dueBase;
 
   if (dueBase <= 0) return "unpriced";
-  if (amountDue <= 0 || paidTotal >= amountDue) return "paid";
+  if (effectiveAmountDue <= 0 || paidTotal >= effectiveAmountDue) return "paid";
   if (paidTotal > 0) return "partial";
   return "unpaid";
 }
@@ -166,21 +155,6 @@ function paymentStatusLabel(status: "paid" | "partial" | "unpaid" | "unpriced") 
       return "לא שולם";
     case "unpriced":
       return "לא סוכם תשלום";
-  }
-}
-
-function projectStatusBadgeClasses(status: string) {
-  switch (status) {
-    case "completed":
-      return "border-transparent bg-emerald-100 text-black";
-    case "cancelled":
-      return "border-transparent bg-rose-100 text-black";
-    case "planned":
-    case "active":
-    case "on_hold":
-      return "border-transparent bg-blue-100 text-blue-900";
-    default:
-      return "border-transparent bg-blue-100 text-blue-900";
   }
 }
 
@@ -803,9 +777,7 @@ export default function ProjectsClient({
                     className="text-sm"
                     onClick={() => emitNavigationStart()}
                   >
-                    <Badge className={projectStatusBadgeClasses(currentStatus)}>
-                      {statusLabel(currentStatus)}
-                    </Badge>
+                    <StatusBadge value={currentStatus} type="project" />
                   </Link>
 
                   <Link

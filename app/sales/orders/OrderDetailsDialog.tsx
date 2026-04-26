@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Dialog,
   DialogContent,
@@ -63,7 +64,7 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function formatOrderStatus(status: string | null) {
+export function formatOrderStatus(status: string | null) {
   switch ((status ?? "").toLowerCase()) {
     case "draft":
       return "פתוחה";
@@ -114,7 +115,7 @@ function normalizeOrderStatus(value: string | null) {
   }
 }
 
-function orderStatusClasses(status: string) {
+export function orderStatusClasses(status: string) {
   switch (normalizeOrderStatus(status)) {
     case "delivered":
     case "completed":
@@ -324,9 +325,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
               >
                 <div className="space-y-3">
                   <div className="flex flex-wrap gap-2">
-                    <Badge className={orderStatusClasses(getString(data.order, "status") ?? "")}>
-                      {formatOrderStatus(getString(data.order, "status"))}
-                    </Badge>
+                    <StatusBadge value={getString(data.order, "status") ?? ""} type="order" />
                     <Badge className={paymentStatusClasses(data.paymentStatus)}>
                       {formatPaymentStatus(data.paymentStatus)}
                     </Badge>

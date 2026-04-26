@@ -4,13 +4,27 @@ import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { minutesBetween, WORK_SESSIONS_TABLE } from "@/lib/payroll";
 
 type CreateSessionPayload = {
+  user_id?: string | null;
   business_domain?: string | null;
   project_id?: string | null;
   property_id?: string | null;
   notes?: string | null;
   clock_in?: string | null;
   clock_out?: string | null;
+  labor_cost?: number | string | null;
+  is_billable_to_customer?: boolean | null;
+  bill_to_customer_amount?: number | string | null;
+  billing_status?: string | null;
 };
+
+function toPositiveNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
 
 function overlaps(start: string, end: string, otherStart: string, otherEnd: string | null) {
   const startMs = new Date(start).getTime();
@@ -30,17 +44,39 @@ export async function POST(req: Request) {
     const businessDomain = isExpenseBusinessDomain(body.business_domain)
       ? body.business_domain
       : null;
+    const selectedUserId = typeof body.user_id === "string" ? body.user_id.trim() : "";
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
     const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
     const notes = typeof body.notes === "string" ? body.notes.trim() : "";
     const clockIn = typeof body.clock_in === "string" ? body.clock_in.trim() : "";
     const clockOut = typeof body.clock_out === "string" ? body.clock_out.trim() : "";
+    const laborCost = toPositiveNumber(body.labor_cost);
+    const isBillableToCustomer = body.is_billable_to_customer === true;
+    const billToCustomerAmount = toPositiveNumber(body.bill_to_customer_amount);
+    const billingStatus =
+      typeof body.billing_status === "string" && body.billing_status.trim()
+        ? body.billing_status.trim()
+        : isBillableToCustomer
+          ? "billable"
+          : "not_billable";
 
     if (!businessDomain) {
       return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
     }
+    if (!selectedUserId) {
+      return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
+    }
     if (!clockIn || !clockOut) {
       return NextResponse.json({ error: "יש להזין שעת התחלה ושעת סיום." }, { status: 400 });
+    }
+    if (laborCost === null || laborCost <= 0) {
+      return NextResponse.json({ error: "Missing or invalid labor_cost" }, { status: 400 });
+    }
+    if (isBillableToCustomer && (billToCustomerAmount === null || billToCustomerAmount <= 0)) {
+      return NextResponse.json(
+        { error: "Missing or invalid bill_to_customer_amount" },
+        { status: 400 }
+      );
     }
     if (businessDomain === "logistics_projects" && !projectId) {
       return NextResponse.json({ error: "יש לבחור פרויקט לתחום פרויקטים." }, { status: 400 });
@@ -59,7 +95,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "שעת הסיום חייבת להיות אחרי שעת ההתחלה." }, { status: 400 });
     }
 
-    const { supabase, user } = access.value;
+    const { supabase } = access.value;
+
+    const { data: selectedUser, error: selectedUserError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("id", selectedUserId)
+      .maybeSingle();
+
+    if (selectedUserError) {
+      return NextResponse.json({ error: selectedUserError.message }, { status: 400 });
+    }
+    if (!selectedUser?.id) {
+      return NextResponse.json({ error: "Selected user not found" }, { status: 404 });
+    }
 
     if (businessDomain === "logistics_projects") {
       const { data: project, error: projectError } = await supabase
@@ -84,7 +133,7 @@ export async function POST(req: Request) {
     const { data: existingSessions, error: existingSessionsError } = await supabase
       .from(WORK_SESSIONS_TABLE)
       .select("id,clock_in,clock_out")
-      .eq("user_id", user.id)
+      .eq("user_id", selectedUserId)
       .order("clock_in", { ascending: false })
       .limit(500);
 
@@ -105,16 +154,20 @@ export async function POST(req: Request) {
     const { data, error } = await supabase
       .from(WORK_SESSIONS_TABLE)
       .insert({
-        user_id: user.id,
+        user_id: selectedUserId,
         clock_in: clockIn,
         clock_out: clockOut,
         worked_minutes: minutesBetween(clockIn, clockOut),
+        labor_cost: laborCost,
+        is_billable_to_customer: isBillableToCustomer,
+        bill_to_customer_amount: isBillableToCustomer ? billToCustomerAmount : null,
+        billing_status: billingStatus,
         notes: notes || null,
         business_domain: businessDomain,
         project_id: businessDomain === "logistics_projects" ? projectId : null,
         property_id: businessDomain === "property_management" ? propertyId : null,
       })
-      .select("id,user_id,clock_in,clock_out,worked_minutes,notes,business_domain,project_id,property_id")
+      .select("id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id")
       .maybeSingle();
 
     if (error) {

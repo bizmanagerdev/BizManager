@@ -1,4 +1,15 @@
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
+import { getPaymentStatusColor, getPaymentStatusLabel } from "@/lib/ui/status-colors";
+
+export type FinancialAttachment = {
+  document_id: string;
+  file_name: string | null;
+  storage_key?: string | null;
+  uploaded_at?: string | null;
+  url: string | null;
+  document_type?: string | null;
+};
 
 export type PaymentRow = {
   id: string;
@@ -20,6 +31,7 @@ export type PaymentRow = {
   notes: string | null;
   created_at: string | null;
   updated_at: string | null;
+  attachments?: FinancialAttachment[];
 };
 
 export const PAYMENT_SELECT =
@@ -86,27 +98,9 @@ export function buildPaymentInsert(input: BuildPaymentInsertInput) {
 }
 
 export function paymentRecordStatusLabel(status: string | null | undefined) {
-  switch (status) {
-    case "cleared":
-      return "התקבל";
-    case "pending":
-      return "ממתין לפירעון";
-    case "rejected":
-      return "נדחה";
-    default:
-      return status || "-";
-  }
+  return getPaymentStatusLabel(status ?? "");
 }
 
 export function paymentRecordStatusClasses(status: string | null | undefined) {
-  switch (status) {
-    case "cleared":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
-    case "pending":
-      return "border-blue-200 bg-blue-50 text-blue-700";
-    case "rejected":
-      return "border-rose-200 bg-rose-50 text-rose-700";
-    default:
-      return "border-slate-200 bg-slate-100 text-slate-700";
-  }
+  return getStatusColorClasses(getPaymentStatusColor(status ?? ""));
 }

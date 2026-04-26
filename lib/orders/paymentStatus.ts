@@ -1,3 +1,6 @@
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
+import type { StatusColor } from "@/lib/ui/status-colors";
+
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
 export type OrderPaymentInput = {
@@ -147,13 +150,19 @@ export function paymentMethodLabel(method: string | null | undefined) {
 }
 
 export function paymentStatusClasses(status: string) {
+  return getStatusColorClasses(getOrderPaymentStatusColor(status));
+}
+
+function getOrderPaymentStatusColor(status: string): StatusColor {
   switch (status) {
     case "paid":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+      return "success";
     case "partial":
-      return "border-blue-200 bg-blue-50 text-blue-700";
+      return "info";
+    case "unpaid":
+      return "danger";
     default:
-      return "border-rose-200 bg-rose-50 text-rose-700";
+      return "neutral";
   }
 }
 

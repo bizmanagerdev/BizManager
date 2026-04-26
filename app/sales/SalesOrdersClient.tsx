@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import OrderDetailsDialog from "@/app/sales/orders/OrderDetailsDialog";
 import { formatOrderDate } from "@/lib/orders/format";
 import {
@@ -92,7 +93,7 @@ function normalizeOrderStatus(value: string | null) {
   }
 }
 
-function statusLabel(value: string) {
+export function statusLabel(value: string) {
   switch (normalizeOrderStatus(value)) {
     case "draft":
       return "פתוחה";
@@ -115,7 +116,7 @@ function statusLabel(value: string) {
   }
 }
 
-function orderStatusBadgeClasses(status: string) {
+export function orderStatusBadgeClasses(status: string) {
   switch (normalizeOrderStatus(status)) {
     case "delivered":
     case "completed":
@@ -159,7 +160,7 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
   const [query, setQuery] = useState("");
   const [activityFilter, setActivityFilter] = useState<"all" | "active" | "inactive">("all");
   const [cityFilter, setCityFilter] = useState("all");
-  const [paymentSnapshot, setPaymentSnapshot] = useState(() => new Map<string, number>());
+  const [paymentSnapshot] = useState(() => new Map<string, number>());
 
   const orderRows = useMemo(() => {
     return orders
@@ -340,7 +341,7 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 md:min-w-0">
-                    <Badge className={orderStatusBadgeClasses(row.status)}>{statusLabel(row.status)}</Badge>
+                    <StatusBadge value={row.status} type="order" />
                     <Badge className={paymentStatusClasses(row.paymentStatus)}>
                       {paymentStatusLabel(row.paymentStatus)}
                     </Badge>

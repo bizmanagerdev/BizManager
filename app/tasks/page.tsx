@@ -1,13 +1,11 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import TasksRealtimeBadge from "@/app/tasks/TasksRealtimeBadge";
 import { formatShortDate } from "@/lib/date";
 
-type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
-type TaskPriority = "low" | "medium" | "high" | "urgent";
 type Row = Record<string, unknown>;
 
 export const revalidate = 30;
@@ -16,70 +14,6 @@ const PAGE_SIZE = 50;
 function getString(row: Row, key: string) {
   const value = row[key];
   return typeof value === "string" ? value : null;
-}
-
-function taskStatusLabel(status: TaskStatus | string) {
-  switch (status) {
-    case "todo":
-      return "לביצוע";
-    case "in_progress":
-      return "בתהליך";
-    case "blocked":
-      return "חסום";
-    case "done":
-      return "בוצע";
-    case "cancelled":
-      return "בוטל";
-    default:
-      return status;
-  }
-}
-
-function taskPriorityLabel(priority: TaskPriority | string) {
-  switch (priority) {
-    case "low":
-      return "נמוכה";
-    case "medium":
-      return "בינונית";
-    case "high":
-      return "גבוהה";
-    case "urgent":
-      return "דחופה";
-    default:
-      return priority;
-  }
-}
-
-function priorityVariant(priority: TaskPriority | string) {
-  switch (priority) {
-    case "low":
-      return "secondary" as const;
-    case "medium":
-      return "warning" as const;
-    case "high":
-      return "destructive" as const;
-    case "urgent":
-      return "destructive" as const;
-    default:
-      return "outline" as const;
-  }
-}
-
-function statusVariant(status: TaskStatus | string) {
-  switch (status) {
-    case "done":
-      return "success" as const;
-    case "in_progress":
-      return "warning" as const;
-    case "blocked":
-      return "destructive" as const;
-    case "todo":
-      return "secondary" as const;
-    case "cancelled":
-      return "outline" as const;
-    default:
-      return "outline" as const;
-  }
 }
 
 function parsePage(value: string | undefined) {
@@ -169,20 +103,10 @@ export default async function TasksPage({
                         </td>
                         <td className="px-3 py-2">{assignee}</td>
                         <td className="px-3 py-2">
-                          {priority ? (
-                            <Badge variant={priorityVariant(priority)}>
-                              {taskPriorityLabel(priority)}
-                            </Badge>
-                          ) : (
-                            "-"
-                          )}
+                          {priority ? <StatusBadge value={priority} type="priority" /> : "-"}
                         </td>
                         <td className="px-3 py-2">
-                          {status ? (
-                            <Badge variant={statusVariant(status)}>{taskStatusLabel(status)}</Badge>
-                          ) : (
-                            "-"
-                          )}
+                          {status ? <StatusBadge value={status} type="task" /> : "-"}
                         </td>
                       </tr>
                     );

@@ -4,8 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import Link from "next/link";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import {
@@ -30,14 +30,21 @@ import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { ORDER_PAYMENT_METHOD_OPTIONS, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import {
-  paymentRecordStatusClasses,
-  paymentRecordStatusLabel,
   type PaymentRow,
+  type FinancialAttachment,
 } from "@/lib/payments";
-import { formatShortDate } from "@/lib/date";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
   mapProjectTypeToExpenseDomain,
 } from "@/lib/expenses";
+import { addMinutes, formatMinutes, sessionWorkedMinutes, type WorkSessionRow } from "@/lib/payroll";
+import { getStatusDotClasses } from "@/lib/ui/status-color-classes";
+import {
+  getTaskPriorityColor,
+  getTaskPriorityLabel,
+  getTaskStatusColor,
+  getTaskStatusLabel,
+} from "@/lib/ui/status-colors";
 
 export type ProjectOverview = {
   id: string;
@@ -63,6 +70,8 @@ export type ProjectFinancials = {
   agreed_base_price: string | number | null;
   actual_price: string | number | null;
   total_expenses: string | number | null;
+  expenses_billed: string | number | null;
+  customer_total_price: string | number | null;
   gross_profit: string | number | null;
 } | null;
 
@@ -82,8 +91,10 @@ export type ProjectExpenseSummary = {
 } | null;
 
 export type ExpenseListItem = {
-  project_expense: Record<string, unknown>;
+  source_type: "expense" | "session";
+  project_expense: Record<string, unknown> | null;
   expense: Record<string, unknown> | null;
+  session: WorkSessionRow | null;
 };
 
 export type AssignableUser = {
@@ -119,6 +130,10 @@ function formatDate(value: string | null) {
   return formatShortDate(value, "—");
 }
 
+function formatDateTime(value: string | null) {
+  return formatShortDateTime(value, "—");
+}
+
 function getString(row: Record<string, unknown> | null, key: string) {
   if (!row) return null;
   const value = row[key];
@@ -141,70 +156,49 @@ function getFirstDate(row: Record<string, unknown> | null, keys: string[]) {
   return null;
 }
 
-function taskStatusLabel(status: TaskStatus | string) {
-  switch (status) {
-    case "todo":
-      return "לביצוע";
-    case "in_progress":
-      return "בתהליך";
-    case "blocked":
-      return "חסום";
-    case "done":
-      return "בוצע";
-    case "cancelled":
-      return "בוטל";
-    default:
-      return status;
+function sessionLaborCost(session: WorkSessionRow | null | undefined) {
+  return Math.max(0, toNumber(session?.labor_cost) ?? 0);
+}
+
+function isSessionBillable(session: WorkSessionRow | null | undefined) {
+  return session?.is_billable_to_customer === true;
+}
+
+function sessionBillToCustomerAmount(session: WorkSessionRow | null | undefined) {
+  if (!isSessionBillable(session)) return 0;
+  return Math.max(0, toNumber(session?.bill_to_customer_amount) ?? 0);
+}
+
+function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
+  const name = attachment.file_name?.toLowerCase() ?? "";
+  return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
+}
+
+async function uploadFinancialAttachment(entityType: "expense" | "payment", entityId: string, file: File) {
+  const form = new FormData();
+  form.set("entity_type", entityType);
+  form.set("entity_id", entityId);
+  form.set("file", file);
+
+  const res = await fetch("/api/financial-attachments/upload", {
+    method: "POST",
+    body: form,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof json?.error === "string" ? json.error : "Upload failed");
   }
+  return (json?.attachment ?? null) as
+    | FinancialAttachment
+    | null;
+}
+
+function taskStatusLabel(status: TaskStatus | string) {
+  return getTaskStatusLabel(status);
 }
 
 function taskPriorityLabel(priority: TaskPriority | string) {
-  switch (priority) {
-    case "low":
-      return "נמוכה";
-    case "medium":
-      return "בינונית";
-    case "high":
-      return "גבוהה";
-    case "urgent":
-      return "דחופה";
-    default:
-      return priority;
-  }
-}
-
-function priorityToBadgeVariant(
-  priority: TaskPriority | string
-): BadgeProps["variant"] {
-  switch (priority) {
-    case "low":
-      return "secondary";
-    case "medium":
-      return "warning";
-    case "high":
-      return "destructive";
-    case "urgent":
-      return "destructive";
-    default:
-      return "outline";
-  }
-}
-
-function statusToBadgeVariant(status: TaskStatus | string): BadgeProps["variant"] {
-  switch (status) {
-    case "done":
-      return "success";
-    case "in_progress":
-      return "warning";
-    case "blocked":
-      return "destructive";
-    case "cancelled":
-      return "outline";
-    case "todo":
-      return "secondary";
-    default:
-      return "outline";
-  }
+  return getTaskPriorityLabel(priority);
 }
 
 type CashFlowEvent =
@@ -616,6 +610,11 @@ export default function ProjectTabsClient({
 
   const [addExpenseOpen, setAddExpenseOpen] = useState(false);
   const [addIncomeOpen, setAddIncomeOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<ExpenseListItem | null>(null);
+  const [editingPayment, setEditingPayment] = useState<PaymentRow | null>(null);
+  const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [updateActualPriceOpen, setUpdateActualPriceOpen] = useState(false);
   const [updateActualPriceSaving, setUpdateActualPriceSaving] = useState(false);
   const [updateActualPriceValue, setUpdateActualPriceValue] = useState<string>("");
@@ -647,8 +646,6 @@ export default function ProjectTabsClient({
     setActualPriceUi(toNumber(financials?.actual_price ?? overview.actual_price) ?? null);
   }, [financials?.actual_price, overview.actual_price]);
 
-  const effectiveActualPrice = actualPriceUi ?? agreedBasePrice;
-
   useEffect(() => {
     if (!updateActualPriceOpen) return;
     const v = actualPriceUi ?? agreedBasePrice;
@@ -667,16 +664,20 @@ export default function ProjectTabsClient({
   const canSaveActualPrice = !updateActualPriceError;
   const totalExpenses = toNumber(financials?.total_expenses) ?? null;
   const grossProfit = toNumber(financials?.gross_profit) ?? null;
+  const billedExpensesFromDb = toNumber(financials?.expenses_billed) ?? null;
+  const customerTotalPrice = toNumber(financials?.customer_total_price) ?? null;
+  const billableCustomerItems = expensesUi.filter((item) =>
+    item.source_type === "session"
+      ? isSessionBillable(item.session)
+      : Boolean(item.project_expense?.["billed_to_customer"])
+  );
+  const billedExpensesTotal = billedExpensesFromDb;
+  const displayedCustomerPrice = customerTotalPrice ?? actualPriceUi ?? agreedBasePrice;
 
   const paymentsTotal = paymentsUi.reduce(
     (sum, p) => sum + (toNumber(p.amount_total) ?? 0),
     0
   );
-  const expensesTotal = expensesUi.reduce((sum, item) => sum + (toNumber(item.expense?.amount) ?? 0), 0);
-  const interimProfit = paymentsTotal - expensesTotal;
-  const hasRecordedFinancialActivity = paymentsUi.length > 0 || expensesUi.length > 0;
-  const effectiveDisplayedExpenses = hasRecordedFinancialActivity ? expensesTotal : totalExpenses;
-  const effectiveDisplayedGrossProfit = hasRecordedFinancialActivity ? interimProfit : grossProfit;
   const tasksSorted = useMemo(() => {
     const copy = [...projectTasksUi];
     copy.sort((a, b) => {
@@ -720,7 +721,29 @@ export default function ProjectTabsClient({
       };
     });
 
-    const expenseEvents: CashFlowEvent[] = expensesUi.map((item, idx) => {
+    const expenseEvents: CashFlowEvent[] = expensesUi.flatMap((item, idx) => {
+      if (item.source_type === "session" && item.session) {
+        if (isSessionBillable(item.session)) return [];
+        const user = usersById.get(item.session.user_id);
+        const workerName = user?.full_name?.trim() || user?.email || "עובד";
+        return [
+          {
+            type: "expense" as const,
+            id: item.session.id,
+            date: item.session.clock_in ?? null,
+            amount: sessionLaborCost(item.session),
+            title: `שכר עובד — ${workerName}`,
+            meta: [
+              `כניסה: ${formatDateTime(item.session.clock_in)}`,
+              `יציאה: ${formatDateTime(item.session.clock_out)}`,
+              `משך: ${formatMinutes(sessionWorkedMinutes(item.session))}`,
+            ],
+            includedInBase: true,
+            billedToCustomer: false,
+          },
+        ];
+      }
+
       const expenseId = getString(item.project_expense, "expense_id") ?? String(idx);
       const date =
         getString(item.expense, "expense_date") ??
@@ -736,23 +759,23 @@ export default function ProjectTabsClient({
         description ||
         "הוצאה";
 
-      const includedInBase = Boolean(item.project_expense["included_in_base_price"]);
-      const billedToCustomer = Boolean(item.project_expense["billed_to_customer"]);
+      const includedInBase = Boolean(item.project_expense?.["included_in_base_price"]);
+      const billedToCustomer = Boolean(item.project_expense?.["billed_to_customer"]);
+      if (billedToCustomer) return [];
 
       const meta: string[] = [];
-      if (includedInBase) meta.push("נכלל בבסיס");
-      if (billedToCustomer) meta.push("חויב ללקוח");
-
-      return {
-        type: "expense",
-        id: expenseId,
-        date,
-        amount,
-        title,
-        meta,
-        includedInBase,
-        billedToCustomer,
-      };
+      return [
+        {
+          type: "expense" as const,
+          id: expenseId,
+          date,
+          amount,
+          title,
+          meta,
+          includedInBase,
+          billedToCustomer,
+        },
+      ];
     });
 
     const all = [...incomeEvents, ...expenseEvents];
@@ -765,6 +788,112 @@ export default function ProjectTabsClient({
 
     return all;
   })();
+
+  async function deleteExpense(item: ExpenseListItem) {
+    const expenseId = getString(item.project_expense, "expense_id") ?? getString(item.expense, "id");
+    if (!expenseId || deletingExpenseId) return;
+
+    setDeletingExpenseId(expenseId);
+    try {
+      const res = await fetch("/api/expenses/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: expenseId,
+          project_id: overview.id,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error("שגיאה במחיקת ההוצאה", {
+          description: typeof json?.error === "string" ? json.error : "",
+        });
+        return;
+      }
+      setExpensesUi((prev) =>
+        prev.filter((row) => {
+          const rowId = getString(row.project_expense, "expense_id") ?? getString(row.expense, "id");
+          return rowId !== expenseId;
+        })
+      );
+      toast.success("ההוצאה נמחקה");
+      startTransition(() => router.refresh());
+    } catch (e: unknown) {
+      toast.error("שגיאה במחיקת ההוצאה", {
+        description: getErrorMessage(e),
+      });
+    } finally {
+      setDeletingExpenseId(null);
+    }
+  }
+
+  async function deleteSession(item: ExpenseListItem) {
+    const sessionId = item.session?.id ?? "";
+    if (!sessionId || deletingSessionId) return;
+
+    setDeletingSessionId(sessionId);
+    try {
+      const res = await fetch("/api/profile/session/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          project_id: overview.id,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error("שגיאה במחיקת המשמרת", {
+          description: typeof json?.error === "string" ? json.error : "",
+        });
+        return;
+      }
+
+      setExpensesUi((prev) =>
+        prev.filter((row) => !(row.source_type === "session" && row.session?.id === sessionId))
+      );
+      toast.success("המשמרת נמחקה");
+      startTransition(() => router.refresh());
+    } catch (e: unknown) {
+      toast.error("שגיאה במחיקת המשמרת", {
+        description: getErrorMessage(e),
+      });
+    } finally {
+      setDeletingSessionId(null);
+    }
+  }
+
+  async function deletePayment(payment: PaymentRow) {
+    if (!payment.id || deletingPaymentId) return;
+
+    setDeletingPaymentId(payment.id);
+    try {
+      const res = await fetch("/api/payments/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: payment.id,
+          project_id: overview.id,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error("שגיאה במחיקת ההכנסה", {
+          description: typeof json?.error === "string" ? json.error : "",
+        });
+        return;
+      }
+      setPaymentsUi((prev) => prev.filter((row) => row.id !== payment.id));
+      toast.success("ההכנסה נמחקה");
+      startTransition(() => router.refresh());
+    } catch (e: unknown) {
+      toast.error("שגיאה במחיקת ההכנסה", {
+        description: getErrorMessage(e),
+      });
+    } finally {
+      setDeletingPaymentId(null);
+    }
+  }
 
   async function updateActualPrice(next: number | null) {
     setUpdateActualPriceSaving(true);
@@ -801,6 +930,151 @@ export default function ProjectTabsClient({
     }
   }
 
+  function renderExpenseRow(item: ExpenseListItem, idx: number, options?: { showBillableBadge?: boolean; billedList?: boolean }) {
+    const expenseId = getString(item.project_expense, "expense_id");
+    const isSession = item.source_type === "session" && item.session;
+    const amount = isSession ? sessionLaborCost(item.session) : toNumber(item.expense?.amount);
+    const billedAmount = isSession
+      ? sessionBillToCustomerAmount(item.session)
+      : toNumber(item.expense?.amount);
+    const createdAt = isSession
+      ? item.session.clock_in
+      : getString(item.expense, "expense_date") ??
+        getString(item.expense, "created_at") ??
+        null;
+
+    const title = isSession
+      ? `שכר עובד${(() => {
+          const user = usersById.get(item.session.user_id);
+          const name = user?.full_name?.trim() || user?.email || "";
+          return name ? ` — ${name}` : "";
+        })()}`
+      : getString(item.expense, "description") ??
+        getString(item.expense, "vendor_name") ??
+        getString(item.expense, "vendor") ??
+        (expenseId ? `הוצאה ${expenseId.slice(0, 8)}` : "הוצאה");
+    const attachments =
+      !isSession && Array.isArray(item.expense?.attachments)
+        ? (item.expense.attachments as FinancialAttachment[])
+        : [];
+
+    const billed = isSession
+      ? isSessionBillable(item.session)
+      : Boolean(item.project_expense?.["billed_to_customer"]);
+
+    return (
+      <div
+        key={isSession ? item.session.id : expenseId ?? String(idx)}
+        className="py-3 flex items-start justify-between gap-4"
+      >
+        <div className="min-w-0">
+          <div className="font-medium truncate">{title}</div>
+          <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
+            <span>{formatDate(createdAt)}</span>
+            {isSession ? (
+              <>
+                <span>כניסה: {formatDateTime(item.session.clock_in)}</span>
+                <span>יציאה: {formatDateTime(item.session.clock_out)}</span>
+                <span>משך: {formatMinutes(sessionWorkedMinutes(item.session))}</span>
+                {options?.billedList ? (
+                  <span>עלות עבודה: {formatIls(amount)}</span>
+                ) : null}
+              </>
+            ) : null}
+            {billed && options?.showBillableBadge !== false ? (
+              <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 font-medium text-amber-800">
+                חויב ללקוח
+              </span>
+            ) : null}
+          </div>
+          {isSession && item.session.notes ? (
+            <div className="text-xs text-muted-foreground mt-1 truncate">
+              {item.session.notes}
+            </div>
+          ) : null}
+          {attachments.length > 0 ? (
+            <div className="mt-2 space-y-2">
+              <div className="flex flex-wrap gap-2">
+                {attachments.map((attachment) => (
+                  <a
+                    key={attachment.document_id}
+                    href={attachment.url ?? "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
+                  >
+                    {attachment.file_name ?? "קובץ"}
+                  </a>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {attachments
+                  .filter((attachment) => attachment.url && isImageAttachment(attachment))
+                  .map((attachment) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={`${attachment.document_id}-preview`}
+                      src={attachment.url ?? ""}
+                      alt={attachment.file_name ?? title}
+                      className="h-16 w-16 rounded-lg border object-cover"
+                    />
+                  ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="shrink-0 text-left">
+          <div className="font-medium">
+            {options?.billedList
+              ? billedAmount === null
+                ? "—"
+                : formatIls(billedAmount)
+              : amount === null
+                ? "—"
+                : formatIls(amount)}
+          </div>
+          <div className="mt-2 flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditingExpense(item);
+                setAddExpenseOpen(true);
+              }}
+              disabled={
+                isSession
+                  ? deletingSessionId === item.session.id
+                  : deletingExpenseId === expenseId
+              }
+            >
+              ערוך
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => void (isSession ? deleteSession(item) : deleteExpense(item))}
+              disabled={
+                isSession
+                  ? deletingSessionId === item.session.id
+                  : deletingExpenseId === expenseId
+              }
+            >
+              {isSession
+                ? deletingSessionId === item.session.id
+                  ? "מוחק..."
+                  : "מחק"
+                : deletingExpenseId === expenseId
+                  ? "מוחק..."
+                  : "מחק"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <ClientOnly
       fallback={<div className="text-muted-foreground text-base">טוען…</div>}
@@ -822,68 +1096,233 @@ export default function ProjectTabsClient({
         </TabsTrigger>
       </TabsList>
 
-      <TabsContent value="overview" className="mx-auto mt-4 w-full max-w-6xl">
-        <AdaptiveGrid variant="projectOverview" className="xl:grid-cols-2">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">סיכום כספי</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">מחיר בסיס שסוכם</span>
-                <span>{formatIls(agreedBasePrice)}</span>
+      <TabsContent value="overview" className="mx-auto mt-4 w-full max-w-6xl space-y-3">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">סיכום כספי</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 text-sm md:grid-cols-4">
+              <div className="rounded-xl border bg-background/60 p-3">
+                <div className="text-xs text-muted-foreground">מחיר בסיס שסוכם</div>
+                <div className="mt-2 text-lg font-semibold">{formatIls(agreedBasePrice)}</div>
               </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">מחיר בפועל</span>
-                <span>{formatIls(effectiveActualPrice)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">הוצאות</span>
-                <span>{formatIls(effectiveDisplayedExpenses)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-muted-foreground">רווח גולמי</span>
-                <span
-                  className={
-                    effectiveDisplayedGrossProfit !== null && effectiveDisplayedGrossProfit < 0
-                      ? "text-destructive"
-                      : ""
-                  }
-                >
-                  {formatIls(effectiveDisplayedGrossProfit)}
-                </span>
-              </div>
-              {actualPriceUi === null && agreedBasePrice !== null ? (
-                <div className="text-xs text-muted-foreground">
-                  ברירת מחדל: מחיר בפועל = מחיר בסיס
+              <div className="rounded-xl border bg-background/60 p-3">
+                <div className="text-xs text-muted-foreground">מחיר בפועל</div>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <div className="text-lg font-semibold">{formatIls(displayedCustomerPrice)}</div>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={() => setUpdateActualPriceOpen(true)}
+                    disabled={agreedBasePrice === null && actualPriceUi === null}
+                  >
+                    עדכון
+                  </Button>
                 </div>
-              ) : null}
-              <div className="text-muted-foreground text-sm pt-2">
-                שים לב: הוצאות “נכלל בבסיס” לא אמורות לייצר חיוב נוסף ללקוח.
               </div>
-              <div className="pt-1">
-                <Button
-                  type="button"
-                  variant="default"
-                  size="sm"
-                  onClick={() => setUpdateActualPriceOpen(true)}
-                  disabled={agreedBasePrice === null && actualPriceUi === null}
-                >
-                  עדכון מחיר בפועל
-                </Button>
+              <div className="rounded-xl border bg-background/60 p-3">
+                <div className="text-xs text-muted-foreground">הוצאות</div>
+                <div className="mt-2 text-lg font-semibold">{formatIls(totalExpenses)}</div>
+              </div>
+              <div className="rounded-xl border bg-background/60 p-3">
+                <div className="text-xs text-muted-foreground">רווח גולמי</div>
+                <div className={("mt-2 text-lg font-semibold " + (grossProfit !== null && grossProfit < 0 ? "text-destructive" : "")).trim()}>
+                  {formatIls(grossProfit)}
+                </div>
+              </div>
+            </div>
+            {actualPriceUi === null && agreedBasePrice !== null ? (
+              <div className="text-xs text-muted-foreground">
+                ברירת מחדל: מחיר בפועל = מחיר בסיס
+              </div>
+            ) : null}
+            {billedExpensesTotal > 0 ? (
+              <div className="text-xs text-muted-foreground">
+                כולל תוספת של {formatIls(billedExpensesTotal)} עבור הוצאות לחיוב לקוח.
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-3 xl:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-3 flex-row items-center justify-between">
+              <CardTitle className="text-base">הכנסות</CardTitle>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  setEditingPayment(null);
+                  setAddIncomeOpen(true);
+                }}
+              >
+                הוספת הכנסה
+              </Button>
+            </CardHeader>
+            <CardContent className="flex min-h-[28rem] flex-col text-sm">
+              {paymentsError ? (
+                <div className="flex-1 text-destructive text-sm">
+                  שגיאה בטעינת הכנסות: {paymentsError}
+                </div>
+              ) : paymentsUi.length === 0 ? (
+                <div className="flex-1 text-muted-foreground">אין הכנסות להצגה.</div>
+              ) : (
+                <div className="flex-1 divide-y overflow-y-auto pl-1">
+                  {paymentsUi.map((p) => {
+                    const amount = toNumber(p.amount_total);
+                    const date = p.payment_date ?? p.created_at ?? null;
+                    const method = paymentMethodLabel(p.payment_method);
+                    const reference = p.reference_number ?? "";
+                    const paymentStatus = typeof p.payment_status === "string" ? p.payment_status : "";
+                    const dueDate = typeof p.due_date === "string" ? p.due_date : null;
+
+                    return (
+                      <div key={p.id} className="py-3 flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">
+                            {reference ? `אסמכתא: ${reference}` : "הכנסה"}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                            <span>{formatDate(date)}</span>
+                            <span>{method}</span>
+                            {dueDate ? <span>פירעון: {formatDate(dueDate)}</span> : null}
+                          </div>
+                          {paymentStatus ? (
+                            <div className="mt-2">
+                              <StatusBadge value={paymentStatus} type="payment" />
+                            </div>
+                          ) : null}
+                          {p.notes ? (
+                            <div className="text-xs text-muted-foreground mt-1 truncate">
+                              {p.notes}
+                            </div>
+                          ) : null}
+                          {Array.isArray(p.attachments) && p.attachments.length > 0 ? (
+                            <div className="mt-2 space-y-2">
+                              <div className="flex flex-wrap gap-2">
+                                {p.attachments.map((attachment) => (
+                                  <a
+                                    key={attachment.document_id}
+                                    href={attachment.url ?? "#"}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
+                                  >
+                                    {attachment.file_name ?? "קובץ"}
+                                  </a>
+                                ))}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {p.attachments
+                                  .filter((attachment) => attachment.url && isImageAttachment(attachment))
+                                  .map((attachment) => (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      key={`${attachment.document_id}-preview`}
+                                      src={attachment.url ?? ""}
+                                      alt={attachment.file_name ?? "קובץ"}
+                                      className="h-16 w-16 rounded-lg border object-cover"
+                                    />
+                                  ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 text-left">
+                          <div className="font-medium">
+                            {amount === null ? "—" : formatIls(amount)}
+                          </div>
+                          <div className="mt-2 flex gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditingPayment(p);
+                                setAddIncomeOpen(true);
+                              }}
+                              disabled={deletingPaymentId === p.id}
+                            >
+                              ערוך
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => void deletePayment(p)}
+                              disabled={deletingPaymentId === p.id}
+                            >
+                              {deletingPaymentId === p.id ? "מוחק..." : "מחק"}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="mt-3 mt-auto flex items-center justify-between border-t pt-3">
+                <span className="text-muted-foreground">סה״כ הכנסות</span>
+                <span className="font-medium">{formatIls(paymentsTotal)}</span>
               </div>
             </CardContent>
           </Card>
 
           <Card>
+            <CardHeader className="pb-3 flex-row items-center justify-between">
+              <CardTitle className="text-base">הוצאות</CardTitle>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  setEditingExpense(null);
+                  setAddExpenseOpen(true);
+                }}
+              >
+                הוספת הוצאה
+              </Button>
+            </CardHeader>
+            <CardContent className="flex min-h-[28rem] flex-col text-sm">
+              {expensesError ? (
+                <div className="flex-1 text-destructive text-sm">
+                  שגיאה בטעינת הוצאות: {expensesError}
+                </div>
+              ) : expensesUi.length === 0 ? (
+                <div className="flex-1 text-muted-foreground">אין הוצאות להצגה.</div>
+              ) : (
+                <div className="flex-1 divide-y overflow-y-auto pl-1">
+                  {expensesUi.map((item, idx) => renderExpenseRow(item, idx))}
+                </div>
+              )}
+
+              {billedExpensesTotal > 0 ? (
+                <div className="pt-2 text-xs text-muted-foreground">
+                  מתוכן {formatIls(billedExpensesTotal)} יתווספו לחיוב הלקוח.
+                </div>
+              ) : null}
+              <div className="mt-3 mt-auto flex items-center justify-between border-t pt-3">
+                <span className="text-muted-foreground">סה״כ הוצאות</span>
+                <span className="font-medium">{formatIls(totalExpenses)}</span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-3 xl:grid-cols-2">
+          <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">תזרים</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm xl:flex xl:min-h-[28rem] xl:flex-col">
+            <CardContent className="space-y-2 text-sm xl:flex xl:min-h-[24rem] xl:flex-col">
               {cashFlow.length === 0 ? (
                 <div className="text-muted-foreground">אין תנועות להצגה.</div>
               ) : (
-                <div className="divide-y xl:max-h-[24rem] xl:overflow-y-auto xl:pl-1">
+                <div className="divide-y xl:max-h-[20rem] xl:overflow-y-auto xl:pl-1">
                   {cashFlow.map((ev) => {
                     const isIncome = ev.type === "income";
                     const signedAmount =
@@ -903,7 +1342,16 @@ export default function ProjectTabsClient({
                           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
                             <span>{formatDate(ev.date)}</span>
                             {ev.meta.map((m) => (
-                              <span key={m}>{m}</span>
+                              <span
+                                key={m}
+                                className={
+                                  m === "חויב ללקוח"
+                                    ? "inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 font-medium text-amber-800"
+                                    : undefined
+                                }
+                              >
+                                {m}
+                              </span>
                             ))}
                           </div>
                         </div>
@@ -929,138 +1377,31 @@ export default function ProjectTabsClient({
           </Card>
 
           <Card>
-            <CardHeader className="pb-3 flex-row items-center justify-between">
-              <CardTitle className="text-base">הוצאות</CardTitle>
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                onClick={() => setAddExpenseOpen(true)}
-              >
-                הוספת הוצאה
-              </Button>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">לחיוב לקוח</CardTitle>
             </CardHeader>
-            <CardContent className="text-sm xl:flex xl:min-h-[28rem] xl:flex-col">
+            <CardContent className="text-sm xl:flex xl:min-h-[24rem] xl:flex-col">
               {expensesError ? (
                 <div className="text-destructive text-sm">
-                  שגיאה בטעינת הוצאות: {expensesError}
+                  שגיאה בטעינת חיובים ללקוח: {expensesError}
                 </div>
-              ) : expensesUi.length === 0 ? (
-                <div className="text-muted-foreground">אין הוצאות להצגה.</div>
+              ) : billableCustomerItems.length === 0 ? (
+                <div className="text-muted-foreground">אין פריטים לחיוב לקוח.</div>
               ) : (
-                <div className="divide-y xl:max-h-[24rem] xl:overflow-y-auto xl:pl-1">
-                  {expensesUi.map((item, idx) => {
-                    const expenseId = getString(item.project_expense, "expense_id");
-                    const amount = toNumber(item.expense?.amount);
-                    const createdAt =
-                      getString(item.expense, "expense_date") ??
-                      getString(item.expense, "created_at") ??
-                      null;
-
-                    const title =
-                      getString(item.expense, "description") ??
-                      getString(item.expense, "vendor_name") ??
-                      getString(item.expense, "vendor") ??
-                      (expenseId ? `הוצאה ${expenseId.slice(0, 8)}` : "הוצאה");
-
-                    const included = Boolean(item.project_expense["included_in_base_price"]);
-                    const billed = Boolean(item.project_expense["billed_to_customer"]);
-
-                    return (
-                      <div key={expenseId ?? String(idx)} className="py-3 flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="font-medium truncate">{title}</div>
-                          <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                            <span>{formatDate(createdAt)}</span>
-                            {included ? <span>נכלל בבסיס</span> : <span>לא נכלל בבסיס</span>}
-                            {billed ? <span>חויב ללקוח</span> : <span>לא חויב ללקוח</span>}
-                          </div>
-                        </div>
-                        <div className="shrink-0 font-medium">
-                          {amount === null ? "—" : formatIls(amount)}
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="divide-y xl:max-h-[20rem] xl:overflow-y-auto xl:pl-1">
+                  {billableCustomerItems.map((item, idx) =>
+                    renderExpenseRow(item, idx, { billedList: true })
+                  )}
                 </div>
               )}
 
               <div className="mt-3 flex items-center justify-between border-t pt-3 xl:mt-auto">
-                <span className="text-muted-foreground">סה״כ הוצאות</span>
-                <span className="font-medium">{formatIls(expensesTotal)}</span>
+                <span className="text-muted-foreground">סה״כ לחיוב לקוח</span>
+                <span className="font-medium">{formatIls(billedExpensesTotal)}</span>
               </div>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader className="pb-3 flex-row items-center justify-between">
-              <CardTitle className="text-base">הכנסות</CardTitle>
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                onClick={() => setAddIncomeOpen(true)}
-              >
-                הוספת הכנסה
-              </Button>
-            </CardHeader>
-            <CardContent className="text-sm xl:flex xl:min-h-[28rem] xl:flex-col">
-              {paymentsError ? (
-                <div className="text-destructive text-sm">
-                  שגיאה בטעינת הכנסות: {paymentsError}
-                </div>
-              ) : paymentsUi.length === 0 ? (
-                <div className="text-muted-foreground">אין הכנסות להצגה.</div>
-              ) : (
-                <div className="divide-y xl:max-h-[24rem] xl:overflow-y-auto xl:pl-1">
-                  {paymentsUi.map((p) => {
-                    const amount = toNumber(p.amount_total);
-                    const date = p.payment_date ?? p.created_at ?? null;
-                    const method = paymentMethodLabel(p.payment_method);
-                    const reference = p.reference_number ?? "";
-                    const paymentStatus = typeof p.payment_status === "string" ? p.payment_status : "";
-                    const dueDate = typeof p.due_date === "string" ? p.due_date : null;
-
-                    return (
-                      <div key={p.id} className="py-3 flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="font-medium truncate">
-                            {reference ? `אסמכתא: ${reference}` : "הכנסה"}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                            <span>{formatDate(date)}</span>
-                            <span>{method}</span>
-                            {dueDate ? <span>פירעון: {formatDate(dueDate)}</span> : null}
-                          </div>
-                          {paymentStatus ? (
-                            <div className="mt-2">
-                              <Badge className={paymentRecordStatusClasses(paymentStatus)}>
-                                {paymentRecordStatusLabel(paymentStatus)}
-                              </Badge>
-                            </div>
-                          ) : null}
-                          {p.notes ? (
-                            <div className="text-xs text-muted-foreground mt-1 truncate">
-                              {p.notes}
-                            </div>
-                          ) : null}
-                        </div>
-                        <div className="shrink-0 font-medium">
-                          {amount === null ? "—" : formatIls(amount)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="mt-3 flex items-center justify-between border-t pt-3 xl:mt-auto">
-                <span className="text-muted-foreground">סה״כ הכנסות</span>
-                <span className="font-medium">{formatIls(paymentsTotal)}</span>
-              </div>
-            </CardContent>
-          </Card>
-        </AdaptiveGrid>
+        </div>
       </TabsContent>
 
       <TabsContent value="tasks" className="mx-auto mt-4 w-full max-w-6xl">
@@ -1552,22 +1893,67 @@ export default function ProjectTabsClient({
 
       <AddExpenseDialog
         open={addExpenseOpen}
-        onOpenChange={setAddExpenseOpen}
+        onOpenChange={(open) => {
+          setAddExpenseOpen(open);
+          if (!open) setEditingExpense(null);
+        }}
         projectId={overview.id}
         projectType={overview.project_type}
-        onCreated={(created) => {
-          setExpensesUi((prev) => [created, ...prev]);
+        users={assignableUsers.filter((user) => user.active !== false)}
+        editingItem={editingExpense}
+        onSaved={(saved) => {
+          if (saved.source_type === "session" && saved.session?.id) {
+            setExpensesUi((prev) => {
+              const exists = prev.some(
+                (row) => row.source_type === "session" && row.session?.id === saved.session?.id
+              );
+              if (!exists) return [saved, ...prev];
+              return prev.map((row) =>
+                row.source_type === "session" && row.session?.id === saved.session?.id ? saved : row
+              );
+            });
+            setEditingExpense(null);
+            setAddExpenseOpen(false);
+            startTransition(() => router.refresh());
+            return;
+          }
+          const savedExpenseId =
+            getString(saved.project_expense, "expense_id") ?? getString(saved.expense, "id");
+          setExpensesUi((prev) => {
+            if (!savedExpenseId) return editingExpense ? prev : [saved, ...prev];
+            const exists = prev.some(
+              (item) =>
+                (getString(item.project_expense, "expense_id") ?? getString(item.expense, "id")) ===
+                savedExpenseId
+            );
+            if (!exists) return [saved, ...prev];
+            return prev.map((item) => {
+              const currentId =
+                getString(item.project_expense, "expense_id") ?? getString(item.expense, "id");
+              return currentId === savedExpenseId ? saved : item;
+            });
+          });
+          setEditingExpense(null);
           setAddExpenseOpen(false);
           startTransition(() => router.refresh());
         }}
       />
       <AddIncomeDialog
         open={addIncomeOpen}
-        onOpenChange={setAddIncomeOpen}
+        onOpenChange={(open) => {
+          setAddIncomeOpen(open);
+          if (!open) setEditingPayment(null);
+        }}
         projectId={overview.id}
         projectType={overview.project_type}
-        onCreated={(created) => {
-          setPaymentsUi((prev) => [created, ...prev]);
+        editingPayment={editingPayment}
+        onSaved={(saved) => {
+          setPaymentsUi((prev) => {
+            const exists = prev.some((item) => item.id === saved.id);
+            if (!exists) return [saved, ...prev];
+            return prev.map((item) => (item.id === saved.id ? saved : item));
+          });
+          setEditingPayment(null);
           setAddIncomeOpen(false);
           startTransition(() => router.refresh());
         }}
@@ -2270,40 +2656,20 @@ function StatusDropdown({
   disabled: boolean;
   onSelect: (next: TaskStatus) => void;
 }) {
-  const variant = statusToBadgeVariant(status);
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
         <button type="button" disabled={disabled}>
-          <Badge
-            variant={variant}
-            className="h-9 px-3 text-sm cursor-pointer select-none"
-          >
-            {taskStatusLabel(status)}
-          </Badge>
+          <StatusBadge value={status} type="task" className="h-9 px-3 text-sm cursor-pointer select-none" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
         {options.map((opt) => (
           <DropdownMenuItem key={opt} onClick={() => onSelect(opt)}>
             <span className="me-2">
-              <span
-                className={
-                  "inline-block h-2.5 w-2.5 rounded-full " +
-                  (statusToBadgeVariant(opt) === "success"
-                    ? "bg-success"
-                    : statusToBadgeVariant(opt) === "warning"
-                    ? "bg-warning"
-                    : statusToBadgeVariant(opt) === "destructive"
-                    ? "bg-destructive"
-                    : statusToBadgeVariant(opt) === "secondary"
-                    ? "bg-muted-foreground/40"
-                    : "bg-border")
-                }
-              />
+              <span className={`inline-block h-2.5 w-2.5 rounded-full ${getStatusDotClasses(getTaskStatusColor(opt))}`} />
             </span>
-            {taskStatusLabel(opt)}
+            {getTaskStatusLabel(opt)}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
@@ -2326,38 +2692,24 @@ function PriorityDropdown({
   disabled: boolean;
   onSelect: (next: TaskPriority) => void;
 }) {
-  const variant = priorityToBadgeVariant(priority);
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
         <button type="button" disabled={disabled}>
-          <Badge
-            variant={variant}
+          <StatusBadge
+            value={priority}
+            type="priority"
             className="h-9 px-3 text-sm cursor-pointer select-none"
-          >
-            {taskPriorityLabel(priority)}
-          </Badge>
+          />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
         {options.map((opt) => (
           <DropdownMenuItem key={opt} onClick={() => onSelect(opt)}>
             <span className="me-2">
-              <span
-                className={
-                  "inline-block h-2.5 w-2.5 rounded-full " +
-                  (priorityToBadgeVariant(opt) === "destructive"
-                    ? "bg-destructive"
-                    : priorityToBadgeVariant(opt) === "warning"
-                    ? "bg-warning"
-                    : priorityToBadgeVariant(opt) === "secondary"
-                    ? "bg-muted-foreground/40"
-                    : "bg-border")
-                }
-              />
+              <span className={`inline-block h-2.5 w-2.5 rounded-full ${getStatusDotClasses(getTaskPriorityColor(opt))}`} />
             </span>
-            {taskPriorityLabel(opt)}
+            {getTaskPriorityLabel(opt)}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
@@ -2369,7 +2721,7 @@ function PriorityDropdown({
   );
 }
 
-function projectTypeLabel(value: string) {
+export function projectTypeLabel(value: string) {
   switch (value) {
     case "logistics":
       return "\u05dc\u05d5\u05d2\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4";
@@ -2398,45 +2750,109 @@ const PROJECT_EXPENSE_CATEGORY_OPTIONS = [
   "\u05d0\u05d7\u05e8",
 ] as const;
 const OTHER_PROJECT_EXPENSE_CATEGORY = "\u05d0\u05d7\u05e8";
+const EMPLOYEE_WAGE_CATEGORY = "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3";
+
+function toLocalDateTimeValue(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function nowLocalDateTime(offsetMinutes = 0) {
+  const value = new Date();
+  value.setSeconds(0, 0);
+  value.setMinutes(value.getMinutes() + offsetMinutes);
+  return toLocalDateTimeValue(value.toISOString());
+}
+
+function toIsoDateTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
 
 function AddExpenseDialog({
   open,
   onOpenChange,
   projectId,
   projectType,
-  onCreated,
+  users,
+  editingItem,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
   projectType: string;
-  onCreated: (created: ExpenseListItem) => void;
+  users: AssignableUser[];
+  editingItem: ExpenseListItem | null;
+  onSaved: (saved: ExpenseListItem) => void;
 }) {
   const getTodayDate = () => new Date().toISOString().slice(0, 10);
+  const editingExpense = editingItem?.expense ?? null;
+  const editingSession = editingItem?.session ?? null;
+  const isEditingSession = editingItem?.source_type === "session" && Boolean(editingSession);
+  const isEditing = Boolean(editingItem);
   const [submitting, setSubmitting] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [amountTouched, setAmountTouched] = useState(false);
   const [categoryTouched, setCategoryTouched] = useState(false);
   const [categoryOtherTouched, setCategoryOtherTouched] = useState(false);
   const [expenseDateTouched, setExpenseDateTouched] = useState(false);
+  const [clockInTouched, setClockInTouched] = useState(false);
+  const [clockOutTouched, setClockOutTouched] = useState(false);
+  const [sessionUsers, setSessionUsers] = useState<AssignableUser[]>(users);
+  const [newWorkerOpen, setNewWorkerOpen] = useState(false);
+  const [newWorkerSubmitting, setNewWorkerSubmitting] = useState(false);
+  const [newWorkerName, setNewWorkerName] = useState("");
+  const [newWorkerEmail, setNewWorkerEmail] = useState("");
+  const expenseAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [categoryOther, setCategoryOther] = useState("");
   const [description, setDescription] = useState("");
   const [expenseDate, setExpenseDate] = useState(getTodayDate());
+  const [clockIn, setClockIn] = useState(nowLocalDateTime(-60));
+  const [clockOut, setClockOut] = useState(nowLocalDateTime());
+  const [sessionUserId, setSessionUserId] = useState("");
   const [notes, setNotes] = useState("");
-  const [includedInBase, setIncludedInBase] = useState(false);
   const [billedToCustomer, setBilledToCustomer] = useState(false);
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
+  const [laborCost, setLaborCost] = useState("");
+  const [laborCostTouched, setLaborCostTouched] = useState(false);
+  const [sessionBillableToCustomer, setSessionBillableToCustomer] = useState(false);
+  const [billToCustomerAmount, setBillToCustomerAmount] = useState("");
+  const [billToCustomerAmountTouched, setBillToCustomerAmountTouched] = useState(false);
   const finalCategory =
     category === OTHER_PROJECT_EXPENSE_CATEGORY ? categoryOther.trim() : category.trim();
+  const isSessionMode = isEditingSession || (!isEditing && finalCategory === EMPLOYEE_WAGE_CATEGORY);
+  const movedAmountToNotesRef = useRef(false);
+  const laborCostNumber = Number(laborCost);
+  const billToCustomerAmountNumber = Number(billToCustomerAmount);
   const canSubmit =
-    Number.isFinite(Number(amount)) &&
-    Number(amount) > 0 &&
     Boolean(finalCategory) &&
-    Boolean(expenseDate);
+    (isSessionMode
+      ? Boolean(clockIn) &&
+        Boolean(clockOut) &&
+        Boolean(sessionUserId) &&
+        Number.isFinite(laborCostNumber) &&
+        laborCostNumber > 0 &&
+        (!sessionBillableToCustomer ||
+          (Number.isFinite(billToCustomerAmountNumber) && billToCustomerAmountNumber > 0)) &&
+        Boolean(toIsoDateTime(clockIn)) &&
+        Boolean(toIsoDateTime(clockOut)) &&
+        new Date(toIsoDateTime(clockOut)) > new Date(toIsoDateTime(clockIn))
+      : Number.isFinite(Number(amount)) &&
+        Number(amount) > 0 &&
+        Boolean(expenseDate));
 
   const amountNumber = Number(amount);
   const amountError =
+    isSessionMode
+      ? null
+      :
     !amount.trim()
       ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4"
       : !Number.isFinite(amountNumber)
@@ -2449,47 +2865,285 @@ function AddExpenseDialog({
     : category === OTHER_PROJECT_EXPENSE_CATEGORY && !categoryOther.trim()
     ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4"
     : null;
-  const expenseDateError = !expenseDate ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
+  const expenseDateError = isSessionMode ? null : !expenseDate ? "\u05e9\u05d3\u05d4 \u05d7\u05d5\u05d1\u05d4" : null;
+  const clockInError = isSessionMode
+    ? !clockIn
+      ? "שדה חובה"
+      : !toIsoDateTime(clockIn)
+        ? "תאריך ושעה לא תקינים"
+        : null
+    : null;
+  const clockOutError = isSessionMode
+    ? !clockOut
+      ? "שדה חובה"
+      : !toIsoDateTime(clockOut)
+        ? "תאריך ושעה לא תקינים"
+        : new Date(toIsoDateTime(clockOut)) <= new Date(toIsoDateTime(clockIn))
+          ? "שעת הסיום חייבת להיות אחרי שעת ההתחלה"
+          : null
+    : null;
+  const sessionUserError = isSessionMode && !sessionUserId ? "יש לבחור עובד" : null;
+  const laborCostError = isSessionMode
+    ? !laborCost.trim()
+      ? "שדה חובה"
+      : !Number.isFinite(laborCostNumber)
+        ? "חייב להיות מספר"
+        : laborCostNumber <= 0
+          ? "חייב להיות גדול מ-0"
+          : null
+    : null;
+  const billToCustomerAmountError = isSessionMode && sessionBillableToCustomer
+    ? !billToCustomerAmount.trim()
+      ? "שדה חובה"
+      : !Number.isFinite(billToCustomerAmountNumber)
+        ? "חייב להיות מספר"
+        : billToCustomerAmountNumber <= 0
+          ? "חייב להיות גדול מ-0"
+          : null
+    : null;
   const showAmountError = (submitAttempted || amountTouched) && Boolean(amountError);
   const showCategoryError =
     (submitAttempted || categoryTouched || categoryOtherTouched) && Boolean(categoryError);
   const showExpenseDateError = (submitAttempted || expenseDateTouched) && Boolean(expenseDateError);
+  const showClockInError = (submitAttempted || clockInTouched) && Boolean(clockInError);
+  const showClockOutError = (submitAttempted || clockOutTouched) && Boolean(clockOutError);
+  const showSessionUserError = submitAttempted && Boolean(sessionUserError);
+  const showLaborCostError = (submitAttempted || laborCostTouched) && Boolean(laborCostError);
+  const showBillToCustomerAmountError =
+    (submitAttempted || billToCustomerAmountTouched) && Boolean(billToCustomerAmountError);
   const addExpenseValidationMessage = (() => {
     if (!submitAttempted || submitting || canSubmit) return "";
     const missing: string[] = [];
     if (amountError) missing.push("\u05e1\u05db\u05d5\u05dd");
     if (categoryError) missing.push("\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4");
     if (expenseDateError) missing.push("\u05ea\u05d0\u05e8\u05d9\u05da");
+    if (clockInError) missing.push("שעת התחלה");
+    if (clockOutError) missing.push("שעת סיום");
+    if (sessionUserError) missing.push("עובד");
+    if (laborCostError) missing.push("עלות עבודה");
+    if (billToCustomerAmountError) missing.push("סכום לחיוב לקוח");
     return missing.length > 0
       ? `\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e9\u05de\u05d5\u05e8: ${missing.join(", ")}`
       : "";
   })();
 
+  const durationHours = (() => {
+    const clockInIso = toIsoDateTime(clockIn);
+    const clockOutIso = toIsoDateTime(clockOut);
+    if (!clockInIso || !clockOutIso) return "";
+    const minutes = Math.round((new Date(clockOutIso).getTime() - new Date(clockInIso).getTime()) / 60000);
+    return minutes > 0 ? String(Number((minutes / 60).toFixed(2))) : "";
+  })();
+
   useEffect(() => {
-    if (open) {
-      setSubmitAttempted(false);
-      setAmountTouched(false);
-      setCategoryTouched(false);
-      setCategoryOtherTouched(false);
-      setExpenseDateTouched(false);
-      setExpenseDate((prev) => prev || getTodayDate());
+    if (!open) return;
+    const rawCategory = getString(editingExpense, "category") ?? "";
+    const categoryIsPreset = PROJECT_EXPENSE_CATEGORY_OPTIONS.includes(rawCategory);
+    setSubmitAttempted(false);
+    setAmountTouched(false);
+    setCategoryTouched(false);
+    setCategoryOtherTouched(false);
+    setExpenseDateTouched(false);
+    setClockInTouched(false);
+    setClockOutTouched(false);
+    setLaborCostTouched(false);
+    setBillToCustomerAmountTouched(false);
+    setAmount(
+      editingExpense && toNumber(editingExpense["amount"]) !== null
+        ? String(toNumber(editingExpense["amount"]))
+        : ""
+    );
+    setCategory(
+      isEditingSession
+        ? EMPLOYEE_WAGE_CATEGORY
+        : categoryIsPreset
+          ? rawCategory
+          : rawCategory
+            ? OTHER_PROJECT_EXPENSE_CATEGORY
+            : ""
+    );
+    setCategoryOther(isEditingSession ? "" : categoryIsPreset ? "" : rawCategory);
+    setDescription(getString(editingExpense, "description") ?? "");
+    setExpenseDate(getString(editingExpense, "expense_date") ?? getTodayDate());
+    setClockIn(isEditingSession ? toLocalDateTimeValue(editingSession?.clock_in) : nowLocalDateTime(-60));
+    setClockOut(isEditingSession ? toLocalDateTimeValue(editingSession?.clock_out) : nowLocalDateTime());
+    setSessionUsers(users);
+    setSessionUserId(isEditingSession ? editingSession?.user_id ?? "" : users[0]?.id ?? "");
+    setNewWorkerOpen(false);
+    setNewWorkerSubmitting(false);
+    setNewWorkerName("");
+    setNewWorkerEmail("");
+    setNotes(isEditingSession ? editingSession?.notes ?? "" : getString(editingExpense, "notes") ?? "");
+    setBilledToCustomer(Boolean(editingItem?.project_expense?.["billed_to_customer"]));
+    setAttachmentFiles([]);
+    setExistingAttachments(Array.isArray(editingExpense?.attachments) ? (editingExpense.attachments as FinancialAttachment[]) : []);
+    setLaborCost(
+      isEditingSession && toNumber(editingSession?.labor_cost) !== null
+        ? String(toNumber(editingSession?.labor_cost))
+        : ""
+    );
+    setSessionBillableToCustomer(Boolean(editingSession?.is_billable_to_customer));
+    setBillToCustomerAmount(
+      isEditingSession && toNumber(editingSession?.bill_to_customer_amount) !== null
+        ? String(toNumber(editingSession?.bill_to_customer_amount))
+        : ""
+    );
+    movedAmountToNotesRef.current = false;
+  }, [open, editingExpense, editingItem, projectType, users, isEditingSession, editingSession]);
+
+  useEffect(() => {
+    if (!isSessionMode) {
+      movedAmountToNotesRef.current = false;
+      return;
     }
-  }, [open, projectType]);
+    if (movedAmountToNotesRef.current) return;
+    if (!amount.trim()) return;
+    const movedText = `סכום שהוזן קודם: ${amount.trim()}`;
+    setNotes((prev) => (prev.trim() ? `${prev.trim()}\n${movedText}` : movedText));
+    setAmount("");
+    movedAmountToNotesRef.current = true;
+  }, [amount, isSessionMode]);
+
+  async function createWorker() {
+    const name = newWorkerName.trim();
+    const email = newWorkerEmail.trim();
+    if (!name || !email) {
+      toast.error("יש למלא שם ואימייל לעובד החדש");
+      return;
+    }
+
+    setNewWorkerSubmitting(true);
+    try {
+      const res = await fetch("/api/users/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          full_name: name,
+          email,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.user?.id) {
+        toast.error("שגיאה ביצירת עובד", {
+          description: json?.error ?? "",
+        });
+        return;
+      }
+
+      const createdUser = json.user as AssignableUser;
+      setSessionUsers((prev) => [createdUser, ...prev]);
+      setSessionUserId(createdUser.id);
+      setNewWorkerOpen(false);
+      setNewWorkerName("");
+      setNewWorkerEmail("");
+      toast.success("העובד נוסף");
+    } catch (e: unknown) {
+      toast.error("שגיאה ביצירת עובד", {
+        description: getErrorMessage(e),
+      });
+    } finally {
+      setNewWorkerSubmitting(false);
+    }
+  }
 
   async function submit() {
     setSubmitAttempted(true);
 
+    if (!finalCategory) return;
+    if (isSessionMode) {
+      const clockInIso = toIsoDateTime(clockIn);
+      const clockOutIso = toIsoDateTime(clockOut);
+      if (!clockInIso || !clockOutIso) return;
+      if (!sessionUserId) return;
+      if (!Number.isFinite(laborCostNumber) || laborCostNumber <= 0) return;
+      if (
+        sessionBillableToCustomer &&
+        (!Number.isFinite(billToCustomerAmountNumber) || billToCustomerAmountNumber <= 0)
+      ) {
+        return;
+      }
+      if (new Date(clockOutIso) <= new Date(clockInIso)) return;
+
+      setSubmitting(true);
+      try {
+        const res = await fetch(isEditingSession ? "/api/profile/session/update" : "/api/profile/session/create", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            session_id: editingSession?.id ?? undefined,
+            business_domain: mapProjectTypeToExpenseDomain(projectType),
+            project_id: projectId,
+            user_id: sessionUserId,
+            notes: notes.trim() ? notes : undefined,
+            clock_in: clockInIso,
+            clock_out: clockOutIso,
+            labor_cost: laborCostNumber,
+            is_billable_to_customer: sessionBillableToCustomer,
+            bill_to_customer_amount: sessionBillableToCustomer ? billToCustomerAmountNumber : undefined,
+            billing_status: sessionBillableToCustomer ? "billable" : "not_billable",
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          toast.error(isEditingSession ? "שגיאה בעדכון משמרת" : "שגיאה בהוספת משמרת", {
+            description: json?.error ?? "",
+          });
+          return;
+        }
+
+        const savedSession = json?.session as WorkSessionRow | undefined;
+        if (!savedSession?.id) {
+          toast.error(isEditingSession ? "שגיאה בעדכון משמרת" : "שגיאה בהוספת משמרת", {
+            description: "Missing session id",
+          });
+          return;
+        }
+
+        toast.success(isEditingSession ? "המשמרת עודכנה" : "המשמרת נוספה");
+        setAmount("");
+        setCategory("");
+        setCategoryOther("");
+        setDescription("");
+        setExpenseDate(getTodayDate());
+        setClockIn(nowLocalDateTime(-60));
+        setClockOut(nowLocalDateTime());
+        setSessionUserId(sessionUsers[0]?.id ?? users[0]?.id ?? "");
+        setNotes("");
+        setBilledToCustomer(false);
+        setAttachmentFiles([]);
+        setExistingAttachments([]);
+        setLaborCost("");
+        setSessionBillableToCustomer(false);
+        setBillToCustomerAmount("");
+        onSaved({
+          source_type: "session",
+          project_expense: null,
+          expense: null,
+          session: savedSession,
+        });
+      } catch (e: unknown) {
+        toast.error(isEditingSession ? "שגיאה בעדכון משמרת" : "שגיאה בהוספת משמרת", {
+          description: getErrorMessage(e),
+        });
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     const amountNumber = Number(amount);
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) return;
-    if (!finalCategory) return;
     if (!expenseDate) return;
+
+    const includedInBase = !billedToCustomer;
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/expenses/create", {
+      const res = await fetch(isEditing ? "/api/expenses/update" : "/api/expenses/create", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          id: getString(editingExpense, "id") ?? undefined,
           project_id: projectId,
           amount: amountNumber,
           category: finalCategory,
@@ -2502,44 +3156,61 @@ function AddExpenseDialog({
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4", {
+        toast.error(isEditing ? "שגיאה בעדכון ההוצאה" : "שגיאה בהוספת הוצאה", {
           description: json?.error ?? "",
         });
         return;
       }
-      toast.success("\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05d5\u05e1\u05e4\u05d4");
+      toast.success(isEditing ? "ההוצאה עודכנה" : "ההוצאה נוספה");
       setAmount("");
       setCategory("");
       setCategoryOther("");
       setDescription("");
       setExpenseDate(getTodayDate());
       setNotes("");
-      setIncludedInBase(false);
       setBilledToCustomer(false);
 
-      const createdExpense = json?.expense as Record<string, unknown> | undefined;
-      const createdExpenseId =
-        createdExpense && typeof createdExpense["id"] === "string"
-          ? (createdExpense["id"] as string)
-          : null;
+      const savedExpense = json?.expense as Record<string, unknown> | undefined;
+      const savedExpenseId =
+        savedExpense && typeof savedExpense["id"] === "string"
+          ? (savedExpense["id"] as string)
+          : getString(editingExpense, "id");
 
-      if (!createdExpenseId) {
-        toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4", {
+      if (!savedExpenseId) {
+        toast.error(isEditing ? "שגיאה בעדכון ההוצאה" : "שגיאה בהוספת הוצאה", {
           description: "Missing expense id",
         });
         return;
       }
 
-      onCreated({
-        project_expense: {
-          expense_id: createdExpenseId,
-          included_in_base_price: includedInBase,
-          billed_to_customer: billedToCustomer,
-        },
-        expense: createdExpense ?? null,
+      let expenseWithAttachment = savedExpense ?? editingExpense;
+      const uploadedAttachments: FinancialAttachment[] = [];
+      for (const file of attachmentFiles) {
+        const attachment = await uploadFinancialAttachment("expense", savedExpenseId, file);
+        if (attachment?.document_id) uploadedAttachments.push(attachment);
+      }
+      expenseWithAttachment = {
+        ...(expenseWithAttachment ?? {}),
+        attachments: [...existingAttachments, ...uploadedAttachments],
+      };
+
+      setAttachmentFiles([]);
+      setExistingAttachments([]);
+
+      onSaved({
+        source_type: "expense",
+        project_expense:
+          (json?.projectExpense as Record<string, unknown> | undefined) ??
+          editingItem?.project_expense ?? {
+            expense_id: savedExpenseId,
+            included_in_base_price: !billedToCustomer,
+            billed_to_customer: billedToCustomer,
+          },
+        expense: expenseWithAttachment,
+        session: null,
       });
     } catch (e: unknown) {
-      toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4", {
+      toast.error(isEditing ? "שגיאה בעדכון ההוצאה" : "שגיאה בהוספת הוצאה", {
         description: getErrorMessage(e),
       });
     } finally {
@@ -2551,9 +3222,15 @@ function AddExpenseDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <AdaptiveDialog size="formLg">
         <DialogHeader>
-          <DialogTitle>{"\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4"}</DialogTitle>
+          <DialogTitle>
+            {isEditingSession ? "עריכת שכר עובד" : isEditing ? "עריכת הוצאה" : "הוספת הוצאה"}
+          </DialogTitle>
           <DialogDescription>
-            {"\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05ea\u05e7\u05d5\u05e9\u05e8 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d5\u05ea\u05d5\u05e4\u05d9\u05e2 \u05d1\u05e4\u05d9\u05e0\u05e0\u05e1\u05d9."}
+            {isEditingSession
+              ? "עדכון פרטי משמרת העובד בפרויקט."
+              : isEditing
+              ? "עדכון פרטי ההוצאה ושיוך הפרויקט."
+              : "ההוצאה תקושר לפרויקט ותופיע בפיננסי."}
           </DialogDescription>
         </DialogHeader>
 
@@ -2569,31 +3246,126 @@ function AddExpenseDialog({
           </div>
 
           <div className="text-xs text-muted-foreground">
-            {"\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05ea\u05d9\u05e9\u05de\u05e8 \u05e2\u05dd \u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d4\u05e0\u05d5\u05db\u05d7\u05d9."}
+            {isSessionMode
+              ? "בחירה בקטגוריית שכר עובד תשמור משמרת לפרויקט הזה במקום הוצאה רגילה."
+              : "\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05ea\u05d9\u05e9\u05de\u05e8 \u05e2\u05dd \u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d4\u05e0\u05d5\u05db\u05d7\u05d9."}
           </div>
-          <AdaptiveGrid variant="formTwo">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
-              <Input
-                inputMode="numeric"
-                value={amount}
-                onChange={(e) => {
-                  setAmount(e.target.value);
-                  setAmountTouched(true);
-                }}
-                onBlur={() => setAmountTouched(true)}
-                placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: 250"}
-                aria-invalid={showAmountError}
-                className={
-                  showAmountError
-                    ? "border-destructive focus-visible:ring-destructive"
-                    : ""
-                }
-              />
-              {showAmountError ? (
-                <div className="text-xs text-destructive">{amountError}</div>
-              ) : null}
+
+          {isSessionMode ? (
+            <div className="space-y-2 rounded-lg border p-3">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">עובד *</div>
+                <select
+                  value={sessionUserId}
+                  onChange={(e) => setSessionUserId(e.target.value)}
+                  aria-invalid={showSessionUserError}
+                  className={
+                    showSessionUserError
+                      ? "h-10 w-full rounded-md border border-destructive bg-background px-3 text-sm focus-visible:ring-destructive"
+                      : "h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  }
+                >
+                  <option value="">בחר עובד...</option>
+                  {sessionUsers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.full_name?.trim() || user.email}
+                    </option>
+                  ))}
+                </select>
+                {showSessionUserError ? (
+                  <div className="text-xs text-destructive">{sessionUserError}</div>
+                ) : null}
+              </div>
+
+              {!newWorkerOpen ? (
+                <Button type="button" variant="outline" size="sm" onClick={() => setNewWorkerOpen(true)}>
+                  עובד חדש
+                </Button>
+              ) : (
+                <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+                  <div className="text-sm font-medium">הוספת עובד חדש</div>
+                  <Input
+                    value={newWorkerName}
+                    onChange={(e) => setNewWorkerName(e.target.value)}
+                    placeholder="שם עובד"
+                  />
+                  <Input
+                    type="email"
+                    value={newWorkerEmail}
+                    onChange={(e) => setNewWorkerEmail(e.target.value)}
+                    placeholder="אימייל עובד"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void createWorker()}
+                      disabled={newWorkerSubmitting || !newWorkerName.trim() || !newWorkerEmail.trim()}
+                    >
+                      {newWorkerSubmitting ? "שומר..." : "הוסף עובד"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={newWorkerSubmitting}
+                      onClick={() => {
+                        setNewWorkerOpen(false);
+                        setNewWorkerName("");
+                        setNewWorkerEmail("");
+                      }}
+                    >
+                      ביטול
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
+          ) : null}
+
+          <AdaptiveGrid variant="formTwo">
+            {isSessionMode ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">שעת התחלה *</div>
+                <Input
+                  type="datetime-local"
+                  value={clockIn}
+                  onChange={(e) => {
+                    setClockIn(e.target.value);
+                    setClockInTouched(true);
+                  }}
+                  onBlur={() => setClockInTouched(true)}
+                  aria-invalid={showClockInError}
+                  className={showClockInError ? "border-destructive focus-visible:ring-destructive" : ""}
+                />
+                {showClockInError ? (
+                  <div className="text-xs text-destructive">{clockInError}</div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
+                <Input
+                  inputMode="numeric"
+                  value={amount}
+                  onChange={(e) => {
+                    setAmount(e.target.value);
+                    setAmountTouched(true);
+                  }}
+                  onBlur={() => setAmountTouched(true)}
+                  placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: 250"}
+                  aria-invalid={showAmountError}
+                  className={
+                    showAmountError
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  }
+                />
+                {showAmountError ? (
+                  <div className="text-xs text-destructive">{amountError}</div>
+                ) : null}
+              </div>
+            )}
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4 *"}</div>
               <select
@@ -2604,6 +3376,7 @@ function AddExpenseDialog({
                 }}
                 onBlur={() => setCategoryTouched(true)}
                 aria-invalid={showCategoryError}
+                disabled={isEditingSession}
                 className={
                   showCategoryError
                     ? "border-destructive focus-visible:ring-destructive"
@@ -2647,58 +3420,180 @@ function AddExpenseDialog({
             </div>
           ) : null}
 
-          <div className="space-y-1">
-            <div className="text-sm font-medium">{"\u05ea\u05d9\u05d0\u05d5\u05e8 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
-            <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: \u05e0\u05e1\u05d9\u05e2\u05d4 \u05dc\u05d0\u05ea\u05e8"}
-            />
-          </div>
+          {!isSessionMode ? (
+            <div className="space-y-1">
+              <div className="text-sm font-medium">{"\u05ea\u05d9\u05d0\u05d5\u05e8 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
+              <Input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: \u05e0\u05e1\u05d9\u05e2\u05d4 \u05dc\u05d0\u05ea\u05e8"}
+              />
+            </div>
+          ) : null}
 
           <AdaptiveGrid variant="formTwo">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">{"\u05ea\u05d0\u05e8\u05d9\u05da *"}</div>
-              <Input
-                type="date"
-                value={expenseDate}
-                onChange={(e) => {
-                  setExpenseDate(e.target.value);
-                  setExpenseDateTouched(true);
-                }}
-                onBlur={() => setExpenseDateTouched(true)}
-                aria-invalid={showExpenseDateError}
-                className={
-                  showExpenseDateError
-                    ? "border-destructive focus-visible:ring-destructive"
-                    : ""
-                }
-              />
-              {showExpenseDateError ? (
-                <div className="text-xs text-destructive">{expenseDateError}</div>
-              ) : null}
-            </div>
-            <div />
+            {isSessionMode ? (
+              <>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">שעת סיום *</div>
+                  <Input
+                    type="datetime-local"
+                    value={clockOut}
+                    onChange={(e) => {
+                      setClockOut(e.target.value);
+                      setClockOutTouched(true);
+                    }}
+                    onBlur={() => setClockOutTouched(true)}
+                    aria-invalid={showClockOutError}
+                    className={showClockOutError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  />
+                  {showClockOutError ? (
+                    <div className="text-xs text-destructive">{clockOutError}</div>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">משך (שעות)</div>
+                  <Input
+                    inputMode="numeric"
+                    value={durationHours}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      if (!nextValue.trim()) {
+                        setClockOut("");
+                        setClockOutTouched(true);
+                        return;
+                      }
+                      const parsedHours = Number(nextValue);
+                      if (!Number.isFinite(parsedHours) || parsedHours <= 0) return;
+                      const nextClockOut = addMinutes(
+                        toIsoDateTime(clockIn),
+                        Math.round(parsedHours * 60)
+                      );
+                      if (!nextClockOut) return;
+                      setClockOut(toLocalDateTimeValue(nextClockOut.toISOString()));
+                      setClockOutTouched(true);
+                    }}
+                    placeholder="למשל 8"
+                  />
+                  <div className="text-xs text-muted-foreground">
+                    שינוי משך בשעות יעדכן את שעת הסיום אוטומטית.
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">{"\u05ea\u05d0\u05e8\u05d9\u05da *"}</div>
+                  <Input
+                    type="date"
+                    value={expenseDate}
+                    onChange={(e) => {
+                      setExpenseDate(e.target.value);
+                      setExpenseDateTouched(true);
+                    }}
+                    onBlur={() => setExpenseDateTouched(true)}
+                    aria-invalid={showExpenseDateError}
+                    className={
+                      showExpenseDateError
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    }
+                  />
+                  {showExpenseDateError ? (
+                    <div className="text-xs text-destructive">{expenseDateError}</div>
+                  ) : null}
+                </div>
+                <div />
+              </>
+            )}
           </AdaptiveGrid>
 
-          <div className="flex flex-col gap-2 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={includedInBase}
-                onChange={(e) => setIncludedInBase(e.target.checked)}
-              />
-              <span>{"\u05e0\u05db\u05dc\u05dc \u05d1\u05d1\u05e1\u05d9\u05e1"}</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={billedToCustomer}
-                onChange={(e) => setBilledToCustomer(e.target.checked)}
-              />
-              <span>{"\u05dc\u05d7\u05d9\u05d5\u05d1 \u05dc\u05e7\u05d5\u05d7"}</span>
-            </label>
-          </div>
+          {isSessionMode ? (
+            <div className="space-y-3 rounded-lg border p-3">
+              <AdaptiveGrid variant="formTwo">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">עלות עבודה *</div>
+                  <Input
+                    inputMode="numeric"
+                    value={laborCost}
+                    onChange={(e) => {
+                      setLaborCost(e.target.value);
+                      setLaborCostTouched(true);
+                    }}
+                    onBlur={() => setLaborCostTouched(true)}
+                    placeholder="למשל 500"
+                    aria-invalid={showLaborCostError}
+                    className={showLaborCostError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  />
+                  {showLaborCostError ? (
+                    <div className="text-xs text-destructive">{laborCostError}</div>
+                  ) : null}
+                </div>
+                <div className="space-y-2 text-sm">
+                  <label className="flex items-center gap-2 pt-7">
+                    <input
+                      type="checkbox"
+                      checked={sessionBillableToCustomer}
+                      onChange={(e) => {
+                        setSessionBillableToCustomer(e.target.checked);
+                        if (!e.target.checked) {
+                          setBillToCustomerAmount("");
+                          setBillToCustomerAmountTouched(false);
+                        }
+                      }}
+                    />
+                    <span>לחיוב לקוח</span>
+                  </label>
+                  <div className="text-xs text-muted-foreground">
+                    {sessionBillableToCustomer
+                      ? "המשמרת תופיע ברשימת חיובי הלקוח ולא בתזרים."
+                      : "אם לא מסומן, עלות העבודה תישאר כהוצאה פנימית בלבד."}
+                  </div>
+                </div>
+              </AdaptiveGrid>
+
+              {sessionBillableToCustomer ? (
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">סכום לחיוב לקוח *</div>
+                  <Input
+                    inputMode="numeric"
+                    value={billToCustomerAmount}
+                    onChange={(e) => {
+                      setBillToCustomerAmount(e.target.value);
+                      setBillToCustomerAmountTouched(true);
+                    }}
+                    onBlur={() => setBillToCustomerAmountTouched(true)}
+                    placeholder="למשל 650"
+                    aria-invalid={showBillToCustomerAmountError}
+                    className={
+                      showBillToCustomerAmountError
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    }
+                  />
+                  {showBillToCustomerAmountError ? (
+                    <div className="text-xs text-destructive">{billToCustomerAmountError}</div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!isSessionMode ? (
+            <div className="flex flex-col gap-2 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={billedToCustomer}
+                  onChange={(e) => setBilledToCustomer(e.target.checked)}
+                />
+                <span>{"\u05dc\u05d7\u05d9\u05d5\u05d1 \u05dc\u05e7\u05d5\u05d7"}</span>
+              </label>
+              <div className="text-xs text-muted-foreground">
+                {billedToCustomer ? "ההוצאה תסומן כחויבה ללקוח." : "אם לא מסומן, ההוצאה נכללת בבסיס כברירת מחדל."}
+              </div>
+            </div>
+          ) : null}
 
           <div className="space-y-1">
             <div className="text-sm font-medium">{"\u05d4\u05e2\u05e8\u05d5\u05ea (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
@@ -2708,6 +3603,72 @@ function AddExpenseDialog({
               placeholder={"\u05d4\u05e2\u05e8\u05d5\u05ea \u05e4\u05e0\u05d9\u05de\u05d9\u05d5\u05ea..."}
             />
           </div>
+
+          {!isSessionMode ? (
+            <div className="space-y-2">
+              <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
+              <input
+                ref={expenseAttachmentInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => setAttachmentFiles(Array.from(e.target.files ?? []))}
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => expenseAttachmentInputRef.current?.click()}
+                >
+                  {attachmentFiles.length > 0 || existingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                </Button>
+                {attachmentFiles.length > 0 ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
+                    נקה בחירה
+                  </Button>
+                ) : null}
+              </div>
+              {attachmentFiles.length > 0 ? (
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {attachmentFiles.map((file) => (
+                    <div key={`${file.name}-${file.size}`}>{file.name}</div>
+                  ))}
+                </div>
+              ) : null}
+              {existingAttachments.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground">קבצים קיימים</div>
+                  <div className="flex flex-wrap gap-2">
+                    {existingAttachments.map((attachment) => (
+                      <a
+                        key={attachment.document_id}
+                        href={attachment.url ?? "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
+                      >
+                        {attachment.file_name ?? "קובץ"}
+                      </a>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {existingAttachments
+                      .filter((attachment) => attachment.url && isImageAttachment(attachment))
+                      .map((attachment) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={`${attachment.document_id}-preview`}
+                          src={attachment.url ?? ""}
+                          alt={attachment.file_name ?? "קובץ"}
+                          className="h-20 w-20 rounded-lg border object-cover"
+                        />
+                      ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <DialogFooter className="mt-6">
             {!canSubmit && !submitting ? (
@@ -2719,7 +3680,7 @@ function AddExpenseDialog({
               {"\u05d1\u05d9\u05d8\u05d5\u05dc"}
             </Button>
             <Button type="submit" disabled={submitting || !canSubmit}>
-              {submitting ? "\u05e9\u05d5\u05de\u05e8..." : "\u05e9\u05de\u05d9\u05e8\u05d4"}
+              {submitting ? "\u05e9\u05d5\u05de\u05e8..." : isEditing ? "עדכון" : "\u05e9\u05de\u05d9\u05e8\u05d4"}
             </Button>
           </DialogFooter>
         </form>
@@ -2732,20 +3693,24 @@ function AddIncomeDialog({
   onOpenChange,
   projectId,
   projectType,
-  onCreated,
+  editingPayment,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
   projectType: string | null;
-  onCreated: (created: PaymentRow) => void;
+  editingPayment: PaymentRow | null;
+  onSaved: (saved: PaymentRow) => void;
 }) {
   const getTodayDate = () => new Date().toISOString().slice(0, 10);
+  const isEditing = Boolean(editingPayment);
   const [submitting, setSubmitting] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [amountTouched, setAmountTouched] = useState(false);
   const [paymentDateTouched, setPaymentDateTouched] = useState(false);
   const [paymentMethodTouched, setPaymentMethodTouched] = useState(false);
+  const incomeAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -2753,6 +3718,8 @@ function AddIncomeDialog({
   const [requiresSplit, setRequiresSplit] = useState(false);
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
   const requiresDueDate = paymentMethod === "check";
   const canSubmit =
     Number.isFinite(Number(amount)) &&
@@ -2793,15 +3760,25 @@ function AddIncomeDialog({
   })();
 
   useEffect(() => {
-    if (open) {
-      setSubmitAttempted(false);
-      setAmountTouched(false);
-      setPaymentDateTouched(false);
-      setPaymentMethodTouched(false);
-      setPaymentDate((prev) => prev || getTodayDate());
-      setRequiresSplit(false);
-    }
-  }, [open]);
+    if (!open) return;
+    setSubmitAttempted(false);
+    setAmountTouched(false);
+    setPaymentDateTouched(false);
+    setPaymentMethodTouched(false);
+    setAmount(
+      editingPayment && toNumber(editingPayment.amount_total) !== null
+        ? String(toNumber(editingPayment.amount_total))
+        : ""
+    );
+    setPaymentDate(editingPayment?.payment_date ?? getTodayDate());
+    setPaymentMethod(editingPayment?.payment_method ?? "");
+    setDueDate(editingPayment?.due_date ?? "");
+    setRequiresSplit(Boolean(editingPayment?.requires_split));
+    setReferenceNumber(editingPayment?.reference_number ?? "");
+    setNotes(editingPayment?.notes ?? "");
+    setAttachmentFiles([]);
+    setExistingAttachments(Array.isArray(editingPayment?.attachments) ? editingPayment.attachments : []);
+  }, [editingPayment, open]);
 
   async function submit() {
     setSubmitAttempted(true);
@@ -2814,10 +3791,11 @@ function AddIncomeDialog({
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/payments/create", {
+      const res = await fetch(isEditing ? "/api/payments/update" : "/api/payments/create", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          id: editingPayment?.id ?? undefined,
           business_domain: mapProjectTypeToExpenseDomain(projectType),
           project_id: projectId,
           amount_total: amountNumber,
@@ -2831,23 +3809,31 @@ function AddIncomeDialog({
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4", {
+        toast.error(isEditing ? "שגיאה בעדכון ההכנסה" : "שגיאה בהוספת ההכנסה", {
           description: json?.error ?? "",
         });
         return;
       }
-      const createdPayment = json?.payment as PaymentRow | undefined;
-      const createdPaymentId =
-        createdPayment && typeof createdPayment.id === "string" ? createdPayment.id : null;
-
-      if (!createdPayment || !createdPaymentId) {
-        toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4", {
+      const savedPayment = (json?.payment as PaymentRow | undefined) ?? editingPayment;
+      if (!savedPayment?.id) {
+        toast.error(isEditing ? "שגיאה בעדכון ההכנסה" : "שגיאה בהוספת ההכנסה", {
           description: "Missing payment id",
         });
         return;
       }
 
-      toast.success("\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05d5\u05e1\u05e4\u05d4");
+      let paymentWithAttachment = savedPayment;
+      const uploadedAttachments: FinancialAttachment[] = [];
+      for (const file of attachmentFiles) {
+        const attachment = await uploadFinancialAttachment("payment", savedPayment.id, file);
+        if (attachment?.document_id) uploadedAttachments.push(attachment);
+      }
+      paymentWithAttachment = {
+        ...savedPayment,
+        attachments: [...existingAttachments, ...uploadedAttachments],
+      };
+
+      toast.success(isEditing ? "ההכנסה עודכנה" : "ההכנסה נוספה");
       setAmount("");
       setPaymentDate(getTodayDate());
       setPaymentMethod("");
@@ -2855,9 +3841,11 @@ function AddIncomeDialog({
       setRequiresSplit(false);
       setReferenceNumber("");
       setNotes("");
-      onCreated(createdPayment);
+      setAttachmentFiles([]);
+      setExistingAttachments([]);
+      onSaved(paymentWithAttachment);
     } catch (e: unknown) {
-      toast.error("\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4", {
+      toast.error(isEditing ? "שגיאה בעדכון ההכנסה" : "שגיאה בהוספת ההכנסה", {
         description: getErrorMessage(e),
       });
     } finally {
@@ -2869,9 +3857,11 @@ function AddIncomeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <AdaptiveDialog size="formLg">
         <DialogHeader>
-          <DialogTitle>{"\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4"}</DialogTitle>
+          <DialogTitle>{isEditing ? "עריכת הכנסה" : "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05db\u05e0\u05e1\u05d4"}</DialogTitle>
           <DialogDescription>
-            {"\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05ea\u05d9\u05e8\u05e9\u05dd \u05db\u05ea\u05e7\u05d1\u05d5\u05dc \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8."}
+            {isEditing
+              ? "עדכון פרטי ההכנסה של הפרויקט."
+              : "\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05ea\u05d9\u05e8\u05e9\u05dd \u05db\u05ea\u05e7\u05d1\u05d5\u05dc \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8."}
           </DialogDescription>
         </DialogHeader>
 
@@ -3024,6 +4014,70 @@ function AddIncomeDialog({
             />
           </div>
 
+          <div className="space-y-2">
+            <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
+            <input
+              ref={incomeAttachmentInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => setAttachmentFiles(Array.from(e.target.files ?? []))}
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => incomeAttachmentInputRef.current?.click()}
+              >
+                {attachmentFiles.length > 0 || existingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+              </Button>
+              {attachmentFiles.length > 0 ? (
+                <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
+                  נקה בחירה
+                </Button>
+              ) : null}
+            </div>
+            {attachmentFiles.length > 0 ? (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                {attachmentFiles.map((file) => (
+                  <div key={`${file.name}-${file.size}`}>{file.name}</div>
+                ))}
+              </div>
+            ) : null}
+            {existingAttachments.length > 0 ? (
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">קבצים קיימים</div>
+                <div className="flex flex-wrap gap-2">
+                  {existingAttachments.map((attachment) => (
+                    <a
+                      key={attachment.document_id}
+                      href={attachment.url ?? "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
+                    >
+                      {attachment.file_name ?? "קובץ"}
+                    </a>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {existingAttachments
+                    .filter((attachment) => attachment.url && isImageAttachment(attachment))
+                    .map((attachment) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={`${attachment.document_id}-preview`}
+                        src={attachment.url ?? ""}
+                        alt={attachment.file_name ?? "קובץ"}
+                        className="h-20 w-20 rounded-lg border object-cover"
+                      />
+                    ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           <DialogFooter className="mt-6">
             {!canSubmit && !submitting ? (
               <div className="me-auto text-xs text-destructive">{addIncomeValidationMessage}</div>
@@ -3034,7 +4088,7 @@ function AddIncomeDialog({
               {"\u05d1\u05d9\u05d8\u05d5\u05dc"}
             </Button>
             <Button type="submit" disabled={submitting || !canSubmit}>
-              {submitting ? "\u05e9\u05d5\u05de\u05e8..." : "\u05e9\u05de\u05d9\u05e8\u05d4"}
+              {submitting ? "\u05e9\u05d5\u05de\u05e8..." : isEditing ? "עדכון" : "\u05e9\u05de\u05d9\u05e8\u05d4"}
             </Button>
           </DialogFooter>
         </form>
