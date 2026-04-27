@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import {
@@ -241,6 +241,7 @@ export default function ProjectsClient({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [sort, setSort] = useState<SortMode>("start_date");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -367,6 +368,7 @@ export default function ProjectsClient({
     );
     return filtered.sort();
   }, [activeTab, projects]);
+  const hasActiveToolbarFilters = query.trim().length > 0 || status !== "all" || sort !== "start_date";
 
   const projectTypeOptions = useMemo(() => {
     return defaultProjectTypeOptions;
@@ -835,14 +837,83 @@ export default function ProjectsClient({
   return (
     <PageStack>
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ProjectsView)}>
-        <TabsList className="w-fit">
+        <TabsList className="mx-auto flex w-fit max-w-full justify-center md:mx-0">
           <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
           <TabsTrigger value="quotes">הצעות מחיר ({quoteCount})</TabsTrigger>
           <TabsTrigger value="closed">סגורים ({closedCount})</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      <AdaptiveStack variant="toolbar">
+      <div className="space-y-3 md:hidden">
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 flex-1 justify-center gap-2"
+            onClick={() => setMobileFiltersOpen((current) => !current)}
+            aria-expanded={mobileFiltersOpen}
+            aria-controls="projects-mobile-filters"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            {mobileFiltersOpen ? "הסתרת חיפוש וסינון" : "חיפוש וסינון"}
+          </Button>
+          <Button type="button" className="h-11 flex-1" onClick={() => openCreateDialog(activeTab)}>
+            {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
+          </Button>
+        </div>
+
+        {hasActiveToolbarFilters && !mobileFiltersOpen ? (
+          <div className="text-xs text-muted-foreground">קיים חיפוש או סינון פעיל.</div>
+        ) : null}
+
+        <div
+          id="projects-mobile-filters"
+          className={(
+            `${mobileFiltersOpen ? "grid" : "hidden"} gap-3 rounded-xl border border-border/60 bg-card p-3 shadow-sm`
+          ).trim()}
+        >
+          <div className="min-w-0">
+            <label className="text-sm text-muted-foreground">חיפוש</label>
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="חיפוש לפי לקוח או פרויקט..."
+              className="mt-1 h-11"
+            />
+          </div>
+
+          <div className="min-w-0">
+            <label className="text-sm text-muted-foreground">סטטוס</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="all">הכל</option>
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>
+                  {statusLabel(s)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="min-w-0">
+            <label className="text-sm text-muted-foreground">מיון</label>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortMode)}
+              className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="recent">אחרונים</option>
+              <option value="start_date">תאריך התחלה</option>
+              <option value="profit_desc">רווח (גבוה לנמוך)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <AdaptiveStack variant="toolbar" className="hidden md:flex">
         <div className="flex-1">
           <label className="text-sm text-muted-foreground">חיפוש</label>
           <Input
