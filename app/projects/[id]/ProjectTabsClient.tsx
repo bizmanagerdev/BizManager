@@ -669,7 +669,7 @@ export default function ProjectTabsClient({
       ? isSessionBillable(item.session)
       : Boolean(item.project_expense?.["billed_to_customer"])
   );
-  const billedExpensesTotal = billedExpensesFromDb;
+  const billedExpensesTotal = billedExpensesFromDb ?? 0;
   const displayedBasePrice = agreedBasePriceUi ?? agreedBasePrice;
   const displayedCustomerPrice =
     displayedBasePrice === null
@@ -934,20 +934,21 @@ export default function ProjectTabsClient({
 
   function renderExpenseRow(item: ExpenseListItem, idx: number, options?: { showBillableBadge?: boolean; billedList?: boolean }) {
     const expenseId = getString(item.project_expense, "expense_id");
-    const isSession = item.source_type === "session" && item.session;
-    const amount = isSession ? sessionLaborCost(item.session) : toNumber(item.expense?.amount);
-    const billedAmount = isSession
-      ? sessionBillToCustomerAmount(item.session)
+    const session = item.source_type === "session" ? item.session : null;
+    const isSession = Boolean(session);
+    const amount = session ? sessionLaborCost(session) : toNumber(item.expense?.amount);
+    const billedAmount = session
+      ? sessionBillToCustomerAmount(session)
       : toNumber(item.expense?.amount);
-    const createdAt = isSession
-      ? item.session.clock_in
+    const createdAt = session
+      ? session.clock_in
       : getString(item.expense, "expense_date") ??
         getString(item.expense, "created_at") ??
         null;
 
-    const title = isSession
+    const title = session
       ? `שכר עובד${(() => {
-          const user = usersById.get(item.session.user_id);
+          const user = usersById.get(session.user_id);
           const name = user?.full_name?.trim() || user?.email || "";
           return name ? ` — ${name}` : "";
         })()}`
@@ -960,24 +961,24 @@ export default function ProjectTabsClient({
         ? (item.expense.attachments as FinancialAttachment[])
         : [];
 
-    const billed = isSession
-      ? isSessionBillable(item.session)
+    const billed = session
+      ? isSessionBillable(session)
       : Boolean(item.project_expense?.["billed_to_customer"]);
 
     return (
       <div
-        key={isSession ? item.session.id : expenseId ?? String(idx)}
+        key={session ? session.id : expenseId ?? String(idx)}
         className="py-3 flex items-start justify-between gap-4"
       >
         <div className="min-w-0">
           <div className="font-medium truncate">{title}</div>
           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
             <span>{formatDate(createdAt)}</span>
-            {isSession ? (
+            {session ? (
               <>
-                <span>כניסה: {formatDateTime(item.session.clock_in)}</span>
-                <span>יציאה: {formatDateTime(item.session.clock_out)}</span>
-                <span>משך: {formatMinutes(sessionWorkedMinutes(item.session))}</span>
+                <span>כניסה: {formatDateTime(session.clock_in)}</span>
+                <span>יציאה: {formatDateTime(session.clock_out)}</span>
+                <span>משך: {formatMinutes(sessionWorkedMinutes(session))}</span>
                 {options?.billedList ? (
                   <span>עלות עבודה: {formatIls(amount)}</span>
                 ) : null}
@@ -989,9 +990,9 @@ export default function ProjectTabsClient({
               </span>
             ) : null}
           </div>
-          {isSession && item.session.notes ? (
+          {session?.notes ? (
             <div className="text-xs text-muted-foreground mt-1 truncate">
-              {item.session.notes}
+              {session.notes}
             </div>
           ) : null}
           {attachments.length > 0 ? (
@@ -1045,8 +1046,8 @@ export default function ProjectTabsClient({
                 setAddExpenseOpen(true);
               }}
               disabled={
-                isSession
-                  ? deletingSessionId === item.session.id
+                session
+                  ? deletingSessionId === session.id
                   : deletingExpenseId === expenseId
               }
             >
@@ -1056,15 +1057,15 @@ export default function ProjectTabsClient({
               type="button"
               variant="destructive"
               size="sm"
-              onClick={() => void (isSession ? deleteSession(item) : deleteExpense(item))}
+              onClick={() => void (session ? deleteSession(item) : deleteExpense(item))}
               disabled={
-                isSession
-                  ? deletingSessionId === item.session.id
+                session
+                  ? deletingSessionId === session.id
                   : deletingExpenseId === expenseId
               }
             >
-              {isSession
-                ? deletingSessionId === item.session.id
+              {session
+                ? deletingSessionId === session.id
                   ? "מוחק..."
                   : "מחק"
                 : deletingExpenseId === expenseId
@@ -2929,7 +2930,7 @@ function AddExpenseDialog({
   useEffect(() => {
     if (!open) return;
     const rawCategory = getString(editingExpense, "category") ?? "";
-    const categoryIsPreset = PROJECT_EXPENSE_CATEGORY_OPTIONS.includes(rawCategory);
+    const categoryIsPreset = (PROJECT_EXPENSE_CATEGORY_OPTIONS as readonly string[]).includes(rawCategory);
     setSubmitAttempted(false);
     setAmountTouched(false);
     setCategoryTouched(false);

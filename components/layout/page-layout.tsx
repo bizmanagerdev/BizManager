@@ -39,6 +39,7 @@ const widthVariants = {
 
 const dialogVariants = {
   newOrder: "max-h-[92svh] w-[calc(100vw-1rem)] max-w-5xl overflow-y-auto p-4 sm:p-6",
+  formSm: "max-h-[90vh] overflow-y-auto sm:max-w-sm",
   formMd: "max-h-[90vh] overflow-y-auto sm:max-w-md",
   formLg: "max-h-[90vh] overflow-y-auto sm:max-w-lg",
   formXl: "max-h-[90svh] overflow-y-auto sm:max-w-xl",

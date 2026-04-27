@@ -115,10 +115,10 @@ export default async function ProjectsPage({
   const [{ data: paymentRows }, { data: projectSettingsRows }] = await Promise.all([
     projectIds.length > 0
       ? supabase.from("payments").select("project_id,amount_total").in("project_id", projectIds)
-      : Promise.resolve({ data: [], error: null }),
+      : Promise.resolve({ data: [] as Row[] }),
     projectIds.length > 0
       ? supabase.from("projects").select("id,expenses_billed_separately").in("id", projectIds)
-      : Promise.resolve({ data: [], error: null }),
+      : Promise.resolve({ data: [] as Row[] }),
   ]);
 
   const { data: financialRows } =
@@ -127,7 +127,7 @@ export default async function ProjectsPage({
           .from("project_financials_view")
           .select("id,total_expenses,gross_profit,customer_total_price,expenses_billed")
           .in("id", projectIds)
-      : { data: [] as Row[], error: null };
+      : { data: [] as Row[] };
 
   const paidTotalByProjectId = new Map<string, number>();
   ((paymentRows ?? []) as Row[]).forEach((row) => {
