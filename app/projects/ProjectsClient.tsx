@@ -31,8 +31,8 @@ import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; email?: string | null };
-type SortMode = "recent" | "profit_desc";
-type ProjectsView = "projects" | "quotes";
+type SortMode = "recent" | "start_date" | "profit_desc";
+type ProjectsView = "projects" | "quotes" | "closed";
 type ContactDraft = {
   full_name: string;
   role: string;
@@ -86,6 +86,24 @@ function formatIls(amount: number) {
     currency: "ILS",
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("he-IL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function getDateValue(row: ProjectRow, key: string) {
+  const value = getString(row, key);
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
 }
 
 function projectDisplayName(row: ProjectRow) {
@@ -154,7 +172,7 @@ function paymentStatusValue(row: ProjectRow) {
 function paymentStatusLabel(status: "paid" | "partial" | "unpaid" | "unpriced") {
   switch (status) {
     case "paid":
-      return "שולם במלואו";
+      return "שולם";
     case "partial":
       return "שולם חלקית";
     case "unpaid":
@@ -222,7 +240,7 @@ export default function ProjectsClient({
   const [activeTab, setActiveTab] = useState<ProjectsView>("projects");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
-  const [sort, setSort] = useState<SortMode>("recent");
+  const [sort, setSort] = useState<SortMode>("start_date");
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -288,7 +306,9 @@ export default function ProjectsClient({
     let list =
       activeTab === "quotes"
         ? projects.filter((row) => statusValue(row) === "quote")
-        : projects.filter((row) => statusValue(row) !== "quote");
+        : activeTab === "closed"
+          ? projects.filter((row) => statusValue(row) === "completed")
+          : projects.filter((row) => !["quote", "completed"].includes(statusValue(row)));
 
     if (q) {
       list = list.filter((row) => {
@@ -306,28 +326,44 @@ export default function ProjectsClient({
       list = [...list].sort(
         (a, b) => (profitValue(b) ?? -Infinity) - (profitValue(a) ?? -Infinity)
       );
+    } else if (sort === "start_date") {
+      list = [...list].sort((a, b) => getDateValue(a, "start_date") - getDateValue(b, "start_date"));
     }
 
     return list;
   }, [activeTab, projects, query, sort, status]);
 
   const projectCount = useMemo(
-    () => projects.filter((row) => statusValue(row) !== "quote").length,
+    () => projects.filter((row) => !["quote", "completed"].includes(statusValue(row))).length,
     [projects]
   );
   const quoteCount = useMemo(
     () => projects.filter((row) => statusValue(row) === "quote").length,
     [projects]
   );
+  const closedCount = useMemo(
+    () => projects.filter((row) => statusValue(row) === "completed").length,
+    [projects]
+  );
 
   const statusOptions = useMemo(() => {
     const set = new Set<string>();
     projects
-      .filter((row) => (activeTab === "quotes" ? statusValue(row) === "quote" : statusValue(row) !== "quote"))
+      .filter((row) =>
+        activeTab === "quotes"
+          ? statusValue(row) === "quote"
+          : activeTab === "closed"
+            ? statusValue(row) === "completed"
+            : !["quote", "completed"].includes(statusValue(row))
+      )
       .forEach((row) => set.add(statusValue(row)));
     defaultStatusOptions.forEach((value) => set.add(value));
     const filtered = Array.from(set).filter((value) =>
-      activeTab === "quotes" ? value === "quote" : value !== "quote"
+      activeTab === "quotes"
+        ? value === "quote"
+        : activeTab === "closed"
+          ? value === "completed"
+          : !["quote", "completed"].includes(value)
     );
     return filtered.sort();
   }, [activeTab, projects]);
@@ -358,7 +394,11 @@ export default function ProjectsClient({
       setStatus("quote");
       return;
     }
-    setStatus((current) => (current === "quote" ? "all" : current));
+    if (activeTab === "closed") {
+      setStatus("completed");
+      return;
+    }
+    setStatus((current) => (current === "quote" || current === "completed" ? "all" : current));
   }, [activeTab]);
 
   function defaultCreateStatusForTab(tab: ProjectsView) {
@@ -798,6 +838,7 @@ export default function ProjectsClient({
         <TabsList className="w-fit">
           <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
           <TabsTrigger value="quotes">הצעות מחיר ({quoteCount})</TabsTrigger>
+          <TabsTrigger value="closed">סגורים ({closedCount})</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -837,6 +878,7 @@ export default function ProjectsClient({
               className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="recent">אחרונים</option>
+              <option value="start_date">תאריך התחלה</option>
               <option value="profit_desc">רווח (גבוה לנמוך)</option>
             </select>
           </div>
@@ -851,12 +893,17 @@ export default function ProjectsClient({
       </AdaptiveStack>
 
       <div className="text-sm text-muted-foreground">
-        {activeTab === "quotes" ? `נמצאו ${rows.length} הצעות מחיר` : `נמצאו ${rows.length} פרויקטים`}
+        {activeTab === "quotes"
+          ? `נמצאו ${rows.length} הצעות מחיר`
+          : activeTab === "closed"
+            ? `נמצאו ${rows.length} פרויקטים סגורים`
+            : `נמצאו ${rows.length} פרויקטים`}
       </div>
 
-      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(150px,1fr)_90px_110px_130px_95px_85px_240px] md:items-center md:gap-2 sm:px-4">
+      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(150px,1fr)_90px_110px_110px_130px_95px_85px_240px] md:items-center md:gap-2 sm:px-4">
         <div>פרויקט</div>
         <div>סטטוס</div>
+        <div>תאריך התחלה</div>
         <div>תשלום</div>
         <div>לקוח</div>
         <div>רווח</div>
@@ -871,11 +918,12 @@ export default function ProjectsClient({
           const currentStatus = statusValue(row);
           const openTasks = getNumber(row, "open_tasks");
           const paymentStatus = paymentStatusValue(row);
+          const startDate = formatDate(getString(row, "start_date"));
 
           return (
             <Card key={id} className="transition-shadow hover:shadow-md">
               <CardContent className="p-3 sm:p-4">
-                <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(150px,1fr)_90px_110px_130px_95px_85px_240px] md:items-center md:gap-2">
+                <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(150px,1fr)_90px_110px_110px_130px_95px_85px_240px] md:items-center md:gap-2">
                   <Link
                     href={`/projects/${id}`}
                     prefetch
@@ -897,6 +945,15 @@ export default function ProjectsClient({
                     onClick={() => emitNavigationStart()}
                   >
                     <StatusBadge value={currentStatus} type="project" />
+                  </Link>
+
+                  <Link
+                    href={`/projects/${id}`}
+                    prefetch
+                    className="text-sm"
+                    onClick={() => emitNavigationStart()}
+                  >
+                    {startDate}
                   </Link>
 
                   <Link
