@@ -3,7 +3,7 @@ export type StatusColor = "success" | "warning" | "danger" | "info" | "neutral";
 export type StatusBadgeType = "payment" | "project" | "task" | "priority" | "order";
 
 export type PaymentStatus = "pending" | "cleared" | "rejected";
-export type ProjectStatus = "planned" | "active" | "on_hold" | "completed" | "cancelled";
+export type ProjectStatus = "quote" | "planned" | "active" | "on_hold" | "completed" | "cancelled";
 export type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 export type OrderStatus = "draft" | "reserved" | "delivered" | "closed" | "cancelled";
@@ -56,6 +56,8 @@ export function getPaymentStatusColor(status: string): StatusColor {
 
 export function getProjectStatusColor(status: string): StatusColor {
   switch (normalizeValue(status)) {
+    case "quote":
+      return "neutral";
     case "planned":
     case "planning":
       return "neutral";
@@ -136,6 +138,8 @@ export function getPaymentStatusLabel(status: string) {
 
 export function getProjectStatusLabel(status: string) {
   switch (normalizeValue(status)) {
+    case "quote":
+      return "הצעת מחיר";
     case "planned":
     case "planning":
       return "מתוכנן";

@@ -36,7 +36,7 @@ type ProjectDetails = {
   notes: string | null;
 };
 
-const defaultStatusOptions = ["planned", "active", "on_hold", "completed", "cancelled"];
+const defaultStatusOptions = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
 const defaultProjectTypeOptions = ["logistics", "construction", "moving", "other", "home"];
 
 function toNumber(value: unknown) {
@@ -50,6 +50,8 @@ function toNumber(value: unknown) {
 
 function statusLabel(status: string) {
   switch (status) {
+    case "quote":
+      return "הצעת מחיר";
     case "planned":
       return "מתוכנן";
     case "active":

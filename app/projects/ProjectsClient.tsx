@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogDescription,
@@ -31,6 +32,7 @@ import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; email?: string | null };
 type SortMode = "recent" | "profit_desc";
+type ProjectsView = "projects" | "quotes";
 type ContactDraft = {
   full_name: string;
   role: string;
@@ -42,7 +44,7 @@ type ContactDraft = {
   active: boolean;
 };
 
-const defaultStatusOptions = ["planned", "active", "on_hold", "completed", "cancelled"];
+const defaultStatusOptions = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
 const defaultProjectTypeOptions = ["logistics", "moving", "renovation"];
 const cityOptions = [
   "ירושלים",
@@ -217,6 +219,7 @@ export default function ProjectsClient({
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
   const [projects, setProjects] = useState<ProjectRow[]>(initialProjects);
+  const [activeTab, setActiveTab] = useState<ProjectsView>("projects");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [sort, setSort] = useState<SortMode>("recent");
@@ -264,6 +267,12 @@ export default function ProjectsClient({
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [approveQuoteOpen, setApproveQuoteOpen] = useState(false);
+  const [approveQuoteSubmitting, setApproveQuoteSubmitting] = useState(false);
+  const [approveQuoteError, setApproveQuoteError] = useState<string | null>(null);
+  const [approveQuoteId, setApproveQuoteId] = useState("");
+  const [approveQuoteName, setApproveQuoteName] = useState("");
+  const [approveQuotePrice, setApproveQuotePrice] = useState("");
 
   function removeProject(id: string) {
     setProjects((prev) =>
@@ -276,7 +285,10 @@ export default function ProjectsClient({
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let list = projects;
+    let list =
+      activeTab === "quotes"
+        ? projects.filter((row) => statusValue(row) === "quote")
+        : projects.filter((row) => statusValue(row) !== "quote");
 
     if (q) {
       list = list.filter((row) => {
@@ -297,14 +309,28 @@ export default function ProjectsClient({
     }
 
     return list;
-  }, [projects, query, sort, status]);
+  }, [activeTab, projects, query, sort, status]);
+
+  const projectCount = useMemo(
+    () => projects.filter((row) => statusValue(row) !== "quote").length,
+    [projects]
+  );
+  const quoteCount = useMemo(
+    () => projects.filter((row) => statusValue(row) === "quote").length,
+    [projects]
+  );
 
   const statusOptions = useMemo(() => {
     const set = new Set<string>();
-    projects.forEach((row) => set.add(statusValue(row)));
+    projects
+      .filter((row) => (activeTab === "quotes" ? statusValue(row) === "quote" : statusValue(row) !== "quote"))
+      .forEach((row) => set.add(statusValue(row)));
     defaultStatusOptions.forEach((value) => set.add(value));
-    return Array.from(set).sort();
-  }, [projects]);
+    const filtered = Array.from(set).filter((value) =>
+      activeTab === "quotes" ? value === "quote" : value !== "quote"
+    );
+    return filtered.sort();
+  }, [activeTab, projects]);
 
   const projectTypeOptions = useMemo(() => {
     return defaultProjectTypeOptions;
@@ -328,6 +354,24 @@ export default function ProjectsClient({
   const selectedCustomer = customerOptionsState.find((row) => row.id === createCustomerId) ?? null;
 
   useEffect(() => {
+    if (activeTab === "quotes") {
+      setStatus("quote");
+      return;
+    }
+    setStatus((current) => (current === "quote" ? "all" : current));
+  }, [activeTab]);
+
+  function defaultCreateStatusForTab(tab: ProjectsView) {
+    return tab === "quotes" ? "quote" : "planned";
+  }
+
+  function openCreateDialog(nextTab: ProjectsView = activeTab) {
+    setCreateError(null);
+    setCreateStatus(defaultCreateStatusForTab(nextTab));
+    setCreateOpen(true);
+  }
+
+  useEffect(() => {
     if (prefillHandled.current) return;
 
     const prefillCustomerId = (searchParams.get("customer_id") ?? "").trim();
@@ -337,13 +381,13 @@ export default function ProjectsClient({
       const matched = customerOptionsState.find((row) => row.id === prefillCustomerId) ?? null;
       setCreateCustomerId(prefillCustomerId);
       setCreateCustomerQuery(matched?.label ?? "");
-      setCreateOpen(true);
+      openCreateDialog(activeTab);
     } else if (shouldOpenCreate) {
-      setCreateOpen(true);
+      openCreateDialog(activeTab);
     }
 
     prefillHandled.current = true;
-  }, [customerOptionsState, searchParams]);
+  }, [activeTab, customerOptionsState, searchParams]);
 
   function resetCreateCustomerForm() {
     setCreateCustomerName("");
@@ -593,7 +637,7 @@ export default function ProjectsClient({
       setCreateCustomerQuery("");
       setCustomerPickerOpen(false);
       setCreateProjectType(projectTypeOptions[0] ?? defaultProjectTypeOptions[0]);
-      setCreateStatus(defaultStatusOptions[0]);
+      setCreateStatus(defaultCreateStatusForTab(activeTab));
       setCreateAgreedBasePrice("");
       setCreateExpensesSeparately(false);
       setCreateProjectManagerId(currentUserId ?? "");
@@ -624,6 +668,15 @@ export default function ProjectsClient({
     setEditEndDate(getString(row, "end_date") ?? "");
     setEditNotes(getString(row, "notes") ?? "");
     setEditOpen(true);
+  }
+
+  function openApproveQuote(row: ProjectRow) {
+    setApproveQuoteError(null);
+    setApproveQuoteId(getString(row, "id") ?? "");
+    setApproveQuoteName(projectDisplayName(row));
+    const currentPrice = getNumber(row, "agreed_base_price");
+    setApproveQuotePrice(currentPrice !== null && currentPrice > 0 ? String(currentPrice) : "");
+    setApproveQuoteOpen(true);
   }
 
   async function saveProjectEdit() {
@@ -686,8 +739,68 @@ export default function ProjectsClient({
     }
   }
 
+  async function approveQuote() {
+    if (approveQuoteSubmitting) return;
+    setApproveQuoteError(null);
+
+    const agreed = approveQuotePrice.trim() ? Number(approveQuotePrice) : NaN;
+    if (!approveQuoteId) {
+      setApproveQuoteError("לא נבחרה הצעת מחיר.");
+      return;
+    }
+    if (!Number.isFinite(agreed) || agreed <= 0) {
+      setApproveQuoteError("יש להזין מחיר מוסכם גדול מ-0.");
+      return;
+    }
+
+    setApproveQuoteSubmitting(true);
+    try {
+      const res = await fetch("/api/projects/approve-quote", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: approveQuoteId,
+          agreed_base_price: agreed,
+        }),
+      });
+
+      const json = (await res.json().catch(() => ({}))) as Partial<{
+        error: string;
+        project: ProjectRow;
+      }>;
+
+      if (!res.ok || !json.project) {
+        setApproveQuoteError(json.error ?? "אישור הצעת המחיר נכשל.");
+        return;
+      }
+
+      setProjects((prev) =>
+        prev.map((row) => {
+          const id = getString(row, "id") ?? "";
+          return id === approveQuoteId ? (json.project as ProjectRow) : row;
+        })
+      );
+      setApproveQuoteOpen(false);
+      setApproveQuoteId("");
+      setApproveQuoteName("");
+      setApproveQuotePrice("");
+      router.refresh();
+    } catch (e: unknown) {
+      setApproveQuoteError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+    } finally {
+      setApproveQuoteSubmitting(false);
+    }
+  }
+
   return (
     <PageStack>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ProjectsView)}>
+        <TabsList className="w-fit">
+          <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
+          <TabsTrigger value="quotes">הצעות מחיר ({quoteCount})</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       <AdaptiveStack variant="toolbar">
         <div className="flex-1">
           <label className="text-sm text-muted-foreground">חיפוש</label>
@@ -730,16 +843,18 @@ export default function ProjectsClient({
 
           <div className="min-w-0">
             <label className="text-sm text-muted-foreground opacity-0">הוספה</label>
-            <Button type="button" className="h-11 w-full" onClick={() => setCreateOpen(true)}>
-              הוספת פרויקט
+            <Button type="button" className="h-11 w-full" onClick={() => openCreateDialog(activeTab)}>
+              {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
             </Button>
           </div>
         </AdaptiveGrid>
       </AdaptiveStack>
 
-      <div className="text-sm text-muted-foreground">נמצאו {rows.length} פרויקטים</div>
+      <div className="text-sm text-muted-foreground">
+        {activeTab === "quotes" ? `נמצאו ${rows.length} הצעות מחיר` : `נמצאו ${rows.length} פרויקטים`}
+      </div>
 
-      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(220px,1.2fr)_120px_150px_180px_160px_140px_140px] md:items-center md:gap-4 sm:px-4">
+      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(150px,1fr)_90px_110px_130px_95px_85px_240px] md:items-center md:gap-2 sm:px-4">
         <div>פרויקט</div>
         <div>סטטוס</div>
         <div>תשלום</div>
@@ -760,7 +875,7 @@ export default function ProjectsClient({
           return (
             <Card key={id} className="transition-shadow hover:shadow-md">
               <CardContent className="p-3 sm:p-4">
-                <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(220px,1.2fr)_120px_150px_180px_160px_140px_140px] md:items-center md:gap-4">
+                <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(150px,1fr)_90px_110px_130px_95px_85px_240px] md:items-center md:gap-2">
                   <Link
                     href={`/projects/${id}`}
                     prefetch
@@ -822,28 +937,65 @@ export default function ProjectsClient({
                     {openTasks === null ? "-" : openTasks}
                   </Link>
 
-                  <div className="flex shrink-0 items-center gap-2 md:justify-start">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-11 w-11 rounded-xl"
-                      onClick={() => openEditProject(row)}
-                      aria-label="עריכת פרויקט"
-                      title="עריכת פרויקט"
-                    >
-                      <Pencil />
-                    </Button>
-                    <DeleteProjectButton
-                      projectId={id}
-                      projectName={projectDisplayName(row)}
-                      size="icon"
-                      className="h-11 w-11 rounded-xl"
-                      ariaLabel="מחיקת פרויקט"
-                      onDeleted={() => removeProject(id)}
-                    >
-                      <Trash2 />
-                    </DeleteProjectButton>
+                  <div className="flex shrink-0 items-center gap-1.5 md:justify-start">
+                    {currentStatus === "quote" ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          className="h-10 rounded-xl px-3"
+                          onClick={() => openApproveQuote(row)}
+                        >
+                          אישור הצעה
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-10 w-10 rounded-xl"
+                          onClick={() => openEditProject(row)}
+                          aria-label="עריכת הצעת מחיר"
+                          title="עריכת הצעת מחיר"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <DeleteProjectButton
+                          projectId={id}
+                          projectName={projectDisplayName(row)}
+                          size="icon"
+                          className="h-10 w-10 rounded-xl"
+                          ariaLabel="מחיקת הצעת מחיר"
+                          onDeleted={() => removeProject(id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </DeleteProjectButton>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-11 w-11 rounded-xl"
+                          onClick={() => openEditProject(row)}
+                          aria-label="עריכת פרויקט"
+                          title="עריכת פרויקט"
+                        >
+                          <Pencil />
+                        </Button>
+                        <DeleteProjectButton
+                          projectId={id}
+                          projectName={projectDisplayName(row)}
+                          size="icon"
+                          className="h-11 w-11 rounded-xl"
+                          ariaLabel="מחיקת פרויקט"
+                          onDeleted={() => removeProject(id)}
+                        >
+                          <Trash2 />
+                        </DeleteProjectButton>
+                      </>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -852,11 +1004,70 @@ export default function ProjectsClient({
         })}
       </div>
 
+      <Dialog
+        open={approveQuoteOpen}
+        onOpenChange={(open) => {
+          setApproveQuoteOpen(open);
+          if (!open && !approveQuoteSubmitting) {
+            setApproveQuoteError(null);
+            setApproveQuoteId("");
+            setApproveQuoteName("");
+            setApproveQuotePrice("");
+          }
+        }}
+      >
+        <AdaptiveDialog size="formSm">
+          <DialogHeader>
+            <DialogTitle>אישור הצעת מחיר</DialogTitle>
+            <DialogDescription>
+              {approveQuoteName
+                ? `הזינו את המחיר המוסכם עבור ${approveQuoteName} לפני ההעברה למתוכנן.`
+                : "הזינו את המחיר המוסכם לפני ההעברה למתוכנן."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">מחיר מוסכם *</label>
+            <Input
+              inputMode="decimal"
+              value={approveQuotePrice}
+              onChange={(e) => setApproveQuotePrice(e.target.value)}
+              placeholder="לדוגמה: 2300"
+            />
+            {approveQuoteError ? <p className="text-sm text-destructive">{approveQuoteError}</p> : null}
+          </div>
+
+          <DialogFooter className="mt-4 border-t pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-slate-300 bg-slate-100 text-slate-700 hover:border-slate-400 hover:bg-slate-200 hover:text-slate-800"
+              onClick={() => setApproveQuoteOpen(false)}
+              disabled={approveQuoteSubmitting}
+            >
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              onClick={() => void approveQuote()}
+              disabled={approveQuoteSubmitting}
+            >
+              {approveQuoteSubmitting ? "שומר..." : "אישור הצעה"}
+            </Button>
+          </DialogFooter>
+        </AdaptiveDialog>
+      </Dialog>
+
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <AdaptiveDialog size="form2xl">
           <DialogHeader>
-            <DialogTitle>הוספת פרויקט חדש</DialogTitle>
-            <DialogDescription>מלאו את השדות הנדרשים ליצירת פרויקט.</DialogDescription>
+            <DialogTitle>{createStatus === "quote" ? "הצעת מחיר חדשה" : "הוספת פרויקט חדש"}</DialogTitle>
+            <DialogDescription>
+              {createStatus === "quote"
+                ? "מלאו את פרטי הצעת המחיר. בהמשך תוכלו לאשר אותה ולהעביר למתוכנן."
+                : "מלאו את השדות הנדרשים ליצירת פרויקט."}
+            </DialogDescription>
           </DialogHeader>
 
           <form
