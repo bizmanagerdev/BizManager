@@ -136,10 +136,14 @@ function paymentStatusValue(row: ProjectRow) {
   const customerTotalPrice = getNumber(row, "customer_total_price");
   const actualPrice = getNumber(row, "actual_price");
   const agreedBasePrice = getNumber(row, "agreed_base_price");
-  const dueBase = customerTotalPrice ?? actualPrice ?? agreedBasePrice ?? 0;
+  const expensesBilled = getNumber(row, "expenses_billed") ?? 0;
+  const baseProjectPrice = agreedBasePrice ?? actualPrice ?? 0;
+  const derivedCustomerTotalPrice = baseProjectPrice + expensesBilled;
+  const dueBase =
+    derivedCustomerTotalPrice > 0 ? derivedCustomerTotalPrice : customerTotalPrice ?? 0;
   const effectiveAmountDue = amountDue ?? dueBase;
 
-  if (dueBase <= 0) return "unpriced";
+  if (baseProjectPrice <= 0) return "unpriced";
   if (effectiveAmountDue <= 0 || paidTotal >= effectiveAmountDue) return "paid";
   if (paidTotal > 0) return "partial";
   return "unpaid";

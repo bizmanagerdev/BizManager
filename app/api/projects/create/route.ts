@@ -33,15 +33,11 @@ export async function POST(req: Request) {
     const projectType = typeof body.project_type === "string" ? body.project_type : "";
     const status = typeof body.status === "string" ? body.status : "";
     const agreedBasePriceRaw = body.agreed_base_price;
-    const actualPriceRaw = body.actual_price;
     const agreedBasePrice =
       agreedBasePriceRaw === undefined || agreedBasePriceRaw === null || agreedBasePriceRaw === ""
         ? 0
         : toNumber(agreedBasePriceRaw);
-    const actualPrice =
-      actualPriceRaw === undefined || actualPriceRaw === null || actualPriceRaw === ""
-        ? agreedBasePrice
-        : toNumber(actualPriceRaw);
+    const actualPrice = agreedBasePrice;
     const expensesBilledSeparately = Boolean(body.expenses_billed_separately);
     const projectManagerId = typeof body.project_manager_id === "string" ? body.project_manager_id : null;
     const startDate = typeof body.start_date === "string" ? body.start_date : "";

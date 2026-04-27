@@ -125,7 +125,7 @@ export default async function ProjectsPage({
     projectIds.length > 0
       ? await supabase
           .from("project_financials_view")
-          .select("id,total_expenses,gross_profit,customer_total_price")
+          .select("id,total_expenses,gross_profit,customer_total_price,expenses_billed")
           .in("id", projectIds)
       : { data: [] as Row[], error: null };
 
@@ -160,12 +160,17 @@ export default async function ProjectsPage({
       toNumber(financialRow?.total_expenses) ?? toNumber(row?.total_expenses) ?? 0;
     const grossProfit =
       toNumber(financialRow?.gross_profit) ?? toNumber(row?.gross_profit) ?? null;
+    const expensesBilled = toNumber(financialRow?.expenses_billed) ?? 0;
+    const baseProjectPrice = agreedBasePrice ?? actualPrice ?? 0;
+    const derivedCustomerTotalPrice = baseProjectPrice + expensesBilled;
     const customerTotalPrice =
-      toNumber(financialRow?.customer_total_price) ?? actualPrice ?? agreedBasePrice ?? 0;
+      derivedCustomerTotalPrice > 0
+        ? derivedCustomerTotalPrice
+        : toNumber(financialRow?.customer_total_price) ?? 0;
     const paidTotal = paidTotalByProjectId.get(projectId) ?? 0;
     const expensesBilledSeparately = expensesSeparatelyByProjectId.get(projectId) ?? false;
     const amountDue = customerTotalPrice;
-    const priceUnset = customerTotalPrice <= 0;
+    const priceUnset = baseProjectPrice <= 0;
 
     const paymentStatus =
       priceUnset

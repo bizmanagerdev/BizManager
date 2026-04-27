@@ -615,9 +615,9 @@ export default function ProjectTabsClient({
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
-  const [updateActualPriceOpen, setUpdateActualPriceOpen] = useState(false);
-  const [updateActualPriceSaving, setUpdateActualPriceSaving] = useState(false);
-  const [updateActualPriceValue, setUpdateActualPriceValue] = useState<string>("");
+  const [updateBasePriceOpen, setUpdateBasePriceOpen] = useState(false);
+  const [updateBasePriceSaving, setUpdateBasePriceSaving] = useState(false);
+  const [updateBasePriceValue, setUpdateBasePriceValue] = useState<string>("");
   const completedFromList = projectTasksUi.filter(
     (t) => getFirstString(t, ["status"]) === "done"
   ).length;
@@ -638,30 +638,28 @@ export default function ProjectTabsClient({
 
   const agreedBasePrice =
     toNumber(financials?.agreed_base_price ?? overview.agreed_base_price) ?? null;
-  const [actualPriceUi, setActualPriceUi] = useState<number | null>(
-    toNumber(financials?.actual_price ?? overview.actual_price) ?? null
-  );
+  const [agreedBasePriceUi, setAgreedBasePriceUi] = useState<number | null>(agreedBasePrice);
 
   useEffect(() => {
-    setActualPriceUi(toNumber(financials?.actual_price ?? overview.actual_price) ?? null);
-  }, [financials?.actual_price, overview.actual_price]);
+    setAgreedBasePriceUi(toNumber(financials?.agreed_base_price ?? overview.agreed_base_price) ?? null);
+  }, [financials?.agreed_base_price, overview.agreed_base_price]);
 
   useEffect(() => {
-    if (!updateActualPriceOpen) return;
-    const v = actualPriceUi ?? agreedBasePrice;
-    setUpdateActualPriceValue(v === null ? "" : String(v));
-  }, [updateActualPriceOpen, actualPriceUi, agreedBasePrice]);
+    if (!updateBasePriceOpen) return;
+    const v = agreedBasePriceUi;
+    setUpdateBasePriceValue(v === null ? "" : String(v));
+  }, [updateBasePriceOpen, agreedBasePriceUi]);
 
-  const updateActualPriceNumber = Number(updateActualPriceValue);
-  const updateActualPriceError =
-    updateActualPriceValue.trim() === ""
+  const updateBasePriceNumber = Number(updateBasePriceValue);
+  const updateBasePriceError =
+    updateBasePriceValue.trim() === ""
       ? "שדה חובה"
-      : !Number.isFinite(updateActualPriceNumber)
+      : !Number.isFinite(updateBasePriceNumber)
         ? "חייב להיות מספר"
-        : updateActualPriceNumber <= 0
-          ? "חייב להיות גדול מ-0"
+        : updateBasePriceNumber < 0
+          ? "חייב להיות 0 או יותר"
           : null;
-  const canSaveActualPrice = !updateActualPriceError;
+  const canSaveBasePrice = !updateBasePriceError;
   const totalExpenses = toNumber(financials?.total_expenses) ?? null;
   const grossProfit = toNumber(financials?.gross_profit) ?? null;
   const billedExpensesFromDb = toNumber(financials?.expenses_billed) ?? null;
@@ -672,7 +670,11 @@ export default function ProjectTabsClient({
       : Boolean(item.project_expense?.["billed_to_customer"])
   );
   const billedExpensesTotal = billedExpensesFromDb;
-  const displayedCustomerPrice = customerTotalPrice ?? actualPriceUi ?? agreedBasePrice;
+  const displayedBasePrice = agreedBasePriceUi ?? agreedBasePrice;
+  const displayedCustomerPrice =
+    displayedBasePrice === null
+      ? customerTotalPrice
+      : displayedBasePrice + (billedExpensesTotal ?? 0);
 
   const paymentsTotal = paymentsUi.reduce(
     (sum, p) => sum + (toNumber(p.amount_total) ?? 0),
@@ -895,38 +897,38 @@ export default function ProjectTabsClient({
     }
   }
 
-  async function updateActualPrice(next: number | null) {
-    setUpdateActualPriceSaving(true);
-    const toastId = "update-actual-price";
-    toast.loading("מעדכן מחיר בפועל...", { id: toastId });
+  async function updateBasePrice(next: number) {
+    setUpdateBasePriceSaving(true);
+    const toastId = "update-base-price";
+    toast.loading("מעדכן מחיר בסיס...", { id: toastId });
     try {
-      const res = await fetch("/api/projects/update-actual-price", {
+      const res = await fetch("/api/projects/update-agreed-base-price", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           project_id: overview.id,
-          actual_price: next,
+          agreed_base_price: next,
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("שגיאה בעדכון מחיר בפועל", { id: toastId, description: json?.error ?? "" });
+        toast.error("שגיאה בעדכון מחיר בסיס", { id: toastId, description: json?.error ?? "" });
         return;
       }
 
-      const updatedActual =
-        json?.project && typeof json.project.actual_price !== "undefined"
-          ? toNumber(json.project.actual_price)
+      const updatedBasePrice =
+        json?.project && typeof json.project.agreed_base_price !== "undefined"
+          ? toNumber(json.project.agreed_base_price)
           : null;
 
-      setActualPriceUi(updatedActual);
-      toast.success("מחיר בפועל עודכן", { id: toastId });
-      setUpdateActualPriceOpen(false);
+      setAgreedBasePriceUi(updatedBasePrice);
+      toast.success("מחיר בסיס עודכן", { id: toastId });
+      setUpdateBasePriceOpen(false);
       startTransition(() => router.refresh());
     } catch (e: unknown) {
-      toast.error("שגיאה בעדכון מחיר בפועל", { id: toastId, description: getErrorMessage(e) });
+      toast.error("שגיאה בעדכון מחיר בסיס", { id: toastId, description: getErrorMessage(e) });
     } finally {
-      setUpdateActualPriceSaving(false);
+      setUpdateBasePriceSaving(false);
     }
   }
 
@@ -1105,22 +1107,21 @@ export default function ProjectTabsClient({
             <div className="grid gap-3 text-sm md:grid-cols-4">
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">מחיר בסיס שסוכם</div>
-                <div className="mt-2 text-lg font-semibold">{formatIls(agreedBasePrice)}</div>
-              </div>
-              <div className="rounded-xl border bg-background/60 p-3">
-                <div className="text-xs text-muted-foreground">מחיר בפועל</div>
                 <div className="mt-2 flex items-center justify-between gap-3">
-                  <div className="text-lg font-semibold">{formatIls(displayedCustomerPrice)}</div>
+                  <div className="text-lg font-semibold">{formatIls(displayedBasePrice)}</div>
                   <Button
                     type="button"
                     variant="default"
                     size="sm"
-                    onClick={() => setUpdateActualPriceOpen(true)}
-                    disabled={agreedBasePrice === null && actualPriceUi === null}
+                    onClick={() => setUpdateBasePriceOpen(true)}
                   >
                     עדכון
                   </Button>
                 </div>
+              </div>
+              <div className="rounded-xl border bg-background/60 p-3">
+                <div className="text-xs text-muted-foreground">מחיר בפועל</div>
+                <div className="mt-2 text-lg font-semibold">{formatIls(displayedCustomerPrice)}</div>
               </div>
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">הוצאות</div>
@@ -1133,15 +1134,12 @@ export default function ProjectTabsClient({
                 </div>
               </div>
             </div>
-            {actualPriceUi === null && agreedBasePrice !== null ? (
-              <div className="text-xs text-muted-foreground">
-                ברירת מחדל: מחיר בפועל = מחיר בסיס
-              </div>
-            ) : null}
             {billedExpensesTotal > 0 ? (
               <div className="text-xs text-muted-foreground">
-                כולל תוספת של {formatIls(billedExpensesTotal)} עבור הוצאות לחיוב לקוח.
+                מחיר בפועל מחושב כמחיר הבסיס ועוד {formatIls(billedExpensesTotal)} עבור חיובים ללקוח.
               </div>
+            ) : displayedBasePrice !== null ? (
+              <div className="text-xs text-muted-foreground">מחיר בפועל זהה למחיר הבסיס כרגע.</div>
             ) : null}
           </CardContent>
         </Card>
@@ -1818,48 +1816,49 @@ export default function ProjectTabsClient({
       </Dialog>
 
       <Dialog
-        open={updateActualPriceOpen}
+        open={updateBasePriceOpen}
         onOpenChange={(open) => {
-          setUpdateActualPriceOpen(open);
-          if (!open) setUpdateActualPriceValue("");
+          setUpdateBasePriceOpen(open);
+          if (!open) setUpdateBasePriceValue("");
         }}
       >
         <AdaptiveDialog size="formMd">
           <DialogHeader>
-            <DialogTitle>עדכון מחיר בפועל</DialogTitle>
+            <DialogTitle>עדכון מחיר בסיס</DialogTitle>
             <DialogDescription>
-              אם לא עודכן מחיר בפועל, המערכת תציג את מחיר הבסיס כברירת מחדל.
+              מחיר בפועל מחושב ממחיר הבסיס בתוספת החיובים שמסומנים ללקוח.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
-            <div className="text-sm font-medium">מחיר בפועל *</div>
+            <div className="text-sm font-medium">מחיר בסיס *</div>
             <Input
               inputMode="numeric"
-              value={updateActualPriceValue}
-              onChange={(e) => setUpdateActualPriceValue(e.target.value)}
+              value={updateBasePriceValue}
+              onChange={(e) => setUpdateBasePriceValue(e.target.value)}
               placeholder="לדוגמה: 12000"
-              aria-invalid={Boolean(updateActualPriceError)}
+              aria-invalid={Boolean(updateBasePriceError)}
               className={
-                updateActualPriceError
+                updateBasePriceError
                   ? "border-destructive focus-visible:ring-destructive"
                   : ""
               }
             />
-            {updateActualPriceError ? (
-              <div className="text-xs text-destructive">{updateActualPriceError}</div>
+            {updateBasePriceError ? (
+              <div className="text-xs text-destructive">{updateBasePriceError}</div>
             ) : null}
-            {agreedBasePrice !== null ? (
+            {updateBasePriceValue.trim() !== "" && Number.isFinite(updateBasePriceNumber) ? (
               <div className="text-xs text-muted-foreground">
-                מחיר בסיס: {formatIls(agreedBasePrice)}
+                המחיר בפועל שיוצג לאחר השמירה:{" "}
+                {formatIls(updateBasePriceNumber + (billedExpensesTotal ?? 0))}
               </div>
             ) : null}
           </div>
 
           <DialogFooter className="mt-4">
-            {!canSaveActualPrice && !updateActualPriceSaving ? (
+            {!canSaveBasePrice && !updateBasePriceSaving ? (
               <div className="me-auto text-xs text-destructive">
-                לא ניתן לשמור: מחיר בפועל
+                לא ניתן לשמור: מחיר בסיס
               </div>
             ) : (
               <div className="me-auto" />
@@ -1867,25 +1866,17 @@ export default function ProjectTabsClient({
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setUpdateActualPriceOpen(false)}
-              disabled={updateActualPriceSaving}
+              onClick={() => setUpdateBasePriceOpen(false)}
+              disabled={updateBasePriceSaving}
             >
               ביטול
             </Button>
             <Button
               type="button"
-              variant="outline"
-              onClick={() => void updateActualPrice(null)}
-              disabled={updateActualPriceSaving || agreedBasePrice === null}
+              onClick={() => void updateBasePrice(updateBasePriceNumber)}
+              disabled={updateBasePriceSaving || !canSaveBasePrice}
             >
-              איפוס למחיר בסיס
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void updateActualPrice(updateActualPriceNumber)}
-              disabled={updateActualPriceSaving || !canSaveActualPrice}
-            >
-              {updateActualPriceSaving ? "שומר..." : "שמירה"}
+              {updateBasePriceSaving ? "שומר..." : "שמירה"}
             </Button>
           </DialogFooter>
         </AdaptiveDialog>

@@ -134,7 +134,6 @@ export default function ProjectDetailsActions({
 
     setEditSubmitting(true);
     try {
-      const actualPrice = toNumber(project.actual_price);
       const res = await fetch("/api/projects/update", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -145,7 +144,7 @@ export default function ProjectDetailsActions({
           project_type: editProjectType,
           status: editStatus,
           agreed_base_price: agreed,
-          actual_price: actualPrice ?? agreed,
+          actual_price: agreed,
           expenses_billed_separately: editExpensesSeparately,
           project_manager_id: editProjectManagerId || null,
           start_date: editStartDate || null,
