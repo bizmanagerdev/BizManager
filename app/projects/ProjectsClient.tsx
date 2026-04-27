@@ -495,16 +495,8 @@ export default function ProjectsClient({
       setCreateCustomerError("יש להזין שם לקוח.");
       return;
     }
-    if (!email) {
-      setCreateCustomerError("יש להזין אימייל לקוח.");
-      return;
-    }
     if (!city) {
       setCreateCustomerError("יש לבחור עיר.");
-      return;
-    }
-    if (!address) {
-      setCreateCustomerError("יש להזין כתובת.");
       return;
     }
 
@@ -547,9 +539,9 @@ export default function ProjectsClient({
         body: JSON.stringify({
           name,
           phone: createCustomerPhone.trim() || null,
-          email,
+          email: email || null,
           city,
-          address,
+          address: address || null,
           notes: createCustomerNotes.trim() || null,
         }),
       });
@@ -839,15 +831,15 @@ export default function ProjectsClient({
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ProjectsView)}>
         <div className="hidden items-center justify-center gap-3 md:flex">
           <TabsList className="flex w-fit max-w-full justify-center">
-            <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
             <TabsTrigger value="quotes">הצעות מחיר ({quoteCount})</TabsTrigger>
+            <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
             <TabsTrigger value="closed">סגורים ({closedCount})</TabsTrigger>
           </TabsList>
         </div>
 
         <TabsList className="mx-auto flex w-fit max-w-full justify-center md:hidden">
-          <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
           <TabsTrigger value="quotes">הצעות מחיר ({quoteCount})</TabsTrigger>
+          <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
           <TabsTrigger value="closed">סגורים ({closedCount})</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -1542,7 +1534,7 @@ export default function ProjectsClient({
           <DialogHeader>
             <DialogTitle>הוספת לקוח חדש</DialogTitle>
             <DialogDescription>
-              הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, אימייל, עיר וכתובת.
+              הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם ועיר.
             </DialogDescription>
           </DialogHeader>
 
@@ -1572,7 +1564,7 @@ export default function ProjectsClient({
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm font-medium">אימייל *</label>
+              <label className="text-sm font-medium">אימייל</label>
               <Input
                 value={createCustomerEmail}
                 onChange={(e) => setCreateCustomerEmail(e.target.value)}
@@ -1608,7 +1600,7 @@ export default function ProjectsClient({
             ) : null}
 
             <div className="space-y-1">
-              <label className="text-sm font-medium">כתובת *</label>
+              <label className="text-sm font-medium">כתובת</label>
               <Input
                 value={createCustomerAddress}
                 onChange={(e) => setCreateCustomerAddress(e.target.value)}

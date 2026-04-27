@@ -37,10 +37,6 @@ export async function POST(req: Request) {
     if (!name) {
       return NextResponse.json({ error: "Customer name is required" }, { status: 400 });
     }
-    if (!email) {
-      return NextResponse.json({ error: "Customer email is required" }, { status: 400 });
-    }
-
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase } = access.value;
@@ -52,7 +48,7 @@ export async function POST(req: Request) {
         name_for_invoice: nameForInvoice || name,
         registration_number: registrationNumber,
         phone,
-        email,
+        email: email || null,
         address,
         notes,
         active,

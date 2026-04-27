@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
@@ -65,6 +65,14 @@ type FormState = {
 
 type EditableSessionField = "labor_cost" | "worked_minutes" | "bill_to_customer_amount";
 
+type CreateUserFormState = {
+  full_name: string;
+  email: string;
+  phone: string;
+  password: string;
+  role: "worker" | "worker_no_access";
+};
+
 const DEFAULT_FORM: FormState = {
   salary_type: "monthly",
   hourly_rate: "",
@@ -73,6 +81,14 @@ const DEFAULT_FORM: FormState = {
   overtime_rate: "",
   standard_daily_hours: "8",
   notes: "",
+};
+
+const DEFAULT_CREATE_USER_FORM: CreateUserFormState = {
+  full_name: "",
+  email: "",
+  phone: "",
+  password: "",
+  role: "worker",
 };
 
 export default function PayrollAdminClient({
@@ -98,6 +114,9 @@ export default function PayrollAdminClient({
   const [dragOverUserId, setDragOverUserId] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [createUserForm, setCreateUserForm] = useState<CreateUserFormState>(DEFAULT_CREATE_USER_FORM);
+  const [createUserError, setCreateUserError] = useState("");
   const [sessionLaborCostDrafts, setSessionLaborCostDrafts] = useState<Record<string, string>>({});
   const [sessionDurationDrafts, setSessionDurationDrafts] = useState<Record<string, string>>({});
   const [sessionBillableAmountDrafts, setSessionBillableAmountDrafts] = useState<Record<string, string>>({});
@@ -218,6 +237,66 @@ export default function PayrollAdminClient({
     startTransition(async () => {
       await fetch("/api/payroll/admin/lock", { method: "POST" });
       router.refresh();
+    });
+  }
+
+  function resetCreateUserForm() {
+    setCreateUserForm(DEFAULT_CREATE_USER_FORM);
+    setCreateUserError("");
+  }
+
+  async function createUser() {
+    if (isPending) return;
+
+    const fullName = createUserForm.full_name.trim();
+    const email = createUserForm.email.trim().toLowerCase();
+    const phone = createUserForm.phone.trim();
+    const password = createUserForm.password;
+
+    setCreateUserError("");
+    setSaveError("");
+    setSaveMessage("");
+
+    if (!fullName) {
+      setCreateUserError("יש להזין שם עובד.");
+      return;
+    }
+    if (!email) {
+      setCreateUserError("יש להזין אימייל.");
+      return;
+    }
+    if (!password) {
+      setCreateUserError("יש להזין סיסמה לעובד.");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/users/create", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            full_name: fullName,
+            email,
+            phone: phone || null,
+            password,
+            role: createUserForm.role,
+          }),
+        });
+
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) {
+          setCreateUserError(json.error ?? "יצירת העובד נכשלה.");
+          return;
+        }
+
+        setCreateUserOpen(false);
+        resetCreateUserForm();
+        setSaveMessage("העובד והחשבון נוצרו בהצלחה.");
+        router.refresh();
+      } catch (error: unknown) {
+        setCreateUserError(error instanceof Error ? error.message : "Unknown error");
+      }
     });
   }
 
@@ -609,6 +688,9 @@ export default function PayrollAdminClient({
           placeholder="חיפוש עובד לפי שם, אימייל או טלפון"
           className="max-w-sm"
         />
+        <Button variant="outline" onClick={() => setCreateUserOpen(true)} disabled={isPending}>
+          {"הוספת עובד"}
+        </Button>
         <Button variant="outline" onClick={() => void lockCenter()} disabled={isPending}>
           {"נעילת מרכז השכר"}
         </Button>
@@ -1063,6 +1145,90 @@ export default function PayrollAdminClient({
       </div>
 
       <Dialog
+        open={createUserOpen}
+        onOpenChange={(open) => {
+          setCreateUserOpen(open);
+          if (!open) resetCreateUserForm();
+        }}
+      >
+        <DialogContent dir="rtl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{"הוספת עובד מתוך המערכת"}</DialogTitle>
+            <DialogDescription>
+              {"העובד יתווסף למרכז השכר ויהיה זמין להגדרת שכר ולעבודה שוטפת."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Field label="שם מלא">
+              <Input
+                value={createUserForm.full_name}
+                onChange={(event) =>
+                  setCreateUserForm((current) => ({ ...current, full_name: event.target.value }))
+                }
+                placeholder="למשל ישראל ישראלי"
+              />
+            </Field>
+            <Field label="אימייל">
+              <Input
+                type="email"
+                value={createUserForm.email}
+                onChange={(event) =>
+                  setCreateUserForm((current) => ({ ...current, email: event.target.value }))
+                }
+                placeholder="name@company.com"
+              />
+            </Field>
+            <Field label="טלפון">
+              <Input
+                value={createUserForm.phone}
+                onChange={(event) =>
+                  setCreateUserForm((current) => ({ ...current, phone: event.target.value }))
+                }
+                placeholder="אופציונלי"
+              />
+            </Field>
+            <Field label="סיסמה">
+              <Input
+                type="password"
+                value={createUserForm.password}
+                onChange={(event) =>
+                  setCreateUserForm((current) => ({ ...current, password: event.target.value }))
+                }
+                placeholder="יצירת סיסמה לעובד"
+              />
+            </Field>
+            <Field label="סוג גישה">
+              <select
+                value={createUserForm.role}
+                onChange={(event) =>
+                  setCreateUserForm((current) => ({
+                    ...current,
+                    role: event.target.value as "worker" | "worker_no_access",
+                  }))
+                }
+                className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
+              >
+                <option value="worker">עובד</option>
+                <option value="worker_no_access">עובד ללא גישה</option>
+              </select>
+            </Field>
+            <div className="text-xs text-muted-foreground">
+              {"המסך הזה יוצר גם חשבון התחברות וגם את רשומת העובד, כך שאפשר להוסיף עובד ישירות מתוך מערכת השכר."}
+            </div>
+            {createUserError ? <div className="text-sm text-destructive">{createUserError}</div> : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateUserOpen(false)} disabled={isPending}>
+              {"ביטול"}
+            </Button>
+            <Button onClick={() => void createUser()} disabled={isPending}>
+              {"שמירת עובד"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={Boolean(pendingSessionEditConfirm)}
         onOpenChange={(open) => {
           if (!open) cancelSessionFieldEdit();
@@ -1230,3 +1396,4 @@ function getRoleLabel(value: string | null | undefined) {
   if (value === "worker_no_access") return "עובד ללא גישה";
   return value || "-";
 }
+

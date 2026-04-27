@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -265,7 +266,6 @@ export default function ProjectTabsClient({
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
   const [docsUploading, setDocsUploading] = useState(false);
-  const docsFileInputRef = useRef<HTMLInputElement | null>(null);
   const [docsFilterCategory, setDocsFilterCategory] = useState<string>("");
   const [expensesUi, setExpensesUi] = useState<ExpenseListItem[]>(expenses);
   const [paymentsUi, setPaymentsUi] = useState<PaymentRow[]>(payments);
@@ -509,7 +509,6 @@ export default function ProjectTabsClient({
       docsToastIdRef.current = null;
     } finally {
       setDocsUploading(false);
-      if (docsFileInputRef.current) docsFileInputRef.current.value = "";
     }
   }
 
@@ -1671,18 +1670,14 @@ export default function ProjectTabsClient({
 
             <div className="space-y-1">
               <div className="text-sm font-medium">קבצים</div>
-              <input
-                ref={docsFileInputRef}
-                type="file"
-                multiple
-                accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
-                className="hidden"
-                onChange={(e) => setUploadDocsFiles(Array.from(e.target.files ?? []))}
-              />
               <div className="flex items-center justify-between gap-2">
-                <Button type="button" variant="secondary" onClick={() => docsFileInputRef.current?.click()}>
-                  בחר קבצים
-                </Button>
+                <FileUploadActions
+                  files={uploadDocsFiles}
+                  accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
+                  multiple
+                  onFilesSelected={setUploadDocsFiles}
+                  chooseLabel="בחר קבצים"
+                />
                 <div className="text-xs text-muted-foreground">{uploadDocsFiles.length} קבצים</div>
               </div>
               {uploadDocsFiles.length > 0 ? (
@@ -2012,7 +2007,6 @@ function ProjectTasksTab({
   const [dueDate, setDueDate] = useState<string>("");
   const [assignedUserId, setAssignedUserId] = useState<string>("");
   const [createFiles, setCreateFiles] = useState<File[]>([]);
-  const createFilesInputRef = useRef<HTMLInputElement | null>(null);
 
   const statusOptions = useMemo(() => {
     return ["todo", "in_progress", "blocked", "done", "cancelled"] as TaskStatus[];
@@ -2578,24 +2572,18 @@ function ProjectTasksTab({
               <div className="text-sm font-medium">
                 {"\u05E7\u05D1\u05E6\u05D9\u05DD \u05DE\u05E6\u05D5\u05E8\u05E4\u05D9\u05DD (\u05D0\u05D5\u05E4\u05E6\u05D9\u05D5\u05E0\u05DC\u05D9)"}
               </div>
-              <input
-                ref={createFilesInputRef}
-                type="file"
-                multiple
-                accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
-                className="hidden"
-                onChange={(e) => setCreateFiles(Array.from(e.target.files ?? []))}
-              />
               <div className="flex items-center justify-between gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => createFilesInputRef.current?.click()}
-                >
-                  {createFiles.length > 0
-                    ? "\u05E9\u05D9\u05E0\u05D5\u05D9 \u05E7\u05D1\u05E6\u05D9\u05DD"
-                    : "\u05D1\u05D7\u05D9\u05E8\u05EA \u05E7\u05D1\u05E6\u05D9\u05DD"}
-                </Button>
+                <FileUploadActions
+                  files={createFiles}
+                  accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
+                  multiple
+                  onFilesSelected={setCreateFiles}
+                  chooseLabel={
+                    createFiles.length > 0
+                      ? "\u05E9\u05D9\u05E0\u05D5\u05D9 \u05E7\u05D1\u05E6\u05D9\u05DD"
+                      : "\u05D1\u05D7\u05D9\u05E8\u05EA \u05E7\u05D1\u05E6\u05D9\u05DD"
+                  }
+                />
                 <div className="text-xs text-muted-foreground">
                   {createFiles.length} {"\u05E7\u05D1\u05E6\u05D9\u05DD"}
                 </div>
@@ -2799,7 +2787,6 @@ function AddExpenseDialog({
   const [newWorkerSubmitting, setNewWorkerSubmitting] = useState(false);
   const [newWorkerName, setNewWorkerName] = useState("");
   const [newWorkerEmail, setNewWorkerEmail] = useState("");
-  const expenseAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [categoryOther, setCategoryOther] = useState("");
@@ -3599,22 +3586,15 @@ function AddExpenseDialog({
           {!isSessionMode ? (
             <div className="space-y-2">
               <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
-              <input
-                ref={expenseAttachmentInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => setAttachmentFiles(Array.from(e.target.files ?? []))}
-              />
               <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
+                <FileUploadActions
+                  files={attachmentFiles}
+                  multiple
+                  onFilesSelected={setAttachmentFiles}
+                  chooseLabel={attachmentFiles.length > 0 || existingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                  chooseVariant="outline"
                   size="sm"
-                  onClick={() => expenseAttachmentInputRef.current?.click()}
-                >
-                  {attachmentFiles.length > 0 || existingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
-                </Button>
+                />
                 {attachmentFiles.length > 0 ? (
                   <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
                     נקה בחירה
@@ -3702,7 +3682,6 @@ function AddIncomeDialog({
   const [amountTouched, setAmountTouched] = useState(false);
   const [paymentDateTouched, setPaymentDateTouched] = useState(false);
   const [paymentMethodTouched, setPaymentMethodTouched] = useState(false);
-  const incomeAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -4008,22 +3987,15 @@ function AddIncomeDialog({
 
           <div className="space-y-2">
             <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
-            <input
-              ref={incomeAttachmentInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => setAttachmentFiles(Array.from(e.target.files ?? []))}
-            />
             <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
+              <FileUploadActions
+                files={attachmentFiles}
+                multiple
+                onFilesSelected={setAttachmentFiles}
+                chooseLabel={attachmentFiles.length > 0 || existingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                chooseVariant="outline"
                 size="sm"
-                onClick={() => incomeAttachmentInputRef.current?.click()}
-              >
-                {attachmentFiles.length > 0 || existingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
-              </Button>
+              />
               {attachmentFiles.length > 0 ? (
                 <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
                   נקה בחירה

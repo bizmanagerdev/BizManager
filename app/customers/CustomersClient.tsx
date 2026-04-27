@@ -225,9 +225,7 @@ export default function CustomersClient({
     setCreateErr("");
     const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
     if (!name.trim()) return setCreateErr("יש למלא שם לקוח.");
-    if (!email.trim()) return setCreateErr("יש למלא אימייל.");
     if (!finalCity) return setCreateErr("יש לבחור עיר.");
-    if (!address.trim()) return setCreateErr("יש למלא כתובת.");
     const preparedContacts = createContacts
       .map((contact) => ({
         full_name: contact.full_name.trim(),
@@ -265,9 +263,9 @@ export default function CustomersClient({
         body: JSON.stringify({
           name: name.trim(),
           phone: phone.trim() || null,
-          email: email.trim(),
+          email: email.trim() || null,
           city: finalCity,
-          address: address.trim(),
+          address: address.trim() || null,
           notes: notes.trim() || null,
         }),
       });
@@ -281,7 +279,7 @@ export default function CustomersClient({
         name: s(customer, "name") || name.trim(),
         email: s(customer, "email") || email.trim(),
         phone: s(customer, "phone") || phone.trim(),
-        address: s(customer, "address") || `${finalCity}, ${address.trim()}`,
+        address: s(customer, "address") || finalCity || address.trim(),
         active: customer.active !== false,
         orders_count: 0,
         projects_count: 0,
@@ -348,8 +346,6 @@ export default function CustomersClient({
     setEditErr("");
     if (!editId) return setEditErr("חסר מזהה לקוח.");
     if (!editName.trim()) return setEditErr("יש למלא שם לקוח.");
-    if (!editEmail.trim()) return setEditErr("יש למלא אימייל.");
-    if (!editAddress.trim()) return setEditErr("יש למלא כתובת.");
     setEditLoading(true);
     try {
       const res = await fetch("/api/customers/update", {
@@ -361,8 +357,8 @@ export default function CustomersClient({
           name_for_invoice: editInvoiceName.trim() || null,
           registration_number: editReg.trim() || null,
           phone: editPhone.trim() || null,
-          email: editEmail.trim(),
-          address: editAddress.trim(),
+          email: editEmail.trim() || null,
+          address: editAddress.trim() || null,
           notes: editNotes.trim() || null,
           active: editActive,
         }),
@@ -592,7 +588,7 @@ export default function CustomersClient({
           }
         }}
         title="הוספת לקוח"
-        description="שדות חובה: שם, אימייל, עיר וכתובת."
+        description="שדות חובה: שם ועיר."
         submitLabel={createLoading ? "יוצר..." : "יצירת לקוח"}
         onSubmit={() => void createCustomer()}
         error={createErr}
@@ -604,7 +600,7 @@ export default function CustomersClient({
         <Field label="טלפון">
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
         </Field>
-        <Field label="אימייל *">
+        <Field label="אימייל">
           <Input value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
         <Field label="עיר *">
@@ -626,7 +622,7 @@ export default function CustomersClient({
             <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
           </Field>
         ) : null}
-        <Field label="כתובת *">
+        <Field label="כתובת">
           <Input value={address} onChange={(e) => setAddress(e.target.value)} />
         </Field>
         <Field label="הערות">
@@ -757,11 +753,11 @@ export default function CustomersClient({
           <Field label="טלפון">
             <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
           </Field>
-          <Field label="אימייל *">
+          <Field label="אימייל">
             <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
           </Field>
         </AdaptiveGrid>
-        <Field label="כתובת *">
+        <Field label="כתובת">
           <Input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} />
         </Field>
         <Field label="הערות">

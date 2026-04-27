@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ExternalLink,
@@ -33,6 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Input } from "@/components/ui/input";
 import { formatShortDateTime } from "@/lib/date";
 
@@ -217,7 +218,6 @@ export default function DocumentsArchiveClient({
   const [uploadProjectId, setUploadProjectId] = useState(initialFilters.project_id);
   const [uploadProjectOptions, setUploadProjectOptions] = useState<UploadProjectOption[]>(projectOptions);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [editDialogDoc, setEditDialogDoc] = useState<DocumentArchiveItem | null>(null);
   const [editTagValue, setEditTagValue] = useState("");
   const [deleteDialogDoc, setDeleteDialogDoc] = useState<DocumentArchiveItem | null>(null);
@@ -397,7 +397,6 @@ export default function DocumentsArchiveClient({
       setUploadCategoryMode("existing");
       setUploadProjectId(initialFilters.project_id);
       setUploadFiles([]);
-      if (uploadInputRef.current) uploadInputRef.current.value = "";
       router.refresh();
     } catch (errorValue: unknown) {
       const description = errorValue instanceof Error ? errorValue.message : "Unknown error";
@@ -771,7 +770,6 @@ export default function DocumentsArchiveClient({
             setUploadCategoryMode("existing");
             setUploadProjectId(initialFilters.project_id);
             setUploadFiles([]);
-            if (uploadInputRef.current) uploadInputRef.current.value = "";
           }
         }}
       >
@@ -843,17 +841,13 @@ export default function DocumentsArchiveClient({
 
             <div className="space-y-1">
               <div className="text-sm font-medium">קבצים</div>
-              <input
-                ref={uploadInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(event) => setUploadFiles(Array.from(event.target.files ?? []))}
-              />
               <div className="flex items-center justify-between gap-2">
-                <Button type="button" variant="secondary" onClick={() => uploadInputRef.current?.click()}>
-                  בחר קבצים
-                </Button>
+                <FileUploadActions
+                  files={uploadFiles}
+                  multiple
+                  onFilesSelected={setUploadFiles}
+                  chooseLabel="בחר קבצים"
+                />
                 <div className="text-xs text-muted-foreground">{uploadFiles.length} קבצים</div>
               </div>
               {uploadFiles.length > 0 ? (

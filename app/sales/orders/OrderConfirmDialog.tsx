@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -675,11 +676,13 @@ export default function OrderConfirmDialog({
 
                 <div className="space-y-1">
                   <label className="text-sm font-medium">העלאת תמונה</label>
-                  <Input
-                    type="file"
+                  <FileUploadActions
+                    files={deliveryImages}
                     accept="image/*"
                     multiple
-                    onChange={(e) => setDeliveryImages(Array.from(e.target.files ?? []))}
+                    onFilesSelected={setDeliveryImages}
+                    chooseLabel="בחר תמונות"
+                    className="flex-wrap"
                   />
                   <p className="hidden text-xs text-muted-foreground">
                     {deliveryImage ? `נבחר קובץ: ${deliveryImage.name}` : "אפשר לצרף תמונת אספקה אחת בכל שמירה."}

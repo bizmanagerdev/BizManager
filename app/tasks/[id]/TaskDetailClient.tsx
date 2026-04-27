@@ -1,11 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
@@ -76,7 +77,6 @@ export default function TaskDetailClient(props: Props) {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteName, setDeleteName] = useState<string>("");
@@ -130,7 +130,7 @@ export default function TaskDetailClient(props: Props) {
     }
   }
 
-  async function uploadAttachments(files: FileList | null) {
+  async function uploadAttachments(files: FileList | File[] | null) {
     if (!files || files.length === 0) return;
     setUploading(true);
     try {
@@ -160,7 +160,6 @@ export default function TaskDetailClient(props: Props) {
       });
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
@@ -247,21 +246,14 @@ export default function TaskDetailClient(props: Props) {
         </CardHeader>
         <CardContent className="text-sm space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
+            <FileUploadActions
+              files={[]}
               accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
-              className="hidden"
-              onChange={(e) => void uploadAttachments(e.target.files)}
-            />
-            <Button
-              variant="secondary"
+              multiple
               disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {uploading ? "\u05DE\u05E2\u05DC\u05D4..." : "\u05D4\u05D5\u05E1\u05E4\u05EA \u05E7\u05D1\u05E6\u05D9\u05DD"}
-            </Button>
+              onFilesSelected={(files) => void uploadAttachments(files)}
+              chooseLabel={uploading ? "\u05DE\u05E2\u05DC\u05D4..." : "\u05D4\u05D5\u05E1\u05E4\u05EA \u05E7\u05D1\u05E6\u05D9\u05DD"}
+            />
             <div className="text-xs text-muted-foreground">
               {props.attachments.length} {"\u05E7\u05D1\u05E6\u05D9\u05DD"}
             </div>

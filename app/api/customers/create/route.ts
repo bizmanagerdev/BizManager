@@ -29,21 +29,14 @@ export async function POST(req: Request) {
     if (!name) {
       return NextResponse.json({ error: "שם לקוח הוא שדה חובה." }, { status: 400 });
     }
-    if (!email) {
-      return NextResponse.json({ error: "אימייל לקוח הוא שדה חובה עבור קבלה." }, { status: 400 });
-    }
     if (!city) {
       return NextResponse.json({ error: "עיר היא שדה חובה לתיאום משלוחים." }, { status: 400 });
     }
-    if (!address) {
-      return NextResponse.json({ error: "כתובת היא שדה חובה לתיאום משלוחים." }, { status: 400 });
-    }
-
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase } = access.value;
 
-    const fullAddress = `${city} | ${address}`;
+    const fullAddress = address ? `${city} | ${address}` : city;
 
     const { data, error } = await supabase
       .from("customers")
@@ -52,8 +45,8 @@ export async function POST(req: Request) {
         name_for_invoice: name,
         registration_number: registrationNumber,
         phone,
-        email,
-        address: fullAddress,
+        email: email || null,
+        address: fullAddress || null,
         active: true,
         notes,
       })
