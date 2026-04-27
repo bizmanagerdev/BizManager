@@ -91,31 +91,9 @@ export function TopBar({
         <span className="text-base font-bold tracking-[0.2em] text-primary">{appName}</span>
       </div>
 
-      {showSearch && (
-        <div className="hidden max-w-md flex-1 lg:flex">
-          <div className="relative w-full">
-            <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="חיפוש..."
-              className="h-10 rounded-xl border-white/50 bg-white/70 ps-9 shadow-sm shadow-primary/5 focus-visible:ring-2"
-            />
-          </div>
-        </div>
-      )}
-
       <div className="flex-1 lg:flex-none" />
 
       <div className="flex items-center gap-1">
-        {showSearch && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="rounded-xl border-primary/15 text-accent-foreground shadow-md lg:hidden"
-            type="button"
-          >
-            <Search className="h-4 w-4" />
-          </Button>
-        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -183,17 +161,17 @@ export function TopBar({
 
         <ClientOnly
           fallback={
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-2 rounded-xl border-primary/15 text-accent-foreground shadow-md"
-                type="button"
-                id="topbar-user-trigger-fallback"
-              >
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 rounded-xl border-primary/15 text-accent-foreground shadow-md"
+              type="button"
+              id="topbar-user-trigger-fallback"
+            >
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
                 <User className="h-3.5 w-3.5" />
               </div>
-              {userName && <span className="hidden lg:inline text-sm">{userName}</span>}
+              {userName && <span className="hidden text-sm lg:inline">{userName}</span>}
               <ChevronDown className="h-3 w-3" />
             </Button>
           }
@@ -211,7 +189,7 @@ export function TopBar({
                   <User className="h-3.5 w-3.5" />
                 </div>
                 {userName && (
-                  <span className="hidden lg:inline text-sm">{userName}</span>
+                  <span className="hidden text-sm lg:inline">{userName}</span>
                 )}
                 <ChevronDown className="h-3 w-3" />
               </Button>
@@ -219,7 +197,7 @@ export function TopBar({
             <DropdownMenuContent align="end" className="w-48 rounded-xl">
               <DropdownMenuItem asChild>
                 <Link href="/profile" className="flex items-center" onClick={() => emitNavigationStart()}>
-                  <User className="h-4 w-4 me-2" />
+                  <User className="me-2 h-4 w-4" />
                   פרופיל
                 </Link>
               </DropdownMenuItem>
@@ -230,7 +208,7 @@ export function TopBar({
                     type="submit"
                     className="flex w-full items-center rounded-lg bg-destructive px-3 py-2 text-destructive-foreground"
                   >
-                    <LogOut className="h-4 w-4 me-2" />
+                    <LogOut className="me-2 h-4 w-4" />
                     התנתקות
                   </button>
                 </DropdownMenuItem>
@@ -238,7 +216,30 @@ export function TopBar({
             </DropdownMenuContent>
           </DropdownMenu>
         </ClientOnly>
+
+        {showSearch && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="rounded-xl border-primary/15 text-accent-foreground shadow-md lg:hidden"
+            type="button"
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+        )}
       </div>
+
+      {showSearch && (
+        <div className="hidden max-w-md flex-1 lg:flex">
+          <div className="relative w-full">
+            <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="חיפוש..."
+              className="h-10 rounded-xl border-white/50 bg-white/70 ps-9 shadow-sm shadow-primary/5 focus-visible:ring-2"
+            />
+          </div>
+        </div>
+      )}
     </header>
   );
 }

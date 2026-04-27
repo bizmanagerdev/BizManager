@@ -3,7 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { isPayrollAdminPasswordConfigured, isPayrollAdminUnlocked } from "@/lib/payroll-admin-auth";
-import type { PayrollPeriodRow, PayslipRow, SalaryAgreementRow } from "@/lib/payroll";
+import type { PayrollPeriodRow, PayslipRow, SalaryAgreementRow, WorkSessionRow } from "@/lib/payroll";
 import PayrollAdminClient from "@/app/payroll/PayrollAdminClient";
 
 type Row = Record<string, unknown>;
@@ -33,6 +33,15 @@ function asPeriods(rows: Row[] | null | undefined) {
   return (rows ?? []) as unknown as PayrollPeriodRow[];
 }
 
+function asSessions(rows: Row[] | null | undefined) {
+  return (rows ?? []) as unknown as WorkSessionRow[];
+}
+
+type LinkedOption = {
+  id: string;
+  label: string;
+};
+
 export default async function PayrollPage() {
   const { profile, supabase } = await requireProfile();
 
@@ -47,6 +56,9 @@ export default async function PayrollPage() {
   let agreements: SalaryAgreementRow[] = [];
   let payslips: PayslipRow[] = [];
   let periods: PayrollPeriodRow[] = [];
+  let sessions: WorkSessionRow[] = [];
+  let projectOptions: LinkedOption[] = [];
+  let propertyOptions: LinkedOption[] = [];
   let loadError: string | null = null;
 
   if (unlocked) {
@@ -91,17 +103,58 @@ export default async function PayrollPage() {
           .in("id", periodIds)
       : { data: [], error: null };
 
+    const { data: sessionRows, error: sessionsError } = userIds.length
+      ? await supabase
+          .from("attendance_sessions")
+          .select(
+            "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+          )
+          .in("user_id", userIds)
+          .order("clock_in", { ascending: false })
+          .range(0, 1999)
+      : { data: [], error: null };
+
+    const [{ data: projectRows, error: projectsError }, { data: propertyRows, error: propertiesError }] =
+      await Promise.all([
+        supabase
+          .from("projects")
+          .select("id,name")
+          .order("name", { ascending: true })
+          .range(0, 499),
+        supabase
+          .from("properties")
+          .select("id,address")
+          .order("address", { ascending: true })
+          .range(0, 499),
+      ]);
+
     loadError =
       usersError?.message ??
       agreementsError?.message ??
       payslipsError?.message ??
       periodsError?.message ??
+      sessionsError?.message ??
+      projectsError?.message ??
+      propertiesError?.message ??
       null;
 
     users = asUsers(userRows);
     agreements = asAgreements(agreementRows);
     payslips = asPayslips(payslipRows);
     periods = asPeriods(periodRows);
+    sessions = asSessions(sessionRows);
+    projectOptions = ((projectRows ?? []) as Row[])
+      .map((row) => ({
+        id: typeof row.id === "string" ? row.id : "",
+        label: typeof row.name === "string" && row.name.trim() ? row.name.trim() : "",
+      }))
+      .filter((row) => row.id && row.label);
+    propertyOptions = ((propertyRows ?? []) as Row[])
+      .map((row) => ({
+        id: typeof row.id === "string" ? row.id : "",
+        label: typeof row.address === "string" && row.address.trim() ? row.address.trim() : "",
+      }))
+      .filter((row) => row.id && row.label);
   }
 
   return (
@@ -128,6 +181,9 @@ export default async function PayrollPage() {
             agreements={agreements}
             payslips={payslips}
             periods={periods}
+            sessions={sessions}
+            projectOptions={projectOptions}
+            propertyOptions={propertyOptions}
           />
         )}
       </div>

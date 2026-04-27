@@ -243,9 +243,7 @@ export default async function ProjectsPage({
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">פרויקטים</h1>
             {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
-            <p className="text-muted-foreground text-sm">ניהול פרויקטים ותפעול</p>
           </div>
           {customerId ? (
             <Button asChild variant="outline" size="sm">

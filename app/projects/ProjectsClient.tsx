@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Pencil, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import {
@@ -837,7 +837,15 @@ export default function ProjectsClient({
   return (
     <PageStack>
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ProjectsView)}>
-        <TabsList className="mx-auto flex w-fit max-w-full justify-center md:mx-0">
+        <div className="hidden items-center justify-center gap-3 md:flex">
+          <TabsList className="flex w-fit max-w-full justify-center">
+            <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
+            <TabsTrigger value="quotes">הצעות מחיר ({quoteCount})</TabsTrigger>
+            <TabsTrigger value="closed">סגורים ({closedCount})</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsList className="mx-auto flex w-fit max-w-full justify-center md:hidden">
           <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
           <TabsTrigger value="quotes">הצעות מחיר ({quoteCount})</TabsTrigger>
           <TabsTrigger value="closed">סגורים ({closedCount})</TabsTrigger>
@@ -874,12 +882,15 @@ export default function ProjectsClient({
         >
           <div className="min-w-0">
             <label className="text-sm text-muted-foreground">חיפוש</label>
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="חיפוש לפי לקוח או פרויקט..."
-              className="mt-1 h-11"
-            />
+            <div className="relative mt-1">
+              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="חיפוש לפי לקוח או פרויקט..."
+                className="h-11 pr-9"
+              />
+            </div>
           </div>
 
           <div className="min-w-0">
@@ -899,7 +910,7 @@ export default function ProjectsClient({
           </div>
 
           <div className="min-w-0">
-            <label className="text-sm text-muted-foreground">מיון</label>
+            <label className="text-sm text-muted-foreground">מיון לפי</label>
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortMode)}
@@ -913,18 +924,21 @@ export default function ProjectsClient({
         </div>
       </div>
 
-      <AdaptiveStack variant="toolbar" className="hidden md:flex">
-        <div className="flex-1">
-          <label className="text-sm text-muted-foreground">חיפוש</label>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="חיפוש לפי לקוח או פרויקט..."
-            className="mt-1 h-11"
-          />
-        </div>
+      <AdaptiveStack variant="toolbar" className="hidden md:flex md:flex-row md:items-end md:justify-between">
+        <AdaptiveGrid variant="projectsToolbarControls" className="lg:grid-cols-4">
+          <div className="min-w-0 lg:col-span-2">
+            <label className="text-sm text-muted-foreground">חיפוש</label>
+            <div className="relative mt-1">
+              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="חיפוש לפי לקוח או פרויקט..."
+                className="h-11 pr-9"
+              />
+            </div>
+          </div>
 
-        <AdaptiveGrid variant="projectsToolbarControls">
           <div className="min-w-0">
             <label className="text-sm text-muted-foreground">סטטוס</label>
             <select
@@ -942,7 +956,7 @@ export default function ProjectsClient({
           </div>
 
           <div className="min-w-0">
-            <label className="text-sm text-muted-foreground">מיון</label>
+            <label className="text-sm text-muted-foreground">מיון לפי</label>
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortMode)}
@@ -954,13 +968,13 @@ export default function ProjectsClient({
             </select>
           </div>
 
-          <div className="min-w-0">
-            <label className="text-sm text-muted-foreground opacity-0">הוספה</label>
-            <Button type="button" className="h-11 w-full" onClick={() => openCreateDialog(activeTab)}>
-              {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
-            </Button>
-          </div>
         </AdaptiveGrid>
+
+        <div className="w-full lg:w-auto">
+          <Button type="button" className="h-11 w-full lg:w-auto" onClick={() => openCreateDialog(activeTab)}>
+            {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
+          </Button>
+        </div>
       </AdaptiveStack>
 
       <div className="text-sm text-muted-foreground">
@@ -971,7 +985,7 @@ export default function ProjectsClient({
             : `נמצאו ${rows.length} פרויקטים`}
       </div>
 
-      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(150px,1fr)_90px_110px_110px_130px_95px_85px_240px] md:items-center md:gap-2 sm:px-4">
+      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(200px,1fr)_120px_130px_150px_160px_120px_110px_250px] md:items-center md:gap-5 sm:px-4">
         <div>פרויקט</div>
         <div>סטטוס</div>
         <div>תאריך התחלה</div>
@@ -994,7 +1008,7 @@ export default function ProjectsClient({
           return (
             <Card key={id} className="transition-shadow hover:shadow-md">
               <CardContent className="p-3 sm:p-4">
-                <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(150px,1fr)_90px_110px_110px_130px_95px_85px_240px] md:items-center md:gap-2">
+                <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(200px,1fr)_120px_130px_150px_160px_120px_110px_250px] md:items-center md:gap-5">
                   <Link
                     href={`/projects/${id}`}
                     prefetch
