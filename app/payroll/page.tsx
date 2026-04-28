@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import { isPayrollAdminPasswordConfigured, isPayrollAdminUnlocked } from "@/lib/payroll-admin-auth";
 import type { PayrollPeriodRow, PayslipRow, SalaryAgreementRow, WorkSessionRow } from "@/lib/payroll";
 import PayrollAdminClient from "@/app/payroll/PayrollAdminClient";
@@ -45,12 +45,13 @@ type LinkedOption = {
 export default async function PayrollPage() {
   const { profile, supabase } = await requireProfile();
 
-  if (profile.role !== "admin") {
+  if (!["admin", "office"].includes(profile.role)) {
     redirect("/no-access");
   }
 
-  const unlocked = await isPayrollAdminUnlocked();
-  const hasPasswordConfigured = isPayrollAdminPasswordConfigured();
+  const canManageSalary = profile.role === "admin";
+  const unlocked = canManageSalary ? await isPayrollAdminUnlocked() : false;
+  const hasPasswordConfigured = canManageSalary ? isPayrollAdminPasswordConfigured() : false;
 
   let users: UserRow[] = [];
   let agreements: SalaryAgreementRow[] = [];
@@ -61,7 +62,7 @@ export default async function PayrollPage() {
   let propertyOptions: LinkedOption[] = [];
   let loadError: string | null = null;
 
-  if (unlocked) {
+  {
     const { data: userRows, error: usersError } = await supabase
       .from("users")
       .select("id,full_name,email,phone,role,active")
@@ -72,7 +73,7 @@ export default async function PayrollPage() {
       .map((row) => (typeof row.id === "string" ? row.id : ""))
       .filter(Boolean);
 
-    const { data: agreementRows, error: agreementsError } = userIds.length
+    const { data: agreementRows, error: agreementsError } = canManageSalary && unlocked && userIds.length
       ? await supabase
           .from("salary_agreements")
           .select(
@@ -82,7 +83,7 @@ export default async function PayrollPage() {
           .order("valid_from", { ascending: false })
       : { data: [], error: null };
 
-    const { data: payslipRows, error: payslipsError } = userIds.length
+    const { data: payslipRows, error: payslipsError } = canManageSalary && unlocked && userIds.length
       ? await supabase
           .from("payslips")
           .select(
@@ -96,7 +97,7 @@ export default async function PayrollPage() {
       .map((row) => (typeof row.payroll_period_id === "string" ? row.payroll_period_id : ""))
       .filter(Boolean);
 
-    const { data: periodRows, error: periodsError } = periodIds.length
+    const { data: periodRows, error: periodsError } = canManageSalary && unlocked && periodIds.length
       ? await supabase
           .from("payroll_periods")
           .select("id,period_month,start_date,end_date,status")
@@ -117,7 +118,7 @@ export default async function PayrollPage() {
     const [{ data: projectRows, error: projectsError }, { data: propertyRows, error: propertiesError }] =
       await Promise.all([
         supabase
-          .from("projects")
+          .from("project_dashboard_view")
           .select("id,name")
           .order("name", { ascending: true })
           .range(0, 499),
@@ -175,6 +176,7 @@ export default async function PayrollPage() {
           </Card>
         ) : (
           <PayrollAdminClient
+            viewerRole={profile.role as UserRole}
             unlocked={unlocked}
             hasPasswordConfigured={hasPasswordConfigured}
             users={users}

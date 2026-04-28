@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import type { UserRole } from "@/lib/auth/requireProfile";
 import {
   formatCurrency,
   formatDate,
@@ -42,6 +43,7 @@ type UserRow = {
 };
 
 type Props = {
+  viewerRole: UserRole;
   unlocked: boolean;
   hasPasswordConfigured: boolean;
   users: UserRow[];
@@ -73,6 +75,17 @@ type CreateUserFormState = {
   role: "worker" | "worker_no_access";
 };
 
+type CreateSessionFormState = {
+  user_id: string;
+  business_domain: string;
+  project_id: string;
+  property_id: string;
+  notes: string;
+  clock_in: string;
+  clock_out: string;
+  labor_cost: string;
+};
+
 const DEFAULT_FORM: FormState = {
   salary_type: "monthly",
   hourly_rate: "",
@@ -91,7 +104,19 @@ const DEFAULT_CREATE_USER_FORM: CreateUserFormState = {
   role: "worker",
 };
 
+const DEFAULT_CREATE_SESSION_FORM: CreateSessionFormState = {
+  user_id: "",
+  business_domain: "general_business",
+  project_id: "",
+  property_id: "",
+  notes: "",
+  clock_in: new Date(new Date().setSeconds(0, 0)).toISOString().slice(0, 16),
+  clock_out: new Date(new Date(Date.now() + 60 * 60 * 1000).setSeconds(0, 0)).toISOString().slice(0, 16),
+  labor_cost: "",
+};
+
 export default function PayrollAdminClient({
+  viewerRole,
   unlocked,
   hasPasswordConfigured,
   users,
@@ -104,6 +129,9 @@ export default function PayrollAdminClient({
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const canManageSessions = viewerRole === "admin" || viewerRole === "office";
+  const canViewSalary = viewerRole === "admin" && unlocked;
+  const canCreateUsers = viewerRole === "admin";
   const [password, setPassword] = useState("");
   const [unlockError, setUnlockError] = useState("");
   const [filter, setFilter] = useState("");
@@ -117,6 +145,13 @@ export default function PayrollAdminClient({
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [createUserForm, setCreateUserForm] = useState<CreateUserFormState>(DEFAULT_CREATE_USER_FORM);
   const [createUserError, setCreateUserError] = useState("");
+  const [createSessionOpen, setCreateSessionOpen] = useState(false);
+  const [createSessionForm, setCreateSessionForm] = useState<CreateSessionFormState>(() => ({
+    ...DEFAULT_CREATE_SESSION_FORM,
+    clock_in: toDateTimeLocalValue(new Date(Date.now() - 60 * 60 * 1000)),
+    clock_out: toDateTimeLocalValue(new Date()),
+  }));
+  const [createSessionError, setCreateSessionError] = useState("");
   const [sessionLaborCostDrafts, setSessionLaborCostDrafts] = useState<Record<string, string>>({});
   const [sessionDurationDrafts, setSessionDurationDrafts] = useState<Record<string, string>>({});
   const [sessionBillableAmountDrafts, setSessionBillableAmountDrafts] = useState<Record<string, string>>({});
@@ -132,12 +167,6 @@ export default function PayrollAdminClient({
   const [deleteSessionError, setDeleteSessionError] = useState("");
   const [deleteSessionErrorId, setDeleteSessionErrorId] = useState("");
   const [formState, setFormState] = useState<FormState>(DEFAULT_FORM);
-  const sessionCostDrafts = sessionLaborCostDrafts;
-  const setSessionCostDrafts = setSessionLaborCostDrafts;
-  const setSessionCostError = setSessionEditError;
-  const setSessionCostErrorId = setSessionEditErrorId;
-  const pendingSessionCostConfirm = pendingSessionEditConfirm;
-  const setPendingSessionCostConfirm = setPendingSessionEditConfirm;
 
   const periodsById = useMemo(() => new Map(periods.map((period) => [period.id, period])), [periods]);
   const agreementsByUserId = useMemo(() => {
@@ -204,6 +233,13 @@ export default function PayrollAdminClient({
       [user.full_name ?? "", user.email ?? "", user.phone ?? ""].join(" ").toLowerCase().includes(query)
     );
   }, [filter, orderedUsers]);
+  const sessionAssignableUsers = useMemo(
+    () =>
+      orderedUsers.filter(
+        (user) => user.active !== false && (user.role === "worker" || user.role === "worker_no_access")
+      ),
+    [orderedUsers]
+  );
 
   function moveUserBefore(targetUserId: string) {
     if (!draggingUserId || draggingUserId === targetUserId) return;
@@ -234,6 +270,7 @@ export default function PayrollAdminClient({
   }
 
   async function lockCenter() {
+    if (!canViewSalary) return;
     startTransition(async () => {
       await fetch("/api/payroll/admin/lock", { method: "POST" });
       router.refresh();
@@ -243,6 +280,16 @@ export default function PayrollAdminClient({
   function resetCreateUserForm() {
     setCreateUserForm(DEFAULT_CREATE_USER_FORM);
     setCreateUserError("");
+  }
+
+  function resetCreateSessionForm() {
+    setCreateSessionForm({
+      ...DEFAULT_CREATE_SESSION_FORM,
+      user_id: sessionAssignableUsers[0]?.id ?? "",
+      clock_in: toDateTimeLocalValue(new Date(Date.now() - 60 * 60 * 1000)),
+      clock_out: toDateTimeLocalValue(new Date()),
+    });
+    setCreateSessionError("");
   }
 
   async function createUser() {
@@ -296,6 +343,74 @@ export default function PayrollAdminClient({
         router.refresh();
       } catch (error: unknown) {
         setCreateUserError(error instanceof Error ? error.message : "Unknown error");
+      }
+    });
+  }
+
+  async function createSession() {
+    if (!canManageSessions || isPending) return;
+
+    const userId = createSessionForm.user_id.trim();
+    const businessDomain = createSessionForm.business_domain.trim();
+    const projectId = createSessionForm.project_id.trim();
+    const propertyId = createSessionForm.property_id.trim();
+    const notes = createSessionForm.notes.trim();
+    const clockIn = createSessionForm.clock_in ? new Date(createSessionForm.clock_in).toISOString() : "";
+    const clockOut = createSessionForm.clock_out ? new Date(createSessionForm.clock_out).toISOString() : "";
+    const laborCost = createSessionForm.labor_cost.trim();
+
+    setCreateSessionError("");
+    setSaveError("");
+    setSaveMessage("");
+
+    if (!userId) {
+      setCreateSessionError("יש לבחור עובד.");
+      return;
+    }
+    if (!clockIn || !clockOut) {
+      setCreateSessionError("יש להזין שעת התחלה ושעת סיום.");
+      return;
+    }
+    if (new Date(clockOut) <= new Date(clockIn)) {
+      setCreateSessionError("שעת הסיום חייבת להיות אחרי שעת ההתחלה.");
+      return;
+    }
+    if (businessDomain === "logistics_projects" && !projectId) {
+      setCreateSessionError("יש לבחור פרויקט.");
+      return;
+    }
+    if (businessDomain === "property_management" && !propertyId) {
+      setCreateSessionError("יש לבחור נכס.");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/payroll/sessions/create", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            business_domain: businessDomain,
+            project_id: projectId || null,
+            property_id: propertyId || null,
+            notes: notes || null,
+            clock_in: clockIn,
+            clock_out: clockOut,
+            labor_cost: canViewSalary && laborCost ? laborCost : null,
+          }),
+        });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) {
+          setCreateSessionError(json.error ?? "יצירת המשמרת נכשלה.");
+          return;
+        }
+        setCreateSessionOpen(false);
+        resetCreateSessionForm();
+        setSaveMessage("המשמרת נוספה בהצלחה.");
+        router.refresh();
+      } catch (error: unknown) {
+        setCreateSessionError(error instanceof Error ? error.message : "Unknown error");
       }
     });
   }
@@ -396,109 +511,8 @@ export default function PayrollAdminClient({
     setPendingSessionEditConfirm(null);
   }
 
-  async function saveSessionCost(session: WorkSessionRow) {
-    await saveSessionField(session, "labor_cost");
-    return;
-    const laborCost = Number(
-      (sessionCostDrafts[session.id] ?? String(Math.max(0, toNumber(session.labor_cost)))).trim()
-    );
-    if (!Number.isFinite(laborCost) || laborCost <= 0) {
-      setSessionCostError("יש להזין סכום תקין גדול מ-0.");
-      return;
-    }
-
-    setSessionCostError("");
-    setSessionCostErrorId("");
-    const oldValue = Math.max(0, toNumber(session.labor_cost));
-    if (laborCost === oldValue) {
-      setSessionCostDrafts((current) => ({ ...current, [session.id]: String(oldValue) }));
-      return;
-    }
-    setPendingSessionCostConfirm({
-      session,
-      oldValue,
-      newValue: laborCost,
-    });
-    return;
-    startTransition(async () => {
-      try {
-        const response = await fetch("/api/profile/session/update", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            session_id: session.id,
-            user_id: session.user_id,
-            business_domain: session.business_domain,
-            project_id: session.project_id,
-            property_id: session.property_id,
-            notes: session.notes,
-            clock_in: session.clock_in,
-            clock_out: session.clock_out,
-            labor_cost: laborCost,
-            is_billable_to_customer: session.is_billable_to_customer === true,
-            bill_to_customer_amount: session.bill_to_customer_amount,
-            billing_status: session.billing_status,
-          }),
-        });
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) {
-          setSessionCostError(json.error ?? "עדכון עלות העובד נכשל.");
-          return;
-        }
-        cancelEditingSessionCost();
-        router.refresh();
-      } catch (error: unknown) {
-        setSessionCostError(error instanceof Error ? error.message : "Unknown error");
-      }
-    });
-  }
-
   async function confirmSessionCostChange() {
     await confirmSessionFieldChange();
-    return;
-    const pending = pendingSessionCostConfirm;
-    if (!pending) return;
-
-    const { session, newValue } = pending;
-    setSessionCostError("");
-    setSessionCostErrorId("");
-    startTransition(async () => {
-      try {
-        const response = await fetch("/api/profile/session/update", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            session_id: session.id,
-            user_id: session.user_id,
-            business_domain: session.business_domain,
-            project_id: session.project_id,
-            property_id: session.property_id,
-            notes: session.notes,
-            clock_in: session.clock_in,
-            clock_out: session.clock_out,
-            labor_cost: newValue,
-            is_billable_to_customer: session.is_billable_to_customer === true,
-            bill_to_customer_amount: session.bill_to_customer_amount,
-            billing_status: session.billing_status,
-          }),
-        });
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) {
-          setSessionCostErrorId(session.id);
-          setSessionCostError(json.error ?? "עדכון עלות העובד נכשל.");
-          return;
-        }
-        setSessionCostDrafts((current) => ({
-          ...current,
-          [session.id]: String(newValue),
-        }));
-        setPendingSessionCostConfirm(null);
-        router.refresh();
-      } catch (error: unknown) {
-        setSessionCostErrorId(session.id);
-        setSessionCostError(error instanceof Error ? error.message : "Unknown error");
-      }
-    });
   }
 
   async function saveSessionField(session: WorkSessionRow, field: EditableSessionField) {
@@ -543,7 +557,12 @@ export default function PayrollAdminClient({
     const workedMinutes = field === "worked_minutes" ? newValue : sessionWorkedMinutes(session);
     const clockOut =
       field === "worked_minutes" ? addMinutesToIso(session.clock_in, workedMinutes) : session.clock_out;
-    const laborCost = field === "labor_cost" ? newValue : Math.max(0, toNumber(session.labor_cost));
+    const laborCost =
+      field === "labor_cost"
+        ? newValue
+        : field === "worked_minutes"
+          ? null
+          : Math.max(0, toNumber(session.labor_cost));
     const billToCustomerAmount =
       field === "bill_to_customer_amount"
         ? newValue
@@ -611,10 +630,10 @@ export default function PayrollAdminClient({
           setDeleteSessionError(json.error ?? "מחיקת המשמרת נכשלה.");
           return;
         }
-        if (pendingSessionCostConfirm?.session.id === session.id) {
-          setPendingSessionCostConfirm(null);
+        if (pendingSessionEditConfirm?.session.id === session.id) {
+          setPendingSessionEditConfirm(null);
         }
-        setSessionCostDrafts((current) => {
+        setSessionLaborCostDrafts((current) => {
           const next = { ...current };
           delete next[session.id];
           return next;
@@ -639,46 +658,6 @@ export default function PayrollAdminClient({
     });
   }
 
-  if (!hasPasswordConfigured) {
-    return (
-      <Card>
-        <CardContent className="space-y-3 py-6">
-          <div className="text-lg font-semibold">{"הגדרת סיסמת מנהל חסרה"}</div>
-          <div className="text-sm text-muted-foreground">
-            {"כדי להשתמש במרכז השכר צריך להגדיר בשרת את `PAYROLL_ADMIN_PASSWORD`."}
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!unlocked) {
-    return (
-      <Card>
-        <CardContent className="space-y-4 py-6">
-          <div>
-            <div className="text-lg font-semibold">{"פתיחת מרכז השכר"}</div>
-            <div className="text-sm text-muted-foreground">
-              {"רק מנהל עם סיסמת השכר יכול לצפות ולעדכן את נתוני השכר של כל העובדים."}
-            </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-[minmax(0,320px)_140px]">
-            <Input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="סיסמת מנהל"
-            />
-            <Button disabled={!password || isPending} onClick={() => void unlock()}>
-              {"כניסה"}
-            </Button>
-          </div>
-          {unlockError ? <div className="text-sm text-destructive">{unlockError}</div> : null}
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -688,13 +667,67 @@ export default function PayrollAdminClient({
           placeholder="חיפוש עובד לפי שם, אימייל או טלפון"
           className="max-w-sm"
         />
-        <Button variant="outline" onClick={() => setCreateUserOpen(true)} disabled={isPending}>
-          {"הוספת עובד"}
-        </Button>
-        <Button variant="outline" onClick={() => void lockCenter()} disabled={isPending}>
-          {"נעילת מרכז השכר"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {canManageSessions ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                resetCreateSessionForm();
+                setCreateSessionOpen(true);
+              }}
+              disabled={isPending}
+            >
+              {"הוספת משמרת"}
+            </Button>
+          ) : null}
+          {canCreateUsers ? (
+            <Button variant="outline" onClick={() => setCreateUserOpen(true)} disabled={isPending}>
+              {"הוספת עובד"}
+            </Button>
+          ) : null}
+          {canViewSalary ? (
+            <Button variant="outline" onClick={() => void lockCenter()} disabled={isPending}>
+              {"נעילת מרכז השכר"}
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      {viewerRole === "admin" && !hasPasswordConfigured ? (
+        <Card>
+          <CardContent className="space-y-3 py-6">
+            <div className="text-lg font-semibold">{"הגדרת סיסמת מנהל חסרה"}</div>
+            <div className="text-sm text-muted-foreground">
+              {"כדי לצפות בנתוני השכר צריך להגדיר בשרת את `PAYROLL_ADMIN_PASSWORD`."}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {viewerRole === "admin" && hasPasswordConfigured && !unlocked ? (
+        <Card>
+          <CardContent className="space-y-4 py-6">
+            <div>
+              <div className="text-lg font-semibold">{"פתיחת נתוני השכר"}</div>
+              <div className="text-sm text-muted-foreground">
+                {"משמרות עובדים זמינות כבר עכשיו. כדי לצפות או לעדכן שכר בפועל צריך להזין את סיסמת השכר."}
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-[minmax(0,320px)_140px]">
+              <Input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="סיסמת מנהל"
+              />
+              <Button disabled={!password || isPending} onClick={() => void unlock()}>
+                {"כניסה"}
+              </Button>
+            </div>
+            {unlockError ? <div className="text-sm text-destructive">{unlockError}</div> : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {saveError ? <div className="text-sm text-destructive">{saveError}</div> : null}
       {saveMessage ? <div className="text-sm text-emerald-700">{saveMessage}</div> : null}
@@ -785,15 +818,17 @@ export default function PayrollAdminClient({
                   </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openFormForUser(user.id, currentAgreement);
-                      }}
-                    >
-                      {"עדכון שכר"}
-                    </Button>
+                    {canViewSalary ? (
+                      <Button
+                        variant="outline"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openFormForUser(user.id, currentAgreement);
+                        }}
+                      >
+                        {"עדכון שכר"}
+                      </Button>
+                    ) : null}
                     <div className="flex items-center text-muted-foreground">
                       <ChevronDown
                         className={`h-5 w-5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
@@ -802,30 +837,36 @@ export default function PayrollAdminClient({
                   </div>
                 </div>
 
-                {isExpanded ? <div className="grid gap-3 lg:grid-cols-5">
-                  <MiniStat
-                    label="שכר נוכחי"
-                    value={
-                      currentAgreement
-                        ? currentAgreement.salary_type === "hourly"
-                          ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה`
-                          : formatCurrency(currentAgreement.monthly_salary)
-                        : "-"
-                    }
-                  />
-                  <MiniStat
-                    label="בתוקף מ"
-                    value={currentAgreement ? formatDate(currentAgreement.valid_from) : "-"}
-                  />
+                {isExpanded ? <div className={`grid gap-3 ${canViewSalary ? "lg:grid-cols-5" : "lg:grid-cols-2"}`}>
+                  {canViewSalary ? (
+                    <>
+                      <MiniStat
+                        label="שכר נוכחי"
+                        value={
+                          currentAgreement
+                            ? currentAgreement.salary_type === "hourly"
+                              ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה`
+                              : formatCurrency(currentAgreement.monthly_salary)
+                            : "-"
+                        }
+                      />
+                      <MiniStat
+                        label="בתוקף מ"
+                        value={currentAgreement ? formatDate(currentAgreement.valid_from) : "-"}
+                      />
+                    </>
+                  ) : null}
                   <MiniStat label={"סה\"כ שעות"} value={formatMinutes(totalWorkedMinutes)} />
-                  <MiniStat label="עלות עבודה" value={formatCurrency(totalLaborCost)} />
-                  <MiniStat
-                    label="תלוש אחרון"
-                    value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}
-                  />
+                  {canViewSalary ? <MiniStat label="עלות עבודה" value={formatCurrency(totalLaborCost)} /> : null}
+                  {canViewSalary ? (
+                    <MiniStat
+                      label="תלוש אחרון"
+                      value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}
+                    />
+                  ) : null}
                 </div> : null}
 
-                {isExpanded && latestPayslip && latestPeriod ? (
+                {isExpanded && canViewSalary && latestPayslip && latestPeriod ? (
                   <div className="rounded-2xl border bg-muted/20 p-4 text-sm">
                     <div className="font-medium">{"תלוש אחרון:"} {latestPeriod.period_month}</div>
                     <div className="mt-1 text-muted-foreground">
@@ -841,7 +882,9 @@ export default function PayrollAdminClient({
                     <div className="text-sm font-semibold">{"פירוט עבודה"}</div>
                     <div className="text-xs text-muted-foreground">
                       {userSessions.length > 0
-                        ? `${userSessions.length} משמרות | ${formatMinutes(totalWorkedMinutes)} | ${formatCurrency(totalLaborCost)}`
+                        ? canViewSalary
+                          ? `${userSessions.length} משמרות | ${formatMinutes(totalWorkedMinutes)} | ${formatCurrency(totalLaborCost)}`
+                          : `${userSessions.length} משמרות | ${formatMinutes(totalWorkedMinutes)}`
                         : "אין משמרות מדווחות"}
                     </div>
                   </div>
@@ -899,27 +942,10 @@ export default function PayrollAdminClient({
                                 </div>
                               </div>
                               <div className="hidden" aria-hidden="true">
-                                <div className="font-semibold">{formatCurrency(laborCost)}</div>
+                                <div className="font-semibold">
+                                  {canViewSalary ? formatCurrency(laborCost) : ""}
+                                </div>
                                 <div className="text-xs text-muted-foreground">{formatMinutes(workedMinutes)}</div>
-                                {false ? <Input
-                                    inputMode="decimal"
-                                    value={sessionCostValue}
-                                    onFocus={() => startEditingSessionCost(session)}
-                                    onChange={(event) =>
-                                      setSessionCostDrafts((current) => ({
-                                        ...current,
-                                        [session.id]: event.target.value,
-                                      }))
-                                    }
-                                    onBlur={() => void saveSessionCost(session)}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter") {
-                                        event.preventDefault();
-                                        void saveSessionCost(session);
-                                      }
-                                    }}
-                                    placeholder="עלות לעובד"
-                                  /> : null}
                               </div>
                             </div>
                             <div className="mt-3 text-muted-foreground">
@@ -927,29 +953,31 @@ export default function PayrollAdminClient({
                               {session.clock_out ? `- ${formatDateTime(session.clock_out)}` : "- פתוח"}
                             </div>
                             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                              <div className="flex items-center gap-2 rounded-full border px-2 py-1">
-                                <span>{"עלות:"}</span>
-                                <Input
-                                  inputMode="decimal"
-                                  value={sessionCostValue}
-                                  onFocus={() => startEditingSessionField(session, "labor_cost")}
-                                  onChange={(event) =>
-                                    setSessionLaborCostDrafts((current) => ({
-                                      ...current,
-                                      [session.id]: event.target.value,
-                                    }))
-                                  }
-                                  onBlur={() => void saveSessionField(session, "labor_cost")}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter") {
-                                      event.preventDefault();
-                                      void saveSessionField(session, "labor_cost");
+                              {canViewSalary ? (
+                                <div className="flex items-center gap-2 rounded-full border px-2 py-1">
+                                  <span>{"עלות:"}</span>
+                                  <Input
+                                    inputMode="decimal"
+                                    value={sessionCostValue}
+                                    onFocus={() => startEditingSessionField(session, "labor_cost")}
+                                    onChange={(event) =>
+                                      setSessionLaborCostDrafts((current) => ({
+                                        ...current,
+                                        [session.id]: event.target.value,
+                                      }))
                                     }
-                                  }}
-                                  placeholder="עלות לעובד"
-                                  className="h-7 w-28 border-0 bg-transparent px-1 text-right shadow-none focus-visible:ring-0"
-                                />
-                              </div>
+                                    onBlur={() => void saveSessionField(session, "labor_cost")}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        event.preventDefault();
+                                        void saveSessionField(session, "labor_cost");
+                                      }
+                                    }}
+                                    placeholder="עלות לעובד"
+                                    className="h-7 w-28 border-0 bg-transparent px-1 text-right shadow-none focus-visible:ring-0"
+                                  />
+                                </div>
+                              ) : null}
                               <div className="flex items-center gap-2 rounded-full border px-2 py-1">
                                 <span>{"זמן:"}</span>
                                 <Input
@@ -1024,7 +1052,7 @@ export default function PayrollAdminClient({
                   )}
                 </div> : null}
 
-                {isEditing ? (
+                {canViewSalary && isEditing ? (
                   <div className="rounded-2xl border p-4">
                     <div className="mb-3 text-base font-semibold">{"הסכם שכר חדש"}</div>
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1114,7 +1142,7 @@ export default function PayrollAdminClient({
                   </div>
                 ) : null}
 
-                {isExpanded ? <div className="space-y-2">
+                {canViewSalary && isExpanded ? <div className="space-y-2">
                   <div className="text-sm font-semibold">{"היסטוריית שכר"}</div>
                   {userAgreements.length === 0 ? (
                     <div className="text-sm text-muted-foreground">{"אין הסכמי שכר קודמים."}</div>
@@ -1229,6 +1257,160 @@ export default function PayrollAdminClient({
       </Dialog>
 
       <Dialog
+        open={createSessionOpen}
+        onOpenChange={(open) => {
+          setCreateSessionOpen(open);
+          if (!open) resetCreateSessionForm();
+        }}
+      >
+        <DialogContent dir="rtl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{"הוספת משמרת ידנית"}</DialogTitle>
+            <DialogDescription>
+              {"מנהל או משרד יכולים להוסיף משמרת לעובד ולבחור איפה הוא עבד, בלי לבקש ממנו להיכנס או להזין סיסמה."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="עובד">
+              <select
+                value={createSessionForm.user_id}
+                onChange={(event) =>
+                  setCreateSessionForm((current) => ({ ...current, user_id: event.target.value }))
+                }
+                className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
+              >
+                <option value="">בחירה</option>
+                {sessionAssignableUsers.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.full_name ?? user.email ?? "עובד"}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="תחום">
+              <select
+                value={createSessionForm.business_domain}
+                onChange={(event) =>
+                  setCreateSessionForm((current) => ({
+                    ...current,
+                    business_domain: event.target.value,
+                    project_id: event.target.value === "logistics_projects" ? current.project_id : "",
+                    property_id: event.target.value === "property_management" ? current.property_id : "",
+                  }))
+                }
+                className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
+              >
+                <option value="general_business">כללי</option>
+                <option value="logistics_projects">פרויקטים</option>
+                <option value="property_management">ניהול נכסים</option>
+                <option value="sales">מכירות</option>
+                <option value="home">בית</option>
+                <option value="charity">צדקה</option>
+              </select>
+            </Field>
+            <Field label="שעת התחלה">
+              <Input
+                type="datetime-local"
+                value={createSessionForm.clock_in}
+                onChange={(event) =>
+                  setCreateSessionForm((current) => ({ ...current, clock_in: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="שעת סיום">
+              <Input
+                type="datetime-local"
+                value={createSessionForm.clock_out}
+                onChange={(event) =>
+                  setCreateSessionForm((current) => ({ ...current, clock_out: event.target.value }))
+                }
+              />
+            </Field>
+            {createSessionForm.business_domain === "logistics_projects" ? (
+              <Field label="פרויקט">
+                <select
+                  value={createSessionForm.project_id}
+                  onChange={(event) =>
+                    setCreateSessionForm((current) => ({ ...current, project_id: event.target.value }))
+                  }
+                  className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
+                >
+                  <option value="">בחירה</option>
+                  {projectOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+            {createSessionForm.business_domain === "property_management" ? (
+              <Field label="נכס">
+                <select
+                  value={createSessionForm.property_id}
+                  onChange={(event) =>
+                    setCreateSessionForm((current) => ({ ...current, property_id: event.target.value }))
+                  }
+                  className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
+                >
+                  <option value="">בחירה</option>
+                  {propertyOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+            {canViewSalary ? (
+              <Field label="עלות לעובד">
+                <Input
+                  inputMode="decimal"
+                  value={createSessionForm.labor_cost}
+                  onChange={(event) =>
+                    setCreateSessionForm((current) => ({ ...current, labor_cost: event.target.value }))
+                  }
+                  placeholder="אופציונלי"
+                />
+              </Field>
+            ) : null}
+            <div className="md:col-span-2">
+              <Field label="הערות">
+                <Input
+                  value={createSessionForm.notes}
+                  onChange={(event) =>
+                    setCreateSessionForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                  placeholder="אופציונלי"
+                />
+              </Field>
+            </div>
+            <div className="md:col-span-2 text-xs text-muted-foreground">
+              {`משך: ${formatMinutes(
+                Math.max(
+                  0,
+                  Math.floor(
+                    (new Date(createSessionForm.clock_out || "").getTime() -
+                      new Date(createSessionForm.clock_in || "").getTime()) /
+                      60000
+                  )
+                )
+              )}`}
+            </div>
+            {createSessionError ? <div className="md:col-span-2 text-sm text-destructive">{createSessionError}</div> : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateSessionOpen(false)} disabled={isPending}>
+              {"ביטול"}
+            </Button>
+            <Button onClick={() => void createSession()} disabled={isPending}>
+              {"שמירת משמרת"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={Boolean(pendingSessionEditConfirm)}
         onOpenChange={(open) => {
           if (!open) cancelSessionFieldEdit();
@@ -1236,7 +1418,7 @@ export default function PayrollAdminClient({
       >
         <DialogContent dir="rtl">
           <DialogHeader className="text-right">
-            <DialogTitle>{"אישור עדכון סכום לעובד"}</DialogTitle>
+            <DialogTitle>{"אישור עדכון משמרת"}</DialogTitle>
             <DialogDescription>
               {"השינוי יישמר רק אחרי אישור."}
             </DialogDescription>
@@ -1245,18 +1427,22 @@ export default function PayrollAdminClient({
             <div className="rounded-xl border p-3 text-sm">
               <div className="text-muted-foreground">{"סכום קודם"}</div>
               <div className="mt-1 font-semibold">
-                {formatCurrency(pendingSessionCostConfirm?.oldValue ?? 0)}
+                {pendingSessionEditConfirm?.field === "worked_minutes"
+                  ? formatMinutes(pendingSessionEditConfirm?.oldValue ?? 0)
+                  : formatCurrency(pendingSessionEditConfirm?.oldValue ?? 0)}
               </div>
             </div>
             <div className="rounded-xl border p-3 text-sm">
               <div className="text-muted-foreground">{"סכום חדש"}</div>
               <div className="mt-1 font-semibold">
-                {formatCurrency(pendingSessionCostConfirm?.newValue ?? 0)}
+                {pendingSessionEditConfirm?.field === "worked_minutes"
+                  ? formatMinutes(pendingSessionEditConfirm?.newValue ?? 0)
+                  : formatCurrency(pendingSessionEditConfirm?.newValue ?? 0)}
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => cancelEditingSessionCost()}>
+            <Button variant="outline" onClick={() => cancelSessionFieldEdit()}>
               {"ביטול"}
             </Button>
             <Button disabled={isPending} onClick={() => void confirmSessionCostChange()}>
@@ -1342,6 +1528,11 @@ function addMinutesToIso(startIso: string | null | undefined, minutes: number) {
   const start = startIso ? new Date(startIso) : null;
   if (!start || Number.isNaN(start.getTime())) return null;
   return new Date(start.getTime() + minutes * 60_000).toISOString();
+}
+
+function toDateTimeLocalValue(date: Date) {
+  const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return adjusted.toISOString().slice(0, 16);
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

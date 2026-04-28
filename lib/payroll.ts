@@ -169,6 +169,42 @@ export function getCurrentSalaryAgreement(agreements: SalaryAgreementRow[], refe
   );
 }
 
+export function calculateSessionLaborCost(
+  agreement: SalaryAgreementRow | null | undefined,
+  workedMinutes: number
+) {
+  if (!agreement || workedMinutes <= 0) return null;
+
+  if (agreement.salary_type === "hourly") {
+    const hourlyRate = toNumber(agreement.hourly_rate);
+    if (hourlyRate <= 0) return null;
+    const standardDailyHours = toNumber(agreement.standard_daily_hours) || 8;
+    const standardMinutes = Math.max(0, standardDailyHours * 60);
+    const overtimeRate = toNumber(agreement.overtime_rate);
+    const regularMinutes = standardMinutes > 0 ? Math.min(workedMinutes, standardMinutes) : workedMinutes;
+    const overtimeMinutes = Math.max(0, workedMinutes - regularMinutes);
+    const effectiveOvertimeRate = overtimeRate > 0 ? overtimeRate : hourlyRate;
+
+    return roundCurrency(
+      (hourlyRate * regularMinutes) / 60 + (effectiveOvertimeRate * overtimeMinutes) / 60
+    );
+  }
+
+  if (agreement.salary_type === "monthly") {
+    const monthlySalary = toNumber(agreement.monthly_salary);
+    const standardDailyHours = toNumber(agreement.standard_daily_hours) || 8;
+    const estimatedMonthlyMinutes = standardDailyHours * 22 * 60;
+    if (monthlySalary <= 0 || estimatedMonthlyMinutes <= 0) return null;
+    return roundCurrency((monthlySalary * workedMinutes) / estimatedMonthlyMinutes);
+  }
+
+  return null;
+}
+
+function roundCurrency(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
 export function getSalaryTypeLabel(value: string | null | undefined) {
   if (value === "hourly") return "שעתי";
   if (value === "monthly") return "גלובלי";

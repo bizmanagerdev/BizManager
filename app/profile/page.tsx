@@ -74,7 +74,7 @@ export default async function ProfilePage() {
   const [{ data: projectRows, error: projectsError }, { data: propertyRows, error: propertiesError }] =
     await Promise.all([
       supabase
-        .from("projects")
+        .from("project_dashboard_view")
         .select("id,name")
         .order("name", { ascending: true })
         .range(0, 199),
