@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { isPayrollAdminPasswordConfigured, isPayrollAdminUnlocked } from "@/lib/payroll-admin-auth";
+import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 
 type SalaryAgreementPayload = {
+  agreement_id?: string;
   user_id?: string;
   salary_type?: string;
   hourly_rate?: number | string | null;
@@ -45,18 +46,8 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess({ allowedRoles: ["admin"] });
     if (!access.ok) return access.response;
 
-    if (!isPayrollAdminPasswordConfigured()) {
-      return NextResponse.json(
-        { error: "Salary area password is not configured on the server." },
-        { status: 500 }
-      );
-    }
-
-    if (!(await isPayrollAdminUnlocked())) {
-      return NextResponse.json({ error: "Salary area is locked." }, { status: 403 });
-    }
-
     const body = (await req.json().catch(() => ({}))) as SalaryAgreementPayload;
+    const agreementId = typeof body.agreement_id === "string" ? body.agreement_id.trim() : "";
     const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
     const salaryType = body.salary_type === "hourly" || body.salary_type === "monthly" ? body.salary_type : "";
     const validFrom = typeof body.valid_from === "string" ? body.valid_from.trim() : "";
@@ -93,6 +84,48 @@ export async function POST(req: Request) {
     }
 
     const agreements = (agreementsResult.data ?? []) as SalaryAgreementRow[];
+
+    if (agreementId) {
+      const targetAgreement = agreements.find((agreement) => agreement.id === agreementId) ?? null;
+      if (!targetAgreement) {
+        return NextResponse.json({ error: "Salary agreement not found." }, { status: 404 });
+      }
+
+      const overlap = agreements.find((agreement) => {
+        if (agreement.id === agreementId) return false;
+        return overlapsAgreement(validFrom, targetAgreement.valid_to, agreement);
+      });
+
+      if (overlap) {
+        return NextResponse.json({ error: "Salary agreements cannot overlap for the same worker." }, { status: 409 });
+      }
+
+      const updateResult = await supabase
+        .from("salary_agreements")
+        .update({
+          salary_type: salaryType,
+          hourly_rate: salaryType === "hourly" ? hourlyRate : null,
+          monthly_salary: salaryType === "monthly" ? monthlySalary : null,
+          valid_from: validFrom,
+          notes,
+          overtime_rate: overtimeRate,
+          standard_daily_hours: standardDailyHours,
+        })
+        .eq("id", agreementId)
+        .select(
+          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+        )
+        .maybeSingle();
+
+      if (updateResult.error) {
+        return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
+      }
+
+      await recalculateUserSessionCostsFromRules(supabase, userId, { fromDate: validFrom });
+
+      return NextResponse.json({ agreement: updateResult.data });
+    }
+
     const previousActive = agreements.find((agreement) => !agreement.valid_to && agreement.valid_from <= validFrom) ?? null;
     const previousValidTo = previousActive ? dayBefore(validFrom) : null;
 
@@ -138,6 +171,8 @@ export async function POST(req: Request) {
     if (insertResult.error) {
       return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
     }
+
+    await recalculateUserSessionCostsFromRules(supabase, userId, { fromDate: validFrom });
 
     return NextResponse.json({ agreement: insertResult.data });
   } catch (error: unknown) {

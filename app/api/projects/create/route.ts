@@ -13,6 +13,7 @@ type CreateProjectPayload = {
   start_date?: string;
   end_date?: string | null;
   notes?: string | null;
+  items_to_move?: string[] | null;
 };
 
 function toNumber(value: unknown) {
@@ -22,6 +23,15 @@ function toNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : NaN;
   }
   return NaN;
+}
+
+function sanitizeStringArray(value: unknown) {
+  if (!Array.isArray(value)) return null;
+  const cleaned = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 export async function POST(req: Request) {
@@ -43,6 +53,7 @@ export async function POST(req: Request) {
     const startDate = typeof body.start_date === "string" ? body.start_date : "";
     const endDate = typeof body.end_date === "string" ? body.end_date : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
+    const itemsToMove = sanitizeStringArray(body.items_to_move);
     const allowedProjectTypes = new Set([
       "logistics",
       "construction",
@@ -79,9 +90,10 @@ export async function POST(req: Request) {
         start_date: startDate || null,
         end_date: endDate,
         notes,
+        items_to_move: projectType === "moving" ? itemsToMove : null,
       })
       .select(
-        "id,customer_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,notes,created_at,updated_at"
+        "id,customer_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,notes,items_to_move,created_at,updated_at"
       )
       .maybeSingle();
 

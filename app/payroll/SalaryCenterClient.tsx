@@ -19,7 +19,6 @@ import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -78,12 +77,20 @@ type SessionFormState = {
   notes: string;
   clock_in: string;
   clock_out: string;
+  labor_cost: string;
+  original_user_id: string;
+  original_clock_in: string;
+  original_clock_out: string;
+  original_labor_cost: string;
   is_billable_to_customer: boolean;
   bill_to_customer_amount: string;
   billing_status: string;
 };
 
 type WorkerFormState = {
+  full_name: string;
+  email: string;
+  phone: string;
   role: "admin" | "office" | "worker" | "worker_no_access";
   active: boolean;
   system_access: boolean;
@@ -100,6 +107,8 @@ type CreateUserFormState = {
 };
 
 type AgreementFormState = {
+  agreement_id: string;
+  user_id: string;
   salary_type: "hourly" | "monthly";
   hourly_rate: string;
   monthly_salary: string;
@@ -130,17 +139,24 @@ const DEFAULT_SESSION_FORM: SessionFormState = {
   notes: "",
   clock_in: toDateTimeLocalValue(new Date(Date.now() - 60 * 60 * 1000)),
   clock_out: toDateTimeLocalValue(new Date()),
+  labor_cost: "",
+  original_user_id: "",
+  original_clock_in: "",
+  original_clock_out: "",
+  original_labor_cost: "",
   is_billable_to_customer: false,
   bill_to_customer_amount: "",
   billing_status: "not_billable",
 };
 
 const DEFAULT_AGREEMENT_FORM: AgreementFormState = {
+  agreement_id: "",
+  user_id: "",
   salary_type: "hourly",
   hourly_rate: "",
   monthly_salary: "",
   overtime_rate: "",
-  standard_daily_hours: "8",
+  standard_daily_hours: "0",
   valid_from: new Date().toISOString().slice(0, 10),
   notes: "",
 };
@@ -190,6 +206,9 @@ export default function SalaryCenterClient({
     dateTo: "",
   });
   const [selectedWorkerId, setSelectedWorkerId] = useState("");
+  const [workerAccessDialogOpen, setWorkerAccessDialogOpen] = useState(false);
+  const [agreementDialogOpen, setAgreementDialogOpen] = useState(false);
+  const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [createUserForm, setCreateUserForm] = useState<CreateUserFormState>(DEFAULT_CREATE_USER_FORM);
   const [createUserError, setCreateUserError] = useState("");
@@ -204,6 +223,9 @@ export default function SalaryCenterClient({
   const [loadingProtected, setLoadingProtected] = useState(false);
   const [salaryUnlocked, setSalaryUnlocked] = useState(initiallyUnlocked);
   const [workerForm, setWorkerForm] = useState<WorkerFormState>({
+    full_name: "",
+    email: "",
+    phone: "",
     role: "worker",
     active: true,
     system_access: true,
@@ -216,7 +238,7 @@ export default function SalaryCenterClient({
   const [payslipAdjustmentDrafts, setPayslipAdjustmentDrafts] = useState<Record<string, string>>({});
 
   const canManageSalary = viewerRole === "admin";
-  const canManageAttendance = viewerRole === "admin" || viewerRole === "office";
+  const canManageAttendance = viewerRole === "admin";
   const canCreateUsers = viewerRole === "admin";
 
   const loadProtectedData = useCallback(async () => {
@@ -230,11 +252,9 @@ export default function SalaryCenterClient({
       if (!response.ok) {
         setProtectedError(json.error ?? "Protected salary data could not be loaded.");
         setProtectedData(null);
-        setSalaryUnlocked(false);
         return;
       }
       setProtectedData(json);
-      setSalaryUnlocked(true);
       setSelectedPeriodId((current) => current || getCurrentPayrollPeriod(json.periods)?.id || "");
     } catch (loadError: unknown) {
       setProtectedError(loadError instanceof Error ? loadError.message : "Unknown error");
@@ -292,6 +312,9 @@ export default function SalaryCenterClient({
   useEffect(() => {
     if (!selectedWorker) return;
     setWorkerForm({
+      full_name: selectedWorker.full_name ?? "",
+      email: selectedWorker.email ?? "",
+      phone: selectedWorker.phone ?? "",
       role:
         selectedWorker.role === "admin" ||
         selectedWorker.role === "office" ||
@@ -387,6 +410,7 @@ export default function SalaryCenterClient({
   function openEditSession(session: SessionPublicRow) {
     setSessionMode("edit");
     setSessionError("");
+    const currentLaborCost = session.labor_cost ? String(session.labor_cost) : "";
     setSessionForm({
       session_id: session.id,
       user_id: session.user_id,
@@ -396,6 +420,11 @@ export default function SalaryCenterClient({
       notes: session.notes ?? "",
       clock_in: toDateTimeLocalValue(new Date(session.clock_in)),
       clock_out: session.clock_out ? toDateTimeLocalValue(new Date(session.clock_out)) : "",
+      labor_cost: currentLaborCost,
+      original_user_id: session.user_id,
+      original_clock_in: session.clock_in,
+      original_clock_out: session.clock_out ?? "",
+      original_labor_cost: currentLaborCost,
       is_billable_to_customer: session.is_billable_to_customer === true,
       bill_to_customer_amount: session.bill_to_customer_amount ? String(session.bill_to_customer_amount) : "",
       billing_status: session.billing_status ?? "not_billable",
@@ -440,6 +469,18 @@ export default function SalaryCenterClient({
     runAction(async () => {
       const path =
         sessionMode === "create" ? "/api/payroll/sessions/create" : "/api/payroll/sessions/update";
+      const clockInIso = new Date(sessionForm.clock_in).toISOString();
+      const clockOutIso = sessionForm.clock_out ? new Date(sessionForm.clock_out).toISOString() : null;
+      const laborCostInput = sessionForm.labor_cost.trim();
+      const originalLaborCost = sessionForm.original_labor_cost.trim();
+      const sessionTimingChanged =
+        sessionMode === "edit" &&
+        (sessionForm.user_id !== sessionForm.original_user_id ||
+          clockInIso !== sessionForm.original_clock_in ||
+          (clockOutIso ?? "") !== sessionForm.original_clock_out);
+      const shouldRecalculateLaborCost =
+        sessionTimingChanged && clockOutIso !== null && laborCostInput === originalLaborCost;
+
       await postJson(path, {
         session_id: sessionForm.session_id || undefined,
         user_id: sessionForm.user_id,
@@ -447,8 +488,10 @@ export default function SalaryCenterClient({
         project_id: sessionForm.project_id || null,
         property_id: sessionForm.property_id || null,
         notes: sessionForm.notes || null,
-        clock_in: new Date(sessionForm.clock_in).toISOString(),
-        clock_out: sessionForm.clock_out ? new Date(sessionForm.clock_out).toISOString() : null,
+        clock_in: clockInIso,
+        clock_out: clockOutIso,
+        labor_cost: shouldRecalculateLaborCost ? null : laborCostInput || null,
+        recalculate_labor_cost: shouldRecalculateLaborCost,
         is_billable_to_customer: sessionForm.is_billable_to_customer,
         bill_to_customer_amount: sessionForm.is_billable_to_customer ? sessionForm.bill_to_customer_amount : null,
         billing_status: sessionForm.billing_status,
@@ -531,6 +574,9 @@ export default function SalaryCenterClient({
     runAction(async () => {
       await postJson("/api/payroll/workers/update", {
         user_id: selectedWorker.id,
+        full_name: workerForm.full_name,
+        email: workerForm.email || null,
+        phone: workerForm.phone || null,
         role: workerForm.role,
         active: workerForm.active,
         system_access: workerForm.role === "worker_no_access" ? false : workerForm.system_access,
@@ -541,16 +587,51 @@ export default function SalaryCenterClient({
   }
 
   function saveAgreement() {
-    if (!selectedWorker) return;
+    const targetUserId = agreementForm.user_id || selectedWorker?.id || "";
+    if (!targetUserId) return;
     runAction(async () => {
       await postJson("/api/payroll/salary-agreements", {
-        user_id: selectedWorker.id,
+        agreement_id: agreementForm.agreement_id || undefined,
+        user_id: targetUserId,
         ...agreementForm,
       });
       setAgreementForm(DEFAULT_AGREEMENT_FORM);
       setMessage("הסכם השכר נשמר.");
       await refreshAll();
     });
+  }
+
+  function openNewAgreementDialog(userId: string, currentAgreement?: SalaryAgreementRow | null) {
+    setAgreementForm({
+      agreement_id: "",
+      user_id: userId,
+      salary_type:
+        currentAgreement?.salary_type === "monthly" || currentAgreement?.salary_type === "hourly"
+          ? currentAgreement.salary_type
+          : "hourly",
+      hourly_rate: currentAgreement?.hourly_rate ? String(currentAgreement.hourly_rate) : "",
+      monthly_salary: currentAgreement?.monthly_salary ? String(currentAgreement.monthly_salary) : "",
+      overtime_rate: currentAgreement?.overtime_rate ? String(currentAgreement.overtime_rate) : "",
+      standard_daily_hours: currentAgreement?.standard_daily_hours ? String(currentAgreement.standard_daily_hours) : "0",
+      valid_from: new Date().toISOString().slice(0, 10),
+      notes: currentAgreement?.notes ?? "",
+    });
+    setAgreementDialogOpen(true);
+  }
+
+  function openEditAgreementDialog(agreement: SalaryAgreementRow) {
+    setAgreementForm({
+      agreement_id: agreement.id,
+      user_id: agreement.user_id,
+      salary_type: agreement.salary_type === "monthly" ? "monthly" : "hourly",
+      hourly_rate: agreement.hourly_rate ? String(agreement.hourly_rate) : "",
+      monthly_salary: agreement.monthly_salary ? String(agreement.monthly_salary) : "",
+      overtime_rate: agreement.overtime_rate ? String(agreement.overtime_rate) : "",
+      standard_daily_hours: agreement.standard_daily_hours ? String(agreement.standard_daily_hours) : "0",
+      valid_from: agreement.valid_from,
+      notes: agreement.notes ?? "",
+    });
+    setAgreementDialogOpen(true);
   }
 
   function saveOverride() {
@@ -635,30 +716,29 @@ export default function SalaryCenterClient({
     });
   }
 
-  const workerProjects = useMemo(() => {
-    if (!selectedWorker) return [];
-    const grouped = new Map<string, { label: string; minutes: number; laborCost: number }>();
-
-    publicSessions
-      .filter((session) => session.user_id === selectedWorker.id && session.project_id)
-      .forEach((session) => {
-        const key = session.project_id ?? "";
-        if (!key) return;
-        const label = projectLabelsById.get(key) ?? "פרויקט";
-        const current = grouped.get(key) ?? { label, minutes: 0, laborCost: 0 };
-        current.minutes += sessionWorkedMinutes(session);
-        current.laborCost += sessionCostsById.get(session.id) ?? 0;
-        grouped.set(key, current);
-      });
-
-    return [...grouped.values()].sort((a, b) => b.minutes - a.minutes);
-  }, [projectLabelsById, publicSessions, selectedWorker, sessionCostsById]);
-
   const selectedWorkerSessions = useMemo(
     () => publicSessions.filter((session) => session.user_id === selectedWorkerId),
     [publicSessions, selectedWorkerId]
   );
   const selectedWorkerStats = selectedWorker ? getWorkerMonthStats(selectedWorker.id, publicSessions) : null;
+  const selectedWorkerTotalPay = useMemo(
+    () =>
+      selectedWorkerSessions.reduce((sum, session) => sum + (sessionCostsById.get(session.id) ?? 0), 0),
+    [selectedWorkerSessions, sessionCostsById]
+  );
+  const selectedWorkerOverrides = useMemo(
+    () => (selectedWorker ? (protectedData?.hourlyOverrides ?? []).filter((override) => override.user_id === selectedWorker.id) : []),
+    [protectedData, selectedWorker]
+  );
+
+  function getSessionPayrollPeriod(session: SessionPublicRow) {
+    return periodsForUi.find((period) => {
+      const time = new Date(session.clock_in).getTime();
+      const start = new Date(`${period.start_date}T00:00:00`).getTime();
+      const end = new Date(`${period.end_date}T23:59:59.999`).getTime();
+      return Number.isFinite(time) && Number.isFinite(start) && Number.isFinite(end) && time >= start && time <= end;
+    }) ?? null;
+  }
 
   return (
     <div className="space-y-4 text-right" dir="rtl" style={{ direction: "rtl" }}>
@@ -699,7 +779,7 @@ export default function SalaryCenterClient({
               {"הוספת משמרת"}
             </Button>
           ) : null}
-          {salaryUnlocked ? (
+          {false ? (
             <Button variant="outline" onClick={() => lockSalaryData()}>
               <LockKeyhole className="h-4 w-4" />
               {"נעילת נתוני שכר"}
@@ -1092,15 +1172,20 @@ export default function SalaryCenterClient({
                       <CardContent className="space-y-3 py-5">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
-                          {current ? (
-                            <Tag>
-                              {current.salary_type === "hourly"
-                                ? `${formatCurrency(current.hourly_rate)} / שעה`
-                                : formatCurrency(current.monthly_salary)}
-                            </Tag>
-                          ) : (
-                            <Tag>{"ללא הסכם פעיל"}</Tag>
-                          )}
+                          <div className="flex flex-wrap gap-2">
+                            {current ? (
+                              <Tag>
+                                {current.salary_type === "hourly"
+                                  ? `${formatCurrency(current.hourly_rate)} / שעה`
+                                  : formatCurrency(current.monthly_salary)}
+                              </Tag>
+                            ) : (
+                              <Tag>{"ללא הסכם פעיל"}</Tag>
+                            )}
+                            <Button variant="outline" onClick={() => openNewAgreementDialog(worker.id, current)}>
+                              {"הסכם חדש"}
+                            </Button>
+                          </div>
                         </div>
                         {workerAgreements.length === 0 ? (
                           <div className="text-sm text-muted-foreground">{"אין עדיין היסטוריית שכר."}</div>
@@ -1109,10 +1194,15 @@ export default function SalaryCenterClient({
                             <div key={agreement.id} className="rounded-2xl border p-3 text-sm">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div>{getSalaryTypeLabel(agreement.salary_type)}</div>
-                                <div className="font-semibold">
-                                  {agreement.salary_type === "hourly"
-                                    ? `${formatCurrency(agreement.hourly_rate)} / שעה`
-                                    : formatCurrency(agreement.monthly_salary)}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="font-semibold">
+                                    {agreement.salary_type === "hourly"
+                                      ? `${formatCurrency(agreement.hourly_rate)} / שעה`
+                                      : formatCurrency(agreement.monthly_salary)}
+                                  </div>
+                                  <Button variant="ghost" onClick={() => openEditAgreementDialog(agreement)}>
+                                    {"עריכה"}
+                                  </Button>
                                 </div>
                               </div>
                               <div className="mt-1 text-muted-foreground">
@@ -1373,79 +1463,31 @@ export default function SalaryCenterClient({
         <SheetContent side="right" className="w-full overflow-y-auto text-right sm:max-w-2xl" dir="rtl">
           {selectedWorker ? (
             <>
-              <SheetHeader className="text-right">
-                <SheetTitle>{selectedWorker.full_name ?? selectedWorker.email ?? "עובד"}</SheetTitle>
-                <SheetDescription>
-                  {"פרופיל, נוכחות, פרויקטים, היסטוריית שכר ותלושים לעובד הנבחר."}
-                </SheetDescription>
+              <SheetHeader className="text-center">
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <SheetTitle>{selectedWorker.full_name ?? selectedWorker.email ?? "עובד"}</SheetTitle>
+                  {isAttendanceWorker(selectedWorker) ? (
+                    <Button variant="outline" onClick={() => openCreateSession(selectedWorker.id)}>
+                      {"הוספת משמרת"}
+                    </Button>
+                  ) : null}
+                </div>
               </SheetHeader>
 
               <div className="mt-6 space-y-5">
                 <Card>
                   <CardContent className="space-y-3 py-5">
-                    <div className="text-lg font-semibold">{"פרופיל"}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {[selectedWorker.email, selectedWorker.phone].filter(Boolean).join(" • ") || "ללא פרטים"}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <InfoRow label="שם מלא" value={selectedWorker.full_name ?? "—"} />
+                      <InfoRow label="אימייל" value={selectedWorker.email ?? "—"} />
+                      <InfoRow label="טלפון" value={selectedWorker.phone ?? "—"} />
+                      <InfoRow label="תפקיד" value={getRoleLabel(selectedWorker.role)} />
+                      <InfoRow label="סטטוס" value={selectedWorker.active === false ? "לא פעיל" : "פעיל"} />
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Tag>{getRoleLabel(selectedWorker.role)}</Tag>
-                      <Tag>{getWorkerAccessLabel(selectedWorker)}</Tag>
-                      <Tag>{selectedWorker.active === false ? "לא פעיל" : "פעיל"}</Tag>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <Field label="תפקיד">
-                        <select
-                          value={workerForm.role}
-                          onChange={(event) =>
-                            setWorkerForm((current) => ({
-                              ...current,
-                              role: event.target.value as WorkerFormState["role"],
-                              system_access: event.target.value === "worker_no_access" ? false : current.system_access,
-                            }))
-                          }
-                          className={selectClassName}
-                        >
-                          <option value="admin">{"מנהל"}</option>
-                          <option value="office">{"משרד"}</option>
-                          <option value="worker">{"עובד"}</option>
-                          <option value="worker_no_access">{"עובד ללא גישה"}</option>
-                        </select>
-                      </Field>
-                      <Field label="פעיל">
-                        <select
-                          value={workerForm.active ? "yes" : "no"}
-                          onChange={(event) =>
-                            setWorkerForm((current) => ({ ...current, active: event.target.value === "yes" }))
-                          }
-                          className={selectClassName}
-                        >
-                          <option value="yes">{"כן"}</option>
-                          <option value="no">{"לא"}</option>
-                        </select>
-                      </Field>
-                      <Field label="גישה למערכת">
-                        <select
-                          value={workerForm.system_access ? "yes" : "no"}
-                          onChange={(event) =>
-                            setWorkerForm((current) => ({ ...current, system_access: event.target.value === "yes" }))
-                          }
-                          disabled={workerForm.role === "worker_no_access"}
-                          className={selectClassName}
-                        >
-                          <option value="yes">{"כן"}</option>
-                          <option value="no">{"לא"}</option>
-                        </select>
-                      </Field>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button onClick={() => saveWorkerAccess()} disabled={isPending}>
-                        {"שמירת גישה"}
+                      <Button onClick={() => setWorkerAccessDialogOpen(true)} disabled={isPending}>
+                        {"עדכון פרטי עובד"}
                       </Button>
-                      {isAttendanceWorker(selectedWorker) ? (
-                        <Button variant="outline" onClick={() => openCreateSession(selectedWorker.id)}>
-                          {"הוספת משמרת"}
-                        </Button>
-                      ) : null}
                     </div>
                   </CardContent>
                 </Card>
@@ -1456,16 +1498,21 @@ export default function SalaryCenterClient({
                     <div className="grid gap-3 sm:grid-cols-3">
                       <MiniStat label="שעות החודש" value={selectedWorkerStats ? formatMinutes(selectedWorkerStats.totalMinutes) : "0:00"} />
                       <MiniStat label="משמרות החודש" value={selectedWorkerStats ? String(selectedWorkerStats.sessionCount) : "0"} />
-                      <MiniStat label="משמרות פתוחות" value={selectedWorkerStats ? String(selectedWorkerStats.openSessionCount) : "0"} />
+                      <MiniStat label="סה״כ תשלום" value={formatCurrency(selectedWorkerTotalPay)} />
                     </div>
                     <div className="space-y-2">
                       {selectedWorkerSessions.slice(0, 12).map((session) => (
                         <div key={session.id} className="rounded-2xl border p-3 text-sm">
+                          {(() => {
+                            const payrollPeriod = getSessionPayrollPeriod(session);
+                            return (
+                              <>
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>{`${formatDateTime(session.clock_in)}${session.clock_out ? ` - ${formatDateTime(session.clock_out)}` : ""}`}</div>
                             <div className="flex flex-wrap gap-2">
                               <Tag>{getBusinessDomainLabel(session.business_domain)}</Tag>
                               <Tag>{session.locked ? "נעול" : "פתוח לעריכה"}</Tag>
+                              {payrollPeriod ? <Tag>{getPayrollPeriodLabel(payrollPeriod.status)}</Tag> : null}
                             </div>
                           </div>
                           <div className="mt-1 text-muted-foreground">
@@ -1474,6 +1521,11 @@ export default function SalaryCenterClient({
                               projectLabelsById,
                               propertyLabelsById
                             )}`}
+                          </div>
+                          <div className="mt-1 text-muted-foreground">
+                            {`עלות עבודה: ${formatCurrency(sessionCostsById.get(session.id) ?? 0)}${
+                              payrollPeriod ? ` • תקופה: ${monthLabelFromKey(payrollPeriod.period_month)}` : ""
+                            }`}
                           </div>
                           {!session.locked ? (
                             <div className="mt-3 flex flex-wrap gap-2">
@@ -1485,36 +1537,12 @@ export default function SalaryCenterClient({
                               </Button>
                             </div>
                           ) : null}
+                              </>
+                            );
+                          })()}
                         </div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="space-y-3 py-5">
-                    <div className="text-lg font-semibold">{"פרויקטים שעבד בהם"}</div>
-                    {workerProjects.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">{"אין פרויקטים משויכים לעובד כרגע."}</div>
-                    ) : (
-                      workerProjects.map((project) => (
-                        <div key={project.label} className="rounded-2xl border p-3 text-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="font-medium">{project.label}</div>
-                            <div>{formatMinutes(project.minutes)}</div>
-                          </div>
-                          <SalaryProtected
-                            unlocked={salaryUnlocked}
-                            hasPasswordConfigured={hasPasswordConfigured}
-                            canUnlock={canManageSalary}
-                            onUnlockSuccess={loadProtectedData}
-                            fallback={null}
-                          >
-                            <div className="mt-1 text-muted-foreground">{`עלות עבודה: ${formatCurrency(project.laborCost)}`}</div>
-                          </SalaryProtected>
-                        </div>
-                      ))
-                    )}
                   </CardContent>
                 </Card>
 
@@ -1527,92 +1555,17 @@ export default function SalaryCenterClient({
                   >
                     <Card>
                       <CardContent className="space-y-4 py-5">
-                        <div className="text-lg font-semibold">{"שכר מוגן"}</div>
+                        <div className="text-lg font-semibold">{"שכר"}</div>
                         <div className="grid gap-4 lg:grid-cols-2">
                           <div className="space-y-3">
-                            <div className="font-medium">{"הוספת הסכם חדש"}</div>
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <Field label="סוג שכר">
-                                <select
-                                  value={agreementForm.salary_type}
-                                  onChange={(event) =>
-                                    setAgreementForm((current) => ({
-                                      ...current,
-                                      salary_type: event.target.value as "hourly" | "monthly",
-                                    }))
-                                  }
-                                  className={selectClassName}
-                                >
-                                  <option value="hourly">{"שעתי"}</option>
-                                  <option value="monthly">{"חודשי"}</option>
-                                </select>
-                              </Field>
-                              <Field label="בתוקף מתאריך">
-                                <Input
-                                  type="date"
-                                  value={agreementForm.valid_from}
-                                  onChange={(event) =>
-                                    setAgreementForm((current) => ({ ...current, valid_from: event.target.value }))
-                                  }
-                                />
-                              </Field>
-                              {agreementForm.salary_type === "hourly" ? (
-                                <Field label="תעריף שעתי">
-                                  <Input
-                                    inputMode="decimal"
-                                    value={agreementForm.hourly_rate}
-                                    onChange={(event) =>
-                                      setAgreementForm((current) => ({ ...current, hourly_rate: event.target.value }))
-                                    }
-                                  />
-                                </Field>
-                              ) : (
-                                <Field label="שכר חודשי">
-                                  <Input
-                                    inputMode="decimal"
-                                    value={agreementForm.monthly_salary}
-                                    onChange={(event) =>
-                                      setAgreementForm((current) => ({ ...current, monthly_salary: event.target.value }))
-                                    }
-                                  />
-                                </Field>
-                              )}
-                              <Field label="תעריף שעות נוספות">
-                                <Input
-                                  inputMode="decimal"
-                                  value={agreementForm.overtime_rate}
-                                  onChange={(event) =>
-                                    setAgreementForm((current) => ({ ...current, overtime_rate: event.target.value }))
-                                  }
-                                />
-                              </Field>
-                              <Field label="שעות יומיות תקניות">
-                                <Input
-                                  inputMode="decimal"
-                                  value={agreementForm.standard_daily_hours}
-                                  onChange={(event) =>
-                                    setAgreementForm((current) => ({
-                                      ...current,
-                                      standard_daily_hours: event.target.value,
-                                    }))
-                                  }
-                                />
-                              </Field>
-                              <div className="sm:col-span-2">
-                                <Field label="הערות">
-                                  <Textarea
-                                    rows={3}
-                                    value={agreementForm.notes}
-                                    onChange={(event) =>
-                                      setAgreementForm((current) => ({ ...current, notes: event.target.value }))
-                                    }
-                                  />
-                                </Field>
-                              </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button onClick={() => setAgreementDialogOpen(true)} disabled={isPending}>
+                                {"הוספת הסכם חדש"}
+                              </Button>
+                              <Button variant="outline" onClick={() => setOverrideDialogOpen(true)} disabled={isPending}>
+                                {"הוספת החרגה"}
+                              </Button>
                             </div>
-                            <Button onClick={() => saveAgreement()} disabled={isPending}>
-                              {"שמירת הסכם שכר"}
-                            </Button>
                           </div>
 
                           <div className="space-y-3">
@@ -1630,52 +1583,68 @@ export default function SalaryCenterClient({
                                 <div className="mt-1 text-muted-foreground">
                                   {`${formatDate(agreement.valid_from)} - ${formatDate(agreement.valid_to)}`}
                                 </div>
+                                <div className="mt-1 text-muted-foreground">
+                                  {agreement.salary_type === "hourly"
+                                    ? `תעריף שעתי: ${formatCurrency(agreement.hourly_rate)}`
+                                    : `שכר חודשי: ${formatCurrency(agreement.monthly_salary)}`}
+                                </div>
+                                <div className="mt-1 text-muted-foreground">
+                                  {`תעריף שעות נוספות: ${formatCurrency(agreement.overtime_rate)} • שעות יומיות תקניות: ${agreement.standard_daily_hours ?? "0"}`}
+                                </div>
+                                {agreement.notes ? (
+                                  <div className="mt-2 rounded-2xl bg-muted/30 px-3 py-2 text-muted-foreground">
+                                    {agreement.notes}
+                                  </div>
+                                ) : null}
                               </div>
                             ))}
 
                             <div className="font-medium">{"החרגות שכר שעתי"}</div>
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <Field label="תעריף החרגה">
-                                <Input
-                                  inputMode="decimal"
-                                  value={overrideForm.override_hourly_rate}
-                                  onChange={(event) =>
-                                    setOverrideForm((current) => ({
-                                      ...current,
-                                      override_hourly_rate: event.target.value,
-                                    }))
-                                  }
-                                />
-                              </Field>
-                              <Field label="הערות">
-                                <Input
-                                  value={overrideForm.notes}
-                                  onChange={(event) =>
-                                    setOverrideForm((current) => ({ ...current, notes: event.target.value }))
-                                  }
-                                />
-                              </Field>
-                            </div>
-                            <Button variant="outline" onClick={() => saveOverride()} disabled={isPending}>
-                              {"שמירת החרגה"}
-                            </Button>
-
-                            {(payslipsByUserId.get(selectedWorker.id) ?? []).map((payslip) => {
-                              const period = periodsById.get(payslip.payroll_period_id);
-                              return (
-                                <div key={payslip.id} className="rounded-2xl border p-3 text-sm">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <div>{period ? monthLabelFromKey(period.period_month) : "תקופה"}</div>
-                                    <div className="font-semibold">{formatCurrency(payslip.gross_salary)}</div>
-                                  </div>
+                            {selectedWorkerOverrides.length === 0 ? (
+                              <div className="text-sm text-muted-foreground">{"אין החרגות שכר."}</div>
+                            ) : (
+                              selectedWorkerOverrides.map((override, index) => (
+                                <div key={`${override.created_at ?? "override"}-${index}`} className="rounded-2xl border p-3 text-sm">
+                                  <div className="font-semibold">{formatCurrency(override.override_hourly_rate)}</div>
                                   <div className="mt-1 text-muted-foreground">
-                                    {`${formatMinutes(payslip.total_work_minutes)} • ${getSalaryTypeLabel(
-                                      payslip.calculated_salary_type
-                                    )}`}
+                                    {override.created_at ? formatDateTime(override.created_at) : "ללא תאריך"}
                                   </div>
+                                  {override.notes ? (
+                                    <div className="mt-2 rounded-2xl bg-muted/30 px-3 py-2 text-muted-foreground">
+                                      {override.notes}
+                                    </div>
+                                  ) : null}
                                 </div>
-                              );
-                            })}
+                              ))
+                            )}
+
+                            <div className="font-medium">{"תלושים"}</div>
+                            {(payslipsByUserId.get(selectedWorker.id) ?? []).length === 0 ? (
+                              <div className="text-sm text-muted-foreground">{"אין תלושים לעובד הזה כרגע."}</div>
+                            ) : (
+                              (payslipsByUserId.get(selectedWorker.id) ?? []).map((payslip) => {
+                                const period = periodsById.get(payslip.payroll_period_id);
+                                return (
+                                  <div key={payslip.id} className="rounded-2xl border p-3 text-sm">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div>{period ? monthLabelFromKey(period.period_month) : "תקופה"}</div>
+                                      <div className="font-semibold">{formatCurrency(payslip.gross_salary)}</div>
+                                    </div>
+                                    <div className="mt-1 text-muted-foreground">
+                                      {`${formatMinutes(payslip.total_work_minutes)} • ${getSalaryTypeLabel(
+                                        payslip.calculated_salary_type
+                                      )}`}
+                                    </div>
+                                    <div className="mt-1 text-muted-foreground">
+                                      {`שכר בסיס: ${formatCurrency(payslip.calculated_base_salary)} • התאמות: ${formatCurrency(payslip.manual_adjustments)}`}
+                                    </div>
+                                    {period ? (
+                                      <div className="mt-1 text-muted-foreground">{`סטטוס: ${getPayrollPeriodLabel(period.status)} • ${formatDate(period.start_date)} - ${formatDate(period.end_date)}`}</div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })
+                            )}
 
                             {selectedPeriodId ? (
                               <Button onClick={() => generateWorkerPayslip(selectedWorker.id)} disabled={isPending}>
@@ -1699,6 +1668,238 @@ export default function SalaryCenterClient({
           ) : null}
         </SheetContent>
       </Sheet>
+
+      <Dialog open={workerAccessDialogOpen} onOpenChange={setWorkerAccessDialogOpen}>
+        <DialogContent dir="rtl" className="max-w-xl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{"עדכון פרטי עובד"}</DialogTitle>
+            <DialogDescription>{"עדכון פרטים אישיים, תפקיד, סטטוס וגישה למערכת."}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="שם מלא">
+              <Input
+                value={workerForm.full_name}
+                onChange={(event) => setWorkerForm((current) => ({ ...current, full_name: event.target.value }))}
+              />
+            </Field>
+            <Field label="אימייל">
+              <Input
+                value={workerForm.email}
+                onChange={(event) => setWorkerForm((current) => ({ ...current, email: event.target.value }))}
+              />
+            </Field>
+            <Field label="טלפון">
+              <Input
+                value={workerForm.phone}
+                onChange={(event) => setWorkerForm((current) => ({ ...current, phone: event.target.value }))}
+              />
+            </Field>
+            <Field label="תפקיד">
+              <select
+                value={workerForm.role}
+                onChange={(event) =>
+                  setWorkerForm((current) => ({
+                    ...current,
+                    role: event.target.value as WorkerFormState["role"],
+                    system_access: event.target.value === "worker_no_access" ? false : current.system_access,
+                  }))
+                }
+                className={selectClassName}
+              >
+                <option value="admin">{"מנהל"}</option>
+                <option value="office">{"משרד"}</option>
+                <option value="worker">{"עובד"}</option>
+                <option value="worker_no_access">{"עובד ללא גישה"}</option>
+              </select>
+            </Field>
+            <Field label="פעיל">
+              <select
+                value={workerForm.active ? "yes" : "no"}
+                onChange={(event) =>
+                  setWorkerForm((current) => ({ ...current, active: event.target.value === "yes" }))
+                }
+                className={selectClassName}
+              >
+                <option value="yes">{"כן"}</option>
+                <option value="no">{"לא"}</option>
+              </select>
+            </Field>
+            <Field label="גישה למערכת">
+              <select
+                value={workerForm.system_access ? "yes" : "no"}
+                onChange={(event) =>
+                  setWorkerForm((current) => ({ ...current, system_access: event.target.value === "yes" }))
+                }
+                disabled={workerForm.role === "worker_no_access"}
+                className={selectClassName}
+              >
+                <option value="yes">{"כן"}</option>
+                <option value="no">{"לא"}</option>
+              </select>
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWorkerAccessDialogOpen(false)}>
+              {"ביטול"}
+            </Button>
+            <Button
+              onClick={() => {
+                saveWorkerAccess();
+                setWorkerAccessDialogOpen(false);
+              }}
+              disabled={isPending}
+            >
+              {"שמירה"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={agreementDialogOpen} onOpenChange={setAgreementDialogOpen}>
+        <DialogContent dir="rtl" className="max-w-2xl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{agreementForm.agreement_id ? "עריכת הסכם שכר" : "הוספת הסכם שכר"}</DialogTitle>
+            <DialogDescription>
+              {agreementForm.agreement_id ? "עדכון הסכם שכר קיים." : "הוספת הסכם חדש לעובד הנבחר."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="סוג שכר">
+              <select
+                value={agreementForm.salary_type}
+                onChange={(event) =>
+                  setAgreementForm((current) => ({
+                    ...current,
+                    salary_type: event.target.value as "hourly" | "monthly",
+                  }))
+                }
+                className={selectClassName}
+              >
+                <option value="hourly">{"שעתי"}</option>
+                <option value="monthly">{"חודשי"}</option>
+              </select>
+            </Field>
+            <Field label="בתוקף מתאריך">
+              <Input
+                type="date"
+                value={agreementForm.valid_from}
+                onChange={(event) =>
+                  setAgreementForm((current) => ({ ...current, valid_from: event.target.value }))
+                }
+              />
+            </Field>
+            {agreementForm.salary_type === "hourly" ? (
+              <Field label="תעריף שעתי">
+                <Input
+                  inputMode="decimal"
+                  value={agreementForm.hourly_rate}
+                  onChange={(event) =>
+                    setAgreementForm((current) => ({ ...current, hourly_rate: event.target.value }))
+                  }
+                />
+              </Field>
+            ) : (
+              <Field label="שכר חודשי">
+                <Input
+                  inputMode="decimal"
+                  value={agreementForm.monthly_salary}
+                  onChange={(event) =>
+                    setAgreementForm((current) => ({ ...current, monthly_salary: event.target.value }))
+                  }
+                />
+              </Field>
+            )}
+            <Field label="תעריף שעות נוספות">
+              <Input
+                inputMode="decimal"
+                value={agreementForm.overtime_rate}
+                onChange={(event) =>
+                  setAgreementForm((current) => ({ ...current, overtime_rate: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="שעות יומיות תקניות">
+              <Input
+                inputMode="decimal"
+                value={agreementForm.standard_daily_hours}
+                onChange={(event) =>
+                  setAgreementForm((current) => ({ ...current, standard_daily_hours: event.target.value }))
+                }
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label="הערות">
+                <Textarea
+                  rows={3}
+                  value={agreementForm.notes}
+                  onChange={(event) =>
+                    setAgreementForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                />
+              </Field>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAgreementDialogOpen(false)}>
+              {"ביטול"}
+            </Button>
+            <Button
+              onClick={() => {
+                saveAgreement();
+                setAgreementDialogOpen(false);
+              }}
+              disabled={isPending}
+            >
+              {agreementForm.agreement_id ? "שמירת שינויים" : "שמירת הסכם שכר"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
+        <DialogContent dir="rtl" className="max-w-xl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{"הוספת החרגת שכר"}</DialogTitle>
+            <DialogDescription>{"שמירת תעריף החרגה לעובד הנבחר."}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="תעריף החרגה">
+              <Input
+                inputMode="decimal"
+                value={overrideForm.override_hourly_rate}
+                onChange={(event) =>
+                  setOverrideForm((current) => ({
+                    ...current,
+                    override_hourly_rate: event.target.value,
+                  }))
+                }
+              />
+            </Field>
+            <Field label="הערות">
+              <Input
+                value={overrideForm.notes}
+                onChange={(event) =>
+                  setOverrideForm((current) => ({ ...current, notes: event.target.value }))
+                }
+              />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOverrideDialogOpen(false)}>
+              {"ביטול"}
+            </Button>
+            <Button
+              onClick={() => {
+                saveOverride();
+                setOverrideDialogOpen(false);
+              }}
+              disabled={isPending}
+            >
+              {"שמירת החרגה"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={createUserOpen}
@@ -1916,6 +2117,16 @@ export default function SalaryCenterClient({
                 </select>
               </Field>
             ) : null}
+            <Field label="מחיר">
+              <Input
+                inputMode="decimal"
+                value={sessionForm.labor_cost}
+                onChange={(event) =>
+                  setSessionForm((current) => ({ ...current, labor_cost: event.target.value }))
+                }
+                placeholder="אופציונלי"
+              />
+            </Field>
             <Field label="חיוב לקוח">
               <select
                 value={sessionForm.is_billable_to_customer ? "yes" : "no"}
@@ -1988,6 +2199,15 @@ function SummaryCard({
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border bg-muted/10 p-3">
+      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className="mt-1 font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border bg-muted/10 p-3">
       <div className="text-sm text-muted-foreground">{label}</div>

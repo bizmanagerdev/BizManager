@@ -50,6 +50,20 @@ export default async function CustomersPage({
     .map((row) => rowId(row))
     .filter(Boolean);
 
+  const { data: customerRows, error: customerRowsError } = customerIds.length
+    ? await supabase
+        .from("customers")
+        .select("id,whatsapp")
+        .in("id", customerIds)
+    : { data: [], error: null };
+
+  const customerById = new Map<string, Row>();
+  ((customerRows ?? []) as Row[]).forEach((row) => {
+    const id = typeof row?.id === "string" ? row.id.trim() : "";
+    if (!id) return;
+    customerById.set(id, row);
+  });
+
   const { data: contactRows, error: contactsError } = customerIds.length
     ? await supabase
         .from("contacts")
@@ -70,10 +84,15 @@ export default async function CustomersPage({
 
   const rowsWithContacts = ((overviewRows ?? []) as Row[]).map((row) => {
     const id = rowId(row);
-    return { ...row, contacts: contactsByCustomerId.get(id) ?? [] };
+    const customer = customerById.get(id);
+    return {
+      ...row,
+      whatsapp: typeof customer?.whatsapp === "string" ? customer.whatsapp : null,
+      contacts: contactsByCustomerId.get(id) ?? [],
+    };
   });
 
-  const loadError = overviewError?.message ?? contactsError?.message ?? null;
+  const loadError = overviewError?.message ?? contactsError?.message ?? customerRowsError?.message ?? null;
   const totalCount = typeof count === "number" ? count : rowsWithContacts.length;
   const hasPreviousPage = page > 1;
   const hasNextPage = typeof count === "number" ? to + 1 < count : rowsWithContacts.length === PAGE_SIZE;

@@ -62,6 +62,7 @@ export type ProjectOverview = {
   project_manager_id: string | null;
   project_manager_name: string | null;
   notes: string | null;
+  items_to_move: string[] | null;
   created_at: string;
   updated_at: string;
 };
@@ -1456,7 +1457,7 @@ export default function ProjectTabsClient({
                   disabled={docsUploading}
                   onClick={() => setUploadDocsOpen(true)}
                 >
-                  {docsUploading ? "מעלה..." : "העלאה"}
+                  {docsUploading ? "מעלה..." : "העלאת קבצים/תמונות"}
                 </Button>
                 <div className="text-xs text-muted-foreground">
                   {filteredProjectDocuments.length} קבצים
@@ -1676,7 +1677,8 @@ export default function ProjectTabsClient({
                   accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
                   multiple
                   onFilesSelected={setUploadDocsFiles}
-                  chooseLabel="בחר קבצים"
+                  chooseLabel="בחר קבצים/תמונות"
+                  takePhotoLabel="צלם תמונה"
                 />
                 <div className="text-xs text-muted-foreground">{uploadDocsFiles.length} קבצים</div>
               </div>
@@ -1886,6 +1888,7 @@ export default function ProjectTabsClient({
         }}
         projectId={overview.id}
         projectType={overview.project_type}
+        projectStartDate={overview.start_date}
         users={assignableUsers.filter((user) => user.active !== false)}
         editingItem={editingExpense}
         onSaved={(saved) => {
@@ -1933,6 +1936,7 @@ export default function ProjectTabsClient({
         }}
         projectId={overview.id}
         projectType={overview.project_type}
+        projectStartDate={overview.start_date}
         editingPayment={editingPayment}
         onSaved={(saved) => {
           setPaymentsUi((prev) => {
@@ -2706,13 +2710,9 @@ export function projectTypeLabel(value: string) {
     case "logistics":
       return "\u05dc\u05d5\u05d2\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4";
     case "construction":
-      return "\u05d1\u05e0\u05d9\u05d9\u05d4";
+      return "\u05e9\u05d9\u05e4\u05d5\u05e6\u05d9\u05dd";
     case "moving":
       return "\u05d4\u05d5\u05d1\u05dc\u05d4";
-    case "other":
-      return "\u05d0\u05d7\u05e8";
-    case "home":
-      return "\u05d1\u05d9\u05ea";
     default:
       return value;
   }
@@ -2740,11 +2740,32 @@ function toLocalDateTimeValue(value: string | null | undefined) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function nowLocalDateTime(offsetMinutes = 0) {
-  const value = new Date();
-  value.setSeconds(0, 0);
-  value.setMinutes(value.getMinutes() + offsetMinutes);
-  return toLocalDateTimeValue(value.toISOString());
+function dateOnly(value: string | null | undefined) {
+  if (!value) return "";
+  const trimmed = value.trim();
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(trimmed);
+  return match ? match[1] : "";
+}
+
+function projectDateOrToday(projectStartDate: string | null | undefined) {
+  return dateOnly(projectStartDate) || new Date().toISOString().slice(0, 10);
+}
+
+function projectLocalDateTime(projectStartDate: string | null | undefined, offsetMinutes = 0) {
+  const baseDate = projectDateOrToday(projectStartDate);
+  const now = new Date();
+  const adjusted = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    now.getHours(),
+    now.getMinutes(),
+    0,
+    0
+  );
+  adjusted.setMinutes(adjusted.getMinutes() + offsetMinutes);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${baseDate}T${pad(adjusted.getHours())}:${pad(adjusted.getMinutes())}`;
 }
 
 function toIsoDateTime(value: string) {
@@ -2757,6 +2778,7 @@ function AddExpenseDialog({
   onOpenChange,
   projectId,
   projectType,
+  projectStartDate,
   users,
   editingItem,
   onSaved,
@@ -2765,11 +2787,11 @@ function AddExpenseDialog({
   onOpenChange: (open: boolean) => void;
   projectId: string;
   projectType: string;
+  projectStartDate: string | null;
   users: AssignableUser[];
   editingItem: ExpenseListItem | null;
   onSaved: (saved: ExpenseListItem) => void;
 }) {
-  const getTodayDate = () => new Date().toISOString().slice(0, 10);
   const editingExpense = editingItem?.expense ?? null;
   const editingSession = editingItem?.session ?? null;
   const isEditingSession = editingItem?.source_type === "session" && Boolean(editingSession);
@@ -2786,18 +2808,15 @@ function AddExpenseDialog({
   const [newWorkerOpen, setNewWorkerOpen] = useState(false);
   const [newWorkerSubmitting, setNewWorkerSubmitting] = useState(false);
   const [newWorkerName, setNewWorkerName] = useState("");
-  const [newWorkerEmail, setNewWorkerEmail] = useState("");
   const [newWorkerPhone, setNewWorkerPhone] = useState("");
-  const [newWorkerPassword, setNewWorkerPassword] = useState("");
-  const [newWorkerRole, setNewWorkerRole] = useState<"worker" | "worker_no_access">("worker_no_access");
-  const [newWorkerSystemAccess, setNewWorkerSystemAccess] = useState(false);
+  const [newWorkerRole, setNewWorkerRole] = useState<"worker_no_access">("worker_no_access");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [categoryOther, setCategoryOther] = useState("");
   const [description, setDescription] = useState("");
-  const [expenseDate, setExpenseDate] = useState(getTodayDate());
-  const [clockIn, setClockIn] = useState(nowLocalDateTime(-60));
-  const [clockOut, setClockOut] = useState(nowLocalDateTime());
+  const [expenseDate, setExpenseDate] = useState(projectDateOrToday(projectStartDate));
+  const [clockIn, setClockIn] = useState(projectLocalDateTime(projectStartDate, -60));
+  const [clockOut, setClockOut] = useState(projectLocalDateTime(projectStartDate));
   const [sessionUserId, setSessionUserId] = useState("");
   const [notes, setNotes] = useState("");
   const [billedToCustomer, setBilledToCustomer] = useState(false);
@@ -2805,6 +2824,10 @@ function AddExpenseDialog({
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [laborCost, setLaborCost] = useState("");
   const [laborCostTouched, setLaborCostTouched] = useState(false);
+  const [originalSessionUserId, setOriginalSessionUserId] = useState("");
+  const [originalClockInIso, setOriginalClockInIso] = useState("");
+  const [originalClockOutIso, setOriginalClockOutIso] = useState("");
+  const [originalLaborCost, setOriginalLaborCost] = useState("");
   const [sessionBillableToCustomer, setSessionBillableToCustomer] = useState(false);
   const [billToCustomerAmount, setBillToCustomerAmount] = useState("");
   const [billToCustomerAmountTouched, setBillToCustomerAmountTouched] = useState(false);
@@ -2820,8 +2843,7 @@ function AddExpenseDialog({
       ? Boolean(clockIn) &&
         Boolean(clockOut) &&
         Boolean(sessionUserId) &&
-        Number.isFinite(laborCostNumber) &&
-        laborCostNumber > 0 &&
+        (!laborCost.trim() || (Number.isFinite(laborCostNumber) && laborCostNumber > 0)) &&
         (!sessionBillableToCustomer ||
           (Number.isFinite(billToCustomerAmountNumber) && billToCustomerAmountNumber > 0)) &&
         Boolean(toIsoDateTime(clockIn)) &&
@@ -2867,11 +2889,9 @@ function AddExpenseDialog({
     : null;
   const sessionUserError = isSessionMode && !sessionUserId ? "יש לבחור עובד" : null;
   const laborCostError = isSessionMode
-    ? !laborCost.trim()
-      ? "שדה חובה"
-      : !Number.isFinite(laborCostNumber)
+    ? laborCost.trim() && !Number.isFinite(laborCostNumber)
         ? "חייב להיות מספר"
-        : laborCostNumber <= 0
+        : laborCost.trim() && laborCostNumber <= 0
           ? "חייב להיות גדול מ-0"
           : null
     : null;
@@ -2947,28 +2967,37 @@ function AddExpenseDialog({
     );
     setCategoryOther(isEditingSession ? "" : categoryIsPreset ? "" : rawCategory);
     setDescription(getString(editingExpense, "description") ?? "");
-    setExpenseDate(getString(editingExpense, "expense_date") ?? getTodayDate());
-    setClockIn(isEditingSession ? toLocalDateTimeValue(editingSession?.clock_in) : nowLocalDateTime(-60));
-    setClockOut(isEditingSession ? toLocalDateTimeValue(editingSession?.clock_out) : nowLocalDateTime());
+    setExpenseDate(getString(editingExpense, "expense_date") ?? projectDateOrToday(projectStartDate));
+    setClockIn(
+      isEditingSession
+        ? toLocalDateTimeValue(editingSession?.clock_in)
+        : projectLocalDateTime(projectStartDate, -60)
+    );
+    setClockOut(
+      isEditingSession
+        ? toLocalDateTimeValue(editingSession?.clock_out)
+        : projectLocalDateTime(projectStartDate)
+    );
     setSessionUsers(users);
     setSessionUserId(isEditingSession ? editingSession?.user_id ?? "" : users[0]?.id ?? "");
     setNewWorkerOpen(false);
     setNewWorkerSubmitting(false);
     setNewWorkerName("");
-    setNewWorkerEmail("");
     setNewWorkerPhone("");
-    setNewWorkerPassword("");
     setNewWorkerRole("worker_no_access");
-    setNewWorkerSystemAccess(false);
     setNotes(isEditingSession ? editingSession?.notes ?? "" : getString(editingExpense, "notes") ?? "");
     setBilledToCustomer(Boolean(editingItem?.project_expense?.["billed_to_customer"]));
     setAttachmentFiles([]);
     setExistingAttachments(Array.isArray(editingExpense?.attachments) ? (editingExpense.attachments as FinancialAttachment[]) : []);
-    setLaborCost(
+    const currentLaborCost =
       isEditingSession && toNumber(editingSession?.labor_cost) !== null
         ? String(toNumber(editingSession?.labor_cost))
-        : ""
-    );
+        : "";
+    setLaborCost(currentLaborCost);
+    setOriginalSessionUserId(isEditingSession ? editingSession?.user_id ?? "" : "");
+    setOriginalClockInIso(isEditingSession ? editingSession?.clock_in ?? "" : "");
+    setOriginalClockOutIso(isEditingSession ? editingSession?.clock_out ?? "" : "");
+    setOriginalLaborCost(currentLaborCost);
     setSessionBillableToCustomer(Boolean(editingSession?.is_billable_to_customer));
     setBillToCustomerAmount(
       isEditingSession && toNumber(editingSession?.bill_to_customer_amount) !== null
@@ -2976,7 +3005,7 @@ function AddExpenseDialog({
         : ""
     );
     movedAmountToNotesRef.current = false;
-  }, [open, editingExpense, editingItem, projectType, users, isEditingSession, editingSession]);
+  }, [open, editingExpense, editingItem, projectType, users, isEditingSession, editingSession, projectStartDate]);
 
   useEffect(() => {
     if (!isSessionMode) {
@@ -2993,16 +3022,9 @@ function AddExpenseDialog({
 
   async function createWorker() {
     const name = newWorkerName.trim();
-    const email = newWorkerEmail.trim();
     const phone = newWorkerPhone.trim();
-    const password = newWorkerPassword;
-    const requiresCredentials = newWorkerRole !== "worker_no_access" && newWorkerSystemAccess;
     if (!name || !phone) {
       toast.error("יש למלא שם וטלפון לעובד החדש");
-      return;
-    }
-    if (requiresCredentials && (!email || !password)) {
-      toast.error("יש למלא אימייל וסיסמה למשתמש עם גישה");
       return;
     }
 
@@ -3013,11 +3035,11 @@ function AddExpenseDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           full_name: name,
-          email: requiresCredentials ? email : null,
+          email: null,
           phone: phone || null,
-          password: requiresCredentials ? password : "",
+          password: "",
           role: newWorkerRole,
-          system_access: newWorkerRole === "worker_no_access" ? false : newWorkerSystemAccess,
+          system_access: false,
         }),
       });
       const json = await res.json();
@@ -3033,11 +3055,8 @@ function AddExpenseDialog({
       setSessionUserId(createdUser.id);
       setNewWorkerOpen(false);
       setNewWorkerName("");
-      setNewWorkerEmail("");
       setNewWorkerPhone("");
-      setNewWorkerPassword("");
       setNewWorkerRole("worker_no_access");
-      setNewWorkerSystemAccess(false);
       toast.success("העובד נוסף");
     } catch (e: unknown) {
       toast.error("שגיאה ביצירת עובד", {
@@ -3057,7 +3076,7 @@ function AddExpenseDialog({
       const clockOutIso = toIsoDateTime(clockOut);
       if (!clockInIso || !clockOutIso) return;
       if (!sessionUserId) return;
-      if (!Number.isFinite(laborCostNumber) || laborCostNumber <= 0) return;
+      if (laborCost.trim() && (!Number.isFinite(laborCostNumber) || laborCostNumber <= 0)) return;
       if (
         sessionBillableToCustomer &&
         (!Number.isFinite(billToCustomerAmountNumber) || billToCustomerAmountNumber <= 0)
@@ -3065,6 +3084,16 @@ function AddExpenseDialog({
         return;
       }
       if (new Date(clockOutIso) <= new Date(clockInIso)) return;
+
+      const laborCostInput = laborCost.trim();
+      const sessionTimingChanged =
+        isEditingSession &&
+        (sessionUserId !== originalSessionUserId ||
+          clockInIso !== originalClockInIso ||
+          clockOutIso !== originalClockOutIso);
+      const shouldAutoCalculateLaborCost =
+        !laborCostInput ||
+        (sessionTimingChanged && laborCostInput === originalLaborCost);
 
       setSubmitting(true);
       try {
@@ -3079,7 +3108,7 @@ function AddExpenseDialog({
             notes: notes.trim() ? notes : undefined,
             clock_in: clockInIso,
             clock_out: clockOutIso,
-            labor_cost: laborCostNumber,
+            labor_cost: shouldAutoCalculateLaborCost ? null : laborCostNumber,
             is_billable_to_customer: sessionBillableToCustomer,
             bill_to_customer_amount: sessionBillableToCustomer ? billToCustomerAmountNumber : undefined,
             billing_status: sessionBillableToCustomer ? "billable" : "not_billable",
@@ -3106,15 +3135,19 @@ function AddExpenseDialog({
         setCategory("");
         setCategoryOther("");
         setDescription("");
-        setExpenseDate(getTodayDate());
-        setClockIn(nowLocalDateTime(-60));
-        setClockOut(nowLocalDateTime());
+        setExpenseDate(projectDateOrToday(projectStartDate));
+        setClockIn(projectLocalDateTime(projectStartDate, -60));
+        setClockOut(projectLocalDateTime(projectStartDate));
         setSessionUserId(sessionUsers[0]?.id ?? users[0]?.id ?? "");
         setNotes("");
         setBilledToCustomer(false);
         setAttachmentFiles([]);
         setExistingAttachments([]);
         setLaborCost("");
+        setOriginalSessionUserId("");
+        setOriginalClockInIso("");
+        setOriginalClockOutIso("");
+        setOriginalLaborCost("");
         setSessionBillableToCustomer(false);
         setBillToCustomerAmount("");
         onSaved({
@@ -3168,7 +3201,7 @@ function AddExpenseDialog({
       setCategory("");
       setCategoryOther("");
       setDescription("");
-      setExpenseDate(getTodayDate());
+      setExpenseDate(projectDateOrToday(projectStartDate));
       setNotes("");
       setBilledToCustomer(false);
 
@@ -3296,49 +3329,8 @@ function AddExpenseDialog({
                     onChange={(e) => setNewWorkerPhone(e.target.value)}
                     placeholder="טלפון עובד"
                   />
-                  <select
-                    value={newWorkerRole}
-                    onChange={(e) => {
-                      const nextRole = e.target.value as "worker" | "worker_no_access";
-                      setNewWorkerRole(nextRole);
-                      if (nextRole === "worker_no_access") {
-                        setNewWorkerSystemAccess(false);
-                      }
-                    }}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="worker_no_access">עובד ללא גישה</option>
-                    <option value="worker">עובד עם גישה</option>
-                  </select>
-                  <select
-                    value={newWorkerSystemAccess ? "yes" : "no"}
-                    onChange={(e) => setNewWorkerSystemAccess(e.target.value === "yes")}
-                    disabled={newWorkerRole === "worker_no_access"}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="no">ללא גישה</option>
-                    <option value="yes">עם גישה</option>
-                  </select>
-                  {newWorkerRole !== "worker_no_access" && newWorkerSystemAccess ? (
-                    <>
-                      <Input
-                        type="email"
-                        value={newWorkerEmail}
-                        onChange={(e) => setNewWorkerEmail(e.target.value)}
-                        placeholder="אימייל עובד"
-                      />
-                      <Input
-                        type="password"
-                        value={newWorkerPassword}
-                        onChange={(e) => setNewWorkerPassword(e.target.value)}
-                        placeholder="סיסמה לעובד"
-                      />
-                    </>
-                  ) : null}
                   <div className="text-xs text-muted-foreground">
-                    {newWorkerRole === "worker_no_access" || !newWorkerSystemAccess
-                      ? "פועל בלי גישה ייווצר רק כרשומת עובד לשיוך שעות בפרויקט, בלי חשבון התחברות."
-                      : "עובד עם גישה ייווצר גם כחשבון התחברות וגם כרשומת עובד לשיוך שעות בפרויקט."}
+                    עובד חדש ייווצר כרשומת עובד בלבד, בלי גישה למערכת.
                   </div>
                   <div className="flex gap-2">
                     <Button
@@ -3348,9 +3340,7 @@ function AddExpenseDialog({
                       disabled={
                         newWorkerSubmitting ||
                         !newWorkerName.trim() ||
-                        !newWorkerPhone.trim() ||
-                        ((newWorkerRole !== "worker_no_access" && newWorkerSystemAccess) &&
-                          (!newWorkerEmail.trim() || !newWorkerPassword))
+                        !newWorkerPhone.trim()
                       }
                     >
                       {newWorkerSubmitting ? "שומר..." : "הוסף עובד"}
@@ -3363,11 +3353,8 @@ function AddExpenseDialog({
                       onClick={() => {
                         setNewWorkerOpen(false);
                         setNewWorkerName("");
-                        setNewWorkerEmail("");
                         setNewWorkerPhone("");
-                        setNewWorkerPassword("");
                         setNewWorkerRole("worker_no_access");
-                        setNewWorkerSystemAccess(false);
                       }}
                     >
                       ביטול
@@ -3397,30 +3384,7 @@ function AddExpenseDialog({
                   <div className="text-xs text-destructive">{clockInError}</div>
                 ) : null}
               </div>
-            ) : (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
-                <Input
-                  inputMode="numeric"
-                  value={amount}
-                  onChange={(e) => {
-                    setAmount(e.target.value);
-                    setAmountTouched(true);
-                  }}
-                  onBlur={() => setAmountTouched(true)}
-                  placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: 250"}
-                  aria-invalid={showAmountError}
-                  className={
-                    showAmountError
-                      ? "border-destructive focus-visible:ring-destructive"
-                      : ""
-                  }
-                />
-                {showAmountError ? (
-                  <div className="text-xs text-destructive">{amountError}</div>
-                ) : null}
-              </div>
-            )}
+            ) : null}
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4 *"}</div>
               <select
@@ -3449,6 +3413,30 @@ function AddExpenseDialog({
                 <div className="text-xs text-destructive">{categoryError}</div>
               ) : null}
             </div>
+            {!isSessionMode ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
+                <Input
+                  inputMode="numeric"
+                  value={amount}
+                  onChange={(e) => {
+                    setAmount(e.target.value);
+                    setAmountTouched(true);
+                  }}
+                  onBlur={() => setAmountTouched(true)}
+                  placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: 250"}
+                  aria-invalid={showAmountError}
+                  className={
+                    showAmountError
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  }
+                />
+                {showAmountError ? (
+                  <div className="text-xs text-destructive">{amountError}</div>
+                ) : null}
+              </div>
+            ) : null}
           </AdaptiveGrid>
 
           {category === OTHER_PROJECT_EXPENSE_CATEGORY ? (
@@ -3565,24 +3553,27 @@ function AddExpenseDialog({
 
           {isSessionMode ? (
             <div className="space-y-3 rounded-lg border p-3">
-              <AdaptiveGrid variant="formTwo">
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">עלות עבודה *</div>
-                  <Input
-                    inputMode="numeric"
-                    value={laborCost}
+                <AdaptiveGrid variant="formTwo">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">עלות עבודה</div>
+                    <Input
+                      inputMode="numeric"
+                      value={laborCost}
                     onChange={(e) => {
                       setLaborCost(e.target.value);
                       setLaborCostTouched(true);
                     }}
                     onBlur={() => setLaborCostTouched(true)}
                     placeholder="למשל 500"
-                    aria-invalid={showLaborCostError}
-                    className={showLaborCostError ? "border-destructive focus-visible:ring-destructive" : ""}
-                  />
-                  {showLaborCostError ? (
-                    <div className="text-xs text-destructive">{laborCostError}</div>
-                  ) : null}
+                      aria-invalid={showLaborCostError}
+                      className={showLaborCostError ? "border-destructive focus-visible:ring-destructive" : ""}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      אם משאירים ריק, העלות תחושב אוטומטית לפי הסכם השכר והשעות הנוספות.
+                    </div>
+                    {showLaborCostError ? (
+                      <div className="text-xs text-destructive">{laborCostError}</div>
+                    ) : null}
                 </div>
                 <div className="space-y-2 text-sm">
                   <label className="flex items-center gap-2 pt-7">
@@ -3741,6 +3732,7 @@ function AddIncomeDialog({
   onOpenChange,
   projectId,
   projectType,
+  projectStartDate,
   editingPayment,
   onSaved,
 }: {
@@ -3748,10 +3740,10 @@ function AddIncomeDialog({
   onOpenChange: (open: boolean) => void;
   projectId: string;
   projectType: string | null;
+  projectStartDate: string | null;
   editingPayment: PaymentRow | null;
   onSaved: (saved: PaymentRow) => void;
 }) {
-  const getTodayDate = () => new Date().toISOString().slice(0, 10);
   const isEditing = Boolean(editingPayment);
   const [submitting, setSubmitting] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -3759,7 +3751,7 @@ function AddIncomeDialog({
   const [paymentDateTouched, setPaymentDateTouched] = useState(false);
   const [paymentMethodTouched, setPaymentMethodTouched] = useState(false);
   const [amount, setAmount] = useState("");
-  const [paymentDate, setPaymentDate] = useState(getTodayDate());
+  const [paymentDate, setPaymentDate] = useState(projectDateOrToday(projectStartDate));
   const [paymentMethod, setPaymentMethod] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [requiresSplit, setRequiresSplit] = useState(false);
@@ -3817,7 +3809,7 @@ function AddIncomeDialog({
         ? String(toNumber(editingPayment.amount_total))
         : ""
     );
-    setPaymentDate(editingPayment?.payment_date ?? getTodayDate());
+    setPaymentDate(editingPayment?.payment_date ?? projectDateOrToday(projectStartDate));
     setPaymentMethod(editingPayment?.payment_method ?? "");
     setDueDate(editingPayment?.due_date ?? "");
     setRequiresSplit(Boolean(editingPayment?.requires_split));
@@ -3825,7 +3817,7 @@ function AddIncomeDialog({
     setNotes(editingPayment?.notes ?? "");
     setAttachmentFiles([]);
     setExistingAttachments(Array.isArray(editingPayment?.attachments) ? editingPayment.attachments : []);
-  }, [editingPayment, open]);
+  }, [editingPayment, open, projectStartDate]);
 
   async function submit() {
     setSubmitAttempted(true);
@@ -3882,7 +3874,7 @@ function AddIncomeDialog({
 
       toast.success(isEditing ? "ההכנסה עודכנה" : "ההכנסה נוספה");
       setAmount("");
-      setPaymentDate(getTodayDate());
+      setPaymentDate(projectDateOrToday(projectStartDate));
       setPaymentMethod("");
       setDueDate("");
       setRequiresSplit(false);

@@ -102,6 +102,7 @@ export default function CustomersClient({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
   const [city, setCity] = useState("");
   const [cityOther, setCityOther] = useState("");
   const [address, setAddress] = useState("");
@@ -116,6 +117,7 @@ export default function CustomersClient({
   const [editInvoiceName, setEditInvoiceName] = useState("");
   const [editReg, setEditReg] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [editWhatsapp, setEditWhatsapp] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editAddress, setEditAddress] = useState("");
   const [editNotes, setEditNotes] = useState("");
@@ -141,6 +143,7 @@ export default function CustomersClient({
       const hay = [
         s(row, "customer_name"),
         s(row, "phone"),
+        s(row, "whatsapp"),
         s(row, "email"),
         s(row, "address"),
       ]
@@ -173,6 +176,7 @@ export default function CustomersClient({
     setName("");
     setEmail("");
     setPhone("");
+    setWhatsapp("");
     setCity("");
     setCityOther("");
     setAddress("");
@@ -263,6 +267,7 @@ export default function CustomersClient({
         body: JSON.stringify({
           name: name.trim(),
           phone: phone.trim() || null,
+          whatsapp: whatsapp.trim() || null,
           email: email.trim() || null,
           city: finalCity,
           address: address.trim() || null,
@@ -279,6 +284,7 @@ export default function CustomersClient({
         name: s(customer, "name") || name.trim(),
         email: s(customer, "email") || email.trim(),
         phone: s(customer, "phone") || phone.trim(),
+        whatsapp: s(customer, "whatsapp") || whatsapp.trim(),
         address: s(customer, "address") || finalCity || address.trim(),
         active: customer.active !== false,
         orders_count: 0,
@@ -334,6 +340,7 @@ export default function CustomersClient({
     setEditInvoiceName(s(row, "name_for_invoice"));
     setEditReg(s(row, "registration_number"));
     setEditPhone(s(row, "phone"));
+    setEditWhatsapp(s(row, "whatsapp"));
     setEditEmail(s(row, "email"));
     setEditAddress(s(row, "address"));
     setEditNotes(s(row, "notes"));
@@ -357,6 +364,7 @@ export default function CustomersClient({
           name_for_invoice: editInvoiceName.trim() || null,
           registration_number: editReg.trim() || null,
           phone: editPhone.trim() || null,
+          whatsapp: editWhatsapp.trim() || null,
           email: editEmail.trim() || null,
           address: editAddress.trim() || null,
           notes: editNotes.trim() || null,
@@ -377,6 +385,7 @@ export default function CustomersClient({
                 name_for_invoice: s(u, "name_for_invoice"),
                 registration_number: s(u, "registration_number"),
                 phone: s(u, "phone"),
+                whatsapp: s(u, "whatsapp"),
                 email: s(u, "email"),
                 address: s(u, "address"),
                 notes: s(u, "notes"),
@@ -600,6 +609,9 @@ export default function CustomersClient({
         <Field label="טלפון">
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
         </Field>
+        <Field label="וואטסאפ">
+          <Input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
+        </Field>
         <Field label="אימייל">
           <Input value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
@@ -752,6 +764,9 @@ export default function CustomersClient({
         <AdaptiveGrid variant="formTwo">
           <Field label="טלפון">
             <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
+          </Field>
+          <Field label="וואטסאפ">
+            <Input value={editWhatsapp} onChange={(e) => setEditWhatsapp(e.target.value)} />
           </Field>
           <Field label="אימייל">
             <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
@@ -942,6 +957,9 @@ function CustomerDetailsDialog({
                 </div>
                 <div>
                   <span className="text-muted-foreground">כתובת:</span> {s(row, "address") || "-"}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">וואטסאפ:</span> {s(row, "whatsapp") || "-"}
                 </div>
                 <div>
                   <span className="text-muted-foreground">הזמנה אחרונה:</span>{" "}

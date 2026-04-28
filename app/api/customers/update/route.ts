@@ -7,6 +7,7 @@ type UpdateCustomerPayload = {
   name_for_invoice?: string | null;
   registration_number?: string | null;
   phone?: string | null;
+  whatsapp?: string | null;
   email?: string | null;
   address?: string | null;
   notes?: string | null;
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
         ? body.registration_number.trim()
         : null;
     const phone = typeof body.phone === "string" ? body.phone.trim() : null;
+    const whatsapp = typeof body.whatsapp === "string" ? body.whatsapp.trim() : null;
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const address = typeof body.address === "string" ? body.address.trim() : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
@@ -48,13 +50,14 @@ export async function POST(req: Request) {
         name_for_invoice: nameForInvoice || name,
         registration_number: registrationNumber,
         phone,
+        whatsapp,
         email: email || null,
         address,
         notes,
         active,
       })
       .eq("id", id)
-      .select("id,name,name_for_invoice,registration_number,phone,email,address,active,notes")
+      .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes")
       .maybeSingle();
 
     if (error) {

@@ -5,7 +5,6 @@ import SalaryCenterClient from "@/app/payroll/SalaryCenterClient";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import { collectLockedSessionIds, type SalaryCenterProjectOption, type SalaryCenterUserRow, type SessionPublicRow } from "@/lib/payroll-center";
 import type { PayrollPeriodRow } from "@/lib/payroll";
-import { isPayrollAdminPasswordConfigured, isPayrollAdminUnlocked } from "@/lib/payroll-admin-auth";
 
 type Row = Record<string, unknown>;
 
@@ -61,12 +60,9 @@ function mapOptions(rows: Row[] | null | undefined, labelKey: "name" | "address"
 export default async function PayrollPage() {
   const { profile, supabase } = await requireProfile();
 
-  if (!["admin", "office"].includes(profile.role)) {
+  if (profile.role !== "admin") {
     redirect("/no-access");
   }
-
-  const hasPasswordConfigured = profile.role === "admin" ? isPayrollAdminPasswordConfigured() : false;
-  const unlocked = profile.role === "admin" ? await isPayrollAdminUnlocked() : false;
 
   const [
     usersResult,
@@ -132,8 +128,8 @@ export default async function PayrollPage() {
             projectOptions={projectOptions}
             propertyOptions={propertyOptions}
             publicPeriods={periods}
-            initiallyUnlocked={unlocked}
-            hasPasswordConfigured={hasPasswordConfigured}
+            initiallyUnlocked
+            hasPasswordConfigured
           />
         )}
       </div>

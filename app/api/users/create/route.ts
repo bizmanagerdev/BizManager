@@ -73,22 +73,32 @@ export async function POST(req: Request) {
     }
 
     if (!systemAccess) {
-      const { data: insertedUser, error: insertUserError } = await supabase
-        .from("users")
-        .insert({
-          full_name: fullName,
-          email: email || null,
-          phone,
-          role,
-          active,
-          system_access: false,
-          auth_user_id: null,
-        })
-        .select("id,auth_user_id,full_name,email,phone,role,active,system_access")
-        .single();
+      const { data: insertedUserId, error: insertUserError } = await supabase.rpc(
+        "admin_upsert_user_profile",
+        {
+          p_user_id: null,
+          p_auth_user_id: null,
+          p_full_name: fullName,
+          p_email: email || null,
+          p_phone: phone,
+          p_role: role,
+          p_active: active,
+          p_system_access: false,
+        }
+      );
 
       if (insertUserError) {
         return NextResponse.json({ error: insertUserError.message }, { status: 400 });
+      }
+
+      const { data: insertedUser, error: insertedUserReadError } = await supabase
+        .from("users")
+        .select("id,auth_user_id,full_name,email,phone,role,active,system_access")
+        .eq("id", insertedUserId)
+        .maybeSingle();
+
+      if (insertedUserReadError) {
+        return NextResponse.json({ error: insertedUserReadError.message }, { status: 400 });
       }
 
       return NextResponse.json({ user: insertedUser });
@@ -124,27 +134,36 @@ export async function POST(req: Request) {
     let user: UserRow | null = null;
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
-      const { data, error } = await supabase
-        .from("users")
-        .update({
-          auth_user_id: signUpData.user?.id ?? null,
-          full_name: fullName,
-          phone,
-          role,
-          active,
-          system_access: systemAccess,
-        })
-        .eq("email", email)
-        .select("id,auth_user_id,full_name,email,phone,role,active,system_access")
-        .maybeSingle();
+      const { data: upsertedUserId, error } = await supabase.rpc("admin_upsert_user_profile", {
+        p_user_id: null,
+        p_auth_user_id: signUpData.user?.id ?? null,
+        p_full_name: fullName,
+        p_email: email,
+        p_phone: phone,
+        p_role: role,
+        p_active: active,
+        p_system_access: systemAccess,
+      });
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 400 });
       }
 
-      if (data?.id) {
-        user = data as UserRow;
-        break;
+      if (upsertedUserId) {
+        const { data, error: readError } = await supabase
+          .from("users")
+          .select("id,auth_user_id,full_name,email,phone,role,active,system_access")
+          .eq("id", upsertedUserId)
+          .maybeSingle();
+
+        if (readError) {
+          return NextResponse.json({ error: readError.message }, { status: 400 });
+        }
+
+        if (data?.id) {
+          user = data as UserRow;
+          break;
+        }
       }
 
       await new Promise((resolve) => setTimeout(resolve, 250));

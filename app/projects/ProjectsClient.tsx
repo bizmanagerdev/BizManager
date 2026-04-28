@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -45,7 +45,7 @@ type ContactDraft = {
 };
 
 const defaultStatusOptions = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
-const defaultProjectTypeOptions = ["logistics", "moving", "renovation"];
+const defaultProjectTypeOptions = ["logistics", "moving", "construction"];
 const cityOptions = [
   "ירושלים",
   "בני ברק",
@@ -78,6 +78,31 @@ function getNumber(row: ProjectRow, key: string) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function getStringArray(row: ProjectRow, key: string) {
+  const value = row[key];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isMovingProjectType(value: string) {
+  return value === "moving";
+}
+
+function itemsToMoveToText(items: string[] | null | undefined) {
+  return (items ?? []).join("\n");
+}
+
+function textToItemsToMove(value: string) {
+  const items = value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : null;
 }
 
 function formatIls(amount: number) {
@@ -128,7 +153,7 @@ function projectTypeLabel(value: string) {
       return "לוגיסטיקה";
     case "moving":
       return "הובלה";
-    case "renovation":
+    case "construction":
       return "שיפוצים";
     default:
       return value;
@@ -258,6 +283,7 @@ export default function ProjectsClient({
   const [createStartDate, setCreateStartDate] = useState(todayIso());
   const [createEndDate, setCreateEndDate] = useState(oneMonthFrom(todayIso()));
   const [createNotes, setCreateNotes] = useState("");
+  const [createItemsToMove, setCreateItemsToMove] = useState("");
 
   const [customerOptionsState, setCustomerOptionsState] = useState<Option[]>(customerOptions);
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
@@ -286,6 +312,7 @@ export default function ProjectsClient({
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editItemsToMove, setEditItemsToMove] = useState("");
   const [approveQuoteOpen, setApproveQuoteOpen] = useState(false);
   const [approveQuoteSubmitting, setApproveQuoteSubmitting] = useState(false);
   const [approveQuoteError, setApproveQuoteError] = useState<string | null>(null);
@@ -407,11 +434,11 @@ export default function ProjectsClient({
     return tab === "quotes" ? "quote" : "planned";
   }
 
-  function openCreateDialog(nextTab: ProjectsView = activeTab) {
+  const openCreateDialog = useCallback((nextTab: ProjectsView = activeTab) => {
     setCreateError(null);
     setCreateStatus(defaultCreateStatusForTab(nextTab));
     setCreateOpen(true);
-  }
+  }, [activeTab]);
 
   useEffect(() => {
     if (prefillHandled.current) return;
@@ -429,7 +456,7 @@ export default function ProjectsClient({
     }
 
     prefillHandled.current = true;
-  }, [activeTab, customerOptionsState, searchParams]);
+  }, [activeTab, customerOptionsState, openCreateDialog, searchParams]);
 
   function resetCreateCustomerForm() {
     setCreateCustomerName("");
@@ -648,6 +675,7 @@ export default function ProjectsClient({
           start_date: createStartDate || null,
           end_date: createEndDate || null,
           notes: createNotes.trim() || null,
+          items_to_move: textToItemsToMove(createItemsToMove),
         }),
       });
 
@@ -679,6 +707,7 @@ export default function ProjectsClient({
       setCreateStartDate(now);
       setCreateEndDate(oneMonthFrom(now));
       setCreateNotes("");
+      setCreateItemsToMove("");
       router.refresh();
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "שגיאה לא ידועה";
@@ -701,6 +730,7 @@ export default function ProjectsClient({
     setEditStartDate(getString(row, "start_date") ?? "");
     setEditEndDate(getString(row, "end_date") ?? "");
     setEditNotes(getString(row, "notes") ?? "");
+    setEditItemsToMove(itemsToMoveToText(getStringArray(row, "items_to_move")));
     setEditOpen(true);
   }
 
@@ -746,6 +776,7 @@ export default function ProjectsClient({
           start_date: editStartDate || null,
           end_date: editEndDate || null,
           notes: editNotes.trim() || null,
+          items_to_move: textToItemsToMove(editItemsToMove),
         }),
       });
 
@@ -1372,6 +1403,21 @@ export default function ProjectsClient({
               <Textarea value={createNotes} onChange={(e) => setCreateNotes(e.target.value)} rows={4} />
             </div>
 
+            {isMovingProjectType(createProjectType) ? (
+              <div className="space-y-1">
+                <label className="text-sm font-medium">פריטים להעברה</label>
+                <Textarea
+                  value={createItemsToMove}
+                  onChange={(e) => setCreateItemsToMove(e.target.value)}
+                  rows={5}
+                  placeholder="כל פריט בשורה נפרדת"
+                />
+                <p className="text-xs text-muted-foreground">
+                  אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.
+                </p>
+              </div>
+            ) : null}
+
             {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
 
             <DialogFooter>
@@ -1505,6 +1551,21 @@ export default function ProjectsClient({
               <label className="text-sm font-medium">הערות</label>
               <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={3} />
             </div>
+
+            {isMovingProjectType(editProjectType) ? (
+              <div className="space-y-1">
+                <label className="text-sm font-medium">פריטים להעברה</label>
+                <Textarea
+                  value={editItemsToMove}
+                  onChange={(e) => setEditItemsToMove(e.target.value)}
+                  rows={5}
+                  placeholder="כל פריט בשורה נפרדת"
+                />
+                <p className="text-xs text-muted-foreground">
+                  אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.
+                </p>
+              </div>
+            ) : null}
 
             {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
 

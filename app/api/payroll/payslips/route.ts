@@ -6,7 +6,6 @@ import {
   type SalaryCenterUserRow,
 } from "@/lib/payroll-center";
 import type { PayrollPeriodRow } from "@/lib/payroll";
-import { isPayrollAdminPasswordConfigured, isPayrollAdminUnlocked } from "@/lib/payroll-admin-auth";
 
 type PayslipPayload = {
   action?: string;
@@ -27,17 +26,6 @@ export async function POST(req: Request) {
   try {
     const access = await requireRouteAccess({ allowedRoles: ["admin"] });
     if (!access.ok) return access.response;
-
-    if (!isPayrollAdminPasswordConfigured()) {
-      return NextResponse.json(
-        { error: "Salary area password is not configured on the server." },
-        { status: 500 }
-      );
-    }
-
-    if (!(await isPayrollAdminUnlocked())) {
-      return NextResponse.json({ error: "Salary area is locked." }, { status: 403 });
-    }
 
     const body = (await req.json().catch(() => ({}))) as PayslipPayload;
     const action = typeof body.action === "string" ? body.action.trim() : "";

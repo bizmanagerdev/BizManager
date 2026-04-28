@@ -3,6 +3,9 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 type UpdateWorkerPayload = {
   user_id?: string;
+  full_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
   role?: string;
   active?: boolean;
   system_access?: boolean;
@@ -10,11 +13,14 @@ type UpdateWorkerPayload = {
 
 export async function POST(req: Request) {
   try {
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    const access = await requireRouteAccess({ allowedRoles: ["admin"] });
     if (!access.ok) return access.response;
 
     const body = (await req.json().catch(() => ({}))) as UpdateWorkerPayload;
     const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
+    const fullName = typeof body.full_name === "string" ? body.full_name.trim() : "";
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    const phone = typeof body.phone === "string" ? body.phone.trim() : "";
     const role =
       body.role === "admin" ||
       body.role === "office" ||
@@ -32,11 +38,17 @@ export async function POST(req: Request) {
     if (!role) {
       return NextResponse.json({ error: "Role must be admin, office, worker or worker_no_access." }, { status: 400 });
     }
+    if (!fullName) {
+      return NextResponse.json({ error: "Full name is required." }, { status: 400 });
+    }
 
     const { supabase } = access.value;
     const result = await supabase
       .from("users")
       .update({
+        full_name: fullName,
+        email: email || null,
+        phone: phone || null,
         role,
         active,
         system_access: systemAccess,

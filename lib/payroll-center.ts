@@ -223,6 +223,93 @@ export function resolveSessionLaborCost(
   return toNumber(calculateSessionLaborCost(agreement, workedMinutes));
 }
 
+export function calculateSessionLaborCostFromRules(
+  session: Pick<WorkSessionRow, "worked_minutes" | "clock_in" | "clock_out">,
+  agreement: SalaryAgreementRow | null,
+  override: HourlySalaryOverrideRow | null
+) {
+  const workedMinutes = sessionWorkedMinutes(session);
+  if (workedMinutes <= 0 || !agreement) return 0;
+
+  if (agreement.salary_type === "hourly" && override && toNumber(override.override_hourly_rate) > 0) {
+    return Math.round(((toNumber(override.override_hourly_rate) * workedMinutes) / 60) * 100) / 100;
+  }
+
+  return toNumber(calculateSessionLaborCost(agreement, workedMinutes));
+}
+
+function sessionDateKey(clockIn: string) {
+  const date = new Date(clockIn);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function calculateSessionLaborCostsByDay(
+  sessions: Array<Pick<WorkSessionRow, "id" | "worked_minutes" | "clock_in" | "clock_out">>,
+  agreements: SalaryAgreementRow[],
+  override: HourlySalaryOverrideRow | null
+) {
+  const costsById = new Map<string, number>();
+  const sessionsByDay = new Map<string, Array<Pick<WorkSessionRow, "id" | "worked_minutes" | "clock_in" | "clock_out">>>();
+
+  sessions.forEach((session) => {
+    if (!session.clock_out) {
+      costsById.set(session.id, 0);
+      return;
+    }
+    const key = sessionDateKey(session.clock_in);
+    const list = sessionsByDay.get(key) ?? [];
+    list.push(session);
+    sessionsByDay.set(key, list);
+  });
+
+  sessionsByDay.forEach((daySessions) => {
+    const orderedSessions = [...daySessions].sort((a, b) => a.clock_in.localeCompare(b.clock_in));
+    let accumulatedMinutes = 0;
+
+    orderedSessions.forEach((session) => {
+      const agreement = getCurrentSalaryAgreement(agreements, new Date(session.clock_in));
+      const workedMinutes = sessionWorkedMinutes(session);
+      if (!agreement || workedMinutes <= 0) {
+        costsById.set(session.id, 0);
+        return;
+      }
+
+      if (agreement.salary_type === "hourly") {
+        const overrideRate = toNumber(override?.override_hourly_rate);
+        if (override && overrideRate > 0) {
+          costsById.set(session.id, Math.round(((overrideRate * workedMinutes) / 60) * 100) / 100);
+          accumulatedMinutes += workedMinutes;
+          return;
+        }
+
+        const hourlyRate = toNumber(agreement.hourly_rate);
+        const standardDailyHours = Math.max(0, toNumber(agreement.standard_daily_hours));
+        const standardMinutes = standardDailyHours * 60;
+        const overtimeRate = toNumber(agreement.overtime_rate);
+        const effectiveOvertimeRate = overtimeRate > 0 ? overtimeRate : hourlyRate;
+        const regularRemaining = Math.max(0, standardMinutes - accumulatedMinutes);
+        const regularMinutes = Math.min(workedMinutes, regularRemaining);
+        const overtimeMinutes = Math.max(0, workedMinutes - regularMinutes);
+        costsById.set(
+          session.id,
+          Math.round((((hourlyRate * regularMinutes) + (effectiveOvertimeRate * overtimeMinutes)) / 60) * 100) / 100
+        );
+        accumulatedMinutes += workedMinutes;
+        return;
+      }
+
+      costsById.set(session.id, toNumber(calculateSessionLaborCost(agreement, workedMinutes)));
+      accumulatedMinutes += workedMinutes;
+    });
+  });
+
+  return costsById;
+}
+
 export function buildPeriodBounds(periodMonth: string) {
   const [yearText, monthText] = periodMonth.split("-");
   const year = Number(yearText);
@@ -497,4 +584,113 @@ export async function generatePayslipsForPeriod(
   }
 
   return { payslips: createdOrUpdated };
+}
+
+export async function regenerateEditablePayslipsForUsers(
+  supabase: SupabaseLike,
+  userIds: string[]
+) {
+  const safeUserIds = [...new Set(userIds.filter(Boolean))];
+  if (safeUserIds.length === 0) return;
+
+  const [periodsResult, usersResult] = await Promise.all([
+    query(supabase.from("payroll_periods"))
+      .select("id,period_month,start_date,end_date,status")
+      .order("period_month", { ascending: false })
+      .range(0, 119),
+    query(supabase.from("users"))
+      .select("id,full_name,email,phone,role,active,system_access")
+      .in("id", safeUserIds)
+      .range(0, 999),
+  ]);
+
+  if (periodsResult.error) throw new Error(periodsResult.error.message);
+  if (usersResult.error) throw new Error(usersResult.error.message);
+
+  const periods = ((periodsResult.data ?? []) as PayrollPeriodRow[]).filter((period) =>
+    isPayrollPeriodEditable(period.status)
+  );
+  const users = (usersResult.data ?? []) as SalaryCenterUserRow[];
+
+  for (const period of periods) {
+    for (const userId of safeUserIds) {
+      await generatePayslipsForPeriod(supabase, period, users, userId);
+    }
+  }
+}
+
+export async function recalculateUserSessionCostsFromRules(
+  supabase: SupabaseLike,
+  userId: string,
+  options?: {
+    fromDate?: string | null;
+  }
+) {
+  const safeUserId = userId.trim();
+  if (!safeUserId) return;
+
+  const [periodsResult, sessionsResult, agreementsResult, overridesResult] = await Promise.all([
+    query(supabase.from("payroll_periods"))
+      .select("id,period_month,start_date,end_date,status")
+      .order("period_month", { ascending: false })
+      .range(0, 119),
+    query(supabase.from("attendance_sessions"))
+      .select(
+        "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+      )
+      .eq("user_id", safeUserId)
+      .order("clock_in", { ascending: false })
+      .range(0, 4999),
+    query(supabase.from("salary_agreements"))
+      .select(
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+      )
+      .eq("user_id", safeUserId)
+      .order("valid_from", { ascending: false }),
+    query(supabase.from("hourly_salary_overrides"))
+      .select("id,user_id,override_hourly_rate,notes,created_at,updated_at")
+      .eq("user_id", safeUserId)
+      .order("created_at", { ascending: false })
+      .range(0, 50),
+  ]);
+
+  if (periodsResult.error) throw new Error(periodsResult.error.message);
+  if (sessionsResult.error) throw new Error(sessionsResult.error.message);
+  if (agreementsResult.error) throw new Error(agreementsResult.error.message);
+  if (overridesResult.error) throw new Error(overridesResult.error.message);
+
+  const sessions = (sessionsResult.data ?? []) as WorkSessionRow[];
+  const periods = (periodsResult.data ?? []) as PayrollPeriodRow[];
+  const agreements = (agreementsResult.data ?? []) as SalaryAgreementRow[];
+  const overrides = (overridesResult.data ?? []) as HourlySalaryOverrideRow[];
+  const latestOverride = getLatestHourlyOverride(overrides, safeUserId);
+  const lockedIds = collectLockedSessionIds(sessions, periods);
+  const fromDate = options?.fromDate?.trim() ? new Date(`${options.fromDate!.trim()}T00:00:00`) : null;
+  const fromTime = fromDate && !Number.isNaN(fromDate.getTime()) ? fromDate.getTime() : null;
+  const calculatedCosts = calculateSessionLaborCostsByDay(
+    sessions.filter((session) => !lockedIds.has(session.id)),
+    agreements,
+    latestOverride
+  );
+
+  for (const session of sessions) {
+    if (lockedIds.has(session.id) || !session.clock_out) continue;
+    if (fromTime !== null) {
+      const sessionTime = new Date(session.clock_in).getTime();
+      if (!Number.isFinite(sessionTime) || sessionTime < fromTime) continue;
+    }
+
+    const nextLaborCost = calculatedCosts.get(session.id) ?? 0;
+    if (Math.abs(toNumber(session.labor_cost) - nextLaborCost) < 0.005) continue;
+
+    const updateResult = await query(supabase.from("attendance_sessions"))
+      .update({ labor_cost: nextLaborCost })
+      .eq("id", session.id)
+      .select("id")
+      .maybeSingle();
+
+    if (updateResult.error) throw new Error(updateResult.error.message);
+  }
+
+  await regenerateEditablePayslipsForUsers(supabase, [safeUserId]);
 }

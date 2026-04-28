@@ -4,6 +4,7 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 type CreateCustomerPayload = {
   name?: string;
   phone?: string | null;
+  whatsapp?: string | null;
   email?: string | null;
   city?: string | null;
   address?: string | null;
@@ -17,6 +18,7 @@ export async function POST(req: Request) {
 
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const phone = typeof body.phone === "string" ? body.phone.trim() : null;
+    const whatsapp = typeof body.whatsapp === "string" ? body.whatsapp.trim() : null;
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const city = typeof body.city === "string" ? body.city.trim() : "";
     const address = typeof body.address === "string" ? body.address.trim() : "";
@@ -45,12 +47,13 @@ export async function POST(req: Request) {
         name_for_invoice: name,
         registration_number: registrationNumber,
         phone,
+        whatsapp,
         email: email || null,
         address: fullAddress || null,
         active: true,
         notes,
       })
-      .select("id,name,name_for_invoice,registration_number,phone,email,address,active,notes")
+      .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes")
       .maybeSingle();
 
     if (error) {

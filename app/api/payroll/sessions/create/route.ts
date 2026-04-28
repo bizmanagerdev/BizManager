@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import {
-  calculateSessionLaborCost,
-  getCurrentSalaryAgreement,
   minutesBetween,
-  type SalaryAgreementRow,
   WORK_SESSIONS_TABLE,
 } from "@/lib/payroll";
 
@@ -43,7 +41,7 @@ function overlaps(start: string, end: string, otherStart: string, otherEnd: stri
 
 export async function POST(req: Request) {
   try {
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    const access = await requireRouteAccess({ allowedRoles: ["admin"] });
     if (!access.ok) return access.response;
 
     const body = (await req.json().catch(() => ({}))) as CreatePayrollSessionPayload;
@@ -145,27 +143,6 @@ export async function POST(req: Request) {
     }
 
     const workedMinutes = minutesBetween(clockIn, clockOut);
-    let resolvedLaborCost = requestedLaborCost;
-
-    if (resolvedLaborCost === null) {
-      const { data: agreementRows, error: agreementsError } = await supabase
-        .from("salary_agreements")
-        .select(
-          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
-        )
-        .eq("user_id", selectedUserId)
-        .order("valid_from", { ascending: false });
-
-      if (agreementsError) {
-        return NextResponse.json({ error: agreementsError.message }, { status: 400 });
-      }
-
-      const currentAgreement = getCurrentSalaryAgreement(
-        ((agreementRows ?? []) as SalaryAgreementRow[]),
-        new Date(clockIn)
-      );
-      resolvedLaborCost = calculateSessionLaborCost(currentAgreement, workedMinutes);
-    }
 
     const { data, error } = await supabase
       .from(WORK_SESSIONS_TABLE)
@@ -174,7 +151,7 @@ export async function POST(req: Request) {
         clock_in: clockIn,
         clock_out: clockOut,
         worked_minutes: workedMinutes,
-        labor_cost: resolvedLaborCost,
+        labor_cost: requestedLaborCost,
         notes: notes || null,
         business_domain: businessDomain,
         project_id: businessDomain === "logistics_projects" ? projectId : null,
@@ -188,6 +165,25 @@ export async function POST(req: Request) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
+
+    if (requestedLaborCost === null) {
+      await recalculateUserSessionCostsFromRules(supabase, selectedUserId, {
+        fromDate: clockIn.slice(0, 10),
+      });
+      const refreshed = await supabase
+        .from(WORK_SESSIONS_TABLE)
+        .select(
+          "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+        )
+        .eq("id", data?.id ?? "")
+        .maybeSingle();
+      if (refreshed.error) {
+        return NextResponse.json({ error: refreshed.error.message }, { status: 400 });
+      }
+      return NextResponse.json({ session: refreshed.data });
+    }
+
+    await regenerateEditablePayslipsForUsers(supabase, [selectedUserId]);
 
     return NextResponse.json({ session: data });
   } catch (error: unknown) {

@@ -94,7 +94,7 @@ const HEBREW = {
   projectType: "\u05e1\u05d5\u05d2 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
   logistics: "\u05dc\u05d5\u05d2\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4",
   moving: "\u05d4\u05d5\u05d1\u05dc\u05d4",
-  renovation: "\u05e9\u05d9\u05e4\u05d5\u05e6\u05d9\u05dd",
+  construction: "\u05e9\u05d9\u05e4\u05d5\u05e6\u05d9\u05dd",
   status: "\u05e1\u05d8\u05d8\u05d5\u05e1",
   statusPlanned: "\u05de\u05ea\u05d5\u05db\u05e0\u05df",
   statusActive: "\u05e4\u05e2\u05d9\u05dc",
@@ -657,7 +657,7 @@ export default function DashboardActions({
                 >
                   <option value="logistics">{HEBREW.logistics}</option>
                   <option value="moving">{HEBREW.moving}</option>
-                  <option value="renovation">{HEBREW.renovation}</option>
+                  <option value="construction">{HEBREW.construction}</option>
                 </select>
               </label>
 

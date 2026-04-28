@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { collectLockedSessionIds } from "@/lib/payroll-center";
+import { collectLockedSessionIds, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import type { PayrollPeriodRow } from "@/lib/payroll";
 import { WORK_SESSIONS_TABLE } from "@/lib/payroll";
 
 export async function POST(req: Request) {
   try {
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    const access = await requireRouteAccess({ allowedRoles: ["admin"] });
     if (!access.ok) return access.response;
 
     const body = (await req.json().catch(() => ({}))) as { session_id?: string };
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
     const { supabase } = access.value;
     const [sessionResult, periodsResult] = await Promise.all([
-      supabase.from(WORK_SESSIONS_TABLE).select("id,clock_in").eq("id", sessionId).maybeSingle(),
+      supabase.from(WORK_SESSIONS_TABLE).select("id,user_id,clock_in").eq("id", sessionId).maybeSingle(),
       supabase.from("payroll_periods").select("id,period_month,start_date,end_date,status").range(0, 119),
     ]);
 
@@ -34,6 +34,8 @@ export async function POST(req: Request) {
     if (deleteResult.error) {
       return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
     }
+
+    await regenerateEditablePayslipsForUsers(supabase, [sessionResult.data.user_id ?? ""]);
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {

@@ -1,23 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { fetchSalaryCenterProtectedPayload, isSalaryTrackedWorker } from "@/lib/payroll-center";
-import { isPayrollAdminPasswordConfigured, isPayrollAdminUnlocked } from "@/lib/payroll-admin-auth";
 
 export async function GET() {
   try {
     const access = await requireRouteAccess({ allowedRoles: ["admin"] });
     if (!access.ok) return access.response;
-
-    if (!isPayrollAdminPasswordConfigured()) {
-      return NextResponse.json(
-        { error: "Salary area password is not configured on the server." },
-        { status: 500 }
-      );
-    }
-
-    if (!(await isPayrollAdminUnlocked())) {
-      return NextResponse.json({ error: "Salary area is locked." }, { status: 403 });
-    }
 
     const { supabase } = access.value;
     const usersResult = await supabase

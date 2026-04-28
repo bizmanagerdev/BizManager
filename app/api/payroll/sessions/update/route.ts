@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
-import { collectLockedSessionIds } from "@/lib/payroll-center";
+import { collectLockedSessionIds, recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import {
-  calculateSessionLaborCost,
-  getCurrentSalaryAgreement,
   minutesBetween,
   type PayrollPeriodRow,
-  type SalaryAgreementRow,
   WORK_SESSIONS_TABLE,
 } from "@/lib/payroll";
-import { isPayrollAdminUnlocked } from "@/lib/payroll-admin-auth";
 
 type UpdateSessionPayload = {
   session_id?: string;
@@ -45,7 +41,7 @@ function overlaps(start: string, end: string | null, otherStart: string, otherEn
 
 export async function POST(req: Request) {
   try {
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    const access = await requireRouteAccess({ allowedRoles: ["admin"] });
     if (!access.ok) return access.response;
 
     const body = (await req.json().catch(() => ({}))) as UpdateSessionPayload;
@@ -127,33 +123,14 @@ export async function POST(req: Request) {
     }
 
     let laborCost = sessionResult.data.labor_cost;
-    if (requestedLaborCost !== null || recalculateLaborCost) {
-      if (access.value.profile.role !== "admin" || !(await isPayrollAdminUnlocked())) {
-        return NextResponse.json({ error: "Salary area must be unlocked to change labor cost." }, { status: 403 });
-      }
-
-      if (requestedLaborCost !== null) {
-        laborCost = requestedLaborCost;
-      } else if (clockOut) {
-        const agreementsResult = await supabase
-          .from("salary_agreements")
-          .select(
-            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
-          )
-          .eq("user_id", userId)
-          .order("valid_from", { ascending: false });
-
-        if (agreementsResult.error) {
-          return NextResponse.json({ error: agreementsResult.error.message }, { status: 400 });
-        }
-
-        const agreement = getCurrentSalaryAgreement(
-          ((agreementsResult.data ?? []) as SalaryAgreementRow[]),
-          new Date(clockIn)
-        );
-        laborCost = calculateSessionLaborCost(agreement, minutesBetween(clockIn, clockOut));
-      }
+    if (requestedLaborCost !== null) {
+      laborCost = requestedLaborCost;
+    } else if (recalculateLaborCost) {
+      laborCost = null;
     }
+
+    const previousUserId = sessionResult.data.user_id;
+    const previousClockIn = sessionResult.data.clock_in;
 
     const updateResult = await supabase
       .from(WORK_SESSIONS_TABLE)
@@ -180,6 +157,34 @@ export async function POST(req: Request) {
     if (updateResult.error) {
       return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
     }
+
+    if ((requestedLaborCost === null && clockOut) || recalculateLaborCost) {
+      await recalculateUserSessionCostsFromRules(supabase, userId, {
+        fromDate: clockIn.slice(0, 10),
+      });
+      if (previousUserId && previousUserId !== userId) {
+        await recalculateUserSessionCostsFromRules(supabase, previousUserId, {
+          fromDate: previousClockIn.slice(0, 10),
+        });
+      } else if (previousClockIn.slice(0, 10) !== clockIn.slice(0, 10)) {
+        await recalculateUserSessionCostsFromRules(supabase, previousUserId, {
+          fromDate: previousClockIn.slice(0, 10),
+        });
+      }
+      const refreshed = await supabase
+        .from(WORK_SESSIONS_TABLE)
+        .select(
+          "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+        )
+        .eq("id", sessionId)
+        .maybeSingle();
+      if (refreshed.error) {
+        return NextResponse.json({ error: refreshed.error.message }, { status: 400 });
+      }
+      return NextResponse.json({ session: refreshed.data });
+    }
+
+    await regenerateEditablePayslipsForUsers(supabase, [previousUserId, userId]);
 
     return NextResponse.json({ session: updateResult.data });
   } catch (error: unknown) {

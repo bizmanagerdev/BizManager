@@ -34,10 +34,27 @@ type ProjectDetails = {
   start_date: string | null;
   end_date: string | null;
   notes: string | null;
+  items_to_move: string[] | null;
 };
 
 const defaultStatusOptions = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
-const defaultProjectTypeOptions = ["logistics", "construction", "moving", "other", "home"];
+const defaultProjectTypeOptions = ["logistics", "moving", "construction"];
+
+function isMovingProjectType(value: string) {
+  return value === "moving";
+}
+
+function itemsToMoveToText(items: string[] | null | undefined) {
+  return (items ?? []).join("\n");
+}
+
+function textToItemsToMove(value: string) {
+  const items = value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : null;
+}
 
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
@@ -72,7 +89,7 @@ function projectTypeLabel(value: string) {
     case "logistics":
       return "לוגיסטיקה";
     case "construction":
-      return "בנייה";
+      return "שיפוצים";
     case "moving":
       return "הובלה";
     case "other":
@@ -111,6 +128,7 @@ export default function ProjectDetailsActions({
   const [editStartDate, setEditStartDate] = useState(project.start_date ?? "");
   const [editEndDate, setEditEndDate] = useState(project.end_date ?? "");
   const [editNotes, setEditNotes] = useState(project.notes ?? "");
+  const [editItemsToMove, setEditItemsToMove] = useState(itemsToMoveToText(project.items_to_move));
 
   const mergedCustomerOptions = useMemo(() => {
     const selectedMissing =
@@ -152,6 +170,7 @@ export default function ProjectDetailsActions({
           start_date: editStartDate || null,
           end_date: editEndDate || null,
           notes: editNotes.trim() || null,
+          items_to_move: textToItemsToMove(editItemsToMove),
         }),
       });
 
@@ -321,6 +340,21 @@ export default function ProjectDetailsActions({
                 rows={3}
               />
             </div>
+
+            {isMovingProjectType(editProjectType) ? (
+              <div className="space-y-1">
+                <label className="text-sm font-medium">פריטים להעברה</label>
+                <Textarea
+                  value={editItemsToMove}
+                  onChange={(event) => setEditItemsToMove(event.target.value)}
+                  rows={5}
+                  placeholder="כל פריט בשורה נפרדת"
+                />
+                <div className="text-xs text-muted-foreground">
+                  אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.
+                </div>
+              </div>
+            ) : null}
 
             {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
 

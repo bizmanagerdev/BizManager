@@ -81,13 +81,9 @@ function projectTypeLabel(type: string | null | undefined) {
     case "logistics":
       return "לוגיסטיקה";
     case "construction":
-      return "בנייה";
+      return "שיפוצים";
     case "moving":
       return "הובלה";
-    case "home":
-      return "בית";
-    case "other":
-      return "אחר";
     default:
       return type ?? "לא הוגדר";
   }
@@ -128,12 +124,21 @@ export default async function ProjectPage({
       "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,expenses_billed_separately,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at"
     )
     .eq("id", id)
-    .maybeSingle<Omit<ProjectOverview, "notes">>();
+    .maybeSingle<Omit<ProjectOverview, "notes" | "items_to_move">>();
+
+  const { data: projectDetailsRaw } = await supabase
+    .from("projects")
+    .select("id,notes,items_to_move")
+    .eq("id", id)
+    .maybeSingle<{ id: string; notes: string | null; items_to_move: string[] | null }>();
 
   const overview: ProjectOverview | null = overviewRaw
     ? {
         ...overviewRaw,
-        notes: null,
+        notes: typeof projectDetailsRaw?.notes === "string" ? projectDetailsRaw.notes : null,
+        items_to_move: Array.isArray(projectDetailsRaw?.items_to_move)
+          ? projectDetailsRaw.items_to_move.filter((item): item is string => typeof item === "string")
+          : null,
       }
     : null;
 
@@ -481,6 +486,7 @@ export default async function ProjectPage({
   const endDate = typeof overview?.end_date === "string" ? overview.end_date : null;
   const projectType =
     typeof overview?.project_type === "string" ? overview.project_type : null;
+  const itemsToMove = Array.isArray(overview?.items_to_move) ? overview.items_to_move : [];
   const grossProfit = financials?.gross_profit ?? null;
   const openTasks =
     typeof tasks?.open_tasks === "number" || typeof tasks?.open_tasks === "string" ? tasks.open_tasks : 0;
@@ -572,6 +578,20 @@ export default async function ProjectPage({
                   <div className="text-xs font-medium text-muted-foreground">מנהל פרויקט:</div>
                   <div className="font-medium">{managerName || "לא הוגדר"}</div>
                 </div>
+                {projectType === "moving" ? (
+                  <div className="min-w-[16rem] space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">פריטים להעברה:</div>
+                    {itemsToMove.length > 0 ? (
+                      <ul className="list-inside list-disc space-y-1 font-medium">
+                        {itemsToMove.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="font-medium text-muted-foreground">לא הוגדרו פריטים.</div>
+                    )}
+                  </div>
+                ) : null}
               </div>
             </div>
           </CardContent>

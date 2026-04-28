@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
-import { minutesBetween, WORK_SESSIONS_TABLE } from "@/lib/payroll";
+import { recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
+import {
+  minutesBetween,
+  WORK_SESSIONS_TABLE,
+} from "@/lib/payroll";
 
 type CreateSessionPayload = {
   user_id?: string | null;
@@ -68,9 +72,6 @@ export async function POST(req: Request) {
     }
     if (!clockIn || !clockOut) {
       return NextResponse.json({ error: "יש להזין שעת התחלה ושעת סיום." }, { status: 400 });
-    }
-    if (laborCost === null || laborCost <= 0) {
-      return NextResponse.json({ error: "Missing or invalid labor_cost" }, { status: 400 });
     }
     if (isBillableToCustomer && (billToCustomerAmount === null || billToCustomerAmount <= 0)) {
       return NextResponse.json(
@@ -151,13 +152,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "המשמרת חופפת למשמרת אחרת." }, { status: 400 });
     }
 
+    const workedMinutes = minutesBetween(clockIn, clockOut);
+
     const { data, error } = await supabase
       .from(WORK_SESSIONS_TABLE)
       .insert({
         user_id: selectedUserId,
         clock_in: clockIn,
         clock_out: clockOut,
-        worked_minutes: minutesBetween(clockIn, clockOut),
+        worked_minutes: workedMinutes,
         labor_cost: laborCost,
         is_billable_to_customer: isBillableToCustomer,
         bill_to_customer_amount: isBillableToCustomer ? billToCustomerAmount : null,
@@ -173,6 +176,23 @@ export async function POST(req: Request) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
+
+    if (laborCost === null) {
+      await recalculateUserSessionCostsFromRules(supabase, selectedUserId, {
+        fromDate: clockIn.slice(0, 10),
+      });
+      const refreshed = await supabase
+        .from(WORK_SESSIONS_TABLE)
+        .select("id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id")
+        .eq("id", data?.id ?? "")
+        .maybeSingle();
+      if (refreshed.error) {
+        return NextResponse.json({ error: refreshed.error.message }, { status: 400 });
+      }
+      return NextResponse.json({ session: refreshed.data });
+    }
+
+    await regenerateEditablePayslipsForUsers(supabase, [selectedUserId]);
 
     return NextResponse.json({ session: data });
   } catch (error: unknown) {
