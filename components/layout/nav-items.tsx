@@ -32,7 +32,7 @@ export function useNavItems() {
     { title: "פניות", url: "/inquiries", icon: MessageSquareMore },
     { title: "ניהול נכסים", url: "/properties", icon: Building2 },
     { title: "פיננסי", url: "/financial", icon: Landmark },
-    { title: "שכר", url: "/payroll", icon: Wallet },
+    { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
     { title: "מסמכים", url: "/documents", icon: FolderOpen },
   ];
 
@@ -49,7 +49,7 @@ export function useNavItems() {
     { title: "משימות", url: "/tasks", icon: ListTodo },
     { title: "ניהול נכסים", url: "/properties", icon: Building2 },
     { title: "פיננסי", url: "/financial", icon: Landmark },
-    { title: "שכר", url: "/payroll", icon: Wallet },
+    { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
     { title: "מסמכים", url: "/documents", icon: FolderOpen },
   ];
 

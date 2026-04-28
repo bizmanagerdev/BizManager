@@ -8,16 +8,26 @@ type CreateUserPayload = {
   phone?: string | null;
   password?: string | null;
   role?: string | null;
+  active?: boolean | null;
+  system_access?: boolean | null;
 };
 
 type UserRow = {
   id: string;
+  auth_user_id?: string | null;
   full_name: string | null;
   email: string | null;
   phone: string | null;
   role: string | null;
   active: boolean | null;
+  system_access: boolean | null;
 };
+
+const ALLOWED_ROLES = ["admin", "office", "worker", "worker_no_access"] as const;
+
+function isAllowedRole(value: string): value is (typeof ALLOWED_ROLES)[number] {
+  return (ALLOWED_ROLES as readonly string[]).includes(value);
+}
 
 export async function POST(req: Request) {
   try {
@@ -25,34 +35,63 @@ export async function POST(req: Request) {
     const fullName = typeof body.full_name === "string" ? body.full_name.trim() : "";
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const phone = typeof body.phone === "string" ? body.phone.trim() : null;
-    const password = typeof body.password === "string" ? body.password : "";
-    const role = typeof body.role === "string" && body.role.trim() ? body.role.trim() : "worker";
+    const roleInput = typeof body.role === "string" && body.role.trim() ? body.role.trim() : "worker";
+    const role = isAllowedRole(roleInput) ? roleInput : "worker";
+    const active = body.active === false ? false : true;
+    const systemAccess =
+      role === "worker_no_access" ? false : body.system_access === false ? false : true;
+    const rawPassword = typeof body.password === "string" ? body.password.trim() : "";
+    const password = rawPassword;
 
     if (!fullName) {
-      return NextResponse.json({ error: "יש להזין שם עובד." }, { status: 400 });
+      return NextResponse.json({ error: "יש להזין שם משתמש." }, { status: 400 });
     }
-    if (!email) {
+    if (role !== "worker_no_access" && !email) {
       return NextResponse.json({ error: "יש להזין אימייל." }, { status: 400 });
     }
-    if (!password) {
-      return NextResponse.json({ error: "יש להזין סיסמה לעובד." }, { status: 400 });
+    if (systemAccess && !password) {
+      return NextResponse.json({ error: "יש להזין סיסמה למשתמש." }, { status: 400 });
     }
 
-    const access = await requireRouteAccess();
+    const access = await requireRouteAccess({ allowedRoles: ["admin"] });
     if (!access.ok) return access.response;
     const { supabase } = access.value;
 
-    const { data: existingUser, error: existingUserError } = await supabase
-      .from("users")
-      .select("id,full_name,email,phone,role,active")
-      .eq("email", email)
-      .maybeSingle();
+    if (email) {
+      const { data: existingUser, error: existingUserError } = await supabase
+        .from("users")
+        .select("id,auth_user_id,full_name,email,phone,role,active,system_access")
+        .eq("email", email)
+        .maybeSingle();
 
-    if (existingUserError) {
-      return NextResponse.json({ error: existingUserError.message }, { status: 400 });
+      if (existingUserError) {
+        return NextResponse.json({ error: existingUserError.message }, { status: 400 });
+      }
+      if (existingUser?.id) {
+        return NextResponse.json({ user: existingUser });
+      }
     }
-    if (existingUser?.id) {
-      return NextResponse.json({ user: existingUser });
+
+    if (!systemAccess) {
+      const { data: insertedUser, error: insertUserError } = await supabase
+        .from("users")
+        .insert({
+          full_name: fullName,
+          email: email || null,
+          phone,
+          role,
+          active,
+          system_access: false,
+          auth_user_id: null,
+        })
+        .select("id,auth_user_id,full_name,email,phone,role,active,system_access")
+        .single();
+
+      if (insertUserError) {
+        return NextResponse.json({ error: insertUserError.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ user: insertedUser });
     }
 
     const signupClient = createClient(
@@ -67,7 +106,7 @@ export async function POST(req: Request) {
       }
     );
 
-    const { error: signUpError } = await signupClient.auth.signUp({
+    const { data: signUpData, error: signUpError } = await signupClient.auth.signUp({
       email,
       password,
       options: {
@@ -88,13 +127,15 @@ export async function POST(req: Request) {
       const { data, error } = await supabase
         .from("users")
         .update({
+          auth_user_id: signUpData.user?.id ?? null,
           full_name: fullName,
           phone,
           role,
-          active: true,
+          active,
+          system_access: systemAccess,
         })
         .eq("email", email)
-        .select("id,full_name,email,phone,role,active")
+        .select("id,auth_user_id,full_name,email,phone,role,active,system_access")
         .maybeSingle();
 
       if (error) {
@@ -111,7 +152,7 @@ export async function POST(req: Request) {
 
     if (!user?.id) {
       return NextResponse.json(
-        { error: "החשבון נוצר אך רשומת העובד עדיין לא הוכנה. נסו שוב בעוד כמה שניות." },
+        { error: "החשבון נוצר אבל רשומת המשתמש עדיין לא הוכנה. נסו שוב בעוד כמה שניות." },
         { status: 500 }
       );
     }

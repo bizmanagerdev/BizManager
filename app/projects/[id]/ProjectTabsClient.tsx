@@ -2790,6 +2790,7 @@ function AddExpenseDialog({
   const [newWorkerPhone, setNewWorkerPhone] = useState("");
   const [newWorkerPassword, setNewWorkerPassword] = useState("");
   const [newWorkerRole, setNewWorkerRole] = useState<"worker" | "worker_no_access">("worker_no_access");
+  const [newWorkerSystemAccess, setNewWorkerSystemAccess] = useState(false);
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
   const [categoryOther, setCategoryOther] = useState("");
@@ -2958,6 +2959,7 @@ function AddExpenseDialog({
     setNewWorkerPhone("");
     setNewWorkerPassword("");
     setNewWorkerRole("worker_no_access");
+    setNewWorkerSystemAccess(false);
     setNotes(isEditingSession ? editingSession?.notes ?? "" : getString(editingExpense, "notes") ?? "");
     setBilledToCustomer(Boolean(editingItem?.project_expense?.["billed_to_customer"]));
     setAttachmentFiles([]);
@@ -2994,8 +2996,13 @@ function AddExpenseDialog({
     const email = newWorkerEmail.trim();
     const phone = newWorkerPhone.trim();
     const password = newWorkerPassword;
-    if (!name || !email || !password) {
-      toast.error("יש למלא שם, אימייל וסיסמה לעובד החדש");
+    const requiresCredentials = newWorkerRole !== "worker_no_access" && newWorkerSystemAccess;
+    if (!name || !phone) {
+      toast.error("יש למלא שם וטלפון לעובד החדש");
+      return;
+    }
+    if (requiresCredentials && (!email || !password)) {
+      toast.error("יש למלא אימייל וסיסמה למשתמש עם גישה");
       return;
     }
 
@@ -3006,10 +3013,11 @@ function AddExpenseDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           full_name: name,
-          email,
+          email: requiresCredentials ? email : null,
           phone: phone || null,
-          password,
+          password: requiresCredentials ? password : "",
           role: newWorkerRole,
+          system_access: newWorkerRole === "worker_no_access" ? false : newWorkerSystemAccess,
         }),
       });
       const json = await res.json();
@@ -3029,6 +3037,7 @@ function AddExpenseDialog({
       setNewWorkerPhone("");
       setNewWorkerPassword("");
       setNewWorkerRole("worker_no_access");
+      setNewWorkerSystemAccess(false);
       toast.success("העובד נוסף");
     } catch (e: unknown) {
       toast.error("שגיאה ביצירת עובד", {
@@ -3283,32 +3292,53 @@ function AddExpenseDialog({
                     placeholder="שם עובד"
                   />
                   <Input
-                    type="email"
-                    value={newWorkerEmail}
-                    onChange={(e) => setNewWorkerEmail(e.target.value)}
-                    placeholder="אימייל עובד"
-                  />
-                  <Input
                     value={newWorkerPhone}
                     onChange={(e) => setNewWorkerPhone(e.target.value)}
                     placeholder="טלפון עובד"
                   />
-                  <Input
-                    type="password"
-                    value={newWorkerPassword}
-                    onChange={(e) => setNewWorkerPassword(e.target.value)}
-                    placeholder="סיסמה לעובד"
-                  />
                   <select
                     value={newWorkerRole}
-                    onChange={(e) => setNewWorkerRole(e.target.value as "worker" | "worker_no_access")}
+                    onChange={(e) => {
+                      const nextRole = e.target.value as "worker" | "worker_no_access";
+                      setNewWorkerRole(nextRole);
+                      if (nextRole === "worker_no_access") {
+                        setNewWorkerSystemAccess(false);
+                      }
+                    }}
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   >
                     <option value="worker_no_access">עובד ללא גישה</option>
                     <option value="worker">עובד עם גישה</option>
                   </select>
+                  <select
+                    value={newWorkerSystemAccess ? "yes" : "no"}
+                    onChange={(e) => setNewWorkerSystemAccess(e.target.value === "yes")}
+                    disabled={newWorkerRole === "worker_no_access"}
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="no">ללא גישה</option>
+                    <option value="yes">עם גישה</option>
+                  </select>
+                  {newWorkerRole !== "worker_no_access" && newWorkerSystemAccess ? (
+                    <>
+                      <Input
+                        type="email"
+                        value={newWorkerEmail}
+                        onChange={(e) => setNewWorkerEmail(e.target.value)}
+                        placeholder="אימייל עובד"
+                      />
+                      <Input
+                        type="password"
+                        value={newWorkerPassword}
+                        onChange={(e) => setNewWorkerPassword(e.target.value)}
+                        placeholder="סיסמה לעובד"
+                      />
+                    </>
+                  ) : null}
                   <div className="text-xs text-muted-foreground">
-                    יצירת עובד כאן תיצור גם חשבון התחברות וגם רשומת עובד לשיוך שעות בפרויקט.
+                    {newWorkerRole === "worker_no_access" || !newWorkerSystemAccess
+                      ? "פועל בלי גישה ייווצר רק כרשומת עובד לשיוך שעות בפרויקט, בלי חשבון התחברות."
+                      : "עובד עם גישה ייווצר גם כחשבון התחברות וגם כרשומת עובד לשיוך שעות בפרויקט."}
                   </div>
                   <div className="flex gap-2">
                     <Button
@@ -3318,8 +3348,9 @@ function AddExpenseDialog({
                       disabled={
                         newWorkerSubmitting ||
                         !newWorkerName.trim() ||
-                        !newWorkerEmail.trim() ||
-                        !newWorkerPassword
+                        !newWorkerPhone.trim() ||
+                        ((newWorkerRole !== "worker_no_access" && newWorkerSystemAccess) &&
+                          (!newWorkerEmail.trim() || !newWorkerPassword))
                       }
                     >
                       {newWorkerSubmitting ? "שומר..." : "הוסף עובד"}
@@ -3336,6 +3367,7 @@ function AddExpenseDialog({
                         setNewWorkerPhone("");
                         setNewWorkerPassword("");
                         setNewWorkerRole("worker_no_access");
+                        setNewWorkerSystemAccess(false);
                       }}
                     >
                       ביטול

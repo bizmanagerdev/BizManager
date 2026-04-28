@@ -192,7 +192,7 @@ export async function POST(req: Request) {
     }
 
     const workedMinutes = clockOut ? minutesBetween(clockIn, clockOut) : null;
-    let resolvedLaborCost = requestedLaborCost;
+    let resolvedLaborCost: number | null = requestedLaborCost;
 
     if (resolvedLaborCost === null && workedMinutes && workedMinutes > 0) {
       const { data: agreementRows, error: agreementsError } = await supabase
@@ -217,7 +217,7 @@ export async function POST(req: Request) {
     if (resolvedLaborCost === null) {
       resolvedLaborCost =
         typeof session.labor_cost === "number" || typeof session.labor_cost === "string"
-          ? session.labor_cost
+          ? Number(session.labor_cost)
           : null;
     }
 

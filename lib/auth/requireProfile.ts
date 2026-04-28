@@ -6,6 +6,7 @@ export type UserRole = "admin" | "office" | "worker" | "worker_no_access";
 
 export type UserProfile = {
   id: string;
+  auth_user_id?: string | null;
   email: string | null;
   full_name: string | null;
   phone: string | null;
@@ -27,8 +28,8 @@ export const requireProfile = cache(async () => {
 
   const { data: profile, error } = await supabase
     .from("users")
-    .select("id,email,full_name,phone,role,active,system_access")
-    .eq("id", userId)
+    .select("id,auth_user_id,email,full_name,phone,role,active,system_access")
+    .eq("auth_user_id", userId)
     .maybeSingle();
 
   if (error) {

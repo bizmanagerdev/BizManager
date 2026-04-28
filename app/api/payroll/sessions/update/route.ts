@@ -1,0 +1,189 @@
+import { NextResponse } from "next/server";
+import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { collectLockedSessionIds } from "@/lib/payroll-center";
+import {
+  calculateSessionLaborCost,
+  getCurrentSalaryAgreement,
+  minutesBetween,
+  type PayrollPeriodRow,
+  type SalaryAgreementRow,
+  WORK_SESSIONS_TABLE,
+} from "@/lib/payroll";
+import { isPayrollAdminUnlocked } from "@/lib/payroll-admin-auth";
+
+type UpdateSessionPayload = {
+  session_id?: string;
+  user_id?: string | null;
+  business_domain?: string | null;
+  project_id?: string | null;
+  property_id?: string | null;
+  notes?: string | null;
+  clock_in?: string | null;
+  clock_out?: string | null;
+  is_billable_to_customer?: boolean | null;
+  bill_to_customer_amount?: number | string | null;
+  billing_status?: string | null;
+  labor_cost?: number | string | null;
+  recalculate_labor_cost?: boolean | null;
+};
+
+function toNullableNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(String(value).trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function overlaps(start: string, end: string | null, otherStart: string, otherEnd: string | null) {
+  const startMs = new Date(start).getTime();
+  const endMs = end ? new Date(end).getTime() : Number.POSITIVE_INFINITY;
+  const otherStartMs = new Date(otherStart).getTime();
+  const otherEndMs = otherEnd ? new Date(otherEnd).getTime() : Number.POSITIVE_INFINITY;
+  if (!Number.isFinite(startMs) || !Number.isFinite(otherStartMs)) return false;
+  return startMs < otherEndMs && otherStartMs < endMs;
+}
+
+export async function POST(req: Request) {
+  try {
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    if (!access.ok) return access.response;
+
+    const body = (await req.json().catch(() => ({}))) as UpdateSessionPayload;
+    const sessionId = typeof body.session_id === "string" ? body.session_id.trim() : "";
+    const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
+    const businessDomain = isExpenseBusinessDomain(body.business_domain) ? body.business_domain : null;
+    const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
+    const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
+    const clockIn = typeof body.clock_in === "string" ? body.clock_in.trim() : "";
+    const clockOutInput = typeof body.clock_out === "string" ? body.clock_out.trim() : "";
+    const clockOut = clockOutInput || null;
+    const notes = typeof body.notes === "string" ? body.notes.trim() : "";
+    const requestedLaborCost = toNullableNumber(body.labor_cost);
+    const recalculateLaborCost = body.recalculate_labor_cost === true;
+    const isBillable = body.is_billable_to_customer === true;
+    const billAmount = toNullableNumber(body.bill_to_customer_amount);
+    const billingStatus =
+      typeof body.billing_status === "string" && body.billing_status.trim()
+        ? body.billing_status.trim()
+        : isBillable
+          ? "billable"
+          : "not_billable";
+
+    if (!sessionId || !userId || !businessDomain || !clockIn) {
+      return NextResponse.json({ error: "Missing required session fields." }, { status: 400 });
+    }
+    if (businessDomain === "logistics_projects" && !projectId) {
+      return NextResponse.json({ error: "Project is required for project work." }, { status: 400 });
+    }
+    if (businessDomain === "property_management" && !propertyId) {
+      return NextResponse.json({ error: "Property is required for property work." }, { status: 400 });
+    }
+    if (isBillable && (billAmount === null || billAmount < 0)) {
+      return NextResponse.json({ error: "Bill to customer amount is invalid." }, { status: 400 });
+    }
+
+    const start = new Date(clockIn);
+    const end = clockOut ? new Date(clockOut) : null;
+    if (Number.isNaN(start.getTime()) || (end && (Number.isNaN(end.getTime()) || end <= start))) {
+      return NextResponse.json({ error: "Clock-out must be after clock-in." }, { status: 400 });
+    }
+
+    const { supabase } = access.value;
+    const [sessionResult, periodsResult, siblingsResult] = await Promise.all([
+      supabase
+        .from(WORK_SESSIONS_TABLE)
+        .select(
+          "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+        )
+        .eq("id", sessionId)
+        .maybeSingle(),
+      supabase.from("payroll_periods").select("id,period_month,start_date,end_date,status").range(0, 119),
+      supabase
+        .from(WORK_SESSIONS_TABLE)
+        .select("id,clock_in,clock_out")
+        .eq("user_id", userId)
+        .neq("id", sessionId)
+        .range(0, 999),
+    ]);
+
+    if (sessionResult.error) return NextResponse.json({ error: sessionResult.error.message }, { status: 400 });
+    if (periodsResult.error) return NextResponse.json({ error: periodsResult.error.message }, { status: 400 });
+    if (siblingsResult.error) return NextResponse.json({ error: siblingsResult.error.message }, { status: 400 });
+    if (!sessionResult.data) return NextResponse.json({ error: "Session not found." }, { status: 404 });
+
+    const lockedIds = collectLockedSessionIds(
+      [{ id: sessionId, clock_in: clockIn }],
+      (periodsResult.data ?? []) as PayrollPeriodRow[]
+    );
+    if (lockedIds.has(sessionId)) {
+      return NextResponse.json({ error: "This session belongs to a locked payroll period." }, { status: 409 });
+    }
+
+    const hasOverlap = ((siblingsResult.data ?? []) as Array<{ clock_in: string; clock_out: string | null }>).some(
+      (row) => overlaps(clockIn, clockOut, row.clock_in, row.clock_out)
+    );
+    if (hasOverlap) {
+      return NextResponse.json({ error: "This session overlaps another session." }, { status: 400 });
+    }
+
+    let laborCost = sessionResult.data.labor_cost;
+    if (requestedLaborCost !== null || recalculateLaborCost) {
+      if (access.value.profile.role !== "admin" || !(await isPayrollAdminUnlocked())) {
+        return NextResponse.json({ error: "Salary area must be unlocked to change labor cost." }, { status: 403 });
+      }
+
+      if (requestedLaborCost !== null) {
+        laborCost = requestedLaborCost;
+      } else if (clockOut) {
+        const agreementsResult = await supabase
+          .from("salary_agreements")
+          .select(
+            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+          )
+          .eq("user_id", userId)
+          .order("valid_from", { ascending: false });
+
+        if (agreementsResult.error) {
+          return NextResponse.json({ error: agreementsResult.error.message }, { status: 400 });
+        }
+
+        const agreement = getCurrentSalaryAgreement(
+          ((agreementsResult.data ?? []) as SalaryAgreementRow[]),
+          new Date(clockIn)
+        );
+        laborCost = calculateSessionLaborCost(agreement, minutesBetween(clockIn, clockOut));
+      }
+    }
+
+    const updateResult = await supabase
+      .from(WORK_SESSIONS_TABLE)
+      .update({
+        user_id: userId,
+        business_domain: businessDomain,
+        project_id: businessDomain === "logistics_projects" ? projectId : null,
+        property_id: businessDomain === "property_management" ? propertyId : null,
+        notes: notes || null,
+        clock_in: clockIn,
+        clock_out: clockOut,
+        worked_minutes: clockOut ? minutesBetween(clockIn, clockOut) : null,
+        labor_cost: laborCost,
+        is_billable_to_customer: isBillable,
+        bill_to_customer_amount: isBillable ? billAmount : null,
+        billing_status: billingStatus,
+      })
+      .eq("id", sessionId)
+      .select(
+        "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+      )
+      .maybeSingle();
+
+    if (updateResult.error) {
+      return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ session: updateResult.data });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

@@ -133,7 +133,9 @@ export function buildMonthlyHoursSummary(sessions: WorkSessionRow[]) {
   return [...byMonth.values()].sort((a, b) => b.key.localeCompare(a.key));
 }
 
-export function sessionWorkedMinutes(session: WorkSessionRow) {
+export function sessionWorkedMinutes(
+  session: Pick<WorkSessionRow, "worked_minutes" | "clock_in" | "clock_out">
+) {
   const explicit = toNumber(session.worked_minutes);
   if (explicit > 0) return explicit;
   if (!session.clock_out) return 0;

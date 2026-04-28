@@ -4,6 +4,7 @@ import type { UserRole } from "@/lib/auth/requireProfile";
 
 type RouteProfile = {
   id: string;
+  auth_user_id?: string | null;
   role: UserRole;
   active: boolean;
   system_access: boolean;
@@ -47,8 +48,8 @@ export async function requireRouteAccess(options?: {
 
   const { data: profile, error: profileError } = await supabase
     .from("users")
-    .select("id,role,active,system_access,email,full_name")
-    .eq("id", user.id)
+    .select("id,auth_user_id,role,active,system_access,email,full_name")
+    .eq("auth_user_id", user.id)
     .maybeSingle();
 
   if (profileError || !profile) {

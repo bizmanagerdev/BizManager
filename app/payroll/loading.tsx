@@ -1,6 +1,5 @@
 import { RouteLoading } from "@/components/layout/RouteLoading";
 
 export default function Loading() {
-  return <RouteLoading title="שכר" />;
+  return <RouteLoading title="עובדים ושכר" />;
 }
-
