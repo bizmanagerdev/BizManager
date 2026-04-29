@@ -16,12 +16,15 @@ with order_totals as (
 project_totals as (
   select
     p.customer_id,
-    count(*)::bigint as projects_count
+    count(*)::bigint as projects_count,
+    coalesce(sum(coalesce(pfv.customer_total_price, 0)), 0)::numeric as project_total_sales
   from public.projects p
+  left join public.project_financials_view pfv
+    on pfv.id = p.id
   where p.customer_id is not null
   group by p.customer_id
 ),
-payment_totals as (
+order_payment_totals as (
   select
     o.customer_id,
     coalesce(sum(coalesce(pay.amount_total, 0)), 0)::numeric as total_paid,
@@ -32,6 +35,29 @@ payment_totals as (
    and pay.target_id = o.id
   where o.customer_id is not null
   group by o.customer_id
+),
+project_payment_totals as (
+  select
+    p.customer_id,
+    coalesce(sum(coalesce(pay.amount_total, 0)), 0)::numeric as total_paid,
+    max(pay.payment_date)::timestamptz as last_payment_at
+  from public.payments pay
+  inner join public.projects p
+    on pay.project_id = p.id
+  where p.customer_id is not null
+  group by p.customer_id
+),
+payment_totals as (
+  select
+    customer_id,
+    coalesce(sum(total_paid), 0)::numeric as total_paid,
+    max(last_payment_at)::timestamptz as last_payment_at
+  from (
+    select * from order_payment_totals
+    union all
+    select * from project_payment_totals
+  ) payments_union
+  group by customer_id
 )
 select
   c.id as customer_id,
@@ -44,9 +70,18 @@ select
   nullif(trim(c.phone), '')::text as phone,
   coalesce(ot.orders_count, 0)::bigint as orders_count,
   coalesce(pt.projects_count, 0)::bigint as projects_count,
-  coalesce(ot.total_sales, 0)::numeric as total_sales,
+  (
+    coalesce(ot.total_sales, 0) +
+    coalesce(pt.project_total_sales, 0)
+  )::numeric as total_sales,
   coalesce(payt.total_paid, 0)::numeric as total_paid,
-  greatest(coalesce(ot.total_sales, 0) - coalesce(payt.total_paid, 0), 0)::numeric as open_balance,
+  greatest(
+    (
+      coalesce(ot.total_sales, 0) +
+      coalesce(pt.project_total_sales, 0)
+    ) - coalesce(payt.total_paid, 0),
+    0
+  )::numeric as open_balance,
   ot.last_order_at,
   payt.last_payment_at,
   nullif(trim(c.address), '')::text as address,

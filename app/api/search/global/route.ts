@@ -8,6 +8,10 @@ function parseLimit(value: string | null) {
   return Math.min(Math.floor(parsed), 12);
 }
 
+function parseMode(value: string | null): "quick" | "full" {
+  return value === "quick" ? "quick" : "full";
+}
+
 export async function GET(req: Request) {
   const access = await requireRouteAccess();
   if (!access.ok) return access.response;
@@ -16,12 +20,14 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") ?? "").trim();
   const limitPerGroup = parseLimit(searchParams.get("limit"));
+  const mode = parseMode(searchParams.get("mode"));
 
   try {
     const results = await performGlobalSearch(supabase, {
       query: q,
       viewerRole: profile.role,
       limitPerGroup,
+      mode,
     });
 
     return NextResponse.json(results);

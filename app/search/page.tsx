@@ -20,6 +20,7 @@ export default async function SearchPage({
     query,
     viewerRole: profile.role,
     limitPerGroup: 10,
+    mode: "full",
   });
 
   return (

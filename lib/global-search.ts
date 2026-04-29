@@ -37,6 +37,7 @@ type SearchOptions = {
   query: string;
   viewerRole: UserRole;
   limitPerGroup?: number;
+  mode?: "quick" | "full";
 };
 
 type Row = Record<string, unknown>;
@@ -67,12 +68,58 @@ function num(value: unknown) {
   return null;
 }
 
-function escapeForOrFilter(query: string) {
-  return query.replace(/,/g, " ").replace(/\s+/g, " ").trim();
-}
-
 function isUuidLike(value: string) {
   return /^[0-9a-f-]{8,}$/i.test(value);
+}
+
+function normalizeHebrewText(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/[\u0591-\u05C7]/g, "")
+    .replace(/[״"'`´.,/\\|()[\]{}\-–—_:;!?+=*&^%$#@~<>]/g, " ")
+    .replace(/[ך]/g, "כ")
+    .replace(/[ם]/g, "מ")
+    .replace(/[ן]/g, "נ")
+    .replace(/[ף]/g, "פ")
+    .replace(/[ץ]/g, "צ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function includesNormalized(haystackParts: Array<string | null | undefined>, query: string) {
+  const normalizedQuery = normalizeHebrewText(query);
+  if (!normalizedQuery) return false;
+  const haystack = normalizeHebrewText(haystackParts.filter(Boolean).join(" "));
+  return haystack.includes(normalizedQuery);
+}
+
+function exactIdMatch(id: string | null | undefined, query: string) {
+  const normalizedId = text(id);
+  return Boolean(normalizedId) && normalizedId.toLowerCase() === query.toLowerCase();
+}
+
+function sortByMatch<T extends Row>(
+  rows: T[],
+  query: string,
+  getRankParts: (row: T) => Array<string | null | undefined>
+) {
+  const normalizedQuery = normalizeHebrewText(query);
+  return [...rows].sort((left, right) => {
+    const leftText = normalizeHebrewText(getRankParts(left).filter(Boolean).join(" "));
+    const rightText = normalizeHebrewText(getRankParts(right).filter(Boolean).join(" "));
+    const leftStarts = leftText.startsWith(normalizedQuery) ? 1 : 0;
+    const rightStarts = rightText.startsWith(normalizedQuery) ? 1 : 0;
+    if (leftStarts !== rightStarts) return rightStarts - leftStarts;
+
+    const leftIndex = leftText.indexOf(normalizedQuery);
+    const rightIndex = rightText.indexOf(normalizedQuery);
+    const safeLeftIndex = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+    const safeRightIndex = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+    if (safeLeftIndex !== safeRightIndex) return safeLeftIndex - safeRightIndex;
+
+    return leftText.localeCompare(rightText, "he");
+  });
 }
 
 function formatCurrency(value: number | null) {
@@ -157,7 +204,7 @@ function orderResult(row: Row): GlobalSearchResult | null {
     id,
     group: "orders",
     groupLabel: GROUP_LABELS.orders,
-    title: customerName ? `${customerName} · #${shortId(id)}` : `Order #${shortId(id)}`,
+    title: customerName ? `${customerName} · #${shortId(id)}` : `הזמנה #${shortId(id)}`,
     subtitle: text(row.order_date) || null,
     meta: [text(row.status), text(row.payment_status), formatCurrency(num(row.total_amount))].filter(Boolean) as string[],
     href: `/sales/orders/${encodeURIComponent(id)}`,
@@ -284,112 +331,69 @@ export async function performGlobalSearch(
 ): Promise<GlobalSearchResponse> {
   const query = options.query.trim();
   const limitPerGroup = Math.min(Math.max(options.limitPerGroup ?? 6, 1), 12);
+  const mode = options.mode ?? "full";
+  const fetchSize =
+    mode === "quick"
+      ? Math.max(limitPerGroup * 4, 24)
+      : Math.max(limitPerGroup * 8, 80);
+  const uuidLike = isUuidLike(query);
 
   if (!query) {
     return { query: "", totalResults: 0, groups: [] };
   }
 
-  const filter = escapeForOrFilter(query);
-  const uuidLike = isUuidLike(filter);
-
   const requests = [
     supabase
       .from("customer_overview_view")
       .select("customer_id,customer_name,phone,email,address")
-      .or(
-        uuidLike
-          ? `customer_id.eq.${filter},customer_name.ilike.%${filter}%,email.ilike.%${filter}%,phone.ilike.%${filter}%,address.ilike.%${filter}%`
-          : `customer_name.ilike.%${filter}%,email.ilike.%${filter}%,phone.ilike.%${filter}%,address.ilike.%${filter}%`
-      )
       .order("customer_name", { ascending: true })
-      .range(0, limitPerGroup - 1),
+      .range(0, fetchSize - 1),
     supabase
       .from("project_dashboard_view")
       .select("id,name,customer_name,status,project_type,updated_at")
-      .or(
-        uuidLike
-          ? `id.eq.${filter},name.ilike.%${filter}%,customer_name.ilike.%${filter}%,status.ilike.%${filter}%,project_type.ilike.%${filter}%`
-          : `name.ilike.%${filter}%,customer_name.ilike.%${filter}%,status.ilike.%${filter}%,project_type.ilike.%${filter}%`
-      )
       .order("updated_at", { ascending: false })
-      .range(0, limitPerGroup - 1),
+      .range(0, fetchSize - 1),
     supabase
       .from("task_overview_view")
       .select("task_id,subject,project_name,status,priority,assigned_user_name,due_date,updated_at")
-      .or(
-        uuidLike
-          ? `task_id.eq.${filter},subject.ilike.%${filter}%,project_name.ilike.%${filter}%,status.ilike.%${filter}%,priority.ilike.%${filter}%,assigned_user_name.ilike.%${filter}%`
-          : `subject.ilike.%${filter}%,project_name.ilike.%${filter}%,status.ilike.%${filter}%,priority.ilike.%${filter}%,assigned_user_name.ilike.%${filter}%`
-      )
       .order("updated_at", { ascending: false })
-      .range(0, limitPerGroup - 1),
+      .range(0, fetchSize - 1),
     supabase
       .from("order_overview_view")
       .select("order_id,customer_name,status,payment_status,total_amount,order_date,customer_email,customer_phone,customer_address")
-      .or(
-        uuidLike
-          ? `order_id.eq.${filter},customer_name.ilike.%${filter}%,status.ilike.%${filter}%,payment_status.ilike.%${filter}%,customer_email.ilike.%${filter}%,customer_phone.ilike.%${filter}%,customer_address.ilike.%${filter}%`
-          : `customer_name.ilike.%${filter}%,status.ilike.%${filter}%,payment_status.ilike.%${filter}%,customer_email.ilike.%${filter}%,customer_phone.ilike.%${filter}%,customer_address.ilike.%${filter}%`
-      )
       .order("order_date", { ascending: false })
-      .range(0, limitPerGroup - 1),
+      .range(0, fetchSize - 1),
     supabase
       .from("products")
       .select("id,name,sku,barcode,description,base_price")
-      .or(
-        uuidLike
-          ? `id.eq.${filter},name.ilike.%${filter}%,sku.ilike.%${filter}%,barcode.ilike.%${filter}%,description.ilike.%${filter}%`
-          : `name.ilike.%${filter}%,sku.ilike.%${filter}%,barcode.ilike.%${filter}%,description.ilike.%${filter}%`
-      )
       .order("name", { ascending: true })
-      .range(0, limitPerGroup - 1),
+      .range(0, fetchSize - 1),
     supabase
       .from("documents")
       .select("id,title,file_name,document_type,uploaded_at,notes")
-      .or(
-        uuidLike
-          ? `id.eq.${filter},title.ilike.%${filter}%,file_name.ilike.%${filter}%,notes.ilike.%${filter}%,document_type.ilike.%${filter}%`
-          : `title.ilike.%${filter}%,file_name.ilike.%${filter}%,notes.ilike.%${filter}%,document_type.ilike.%${filter}%`
-      )
       .order("uploaded_at", { ascending: false, nullsFirst: false })
-      .range(0, limitPerGroup - 1),
+      .range(0, fetchSize - 1),
     supabase
       .from("properties")
       .select("id,address,is_active")
-      .or(uuidLike ? `id.eq.${filter},address.ilike.%${filter}%` : `address.ilike.%${filter}%`)
       .order("address", { ascending: true })
-      .range(0, limitPerGroup - 1),
+      .range(0, fetchSize - 1),
     supabase
       .from("payments")
       .select("id,payment_date,amount_total,payment_method,reference_number,notes,business_domain,project_id,order_id,property_id")
-      .or(
-        uuidLike
-          ? `id.eq.${filter},reference_number.ilike.%${filter}%,notes.ilike.%${filter}%,payment_method.ilike.%${filter}%,business_domain.ilike.%${filter}%`
-          : `reference_number.ilike.%${filter}%,notes.ilike.%${filter}%,payment_method.ilike.%${filter}%,business_domain.ilike.%${filter}%`
-      )
       .order("payment_date", { ascending: false })
-      .range(0, limitPerGroup - 1),
+      .range(0, fetchSize - 1),
     supabase
       .from("expenses")
       .select("id,expense_date,amount,category,description,notes,business_domain,project_id,order_id,property_id")
-      .or(
-        uuidLike
-          ? `id.eq.${filter},category.ilike.%${filter}%,description.ilike.%${filter}%,notes.ilike.%${filter}%,business_domain.ilike.%${filter}%`
-          : `category.ilike.%${filter}%,description.ilike.%${filter}%,notes.ilike.%${filter}%,business_domain.ilike.%${filter}%`
-      )
       .order("expense_date", { ascending: false })
-      .range(0, limitPerGroup - 1),
+      .range(0, fetchSize - 1),
     options.viewerRole === "admin"
       ? supabase
           .from("users")
           .select("id,full_name,email,role,active,phone")
-          .or(
-            uuidLike
-              ? `id.eq.${filter},full_name.ilike.%${filter}%,email.ilike.%${filter}%,phone.ilike.%${filter}%`
-              : `full_name.ilike.%${filter}%,email.ilike.%${filter}%,phone.ilike.%${filter}%`
-          )
           .order("full_name", { ascending: true })
-          .range(0, limitPerGroup - 1)
+          .range(0, fetchSize - 1)
       : Promise.resolve({ data: [], error: null }),
   ] as const;
 
@@ -423,17 +427,120 @@ export async function performGlobalSearch(
     throw new Error(errors[0]?.message ?? "Global search failed");
   }
 
+  const customers = sortByMatch(
+    ((customersResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.customer_id) || text(row.id), query)) ||
+      includesNormalized([text(row.customer_name), text(row.email), text(row.phone), text(row.address)], query)
+    ),
+    query,
+    (row) => [text(row.customer_name), text(row.email), text(row.phone), text(row.address)]
+  ).slice(0, limitPerGroup);
+
+  const projects = sortByMatch(
+    ((projectsResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.id), query)) ||
+      includesNormalized([text(row.name), text(row.customer_name), text(row.status), text(row.project_type)], query)
+    ),
+    query,
+    (row) => [text(row.name), text(row.customer_name), text(row.status), text(row.project_type)]
+  ).slice(0, limitPerGroup);
+
+  const tasks = sortByMatch(
+    ((tasksResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.task_id) || text(row.id), query)) ||
+      includesNormalized(
+        [text(row.subject), text(row.project_name), text(row.status), text(row.priority), text(row.assigned_user_name)],
+        query
+      )
+    ),
+    query,
+    (row) => [text(row.subject), text(row.project_name), text(row.assigned_user_name), text(row.status), text(row.priority)]
+  ).slice(0, limitPerGroup);
+
+  const orders = sortByMatch(
+    ((ordersResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.order_id) || text(row.id), query)) ||
+      includesNormalized(
+        [
+          text(row.customer_name),
+          text(row.status),
+          text(row.payment_status),
+          text(row.customer_email),
+          text(row.customer_phone),
+          text(row.customer_address),
+        ],
+        query
+      )
+    ),
+    query,
+    (row) => [text(row.customer_name), text(row.customer_phone), text(row.customer_address), text(row.status)]
+  ).slice(0, limitPerGroup);
+
+  const products = sortByMatch(
+    ((productsResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.id), query)) ||
+      includesNormalized([text(row.name), text(row.sku), text(row.barcode), text(row.description)], query)
+    ),
+    query,
+    (row) => [text(row.name), text(row.sku), text(row.barcode), text(row.description)]
+  ).slice(0, limitPerGroup);
+
+  const documents = sortByMatch(
+    ((documentsResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.id), query)) ||
+      includesNormalized([text(row.title), text(row.file_name), text(row.notes), text(row.document_type)], query)
+    ),
+    query,
+    (row) => [text(row.title), text(row.file_name), text(row.document_type), text(row.notes)]
+  ).slice(0, limitPerGroup);
+
+  const properties = sortByMatch(
+    ((propertiesResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.id), query)) ||
+      includesNormalized([text(row.address)], query)
+    ),
+    query,
+    (row) => [text(row.address)]
+  ).slice(0, limitPerGroup);
+
+  const payments = sortByMatch(
+    ((paymentsResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.id), query)) ||
+      includesNormalized([text(row.reference_number), text(row.notes), text(row.payment_method), text(row.business_domain)], query)
+    ),
+    query,
+    (row) => [text(row.notes), text(row.reference_number), text(row.payment_method), text(row.business_domain)]
+  ).slice(0, limitPerGroup);
+
+  const expenses = sortByMatch(
+    ((expensesResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.id), query)) ||
+      includesNormalized([text(row.category), text(row.description), text(row.notes), text(row.business_domain)], query)
+    ),
+    query,
+    (row) => [text(row.description), text(row.category), text(row.notes), text(row.business_domain)]
+  ).slice(0, limitPerGroup);
+
+  const users = sortByMatch(
+    ((usersResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.id), query)) ||
+      includesNormalized([text(row.full_name), text(row.email), text(row.phone), text(row.role)], query)
+    ),
+    query,
+    (row) => [text(row.full_name), text(row.email), text(row.phone), text(row.role)]
+  ).slice(0, limitPerGroup);
+
   const results = [
-    ...(((customersResult.data ?? []) as Row[]).map(customerResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(((projectsResult.data ?? []) as Row[]).map(projectResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(((tasksResult.data ?? []) as Row[]).map(taskResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(((ordersResult.data ?? []) as Row[]).map(orderResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(((productsResult.data ?? []) as Row[]).map(productResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(((documentsResult.data ?? []) as Row[]).map((row) => documentResult(row, query)).filter(Boolean) as GlobalSearchResult[]),
-    ...(((propertiesResult.data ?? []) as Row[]).map(propertyResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(((paymentsResult.data ?? []) as Row[]).map(paymentResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(((expensesResult.data ?? []) as Row[]).map(expenseResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(((usersResult.data ?? []) as Row[]).map(userResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(customers.map(customerResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(projects.map(projectResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(tasks.map(taskResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(orders.map(orderResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(products.map(productResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(documents.map((row) => documentResult(row, query)).filter(Boolean) as GlobalSearchResult[]),
+    ...(properties.map(propertyResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(payments.map(paymentResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(expenses.map(expenseResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(users.map(userResult).filter(Boolean) as GlobalSearchResult[]),
   ];
 
   return {

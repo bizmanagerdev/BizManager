@@ -28,12 +28,18 @@ function SearchResults({
   compact?: boolean;
   onNavigate?: () => void;
 }) {
-  if (!query.trim()) {
+  const trimmedQuery = query.trim();
+
+  if (!trimmedQuery) {
     return (
       <div className="px-4 py-6 text-sm text-muted-foreground">
         חפשו לקוחות, פרויקטים, משימות, הזמנות, מוצרים, מסמכים, מלאי ופיננסים.
       </div>
     );
+  }
+
+  if (trimmedQuery.length < 2) {
+    return <div className="px-4 py-6 text-sm text-muted-foreground">הקלידו לפחות 2 תווים.</div>;
   }
 
   if (!results) {
@@ -101,10 +107,19 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
   const desktopRef = useRef<HTMLDivElement | null>(null);
   const mobileInputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [fetchedResults, setFetchedResults] = useState<GlobalSearchResponse | null>(null);
   const [open, setOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const deferredQuery = useDeferredValue(query);
+  const deferredQuery = useDeferredValue(debouncedQuery);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 250);
+
+    return () => window.clearTimeout(handle);
+  }, [query]);
 
   useEffect(() => {
     if (mobileOpen) {
@@ -114,11 +129,11 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
 
   useEffect(() => {
     const normalized = deferredQuery.trim();
-    if (!normalized) return;
+    if (!normalized || normalized.length < 2) return;
 
     const controller = new AbortController();
 
-    void fetch(`/api/search/global?q=${encodeURIComponent(normalized)}&limit=4`, {
+    void fetch(`/api/search/global?q=${encodeURIComponent(normalized)}&limit=4&mode=quick`, {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -152,9 +167,12 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
     const normalized = query.trim();
     return normalized ? `/search?q=${encodeURIComponent(normalized)}` : "/search";
   }, [query]);
+
   const normalizedQuery = query.trim();
   const results =
-    normalizedQuery && fetchedResults?.query === normalizedQuery ? fetchedResults : null;
+    normalizedQuery.length >= 2 && fetchedResults?.query === normalizedQuery
+      ? fetchedResults
+      : null;
 
   function submitSearch() {
     emitNavigationStart();
@@ -189,7 +207,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
           {open ? (
             <div className="absolute inset-x-0 top-[calc(100%+0.6rem)] z-50 overflow-hidden rounded-[1.4rem] border border-white/60 bg-background/95 shadow-elevated backdrop-blur-xl">
               <SearchResults results={results} query={query} onNavigate={() => setOpen(false)} />
-              {query.trim() ? (
+              {query.trim().length >= 2 ? (
                 <div className="border-t border-border/70 p-2">
                   <Button variant="ghost" className="w-full justify-center rounded-xl" onClick={submitSearch}>
                     לכל התוצאות
@@ -239,7 +257,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
               </div>
             </div>
             <SearchResults results={results} query={query} compact onNavigate={() => setMobileOpen(false)} />
-            {query.trim() ? (
+            {query.trim().length >= 2 ? (
               <div className="border-t border-border/70 p-3">
                 <Button className="w-full rounded-xl" onClick={submitSearch}>
                   לכל התוצאות
