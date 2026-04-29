@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -1166,8 +1167,7 @@ export default function NewOrderClient({
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">תאריך הזמנה *</label>
-                <Input
-                  type="date"
+                <DateInput
                   value={orderDate}
                   onChange={(e) => setOrderDate(e.target.value)}
                   placeholder="בחר תאריך הזמנה"
@@ -1310,8 +1310,7 @@ export default function NewOrderClient({
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">תאריך *</label>
-                      <Input
-                        type="date"
+                      <DateInput
                         value={payment.payment_date}
                         disabled={actionLocked}
                         onChange={(e) => updatePaymentDraft(index, { payment_date: e.target.value })}

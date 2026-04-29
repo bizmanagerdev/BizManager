@@ -347,7 +347,7 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="סטטוס נוכחי" value={openSession ? "במשמרת" : "לא במשמרת"} hint={openSession ? `נכנסת ב-${formatDateTime(openSession.clock_in)}` : "אין משמרת פתוחה כרגע"} />
         <SummaryCard title="שעות החודש" value={selectedMonthSummary ? formatMinutes(selectedMonthSummary.totalMinutes) : "0:00"} hint={selectedMonthSummary ? selectedMonthSummary.label : "אין שעות מדווחות"} />
-        <SummaryCard title="שכר נוכחי" value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `סוג שכר: ${getSalaryTypeLabel(currentAgreement.salary_type)}` : "אין הסכם שכר פעיל"} />
+<SummaryCard title="שכר נוכחי" value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `סוג שכר: ${getSalaryTypeLabel(currentAgreement.salary_type)}` : "אין משכורת פעילה"} />
         <SummaryCard title="תלוש אחרון" value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? `${latestPeriod.period_month} • ${getPayrollStatusLabel(latestPeriod.status)}` : "אין תלושים זמינים"} />
       </div>
 

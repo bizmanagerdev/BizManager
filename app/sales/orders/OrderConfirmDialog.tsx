@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -500,8 +501,7 @@ export default function OrderConfirmDialog({
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium">תאריך תשלום</label>
-                    <Input
-                      type="date"
+                    <DateInput
                       value={paymentDate}
                       onChange={(e) => setPaymentDate(e.target.value)}
                     />
@@ -589,8 +589,7 @@ export default function OrderConfirmDialog({
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div className="space-y-1">
                             <label className="text-sm font-medium">תאריך החזר</label>
-                            <Input
-                              type="date"
+                            <DateInput
                               value={refundDate}
                               onChange={(e) => setRefundDate(e.target.value)}
                             />

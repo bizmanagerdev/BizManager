@@ -12,6 +12,7 @@ import {
   AdaptiveStack,
   PageStack,
 } from "@/components/layout/page-layout";
+import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1526,8 +1527,7 @@ export default function ProjectsClient({
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">תאריך התחלה</label>
-                <Input
-                  type="date"
+                <DateInput
                   value={createStartDate}
                   onChange={(e) => {
                     const nextStartDate = e.target.value;
@@ -1540,8 +1540,7 @@ export default function ProjectsClient({
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">תאריך סיום (אופציונלי)</label>
-                <Input
-                  type="date"
+                <DateInput
                   value={createEndDate}
                   onChange={(e) => setCreateEndDate(e.target.value)}
                 />
@@ -1689,11 +1688,11 @@ export default function ProjectsClient({
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">תאריך התחלה</label>
-                <Input type="date" value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} />
+                <DateInput value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">תאריך סיום</label>
-                <Input type="date" value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} />
+                <DateInput value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} />
               </div>
             </AdaptiveGrid>
 

@@ -408,9 +408,25 @@ export async function fetchSalaryCenterProtectedPayload(
 
   const periods = (periodsResult.data ?? []) as PayrollPeriodRow[];
   const currentPeriod = getCurrentPayrollPeriod(periods);
-  const totalLaborCostThisMonth = ((sessionCostsResult.data ?? []) as Array<SessionCostRow & { clock_in: string }>)
-    .filter((session) => monthKeyFromDate(session.clock_in) === getCurrentMonthKey())
+  const currentMonthKey = getCurrentMonthKey();
+  const currentMonthDate = new Date(`${currentMonthKey}-01T12:00:00`);
+  const agreements = (agreementsResult.data ?? []) as SalaryAgreementRow[];
+  const monthlyAgreementUserIds = new Set<string>();
+  const monthlyAgreementTotal = safeSalaryTrackedUserIds.reduce((sum, userId) => {
+    const userAgreements = agreements.filter((agreement) => agreement.user_id === userId);
+    const activeAgreement = getActiveSalaryAgreementForDate(userAgreements, currentMonthDate);
+    if (!activeAgreement || activeAgreement.salary_type !== "monthly") return sum;
+    monthlyAgreementUserIds.add(userId);
+    return sum + toNumber(activeAgreement.monthly_salary);
+  }, 0);
+  const sessionLaborCostThisMonth = ((sessionCostsResult.data ?? []) as Array<SessionCostRow & { clock_in: string; user_id: string }>)
+    .filter(
+      (session) =>
+        monthKeyFromDate(session.clock_in) === currentMonthKey &&
+        !monthlyAgreementUserIds.has(session.user_id)
+    )
     .reduce((sum, session) => sum + toNumber(session.labor_cost), 0);
+  const totalLaborCostThisMonth = sessionLaborCostThisMonth + monthlyAgreementTotal;
 
   let unpaidOrUnfinishedPayslips = 0;
   if (currentPeriod && normalizePayrollStatus(currentPeriod.status) !== "paid") {
@@ -427,7 +443,7 @@ export async function fetchSalaryCenterProtectedPayload(
   }
 
   return {
-    agreements: (agreementsResult.data ?? []) as SalaryAgreementRow[],
+    agreements,
     periods,
     payslips,
     payslipItems: (payslipItemsResult.data ?? []) as PayslipItemRow[],

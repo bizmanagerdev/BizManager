@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { Search, Bell, LogOut, User, ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Bell, ChevronDown, LogOut, User } from "lucide-react";
 import { ClientOnly } from "@/components/ClientOnly";
+import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 
 type Props = {
   appName?: string;
@@ -55,7 +55,7 @@ export function TopBar({
         };
 
         if (!res.ok) {
-          throw new Error(json.error ?? "טעינת התראות נכשלה.");
+          throw new Error(json.error ?? "טעינת ההתראות נכשלה.");
         }
 
         if (!cancelled) {
@@ -63,7 +63,7 @@ export function TopBar({
         }
       } catch (error: unknown) {
         if (!cancelled) {
-          setAlertsError(error instanceof Error ? error.message : "טעינת התראות נכשלה.");
+          setAlertsError(error instanceof Error ? error.message : "טעינת ההתראות נכשלה.");
         }
       } finally {
         if (!cancelled) setAlertsLoading(false);
@@ -188,9 +188,7 @@ export function TopBar({
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
                   <User className="h-3.5 w-3.5" />
                 </div>
-                {userName && (
-                  <span className="hidden text-sm lg:inline">{userName}</span>
-                )}
+                {userName && <span className="hidden text-sm lg:inline">{userName}</span>}
                 <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
@@ -217,29 +215,10 @@ export function TopBar({
           </DropdownMenu>
         </ClientOnly>
 
-        {showSearch && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="rounded-xl border-primary/15 text-accent-foreground shadow-md lg:hidden"
-            type="button"
-          >
-            <Search className="h-4 w-4" />
-          </Button>
-        )}
+        {showSearch ? <GlobalSearch mobileOnly /> : null}
       </div>
 
-      {showSearch && (
-        <div className="hidden max-w-md flex-1 lg:flex">
-          <div className="relative w-full">
-            <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="חיפוש..."
-              className="h-10 rounded-xl border-white/50 bg-white/70 ps-9 shadow-sm shadow-primary/5 focus-visible:ring-2"
-            />
-          </div>
-        </div>
-      )}
+      {showSearch ? <GlobalSearch desktopOnly className="max-w-md" /> : null}
     </header>
   );
 }

@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -2516,8 +2517,7 @@ function ProjectTasksTab({
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">תאריך יעד *</div>
-              <Input
-                type="date"
+              <DateInput
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 aria-invalid={dueDateError}
@@ -3601,8 +3601,7 @@ function AddExpenseDialog({
               <>
                 <div className="space-y-1">
                   <div className="text-sm font-medium">{"\u05ea\u05d0\u05e8\u05d9\u05da *"}</div>
-                  <Input
-                    type="date"
+                  <DateInput
                     value={expenseDate}
                     onChange={(e) => {
                       setExpenseDate(e.target.value);
@@ -3991,8 +3990,7 @@ function AddIncomeDialog({
             </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05ea\u05d0\u05e8\u05d9\u05da *"}</div>
-              <Input
-                type="date"
+              <DateInput
                 value={paymentDate}
                 onChange={(e) => {
                   setPaymentDate(e.target.value);
@@ -4051,8 +4049,7 @@ function AddIncomeDialog({
               {requiresDueDate ? (
                 <>
                   <div className="text-sm font-medium">תאריך פירעון *</div>
-                  <Input
-                    type="date"
+                  <DateInput
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
                     aria-invalid={Boolean(dueDateError)}

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -227,7 +228,7 @@ export default function OrderPaymentDialog({
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">{entryType === "refund" ? "תאריך החזר *" : "תאריך תשלום *"}</label>
-                <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+                <DateInput value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
               </div>
             </div>
 

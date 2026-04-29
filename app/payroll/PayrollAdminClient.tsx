@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import {
@@ -92,7 +93,7 @@ const DEFAULT_FORM: FormState = {
   monthly_salary: "",
   valid_from: new Date().toISOString().slice(0, 10),
   overtime_rate: "",
-  standard_daily_hours: "8",
+  standard_daily_hours: "0",
   notes: "",
 };
 
@@ -178,6 +179,7 @@ export default function PayrollAdminClient({
     });
     return map;
   }, [agreements]);
+  const standardDailyHoursValid = toNumber(formState.standard_daily_hours) > 0;
   const latestPayslipByUserId = useMemo(() => {
     const map = new Map<string, PayslipRow>();
     payslips.forEach((payslip) => {
@@ -428,7 +430,7 @@ export default function PayrollAdminClient({
       overtime_rate: agreement?.overtime_rate ? String(agreement.overtime_rate) : "",
       standard_daily_hours: agreement?.standard_daily_hours
         ? String(agreement.standard_daily_hours)
-        : "8",
+        : "0",
       notes: "",
     });
   }
@@ -436,13 +438,17 @@ export default function PayrollAdminClient({
   async function saveAgreement(userId: string) {
     setSaveError("");
     setSaveMessage("");
+    if (!standardDailyHoursValid) {
+      setSaveError("יש להזין שעות תקן יומיות גדולות מ-0.");
+      return;
+    }
 
     startTransition(async () => {
       try {
         const response = await fetch("/api/payroll/salary-agreements", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ user_id: userId, ...formState }),
+          body: JSON.stringify({ ...formState, user_id: userId }),
         });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) {
@@ -1054,7 +1060,7 @@ export default function PayrollAdminClient({
 
                 {canViewSalary && isEditing ? (
                   <div className="rounded-2xl border p-4">
-                    <div className="mb-3 text-base font-semibold">{"הסכם שכר חדש"}</div>
+                    <div className="mb-3 text-base font-semibold">{"משכורת חדשה"}</div>
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                       <Field label="סוג שכר">
                         <select
@@ -1072,8 +1078,7 @@ export default function PayrollAdminClient({
                         </select>
                       </Field>
                       <Field label="בתוקף מ">
-                        <Input
-                          type="date"
+                        <DateInput
                           value={formState.valid_from}
                           onChange={(event) =>
                             setFormState((current) => ({ ...current, valid_from: event.target.value }))
@@ -1082,6 +1087,9 @@ export default function PayrollAdminClient({
                       </Field>
                       <Field label="שעות תקן יומיות">
                         <Input
+                          type="number"
+                          min="0"
+                          step="0.25"
                           value={formState.standard_daily_hours}
                           onChange={(event) =>
                             setFormState((current) => ({
@@ -1090,6 +1098,9 @@ export default function PayrollAdminClient({
                             }))
                           }
                         />
+                        {!standardDailyHoursValid ? (
+                          <div className="mt-1 text-xs text-destructive">יש להזין ערך גדול מ-0 לפני שמירה.</div>
+                        ) : null}
                       </Field>
                       <Field label="תעריף שעות נוספות">
                         <Input
@@ -1132,8 +1143,8 @@ export default function PayrollAdminClient({
                       </Field>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Button disabled={isPending} onClick={() => void saveAgreement(user.id)}>
-                        {"שמירת ההסכם"}
+                      <Button disabled={isPending || !standardDailyHoursValid} onClick={() => void saveAgreement(user.id)}>
+                        {"שמירת המשכורת"}
                       </Button>
                       <Button variant="outline" onClick={() => setEditingUserId("")}>
                         {"ביטול"}
@@ -1145,7 +1156,7 @@ export default function PayrollAdminClient({
                 {canViewSalary && isExpanded ? <div className="space-y-2">
                   <div className="text-sm font-semibold">{"היסטוריית שכר"}</div>
                   {userAgreements.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">{"אין הסכמי שכר קודמים."}</div>
+                    <div className="text-sm text-muted-foreground">{"אין משכורות קודמות."}</div>
                   ) : (
                     userAgreements.map((agreement) => (
                       <div key={agreement.id} className="rounded-2xl border p-3 text-sm">

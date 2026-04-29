@@ -158,17 +158,7 @@ export function addMinutes(value: string | Date, minutes: number) {
 }
 
 export function getCurrentSalaryAgreement(agreements: SalaryAgreementRow[], referenceDate = new Date()) {
-  const point = new Date(referenceDate);
-  return (
-    agreements.find((agreement) => {
-      const from = new Date(agreement.valid_from);
-      const to = agreement.valid_to ? new Date(agreement.valid_to) : null;
-      if (Number.isNaN(from.getTime())) return false;
-      if (from > point) return false;
-      if (to && to < point) return false;
-      return true;
-    }) ?? agreements[0] ?? null
-  );
+  return getActiveSalaryAgreementForDate(agreements, referenceDate);
 }
 
 export function getActiveSalaryAgreementForDate(

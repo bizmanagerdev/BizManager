@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { LockKeyhole, Plus, RefreshCcw } from "lucide-react";
+import { LockKeyhole, Pencil, Plus, RefreshCcw, Trash2 } from "lucide-react";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,13 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { UserRole } from "@/lib/auth/requireProfile";
@@ -183,6 +178,9 @@ const DEFAULT_CREATE_USER_FORM: CreateUserFormState = {
   system_access: true,
 };
 
+const SOLID_EDIT_BUTTON_CLASS =
+  "border-primary bg-primary text-primary-foreground hover:border-primary hover:bg-primary/90 hover:text-primary-foreground";
+
 export default function SalaryCenterClient({
   viewerRole,
   publicUsers,
@@ -238,6 +236,11 @@ export default function SalaryCenterClient({
   const [payslipAdjustmentDrafts, setPayslipAdjustmentDrafts] = useState<Record<string, string>>({});
 
   const canManageSalary = viewerRole === "admin";
+  const agreementStandardDailyHoursValid = toNumber(agreementForm.standard_daily_hours) > 0;
+  const allSalaryTrackedUsers = useMemo(
+    () => publicUsers.filter((user) => isSalaryTrackedWorker(user)),
+    [publicUsers]
+  );
   const canManageAttendance = viewerRole === "admin";
   const canCreateUsers = viewerRole === "admin";
 
@@ -295,7 +298,6 @@ export default function SalaryCenterClient({
     });
     return next;
   }, [agreements]);
-
   const payslipsByUserId = useMemo(() => {
     const next = new Map<string, PayslipRow[]>();
     payslips.forEach((payslip) => {
@@ -349,6 +351,14 @@ export default function SalaryCenterClient({
   const laborWorkers = useMemo(
     () => filteredWorkers.filter((user) => user.role === "worker_no_access"),
     [filteredWorkers]
+  );
+  const visibleSalaryTrackedUsers = useMemo(
+    () => filteredWorkers.filter((user) => isSalaryTrackedWorker(user)),
+    [filteredWorkers]
+  );
+  const salaryTrackedUsersWithAgreements = useMemo(
+    () => visibleSalaryTrackedUsers.filter((user) => (agreementsByUserId.get(user.id) ?? []).length > 0),
+    [agreementsByUserId, visibleSalaryTrackedUsers]
   );
 
   const isAttendanceWorker = useCallback(
@@ -561,17 +571,15 @@ export default function SalaryCenterClient({
   }
 
   function deleteSession(sessionId: string) {
+    const session = publicSessions.find((item) => item.id === sessionId) ?? null;
+    const worker = session ? usersById.get(session.user_id) ?? null : null;
+    const workerLabel = worker?.full_name ?? worker?.email ?? "העובד";
+    const confirmed = window.confirm(`למחוק את המשמרת של ${workerLabel}?`);
+    if (!confirmed) return;
+
     runAction(async () => {
       await postJson("/api/payroll/sessions/delete", { session_id: sessionId });
       setMessage("המשמרת נמחקה.");
-      await refreshAll();
-    });
-  }
-
-  function recalculateSession(sessionId: string) {
-    runAction(async () => {
-      await postJson("/api/payroll/sessions/recalculate", { session_id: sessionId });
-      setMessage("עלות העבודה חושבה מחדש.");
       await refreshAll();
     });
   }
@@ -595,20 +603,28 @@ export default function SalaryCenterClient({
 
   function saveAgreement() {
     const targetUserId = agreementForm.user_id || selectedWorker?.id || "";
-    if (!targetUserId) return;
+    if (!targetUserId) {
+      setError("יש לבחור עובד לפני שמירה.");
+      return;
+    }
+    if (!agreementStandardDailyHoursValid) {
+      setError("יש להזין שעות יומיות תקניות גדולות מ-0.");
+      return;
+    }
     runAction(async () => {
       await postJson("/api/payroll/salary-agreements", {
+        ...agreementForm,
         agreement_id: agreementForm.agreement_id || undefined,
         user_id: targetUserId,
-        ...agreementForm,
       });
       setAgreementForm(DEFAULT_AGREEMENT_FORM);
+      setAgreementDialogOpen(false);
       setMessage("הסכם השכר נשמר.");
       await refreshAll();
     });
   }
 
-  function openNewAgreementDialog(userId: string, currentAgreement?: SalaryAgreementRow | null) {
+  function openNewAgreementDialog(userId = "", currentAgreement?: SalaryAgreementRow | null) {
     setAgreementForm({
       agreement_id: "",
       user_id: userId,
@@ -639,6 +655,23 @@ export default function SalaryCenterClient({
       notes: agreement.notes ?? "",
     });
     setAgreementDialogOpen(true);
+  }
+
+  function deleteAgreement(agreement: SalaryAgreementRow) {
+    const worker = publicUsers.find((user) => user.id === agreement.user_id);
+    const workerLabel = worker?.full_name ?? worker?.email ?? "העובד";
+    const confirmed = window.confirm(`למחוק את המשכורת של ${workerLabel}?`);
+    if (!confirmed) return;
+
+    runAction(async () => {
+      await postJson("/api/payroll/salary-agreements", {
+        action: "delete",
+        agreement_id: agreement.id,
+        user_id: agreement.user_id,
+      });
+      setMessage("המשכורת נמחקה.");
+      await refreshAll();
+    });
   }
 
   function saveOverride() {
@@ -773,10 +806,11 @@ export default function SalaryCenterClient({
         </SalaryProtected>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap-reverse items-center justify-between gap-3">
+        <div className="flex flex-wrap justify-end gap-2">
           {canCreateUsers ? (
             <Button variant="outline" onClick={() => setCreateUserOpen(true)}>
+              <Plus className="ms-2 h-4 w-4" />
               {"הוספת משתמש"}
             </Button>
           ) : null}
@@ -808,7 +842,7 @@ export default function SalaryCenterClient({
           autoComplete="off"
           spellCheck={false}
           data-lpignore="true"
-          className="max-w-sm"
+          className="max-w-sm text-right"
         />
       </div>
 
@@ -817,170 +851,187 @@ export default function SalaryCenterClient({
           <TabsTrigger value="employees">{"עובדים"}</TabsTrigger>
           <TabsTrigger value="labor">{"פועלים"}</TabsTrigger>
           <TabsTrigger value="attendance">{"נוכחות"}</TabsTrigger>
-          <TabsTrigger value="agreements">{"הסכמי שכר"}</TabsTrigger>
-          <TabsTrigger value="periods">{"תקופות שכר"}</TabsTrigger>
-          <TabsTrigger value="payslips">{"תלושים"}</TabsTrigger>
+          <TabsTrigger value="agreements">{"משכורות"}</TabsTrigger>
+          <TabsTrigger value="payslips">{"תקופות ותלושים"}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="employees" className="space-y-3">
-          {employeeWorkers.map((worker) => {
-            const monthStats = getWorkerMonthStats(worker.id, publicSessions);
-            const currentAgreement = getCurrentSalaryAgreement(agreementsByUserId.get(worker.id) ?? []);
-            const latestPayslip = [...(payslipsByUserId.get(worker.id) ?? [])].sort((a, b) =>
-              (periodsById.get(b.payroll_period_id)?.period_month ?? "").localeCompare(
-                periodsById.get(a.payroll_period_id)?.period_month ?? ""
-              )
-            )[0] ?? null;
-            const salaryTracked = isSalaryTrackedWorker(worker);
+          <Card>
+            <CardContent className="py-4">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1200px] text-right text-sm">
+                  <thead>
+                    <tr className="border-b text-muted-foreground">
+                      <th className="px-3 py-2 font-medium">פעולות</th>
+                      <th className="px-3 py-2 font-medium">תלוש אחרון</th>
+                      <th className="px-3 py-2 font-medium">עלות עבודה החודש</th>
+                      <th className="px-3 py-2 font-medium">משכורת נוכחית</th>
+                      <th className="px-3 py-2 font-medium">פתוחות</th>
+                      <th className="px-3 py-2 font-medium">פרויקטים</th>
+                      <th className="px-3 py-2 font-medium">משמרות</th>
+                      <th className="px-3 py-2 font-medium">שעות החודש</th>
+                      <th className="px-3 py-2 font-medium">סטטוס</th>
+                      <th className="px-3 py-2 font-medium">פרטי קשר</th>
+                      <th className="px-3 py-2 font-medium">עובד</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employeeWorkers.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
+                          {"אין עובדים להצגה."}
+                        </td>
+                      </tr>
+                    ) : (
+                      employeeWorkers.map((worker, index) => {
+                        const monthStats = getWorkerMonthStats(worker.id, publicSessions);
+                        const currentAgreement = getCurrentSalaryAgreement(agreementsByUserId.get(worker.id) ?? []);
+                        const latestPayslip = [...(payslipsByUserId.get(worker.id) ?? [])].sort((a, b) =>
+                          (periodsById.get(b.payroll_period_id)?.period_month ?? "").localeCompare(
+                            periodsById.get(a.payroll_period_id)?.period_month ?? ""
+                          )
+                        )[0] ?? null;
+                        const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
+                        const monthlyLaborCost = publicSessions
+                          .filter((session) => session.user_id === worker.id && monthKeyFromDate(session.clock_in) === currentMonthKey)
+                          .reduce((sum, session) => sum + (sessionCostsById.get(session.id) ?? 0), 0);
 
-            return (
-              <Card key={worker.id}>
-                <CardContent className="space-y-4 py-5">
-                  <div className="grid gap-4 md:grid-cols-[auto_minmax(0,1fr)] md:items-start">
-                    <div className="flex flex-wrap gap-2 md:col-start-1 md:justify-self-start">
-                      <Button variant="outline" onClick={() => setSelectedWorkerId(worker.id)}>
-                        {"פרטי עובד"}
-                      </Button>
-                      {canManageAttendance && isAttendanceWorker(worker) ? (
-                        <Button variant="ghost" onClick={() => openCreateSession(worker.id)}>
-                          {"הוספת משמרת"}
-                        </Button>
-                      ) : null}
-                    </div>
-
-                    <div className="min-w-0 space-y-2 md:col-start-2 md:justify-self-end md:text-right">
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        <div className="shrink-0 text-lg font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <RoleBadge role={worker.role} />
-                          <AccessBadge hasAccess={getWorkerAccessLabel(worker) === "עם גישה"} />
-                          <StatusPill tone={worker.active === false ? "muted" : "success"}>
-                            {worker.active === false ? "לא פעיל" : "פעיל"}
-                          </StatusPill>
-                        </div>
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {[worker.email, worker.phone].filter(Boolean).join(" • ") || "ללא פרטי קשר"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    <InlineMetric label="שעות החודש" value={formatMinutes(monthStats.totalMinutes)} />
-                    <InlineMetric label="משמרות" value={String(monthStats.sessionCount)} />
-                    <InlineMetric label="פרויקטים / קישורים" value={String(monthStats.projectCount)} />
-                    <InlineMetric label="פתוחות" value={String(monthStats.openSessionCount)} />
-                  </div>
-
-                  {salaryTracked ? (
-                    <SalaryProtected
-                      unlocked={salaryUnlocked}
-                      hasPasswordConfigured={hasPasswordConfigured}
-                      canUnlock={canManageSalary}
-                      onUnlockSuccess={loadProtectedData}
-                    >
-                      <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3">
-                        <div className="mb-2 text-xs font-medium text-muted-foreground">{"נתוני שכר"}</div>
-                        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                          <InlineMetric
-                          label="שעות החודש"
-                          value={formatMinutes(monthStats.totalMinutes)}
-                          forceShow
-                          />
-                          <InlineMetric
-                          label="הסכם שכר נוכחי"
-                          value={
-                            currentAgreement
-                              ? currentAgreement.salary_type === "hourly"
-                                ? `${formatCurrency(currentAgreement.hourly_rate)} / שעה`
-                                : formatCurrency(currentAgreement.monthly_salary)
-                              : "-"
-                          }
-                          />
-                          <InlineMetric
-                          label="עלות עבודה החודש"
-                          value={formatCurrency(
-                            publicSessions
-                              .filter(
-                                (session) =>
-                                  session.user_id === worker.id && monthKeyFromDate(session.clock_in) === currentMonthKey
-                              )
-                              .reduce((sum, session) => sum + (sessionCostsById.get(session.id) ?? 0), 0)
-                          )}
-                          />
-                          <InlineMetric
-                          label="תלוש אחרון"
-                          value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}
-                          />
-                        </div>
-                      </div>
-                    </SalaryProtected>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
-                      {"עובד ללא גישה מנוהל לפי עבודה/פרויקט, בלי הסכמי שכר ותלושים קבועים."}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
+                        return (
+                          <tr key={worker.id} className={`border-b align-top ${rowClass}`}>
+                            <td className="px-3 py-3">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <Button variant="outline" size="sm" onClick={() => setSelectedWorkerId(worker.id)}>
+                                  {"פרטים"}
+                                </Button>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">{latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}</td>
+                            <td className="px-3 py-3">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canManageSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                {formatCurrency(monthlyLaborCost)}
+                              </SalaryProtected>
+                            </td>
+                            <td className="px-3 py-3">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canManageSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                {currentAgreement
+                                  ? currentAgreement.salary_type === "hourly"
+                                    ? `${formatCurrency(currentAgreement.hourly_rate)} / שעה`
+                                    : formatCurrency(currentAgreement.monthly_salary)
+                                  : "-"}
+                              </SalaryProtected>
+                            </td>
+                            <td className="px-3 py-3">{String(monthStats.openSessionCount)}</td>
+                            <td className="px-3 py-3">{String(monthStats.projectCount)}</td>
+                            <td className="px-3 py-3">{String(monthStats.sessionCount)}</td>
+                            <td className="px-3 py-3">{formatMinutes(monthStats.totalMinutes)}</td>
+                            <td className="px-3 py-3">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <RoleBadge role={worker.role} />
+                                <AccessBadge hasAccess={getWorkerAccessLabel(worker) === "עם גישה"} />
+                                <StatusPill tone={worker.active === false ? "muted" : "success"}>
+                                  {worker.active === false ? "לא פעיל" : "פעיל"}
+                                </StatusPill>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 text-muted-foreground">
+                              {[worker.email, worker.phone].filter(Boolean).join(" • ") || "ללא פרטי קשר"}
+                            </td>
+                            <td className="px-3 py-3 font-medium">{worker.full_name ?? worker.email ?? "עובד"}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="labor" className="space-y-3">
-          {laborWorkers.map((worker) => {
-            const monthStats = getWorkerMonthStats(worker.id, publicSessions);
+          <Card>
+            <CardContent className="py-4">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[980px] text-right text-sm">
+                  <thead>
+                    <tr className="border-b text-muted-foreground">
+                      <th className="px-3 py-2 font-medium">פעולות</th>
+                      <th className="px-3 py-2 font-medium">פתוחות</th>
+                      <th className="px-3 py-2 font-medium">פרויקטים</th>
+                      <th className="px-3 py-2 font-medium">משמרות</th>
+                      <th className="px-3 py-2 font-medium">שעות החודש</th>
+                      <th className="px-3 py-2 font-medium">סטטוס</th>
+                      <th className="px-3 py-2 font-medium">פרטי קשר</th>
+                      <th className="px-3 py-2 font-medium">פועל</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {laborWorkers.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
+                          {"אין פועלים להצגה."}
+                        </td>
+                      </tr>
+                    ) : (
+                      laborWorkers.map((worker, index) => {
+                        const monthStats = getWorkerMonthStats(worker.id, publicSessions);
+                        const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
 
-            return (
-              <Card key={worker.id}>
-                <CardContent className="space-y-4 py-5">
-                  <div className="grid gap-4 md:grid-cols-[auto_minmax(0,1fr)] md:items-start">
-                    <div className="flex flex-wrap gap-2 md:col-start-1 md:justify-self-start">
-                      <Button variant="outline" onClick={() => setSelectedWorkerId(worker.id)}>
-                        {"פרטי פועל"}
-                      </Button>
-                      {canManageAttendance && isAttendanceWorker(worker) ? (
-                        <Button variant="ghost" onClick={() => openCreateSession(worker.id)}>
-                          {"הוספת משמרת"}
-                        </Button>
-                      ) : null}
-                    </div>
-
-                    <div className="min-w-0 space-y-2 md:col-start-2 md:justify-self-end md:text-right">
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        <div className="shrink-0 text-lg font-semibold">{worker.full_name ?? worker.email ?? "פועל"}</div>
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <StatusPill tone="warning">{"פועל"}</StatusPill>
-                          <AccessBadge hasAccess={false} />
-                          <StatusPill tone={worker.active === false ? "muted" : "success"}>
-                            {worker.active === false ? "לא פעיל" : "פעיל"}
-                          </StatusPill>
-                        </div>
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {[worker.email, worker.phone].filter(Boolean).join(" • ") || "ללא פרטי קשר"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    <InlineMetric label="שעות החודש" value={formatMinutes(monthStats.totalMinutes)} />
-                    <InlineMetric label="משמרות" value={String(monthStats.sessionCount)} />
-                    <InlineMetric label="פרויקטים / קישורים" value={String(monthStats.projectCount)} />
-                    <InlineMetric label="פתוחות" value={String(monthStats.openSessionCount)} />
-                  </div>
-
-                  <div className="rounded-2xl border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
-                    {"פועלים מנוהלים לפי עבודה / פרויקט, בלי הסכמי שכר חודשיים ובלי תלושים."}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                        return (
+                          <tr key={worker.id} className={`border-b align-top ${rowClass}`}>
+                            <td className="px-3 py-3">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <Button variant="outline" size="sm" onClick={() => setSelectedWorkerId(worker.id)}>
+                                  {"פרטים"}
+                                </Button>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3">{String(monthStats.openSessionCount)}</td>
+                            <td className="px-3 py-3">{String(monthStats.projectCount)}</td>
+                            <td className="px-3 py-3">{String(monthStats.sessionCount)}</td>
+                            <td className="px-3 py-3">{formatMinutes(monthStats.totalMinutes)}</td>
+                            <td className="px-3 py-3">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <StatusPill tone="warning">{"פועל"}</StatusPill>
+                                <AccessBadge hasAccess={false} />
+                                <StatusPill tone={worker.active === false ? "muted" : "success"}>
+                                  {worker.active === false ? "לא פעיל" : "פעיל"}
+                                </StatusPill>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 text-muted-foreground">
+                              {[worker.email, worker.phone].filter(Boolean).join(" • ") || "ללא פרטי קשר"}
+                            </td>
+                            <td className="px-3 py-3 font-medium">{worker.full_name ?? worker.email ?? "פועל"}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="attendance" className="space-y-3">
           <Card>
-            <CardContent className="grid gap-3 py-5 md:grid-cols-3 xl:grid-cols-6">
+            <CardContent
+              className="grid gap-3 py-5 md:grid-cols-3 xl:grid-cols-6"
+              dir="rtl"
+            >
               <Field label="עובד">
                 <select
                   value={attendanceFilters.workerId}
@@ -1072,93 +1123,125 @@ export default function SalaryCenterClient({
             </CardContent>
           </Card>
 
-          {filteredSessions.map((session) => {
-            const worker = usersById.get(session.user_id);
-            const linkLabel = getSessionLinkLabel(session, projectLabelsById, propertyLabelsById);
-            return (
-              <Card key={session.id}>
-                <CardContent className="space-y-4 py-5">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="font-semibold">{worker?.full_name ?? worker?.email ?? "עובד"}</div>
-                        <StatusPill tone="muted">{getBusinessDomainLabel(session.business_domain)}</StatusPill>
-                        <StatusPill tone="muted">{linkLabel}</StatusPill>
-                        <StatusPill tone={session.clock_out ? "success" : "warning"}>
-                          {session.clock_out ? "סגור" : "פתוח"}
-                        </StatusPill>
-                        <StatusPill tone={session.locked ? "danger" : "muted"}>
-                          {session.locked ? "נעול" : "ניתן לעריכה"}
-                        </StatusPill>
-                        {session.billing_status ? (
-                          <StatusPill tone={session.billing_status === "paid" ? "success" : "muted"}>
-                            {getBillingStatusLabel(session.billing_status)}
-                          </StatusPill>
-                        ) : null}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {formatSessionRange(session.clock_in, session.clock_out)}
-                      </div>
-                    </div>
+          <Card>
+            <CardContent className="py-4">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1100px] text-right text-sm">
+                  <thead>
+                    <tr className="border-b text-muted-foreground">
+                      <th className="px-3 py-2 font-medium">פעולות</th>
+                      <th className="px-3 py-2 font-medium">עלות עבודה</th>
+                      <th className="px-3 py-2 font-medium">חיוב לקוח</th>
+                      <th className="px-3 py-2 font-medium">משך</th>
+                      <th className="px-3 py-2 font-medium">טווח</th>
+                      <th className="px-3 py-2 font-medium">קישור</th>
+                      <th className="px-3 py-2 font-medium">תחום</th>
+                      <th className="px-3 py-2 font-medium">סטטוס</th>
+                      <th className="px-3 py-2 font-medium">עובד</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSessions.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">
+                          {"אין משמרות להצגה."}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredSessions.map((session, index) => {
+                        const worker = usersById.get(session.user_id);
+                        const linkLabel = getSessionLinkLabel(session, projectLabelsById, propertyLabelsById);
+                        const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
 
-                    <div className="grid min-w-[220px] gap-2 sm:grid-cols-3">
-                      <InlineMetric label="משך" value={formatMinutes(sessionWorkedMinutes(session))} />
-                      <InlineMetric
-                        label="חיוב לקוח"
-                        value={
-                          session.is_billable_to_customer
-                            ? formatCurrency(session.bill_to_customer_amount)
-                            : "לא לחיוב"
-                        }
-                      />
-                      <SalaryProtected
-                        unlocked={salaryUnlocked}
-                        hasPasswordConfigured={hasPasswordConfigured}
-                        canUnlock={canManageSalary}
-                        onUnlockSuccess={loadProtectedData}
-                        fallback={<InlineMetric label="עלות עבודה" value="מוגן" />}
-                      >
-                        <InlineMetric label="עלות עבודה" value={formatCurrency(sessionCostsById.get(session.id) ?? 0)} />
-                      </SalaryProtected>
-                    </div>
-                  </div>
-
-                  {session.notes ? (
-                    <div className="rounded-2xl bg-muted/30 px-3 py-2 text-sm text-muted-foreground">{session.notes}</div>
-                  ) : null}
-
-                  {canManageAttendance ? (
-                    <div className="flex flex-wrap gap-2 border-t pt-3">
-                      <Button variant="outline" onClick={() => openEditSession(session)} disabled={session.locked || isPending}>
-                        {"עריכה"}
-                      </Button>
-                      {!session.clock_out ? (
-                        <Button variant="ghost" onClick={() => closeOpenSession(session.id)} disabled={session.locked || isPending}>
-                          {"סגירת משמרת"}
-                        </Button>
-                      ) : null}
-                      <Button variant="ghost" onClick={() => deleteSession(session.id)} disabled={session.locked || isPending}>
-                        {"מחיקה"}
-                      </Button>
-                      {canManageSalary ? (
-                        <SalaryProtected
-                          unlocked={salaryUnlocked}
-                          hasPasswordConfigured={hasPasswordConfigured}
-                          canUnlock={canManageSalary}
-                          onUnlockSuccess={loadProtectedData}
-                          fallback={null}
-                        >
-                          <Button variant="ghost" onClick={() => recalculateSession(session.id)} disabled={session.locked || isPending}>
-                            {"חישוב מחדש של עלות עבודה"}
-                          </Button>
-                        </SalaryProtected>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-            );
-          })}
+                        return (
+                          <tr key={session.id} className={`border-b align-top ${rowClass}`}>
+                            <td className="px-3 py-3">
+                              {canManageAttendance ? (
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => openEditSession(session)}
+                                    aria-label="עריכה"
+                                    className={SOLID_EDIT_BUTTON_CLASS}
+                                    disabled={session.locked || isPending}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  {!session.clock_out ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => closeOpenSession(session.id)}
+                                      disabled={session.locked || isPending}
+                                    >
+                                      {"סגירה"}
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    variant="destructive"
+                                    size="icon"
+                                    onClick={() => deleteSession(session.id)}
+                                    aria-label="מחיקה"
+                                    disabled={session.locked || isPending}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canManageSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                <span className="font-medium">{formatCurrency(sessionCostsById.get(session.id) ?? 0)}</span>
+                              </SalaryProtected>
+                            </td>
+                            <td className="px-3 py-3">
+                              {session.is_billable_to_customer
+                                ? formatCurrency(session.bill_to_customer_amount)
+                                : "לא לחיוב"}
+                            </td>
+                            <td className="px-3 py-3">{formatMinutes(sessionWorkedMinutes(session))}</td>
+                            <td className="px-3 py-3 text-muted-foreground">
+                              <div>{formatSessionRange(session.clock_in, session.clock_out)}</div>
+                              {session.notes ? <div className="mt-1 text-xs">{session.notes}</div> : null}
+                            </td>
+                            <td className="px-3 py-3">{linkLabel}</td>
+                            <td className="px-3 py-3">{getBusinessDomainLabel(session.business_domain)}</td>
+                            <td className="px-3 py-3">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <StatusPill tone={session.clock_out ? "success" : "warning"}>
+                                  {session.clock_out ? "סגור" : "פתוח"}
+                                </StatusPill>
+                                <StatusPill tone={session.locked ? "danger" : "muted"}>
+                                  {session.locked ? "נעול" : "ניתן לעריכה"}
+                                </StatusPill>
+                                {session.billing_status && session.is_billable_to_customer ? (
+                                  <StatusPill tone={session.billing_status === "paid" ? "success" : "muted"}>
+                                    {getBillingStatusLabel(session.billing_status)}
+                                  </StatusPill>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 font-medium">
+                              {worker?.full_name ?? worker?.email ?? "עובד"}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="agreements">
@@ -1168,65 +1251,94 @@ export default function SalaryCenterClient({
             canUnlock={canManageSalary}
             onUnlockSuccess={loadProtectedData}
           >
-            <div className="space-y-3">
-              {publicUsers
-                .filter((user) => isSalaryTrackedWorker(user))
-                .map((worker) => {
-                  const workerAgreements = agreementsByUserId.get(worker.id) ?? [];
-                  const current = getCurrentSalaryAgreement(workerAgreements);
-                  return (
-                    <Card key={worker.id}>
-                      <CardContent className="space-y-3 py-5">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
-                          <div className="flex flex-wrap gap-2">
-                            {current ? (
-                              <Tag>
-                                {current.salary_type === "hourly"
-                                  ? `${formatCurrency(current.hourly_rate)} / שעה`
-                                  : formatCurrency(current.monthly_salary)}
-                              </Tag>
-                            ) : (
-                              <Tag>{"ללא הסכם פעיל"}</Tag>
-                            )}
-                            <Button variant="outline" onClick={() => openNewAgreementDialog(worker.id, current)}>
-                              {"הסכם חדש"}
-                            </Button>
-                          </div>
-                        </div>
-                        {workerAgreements.length === 0 ? (
-                          <div className="text-sm text-muted-foreground">{"אין עדיין היסטוריית שכר."}</div>
-                        ) : (
-                          workerAgreements.map((agreement) => (
-                            <div key={agreement.id} className="rounded-2xl border p-3 text-sm">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div>{getSalaryTypeLabel(agreement.salary_type)}</div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <div className="font-semibold">
-                                    {agreement.salary_type === "hourly"
-                                      ? `${formatCurrency(agreement.hourly_rate)} / שעה`
-                                      : formatCurrency(agreement.monthly_salary)}
-                                  </div>
-                                  <Button variant="ghost" onClick={() => openEditAgreementDialog(agreement)}>
-                                    {"עריכה"}
+            <Card>
+              <CardContent className="space-y-4 py-4">
+                <div className="flex justify-end">
+                  <Button onClick={() => openNewAgreementDialog()} disabled={isPending}>
+                    <Plus className="ms-2 h-4 w-4" />
+                    {"הוספת משכורת"}
+                  </Button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-right text-sm">
+                    <thead>
+                      <tr className="border-b text-muted-foreground">
+                        <th className="px-3 py-2 font-medium">פעולות</th>
+                        <th className="px-3 py-2 font-medium">מצב</th>
+                        <th className="px-3 py-2 font-medium">עד תאריך</th>
+                        <th className="px-3 py-2 font-medium">מתאריך</th>
+                        <th className="px-3 py-2 font-medium">סכום</th>
+                        <th className="px-3 py-2 font-medium">סוג</th>
+                        <th className="px-3 py-2 font-medium">עובד</th>
+                      </tr>
+                    </thead>
+                    {salaryTrackedUsersWithAgreements.map((worker, workerIndex) => {
+                      const workerAgreements = agreementsByUserId.get(worker.id) ?? [];
+                      const current = getCurrentSalaryAgreement(workerAgreements);
+                      const workerRowClass = workerIndex % 2 === 0 ? "bg-muted/20" : "bg-background";
+                      const separatorClass = workerIndex > 0 ? "border-t-4 border-border/80" : "border-t-4 border-background";
+
+                      return (
+                        <tbody key={worker.id} className={separatorClass}>
+                          {workerAgreements.map((agreement, index) => (
+                            <tr
+                              key={agreement.id}
+                              className={
+                                index === 0
+                                  ? `border-b ${workerRowClass} align-top`
+                                  : `border-b ${workerRowClass} align-top`
+                              }
+                            >
+                              <td className="px-3 py-3">
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => openEditAgreementDialog(agreement)}
+                                    aria-label="עריכה"
+                                    className={SOLID_EDIT_BUTTON_CLASS}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="icon"
+                                    onClick={() => deleteAgreement(agreement)}
+                                    aria-label="מחיקה"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </div>
-                              </div>
-                              <div className="mt-1 text-muted-foreground">
-                                {`${formatDate(agreement.valid_from)} - ${formatDate(agreement.valid_to)}`}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-            </div>
+                              </td>
+                              <td className="px-3 py-3">
+                                {current?.id === agreement.id ? <Tag>{"נוכחי"}</Tag> : <span className="text-muted-foreground">-</span>}
+                              </td>
+                              <td className="px-3 py-3 text-muted-foreground">{formatDate(agreement.valid_to)}</td>
+                              <td className="px-3 py-3 text-muted-foreground">{formatDate(agreement.valid_from)}</td>
+                              <td className="px-3 py-3 font-semibold">
+                                {agreement.salary_type === "hourly"
+                                  ? `${formatCurrency(agreement.hourly_rate)} / שעה`
+                                  : formatCurrency(agreement.monthly_salary)}
+                              </td>
+                              <td className="px-3 py-3">{getSalaryTypeLabel(agreement.salary_type)}</td>
+                              {index === 0 ? (
+                                <td rowSpan={workerAgreements.length} className="px-3 py-3 align-top font-medium">
+                                  {worker.full_name ?? worker.email ?? "עובד"}
+                                </td>
+                              ) : null}
+                            </tr>
+                          ))}
+                        </tbody>
+                      );
+                    })}
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
           </SalaryProtected>
         </TabsContent>
 
-        <TabsContent value="periods">
+        <TabsContent value="payslips">
           <SalaryProtected
             unlocked={salaryUnlocked}
             hasPasswordConfigured={hasPasswordConfigured}
@@ -1302,18 +1414,7 @@ export default function SalaryCenterClient({
                   </CardContent>
                 </Card>
               ))}
-            </div>
-          </SalaryProtected>
-        </TabsContent>
 
-        <TabsContent value="payslips">
-          <SalaryProtected
-            unlocked={salaryUnlocked}
-            hasPasswordConfigured={hasPasswordConfigured}
-            canUnlock={canManageSalary}
-            onUnlockSuccess={loadProtectedData}
-          >
-            <div className="space-y-3">
               <Card>
                 <CardContent className="grid gap-3 py-5 md:grid-cols-2">
                   <Field label="תקופה נבחרת">
@@ -1466,32 +1567,34 @@ export default function SalaryCenterClient({
         </TabsContent>
       </Tabs>
 
-      <Sheet open={Boolean(selectedWorker)} onOpenChange={(open) => !open && setSelectedWorkerId("")}>
-        <SheetContent side="right" className="w-full overflow-y-auto text-right sm:max-w-2xl" dir="rtl">
+      <Dialog open={Boolean(selectedWorker)} onOpenChange={(open) => !open && setSelectedWorkerId("")}>
+        <DialogContent className="max-h-[90vh] w-full overflow-y-auto text-right sm:max-w-4xl" dir="rtl">
           {selectedWorker ? (
             <>
-              <SheetHeader className="text-center">
+              <DialogHeader className="text-center">
                 <div className="flex flex-wrap items-center justify-center gap-3">
-                  <SheetTitle>{selectedWorker.full_name ?? selectedWorker.email ?? "עובד"}</SheetTitle>
+                  <DialogTitle>{selectedWorker.full_name ?? selectedWorker.email ?? "עובד"}</DialogTitle>
                   {isAttendanceWorker(selectedWorker) ? (
                     <Button variant="outline" onClick={() => openCreateSession(selectedWorker.id)}>
                       {"הוספת משמרת"}
                     </Button>
                   ) : null}
                 </div>
-              </SheetHeader>
+              </DialogHeader>
 
               <div className="mt-6 space-y-5">
                 <Card>
                   <CardContent className="space-y-3 py-5">
                     <div className="grid gap-3 sm:grid-cols-2">
                       <InfoRow label="שם מלא" value={selectedWorker.full_name ?? "—"} />
-                      <InfoRow label="אימייל" value={selectedWorker.email ?? "—"} />
+                      {selectedWorker.system_access !== false ? (
+                        <InfoRow label="אימייל" value={selectedWorker.email ?? "—"} />
+                      ) : null}
                       <InfoRow label="טלפון" value={selectedWorker.phone ?? "—"} />
                       <InfoRow label="תפקיד" value={getRoleLabel(selectedWorker.role)} />
                       <InfoRow label="סטטוס" value={selectedWorker.active === false ? "לא פעיל" : "פעיל"} />
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
                       <Button onClick={() => setWorkerAccessDialogOpen(true)} disabled={isPending}>
                         {"עדכון פרטי עובד"}
                       </Button>
@@ -1515,27 +1618,27 @@ export default function SalaryCenterClient({
                             return (
                               <>
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>{`${formatDateTime(session.clock_in)}${session.clock_out ? ` - ${formatDateTime(session.clock_out)}` : ""}`}</div>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap justify-end gap-2">
                               <Tag>{getBusinessDomainLabel(session.business_domain)}</Tag>
                               <Tag>{session.locked ? "נעול" : "פתוח לעריכה"}</Tag>
                               {payrollPeriod ? <Tag>{getPayrollPeriodLabel(payrollPeriod.status)}</Tag> : null}
                             </div>
+                            <div className="text-right">{`${formatDateTime(session.clock_in)}${session.clock_out ? ` - ${formatDateTime(session.clock_out)}` : ""}`}</div>
                           </div>
-                          <div className="mt-1 text-muted-foreground">
+                          <div className="mt-1 text-right text-muted-foreground">
                             {`${formatMinutes(sessionWorkedMinutes(session))} • ${getSessionLinkLabel(
                               session,
                               projectLabelsById,
                               propertyLabelsById
                             )}`}
                           </div>
-                          <div className="mt-1 text-muted-foreground">
+                          <div className="mt-1 text-right text-muted-foreground">
                             {`עלות עבודה: ${formatCurrency(sessionCostsById.get(session.id) ?? 0)}${
                               payrollPeriod ? ` • תקופה: ${monthLabelFromKey(payrollPeriod.period_month)}` : ""
                             }`}
                           </div>
                           {!session.locked ? (
-                            <div className="mt-3 flex flex-wrap gap-2">
+                            <div className="mt-3 flex flex-wrap justify-end gap-2">
                               <Button variant="outline" onClick={() => openEditSession(session)}>
                                 {"עריכה"}
                               </Button>
@@ -1561,120 +1664,120 @@ export default function SalaryCenterClient({
                     onUnlockSuccess={loadProtectedData}
                   >
                     <Card>
-                      <CardContent className="space-y-4 py-5">
+                      <CardContent className="space-y-3 py-4">
                         <div className="text-lg font-semibold">{"שכר"}</div>
-                        <div className="grid gap-4 lg:grid-cols-2">
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap gap-2">
-                              <Button onClick={() => setAgreementDialogOpen(true)} disabled={isPending}>
-                                {"הוספת הסכם חדש"}
-                              </Button>
-                              <Button variant="outline" onClick={() => setOverrideDialogOpen(true)} disabled={isPending}>
-                                {"הוספת החרגה"}
-                              </Button>
-                            </div>
-                          </div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button
+                            onClick={() =>
+                              openNewAgreementDialog(
+                                selectedWorker.id,
+                                getCurrentSalaryAgreement(agreementsByUserId.get(selectedWorker.id) ?? [])
+                              )
+                            }
+                            disabled={isPending}
+                          >
+                            <Plus className="ms-2 h-4 w-4" />
+                            {"הוספת משכורת חדשה"}
+                          </Button>
+                          <Button variant="outline" onClick={() => setOverrideDialogOpen(true)} disabled={isPending}>
+                            {"הוספת החרגה"}
+                          </Button>
+                        </div>
 
-                          <div className="space-y-3">
-                            <div className="font-medium">{"היסטוריית הסכמים"}</div>
+                        <div className="space-y-3">
+                          <div className="font-medium">{"היסטוריית משכורות"}</div>
                             {(agreementsByUserId.get(selectedWorker.id) ?? []).map((agreement) => (
-                              <div key={agreement.id} className="rounded-2xl border p-3 text-sm">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div>{getSalaryTypeLabel(agreement.salary_type)}</div>
-                                  <div className="font-semibold">
-                                    {agreement.salary_type === "hourly"
-                                      ? `${formatCurrency(agreement.hourly_rate)} / שעה`
-                                      : formatCurrency(agreement.monthly_salary)}
+                              <div
+                                key={agreement.id}
+                                className="grid gap-1 rounded-lg border px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                              >
+                                <div className="min-w-0 text-right">
+                                  <div className="flex flex-wrap items-center justify-end gap-2">
+                                    <span className="font-medium">{getSalaryTypeLabel(agreement.salary_type)}</span>
+                                    {getCurrentSalaryAgreement(agreementsByUserId.get(selectedWorker.id) ?? [])?.id === agreement.id ? (
+                                      <Tag>{"נוכחי"}</Tag>
+                                    ) : null}
+                                    <span className="text-muted-foreground">
+                                      {`${formatDate(agreement.valid_from)} - ${formatDate(agreement.valid_to)}`}
+                                    </span>
                                   </div>
+                                  <div className="mt-1 text-xs text-muted-foreground">
+                                    {`שעות תקניות: ${agreement.standard_daily_hours ?? "0"} • נוספות: ${formatCurrency(agreement.overtime_rate)}`}
+                                  </div>
+                                  {agreement.notes ? (
+                                    <div className="mt-1 text-xs text-muted-foreground">{agreement.notes}</div>
+                                  ) : null}
                                 </div>
-                                <div className="mt-1 text-muted-foreground">
-                                  {`${formatDate(agreement.valid_from)} - ${formatDate(agreement.valid_to)}`}
-                                </div>
-                                <div className="mt-1 text-muted-foreground">
+                                <div className="text-right font-semibold">
                                   {agreement.salary_type === "hourly"
-                                    ? `תעריף שעתי: ${formatCurrency(agreement.hourly_rate)}`
-                                    : `שכר חודשי: ${formatCurrency(agreement.monthly_salary)}`}
+                                    ? `${formatCurrency(agreement.hourly_rate)} / שעה`
+                                    : formatCurrency(agreement.monthly_salary)}
                                 </div>
-                                <div className="mt-1 text-muted-foreground">
-                                  {`תעריף שעות נוספות: ${formatCurrency(agreement.overtime_rate)} • שעות יומיות תקניות: ${agreement.standard_daily_hours ?? "0"}`}
-                                </div>
-                                {agreement.notes ? (
-                                  <div className="mt-2 rounded-2xl bg-muted/30 px-3 py-2 text-muted-foreground">
-                                    {agreement.notes}
-                                  </div>
-                                ) : null}
                               </div>
                             ))}
 
-                            <div className="font-medium">{"החרגות שכר שעתי"}</div>
-                            {selectedWorkerOverrides.length === 0 ? (
-                              <div className="text-sm text-muted-foreground">{"אין החרגות שכר."}</div>
-                            ) : (
-                              selectedWorkerOverrides.map((override, index) => (
-                                <div key={`${override.created_at ?? "override"}-${index}`} className="rounded-2xl border p-3 text-sm">
-                                  <div className="font-semibold">{formatCurrency(override.override_hourly_rate)}</div>
-                                  <div className="mt-1 text-muted-foreground">
+                          <div className="font-medium">{"החרגות שכר שעתי"}</div>
+                          {selectedWorkerOverrides.length === 0 ? (
+                            <div className="text-sm text-muted-foreground">{"אין החרגות שכר."}</div>
+                          ) : (
+                            selectedWorkerOverrides.map((override, index) => (
+                              <div
+                                key={`${override.created_at ?? "override"}-${index}`}
+                                className="grid gap-1 rounded-lg border px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                              >
+                                <div className="min-w-0 text-right">
+                                  <div className="text-muted-foreground">
                                     {override.created_at ? formatDateTime(override.created_at) : "ללא תאריך"}
                                   </div>
                                   {override.notes ? (
-                                    <div className="mt-2 rounded-2xl bg-muted/30 px-3 py-2 text-muted-foreground">
-                                      {override.notes}
-                                    </div>
+                                    <div className="mt-1 text-xs text-muted-foreground">{override.notes}</div>
                                   ) : null}
                                 </div>
-                              ))
-                            )}
+                                <div className="text-right font-semibold">{formatCurrency(override.override_hourly_rate)}</div>
+                              </div>
+                            ))
+                          )}
 
-                            <div className="font-medium">{"תלושים"}</div>
-                            {(payslipsByUserId.get(selectedWorker.id) ?? []).length === 0 ? (
-                              <div className="text-sm text-muted-foreground">{"אין תלושים לעובד הזה כרגע."}</div>
-                            ) : (
-                              (payslipsByUserId.get(selectedWorker.id) ?? []).map((payslip) => {
-                                const period = periodsById.get(payslip.payroll_period_id);
-                                return (
-                                  <div key={payslip.id} className="rounded-2xl border p-3 text-sm">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                      <div>{period ? monthLabelFromKey(period.period_month) : "תקופה"}</div>
-                                      <div className="font-semibold">{formatCurrency(payslip.gross_salary)}</div>
-                                    </div>
-                                    <div className="mt-1 text-muted-foreground">
+                          <div className="font-medium">{"תלושים"}</div>
+                          {(payslipsByUserId.get(selectedWorker.id) ?? []).length === 0 ? (
+                            <div className="text-sm text-muted-foreground">{"אין תלושים לעובד הזה כרגע."}</div>
+                          ) : (
+                            (payslipsByUserId.get(selectedWorker.id) ?? []).map((payslip) => {
+                              const period = periodsById.get(payslip.payroll_period_id);
+                              return (
+                                <div
+                                  key={payslip.id}
+                                  className="grid gap-1 rounded-lg border px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                                >
+                                  <div className="min-w-0 text-right">
+                                    <div className="font-medium">{period ? monthLabelFromKey(period.period_month) : "תקופה"}</div>
+                                    <div className="mt-1 text-xs text-muted-foreground">
                                       {`${formatMinutes(payslip.total_work_minutes)} • ${getSalaryTypeLabel(
                                         payslip.calculated_salary_type
                                       )}`}
                                     </div>
-                                    <div className="mt-1 text-muted-foreground">
-                                      {`שכר בסיס: ${formatCurrency(payslip.calculated_base_salary)} • התאמות: ${formatCurrency(payslip.manual_adjustments)}`}
-                                    </div>
-                                    {period ? (
-                                      <div className="mt-1 text-muted-foreground">{`סטטוס: ${getPayrollPeriodLabel(period.status)} • ${formatDate(period.start_date)} - ${formatDate(period.end_date)}`}</div>
-                                    ) : null}
                                   </div>
-                                );
-                              })
-                            )}
+                                  <div className="text-right font-semibold">{formatCurrency(payslip.gross_salary)}</div>
+                                </div>
+                              );
+                            })
+                          )}
 
-                            {selectedPeriodId ? (
-                              <Button onClick={() => generateWorkerPayslip(selectedWorker.id)} disabled={isPending}>
-                                {"יצירת / חישוב תלוש לתקופה שנבחרה"}
-                              </Button>
-                            ) : null}
-                          </div>
+                          {selectedPeriodId ? (
+                            <Button onClick={() => generateWorkerPayslip(selectedWorker.id)} disabled={isPending}>
+                              {"יצירת / חישוב תלוש לתקופה שנבחרה"}
+                            </Button>
+                          ) : null}
                         </div>
                       </CardContent>
                     </Card>
                   </SalaryProtected>
-                ) : (
-                  <Card>
-                    <CardContent className="py-5 text-sm text-muted-foreground">
-                      {"העובד הזה מנוהל לפי משימות / פרויקטים בלבד, ולכן אין עבורו הסכמי שכר, תלושים או היסטוריית שכר חודשית."}
-                    </CardContent>
-                  </Card>
-                )}
+                ) : null}
               </div>
             </>
           ) : null}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={workerAccessDialogOpen} onOpenChange={setWorkerAccessDialogOpen}>
         <DialogContent dir="rtl" className="max-w-xl">
@@ -1765,12 +1868,29 @@ export default function SalaryCenterClient({
       <Dialog open={agreementDialogOpen} onOpenChange={setAgreementDialogOpen}>
         <DialogContent dir="rtl" className="max-w-2xl">
           <DialogHeader className="text-right">
-            <DialogTitle>{agreementForm.agreement_id ? "עריכת הסכם שכר" : "הוספת הסכם שכר"}</DialogTitle>
+            <DialogTitle>{agreementForm.agreement_id ? "עריכת משכורת" : "הוספת משכורת"}</DialogTitle>
             <DialogDescription>
-              {agreementForm.agreement_id ? "עדכון הסכם שכר קיים." : "הוספת הסכם חדש לעובד הנבחר."}
+              {agreementForm.agreement_id ? "עדכון משכורת קיימת." : "הוספת משכורת חדשה ובחירת עובד."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="עובד">
+              <select
+                value={agreementForm.user_id}
+                onChange={(event) =>
+                  setAgreementForm((current) => ({ ...current, user_id: event.target.value }))
+                }
+                className={selectClassName}
+                disabled={Boolean(agreementForm.agreement_id)}
+              >
+                <option value="">{"בחירת עובד"}</option>
+                {allSalaryTrackedUsers.map((worker) => (
+                  <option key={worker.id} value={worker.id}>
+                    {worker.full_name ?? worker.email ?? "עובד"}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field label="סוג שכר">
               <select
                 value={agreementForm.salary_type}
@@ -1787,8 +1907,7 @@ export default function SalaryCenterClient({
               </select>
             </Field>
             <Field label="בתוקף מתאריך">
-              <Input
-                type="date"
+              <DateInput
                 value={agreementForm.valid_from}
                 onChange={(event) =>
                   setAgreementForm((current) => ({ ...current, valid_from: event.target.value }))
@@ -1827,12 +1946,18 @@ export default function SalaryCenterClient({
             </Field>
             <Field label="שעות יומיות תקניות">
               <Input
+                type="number"
+                min="0"
+                step="0.25"
                 inputMode="decimal"
                 value={agreementForm.standard_daily_hours}
                 onChange={(event) =>
                   setAgreementForm((current) => ({ ...current, standard_daily_hours: event.target.value }))
                 }
               />
+              {!agreementStandardDailyHoursValid ? (
+                <div className="mt-1 text-xs text-destructive">יש להזין ערך גדול מ-0 לפני שמירה.</div>
+              ) : null}
             </Field>
             <div className="sm:col-span-2">
               <Field label="הערות">
@@ -1851,13 +1976,10 @@ export default function SalaryCenterClient({
               {"ביטול"}
             </Button>
             <Button
-              onClick={() => {
-                saveAgreement();
-                setAgreementDialogOpen(false);
-              }}
-              disabled={isPending}
+              onClick={saveAgreement}
+              disabled={isPending || !agreementStandardDailyHoursValid}
             >
-              {agreementForm.agreement_id ? "שמירת שינויים" : "שמירת הסכם שכר"}
+              {agreementForm.agreement_id ? "שמירת שינויים" : "שמירת משכורת"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2223,36 +2345,9 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function InlineMetric({
-  label,
-  value,
-  forceShow = false,
-}: {
-  label: string;
-  value: string;
-  forceShow?: boolean;
-}) {
-  if (
-    !forceShow &&
-    (label === "משמרות" ||
-      label === "פרויקטים / קישורים" ||
-      label === "פתוחות" ||
-      label === "שעות החודש")
-  ) {
-    return null;
-  }
-
-  return (
-    <div className="rounded-2xl border bg-background/80 px-3 py-2">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm font-semibold">{value}</div>
-    </div>
-  );
-}
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="space-y-1 text-sm">
+    <label className="space-y-1 text-right text-sm">
       <div className="font-medium">{label}</div>
       {children}
     </label>
