@@ -32,6 +32,10 @@ function mapSessions(rows: Row[] | null | undefined, lockedIds: Set<string>): Se
         typeof row.worked_minutes === "number" || typeof row.worked_minutes === "string"
           ? row.worked_minutes
           : null,
+      labor_cost:
+        typeof row.labor_cost === "number" || typeof row.labor_cost === "string"
+          ? row.labor_cost
+          : null,
       is_billable_to_customer:
         typeof row.is_billable_to_customer === "boolean" ? row.is_billable_to_customer : null,
       bill_to_customer_amount:
@@ -80,7 +84,7 @@ export default async function PayrollPage() {
     supabase
       .from("attendance_sessions")
       .select(
-        "id,user_id,clock_in,clock_out,worked_minutes,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+        "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
       )
       .order("clock_in", { ascending: false })
       .range(0, 4999),

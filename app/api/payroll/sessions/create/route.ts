@@ -3,7 +3,9 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import {
+  getActiveSalaryAgreementForDate,
   minutesBetween,
+  type SalaryAgreementRow,
   WORK_SESSIONS_TABLE,
 } from "@/lib/payroll";
 
@@ -132,6 +134,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: existingSessionsError.message }, { status: 400 });
     }
 
+    const { data: salaryAgreements, error: salaryAgreementsError } = await supabase
+      .from("salary_agreements")
+      .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours")
+      .eq("user_id", selectedUserId)
+      .order("valid_from", { ascending: false });
+
+    if (salaryAgreementsError) {
+      return NextResponse.json({ error: salaryAgreementsError.message }, { status: 400 });
+    }
+
     const overlapSession = (existingSessions ?? []).find((row) => {
       if (typeof row.clock_in !== "string") return false;
       const existingClockOut = typeof row.clock_out === "string" ? row.clock_out : null;
@@ -166,7 +178,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    if (requestedLaborCost === null) {
+    const activeAgreement = getActiveSalaryAgreementForDate(
+      (salaryAgreements ?? []) as SalaryAgreementRow[],
+      new Date(clockIn)
+    );
+
+    if (requestedLaborCost === null && activeAgreement) {
       await recalculateUserSessionCostsFromRules(supabase, selectedUserId, {
         fromDate: clockIn.slice(0, 10),
       });

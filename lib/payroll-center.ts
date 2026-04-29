@@ -1,6 +1,7 @@
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import {
   calculateSessionLaborCost,
+  getActiveSalaryAgreementForDate,
   monthKeyFromDate,
   sessionWorkedMinutes,
   toNumber,
@@ -25,7 +26,7 @@ export type SalaryCenterProjectOption = {
   label: string;
 };
 
-export type SessionPublicRow = Omit<WorkSessionRow, "labor_cost"> & {
+export type SessionPublicRow = WorkSessionRow & {
   locked?: boolean;
 };
 
@@ -271,10 +272,9 @@ export function calculateSessionLaborCostsByDay(
     let accumulatedMinutes = 0;
 
     orderedSessions.forEach((session) => {
-      const agreement = getCurrentSalaryAgreement(agreements, new Date(session.clock_in));
+      const agreement = getActiveSalaryAgreementForDate(agreements, new Date(session.clock_in));
       const workedMinutes = sessionWorkedMinutes(session);
       if (!agreement || workedMinutes <= 0) {
-        costsById.set(session.id, 0);
         return;
       }
 
@@ -680,6 +680,7 @@ export async function recalculateUserSessionCostsFromRules(
       if (!Number.isFinite(sessionTime) || sessionTime < fromTime) continue;
     }
 
+    if (!calculatedCosts.has(session.id)) continue;
     const nextLaborCost = calculatedCosts.get(session.id) ?? 0;
     if (Math.abs(toNumber(session.labor_cost) - nextLaborCost) < 0.005) continue;
 

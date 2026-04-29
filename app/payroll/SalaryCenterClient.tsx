@@ -479,7 +479,14 @@ export default function SalaryCenterClient({
           clockInIso !== sessionForm.original_clock_in ||
           (clockOutIso ?? "") !== sessionForm.original_clock_out);
       const shouldRecalculateLaborCost =
-        sessionTimingChanged && clockOutIso !== null && laborCostInput === originalLaborCost;
+        clockOutIso !== null &&
+        (
+          (sessionMode === "create" && !laborCostInput) ||
+          (sessionMode === "edit" &&
+            ((!laborCostInput && !originalLaborCost) ||
+              !laborCostInput ||
+              (sessionTimingChanged && laborCostInput === originalLaborCost)))
+        );
 
       await postJson(path, {
         session_id: sessionForm.session_id || undefined,

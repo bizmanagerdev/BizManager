@@ -3,7 +3,9 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { collectLockedSessionIds, recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import {
+  getActiveSalaryAgreementForDate,
   minutesBetween,
+  type SalaryAgreementRow,
   type PayrollPeriodRow,
   WORK_SESSIONS_TABLE,
 } from "@/lib/payroll";
@@ -85,7 +87,7 @@ export async function POST(req: Request) {
     }
 
     const { supabase } = access.value;
-    const [sessionResult, periodsResult, siblingsResult] = await Promise.all([
+    const [sessionResult, periodsResult, siblingsResult, agreementsResult] = await Promise.all([
       supabase
         .from(WORK_SESSIONS_TABLE)
         .select(
@@ -100,11 +102,17 @@ export async function POST(req: Request) {
         .eq("user_id", userId)
         .neq("id", sessionId)
         .range(0, 999),
+      supabase
+        .from("salary_agreements")
+        .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours")
+        .eq("user_id", userId)
+        .order("valid_from", { ascending: false }),
     ]);
 
     if (sessionResult.error) return NextResponse.json({ error: sessionResult.error.message }, { status: 400 });
     if (periodsResult.error) return NextResponse.json({ error: periodsResult.error.message }, { status: 400 });
     if (siblingsResult.error) return NextResponse.json({ error: siblingsResult.error.message }, { status: 400 });
+    if (agreementsResult.error) return NextResponse.json({ error: agreementsResult.error.message }, { status: 400 });
     if (!sessionResult.data) return NextResponse.json({ error: "Session not found." }, { status: 404 });
 
     const lockedIds = collectLockedSessionIds(
@@ -122,10 +130,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "This session overlaps another session." }, { status: 400 });
     }
 
+    const activeAgreement = getActiveSalaryAgreementForDate(
+      (agreementsResult.data ?? []) as SalaryAgreementRow[],
+      new Date(clockIn)
+    );
+    const canRecalculateLaborCost = recalculateLaborCost && Boolean(activeAgreement);
+
     let laborCost = sessionResult.data.labor_cost;
     if (requestedLaborCost !== null) {
       laborCost = requestedLaborCost;
-    } else if (recalculateLaborCost) {
+    } else if (canRecalculateLaborCost) {
       laborCost = null;
     }
 
@@ -158,7 +172,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
     }
 
-    if ((requestedLaborCost === null && clockOut) || recalculateLaborCost) {
+    if (canRecalculateLaborCost && requestedLaborCost === null && clockOut) {
       await recalculateUserSessionCostsFromRules(supabase, userId, {
         fromDate: clockIn.slice(0, 10),
       });

@@ -272,6 +272,23 @@ export default function ProjectTabsClient({
   const [paymentsUi, setPaymentsUi] = useState<PaymentRow[]>(payments);
   const [projectTasksUi, setProjectTasksUi] =
     useState<Record<string, unknown>[]>(projectTasks);
+  const firstWorkerSessionDefaults = useMemo(() => {
+    const orderedSessions = expensesUi
+      .filter(
+        (item): item is ExpenseListItem & { source_type: "session"; session: WorkSessionRow } =>
+          item.source_type === "session" && Boolean(item.session?.clock_in)
+      )
+      .sort((a, b) => {
+        const aTime = new Date(a.session.clock_in).getTime();
+        const bTime = new Date(b.session.clock_in).getTime();
+        return aTime - bTime;
+      });
+
+    return {
+      clockIn: orderedSessions[0]?.session.clock_in ?? null,
+      clockOut: orderedSessions[0]?.session.clock_out ?? null,
+    };
+  }, [expensesUi]);
 
   useEffect(() => {
     setExpensesUi(expenses);
@@ -1889,6 +1906,8 @@ export default function ProjectTabsClient({
         projectId={overview.id}
         projectType={overview.project_type}
         projectStartDate={overview.start_date}
+        defaultSessionClockIn={firstWorkerSessionDefaults.clockIn}
+        defaultSessionClockOut={firstWorkerSessionDefaults.clockOut}
         users={assignableUsers.filter((user) => user.active !== false)}
         editingItem={editingExpense}
         onSaved={(saved) => {
@@ -2768,6 +2787,21 @@ function projectLocalDateTime(projectStartDate: string | null | undefined, offse
   return `${baseDate}T${pad(adjusted.getHours())}:${pad(adjusted.getMinutes())}`;
 }
 
+function projectLocalDateTimeWithTemplate(
+  projectStartDate: string | null | undefined,
+  templateDateTime: string | null | undefined,
+  fallbackOffsetMinutes = 0
+) {
+  const baseDate = projectDateOrToday(projectStartDate);
+  if (!templateDateTime) return projectLocalDateTime(projectStartDate, fallbackOffsetMinutes);
+  const template = new Date(templateDateTime);
+  if (Number.isNaN(template.getTime())) {
+    return projectLocalDateTime(projectStartDate, fallbackOffsetMinutes);
+  }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${baseDate}T${pad(template.getHours())}:${pad(template.getMinutes())}`;
+}
+
 function toIsoDateTime(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
@@ -2779,6 +2813,8 @@ function AddExpenseDialog({
   projectId,
   projectType,
   projectStartDate,
+  defaultSessionClockIn,
+  defaultSessionClockOut,
   users,
   editingItem,
   onSaved,
@@ -2788,6 +2824,8 @@ function AddExpenseDialog({
   projectId: string;
   projectType: string;
   projectStartDate: string | null;
+  defaultSessionClockIn: string | null;
+  defaultSessionClockOut: string | null;
   users: AssignableUser[];
   editingItem: ExpenseListItem | null;
   onSaved: (saved: ExpenseListItem) => void;
@@ -2815,8 +2853,12 @@ function AddExpenseDialog({
   const [categoryOther, setCategoryOther] = useState("");
   const [description, setDescription] = useState("");
   const [expenseDate, setExpenseDate] = useState(projectDateOrToday(projectStartDate));
-  const [clockIn, setClockIn] = useState(projectLocalDateTime(projectStartDate, -60));
-  const [clockOut, setClockOut] = useState(projectLocalDateTime(projectStartDate));
+  const [clockIn, setClockIn] = useState(
+    projectLocalDateTimeWithTemplate(projectStartDate, defaultSessionClockIn, -60)
+  );
+  const [clockOut, setClockOut] = useState(
+    projectLocalDateTimeWithTemplate(projectStartDate, defaultSessionClockOut, 0)
+  );
   const [sessionUserId, setSessionUserId] = useState("");
   const [notes, setNotes] = useState("");
   const [billedToCustomer, setBilledToCustomer] = useState(false);
@@ -2824,9 +2866,6 @@ function AddExpenseDialog({
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [laborCost, setLaborCost] = useState("");
   const [laborCostTouched, setLaborCostTouched] = useState(false);
-  const [originalSessionUserId, setOriginalSessionUserId] = useState("");
-  const [originalClockInIso, setOriginalClockInIso] = useState("");
-  const [originalClockOutIso, setOriginalClockOutIso] = useState("");
   const [originalLaborCost, setOriginalLaborCost] = useState("");
   const [sessionBillableToCustomer, setSessionBillableToCustomer] = useState(false);
   const [billToCustomerAmount, setBillToCustomerAmount] = useState("");
@@ -2971,12 +3010,12 @@ function AddExpenseDialog({
     setClockIn(
       isEditingSession
         ? toLocalDateTimeValue(editingSession?.clock_in)
-        : projectLocalDateTime(projectStartDate, -60)
+        : projectLocalDateTimeWithTemplate(projectStartDate, defaultSessionClockIn, -60)
     );
     setClockOut(
       isEditingSession
         ? toLocalDateTimeValue(editingSession?.clock_out)
-        : projectLocalDateTime(projectStartDate)
+        : projectLocalDateTimeWithTemplate(projectStartDate, defaultSessionClockOut, 0)
     );
     setSessionUsers(users);
     setSessionUserId(isEditingSession ? editingSession?.user_id ?? "" : users[0]?.id ?? "");
@@ -2994,9 +3033,6 @@ function AddExpenseDialog({
         ? String(toNumber(editingSession?.labor_cost))
         : "";
     setLaborCost(currentLaborCost);
-    setOriginalSessionUserId(isEditingSession ? editingSession?.user_id ?? "" : "");
-    setOriginalClockInIso(isEditingSession ? editingSession?.clock_in ?? "" : "");
-    setOriginalClockOutIso(isEditingSession ? editingSession?.clock_out ?? "" : "");
     setOriginalLaborCost(currentLaborCost);
     setSessionBillableToCustomer(Boolean(editingSession?.is_billable_to_customer));
     setBillToCustomerAmount(
@@ -3005,7 +3041,18 @@ function AddExpenseDialog({
         : ""
     );
     movedAmountToNotesRef.current = false;
-  }, [open, editingExpense, editingItem, projectType, users, isEditingSession, editingSession, projectStartDate]);
+  }, [
+    open,
+    editingExpense,
+    editingItem,
+    projectType,
+    users,
+    isEditingSession,
+    editingSession,
+    projectStartDate,
+    defaultSessionClockIn,
+    defaultSessionClockOut,
+  ]);
 
   useEffect(() => {
     if (!isSessionMode) {
@@ -3088,12 +3135,17 @@ function AddExpenseDialog({
       const laborCostInput = laborCost.trim();
       const sessionTimingChanged =
         isEditingSession &&
-        (sessionUserId !== originalSessionUserId ||
-          clockInIso !== originalClockInIso ||
-          clockOutIso !== originalClockOutIso);
+        (sessionUserId !== (editingSession?.user_id ?? "") ||
+          clockInIso !== (editingSession?.clock_in ?? "") ||
+          clockOutIso !== (editingSession?.clock_out ?? ""));
       const shouldAutoCalculateLaborCost =
-        !laborCostInput ||
-        (sessionTimingChanged && laborCostInput === originalLaborCost);
+        clockOutIso !== null &&
+        (
+          (!isEditingSession && !laborCostInput) ||
+          (isEditingSession &&
+            (!laborCostInput ||
+              (sessionTimingChanged && laborCostInput === originalLaborCost.trim())))
+        );
 
       setSubmitting(true);
       try {
@@ -3109,6 +3161,7 @@ function AddExpenseDialog({
             clock_in: clockInIso,
             clock_out: clockOutIso,
             labor_cost: shouldAutoCalculateLaborCost ? null : laborCostNumber,
+            recalculate_labor_cost: shouldAutoCalculateLaborCost,
             is_billable_to_customer: sessionBillableToCustomer,
             bill_to_customer_amount: sessionBillableToCustomer ? billToCustomerAmountNumber : undefined,
             billing_status: sessionBillableToCustomer ? "billable" : "not_billable",
@@ -3136,17 +3189,14 @@ function AddExpenseDialog({
         setCategoryOther("");
         setDescription("");
         setExpenseDate(projectDateOrToday(projectStartDate));
-        setClockIn(projectLocalDateTime(projectStartDate, -60));
-        setClockOut(projectLocalDateTime(projectStartDate));
+        setClockIn(projectLocalDateTimeWithTemplate(projectStartDate, defaultSessionClockIn, -60));
+        setClockOut(projectLocalDateTimeWithTemplate(projectStartDate, defaultSessionClockOut, 0));
         setSessionUserId(sessionUsers[0]?.id ?? users[0]?.id ?? "");
         setNotes("");
         setBilledToCustomer(false);
         setAttachmentFiles([]);
         setExistingAttachments([]);
         setLaborCost("");
-        setOriginalSessionUserId("");
-        setOriginalClockInIso("");
-        setOriginalClockOutIso("");
         setOriginalLaborCost("");
         setSessionBillableToCustomer(false);
         setBillToCustomerAmount("");
@@ -3413,30 +3463,54 @@ function AddExpenseDialog({
                 <div className="text-xs text-destructive">{categoryError}</div>
               ) : null}
             </div>
-            {!isSessionMode ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
-                <Input
-                  inputMode="numeric"
-                  value={amount}
-                  onChange={(e) => {
-                    setAmount(e.target.value);
-                    setAmountTouched(true);
-                  }}
-                  onBlur={() => setAmountTouched(true)}
-                  placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: 250"}
-                  aria-invalid={showAmountError}
-                  className={
-                    showAmountError
+            <div className="space-y-1">
+              <div className="text-sm font-medium">
+                {isSessionMode ? "עלות עבודה" : "\u05e1\u05db\u05d5\u05dd *"}
+              </div>
+              <Input
+                inputMode="numeric"
+                value={isSessionMode ? laborCost : amount}
+                onChange={(e) => {
+                  if (isSessionMode) {
+                    setLaborCost(e.target.value);
+                    setLaborCostTouched(true);
+                    return;
+                  }
+                  setAmount(e.target.value);
+                  setAmountTouched(true);
+                }}
+                onBlur={() => {
+                  if (isSessionMode) {
+                    setLaborCostTouched(true);
+                    return;
+                  }
+                  setAmountTouched(true);
+                }}
+                placeholder={isSessionMode ? "למשל 500" : "\u05dc\u05d3\u05d5\u05d2\u05de\u05d4: 250"}
+                aria-invalid={isSessionMode ? showLaborCostError : showAmountError}
+                className={
+                  isSessionMode
+                    ? showLaborCostError
                       ? "border-destructive focus-visible:ring-destructive"
                       : ""
-                  }
-                />
-                {showAmountError ? (
-                  <div className="text-xs text-destructive">{amountError}</div>
-                ) : null}
-              </div>
-            ) : null}
+                    : showAmountError
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                }
+              />
+              {isSessionMode ? (
+                <>
+                  <div className="text-xs text-muted-foreground">
+                    אם משאירים ריק, העלות תחושב אוטומטית לפי הסכם השכר והשעות הנוספות.
+                  </div>
+                  {showLaborCostError ? (
+                    <div className="text-xs text-destructive">{laborCostError}</div>
+                  ) : null}
+                </>
+              ) : showAmountError ? (
+                <div className="text-xs text-destructive">{amountError}</div>
+              ) : null}
+            </div>
           </AdaptiveGrid>
 
           {category === OTHER_PROJECT_EXPENSE_CATEGORY ? (
@@ -3554,27 +3628,6 @@ function AddExpenseDialog({
           {isSessionMode ? (
             <div className="space-y-3 rounded-lg border p-3">
                 <AdaptiveGrid variant="formTwo">
-                  <div className="space-y-1">
-                    <div className="text-sm font-medium">עלות עבודה</div>
-                    <Input
-                      inputMode="numeric"
-                      value={laborCost}
-                    onChange={(e) => {
-                      setLaborCost(e.target.value);
-                      setLaborCostTouched(true);
-                    }}
-                    onBlur={() => setLaborCostTouched(true)}
-                    placeholder="למשל 500"
-                      aria-invalid={showLaborCostError}
-                      className={showLaborCostError ? "border-destructive focus-visible:ring-destructive" : ""}
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      אם משאירים ריק, העלות תחושב אוטומטית לפי הסכם השכר והשעות הנוספות.
-                    </div>
-                    {showLaborCostError ? (
-                      <div className="text-xs text-destructive">{laborCostError}</div>
-                    ) : null}
-                </div>
                 <div className="space-y-2 text-sm">
                   <label className="flex items-center gap-2 pt-7">
                     <input

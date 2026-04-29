@@ -31,8 +31,28 @@ import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; email?: string | null };
-type SortMode = "recent" | "start_date" | "profit_desc";
+type SortMode = "recent" | "start_date" | "start_date_desc" | "profit_desc";
 type ProjectsView = "projects" | "quotes" | "closed";
+type ProjectMonthlySummary = {
+  month: string;
+  startDate: string;
+  endDate: string;
+  totalProjects: number;
+  byType: Array<{ type: string; count: number }>;
+  byStatus: Array<{ status: string; count: number }>;
+  totals: {
+    charged: number;
+    paid: number;
+    expenses: number;
+    profit: number;
+    basePrice: number;
+    billedExtras: number;
+  };
+  quotes: {
+    count: number;
+    charged: number;
+  };
+};
 type ContactDraft = {
   full_name: string;
   role: string;
@@ -170,6 +190,23 @@ function profitValue(row: ProjectRow) {
   return null;
 }
 
+function actualPriceValue(row: ProjectRow) {
+  return getNumber(row, "actual_price") ?? getNumber(row, "agreed_base_price");
+}
+
+function normalizeProjectsView(value: string | null): ProjectsView {
+  return value === "quotes" || value === "closed" ? value : "projects";
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg font-semibold">{value}</div>
+    </div>
+  );
+}
+
 function paymentStatusValue(row: ProjectRow) {
   const value = getString(row, "payment_status_list");
   if (value === "paid" || value === "partial" || value === "unpaid" || value === "unpriced") {
@@ -228,10 +265,23 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function currentMonthIso() {
+  return new Date().toISOString().slice(0, 7);
+}
+
 function oneMonthFrom(dateIso: string) {
   const d = new Date(`${dateIso}T00:00:00`);
   d.setMonth(d.getMonth() + 1);
   return d.toISOString().slice(0, 10);
+}
+
+function defaultSortForTab(tab: ProjectsView): SortMode {
+  return tab === "closed" ? "start_date_desc" : "start_date";
+}
+
+function defaultEndDateForProjectType(projectType: string, startDate: string) {
+  if (isMovingProjectType(projectType)) return startDate;
+  return oneMonthFrom(startDate);
 }
 
 function makeEmptyContactDraft(): ContactDraft {
@@ -262,11 +312,18 @@ export default function ProjectsClient({
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
   const [projects, setProjects] = useState<ProjectRow[]>(initialProjects);
-  const [activeTab, setActiveTab] = useState<ProjectsView>("projects");
+  const [activeTab, setActiveTab] = useState<ProjectsView>(() =>
+    normalizeProjectsView(searchParams.get("view"))
+  );
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
-  const [sort, setSort] = useState<SortMode>("start_date");
+  const [sort, setSort] = useState<SortMode>(defaultSortForTab("projects"));
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [monthlySummaryOpen, setMonthlySummaryOpen] = useState(false);
+  const [monthlySummaryMonth, setMonthlySummaryMonth] = useState(currentMonthIso());
+  const [monthlySummaryLoading, setMonthlySummaryLoading] = useState(false);
+  const [monthlySummaryError, setMonthlySummaryError] = useState<string | null>(null);
+  const [monthlySummary, setMonthlySummary] = useState<ProjectMonthlySummary | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -281,7 +338,9 @@ export default function ProjectsClient({
   const [createExpensesSeparately, setCreateExpensesSeparately] = useState(false);
   const [createProjectManagerId, setCreateProjectManagerId] = useState(currentUserId ?? "");
   const [createStartDate, setCreateStartDate] = useState(todayIso());
-  const [createEndDate, setCreateEndDate] = useState(oneMonthFrom(todayIso()));
+  const [createEndDate, setCreateEndDate] = useState(
+    defaultEndDateForProjectType(defaultProjectTypeOptions[0] ?? "", todayIso())
+  );
   const [createNotes, setCreateNotes] = useState("");
   const [createItemsToMove, setCreateItemsToMove] = useState("");
 
@@ -289,6 +348,7 @@ export default function ProjectsClient({
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [createCustomerName, setCreateCustomerName] = useState("");
   const [createCustomerPhone, setCreateCustomerPhone] = useState("");
+  const [createCustomerWhatsapp, setCreateCustomerWhatsapp] = useState("");
   const [createCustomerEmail, setCreateCustomerEmail] = useState("");
   const [createCustomerCity, setCreateCustomerCity] = useState("");
   const [createCustomerCityOther, setCreateCustomerCityOther] = useState("");
@@ -354,6 +414,8 @@ export default function ProjectsClient({
       list = [...list].sort(
         (a, b) => (profitValue(b) ?? -Infinity) - (profitValue(a) ?? -Infinity)
       );
+    } else if (sort === "start_date_desc") {
+      list = [...list].sort((a, b) => getDateValue(b, "start_date") - getDateValue(a, "start_date"));
     } else if (sort === "start_date") {
       list = [...list].sort((a, b) => getDateValue(a, "start_date") - getDateValue(b, "start_date"));
     }
@@ -395,7 +457,8 @@ export default function ProjectsClient({
     );
     return filtered.sort();
   }, [activeTab, projects]);
-  const hasActiveToolbarFilters = query.trim().length > 0 || status !== "all" || sort !== "start_date";
+  const hasActiveToolbarFilters =
+    query.trim().length > 0 || status !== "all" || sort !== defaultSortForTab(activeTab);
 
   const projectTypeOptions = useMemo(() => {
     return defaultProjectTypeOptions;
@@ -419,16 +482,40 @@ export default function ProjectsClient({
   const selectedCustomer = customerOptionsState.find((row) => row.id === createCustomerId) ?? null;
 
   useEffect(() => {
+    const nextView = normalizeProjectsView(searchParams.get("view"));
+    setActiveTab((current) => (current === nextView ? current : nextView));
+  }, [searchParams]);
+
+  useEffect(() => {
     if (activeTab === "quotes") {
       setStatus("quote");
+      setSort(defaultSortForTab(activeTab));
       return;
     }
     if (activeTab === "closed") {
       setStatus("completed");
+      setSort(defaultSortForTab(activeTab));
       return;
     }
+    setSort(defaultSortForTab(activeTab));
     setStatus((current) => (current === "quote" || current === "completed" ? "all" : current));
   }, [activeTab]);
+
+  const handleTabChange = useCallback(
+    (value: string) => {
+      const nextTab = normalizeProjectsView(value);
+      setActiveTab(nextTab);
+      const params = new URLSearchParams(searchParams.toString());
+      if (nextTab === "projects") {
+        params.delete("view");
+      } else {
+        params.set("view", nextTab);
+      }
+      const queryString = params.toString();
+      router.replace(queryString ? `/projects?${queryString}` : "/projects", { scroll: false });
+    },
+    [router, searchParams]
+  );
 
   function defaultCreateStatusForTab(tab: ProjectsView) {
     return tab === "quotes" ? "quote" : "planned";
@@ -461,6 +548,7 @@ export default function ProjectsClient({
   function resetCreateCustomerForm() {
     setCreateCustomerName("");
     setCreateCustomerPhone("");
+    setCreateCustomerWhatsapp("");
     setCreateCustomerEmail("");
     setCreateCustomerCity("");
     setCreateCustomerCityOther("");
@@ -566,6 +654,7 @@ export default function ProjectsClient({
         body: JSON.stringify({
           name,
           phone: createCustomerPhone.trim() || null,
+          whatsapp: createCustomerWhatsapp.trim() || null,
           email: email || null,
           city,
           address: address || null,
@@ -705,7 +794,9 @@ export default function ProjectsClient({
       setCreateProjectManagerId(currentUserId ?? "");
       const now = todayIso();
       setCreateStartDate(now);
-      setCreateEndDate(oneMonthFrom(now));
+      setCreateEndDate(
+        defaultEndDateForProjectType(projectTypeOptions[0] ?? defaultProjectTypeOptions[0] ?? "", now)
+      );
       setCreateNotes("");
       setCreateItemsToMove("");
       router.refresh();
@@ -741,6 +832,31 @@ export default function ProjectsClient({
     const currentPrice = getNumber(row, "agreed_base_price");
     setApproveQuotePrice(currentPrice !== null && currentPrice > 0 ? String(currentPrice) : "");
     setApproveQuoteOpen(true);
+  }
+
+  async function loadMonthlySummary() {
+    if (monthlySummaryLoading) return;
+    setMonthlySummaryError(null);
+    setMonthlySummaryLoading(true);
+    try {
+      const res = await fetch("/api/projects/monthly-summary", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ month: monthlySummaryMonth }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      } & Partial<ProjectMonthlySummary>;
+      if (!res.ok) {
+        setMonthlySummaryError(json.error ?? "טעינת הסיכום נכשלה.");
+        return;
+      }
+      setMonthlySummary(json as ProjectMonthlySummary);
+    } catch (e: unknown) {
+      setMonthlySummaryError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+    } finally {
+      setMonthlySummaryLoading(false);
+    }
   }
 
   async function saveProjectEdit() {
@@ -859,19 +975,31 @@ export default function ProjectsClient({
 
   return (
     <PageStack>
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ProjectsView)}>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <div className="hidden items-center justify-center gap-3 md:flex">
-          <TabsList className="flex w-fit max-w-full justify-center">
-            <TabsTrigger value="quotes">הצעות מחיר ({quoteCount})</TabsTrigger>
-            <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
-            <TabsTrigger value="closed">סגורים ({closedCount})</TabsTrigger>
+          <TabsList className="flex w-fit max-w-full justify-center overflow-hidden">
+            <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="quotes">
+              הצעות מחיר ({quoteCount})
+            </TabsTrigger>
+            <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="projects">
+              פרויקטים ({projectCount})
+            </TabsTrigger>
+            <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="closed">
+              סגורים ({closedCount})
+            </TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsList className="mx-auto flex w-fit max-w-full justify-center md:hidden">
-          <TabsTrigger value="quotes">הצעות מחיר ({quoteCount})</TabsTrigger>
-          <TabsTrigger value="projects">פרויקטים ({projectCount})</TabsTrigger>
-          <TabsTrigger value="closed">סגורים ({closedCount})</TabsTrigger>
+        <TabsList className="mx-auto grid w-full grid-cols-3 justify-center overflow-hidden md:hidden">
+          <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="quotes">
+            הצעות מחיר ({quoteCount})
+          </TabsTrigger>
+          <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="projects">
+            פרויקטים ({projectCount})
+          </TabsTrigger>
+          <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="closed">
+            סגורים ({closedCount})
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -890,6 +1018,17 @@ export default function ProjectsClient({
           </Button>
           <Button type="button" className="h-11 flex-1" onClick={() => openCreateDialog(activeTab)}>
             {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 flex-1"
+            onClick={() => {
+              setMonthlySummaryOpen(true);
+              void loadMonthlySummary();
+            }}
+          >
+            סיכום חודשי
           </Button>
         </div>
 
@@ -940,15 +1079,16 @@ export default function ProjectsClient({
               className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="recent">אחרונים</option>
-              <option value="start_date">תאריך התחלה</option>
+              <option value="start_date">תאריך התחלה - ישן לחדש</option>
+              <option value="start_date_desc">תאריך התחלה - חדש לישן</option>
               <option value="profit_desc">רווח (גבוה לנמוך)</option>
             </select>
           </div>
         </div>
       </div>
 
-      <AdaptiveStack variant="toolbar" className="hidden md:flex md:flex-row md:items-end md:justify-between">
-        <AdaptiveGrid variant="projectsToolbarControls" className="lg:grid-cols-4">
+      <AdaptiveStack variant="toolbar" className="hidden min-w-0 md:flex md:flex-col xl:flex-row xl:items-end xl:justify-between">
+        <AdaptiveGrid variant="projectsToolbarControls" className="min-w-0 lg:grid-cols-4">
           <div className="min-w-0 lg:col-span-2">
             <label className="text-sm text-muted-foreground">חיפוש</label>
             <div className="relative mt-1">
@@ -986,17 +1126,31 @@ export default function ProjectsClient({
               className="mt-1 h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="recent">אחרונים</option>
-              <option value="start_date">תאריך התחלה</option>
+              <option value="start_date">תאריך התחלה - ישן לחדש</option>
+              <option value="start_date_desc">תאריך התחלה - חדש לישן</option>
               <option value="profit_desc">רווח (גבוה לנמוך)</option>
             </select>
           </div>
 
         </AdaptiveGrid>
 
-        <div className="w-full lg:w-auto">
-          <Button type="button" className="h-11 w-full lg:w-auto" onClick={() => openCreateDialog(activeTab)}>
-            {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
-          </Button>
+        <div className="w-full xl:w-auto">
+          <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:flex xl:w-auto">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 w-full xl:w-auto"
+              onClick={() => {
+                setMonthlySummaryOpen(true);
+                void loadMonthlySummary();
+              }}
+            >
+              סיכום חודשי
+            </Button>
+            <Button type="button" className="h-11 w-full xl:w-auto" onClick={() => openCreateDialog(activeTab)}>
+              {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
+            </Button>
+          </div>
         </div>
       </AdaptiveStack>
 
@@ -1008,7 +1162,7 @@ export default function ProjectsClient({
             : `נמצאו ${rows.length} פרויקטים`}
       </div>
 
-      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground md:grid md:grid-cols-[minmax(200px,1fr)_120px_130px_150px_160px_120px_110px_250px] md:items-center md:gap-5 sm:px-4">
+      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground xl:grid xl:grid-cols-[minmax(200px,1fr)_120px_130px_150px_160px_120px_110px_250px] xl:items-center xl:gap-5 sm:px-4">
         <div>פרויקט</div>
         <div>סטטוס</div>
         <div>תאריך התחלה</div>
@@ -1023,17 +1177,19 @@ export default function ProjectsClient({
         {rows.map((row) => {
           const id = getString(row, "id") ?? "";
           const profit = profitValue(row);
+          const actualPrice = actualPriceValue(row);
           const currentStatus = statusValue(row);
           const openTasks = getNumber(row, "open_tasks");
           const paymentStatus = paymentStatusValue(row);
           const startDate = formatDate(getString(row, "start_date"));
+          const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
           return (
             <Card key={id} className="transition-shadow hover:shadow-md">
               <CardContent className="p-3 sm:p-4">
-                <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(200px,1fr)_120px_130px_150px_160px_120px_110px_250px] md:items-center md:gap-5">
+                <div className="flex flex-col gap-3 xl:grid xl:grid-cols-[minmax(200px,1fr)_120px_130px_150px_160px_120px_110px_250px] xl:items-center xl:gap-5">
                   <Link
-                    href={`/projects/${id}`}
+                    href={detailHref}
                     prefetch
                     className="min-w-0"
                     onClick={() => emitNavigationStart()}
@@ -1047,7 +1203,7 @@ export default function ProjectsClient({
                   </Link>
 
                   <Link
-                    href={`/projects/${id}`}
+                    href={detailHref}
                     prefetch
                     className="text-sm"
                     onClick={() => emitNavigationStart()}
@@ -1056,7 +1212,7 @@ export default function ProjectsClient({
                   </Link>
 
                   <Link
-                    href={`/projects/${id}`}
+                    href={detailHref}
                     prefetch
                     className="text-sm"
                     onClick={() => emitNavigationStart()}
@@ -1065,7 +1221,7 @@ export default function ProjectsClient({
                   </Link>
 
                   <Link
-                    href={`/projects/${id}`}
+                    href={detailHref}
                     prefetch
                     className="text-sm"
                     onClick={() => emitNavigationStart()}
@@ -1076,7 +1232,7 @@ export default function ProjectsClient({
                   </Link>
 
                   <Link
-                    href={`/projects/${id}`}
+                    href={detailHref}
                     prefetch
                     className="text-sm"
                     onClick={() => emitNavigationStart()}
@@ -1085,16 +1241,23 @@ export default function ProjectsClient({
                   </Link>
 
                   <Link
-                    href={`/projects/${id}`}
+                    href={detailHref}
                     prefetch
-                    className={`text-sm ${profit !== null && profit < 0 ? "text-destructive" : ""}`}
+                    className="text-sm"
                     onClick={() => emitNavigationStart()}
                   >
-                    {profit === null ? "-" : formatIls(profit)}
+                    <div className="space-y-0.5">
+                      <div className="text-xs text-muted-foreground">
+                        מחיר: {actualPrice === null ? "-" : formatIls(actualPrice)}
+                      </div>
+                      <div className={profit !== null && profit < 0 ? "text-destructive" : ""}>
+                        רווח: {profit === null ? "-" : formatIls(profit)}
+                      </div>
+                    </div>
                   </Link>
 
                   <Link
-                    href={`/projects/${id}`}
+                    href={detailHref}
                     prefetch
                     className="text-sm"
                     onClick={() => emitNavigationStart()}
@@ -1318,7 +1481,13 @@ export default function ProjectsClient({
                 <label className="text-sm font-medium">סוג פרויקט *</label>
                 <select
                   value={createProjectType}
-                  onChange={(e) => setCreateProjectType(e.target.value)}
+                  onChange={(e) => {
+                    const nextProjectType = e.target.value;
+                    setCreateProjectType(nextProjectType);
+                    if (isMovingProjectType(nextProjectType)) {
+                      setCreateEndDate(createStartDate);
+                    }
+                  }}
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   {projectTypeOptions.map((v) => (
@@ -1360,7 +1529,13 @@ export default function ProjectsClient({
                 <Input
                   type="date"
                   value={createStartDate}
-                  onChange={(e) => setCreateStartDate(e.target.value)}
+                  onChange={(e) => {
+                    const nextStartDate = e.target.value;
+                    setCreateStartDate(nextStartDate);
+                    if (isMovingProjectType(createProjectType)) {
+                      setCreateEndDate(nextStartDate);
+                    }
+                  }}
                 />
               </div>
               <div className="space-y-1">
@@ -1615,14 +1790,25 @@ export default function ProjectsClient({
               />
             </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">טלפון</label>
-              <Input
-                value={createCustomerPhone}
-                onChange={(e) => setCreateCustomerPhone(e.target.value)}
-                placeholder="0501234567"
-              />
-            </div>
+            <AdaptiveGrid variant="formTwo">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">טלפון</label>
+                <Input
+                  value={createCustomerPhone}
+                  onChange={(e) => setCreateCustomerPhone(e.target.value)}
+                  placeholder="0501234567"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium">וואטסאפ</label>
+                <Input
+                  value={createCustomerWhatsapp}
+                  onChange={(e) => setCreateCustomerWhatsapp(e.target.value)}
+                  placeholder="0501234567"
+                />
+              </div>
+            </AdaptiveGrid>
 
             <div className="space-y-1">
               <label className="text-sm font-medium">אימייל</label>
@@ -1810,6 +1996,90 @@ export default function ProjectsClient({
               <p className="text-xs text-muted-foreground">הלקוח נוצר כעת, נא להמתין...</p>
             ) : null}
           </form>
+        </AdaptiveDialog>
+      </Dialog>
+
+      <Dialog open={monthlySummaryOpen} onOpenChange={setMonthlySummaryOpen}>
+        <AdaptiveDialog size="formLg">
+          <DialogHeader>
+            <DialogTitle>סיכום פרויקטים לפי חודש</DialogTitle>
+            <DialogDescription>
+              בחר חודש כדי לראות סיכום של פרויקטים בפועל.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <AdaptiveGrid variant="formTwo">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">חודש</label>
+                <Input
+                  type="month"
+                  value={monthlySummaryMonth}
+                  onChange={(e) => setMonthlySummaryMonth(e.target.value)}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => void loadMonthlySummary()}
+                  disabled={monthlySummaryLoading}
+                >
+                  {monthlySummaryLoading ? "טוען..." : "הצג סיכום"}
+                </Button>
+              </div>
+            </AdaptiveGrid>
+
+            {monthlySummaryError ? (
+              <div className="text-sm text-destructive">{monthlySummaryError}</div>
+            ) : null}
+
+            {monthlySummary ? (
+              <div className="space-y-4">
+                <AdaptiveGrid variant="customerStats">
+                  <Stat label="פרויקטים בפועל" value={`${monthlySummary.totalProjects}`} />
+                  <Stat label='סה"כ לחיוב' value={formatIls(monthlySummary.totals.charged)} />
+                  <Stat label='סה"כ הוצאות' value={formatIls(monthlySummary.totals.expenses)} />
+                  <Stat label="רווח גולמי" value={formatIls(monthlySummary.totals.profit)} />
+                  <Stat label='סה"כ שולם' value={formatIls(monthlySummary.totals.paid)} />
+                  <Stat
+                    label="יתרה פתוחה"
+                    value={formatIls(monthlySummary.totals.charged - monthlySummary.totals.paid)}
+                  />
+                </AdaptiveGrid>
+
+                <AdaptiveGrid variant="formTwo">
+                  <div className="space-y-2 rounded-md border bg-background p-3">
+                    <div className="text-sm font-semibold">סוג פרויקט</div>
+                    {monthlySummary.byType.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">אין נתונים לחודש הזה.</div>
+                    ) : (
+                      monthlySummary.byType.map((item) => (
+                        <div key={item.type} className="flex items-center justify-between gap-3 text-sm">
+                          <span>{projectTypeLabel(item.type)}</span>
+                          <span className="font-medium">{item.count}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="space-y-2 rounded-md border bg-background p-3">
+                    <div className="text-sm font-semibold">סטטוס</div>
+                    {monthlySummary.byStatus.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">אין נתונים לחודש הזה.</div>
+                    ) : (
+                      monthlySummary.byStatus.map((item) => (
+                        <div key={item.status} className="flex items-center justify-between gap-3 text-sm">
+                          <span>{statusLabel(item.status)}</span>
+                          <span className="font-medium">{item.count}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </AdaptiveGrid>
+              </div>
+            ) : null}
+          </div>
         </AdaptiveDialog>
       </Dialog>
     </PageStack>

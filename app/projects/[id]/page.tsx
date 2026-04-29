@@ -112,10 +112,18 @@ function formatIls(value: number | string | null | undefined) {
 
 export default async function ProjectPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const rawView = Array.isArray(resolvedSearchParams?.view)
+    ? resolvedSearchParams?.view[0]
+    : resolvedSearchParams?.view;
+  const returnView = rawView === "quotes" || rawView === "closed" ? rawView : "projects";
+  const backHref = returnView === "projects" ? "/projects" : `/projects?view=${returnView}`;
   const { profile, supabase } = await requireProfile();
 
   const { data: overviewRaw, error: overviewError } = await supabase
@@ -519,7 +527,7 @@ export default async function ProjectPage({
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <Button asChild variant="outline" size="sm">
-                      <Link href="/projects">
+                      <Link href={backHref}>
                         <ChevronRight className="h-4 w-4" />
                         <span>חזרה לפרויקטים</span>
                       </Link>

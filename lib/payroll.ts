@@ -171,6 +171,23 @@ export function getCurrentSalaryAgreement(agreements: SalaryAgreementRow[], refe
   );
 }
 
+export function getActiveSalaryAgreementForDate(
+  agreements: SalaryAgreementRow[],
+  referenceDate = new Date()
+) {
+  const point = new Date(referenceDate);
+  return (
+    agreements.find((agreement) => {
+      const from = new Date(agreement.valid_from);
+      const to = agreement.valid_to ? new Date(`${agreement.valid_to}T23:59:59.999`) : null;
+      if (Number.isNaN(from.getTime())) return false;
+      if (from > point) return false;
+      if (to && to < point) return false;
+      return true;
+    }) ?? null
+  );
+}
+
 export function calculateSessionLaborCost(
   agreement: SalaryAgreementRow | null | undefined,
   workedMinutes: number

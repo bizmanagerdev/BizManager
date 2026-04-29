@@ -3,7 +3,9 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import {
+  getActiveSalaryAgreementForDate,
   minutesBetween,
+  type SalaryAgreementRow,
   WORK_SESSIONS_TABLE,
 } from "@/lib/payroll";
 
@@ -17,6 +19,7 @@ type UpdateSessionPayload = {
   clock_in?: string | null;
   clock_out?: string | null;
   labor_cost?: number | string | null;
+  recalculate_labor_cost?: boolean | null;
   is_billable_to_customer?: boolean | null;
   bill_to_customer_amount?: number | string | null;
   billing_status?: string | null;
@@ -61,6 +64,7 @@ export async function POST(req: Request) {
     const clockOutInput = typeof body.clock_out === "string" ? body.clock_out.trim() : "";
     const clockOut = clockOutInput || null;
     const requestedLaborCost = toOptionalNonNegativeNumber(body.labor_cost);
+    const recalculateLaborCost = body.recalculate_labor_cost === true;
     const isBillableToCustomer = body.is_billable_to_customer === true;
     const billToCustomerAmount = toOptionalNonNegativeNumber(body.bill_to_customer_amount);
     const billingStatus =
@@ -169,6 +173,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: siblingSessionsError.message }, { status: 400 });
     }
 
+    const { data: salaryAgreements, error: salaryAgreementsError } = await supabase
+      .from("salary_agreements")
+      .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours")
+      .eq("user_id", selectedUserId)
+      .order("valid_from", { ascending: false });
+
+    if (salaryAgreementsError) {
+      return NextResponse.json({ error: salaryAgreementsError.message }, { status: 400 });
+    }
+
     const overlapSession = (siblingSessions ?? []).find((row) => {
       if (typeof row.clock_in !== "string") return false;
       const siblingClockOut = typeof row.clock_out === "string" ? row.clock_out : null;
@@ -189,6 +203,12 @@ export async function POST(req: Request) {
       }
     }
 
+    const activeAgreement = getActiveSalaryAgreementForDate(
+      (salaryAgreements ?? []) as SalaryAgreementRow[],
+      new Date(clockIn)
+    );
+    const canRecalculateLaborCost = recalculateLaborCost && Boolean(activeAgreement);
+
     const workedMinutes = clockOut ? minutesBetween(clockIn, clockOut) : null;
     let resolvedLaborCost: number | null = requestedLaborCost;
 
@@ -197,6 +217,9 @@ export async function POST(req: Request) {
         typeof session.labor_cost === "number" || typeof session.labor_cost === "string"
           ? Number(session.labor_cost)
           : null;
+    }
+    if (canRecalculateLaborCost) {
+      resolvedLaborCost = null;
     }
 
     const previousUserId = session.user_id;
@@ -226,7 +249,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    if (requestedLaborCost === null && clockOut) {
+    if (canRecalculateLaborCost && requestedLaborCost === null && clockOut) {
       await recalculateUserSessionCostsFromRules(supabase, selectedUserId, {
         fromDate: clockIn.slice(0, 10),
       });
