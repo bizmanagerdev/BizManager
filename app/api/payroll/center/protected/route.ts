@@ -10,7 +10,7 @@ export async function GET() {
     const { supabase } = access.value;
     const usersResult = await supabase
       .from("users")
-      .select("id,role,active")
+      .select("id,role,active,pay_tracking_mode")
       .or("role.eq.admin,role.eq.office,role.eq.worker,role.eq.worker_no_access")
       .eq("active", true)
       .range(0, 999);
@@ -19,7 +19,11 @@ export async function GET() {
       return NextResponse.json({ error: usersResult.error.message }, { status: 400 });
     }
 
-    const rows = (usersResult.data ?? []) as Array<{ id: string; role: string | null }>;
+    const rows = (usersResult.data ?? []) as Array<{
+      id: string;
+      role: string | null;
+      pay_tracking_mode: "session" | "payslip" | null;
+    }>;
     const userIds = rows.map((row) => row.id).filter(Boolean);
     const salaryTrackedUserIds = rows.filter((row) => isSalaryTrackedWorker(row)).map((row) => row.id).filter(Boolean);
     const payload = await fetchSalaryCenterProtectedPayload(supabase, userIds, salaryTrackedUserIds);

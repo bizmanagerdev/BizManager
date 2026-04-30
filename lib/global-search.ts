@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/requireProfile";
+import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 
 export type GlobalSearchGroupKey =
   | "customers"
@@ -135,6 +136,19 @@ function shortId(value: string) {
   return value.slice(0, 8);
 }
 
+function projectTypeLabel(value: unknown) {
+  switch (text(value)) {
+    case "moving":
+      return "הובלה";
+    case "construction":
+      return "שיפוצים";
+    case "logistics":
+      return "לוגיסטיקה";
+    default:
+      return text(value);
+  }
+}
+
 function buildGroups(results: GlobalSearchResult[]): GlobalSearchResponse["groups"] {
   const byGroup = new Map<GlobalSearchGroupKey, GlobalSearchResult[]>();
 
@@ -176,7 +190,7 @@ function projectResult(row: Row): GlobalSearchResult | null {
     groupLabel: GROUP_LABELS.projects,
     title: name,
     subtitle: text(row.customer_name) || null,
-    meta: [text(row.status), text(row.project_type)].filter(Boolean),
+    meta: [getProjectStatusLabel(text(row.status)), projectTypeLabel(row.project_type)].filter(Boolean),
     href: `/projects/${encodeURIComponent(id)}`,
   };
 }

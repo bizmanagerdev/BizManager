@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
 import type { SalaryAgreementRow } from "@/lib/payroll";
+import { createSupabaseRouteClient } from "@/lib/supabase/route";
 
 type SalaryAgreementPayload = {
   agreement_id?: string;
@@ -51,9 +52,7 @@ function overlapsAgreement(startDate: string, endDate: string | null, other: Sal
 }
 
 async function normalizeAgreementRanges(
-  supabase: Awaited<ReturnType<typeof requireRouteAccess>> extends { ok: true; value: infer V }
-    ? V["supabase"]
-    : never,
+  supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
   agreements: SalaryAgreementRow[]
 ) {
   const sortedAscending = [...agreements].sort((a, b) => a.valid_from.localeCompare(b.valid_from));

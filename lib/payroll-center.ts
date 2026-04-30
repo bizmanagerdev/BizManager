@@ -19,6 +19,7 @@ export type SalaryCenterUserRow = {
   role: string | null;
   active: boolean | null;
   system_access: boolean | null;
+  pay_tracking_mode: "session" | "payslip" | null;
 };
 
 export type SalaryCenterProjectOption = {
@@ -59,15 +60,72 @@ export type SalaryCenterProtectedPayload = {
   payslipItems: PayslipItemRow[];
   hourlyOverrides: HourlySalaryOverrideRow[];
   sessionCosts: SessionCostRow[];
+  workerPayments: WorkerPaymentRow[];
+  workerPaymentAllocations: WorkerPaymentAllocationRow[];
+  workerDebtItems: WorkerDebtItemRow[];
+  workerBalances: WorkerBalanceRow[];
   summary: {
     totalLaborCostThisMonth: number;
     unpaidOrUnfinishedPayslips: number;
+    totalWorkerOwed: number;
   };
 };
 
+export type WorkerPaymentRow = {
+  id: string;
+  user_id: string;
+  payment_date: string;
+  amount: number | string | null;
+  payment_method: string | null;
+  reference_number: string | null;
+  notes: string | null;
+  recorded_by: string | null;
+  created_at: string | null;
+};
+
+export type WorkerPaymentAllocationRow = {
+  id: string;
+  worker_payment_id: string;
+  source_type: "session" | "payslip";
+  attendance_session_id: string | null;
+  payslip_id: string | null;
+  amount: number | string | null;
+  created_at: string | null;
+};
+
+export type WorkerDebtItemRow = {
+  source_type: "session" | "payslip";
+  source_id: string;
+  user_id: string;
+  project_id: string | null;
+  payslip_id: string | null;
+  payroll_period_id: string | null;
+  source_date: string | null;
+  period_month: string | null;
+  worked_minutes: number | string | null;
+  earned_amount: number | string | null;
+  paid_amount: number | string | null;
+  owed_amount: number | string | null;
+  payment_status: string | null;
+  last_payment_date: string | null;
+};
+
+export type WorkerBalanceRow = {
+  user_id: string;
+  item_count: number | string | null;
+  open_item_count: number | string | null;
+  earned_amount: number | string | null;
+  paid_amount: number | string | null;
+  owed_amount: number | string | null;
+  payment_status: string | null;
+  last_payment_date: string | null;
+};
+
 export function isSalaryTrackedWorker(
-  user: Pick<SalaryCenterUserRow, "role">
+  user: Pick<SalaryCenterUserRow, "role" | "pay_tracking_mode">
 ) {
+  if (user.pay_tracking_mode === "payslip") return true;
+  if (user.pay_tracking_mode === "session") return false;
   return user.role === "worker" || user.role === "office" || user.role === "admin";
 }
 
@@ -353,20 +411,34 @@ export async function fetchSalaryCenterProtectedPayload(
     payslipItems: [],
     hourlyOverrides: [],
     sessionCosts: [],
+    workerPayments: [],
+    workerPaymentAllocations: [],
+    workerDebtItems: [],
+    workerBalances: [],
     summary: {
       totalLaborCostThisMonth: 0,
       unpaidOrUnfinishedPayslips: 0,
+      totalWorkerOwed: 0,
     },
   };
 
   if (safeUserIds.length === 0) return emptyPayload;
 
-  const [agreementsResult, periodsResult, payslipsResult, overridesResult, sessionCostsResult] = await Promise.all([
+  const [
+    agreementsResult,
+    periodsResult,
+    payslipsResult,
+    overridesResult,
+    sessionCostsResult,
+    workerBalancesResult,
+    workerDebtItemsResult,
+    workerPaymentsResult,
+  ] = await Promise.all([
     query(supabase.from("salary_agreements"))
       .select(
         "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
       )
-      .in("user_id", safeSalaryTrackedUserIds)
+      .in("user_id", safeUserIds)
       .order("valid_from", { ascending: false }),
     query(supabase.from("payroll_periods"))
       .select("id,period_month,start_date,end_date,status")
@@ -380,13 +452,28 @@ export async function fetchSalaryCenterProtectedPayload(
       .range(0, 1999),
     query(supabase.from("hourly_salary_overrides"))
       .select("id,user_id,override_hourly_rate,notes,created_at,updated_at")
-      .in("user_id", safeSalaryTrackedUserIds)
+      .in("user_id", safeUserIds)
       .order("created_at", { ascending: false })
       .range(0, 999),
     query(supabase.from("attendance_sessions"))
       .select("id,labor_cost,clock_in,user_id")
       .in("user_id", safeUserIds)
       .range(0, 4999),
+    query(supabase.from("worker_balance_summary_view"))
+      .select("user_id,item_count,open_item_count,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date")
+      .in("user_id", safeUserIds)
+      .range(0, 1999),
+    query(supabase.from("worker_debt_items_view"))
+      .select(
+        "source_type,source_id,user_id,project_id,payslip_id,payroll_period_id,source_date,period_month,worked_minutes,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date"
+      )
+      .in("user_id", safeUserIds)
+      .range(0, 4999),
+    query(supabase.from("worker_payments"))
+      .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by,created_at")
+      .in("user_id", safeUserIds)
+      .order("payment_date", { ascending: false })
+      .range(0, 1999),
   ]);
 
   if (agreementsResult.error) throw new Error(agreementsResult.error.message);
@@ -394,17 +481,29 @@ export async function fetchSalaryCenterProtectedPayload(
   if (payslipsResult.error) throw new Error(payslipsResult.error.message);
   if (overridesResult.error) throw new Error(overridesResult.error.message);
   if (sessionCostsResult.error) throw new Error(sessionCostsResult.error.message);
+  if (workerBalancesResult.error) throw new Error(workerBalancesResult.error.message);
+  if (workerDebtItemsResult.error) throw new Error(workerDebtItemsResult.error.message);
+  if (workerPaymentsResult.error) throw new Error(workerPaymentsResult.error.message);
 
   const payslips = ((payslipsResult.data ?? []) as PayslipRow[]).filter((row) => row.id);
   const payslipIds = payslips.map((row) => row.id);
+  const workerPayments = ((workerPaymentsResult.data ?? []) as WorkerPaymentRow[]).filter((row) => row.id);
+  const workerPaymentIds = workerPayments.map((row) => row.id);
   const payslipItemsResult = payslipIds.length
     ? await query(supabase.from("payslip_items"))
         .select("id,payslip_id,item_type,amount,notes")
         .in("payslip_id", payslipIds)
         .range(0, 3999)
     : { data: [], error: null };
+  const workerPaymentAllocationsResult = workerPaymentIds.length
+    ? await query(supabase.from("worker_payment_allocations"))
+        .select("id,worker_payment_id,source_type,attendance_session_id,payslip_id,amount,created_at")
+        .in("worker_payment_id", workerPaymentIds)
+        .range(0, 4999)
+    : { data: [], error: null };
 
   if (payslipItemsResult.error) throw new Error(payslipItemsResult.error.message);
+  if (workerPaymentAllocationsResult.error) throw new Error(workerPaymentAllocationsResult.error.message);
 
   const periods = (periodsResult.data ?? []) as PayrollPeriodRow[];
   const currentPeriod = getCurrentPayrollPeriod(periods);
@@ -427,6 +526,8 @@ export async function fetchSalaryCenterProtectedPayload(
     )
     .reduce((sum, session) => sum + toNumber(session.labor_cost), 0);
   const totalLaborCostThisMonth = sessionLaborCostThisMonth + monthlyAgreementTotal;
+  const workerBalances = ((workerBalancesResult.data ?? []) as WorkerBalanceRow[]).filter((row) => row.user_id);
+  const totalWorkerOwed = workerBalances.reduce((sum, row) => sum + toNumber(row.owed_amount), 0);
 
   let unpaidOrUnfinishedPayslips = 0;
   if (currentPeriod && normalizePayrollStatus(currentPeriod.status) !== "paid") {
@@ -448,6 +549,12 @@ export async function fetchSalaryCenterProtectedPayload(
     payslips,
     payslipItems: (payslipItemsResult.data ?? []) as PayslipItemRow[],
     hourlyOverrides: (overridesResult.data ?? []) as HourlySalaryOverrideRow[],
+    workerPayments,
+    workerPaymentAllocations: (workerPaymentAllocationsResult.data ?? []) as WorkerPaymentAllocationRow[],
+    workerDebtItems: ((workerDebtItemsResult.data ?? []) as WorkerDebtItemRow[]).filter(
+      (row) => row.user_id && row.source_id
+    ),
+    workerBalances,
     sessionCosts: ((sessionCostsResult.data ?? []) as Array<SessionCostRow & { user_id: string }>).map(
       (row) => ({
         id: row.id,
@@ -457,6 +564,7 @@ export async function fetchSalaryCenterProtectedPayload(
     summary: {
       totalLaborCostThisMonth,
       unpaidOrUnfinishedPayslips,
+      totalWorkerOwed,
     },
   };
 }

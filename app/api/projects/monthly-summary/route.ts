@@ -63,7 +63,11 @@ export async function POST(req: Request) {
       .map((row) => (typeof row.id === "string" ? row.id : ""))
       .filter(Boolean);
 
-    const [{ data: paymentRows, error: paymentError }, { data: financialRows, error: financialError }] =
+    const [
+      { data: paymentRows, error: paymentError },
+      { data: financialRows, error: financialError },
+      { data: workerBalanceRows, error: workerBalanceError },
+    ] =
       projectIds.length > 0
         ? await Promise.all([
             supabase.from("payments").select("project_id,amount_total").in("project_id", projectIds),
@@ -71,14 +75,26 @@ export async function POST(req: Request) {
               .from("project_financials_view")
               .select("id,total_expenses,gross_profit,customer_total_price,expenses_billed")
               .in("id", projectIds),
+            supabase
+              .from("monthly_worker_balance_view")
+              .select("period_month,owed_amount")
+              .eq("period_month", bounds.month)
+              .maybeSingle(),
           ])
-        : [{ data: [] as Row[], error: null }, { data: [] as Row[], error: null }];
+        : [
+            { data: [] as Row[], error: null },
+            { data: [] as Row[], error: null },
+            { data: null as Row | null, error: null },
+          ];
 
     if (paymentError) {
       return NextResponse.json({ error: paymentError.message }, { status: 400 });
     }
     if (financialError) {
       return NextResponse.json({ error: financialError.message }, { status: 400 });
+    }
+    if (workerBalanceError) {
+      return NextResponse.json({ error: workerBalanceError.message }, { status: 400 });
     }
 
     const paidTotalByProjectId = new Map<string, number>();
@@ -107,6 +123,7 @@ export async function POST(req: Request) {
     let totalBilledExtras = 0;
     let totalQuoteCharged = 0;
     let totalQuoteCount = 0;
+    const totalWorkerOwed = toNumber((workerBalanceRows as Row | null)?.owed_amount) ?? 0;
 
     projects.forEach((row) => {
       const projectId = typeof row.id === "string" ? row.id : "";
@@ -153,14 +170,15 @@ export async function POST(req: Request) {
       byStatus: Array.from(statusCounts.entries())
         .map(([status, count]) => ({ status, count }))
         .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status)),
-      totals: {
-        charged: totalCharged,
-        paid: totalPaid,
-        expenses: totalExpenses,
-        profit: totalProfit,
-        basePrice: totalBasePrice,
-        billedExtras: totalBilledExtras,
-      },
+        totals: {
+          charged: totalCharged,
+          paid: totalPaid,
+          expenses: totalExpenses,
+          profit: totalProfit,
+          basePrice: totalBasePrice,
+          billedExtras: totalBilledExtras,
+          workerOwed: totalWorkerOwed,
+        },
       quotes: {
         count: totalQuoteCount,
         charged: totalQuoteCharged,

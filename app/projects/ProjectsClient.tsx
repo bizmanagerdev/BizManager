@@ -48,6 +48,7 @@ type ProjectMonthlySummary = {
     profit: number;
     basePrice: number;
     billedExtras: number;
+    workerOwed: number;
   };
   quotes: {
     count: number;
@@ -2041,6 +2042,7 @@ export default function ProjectsClient({
                   <Stat label='סה"כ הוצאות' value={formatIls(monthlySummary.totals.expenses)} />
                   <Stat label="רווח גולמי" value={formatIls(monthlySummary.totals.profit)} />
                   <Stat label='סה"כ שולם' value={formatIls(monthlySummary.totals.paid)} />
+                  <Stat label='סה"כ חייב לעובדים' value={formatIls(monthlySummary.totals.workerOwed)} />
                   <Stat
                     label="יתרה פתוחה"
                     value={formatIls(monthlySummary.totals.charged - monthlySummary.totals.paid)}

@@ -50,6 +50,9 @@ import {
   type SalaryCenterProtectedPayload,
   type SalaryCenterUserRow,
   type SessionPublicRow,
+  type WorkerPaymentAllocationRow,
+  type WorkerDebtItemRow,
+  type WorkerPaymentRow,
 } from "@/lib/payroll-center";
 
 type Props = {
@@ -80,6 +83,8 @@ type SessionFormState = {
   is_billable_to_customer: boolean;
   bill_to_customer_amount: string;
   billing_status: string;
+  mark_paid_now: boolean;
+  paid_amount_now: string;
 };
 
 type WorkerFormState = {
@@ -89,6 +94,7 @@ type WorkerFormState = {
   role: "admin" | "office" | "worker" | "worker_no_access";
   active: boolean;
   system_access: boolean;
+  pay_tracking_mode: "session" | "payslip";
 };
 
 type CreateUserFormState = {
@@ -99,6 +105,7 @@ type CreateUserFormState = {
   role: "admin" | "office" | "worker" | "worker_no_access";
   active: boolean;
   system_access: boolean;
+  pay_tracking_mode: "session" | "payslip";
 };
 
 type AgreementFormState = {
@@ -125,6 +132,26 @@ type PayslipItemFormState = {
   notes: string;
 };
 
+type WorkerPaymentAllocationFormState = {
+  source_type: "session" | "payslip";
+  source_id: string;
+  amount: string;
+  max_amount: number;
+  title: string;
+  subtitle: string;
+};
+
+type WorkerPaymentFormState = {
+  payment_id: string;
+  user_id: string;
+  payment_date: string;
+  amount: string;
+  payment_method: string;
+  reference_number: string;
+  notes: string;
+  allocations: WorkerPaymentAllocationFormState[];
+};
+
 const DEFAULT_SESSION_FORM: SessionFormState = {
   session_id: "",
   user_id: "",
@@ -142,6 +169,8 @@ const DEFAULT_SESSION_FORM: SessionFormState = {
   is_billable_to_customer: false,
   bill_to_customer_amount: "",
   billing_status: "not_billable",
+  mark_paid_now: false,
+  paid_amount_now: "",
 };
 
 const DEFAULT_AGREEMENT_FORM: AgreementFormState = {
@@ -176,6 +205,18 @@ const DEFAULT_CREATE_USER_FORM: CreateUserFormState = {
   role: "worker",
   active: true,
   system_access: true,
+  pay_tracking_mode: "session",
+};
+
+const DEFAULT_WORKER_PAYMENT_FORM: WorkerPaymentFormState = {
+  payment_id: "",
+  user_id: "",
+  payment_date: new Date().toISOString().slice(0, 10),
+  amount: "",
+  payment_method: "",
+  reference_number: "",
+  notes: "",
+  allocations: [],
 };
 
 const SOLID_EDIT_BUTTON_CLASS =
@@ -213,6 +254,9 @@ export default function SalaryCenterClient({
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [sessionForm, setSessionForm] = useState<SessionFormState>(DEFAULT_SESSION_FORM);
   const [sessionMode, setSessionMode] = useState<"create" | "edit">("create");
+  const [workerPaymentDialogOpen, setWorkerPaymentDialogOpen] = useState(false);
+  const [workerPaymentForm, setWorkerPaymentForm] = useState<WorkerPaymentFormState>(DEFAULT_WORKER_PAYMENT_FORM);
+  const [workerPaymentError, setWorkerPaymentError] = useState("");
   const [sessionError, setSessionError] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -227,6 +271,7 @@ export default function SalaryCenterClient({
     role: "worker",
     active: true,
     system_access: true,
+    pay_tracking_mode: "session",
   });
   const [agreementForm, setAgreementForm] = useState<AgreementFormState>(DEFAULT_AGREEMENT_FORM);
   const [overrideForm, setOverrideForm] = useState<OverrideFormState>(DEFAULT_OVERRIDE_FORM);
@@ -237,8 +282,16 @@ export default function SalaryCenterClient({
 
   const canManageSalary = viewerRole === "admin";
   const agreementStandardDailyHoursValid = toNumber(agreementForm.standard_daily_hours) > 0;
-  const allSalaryTrackedUsers = useMemo(
-    () => publicUsers.filter((user) => isSalaryTrackedWorker(user)),
+  const allAgreementEligibleUsers = useMemo(
+    () =>
+      publicUsers.filter(
+        (user) =>
+          user.active !== false &&
+          (user.role === "admin" ||
+            user.role === "office" ||
+            user.role === "worker" ||
+            user.role === "worker_no_access")
+      ),
     [publicUsers]
   );
   const canManageAttendance = viewerRole === "admin";
@@ -307,9 +360,68 @@ export default function SalaryCenterClient({
     });
     return next;
   }, [payslips]);
+  const workerBalancesByUserId = useMemo(
+    () => new Map((protectedData?.workerBalances ?? []).map((row) => [row.user_id, row])),
+    [protectedData]
+  );
+  const workerDebtItemsByUserId = useMemo(() => {
+    const next = new Map<string, WorkerDebtItemRow[]>();
+    (protectedData?.workerDebtItems ?? []).forEach((item) => {
+      const list = next.get(item.user_id) ?? [];
+      list.push(item);
+      next.set(item.user_id, list);
+    });
+    return next;
+  }, [protectedData]);
+  const workerDebtItemsBySourceKey = useMemo(() => {
+    const next = new Map<string, WorkerDebtItemRow>();
+    (protectedData?.workerDebtItems ?? []).forEach((item) => {
+      next.set(`${item.source_type}:${item.source_id}`, item);
+    });
+    return next;
+  }, [protectedData]);
+  const workerPaymentsByUserId = useMemo(() => {
+    const next = new Map<string, WorkerPaymentRow[]>();
+    (protectedData?.workerPayments ?? []).forEach((payment) => {
+      const list = next.get(payment.user_id) ?? [];
+      list.push(payment);
+      next.set(payment.user_id, list);
+    });
+    return next;
+  }, [protectedData]);
+  const workerPaymentsById = useMemo(
+    () => new Map((protectedData?.workerPayments ?? []).map((payment) => [payment.id, payment])),
+    [protectedData]
+  );
+  const workerPaymentAllocationsBySessionId = useMemo(() => {
+    const next = new Map<string, WorkerPaymentAllocationRow[]>();
+    (protectedData?.workerPaymentAllocations ?? []).forEach((allocation) => {
+      if (!allocation.attendance_session_id) return;
+      const list = next.get(allocation.attendance_session_id) ?? [];
+      list.push(allocation);
+      next.set(allocation.attendance_session_id, list);
+    });
+    return next;
+  }, [protectedData]);
+  const workerPaymentAllocationsByPaymentId = useMemo(() => {
+    const next = new Map<string, WorkerPaymentAllocationRow[]>();
+    (protectedData?.workerPaymentAllocations ?? []).forEach((allocation) => {
+      const list = next.get(allocation.worker_payment_id) ?? [];
+      list.push(allocation);
+      next.set(allocation.worker_payment_id, list);
+    });
+    return next;
+  }, [protectedData]);
 
   const selectedWorker = selectedWorkerId ? usersById.get(selectedWorkerId) ?? null : null;
   const isSelectedWorkerSalaryTracked = selectedWorker ? isSalaryTrackedWorker(selectedWorker) : false;
+  const canSelectedWorkerHaveAgreement = Boolean(
+    selectedWorker &&
+      (selectedWorker.role === "admin" ||
+        selectedWorker.role === "office" ||
+        selectedWorker.role === "worker" ||
+        selectedWorker.role === "worker_no_access")
+  );
 
   useEffect(() => {
     if (!selectedWorker) return;
@@ -325,6 +437,7 @@ export default function SalaryCenterClient({
           : "worker",
       active: selectedWorker.active !== false,
       system_access: selectedWorker.system_access !== false && selectedWorker.role !== "worker_no_access",
+      pay_tracking_mode: selectedWorker.pay_tracking_mode === "payslip" ? "payslip" : "session",
     });
   }, [selectedWorker]);
 
@@ -337,6 +450,7 @@ export default function SalaryCenterClient({
         user.role === "worker" ||
         user.role === "worker_no_access";
       if (!isWorker) return false;
+      if (user.active === false) return false;
       if (!query) return true;
       const haystack = [user.full_name ?? "", user.email ?? "", user.phone ?? ""].join(" ").toLowerCase();
       return haystack.includes(query);
@@ -352,13 +466,17 @@ export default function SalaryCenterClient({
     () => filteredWorkers.filter((user) => user.role === "worker_no_access"),
     [filteredWorkers]
   );
-  const visibleSalaryTrackedUsers = useMemo(
-    () => filteredWorkers.filter((user) => isSalaryTrackedWorker(user)),
-    [filteredWorkers]
-  );
-  const salaryTrackedUsersWithAgreements = useMemo(
-    () => visibleSalaryTrackedUsers.filter((user) => (agreementsByUserId.get(user.id) ?? []).length > 0),
-    [agreementsByUserId, visibleSalaryTrackedUsers]
+  const agreementUsersWithAgreements = useMemo(
+    () =>
+      filteredWorkers.filter(
+        (user) =>
+          (user.role === "admin" ||
+            user.role === "office" ||
+            user.role === "worker" ||
+            user.role === "worker_no_access") &&
+          (agreementsByUserId.get(user.id) ?? []).length > 0
+      ),
+    [agreementsByUserId, filteredWorkers]
   );
 
   const isAttendanceWorker = useCallback(
@@ -402,6 +520,7 @@ export default function SalaryCenterClient({
       totalWorkMinutes: thisMonthSessions.reduce((sum, session) => sum + sessionWorkedMinutes(session), 0),
       totalLaborCost: protectedData?.summary.totalLaborCostThisMonth ?? 0,
       unpaidPayslips: protectedData?.summary.unpaidOrUnfinishedPayslips ?? 0,
+      totalWorkerOwed: protectedData?.summary.totalWorkerOwed ?? 0,
     };
   }, [activePayrollPeriod, currentMonthKey, protectedData, publicSessions, publicUsers]);
 
@@ -438,6 +557,8 @@ export default function SalaryCenterClient({
       is_billable_to_customer: session.is_billable_to_customer === true,
       bill_to_customer_amount: session.bill_to_customer_amount ? String(session.bill_to_customer_amount) : "",
       billing_status: session.billing_status ?? "not_billable",
+      mark_paid_now: false,
+      paid_amount_now: "",
     });
     setSessionDialogOpen(true);
   }
@@ -498,7 +619,7 @@ export default function SalaryCenterClient({
               (sessionTimingChanged && laborCostInput === originalLaborCost)))
         );
 
-      await postJson(path, {
+      const response = await postJson(path, {
         session_id: sessionForm.session_id || undefined,
         user_id: sessionForm.user_id,
         business_domain: sessionForm.business_domain,
@@ -513,8 +634,62 @@ export default function SalaryCenterClient({
         bill_to_customer_amount: sessionForm.is_billable_to_customer ? sessionForm.bill_to_customer_amount : null,
         billing_status: sessionForm.billing_status,
       });
+
+      const savedSession =
+        response && typeof response === "object" && "session" in response
+          ? (response.session as SessionPublicRow | null | undefined)
+          : null;
+
+      const shouldCreatePayment =
+        sessionForm.mark_paid_now &&
+        savedSession?.id &&
+        savedSession.user_id &&
+        (usersById.get(savedSession.user_id)?.pay_tracking_mode ?? "session") === "session";
+
+      if (shouldCreatePayment) {
+        const derivedEarnedAmount =
+          typeof savedSession?.labor_cost === "number" || typeof savedSession?.labor_cost === "string"
+            ? toNumber(savedSession.labor_cost)
+            : laborCostInput
+              ? Number(laborCostInput)
+              : null;
+        const requestedPaidAmountRaw = sessionForm.paid_amount_now.trim()
+          ? Number(sessionForm.paid_amount_now)
+          : derivedEarnedAmount;
+
+        if (!Number.isFinite(requestedPaidAmountRaw) || requestedPaidAmountRaw === null || requestedPaidAmountRaw <= 0) {
+          throw new Error("יש להזין סכום ששולם עבור המשמרת.");
+        }
+        const requestedPaidAmount = requestedPaidAmountRaw;
+
+        const paymentDateSource = savedSession.clock_out || savedSession.clock_in || new Date().toISOString();
+        await postJson("/api/payroll/worker-payments", {
+          user_id: savedSession.user_id,
+          payment_date: paymentDateSource.slice(0, 10),
+          amount: requestedPaidAmount,
+          payment_method: null,
+          reference_number: null,
+          notes: `תשלום שסומן מתוך משמרת ${formatDate(paymentDateSource)}`,
+          allocations: [
+            {
+              source_type: "session",
+              source_id: savedSession.id,
+              amount: requestedPaidAmount,
+            },
+          ],
+        });
+      }
+
       setSessionDialogOpen(false);
-      setMessage(sessionMode === "create" ? "המשמרת נוספה." : "המשמרת עודכנה.");
+      setMessage(
+        sessionMode === "create"
+          ? sessionForm.mark_paid_now
+            ? "המשמרת נוספה והתשלום נרשם."
+            : "המשמרת נוספה."
+          : sessionForm.mark_paid_now
+            ? "המשמרת עודכנה והתשלום נרשם."
+            : "המשמרת עודכנה."
+      );
       await refreshAll();
     });
   }
@@ -554,6 +729,7 @@ export default function SalaryCenterClient({
         role: createUserForm.role,
         active: createUserForm.active,
         system_access: createUserForm.role === "worker_no_access" ? false : createUserForm.system_access,
+        pay_tracking_mode: createUserForm.pay_tracking_mode,
       });
       setCreateUserOpen(false);
       resetCreateUserForm();
@@ -595,9 +771,26 @@ export default function SalaryCenterClient({
         role: workerForm.role,
         active: workerForm.active,
         system_access: workerForm.role === "worker_no_access" ? false : workerForm.system_access,
+        pay_tracking_mode: workerForm.pay_tracking_mode,
       });
       setMessage("פרטי הגישה עודכנו.");
       await refreshAll({ reloadProtected: false });
+    });
+  }
+
+  function deleteSelectedWorker() {
+    if (!selectedWorker) return;
+    const confirmed = window.confirm("למחוק את העובד הזה? הפעולה תשבית אותו, תבטל גישה למערכת, ותשמור את כל ההיסטוריה.");
+    if (!confirmed) return;
+
+    runAction(async () => {
+      await postJson("/api/payroll/workers/delete", {
+        user_id: selectedWorker.id,
+      });
+      setWorkerAccessDialogOpen(false);
+      setSelectedWorkerId("");
+      setMessage("העובד הוסר מהרשימה הפעילה.");
+      await refreshAll();
     });
   }
 
@@ -698,6 +891,10 @@ export default function SalaryCenterClient({
 
   function runPeriodAction(action: "generate" | "lock" | "mark_paid", periodId = selectedPeriodId) {
     if (!periodId) return;
+    if (action === "mark_paid") {
+      setError("תשלומי שכר נרשמים עכשיו דרך כרטיס העובד, לא דרך סימון תקופה כשולמה.");
+      return;
+    }
     runAction(async () => {
       await postJson("/api/payroll/periods", { action, period_id: periodId });
       setMessage(
@@ -705,7 +902,7 @@ export default function SalaryCenterClient({
           ? "התלושים נוצרו."
           : action === "lock"
             ? "תקופת השכר ננעלה."
-            : "תקופת השכר סומנה כשולמה."
+            : ""
       );
       await refreshAll();
     });
@@ -756,6 +953,199 @@ export default function SalaryCenterClient({
     });
   }
 
+  function openWorkerPaymentDialogForItems(userId: string, items: WorkerDebtItemRow[], defaultAmount?: number | null) {
+    const allocations = items.map((item) => ({
+      source_type: item.source_type,
+      source_id: item.source_id,
+      amount: "",
+      max_amount: toNumber(item.owed_amount) ?? 0,
+      title: buildDebtItemTitle(item),
+      subtitle: buildDebtItemSubtitle(item),
+    }));
+    const normalizedDefaultAmount = defaultAmount && defaultAmount > 0 ? String(defaultAmount) : "";
+    setWorkerPaymentError("");
+    setWorkerPaymentForm({
+      ...DEFAULT_WORKER_PAYMENT_FORM,
+      user_id: userId,
+      amount: normalizedDefaultAmount,
+      allocations: normalizedDefaultAmount ? distributePaymentAmount(normalizedDefaultAmount, allocations) : allocations,
+    });
+    setWorkerPaymentDialogOpen(true);
+  }
+
+  function openWorkerPaymentDialog() {
+    if (!selectedWorker) return;
+    openWorkerPaymentDialogForItems(selectedWorker.id, selectedWorkerOpenDebtItems);
+  }
+
+  function openEditWorkerPaymentDialog(payment: WorkerPaymentRow) {
+    const allocations = (workerPaymentAllocationsByPaymentId.get(payment.id) ?? [])
+      .map((allocation) => {
+        const sourceId =
+          allocation.source_type === "session" ? allocation.attendance_session_id : allocation.payslip_id;
+        if (!sourceId) return null;
+        const debtItem =
+          (protectedData?.workerDebtItems ?? []).find(
+            (item) => item.source_type === allocation.source_type && item.source_id === sourceId
+          ) ?? null;
+        return {
+          source_type: allocation.source_type,
+          source_id: sourceId,
+          amount:
+            typeof allocation.amount === "number" || typeof allocation.amount === "string"
+              ? String(allocation.amount)
+              : "",
+          max_amount: (toNumber(debtItem?.owed_amount) ?? 0) + (toNumber(allocation.amount) ?? 0),
+          title: debtItem ? buildDebtItemTitle(debtItem) : sourceId,
+          subtitle: debtItem ? buildDebtItemSubtitle(debtItem) : "",
+        };
+      })
+      .filter((allocation): allocation is WorkerPaymentAllocationFormState => Boolean(allocation));
+
+    setWorkerPaymentError("");
+    setWorkerPaymentForm({
+      payment_id: payment.id,
+      user_id: payment.user_id,
+      payment_date: payment.payment_date ?? new Date().toISOString().slice(0, 10),
+      amount:
+        typeof payment.amount === "number" || typeof payment.amount === "string" ? String(payment.amount) : "",
+      payment_method: payment.payment_method ?? "",
+      reference_number: payment.reference_number ?? "",
+      notes: payment.notes ?? "",
+      allocations,
+    });
+    setWorkerPaymentDialogOpen(true);
+  }
+
+  function openSessionPaymentDialog() {
+    if (!sessionDialogWorker || !sessionDialogDebtItem) return;
+    openWorkerPaymentDialogForItems(
+      sessionDialogWorker.id,
+      [sessionDialogDebtItem],
+      toNumber(sessionDialogDebtItem.owed_amount)
+    );
+  }
+
+  function setWorkerPaymentAmount(value: string) {
+    setWorkerPaymentForm((current) => ({
+      ...current,
+      amount: value,
+      allocations: distributePaymentAmount(value, current.allocations),
+    }));
+  }
+
+  function updateWorkerPaymentAllocation(sourceId: string, value: string) {
+    setWorkerPaymentForm((current) => ({
+      ...current,
+      allocations: current.allocations.map((allocation) => {
+        if (allocation.source_id !== sourceId) return allocation;
+        const parsed = Number(value);
+        const bounded = Number.isFinite(parsed)
+          ? Math.max(0, Math.min(allocation.max_amount, parsed))
+          : 0;
+        return {
+          ...allocation,
+          amount: bounded > 0 ? String(Math.round(bounded * 100) / 100) : "",
+        };
+      }),
+    }));
+  }
+
+  function autoDistributeWorkerPayment() {
+    setWorkerPaymentForm((current) => ({
+      ...current,
+      allocations: distributePaymentAmount(current.amount, current.allocations),
+    }));
+  }
+
+  function saveWorkerPayment() {
+    const amount = Number(workerPaymentForm.amount);
+    const activeAllocations = workerPaymentForm.allocations
+      .map((allocation) => ({
+        ...allocation,
+        parsedAmount: Number(allocation.amount),
+      }))
+      .filter((allocation) => Number.isFinite(allocation.parsedAmount) && allocation.parsedAmount > 0);
+
+    const allocationTotal = activeAllocations.reduce((sum, allocation) => sum + allocation.parsedAmount, 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setWorkerPaymentError("יש להזין סכום תשלום תקין.");
+      return;
+    }
+    if (!workerPaymentForm.payment_date) {
+      setWorkerPaymentError("יש לבחור תאריך תשלום.");
+      return;
+    }
+    if (activeAllocations.length === 0) {
+      setWorkerPaymentError("יש להקצות את התשלום לפחות לפריט חוב אחד.");
+      return;
+    }
+    if (Math.abs(allocationTotal - amount) > 0.01) {
+      setWorkerPaymentError("סכום ההקצאות חייב להיות שווה לסכום התשלום.");
+      return;
+    }
+
+    runAction(async () => {
+      const path = "/api/payroll/worker-payments";
+      const response = await fetch(path, {
+        method: workerPaymentForm.payment_id ? "PATCH" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          payment_id: workerPaymentForm.payment_id || undefined,
+          user_id: workerPaymentForm.user_id,
+          payment_date: workerPaymentForm.payment_date,
+          amount,
+          payment_method: workerPaymentForm.payment_method.trim() || null,
+          reference_number: workerPaymentForm.reference_number.trim() || null,
+          notes: workerPaymentForm.notes.trim() || null,
+          allocations: activeAllocations.map((allocation) => ({
+            source_type: allocation.source_type,
+            source_id: allocation.source_id,
+            amount: allocation.parsedAmount,
+          })),
+        }),
+      });
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(json.error ?? "Request failed.");
+      }
+      setWorkerPaymentDialogOpen(false);
+      setWorkerPaymentForm(DEFAULT_WORKER_PAYMENT_FORM);
+      setWorkerPaymentError("");
+      setMessage(workerPaymentForm.payment_id ? "תשלום לעובד עודכן." : "תשלום לעובד נשמר.");
+      await refreshAll();
+    });
+  }
+
+  function deleteWorkerPayment(payment: WorkerPaymentRow) {
+    const confirmed = window.confirm("למחוק את התשלום הזה?");
+    if (!confirmed) return;
+
+    runAction(async () => {
+      const response = await fetch("/api/payroll/worker-payments", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          payment_id: payment.id,
+          user_id: payment.user_id,
+        }),
+      });
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(json.error ?? "Request failed.");
+      }
+
+      if (workerPaymentForm.payment_id === payment.id) {
+        setWorkerPaymentDialogOpen(false);
+        setWorkerPaymentForm(DEFAULT_WORKER_PAYMENT_FORM);
+        setWorkerPaymentError("");
+      }
+
+      setMessage("תשלום לעובד נמחק.");
+      await refreshAll();
+    });
+  }
+
   const selectedWorkerSessions = useMemo(
     () => publicSessions.filter((session) => session.user_id === selectedWorkerId),
     [publicSessions, selectedWorkerId]
@@ -766,10 +1156,81 @@ export default function SalaryCenterClient({
       selectedWorkerSessions.reduce((sum, session) => sum + (sessionCostsById.get(session.id) ?? 0), 0),
     [selectedWorkerSessions, sessionCostsById]
   );
+  const selectedWorkerBalance = selectedWorker ? workerBalancesByUserId.get(selectedWorker.id) ?? null : null;
+  const selectedWorkerDebtItems = useMemo(() => {
+    if (!selectedWorker) return [];
+    const items = workerDebtItemsByUserId.get(selectedWorker.id) ?? [];
+    return [...items].sort((a, b) => {
+      const aTime = a.source_date ? new Date(a.source_date).getTime() : 0;
+      const bTime = b.source_date ? new Date(b.source_date).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [selectedWorker, workerDebtItemsByUserId]);
+  const selectedWorkerOpenDebtItems = useMemo(
+    () => selectedWorkerDebtItems.filter((item) => toNumber(item.owed_amount) > 0.009),
+    [selectedWorkerDebtItems]
+  );
+  const selectedWorkerPayments = useMemo(() => {
+    if (!selectedWorker) return [];
+    return [...(workerPaymentsByUserId.get(selectedWorker.id) ?? [])].sort((a, b) =>
+      (b.payment_date ?? "").localeCompare(a.payment_date ?? "")
+    );
+  }, [selectedWorker, workerPaymentsByUserId]);
   const selectedWorkerOverrides = useMemo(
     () => (selectedWorker ? (protectedData?.hourlyOverrides ?? []).filter((override) => override.user_id === selectedWorker.id) : []),
     [protectedData, selectedWorker]
   );
+  const sessionDialogWorker = useMemo(
+    () => (sessionForm.user_id ? usersById.get(sessionForm.user_id) ?? null : null),
+    [sessionForm.user_id, usersById]
+  );
+  const sessionDialogDebtItem = useMemo(() => {
+    if (sessionMode !== "edit" || !sessionForm.session_id) return null;
+    return (
+      (protectedData?.workerDebtItems ?? []).find(
+        (item) => item.source_type === "session" && item.source_id === sessionForm.session_id
+      ) ?? null
+    );
+  }, [protectedData, sessionForm.session_id, sessionMode]);
+  const sessionDialogPaymentAllocations = useMemo(() => {
+    if (!sessionForm.session_id) return [];
+    return [...(workerPaymentAllocationsBySessionId.get(sessionForm.session_id) ?? [])].sort((a, b) =>
+      (workerPaymentsById.get(b.worker_payment_id)?.payment_date ?? "").localeCompare(
+        workerPaymentsById.get(a.worker_payment_id)?.payment_date ?? ""
+      )
+    );
+  }, [sessionForm.session_id, workerPaymentAllocationsBySessionId, workerPaymentsById]);
+  const canManageSessionPayments =
+    sessionMode === "edit" &&
+    sessionDialogWorker?.pay_tracking_mode === "session" &&
+    Boolean(sessionDialogDebtItem);
+
+  function buildDebtItemTitle(item: WorkerDebtItemRow) {
+    if (item.source_type === "payslip") {
+      return item.period_month ? `תלוש ${monthLabelFromKey(item.period_month)}` : "תלוש";
+    }
+    const projectLabel = item.project_id ? projectLabelsById.get(item.project_id) ?? "פרויקט" : "ללא פרויקט";
+    return item.source_date ? `${formatDate(item.source_date)} • ${projectLabel}` : projectLabel;
+  }
+
+  function buildDebtItemSubtitle(item: WorkerDebtItemRow) {
+    if (item.source_type === "payslip") {
+      return `ברוטו ${formatCurrency(item.earned_amount)}`;
+    }
+    return `${formatMinutes(item.worked_minutes)} • עלות ${formatCurrency(item.earned_amount)}`;
+  }
+
+  function distributePaymentAmount(totalAmountText: string, allocations: WorkerPaymentAllocationFormState[]) {
+    let remaining = Math.max(0, Number(totalAmountText) || 0);
+    return allocations.map((allocation) => {
+      const nextAmount = Math.min(allocation.max_amount, remaining);
+      remaining -= nextAmount;
+      return {
+        ...allocation,
+        amount: nextAmount > 0 ? String(Math.round(nextAmount * 100) / 100) : "",
+      };
+    });
+  }
 
   function getSessionPayrollPeriod(session: SessionPublicRow) {
     return periodsForUi.find((period) => {
@@ -792,7 +1253,7 @@ export default function SalaryCenterClient({
         </Card>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="חודש שכר נוכחי" value={monthLabelFromKey(summary.currentPayrollMonth)} />
         <SummaryCard title="סה״כ שעות החודש" value={formatMinutes(summary.totalWorkMinutes)} />
         <SalaryProtected
@@ -803,6 +1264,15 @@ export default function SalaryCenterClient({
           fallback={<SummaryCard title="עלות עבודה החודש" value="מוגן" protectedValue />}
         >
           <SummaryCard title="עלות עבודה החודש" value={formatCurrency(summary.totalLaborCost)} protectedValue />
+        </SalaryProtected>
+        <SalaryProtected
+          unlocked={salaryUnlocked}
+          hasPasswordConfigured={hasPasswordConfigured}
+          canUnlock={canManageSalary}
+          onUnlockSuccess={loadProtectedData}
+          fallback={<SummaryCard title="יתרה לעובדים" value="מוגן" protectedValue />}
+        >
+          <SummaryCard title="יתרה לעובדים" value={formatCurrency(summary.totalWorkerOwed)} protectedValue />
         </SalaryProtected>
       </div>
 
@@ -859,10 +1329,13 @@ export default function SalaryCenterClient({
           <Card>
             <CardContent className="py-4">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1200px] text-right text-sm">
+                <table className="w-full min-w-[1450px] text-right text-sm">
                   <thead>
                     <tr className="border-b text-muted-foreground">
                       <th className="px-3 py-2 font-medium">פעולות</th>
+                      <th className="px-3 py-2 font-medium">יתרה</th>
+                      <th className="px-3 py-2 font-medium">שולם</th>
+                      <th className="px-3 py-2 font-medium">סטטוס תשלום</th>
                       <th className="px-3 py-2 font-medium">תלוש אחרון</th>
                       <th className="px-3 py-2 font-medium">עלות עבודה החודש</th>
                       <th className="px-3 py-2 font-medium">משכורת נוכחית</th>
@@ -878,7 +1351,7 @@ export default function SalaryCenterClient({
                   <tbody>
                     {employeeWorkers.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
+                        <td colSpan={14} className="px-3 py-6 text-center text-muted-foreground">
                           {"אין עובדים להצגה."}
                         </td>
                       </tr>
@@ -891,6 +1364,7 @@ export default function SalaryCenterClient({
                             periodsById.get(a.payroll_period_id)?.period_month ?? ""
                           )
                         )[0] ?? null;
+                        const balance = workerBalancesByUserId.get(worker.id) ?? null;
                         const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
                         const monthlyLaborCost = publicSessions
                           .filter((session) => session.user_id === worker.id && monthKeyFromDate(session.clock_in) === currentMonthKey)
@@ -904,6 +1378,39 @@ export default function SalaryCenterClient({
                                   {"פרטים"}
                                 </Button>
                               </div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canManageSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                {formatCurrency(balance?.owed_amount ?? 0)}
+                              </SalaryProtected>
+                            </td>
+                            <td className="px-3 py-3">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canManageSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                {formatCurrency(balance?.paid_amount ?? 0)}
+                              </SalaryProtected>
+                            </td>
+                            <td className="px-3 py-3">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canManageSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                <PaymentStatusBadge status={balance?.payment_status} />
+                              </SalaryProtected>
                             </td>
                             <td className="px-3 py-3">{latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}</td>
                             <td className="px-3 py-3">
@@ -964,10 +1471,13 @@ export default function SalaryCenterClient({
           <Card>
             <CardContent className="py-4">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[980px] text-right text-sm">
+                <table className="w-full min-w-[1240px] text-right text-sm">
                   <thead>
                     <tr className="border-b text-muted-foreground">
                       <th className="px-3 py-2 font-medium">פעולות</th>
+                      <th className="px-3 py-2 font-medium">יתרה</th>
+                      <th className="px-3 py-2 font-medium">שולם</th>
+                      <th className="px-3 py-2 font-medium">סטטוס תשלום</th>
                       <th className="px-3 py-2 font-medium">פתוחות</th>
                       <th className="px-3 py-2 font-medium">פרויקטים</th>
                       <th className="px-3 py-2 font-medium">משמרות</th>
@@ -980,13 +1490,14 @@ export default function SalaryCenterClient({
                   <tbody>
                     {laborWorkers.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
+                        <td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
                           {"אין פועלים להצגה."}
                         </td>
                       </tr>
                     ) : (
                       laborWorkers.map((worker, index) => {
                         const monthStats = getWorkerMonthStats(worker.id, publicSessions);
+                        const balance = workerBalancesByUserId.get(worker.id) ?? null;
                         const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
 
                         return (
@@ -997,6 +1508,39 @@ export default function SalaryCenterClient({
                                   {"פרטים"}
                                 </Button>
                               </div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canManageSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                {formatCurrency(balance?.owed_amount ?? 0)}
+                              </SalaryProtected>
+                            </td>
+                            <td className="px-3 py-3">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canManageSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                {formatCurrency(balance?.paid_amount ?? 0)}
+                              </SalaryProtected>
+                            </td>
+                            <td className="px-3 py-3">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canManageSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                <PaymentStatusBadge status={balance?.payment_status} />
+                              </SalaryProtected>
                             </td>
                             <td className="px-3 py-3">{String(monthStats.openSessionCount)}</td>
                             <td className="px-3 py-3">{String(monthStats.projectCount)}</td>
@@ -1272,7 +1816,7 @@ export default function SalaryCenterClient({
                         <th className="px-3 py-2 font-medium">עובד</th>
                       </tr>
                     </thead>
-                    {salaryTrackedUsersWithAgreements.map((worker, workerIndex) => {
+                    {agreementUsersWithAgreements.map((worker, workerIndex) => {
                       const workerAgreements = agreementsByUserId.get(worker.id) ?? [];
                       const current = getCurrentSalaryAgreement(workerAgreements);
                       const workerRowClass = workerIndex % 2 === 0 ? "bg-muted/20" : "bg-background";
@@ -1399,16 +1943,6 @@ export default function SalaryCenterClient({
                         disabled={!isPayrollPeriodEditable(period.status) || isPending}
                       >
                         {"נעילה"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setSelectedPeriodId(period.id);
-                          runPeriodAction("mark_paid", period.id);
-                        }}
-                        disabled={normalizePayrollStatus(period.status) === "paid" || isPending}
-                      >
-                        {"סימון כשולם"}
                       </Button>
                     </div>
                   </CardContent>
@@ -1571,17 +2105,9 @@ export default function SalaryCenterClient({
         <DialogContent className="max-h-[90vh] w-full overflow-y-auto text-right sm:max-w-4xl" dir="rtl">
           {selectedWorker ? (
             <>
-              <DialogHeader className="text-center">
-                <div className="flex flex-wrap items-center justify-center gap-3">
-                  <DialogTitle>{selectedWorker.full_name ?? selectedWorker.email ?? "עובד"}</DialogTitle>
-                  {isAttendanceWorker(selectedWorker) ? (
-                    <Button variant="outline" onClick={() => openCreateSession(selectedWorker.id)}>
-                      {"הוספת משמרת"}
-                    </Button>
-                  ) : null}
-                </div>
+              <DialogHeader className="sr-only">
+                <DialogTitle>{`פרטי עובד - ${selectedWorker.full_name ?? selectedWorker.email ?? "עובד"}`}</DialogTitle>
               </DialogHeader>
-
               <div className="mt-6 space-y-5">
                 <Card>
                   <CardContent className="space-y-3 py-5">
@@ -1593,14 +2119,72 @@ export default function SalaryCenterClient({
                       <InfoRow label="טלפון" value={selectedWorker.phone ?? "—"} />
                       <InfoRow label="תפקיד" value={getRoleLabel(selectedWorker.role)} />
                       <InfoRow label="סטטוס" value={selectedWorker.active === false ? "לא פעיל" : "פעיל"} />
+                      <InfoRow
+                        label="אופן מעקב תשלום"
+                        value={selectedWorker.pay_tracking_mode === "payslip" ? "לפי תלוש" : "לפי משמרות"}
+                      />
                     </div>
                     <div className="flex flex-wrap justify-end gap-2">
                       <Button onClick={() => setWorkerAccessDialogOpen(true)} disabled={isPending}>
                         {"עדכון פרטי עובד"}
                       </Button>
+                      <Button variant="destructive" onClick={() => deleteSelectedWorker()} disabled={isPending}>
+                        {"מחק עובד"}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
+
+                <SalaryProtected
+                  unlocked={salaryUnlocked}
+                  hasPasswordConfigured={hasPasswordConfigured}
+                  canUnlock={canManageSalary}
+                  onUnlockSuccess={loadProtectedData}
+                >
+                  <Card>
+                    <CardContent className="space-y-4 py-5">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-lg font-semibold">כספים לעובד</div>
+                        <Button onClick={() => openWorkerPaymentDialog()} disabled={isPending || selectedWorkerOpenDebtItems.length === 0}>
+                          הוספת תשלום
+                        </Button>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-4">
+                        <MiniStat label="סה״כ חוב" value={formatCurrency(selectedWorkerBalance?.earned_amount ?? 0)} />
+                        <MiniStat label="שולם" value={formatCurrency(selectedWorkerBalance?.paid_amount ?? 0)} />
+                        <MiniStat label="יתרה" value={formatCurrency(selectedWorkerBalance?.owed_amount ?? 0)} />
+                        <MiniStat label="סטטוס תשלום" value={paymentStatusLabel(selectedWorkerBalance?.payment_status)} />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="font-medium">היסטוריית תשלומים</div>
+                        {selectedWorkerPayments.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">אין תשלומים שמורים לעובד הזה.</div>
+                        ) : (
+                          selectedWorkerPayments.map((payment) => (
+                            <div key={payment.id} className="rounded-2xl border p-3 text-sm">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="font-medium">{formatCurrency(payment.amount)}</div>
+                                <div>{formatDate(payment.payment_date)}</div>
+                              </div>
+                              <div className="mt-1 text-muted-foreground">
+                                {[payment.payment_method, payment.reference_number].filter(Boolean).join(" • ") || "ללא פירוט"}
+                              </div>
+                              {payment.notes ? <div className="mt-1 text-muted-foreground">{payment.notes}</div> : null}
+                              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                                <Button variant="outline" size="sm" onClick={() => openEditWorkerPaymentDialog(payment)}>
+                                  {"ערוך"}
+                                </Button>
+                                <Button variant="destructive" size="sm" onClick={() => deleteWorkerPayment(payment)}>
+                                  {"מחק"}
+                                </Button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </SalaryProtected>
 
                 <Card>
                   <CardContent className="space-y-3 py-5">
@@ -1608,13 +2192,14 @@ export default function SalaryCenterClient({
                     <div className="grid gap-3 sm:grid-cols-3">
                       <MiniStat label="שעות החודש" value={selectedWorkerStats ? formatMinutes(selectedWorkerStats.totalMinutes) : "0:00"} />
                       <MiniStat label="משמרות החודש" value={selectedWorkerStats ? String(selectedWorkerStats.sessionCount) : "0"} />
-                      <MiniStat label="סה״כ תשלום" value={formatCurrency(selectedWorkerTotalPay)} />
+                      <MiniStat label="עלות משמרות" value={formatCurrency(selectedWorkerTotalPay)} />
                     </div>
                     <div className="space-y-2">
                       {selectedWorkerSessions.slice(0, 12).map((session) => (
                         <div key={session.id} className="rounded-2xl border p-3 text-sm">
                           {(() => {
                             const payrollPeriod = getSessionPayrollPeriod(session);
+                            const debtItem = workerDebtItemsBySourceKey.get(`session:${session.id}`) ?? null;
                             return (
                               <>
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1622,6 +2207,7 @@ export default function SalaryCenterClient({
                               <Tag>{getBusinessDomainLabel(session.business_domain)}</Tag>
                               <Tag>{session.locked ? "נעול" : "פתוח לעריכה"}</Tag>
                               {payrollPeriod ? <Tag>{getPayrollPeriodLabel(payrollPeriod.status)}</Tag> : null}
+                              {debtItem ? <PaymentStatusBadge status={debtItem.payment_status} /> : null}
                             </div>
                             <div className="text-right">{`${formatDateTime(session.clock_in)}${session.clock_out ? ` - ${formatDateTime(session.clock_out)}` : ""}`}</div>
                           </div>
@@ -1637,6 +2223,12 @@ export default function SalaryCenterClient({
                               payrollPeriod ? ` • תקופה: ${monthLabelFromKey(payrollPeriod.period_month)}` : ""
                             }`}
                           </div>
+                          {debtItem ? (
+                            <div className="mt-2 flex flex-wrap justify-end gap-3 text-xs text-muted-foreground">
+                              <span>{`שולם: ${formatCurrency(debtItem.paid_amount)}`}</span>
+                              <span>{`יתרה: ${formatCurrency(debtItem.owed_amount)}`}</span>
+                            </div>
+                          ) : null}
                           {!session.locked ? (
                             <div className="mt-3 flex flex-wrap justify-end gap-2">
                               <Button variant="outline" onClick={() => openEditSession(session)}>
@@ -1656,7 +2248,7 @@ export default function SalaryCenterClient({
                   </CardContent>
                 </Card>
 
-                {isSelectedWorkerSalaryTracked ? (
+                {canSelectedWorkerHaveAgreement ? (
                   <SalaryProtected
                     unlocked={salaryUnlocked}
                     hasPasswordConfigured={hasPasswordConfigured}
@@ -1739,6 +2331,8 @@ export default function SalaryCenterClient({
                           )}
 
                           <div className="font-medium">{"תלושים"}</div>
+                          {isSelectedWorkerSalaryTracked ? (
+                            <>
                           {(payslipsByUserId.get(selectedWorker.id) ?? []).length === 0 ? (
                             <div className="text-sm text-muted-foreground">{"אין תלושים לעובד הזה כרגע."}</div>
                           ) : (
@@ -1767,6 +2361,8 @@ export default function SalaryCenterClient({
                             <Button onClick={() => generateWorkerPayslip(selectedWorker.id)} disabled={isPending}>
                               {"יצירת / חישוב תלוש לתקופה שנבחרה"}
                             </Button>
+                          ) : null}
+                            </>
                           ) : null}
                         </div>
                       </CardContent>
@@ -1834,6 +2430,21 @@ export default function SalaryCenterClient({
                 <option value="no">{"לא"}</option>
               </select>
             </Field>
+            <Field label="מעקב תשלום">
+              <select
+                value={workerForm.pay_tracking_mode}
+                onChange={(event) =>
+                  setWorkerForm((current) => ({
+                    ...current,
+                    pay_tracking_mode: event.target.value as WorkerFormState["pay_tracking_mode"],
+                  }))
+                }
+                className={selectClassName}
+              >
+                <option value="session">{"לפי משמרות"}</option>
+                <option value="payslip">{"לפי תלוש"}</option>
+              </select>
+            </Field>
             <Field label="גישה למערכת">
               <select
                 value={workerForm.system_access ? "yes" : "no"}
@@ -1849,6 +2460,9 @@ export default function SalaryCenterClient({
             </Field>
           </div>
           <DialogFooter>
+            <Button variant="destructive" onClick={() => deleteSelectedWorker()} disabled={isPending}>
+              {"מחק עובד"}
+            </Button>
             <Button variant="outline" onClick={() => setWorkerAccessDialogOpen(false)}>
               {"ביטול"}
             </Button>
@@ -1884,7 +2498,7 @@ export default function SalaryCenterClient({
                 disabled={Boolean(agreementForm.agreement_id)}
               >
                 <option value="">{"בחירת עובד"}</option>
-                {allSalaryTrackedUsers.map((worker) => (
+                {allAgreementEligibleUsers.map((worker) => (
                   <option key={worker.id} value={worker.id}>
                     {worker.full_name ?? worker.email ?? "עובד"}
                   </option>
@@ -2112,6 +2726,21 @@ export default function SalaryCenterClient({
                 <option value="no">{"לא"}</option>
               </select>
             </Field>
+            <Field label="מעקב תשלום">
+              <select
+                value={createUserForm.pay_tracking_mode}
+                onChange={(event) =>
+                  setCreateUserForm((current) => ({
+                    ...current,
+                    pay_tracking_mode: event.target.value as CreateUserFormState["pay_tracking_mode"],
+                  }))
+                }
+                className={selectClassName}
+              >
+                <option value="session">{"לפי משמרות"}</option>
+                <option value="payslip">{"לפי תלוש"}</option>
+              </select>
+            </Field>
             <Field label="גישה למערכת">
               <select
                 value={createUserForm.system_access ? "yes" : "no"}
@@ -2148,6 +2777,117 @@ export default function SalaryCenterClient({
             </Button>
             <Button onClick={() => createUser()} disabled={isPending}>
               {"שמירת משתמש"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={workerPaymentDialogOpen} onOpenChange={setWorkerPaymentDialogOpen}>
+        <DialogContent dir="rtl" className="max-w-3xl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{workerPaymentForm.payment_id ? "עדכון תשלום לעובד" : "הוספת תשלום לעובד"}</DialogTitle>
+            <DialogDescription>
+              {"רישום תשלום והקצאה שלו למשמרות או לתלושים פתוחים."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="תאריך תשלום">
+              <Input
+                type="date"
+                value={workerPaymentForm.payment_date}
+                onChange={(event) =>
+                  setWorkerPaymentForm((current) => ({ ...current, payment_date: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="סכום">
+              <Input
+                inputMode="decimal"
+                value={workerPaymentForm.amount}
+                onChange={(event) => setWorkerPaymentAmount(event.target.value)}
+              />
+            </Field>
+            <Field label="אופן תשלום">
+              <Input
+                value={workerPaymentForm.payment_method}
+                onChange={(event) =>
+                  setWorkerPaymentForm((current) => ({ ...current, payment_method: event.target.value }))
+                }
+                placeholder="מזומן, העברה, צ׳ק..."
+              />
+            </Field>
+            <Field label="אסמכתא / רפרנס">
+              <Input
+                value={workerPaymentForm.reference_number}
+                onChange={(event) =>
+                  setWorkerPaymentForm((current) => ({ ...current, reference_number: event.target.value }))
+                }
+              />
+            </Field>
+            <div className="md:col-span-2">
+              <Field label="הערות">
+                <Textarea
+                  rows={3}
+                  value={workerPaymentForm.notes}
+                  onChange={(event) =>
+                    setWorkerPaymentForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="font-medium">{"הקצאות לפריטי חוב"}</div>
+              <Button variant="outline" onClick={() => autoDistributeWorkerPayment()} disabled={isPending}>
+                {"פיזור אוטומטי"}
+              </Button>
+            </div>
+            {workerPaymentForm.allocations.length === 0 ? (
+              <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+                {"אין פריטי חוב פתוחים לעובד הזה."}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {workerPaymentForm.allocations.map((allocation) => (
+                  <div
+                    key={allocation.source_id}
+                    className="grid gap-3 rounded-2xl border p-3 md:grid-cols-[minmax(0,1fr)_180px]"
+                  >
+                    <div className="text-right">
+                      <div className="font-medium">{allocation.title}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">{allocation.subtitle}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {`יתרה להקצאה: ${formatCurrency(allocation.max_amount)}`}
+                      </div>
+                    </div>
+                    <Field label="סכום להקצאה">
+                      <Input
+                        inputMode="decimal"
+                        value={allocation.amount}
+                        onChange={(event) =>
+                          updateWorkerPaymentAllocation(allocation.source_id, event.target.value)
+                        }
+                      />
+                    </Field>
+                  </div>
+                ))}
+              </div>
+            )}
+            {workerPaymentError ? <div className="text-sm text-destructive">{workerPaymentError}</div> : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWorkerPaymentDialogOpen(false)}>
+              {"ביטול"}
+            </Button>
+            <Button
+              onClick={() => saveWorkerPayment()}
+              disabled={isPending || workerPaymentForm.allocations.length === 0}
+            >
+              {workerPaymentForm.payment_id ? "שמירת עדכון" : "שמירת תשלום"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2282,6 +3022,37 @@ export default function SalaryCenterClient({
                 />
               </Field>
             ) : null}
+            {sessionDialogWorker?.pay_tracking_mode === "session" ? (
+              <>
+                <Field label="שולם עכשיו">
+                  <select
+                    value={sessionForm.mark_paid_now ? "yes" : "no"}
+                    onChange={(event) =>
+                      setSessionForm((current) => ({
+                        ...current,
+                        mark_paid_now: event.target.value === "yes",
+                      }))
+                    }
+                    className={selectClassName}
+                  >
+                    <option value="no">{"לא"}</option>
+                    <option value="yes">{"כן"}</option>
+                  </select>
+                </Field>
+                {sessionForm.mark_paid_now ? (
+                  <Field label="כמה שולם">
+                    <Input
+                      inputMode="decimal"
+                      value={sessionForm.paid_amount_now}
+                      onChange={(event) =>
+                        setSessionForm((current) => ({ ...current, paid_amount_now: event.target.value }))
+                      }
+                      placeholder="אם ריק, יירשם מלוא סכום המשמרת"
+                    />
+                  </Field>
+                ) : null}
+              </>
+            ) : null}
             <div className="md:col-span-2">
               <Field label="הערות">
                 <Textarea
@@ -2293,6 +3064,89 @@ export default function SalaryCenterClient({
             </div>
             {sessionError ? <div className="md:col-span-2 text-sm text-destructive">{sessionError}</div> : null}
           </div>
+
+          {sessionMode === "edit" && sessionDialogWorker?.pay_tracking_mode === "session" ? (
+            <SalaryProtected
+              unlocked={salaryUnlocked}
+              hasPasswordConfigured={hasPasswordConfigured}
+              canUnlock={canManageSalary}
+              onUnlockSuccess={loadProtectedData}
+            >
+              <div className="space-y-3 rounded-2xl border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="font-medium">{"תשלום על המשמרת"}</div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => openSessionPaymentDialog()}
+                    disabled={isPending || !sessionDialogDebtItem || toNumber(sessionDialogDebtItem.owed_amount) <= 0.009}
+                  >
+                    {"עדכון תשלום"}
+                  </Button>
+                </div>
+                {sessionDialogDebtItem ? (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-4">
+                      <MiniStat label="עלות משמרת" value={formatCurrency(sessionDialogDebtItem.earned_amount)} />
+                      <MiniStat label="שולם" value={formatCurrency(sessionDialogDebtItem.paid_amount)} />
+                      <MiniStat label="יתרה" value={formatCurrency(sessionDialogDebtItem.owed_amount)} />
+                      <MiniStat label="סטטוס" value={paymentStatusLabel(sessionDialogDebtItem.payment_status)} />
+                    </div>
+                    {sessionDialogPaymentAllocations.length > 0 ? (
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">{"תשלומים שנרשמו למשמרת"}</div>
+                        {sessionDialogPaymentAllocations.map((allocation) => {
+                          const payment = workerPaymentsById.get(allocation.worker_payment_id) ?? null;
+                          return (
+                            <div key={allocation.id} className="rounded-xl border bg-muted/10 p-3 text-sm">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="font-medium">{formatCurrency(allocation.amount)}</div>
+                                <div className="text-muted-foreground">
+                                  {formatDate(payment?.payment_date ?? null)}
+                                </div>
+                              </div>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {[payment?.payment_method, payment?.reference_number].filter(Boolean).join(" • ") || "ללא פירוט"}
+                              </div>
+                              {payment?.notes ? (
+                                <div className="mt-1 text-xs text-muted-foreground">{payment.notes}</div>
+                              ) : null}
+                              {payment ? (
+                                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openEditWorkerPaymentDialog(payment)}
+                                  >
+                                    {"ערוך"}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => deleteWorkerPayment(payment)}
+                                  >
+                                    {"מחק"}
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">{"עדיין לא נרשם תשלום על המשמרת."}</div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-sm text-muted-foreground">
+                    {"התשלום למשמרת יהיה זמין אחרי טעינת נתוני השכר ולפי עלות העבודה של המשמרת."}
+                  </div>
+                )}
+              </div>
+            </SalaryProtected>
+          ) : null}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setSessionDialogOpen(false)}>
@@ -2375,6 +3229,27 @@ function StatusPill({
           : "border-slate-200 bg-slate-50 text-slate-700";
 
   return <Badge className={className}>{children}</Badge>;
+}
+
+function PaymentStatusBadge({ status }: { status: string | null | undefined }) {
+  const normalized = status === "paid" || status === "partial" || status === "overpaid" ? status : "unpaid";
+  const tone =
+    normalized === "paid"
+      ? "success"
+      : normalized === "partial"
+        ? "warning"
+        : normalized === "overpaid"
+          ? "danger"
+          : "muted";
+
+  return <StatusPill tone={tone}>{paymentStatusLabel(normalized)}</StatusPill>;
+}
+
+function paymentStatusLabel(status: string | null | undefined) {
+  if (status === "paid") return "שולם";
+  if (status === "partial") return "שולם חלקית";
+  if (status === "overpaid") return "שולם יתר";
+  return "לא שולם";
 }
 
 function RoleBadge({ role }: { role: string | null | undefined }) {

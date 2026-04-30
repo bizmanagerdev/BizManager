@@ -9,10 +9,12 @@ import type {
   ProjectFinancials,
   ProjectOverview,
   ProjectTaskProgress,
+  ProjectWorkerBalance,
 } from "@/app/projects/[id]/ProjectTabsClient";
 import { PAYMENT_SELECT } from "@/lib/payments";
 import type { FinancialAttachment } from "@/lib/payments";
 import type { WorkSessionRow } from "@/lib/payroll";
+import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -110,6 +112,25 @@ function formatIls(value: number | string | null | undefined) {
   }).format(amount);
 }
 
+type CustomerPaymentStatus = "paid" | "partial" | "unpaid" | "unpriced";
+
+function deriveCustomerPaymentStatus(totalDue: number | null, paidTotal: number) {
+  if (totalDue === null || totalDue <= 0) return "unpriced" as const;
+  if (paidTotal + 0.009 >= totalDue) return "paid" as const;
+  if (paidTotal > 0) return "partial" as const;
+  return "unpaid" as const;
+}
+
+function customerPaymentStatusLabel(status: CustomerPaymentStatus) {
+  if (status === "unpriced") return "לא סוכם תשלום";
+  return paymentStatusLabel(status);
+}
+
+function customerPaymentStatusClasses(status: CustomerPaymentStatus) {
+  if (status === "unpriced") return "border-slate-200 bg-slate-100 text-slate-700";
+  return paymentStatusClasses(status);
+}
+
 export default async function ProjectPage({
   params,
   searchParams,
@@ -156,6 +177,12 @@ export default async function ProjectPage({
     .eq("id", id)
     .maybeSingle<ProjectFinancials extends infer T ? Exclude<T, null> : never>();
 
+  const { data: workerBalance } = await supabase
+    .from("project_worker_balance_view")
+    .select("project_id,earned_amount,paid_amount,owed_amount")
+    .eq("project_id", id)
+    .maybeSingle<ProjectWorkerBalance extends infer T ? Exclude<T, null> : never>();
+
   const { data: tasks } = await supabase
     .from("project_task_progress_view")
     .select("project_id,total_tasks,completed_tasks,open_tasks")
@@ -179,7 +206,7 @@ export default async function ProjectPage({
 
   const { data: customers } = await supabase
     .from("customer_overview_view")
-    .select("customer_id,customer_name")
+    .select("customer_id,customer_name,phone")
     .order("customer_name", { ascending: true })
     .range(0, 199);
 
@@ -488,6 +515,17 @@ export default async function ProjectPage({
   const projectName = typeof overview?.name === "string" ? overview.name : "פרויקט";
   const customerName =
     typeof overview?.customer_name === "string" ? overview.customer_name : "";
+  const customerPhoneRow =
+    ((customers ?? []) as UnknownRow[]).find(
+      (row) =>
+        typeof row.customer_id === "string" &&
+        row.customer_id === overview?.customer_id &&
+        typeof row.phone === "string" &&
+        row.phone.trim()
+    ) ?? null;
+  const customerPhone = typeof customerPhoneRow?.phone === "string" ? customerPhoneRow.phone : null;
+  const projectNotes =
+    typeof overview?.notes === "string" && overview.notes.trim() ? overview.notes.trim() : null;
   const managerName =
     typeof overview?.project_manager_name === "string" ? overview.project_manager_name : null;
   const startDate = typeof overview?.start_date === "string" ? overview.start_date : null;
@@ -498,6 +536,42 @@ export default async function ProjectPage({
   const grossProfit = financials?.gross_profit ?? null;
   const openTasks =
     typeof tasks?.open_tasks === "number" || typeof tasks?.open_tasks === "string" ? tasks.open_tasks : 0;
+  const paidTotal = paymentsWithPhotos.reduce((sum, payment) => {
+    const amount =
+      typeof payment.amount_total === "number"
+        ? payment.amount_total
+        : typeof payment.amount_total === "string"
+          ? Number(payment.amount_total)
+          : NaN;
+    return sum + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+  const agreedBasePrice =
+    typeof overview?.agreed_base_price === "number"
+      ? overview.agreed_base_price
+      : typeof overview?.agreed_base_price === "string"
+        ? Number(overview.agreed_base_price)
+        : null;
+  const actualPrice =
+    typeof overview?.actual_price === "number"
+      ? overview.actual_price
+      : typeof overview?.actual_price === "string"
+        ? Number(overview.actual_price)
+        : null;
+  const expensesBilled =
+    typeof financials?.expenses_billed === "number"
+      ? financials.expenses_billed
+      : typeof financials?.expenses_billed === "string"
+        ? Number(financials.expenses_billed)
+        : 0;
+  const baseProjectPrice =
+    agreedBasePrice !== null && Number.isFinite(agreedBasePrice)
+      ? agreedBasePrice
+      : actualPrice !== null && Number.isFinite(actualPrice)
+        ? actualPrice
+        : null;
+  const totalCustomerCharge =
+    baseProjectPrice !== null ? baseProjectPrice + (Number.isFinite(expensesBilled) ? expensesBilled : 0) : null;
+  const customerPaymentStatus = deriveCustomerPaymentStatus(totalCustomerCharge, paidTotal);
   const customerOptions = ((customers ?? []) as UnknownRow[])
     .map((row) => ({
       id: typeof row.customer_id === "string" ? row.customer_id : "",
@@ -562,6 +636,22 @@ export default async function ProjectPage({
                   <div className="text-xs font-medium text-muted-foreground">לקוח:</div>
                   <div className="font-medium">{customerName || "—"}</div>
                 </div>
+                <div className="min-w-[10rem] space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">טלפון לקוח:</div>
+                  {customerPhone ? (
+                    <a href={`tel:${customerPhone}`} className="font-medium hover:underline">
+                      {customerPhone}
+                    </a>
+                  ) : (
+                    <div className="font-medium">—</div>
+                  )}
+                </div>
+                <div className="min-w-[10rem] space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">תשלום לקוח:</div>
+                  <Badge className={customerPaymentStatusClasses(customerPaymentStatus)}>
+                    {customerPaymentStatusLabel(customerPaymentStatus)}
+                  </Badge>
+                </div>
                 <div className="min-w-[8rem] space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">סטטוס:</div>
                   <div className="font-medium">{status ? projectStatusLabel(status) : "—"}</div>
@@ -585,6 +675,12 @@ export default async function ProjectPage({
                 <div className="min-w-[10rem] space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">מנהל פרויקט:</div>
                   <div className="font-medium">{managerName || "לא הוגדר"}</div>
+                </div>
+                <div className="min-w-[16rem] max-w-[28rem] space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">הערות:</div>
+                  <div className="whitespace-pre-wrap font-medium text-sm">
+                    {projectNotes || "—"}
+                  </div>
                 </div>
                 {projectType === "moving" ? (
                   <div className="min-w-[16rem] space-y-1">
@@ -628,6 +724,7 @@ export default async function ProjectPage({
             }
             payments={paymentsWithPhotos}
             paymentsError={paymentsError}
+            workerBalance={workerBalance ?? null}
           />
         )}
       </div>

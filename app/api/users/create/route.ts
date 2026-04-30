@@ -10,6 +10,7 @@ type CreateUserPayload = {
   role?: string | null;
   active?: boolean | null;
   system_access?: boolean | null;
+  pay_tracking_mode?: "session" | "payslip" | null;
 };
 
 type UserRow = {
@@ -21,6 +22,7 @@ type UserRow = {
   role: string | null;
   active: boolean | null;
   system_access: boolean | null;
+  pay_tracking_mode?: "session" | "payslip" | null;
 };
 
 const ALLOWED_ROLES = ["admin", "office", "worker", "worker_no_access"] as const;
@@ -40,6 +42,7 @@ export async function POST(req: Request) {
     const active = body.active === false ? false : true;
     const systemAccess =
       role === "worker_no_access" ? false : body.system_access === false ? false : true;
+    const payTrackingMode = body.pay_tracking_mode === "payslip" ? "payslip" : "session";
     const rawPassword = typeof body.password === "string" ? body.password.trim() : "";
     const password = rawPassword;
 
@@ -60,7 +63,7 @@ export async function POST(req: Request) {
     if (email) {
       const { data: existingUser, error: existingUserError } = await supabase
         .from("users")
-        .select("id,auth_user_id,full_name,email,phone,role,active,system_access")
+        .select("id,auth_user_id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
         .eq("email", email)
         .maybeSingle();
 
@@ -84,6 +87,7 @@ export async function POST(req: Request) {
           p_role: role,
           p_active: active,
           p_system_access: false,
+          p_pay_tracking_mode: payTrackingMode,
         }
       );
 
@@ -93,15 +97,24 @@ export async function POST(req: Request) {
 
       const { data: insertedUser, error: insertedUserReadError } = await supabase
         .from("users")
-        .select("id,auth_user_id,full_name,email,phone,role,active,system_access")
+        .select("id,auth_user_id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
         .eq("id", insertedUserId)
         .maybeSingle();
 
       if (insertedUserReadError) {
         return NextResponse.json({ error: insertedUserReadError.message }, { status: 400 });
       }
+      const { data: refreshedUser, error: refreshedUserError } = await supabase
+        .from("users")
+        .select("id,auth_user_id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
+        .eq("id", insertedUserId)
+        .maybeSingle();
 
-      return NextResponse.json({ user: insertedUser });
+      if (refreshedUserError) {
+        return NextResponse.json({ error: refreshedUserError.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ user: refreshedUser ?? insertedUser });
     }
 
     const signupClient = createClient(
@@ -143,6 +156,7 @@ export async function POST(req: Request) {
         p_role: role,
         p_active: active,
         p_system_access: systemAccess,
+        p_pay_tracking_mode: payTrackingMode,
       });
 
       if (error) {
@@ -152,7 +166,7 @@ export async function POST(req: Request) {
       if (upsertedUserId) {
         const { data, error: readError } = await supabase
           .from("users")
-          .select("id,auth_user_id,full_name,email,phone,role,active,system_access")
+          .select("id,auth_user_id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
           .eq("id", upsertedUserId)
           .maybeSingle();
 
@@ -175,8 +189,17 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+    const { data: refreshedUser, error: refreshedUserError } = await supabase
+      .from("users")
+      .select("id,auth_user_id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
+      .eq("id", user.id)
+      .maybeSingle();
 
-    return NextResponse.json({ user });
+    if (refreshedUserError) {
+      return NextResponse.json({ error: refreshedUserError.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ user: refreshedUser ?? user });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

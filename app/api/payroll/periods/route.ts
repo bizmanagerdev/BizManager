@@ -105,8 +105,8 @@ export async function POST(req: Request) {
 
       const usersResult = await supabase
         .from("users")
-        .select("id,full_name,email,phone,role,active,system_access")
-        .in("role", ["admin", "office", "worker"])
+        .select("id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
+        .in("role", ["admin", "office", "worker", "worker_no_access"])
         .range(0, 999);
 
       if (usersResult.error) {
@@ -121,8 +121,15 @@ export async function POST(req: Request) {
       return NextResponse.json(generated);
     }
 
-    if (action === "lock" || action === "mark_paid") {
-      const nextStatus = action === "mark_paid" ? "paid" : "locked";
+    if (action === "mark_paid") {
+      return NextResponse.json(
+        { error: "Use worker payments to record actual payroll payments. Period status is no longer the payment source of truth." },
+        { status: 409 }
+      );
+    }
+
+    if (action === "lock") {
+      const nextStatus = "locked";
       const updateResult = await supabase
         .from("payroll_periods")
         .update({ status: nextStatus })

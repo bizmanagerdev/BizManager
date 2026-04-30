@@ -99,7 +99,7 @@ export function TopBar({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="relative rounded-xl border-primary/15 text-accent-foreground shadow-md"
+              className="relative rounded-xl bg-destructive text-destructive-foreground shadow-md hover:bg-destructive/90 hover:text-destructive-foreground"
               type="button"
               id="topbar-alerts-trigger"
             >
@@ -164,7 +164,7 @@ export function TopBar({
             <Button
               variant="ghost"
               size="sm"
-              className="gap-2 rounded-xl border-primary/15 text-accent-foreground shadow-md"
+              className="gap-2 rounded-xl bg-foreground text-background shadow-md hover:bg-foreground/90 hover:text-background"
               type="button"
               id="topbar-user-trigger-fallback"
             >
@@ -181,7 +181,7 @@ export function TopBar({
               <Button
                 variant="ghost"
                 size="sm"
-                className="gap-2 rounded-xl border-primary/15 text-accent-foreground shadow-md"
+                className="gap-2 rounded-xl bg-foreground text-background shadow-md hover:bg-foreground/90 hover:text-background"
                 type="button"
                 id="topbar-user-trigger"
               >

@@ -30,7 +30,12 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { ORDER_PAYMENT_METHOD_OPTIONS, paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import {
+  ORDER_PAYMENT_METHOD_OPTIONS,
+  paymentMethodLabel,
+  paymentStatusClasses,
+  paymentStatusLabel,
+} from "@/lib/orders/paymentStatus";
 import {
   type PaymentRow,
   type FinancialAttachment,
@@ -85,6 +90,13 @@ export type ProjectTaskProgress = {
   open_tasks: number | string | null;
 } | null;
 
+export type ProjectWorkerBalance = {
+  project_id: string;
+  earned_amount: number | string | null;
+  paid_amount: number | string | null;
+  owed_amount: number | string | null;
+} | null;
+
 export type ProjectExpenseSummary = {
   project_id: string;
   expense_count: number | string | null;
@@ -110,6 +122,7 @@ export type AssignableUser = {
 
 type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
 type TaskPriority = "low" | "medium" | "high" | "urgent";
+type CustomerPaymentStatus = "paid" | "partial" | "unpaid" | "unpriced";
 
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
@@ -135,6 +148,23 @@ function formatDate(value: string | null) {
 
 function formatDateTime(value: string | null) {
   return formatShortDateTime(value, "—");
+}
+
+function deriveCustomerPaymentStatus(totalDue: number | null, paidTotal: number): CustomerPaymentStatus {
+  if (totalDue === null || totalDue <= 0) return "unpriced";
+  if (paidTotal + 0.009 >= totalDue) return "paid";
+  if (paidTotal > 0) return "partial";
+  return "unpaid";
+}
+
+function customerPaymentStatusLabel(status: CustomerPaymentStatus) {
+  if (status === "unpriced") return "לא סוכם תשלום";
+  return paymentStatusLabel(status);
+}
+
+function customerPaymentStatusBadgeClasses(status: CustomerPaymentStatus) {
+  if (status === "unpriced") return "border-slate-200 bg-slate-100 text-slate-700";
+  return paymentStatusClasses(status);
 }
 
 function getString(row: Record<string, unknown> | null, key: string) {
@@ -238,6 +268,7 @@ export default function ProjectTabsClient({
   expensesError,
   payments,
   paymentsError,
+  workerBalance,
 }: {
   overview: ProjectOverview;
   financials: ProjectFinancials;
@@ -262,6 +293,7 @@ export default function ProjectTabsClient({
   expensesError: string | null;
   payments: PaymentRow[];
   paymentsError: string | null;
+  workerBalance: ProjectWorkerBalance;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -680,6 +712,8 @@ export default function ProjectTabsClient({
   const canSaveBasePrice = !updateBasePriceError;
   const totalExpenses = toNumber(financials?.total_expenses) ?? null;
   const grossProfit = toNumber(financials?.gross_profit) ?? null;
+  const totalWorkerPaid = toNumber(workerBalance?.paid_amount) ?? 0;
+  const totalWorkerOwed = toNumber(workerBalance?.owed_amount) ?? 0;
   const billedExpensesFromDb = toNumber(financials?.expenses_billed) ?? null;
   const customerTotalPrice = toNumber(financials?.customer_total_price) ?? null;
   const billableCustomerItems = expensesUi.filter((item) =>
@@ -693,11 +727,13 @@ export default function ProjectTabsClient({
     displayedBasePrice === null
       ? customerTotalPrice
       : displayedBasePrice + (billedExpensesTotal ?? 0);
-
   const paymentsTotal = paymentsUi.reduce(
     (sum, p) => sum + (toNumber(p.amount_total) ?? 0),
     0
   );
+  const customerPaymentStatus = deriveCustomerPaymentStatus(displayedCustomerPrice, paymentsTotal);
+  const remainingCustomerBalance =
+    displayedCustomerPrice !== null ? Math.max(displayedCustomerPrice - paymentsTotal, 0) : null;
   const tasksSorted = useMemo(() => {
     const copy = [...projectTasksUi];
     copy.sort((a, b) => {
@@ -1123,7 +1159,7 @@ export default function ProjectTabsClient({
             <CardTitle className="text-base">סיכום כספי</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid gap-3 text-sm md:grid-cols-4">
+            <div className="grid gap-3 text-sm md:grid-cols-6">
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">מחיר בסיס שסוכם</div>
                 <div className="mt-2 flex items-center justify-between gap-3">
@@ -1150,6 +1186,25 @@ export default function ProjectTabsClient({
                 <div className="text-xs text-muted-foreground">רווח גולמי</div>
                 <div className={("mt-2 text-lg font-semibold " + (grossProfit !== null && grossProfit < 0 ? "text-destructive" : "")).trim()}>
                   {formatIls(grossProfit)}
+                </div>
+              </div>
+              <div className="rounded-xl border bg-background/60 p-3">
+                <div className="text-xs text-muted-foreground">יתרה לעובדי משמרות</div>
+                <div className="mt-2 text-lg font-semibold">{formatIls(totalWorkerOwed)}</div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  שולם לעובדי משמרות {formatIls(totalWorkerPaid)}
+                </div>
+              </div>
+              <div className="rounded-xl border bg-background/60 p-3">
+                <div className="text-xs text-muted-foreground">סטטוס תשלום לקוח</div>
+                <div className="mt-2">
+                  <Badge className={customerPaymentStatusBadgeClasses(customerPaymentStatus)}>
+                    {customerPaymentStatusLabel(customerPaymentStatus)}
+                  </Badge>
+                </div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  שולם {formatIls(paymentsTotal)}
+                  {remainingCustomerBalance !== null ? ` • נותר ${formatIls(remainingCustomerBalance)}` : ""}
                 </div>
               </div>
             </div>
@@ -3087,6 +3142,7 @@ function AddExpenseDialog({
           password: "",
           role: newWorkerRole,
           system_access: false,
+          pay_tracking_mode: "session",
         }),
       });
       const json = await res.json();

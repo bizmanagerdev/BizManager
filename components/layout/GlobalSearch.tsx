@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { cn } from "@/lib/utils";
 import type { GlobalSearchResponse } from "@/lib/global-search";
 
@@ -16,6 +17,28 @@ type Props = {
   desktopOnly?: boolean;
   mobileOnly?: boolean;
 };
+
+function translateSearchMetaItem(value: string) {
+  const normalized = value.trim().toLowerCase();
+  switch (normalized) {
+    case "moving":
+      return "הובלה";
+    case "construction":
+      return "שיפוצים";
+    case "logistics":
+      return "לוגיסטיקה";
+    case "completed":
+    case "active":
+    case "planned":
+    case "planning":
+    case "on_hold":
+    case "quote":
+    case "cancelled":
+      return getProjectStatusLabel(normalized);
+    default:
+      return value;
+  }
+}
 
 function SearchResults({
   results,
@@ -86,11 +109,14 @@ function SearchResults({
                 </div>
                 {result.meta.length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-                    {result.meta.slice(0, compact ? 2 : 3).map((item) => (
-                      <span key={item} className="rounded-full bg-background/80 px-2 py-1">
-                        {item}
-                      </span>
-                    ))}
+                    {result.meta.slice(0, compact ? 2 : 3).map((item) => {
+                      const translated = translateSearchMetaItem(item);
+                      return (
+                        <span key={`${item}-${translated}`} className="rounded-full bg-background/80 px-2 py-1">
+                          {translated}
+                        </span>
+                      );
+                    })}
                   </div>
                 ) : null}
               </Link>
