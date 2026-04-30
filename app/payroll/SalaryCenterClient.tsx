@@ -2223,6 +2223,9 @@ export default function SalaryCenterClient({
                               payrollPeriod ? ` • תקופה: ${monthLabelFromKey(payrollPeriod.period_month)}` : ""
                             }`}
                           </div>
+                          {session.notes ? (
+                            <div className="mt-1 text-right text-muted-foreground">{`הערות: ${session.notes}`}</div>
+                          ) : null}
                           {debtItem ? (
                             <div className="mt-2 flex flex-wrap justify-end gap-3 text-xs text-muted-foreground">
                               <span>{`שולם: ${formatCurrency(debtItem.paid_amount)}`}</span>
