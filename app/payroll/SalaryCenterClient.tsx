@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DateInput } from "@/components/ui/date-input";
+import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -1329,29 +1329,25 @@ export default function SalaryCenterClient({
           <Card>
             <CardContent className="py-4">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1450px] text-right text-sm">
+                <table className="w-full min-w-[1040px] text-right text-xs">
                   <thead>
                     <tr className="border-b text-muted-foreground">
-                      <th className="px-3 py-2 font-medium">פעולות</th>
-                      <th className="px-3 py-2 font-medium">יתרה</th>
-                      <th className="px-3 py-2 font-medium">שולם</th>
-                      <th className="px-3 py-2 font-medium">סטטוס תשלום</th>
-                      <th className="px-3 py-2 font-medium">תלוש אחרון</th>
-                      <th className="px-3 py-2 font-medium">עלות עבודה החודש</th>
-                      <th className="px-3 py-2 font-medium">משכורת נוכחית</th>
-                      <th className="px-3 py-2 font-medium">פתוחות</th>
-                      <th className="px-3 py-2 font-medium">פרויקטים</th>
-                      <th className="px-3 py-2 font-medium">משמרות</th>
-                      <th className="px-3 py-2 font-medium">שעות החודש</th>
-                      <th className="px-3 py-2 font-medium">סטטוס</th>
-                      <th className="px-3 py-2 font-medium">פרטי קשר</th>
-                      <th className="px-3 py-2 font-medium">עובד</th>
+                      <th className="px-2 py-2 font-medium">פעולות</th>
+                      <th className="px-2 py-2 font-medium">יתרה</th>
+                      <th className="px-2 py-2 font-medium">שולם</th>
+                      <th className="px-2 py-2 font-medium">סטטוס תשלום</th>
+                      <th className="px-2 py-2 font-medium">תלוש אחרון</th>
+                      <th className="px-2 py-2 font-medium">עלות עבודה החודש</th>
+                      <th className="px-2 py-2 font-medium">משכורת נוכחית</th>
+                      <th className="px-2 py-2 font-medium">שעות החודש</th>
+                      <th className="px-2 py-2 font-medium">סטטוס</th>
+                      <th className="px-2 py-2 font-medium">עובד</th>
                     </tr>
                   </thead>
                   <tbody>
                     {employeeWorkers.length === 0 ? (
                       <tr>
-                        <td colSpan={14} className="px-3 py-6 text-center text-muted-foreground">
+                        <td colSpan={10} className="px-2 py-6 text-center text-muted-foreground">
                           {"אין עובדים להצגה."}
                         </td>
                       </tr>
@@ -1401,7 +1397,7 @@ export default function SalaryCenterClient({
                                 {formatCurrency(balance?.paid_amount ?? 0)}
                               </SalaryProtected>
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="px-2 py-2">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
@@ -1412,8 +1408,8 @@ export default function SalaryCenterClient({
                                 <PaymentStatusBadge status={balance?.payment_status} />
                               </SalaryProtected>
                             </td>
-                            <td className="px-3 py-3">{latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}</td>
-                            <td className="px-3 py-3">
+                            <td className="px-2 py-2 whitespace-nowrap">{latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}</td>
+                            <td className="px-2 py-2 whitespace-nowrap">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
@@ -1424,7 +1420,7 @@ export default function SalaryCenterClient({
                                 {formatCurrency(monthlyLaborCost)}
                               </SalaryProtected>
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="px-2 py-2 whitespace-nowrap">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
@@ -1439,12 +1435,9 @@ export default function SalaryCenterClient({
                                   : "-"}
                               </SalaryProtected>
                             </td>
-                            <td className="px-3 py-3">{String(monthStats.openSessionCount)}</td>
-                            <td className="px-3 py-3">{String(monthStats.projectCount)}</td>
-                            <td className="px-3 py-3">{String(monthStats.sessionCount)}</td>
-                            <td className="px-3 py-3">{formatMinutes(monthStats.totalMinutes)}</td>
-                            <td className="px-3 py-3">
-                              <div className="flex flex-wrap justify-end gap-2">
+                            <td className="px-2 py-2 whitespace-nowrap">{formatMinutes(monthStats.totalMinutes)}</td>
+                            <td className="px-2 py-2">
+                              <div className="flex flex-col items-end gap-1">
                                 <RoleBadge role={worker.role} />
                                 <AccessBadge hasAccess={getWorkerAccessLabel(worker) === "עם גישה"} />
                                 <StatusPill tone={worker.active === false ? "muted" : "success"}>
@@ -1452,10 +1445,16 @@ export default function SalaryCenterClient({
                                 </StatusPill>
                               </div>
                             </td>
-                            <td className="px-3 py-3 text-muted-foreground">
-                              {[worker.email, worker.phone].filter(Boolean).join(" • ") || "ללא פרטי קשר"}
+                            <td className="px-2 py-2 font-medium w-[180px]">
+                              <div className="flex flex-col items-end gap-1">
+                                <div>{worker.full_name ?? worker.email ?? "עובד"}</div>
+                                <div className="flex flex-col items-end text-muted-foreground break-all">
+                                  {worker.email ? <div>{worker.email}</div> : null}
+                                  {worker.phone ? <div>{worker.phone}</div> : null}
+                                  {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
+                                </div>
+                              </div>
                             </td>
-                            <td className="px-3 py-3 font-medium">{worker.full_name ?? worker.email ?? "עובד"}</td>
                           </tr>
                         );
                       })
@@ -1471,26 +1470,22 @@ export default function SalaryCenterClient({
           <Card>
             <CardContent className="py-4">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1240px] text-right text-sm">
+                <table className="w-full min-w-[760px] text-right text-xs">
                   <thead>
                     <tr className="border-b text-muted-foreground">
-                      <th className="px-3 py-2 font-medium">פעולות</th>
-                      <th className="px-3 py-2 font-medium">יתרה</th>
-                      <th className="px-3 py-2 font-medium">שולם</th>
-                      <th className="px-3 py-2 font-medium">סטטוס תשלום</th>
-                      <th className="px-3 py-2 font-medium">פתוחות</th>
-                      <th className="px-3 py-2 font-medium">פרויקטים</th>
-                      <th className="px-3 py-2 font-medium">משמרות</th>
-                      <th className="px-3 py-2 font-medium">שעות החודש</th>
-                      <th className="px-3 py-2 font-medium">סטטוס</th>
-                      <th className="px-3 py-2 font-medium">פרטי קשר</th>
-                      <th className="px-3 py-2 font-medium">פועל</th>
+                      <th className="px-2 py-2 font-medium">פעולות</th>
+                      <th className="px-2 py-2 font-medium">יתרה</th>
+                      <th className="px-2 py-2 font-medium">שולם</th>
+                      <th className="px-2 py-2 font-medium">סטטוס תשלום</th>
+                      <th className="px-2 py-2 font-medium">שעות החודש</th>
+                      <th className="px-2 py-2 font-medium">סטטוס</th>
+                      <th className="px-2 py-2 font-medium">פועל</th>
                     </tr>
                   </thead>
                   <tbody>
                     {laborWorkers.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
+                        <td colSpan={7} className="px-2 py-6 text-center text-muted-foreground">
                           {"אין פועלים להצגה."}
                         </td>
                       </tr>
@@ -1502,14 +1497,14 @@ export default function SalaryCenterClient({
 
                         return (
                           <tr key={worker.id} className={`border-b align-top ${rowClass}`}>
-                            <td className="px-3 py-3">
+                            <td className="px-2 py-2">
                               <div className="flex flex-wrap justify-end gap-2">
                                 <Button variant="outline" size="sm" onClick={() => setSelectedWorkerId(worker.id)}>
                                   {"פרטים"}
                                 </Button>
                               </div>
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="px-2 py-2 whitespace-nowrap">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
@@ -1520,7 +1515,7 @@ export default function SalaryCenterClient({
                                 {formatCurrency(balance?.owed_amount ?? 0)}
                               </SalaryProtected>
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="px-2 py-2 whitespace-nowrap">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
@@ -1531,7 +1526,7 @@ export default function SalaryCenterClient({
                                 {formatCurrency(balance?.paid_amount ?? 0)}
                               </SalaryProtected>
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="px-2 py-2">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
@@ -1542,12 +1537,9 @@ export default function SalaryCenterClient({
                                 <PaymentStatusBadge status={balance?.payment_status} />
                               </SalaryProtected>
                             </td>
-                            <td className="px-3 py-3">{String(monthStats.openSessionCount)}</td>
-                            <td className="px-3 py-3">{String(monthStats.projectCount)}</td>
-                            <td className="px-3 py-3">{String(monthStats.sessionCount)}</td>
-                            <td className="px-3 py-3">{formatMinutes(monthStats.totalMinutes)}</td>
-                            <td className="px-3 py-3">
-                              <div className="flex flex-wrap justify-end gap-2">
+                            <td className="px-2 py-2 whitespace-nowrap">{formatMinutes(monthStats.totalMinutes)}</td>
+                            <td className="px-2 py-2">
+                              <div className="flex flex-col items-end gap-1">
                                 <StatusPill tone="warning">{"פועל"}</StatusPill>
                                 <AccessBadge hasAccess={false} />
                                 <StatusPill tone={worker.active === false ? "muted" : "success"}>
@@ -1555,10 +1547,16 @@ export default function SalaryCenterClient({
                                 </StatusPill>
                               </div>
                             </td>
-                            <td className="px-3 py-3 text-muted-foreground">
-                              {[worker.email, worker.phone].filter(Boolean).join(" • ") || "ללא פרטי קשר"}
+                            <td className="px-2 py-2 font-medium w-[180px]">
+                              <div className="flex flex-col items-end gap-1">
+                                <div>{worker.full_name ?? worker.email ?? "פועל"}</div>
+                                <div className="flex flex-col items-end text-muted-foreground break-all">
+                                  {worker.email ? <div>{worker.email}</div> : null}
+                                  {worker.phone ? <div>{worker.phone}</div> : null}
+                                  {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
+                                </div>
+                              </div>
                             </td>
-                            <td className="px-3 py-3 font-medium">{worker.full_name ?? worker.email ?? "פועל"}</td>
                           </tr>
                         );
                       })
@@ -1642,10 +1640,9 @@ export default function SalaryCenterClient({
                   <option value="editable">{"ניתן לעריכה"}</option>
                 </select>
               </Field>
-              <Field label="מתאריך">
-                <Input
+            <Field label="מתאריך">
+                <DateInput
                   name="attendance_date_from"
-                  type="date"
                   value={attendanceFilters.dateFrom}
                   onChange={(event) =>
                     setAttendanceFilters((current) => ({ ...current, dateFrom: event.target.value }))
@@ -1653,10 +1650,9 @@ export default function SalaryCenterClient({
                   autoComplete="off"
                 />
               </Field>
-              <Field label="עד תאריך">
-                <Input
+            <Field label="עד תאריך">
+                <DateInput
                   name="attendance_date_to"
-                  type="date"
                   value={attendanceFilters.dateTo}
                   onChange={(event) =>
                     setAttendanceFilters((current) => ({ ...current, dateTo: event.target.value }))
@@ -2796,8 +2792,7 @@ export default function SalaryCenterClient({
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="תאריך תשלום">
-              <Input
-                type="date"
+              <DateInput
                 value={workerPaymentForm.payment_date}
                 onChange={(event) =>
                   setWorkerPaymentForm((current) => ({ ...current, payment_date: event.target.value }))
@@ -2944,15 +2939,13 @@ export default function SalaryCenterClient({
               </select>
             </Field>
             <Field label="כניסה">
-              <Input
-                type="datetime-local"
+              <DateTimeInput
                 value={sessionForm.clock_in}
                 onChange={(event) => setSessionForm((current) => ({ ...current, clock_in: event.target.value }))}
               />
             </Field>
             <Field label="יציאה">
-              <Input
-                type="datetime-local"
+              <DateTimeInput
                 value={sessionForm.clock_out}
                 onChange={(event) => setSessionForm((current) => ({ ...current, clock_out: event.target.value }))}
               />

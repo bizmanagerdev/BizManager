@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -704,8 +705,7 @@ export default function DashboardActions({
 
               <label className="space-y-2 text-sm">
                 <span>{HEBREW.startDate}</span>
-                <Input
-                  type="date"
+                <DateInput
                   value={projectStartDate}
                   onChange={(e) => setProjectStartDate(e.target.value)}
                 />
@@ -713,8 +713,7 @@ export default function DashboardActions({
 
               <label className="space-y-2 text-sm">
                 <span>{HEBREW.endDate}</span>
-                <Input
-                  type="date"
+                <DateInput
                   value={projectEndDate}
                   onChange={(e) => setProjectEndDate(e.target.value)}
                 />
@@ -779,8 +778,7 @@ export default function DashboardActions({
               <AdaptiveGrid variant="formTwoLoose">
                 <label className="space-y-2 text-sm">
                   <span>{HEBREW.dueDate}</span>
-                  <Input
-                    type="date"
+                  <DateInput
                     value={taskDueDate}
                     onChange={(e) => setTaskDueDate(e.target.value)}
                   />
@@ -863,8 +861,7 @@ export default function DashboardActions({
 
                 <label className="space-y-2 text-sm">
                   <span>{HEBREW.date}</span>
-                  <Input
-                    type="date"
+                  <DateInput
                     value={expenseDate}
                     onChange={(e) => setExpenseDate(e.target.value)}
                   />
@@ -989,8 +986,7 @@ export default function DashboardActions({
 
                 <label className="space-y-2 text-sm">
                   <span>{HEBREW.date}</span>
-                  <Input
-                    type="date"
+                  <DateInput
                     value={incomeDate}
                     onChange={(e) => setIncomeDate(e.target.value)}
                   />
@@ -1021,8 +1017,7 @@ export default function DashboardActions({
                 <label className="space-y-2 text-sm">
                   <span>{incomeMethod === "check" ? HEBREW.paymentDueDate : HEBREW.reference}</span>
                   {incomeMethod === "check" ? (
-                    <Input
-                      type="date"
+                    <DateInput
                       value={incomeDueDate}
                       onChange={(e) => setIncomeDueDate(e.target.value)}
                     />

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DateInput } from "@/components/ui/date-input";
 import type { CashFlowSourceKind, ProjectOption } from "@/lib/cashflow";
 
 type Props = {
@@ -91,8 +92,7 @@ export default function CashFlowFilters({
           <div className="grid gap-3 sm:grid-cols-2 lg:flex lg:flex-1 lg:flex-wrap">
             <label className="grid gap-1.5 text-sm text-right">
               <span className="font-medium">מתאריך</span>
-              <input
-                type="date"
+              <DateInput
                 name="from"
                 value={fromValue}
                 onChange={(event) => setFromValue(event.target.value)}
@@ -101,8 +101,7 @@ export default function CashFlowFilters({
             </label>
             <label className="grid gap-1.5 text-sm text-right">
               <span className="font-medium">עד תאריך</span>
-              <input
-                type="date"
+              <DateInput
                 name="to"
                 value={toValue}
                 onChange={(event) => setToValue(event.target.value)}
