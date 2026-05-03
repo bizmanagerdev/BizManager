@@ -66,6 +66,11 @@ type ContactDraft = {
   active: boolean;
 };
 
+const projectsDesktopGridClass =
+  "2xl:grid-cols-[minmax(180px,1.3fr)_minmax(88px,0.7fr)_minmax(96px,0.8fr)_minmax(110px,0.9fr)_minmax(140px,1fr)_minmax(120px,0.95fr)_minmax(90px,0.7fr)_minmax(150px,1fr)]";
+const quotesDesktopGridClass =
+  "2xl:grid-cols-[minmax(180px,1.2fr)_minmax(88px,0.7fr)_minmax(96px,0.8fr)_minmax(110px,0.9fr)_minmax(140px,1fr)_minmax(120px,0.95fr)_minmax(90px,0.7fr)_minmax(140px,0.95fr)_minmax(110px,0.8fr)]";
+
 const defaultStatusOptions = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
 const defaultProjectTypeOptions = ["logistics", "moving", "construction"];
 const cityOptions = [
@@ -461,6 +466,7 @@ export default function ProjectsClient({
   }, [activeTab, projects]);
   const hasActiveToolbarFilters =
     query.trim().length > 0 || status !== "all" || sort !== defaultSortForTab(activeTab);
+  const desktopGridClass = activeTab === "quotes" ? quotesDesktopGridClass : projectsDesktopGridClass;
 
   const projectTypeOptions = useMemo(() => {
     return defaultProjectTypeOptions;
@@ -610,6 +616,10 @@ export default function ProjectsClient({
 
     if (!name) {
       setCreateCustomerError("יש להזין שם לקוח.");
+      return;
+    }
+    if (!createCustomerPhone.trim()) {
+      setCreateCustomerError("יש להזין מספר טלפון.");
       return;
     }
     if (!city) {
@@ -1164,14 +1174,15 @@ export default function ProjectsClient({
             : `נמצאו ${rows.length} פרויקטים`}
       </div>
 
-      <div className="hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground xl:grid xl:grid-cols-[minmax(200px,1fr)_120px_130px_150px_160px_120px_110px_250px] xl:items-center xl:gap-5 sm:px-4">
+      <div className={`hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground 2xl:grid ${desktopGridClass} 2xl:items-center 2xl:gap-5 sm:px-4`}>
         <div>פרויקט</div>
         <div>סטטוס</div>
         <div>תאריך התחלה</div>
         <div>תשלום</div>
         <div>לקוח</div>
-        <div>רווח</div>
+        <div>{activeTab === "quotes" ? "מחיר" : "רווח"}</div>
         <div>משימות פתוחות</div>
+        {activeTab === "quotes" ? <div>אישור הצעה</div> : null}
         <div>פעולות</div>
       </div>
 
@@ -1189,7 +1200,7 @@ export default function ProjectsClient({
           return (
             <Card key={id} className="transition-shadow hover:shadow-md">
               <CardContent className="p-3 sm:p-4">
-                <div className="flex flex-col gap-3 xl:grid xl:grid-cols-[minmax(200px,1fr)_120px_130px_150px_160px_120px_110px_250px] xl:items-center xl:gap-5">
+                <div className={`flex flex-col gap-3 2xl:grid ${desktopGridClass} 2xl:items-center 2xl:gap-5`}>
                   <Link
                     href={detailHref}
                     prefetch
@@ -1207,7 +1218,7 @@ export default function ProjectsClient({
                   <Link
                     href={detailHref}
                     prefetch
-                    className="text-sm"
+                    className="min-w-0 text-sm"
                     onClick={() => emitNavigationStart()}
                   >
                     <StatusBadge value={currentStatus} type="project" />
@@ -1216,7 +1227,7 @@ export default function ProjectsClient({
                   <Link
                     href={detailHref}
                     prefetch
-                    className="text-sm"
+                    className="min-w-0 text-sm"
                     onClick={() => emitNavigationStart()}
                   >
                     {startDate}
@@ -1225,7 +1236,7 @@ export default function ProjectsClient({
                   <Link
                     href={detailHref}
                     prefetch
-                    className="text-sm"
+                    className="min-w-0 text-sm"
                     onClick={() => emitNavigationStart()}
                   >
                     <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
@@ -1236,7 +1247,7 @@ export default function ProjectsClient({
                   <Link
                     href={detailHref}
                     prefetch
-                    className="text-sm"
+                    className="min-w-0 text-sm"
                     onClick={() => emitNavigationStart()}
                   >
                     {clientDisplayName(row)}
@@ -1245,40 +1256,49 @@ export default function ProjectsClient({
                   <Link
                     href={detailHref}
                     prefetch
-                    className="text-sm"
+                    className="min-w-0 text-sm"
                     onClick={() => emitNavigationStart()}
                   >
-                    <div className="space-y-0.5">
-                      <div className="text-xs text-muted-foreground">
-                        מחיר: {actualPrice === null ? "-" : formatIls(actualPrice)}
+                    {currentStatus === "quote" ? (
+                      actualPrice === null ? "-" : formatIls(actualPrice)
+                    ) : (
+                      <div className="space-y-0.5">
+                        <div className="text-xs text-muted-foreground">
+                          מחיר: {actualPrice === null ? "-" : formatIls(actualPrice)}
+                        </div>
+                        <div className={profit !== null && profit < 0 ? "text-destructive" : ""}>
+                          רווח: {profit === null ? "-" : formatIls(profit)}
+                        </div>
                       </div>
-                      <div className={profit !== null && profit < 0 ? "text-destructive" : ""}>
-                        רווח: {profit === null ? "-" : formatIls(profit)}
-                      </div>
-                    </div>
+                    )}
                   </Link>
 
                   <Link
                     href={detailHref}
                     prefetch
-                    className="text-sm"
+                    className="min-w-0 text-sm"
                     onClick={() => emitNavigationStart()}
                   >
                     {openTasks === null ? "-" : openTasks}
                   </Link>
 
+                  {currentStatus === "quote" ? (
+                    <div className="flex shrink-0 items-center md:justify-start">
+                      <Button
+                        type="button"
+                        variant="default"
+                        size="sm"
+                        className="h-10 w-full rounded-xl px-3 2xl:w-auto"
+                        onClick={() => openApproveQuote(row)}
+                      >
+                        אישור הצעה
+                      </Button>
+                    </div>
+                  ) : null}
+
                   <div className="flex shrink-0 items-center gap-1.5 md:justify-start">
                     {currentStatus === "quote" ? (
                       <>
-                        <Button
-                          type="button"
-                          variant="default"
-                          size="sm"
-                          className="h-10 rounded-xl px-3"
-                          onClick={() => openApproveQuote(row)}
-                        >
-                          אישור הצעה
-                        </Button>
                         <Button
                           type="button"
                           variant="outline"
@@ -1770,7 +1790,7 @@ export default function ProjectsClient({
           <DialogHeader>
             <DialogTitle>הוספת לקוח חדש</DialogTitle>
             <DialogDescription>
-              הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם ועיר.
+              הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון ועיר.
             </DialogDescription>
           </DialogHeader>
 
@@ -1792,7 +1812,7 @@ export default function ProjectsClient({
 
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
-                <label className="text-sm font-medium">טלפון</label>
+                <label className="text-sm font-medium">טלפון *</label>
                 <Input
                   value={createCustomerPhone}
                   onChange={(e) => setCreateCustomerPhone(e.target.value)}

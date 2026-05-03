@@ -14,14 +14,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DateInput } from "@/components/ui/date-input";
+import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import {
+  calculateSessionLaborCost,
   formatCurrency,
   formatDate,
   formatDateTime,
   formatMinutes,
+  getActiveSalaryAgreementForDate,
   getCurrentSalaryAgreement,
   getNextMonthDueText,
   getPayrollStatusLabel,
@@ -85,6 +87,10 @@ type CreateSessionFormState = {
   clock_in: string;
   clock_out: string;
   labor_cost: string;
+};
+
+type PendingAdminDeletion = {
+  session: WorkSessionRow;
 };
 
 const DEFAULT_FORM: FormState = {
@@ -167,6 +173,7 @@ export default function PayrollAdminClient({
   const [deletingSessionId, setDeletingSessionId] = useState("");
   const [deleteSessionError, setDeleteSessionError] = useState("");
   const [deleteSessionErrorId, setDeleteSessionErrorId] = useState("");
+  const [pendingDeletion, setPendingDeletion] = useState<PendingAdminDeletion | null>(null);
   const [formState, setFormState] = useState<FormState>(DEFAULT_FORM);
 
   const periodsById = useMemo(() => new Map(periods.map((period) => [period.id, period])), [periods]);
@@ -210,6 +217,32 @@ export default function PayrollAdminClient({
     [propertyOptions]
   );
   const usersById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
+  const createSessionWorkedMinutes = useMemo(() => {
+    const start = new Date(createSessionForm.clock_in).getTime();
+    const end = new Date(createSessionForm.clock_out).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+    return Math.round((end - start) / 60000);
+  }, [createSessionForm.clock_in, createSessionForm.clock_out]);
+  const createSessionDurationHours = useMemo(() => {
+    if (createSessionWorkedMinutes <= 0) return "";
+    const hours = createSessionWorkedMinutes / 60;
+    return Number.isInteger(hours) ? String(hours) : String(Math.round(hours * 100) / 100);
+  }, [createSessionWorkedMinutes]);
+  const createSessionAgreement = useMemo(() => {
+    if (!createSessionForm.user_id || !createSessionForm.clock_in) return null;
+    return getActiveSalaryAgreementForDate(
+      agreementsByUserId.get(createSessionForm.user_id) ?? [],
+      new Date(createSessionForm.clock_in)
+    );
+  }, [agreementsByUserId, createSessionForm.clock_in, createSessionForm.user_id]);
+  const createSessionSuggestedAmount = useMemo(() => {
+    if (createSessionForm.labor_cost.trim()) {
+      const parsed = Number(createSessionForm.labor_cost);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+    if (createSessionWorkedMinutes <= 0) return null;
+    return calculateSessionLaborCost(createSessionAgreement, createSessionWorkedMinutes);
+  }, [createSessionAgreement, createSessionForm.labor_cost, createSessionWorkedMinutes]);
 
   useEffect(() => {
     setOrderedUserIds((current) => {
@@ -614,8 +647,12 @@ export default function PayrollAdminClient({
 
   async function deleteSession(session: WorkSessionRow) {
     if (deletingSessionId) return;
-    const confirmed = window.confirm("למחוק את המשמרת הזאת לגמרי?");
-    if (!confirmed) return;
+    setPendingDeletion({ session });
+  }
+
+  async function confirmDeleteSession() {
+    const session = pendingDeletion?.session;
+    if (!session || deletingSessionId) return;
 
     setDeleteSessionError("");
     setDeleteSessionErrorId("");
@@ -654,6 +691,7 @@ export default function PayrollAdminClient({
           delete next[session.id];
           return next;
         });
+        setPendingDeletion(null);
         router.refresh();
       } catch (error: unknown) {
         setDeleteSessionErrorId(session.id);
@@ -1319,24 +1357,44 @@ export default function PayrollAdminClient({
                 <option value="charity">צדקה</option>
               </select>
             </Field>
-            <Field label="שעת התחלה">
-              <Input
-                type="datetime-local"
-                value={createSessionForm.clock_in}
-                onChange={(event) =>
-                  setCreateSessionForm((current) => ({ ...current, clock_in: event.target.value }))
-                }
-              />
-            </Field>
-            <Field label="שעת סיום">
-              <Input
-                type="datetime-local"
-                value={createSessionForm.clock_out}
-                onChange={(event) =>
-                  setCreateSessionForm((current) => ({ ...current, clock_out: event.target.value }))
-                }
-              />
-            </Field>
+            <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
+              <Field label="שעת התחלה">
+                <DateTimeInput
+                  value={createSessionForm.clock_in}
+                  onChange={(event) =>
+                    setCreateSessionForm((current) => ({ ...current, clock_in: event.target.value }))
+                  }
+                />
+              </Field>
+              <Field label="סה״כ שעות">
+                <Input
+                  inputMode="decimal"
+                  value={createSessionDurationHours}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    if (!nextValue.trim()) {
+                      setCreateSessionForm((current) => ({ ...current, clock_out: "" }));
+                      return;
+                    }
+                    const parsedHours = Number(nextValue);
+                    const start = new Date(createSessionForm.clock_in).getTime();
+                    if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !Number.isFinite(start)) return;
+                    const nextClockOut = new Date(start + parsedHours * 60 * 60 * 1000);
+                    if (Number.isNaN(nextClockOut.getTime())) return;
+                    setCreateSessionForm((current) => ({ ...current, clock_out: toDateTimeLocalValue(nextClockOut) }));
+                  }}
+                  placeholder="למשל 8"
+                />
+              </Field>
+              <Field label="שעת סיום">
+                <DateTimeInput
+                  value={createSessionForm.clock_out}
+                  onChange={(event) =>
+                    setCreateSessionForm((current) => ({ ...current, clock_out: event.target.value }))
+                  }
+                />
+              </Field>
+            </div>
             {createSessionForm.business_domain === "logistics_projects" ? (
               <Field label="פרויקט">
                 <select
@@ -1383,6 +1441,11 @@ export default function PayrollAdminClient({
                   }
                   placeholder="אופציונלי"
                 />
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {createSessionSuggestedAmount !== null
+                    ? `סה״כ לתשלום עבור המשמרת: ${formatCurrency(createSessionSuggestedAmount)}`
+                    : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
+                </div>
               </Field>
             ) : null}
             <div className="md:col-span-2">
@@ -1397,16 +1460,7 @@ export default function PayrollAdminClient({
               </Field>
             </div>
             <div className="md:col-span-2 text-xs text-muted-foreground">
-              {`משך: ${formatMinutes(
-                Math.max(
-                  0,
-                  Math.floor(
-                    (new Date(createSessionForm.clock_out || "").getTime() -
-                      new Date(createSessionForm.clock_in || "").getTime()) /
-                      60000
-                  )
-                )
-              )}`}
+              {`משך: ${formatMinutes(createSessionWorkedMinutes)}`}
             </div>
             {createSessionError ? <div className="md:col-span-2 text-sm text-destructive">{createSessionError}</div> : null}
           </div>
@@ -1458,6 +1512,50 @@ export default function PayrollAdminClient({
             </Button>
             <Button disabled={isPending} onClick={() => void confirmSessionCostChange()}>
               {"אישור"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(pendingDeletion)}
+        onOpenChange={(open) => {
+          if (!open && !deletingSessionId) {
+            setPendingDeletion(null);
+          }
+        }}
+      >
+        <DialogContent dir="rtl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{"מחיקת משמרת"}</DialogTitle>
+            <DialogDescription>
+              {"הפעולה תמחק את המשמרת מרישומי הפרויקט והשכר."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-right text-sm">
+            <div>
+              למחוק את המשמרת של{" "}
+              <span className="font-medium">
+                {usersById.get(pendingDeletion?.session.user_id ?? "")?.full_name ??
+                  usersById.get(pendingDeletion?.session.user_id ?? "")?.email ??
+                  "העובד"}
+              </span>
+              ?
+            </div>
+            <div className="text-muted-foreground">
+              {pendingDeletion?.session.clock_in ? formatDateTime(pendingDeletion.session.clock_in) : ""}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDeletion(null)} disabled={Boolean(deletingSessionId)}>
+              {"ביטול"}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void confirmDeleteSession()}
+              disabled={!pendingDeletion || Boolean(deletingSessionId)}
+            >
+              {deletingSessionId ? "מוחק..." : "מחיקה"}
             </Button>
           </DialogFooter>
         </DialogContent>

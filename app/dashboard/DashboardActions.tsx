@@ -1,20 +1,28 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
+  Clock3,
   FolderKanban,
   Landmark,
   ListTodo,
+  PlayCircle,
   ShoppingCart,
 } from "lucide-react";
 import NewOrderClient from "@/app/sales/orders/new/NewOrderClient";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
-import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
+import type { UserRole } from "@/lib/auth/requireProfile";
+import { EXPENSE_BUSINESS_DOMAINS, mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
+import {
+  calculateSessionLaborCost,
+  getActiveSalaryAgreementForDate,
+  type SalaryAgreementRow,
+} from "@/lib/payroll";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,7 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DateInput } from "@/components/ui/date-input";
+import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -39,6 +47,7 @@ type ProjectOption = {
 type UserOption = {
   id: string;
   label: string;
+  role?: UserRole;
 };
 
 type EntityOption = {
@@ -46,6 +55,13 @@ type EntityOption = {
   name: string;
   subtitle?: string;
 };
+
+type OpenSessionInfo = {
+  id: string;
+  clock_in: string;
+};
+
+type PaymentChoice = "none" | "paid" | "partial";
 
 function getString(row: Row, key: string) {
   const value = row[key];
@@ -60,6 +76,36 @@ function nextMonth(dateString: string) {
   const date = new Date(`${dateString}T00:00:00`);
   date.setMonth(date.getMonth() + 1);
   return date.toISOString().slice(0, 10);
+}
+
+function nowLocal(offsetMinutes = 0) {
+  const value = new Date();
+  value.setSeconds(0, 0);
+  value.setMinutes(value.getMinutes() + offsetMinutes);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
+
+function toIso(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function durationHours(clockIn: string, clockOut: string) {
+  const start = new Date(clockIn).getTime();
+  const end = new Date(clockOut).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return "";
+  const hours = (end - start) / 3600000;
+  return Number.isInteger(hours) ? String(hours) : String(Math.round(hours * 100) / 100);
+}
+
+function formatIls(value: number | null) {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("he-IL", {
+    style: "currency",
+    currency: "ILS",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 const fieldClass =
@@ -97,6 +143,7 @@ const HEBREW = {
   moving: "\u05d4\u05d5\u05d1\u05dc\u05d4",
   construction: "\u05e9\u05d9\u05e4\u05d5\u05e6\u05d9\u05dd",
   status: "\u05e1\u05d8\u05d8\u05d5\u05e1",
+  statusQuote: "\u05d4\u05e6\u05e2\u05ea \u05de\u05d7\u05d9\u05e8",
   statusPlanned: "\u05de\u05ea\u05d5\u05db\u05e0\u05df",
   statusActive: "\u05e4\u05e2\u05d9\u05dc",
   statusOnHold: "\u05d1\u05d4\u05de\u05ea\u05e0\u05d4",
@@ -168,6 +215,28 @@ const HEBREW = {
   incomeInvalidAmount: "\u05d9\u05e9 \u05dc\u05d4\u05d6\u05d9\u05df \u05e1\u05db\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4 \u05ea\u05e7\u05d9\u05df.",
   incomeCreateFailed: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
   incomeSaved: "\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
+  selfSessionStart: "\u05e4\u05ea\u05d9\u05d7\u05ea \u05de\u05e9\u05de\u05e8\u05ea",
+  selfSessionHint: "\u05e4\u05ea\u05d9\u05d7\u05d4 \u05de\u05d9\u05d9\u05d3\u05d9\u05ea \u05dc\u05e2\u05e6\u05de\u05da",
+  selfSessionOpenExists: "\u05db\u05d1\u05e8 \u05d9\u05e9 \u05de\u05e9\u05de\u05e8\u05ea \u05e4\u05ea\u05d5\u05d7\u05d4",
+  selfSessionStarted: "\u05d4\u05de\u05e9\u05de\u05e8\u05ea \u05e0\u05e4\u05ea\u05d7\u05d4",
+  selfSessionStartFailed: "\u05e4\u05ea\u05d9\u05d7\u05ea \u05d4\u05de\u05e9\u05de\u05e8\u05ea \u05e0\u05db\u05e9\u05dc\u05d4.",
+  manualSessionNew: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05de\u05e9\u05de\u05e8\u05ea \u05d9\u05d3\u05e0\u05d9\u05ea",
+  manualSessionHint: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05de\u05e9\u05de\u05e8\u05ea \u05e1\u05d2\u05d5\u05e8\u05d4 \u05de\u05d4\u05d3\u05e9\u05d1\u05d5\u05e8\u05d3",
+  manualSessionDescription:
+    "\u05d4\u05d6\u05e0\u05ea \u05de\u05e9\u05de\u05e8\u05ea \u05d9\u05d3\u05e0\u05d9\u05ea \u05e2\u05dd \u05e9\u05e2\u05ea \u05d4\u05ea\u05d7\u05dc\u05d4 \u05d5\u05e1\u05d9\u05d5\u05dd.",
+  worker: "\u05e2\u05d5\u05d1\u05d3",
+  selectWorker: "\u05d1\u05d7\u05e8\u05d5 \u05e2\u05d5\u05d1\u05d3",
+  domain: "\u05ea\u05d7\u05d5\u05dd",
+  clockIn: "\u05e9\u05e2\u05ea \u05d4\u05ea\u05d7\u05dc\u05d4",
+  totalHours: "\u05e1\u05d4\u05f4\u05db \u05e9\u05e2\u05d5\u05ea",
+  clockOut: "\u05e9\u05e2\u05ea \u05e1\u05d9\u05d5\u05dd",
+  saveManualSession: "\u05e9\u05de\u05d9\u05e8\u05ea \u05de\u05e9\u05de\u05e8\u05ea",
+  manualSessionSaved: "\u05d4\u05de\u05e9\u05de\u05e8\u05ea \u05e0\u05e9\u05de\u05e8\u05d4",
+  manualSessionFailed: "\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05de\u05e9\u05de\u05e8\u05ea \u05e0\u05db\u05e9\u05dc\u05d4.",
+  sessionInvalidWorker: "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e2\u05d5\u05d1\u05d3.",
+  sessionInvalidProject: "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05dc\u05ea\u05d7\u05d5\u05dd \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8\u05d9\u05dd.",
+  sessionInvalidProperty: "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e0\u05db\u05e1 \u05dc\u05ea\u05d7\u05d5\u05dd \u05e0\u05d9\u05d4\u05d5\u05dc \u05e0\u05db\u05e1\u05d9\u05dd.",
+  sessionInvalidTimes: "\u05e9\u05e2\u05ea \u05d4\u05e1\u05d9\u05d5\u05dd \u05d7\u05d9\u05d9\u05d1\u05ea \u05dc\u05d4\u05d9\u05d5\u05ea \u05d0\u05d7\u05e8\u05d9 \u05e9\u05e2\u05ea \u05d4\u05d4\u05ea\u05d7\u05dc\u05d4.",
 } as const;
 
 export default function DashboardActions({
@@ -178,6 +247,9 @@ export default function DashboardActions({
   properties,
   users,
   currentUserId,
+  currentUserRole,
+  currentOpenSession,
+  salaryAgreements,
 }: {
   customers: Row[];
   products: Row[];
@@ -186,16 +258,22 @@ export default function DashboardActions({
   properties: EntityOption[];
   users: UserOption[];
   currentUserId?: string;
+  currentUserRole?: UserRole;
+  currentOpenSession?: OpenSessionInfo | null;
+  salaryAgreements: SalaryAgreementRow[];
 }) {
   const router = useRouter();
   void orders;
   void properties;
+
+  const [orderActionLocked, setOrderActionLocked] = useState(false);
 
   const [orderOpen, setOrderOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [incomeOpen, setIncomeOpen] = useState(false);
+  const [manualSessionOpen, setManualSessionOpen] = useState(false);
 
   const [projectSubmitting, setProjectSubmitting] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -242,11 +320,69 @@ export default function DashboardActions({
   const [incomeReference, setIncomeReference] = useState("");
   const [incomeNotes, setIncomeNotes] = useState("");
   const [financeNavLoading, setFinanceNavLoading] = useState(false);
+  const [selfSessionSubmitting, setSelfSessionSubmitting] = useState(false);
+  const [manualSessionSubmitting, setManualSessionSubmitting] = useState(false);
+  const [manualSessionError, setManualSessionError] = useState<string | null>(null);
+  const [manualSessionUserId, setManualSessionUserId] = useState("");
+  const [manualSessionDomain, setManualSessionDomain] = useState<ExpenseBusinessDomain>("general_business");
+  const [manualSessionProjectId, setManualSessionProjectId] = useState("");
+  const [manualSessionPropertyId, setManualSessionPropertyId] = useState("");
+  const [manualSessionNotes, setManualSessionNotes] = useState("");
+  const [manualSessionClockIn, setManualSessionClockIn] = useState(nowLocal(-60));
+  const [manualSessionClockOut, setManualSessionClockOut] = useState(nowLocal());
+  const [manualSessionLaborCost, setManualSessionLaborCost] = useState("");
+  const [manualSessionPaymentChoice, setManualSessionPaymentChoice] = useState<PaymentChoice>("none");
+  const [manualSessionPaidAmount, setManualSessionPaidAmount] = useState("");
 
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
   );
+  const workerUsers = useMemo(
+    () => users.filter((user) => user.role === "worker" || user.role === "worker_no_access"),
+    [users]
+  );
+  const canManageWorkerSessions = currentUserRole === "admin";
+  const manualSessionTargetId = canManageWorkerSessions ? manualSessionUserId : currentUserId ?? "";
+  const manualSessionDuration = useMemo(
+    () => durationHours(manualSessionClockIn, manualSessionClockOut),
+    [manualSessionClockIn, manualSessionClockOut]
+  );
+  const manualSessionWorkedMinutes = useMemo(() => {
+    const start = new Date(manualSessionClockIn).getTime();
+    const end = new Date(manualSessionClockOut).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+    return Math.round((end - start) / 60000);
+  }, [manualSessionClockIn, manualSessionClockOut]);
+  const activeManualSessionAgreement = useMemo(() => {
+    if (!manualSessionTargetId) return null;
+    const referenceDate = toIso(manualSessionClockIn);
+    if (!referenceDate) return null;
+    return getActiveSalaryAgreementForDate(
+      salaryAgreements.filter((agreement) => agreement.user_id === manualSessionTargetId),
+      new Date(referenceDate)
+    );
+  }, [manualSessionClockIn, manualSessionTargetId, salaryAgreements]);
+  const suggestedManualSessionAmount = useMemo(() => {
+    if (manualSessionLaborCost.trim()) {
+      const parsed = Number(manualSessionLaborCost);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+    if (manualSessionWorkedMinutes <= 0) return null;
+    return calculateSessionLaborCost(activeManualSessionAgreement, manualSessionWorkedMinutes);
+  }, [activeManualSessionAgreement, manualSessionLaborCost, manualSessionWorkedMinutes]);
+
+  useEffect(() => {
+    if (!canManageWorkerSessions || manualSessionPaymentChoice === "none" || suggestedManualSessionAmount === null) return;
+    setManualSessionPaidAmount((current) => {
+      if (manualSessionPaymentChoice === "paid") {
+        return String(Number(suggestedManualSessionAmount.toFixed(2)));
+      }
+      return current.trim()
+        ? current
+        : String(Number(suggestedManualSessionAmount.toFixed(2)));
+    });
+  }, [canManageWorkerSessions, manualSessionPaymentChoice, suggestedManualSessionAmount]);
 
   function resetProjectForm() {
     setProjectError(null);
@@ -295,6 +431,20 @@ export default function DashboardActions({
     setIncomeRequiresSplit(false);
     setIncomeReference("");
     setIncomeNotes("");
+  }
+
+  function resetManualSessionForm() {
+    setManualSessionError(null);
+    setManualSessionUserId(canManageWorkerSessions ? workerUsers[0]?.id ?? "" : currentUserId ?? "");
+    setManualSessionDomain("general_business");
+    setManualSessionProjectId("");
+    setManualSessionPropertyId("");
+    setManualSessionNotes("");
+    setManualSessionClockIn(nowLocal(-60));
+    setManualSessionClockOut(nowLocal());
+    setManualSessionLaborCost("");
+    setManualSessionPaymentChoice("none");
+    setManualSessionPaidAmount("");
   }
 
   async function createProject() {
@@ -483,58 +633,235 @@ export default function DashboardActions({
     }
   }
 
+  function validateSessionDomain(domain: ExpenseBusinessDomain, projectId: string, propertyId: string) {
+    if (domain === "logistics_projects" && !projectId) return HEBREW.sessionInvalidProject;
+    if (domain === "property_management" && !propertyId) return HEBREW.sessionInvalidProperty;
+    return "";
+  }
+
+  async function startOwnSession() {
+    if (!currentUserId || currentOpenSession?.id || selfSessionSubmitting) return;
+
+    setSelfSessionSubmitting(true);
+    try {
+      const res = await fetch("/api/profile/session/start", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ notes: null }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(HEBREW.selfSessionStartFailed, {
+          description: json.error ?? HEBREW.saveErrorUnknown,
+        });
+        return;
+      }
+
+      toast.success(HEBREW.selfSessionStarted);
+      router.refresh();
+    } catch (error: unknown) {
+      toast.error(HEBREW.selfSessionStartFailed, {
+        description: error instanceof Error ? error.message : HEBREW.saveErrorUnknown,
+      });
+    } finally {
+      setSelfSessionSubmitting(false);
+    }
+  }
+
+  async function saveManualSession() {
+    setManualSessionError(null);
+    if (!manualSessionTargetId) {
+      setManualSessionError(HEBREW.sessionInvalidWorker);
+      return;
+    }
+    const domainError = validateSessionDomain(
+      manualSessionDomain,
+      manualSessionProjectId,
+      manualSessionPropertyId
+    );
+    if (domainError) {
+      setManualSessionError(domainError);
+      return;
+    }
+
+    const clockInIso = toIso(manualSessionClockIn);
+    const clockOutIso = toIso(manualSessionClockOut);
+    if (!clockInIso || !clockOutIso || new Date(clockOutIso) <= new Date(clockInIso)) {
+      setManualSessionError(HEBREW.sessionInvalidTimes);
+      return;
+    }
+    const laborCostNumber =
+      manualSessionLaborCost.trim() === ""
+        ? null
+        : Number(manualSessionLaborCost);
+    if (
+      manualSessionLaborCost.trim() !== "" &&
+      (laborCostNumber === null || !Number.isFinite(laborCostNumber) || laborCostNumber <= 0)
+    ) {
+      setManualSessionError("יש להזין עלות עבודה תקינה.");
+      return;
+    }
+    const paidAmountNumber =
+      manualSessionPaymentChoice === "none" || !manualSessionPaidAmount.trim()
+        ? suggestedManualSessionAmount
+        : Number(manualSessionPaidAmount);
+    if (
+      canManageWorkerSessions &&
+      manualSessionPaymentChoice !== "none" &&
+      (!Number.isFinite(paidAmountNumber) || paidAmountNumber === null || paidAmountNumber <= 0)
+    ) {
+      setManualSessionError("יש להזין סכום ששולם לעובד.");
+      return;
+    }
+
+    setManualSessionSubmitting(true);
+    try {
+      const endpoint = canManageWorkerSessions ? "/api/payroll/sessions/create" : "/api/profile/session/create";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          user_id: manualSessionTargetId,
+          business_domain: manualSessionDomain,
+          project_id: manualSessionDomain === "logistics_projects" ? manualSessionProjectId : null,
+          property_id: manualSessionDomain === "property_management" ? manualSessionPropertyId : null,
+          notes: manualSessionNotes.trim() || null,
+          clock_in: clockInIso,
+          clock_out: clockOutIso,
+          labor_cost: laborCostNumber,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; session?: { id?: string; user_id?: string; clock_in?: string; clock_out?: string; labor_cost?: number | string | null } };
+      if (!res.ok || !json.session) {
+        setManualSessionError(json.error ?? HEBREW.manualSessionFailed);
+        return;
+      }
+
+      if (
+        canManageWorkerSessions &&
+        manualSessionPaymentChoice !== "none" &&
+        json.session.id &&
+        json.session.user_id &&
+        Number.isFinite(paidAmountNumber) &&
+        paidAmountNumber !== null &&
+        paidAmountNumber > 0
+      ) {
+        const paymentDateSource = json.session.clock_out || json.session.clock_in || new Date().toISOString();
+        await fetch("/api/payroll/worker-payments", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            user_id: json.session.user_id,
+            payment_date: paymentDateSource.slice(0, 10),
+            amount: paidAmountNumber,
+            payment_method: null,
+            reference_number: null,
+            notes: `תשלום שסומן מתוך הדשבורד עבור משמרת ${paymentDateSource.slice(0, 10)}`,
+            allocations: [
+              {
+                source_type: "session",
+                source_id: json.session.id,
+                amount: paidAmountNumber,
+              },
+            ],
+          }),
+        }).then(async (response) => {
+          const paymentJson = (await response.json().catch(() => ({}))) as { error?: string };
+          if (!response.ok) {
+            throw new Error(paymentJson.error ?? "שמירת התשלום נכשלה.");
+          }
+        });
+      }
+
+      setManualSessionOpen(false);
+      resetManualSessionForm();
+      router.refresh();
+      toast.success(
+        canManageWorkerSessions && manualSessionPaymentChoice !== "none"
+          ? "המשמרת נשמרה והתשלום נרשם."
+          : HEBREW.manualSessionSaved
+      );
+    } catch (error: unknown) {
+      setManualSessionError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
+    } finally {
+      setManualSessionSubmitting(false);
+    }
+  }
+
   return (
     <>
       <AdaptiveGrid variant="quickActions">
         <Button
           type="button"
           variant="outline"
-          className="aspect-square h-auto min-h-24 flex-col items-start justify-between rounded-2xl p-3 text-right"
-          onClick={() => setOrderOpen(true)}
+          className="h-20 flex-col items-start justify-between rounded-2xl p-3 text-right sm:h-24"
+          onClick={() => void startOwnSession()}
+          disabled={Boolean(currentOpenSession) || selfSessionSubmitting}
         >
           <span className="rounded-xl bg-primary/10 p-2 text-primary">
-            <ShoppingCart className="h-5 w-5" />
+            <PlayCircle className="h-5 w-5" />
           </span>
-          <span className="flex flex-col items-start">
-            <span className="font-semibold">{HEBREW.orderNew}</span>
-            <span className="text-xs text-muted-foreground">{HEBREW.orderQuickOpen}</span>
-          </span>
+          <span className="font-semibold">{HEBREW.selfSessionStart}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="aspect-square h-auto min-h-24 flex-col items-start justify-between rounded-2xl p-3 text-right"
+          className="h-20 flex-col items-start justify-between rounded-2xl p-3 text-right sm:h-24"
+          onClick={() => {
+            resetManualSessionForm();
+            setManualSessionOpen(true);
+          }}
+        >
+          <span className="rounded-xl bg-primary/10 p-2 text-primary">
+            <Clock3 className="h-5 w-5" />
+          </span>
+          <span className="font-semibold">{HEBREW.manualSessionNew}</span>
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="h-20 flex-col items-start justify-between rounded-2xl p-3 text-right sm:h-24"
+          onClick={() => {
+            setOrderActionLocked(false);
+            setOrderOpen(true);
+          }}
+        >
+          <span className="rounded-xl bg-primary/10 p-2 text-primary">
+            <ShoppingCart className="h-5 w-5" />
+          </span>
+          <span className="font-semibold">{HEBREW.orderNew}</span>
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="h-20 flex-col items-start justify-between rounded-2xl p-3 text-right sm:h-24"
           onClick={() => setProjectOpen(true)}
         >
           <span className="rounded-xl bg-primary/10 p-2 text-primary">
             <FolderKanban className="h-5 w-5" />
           </span>
-          <span className="flex flex-col items-start">
-            <span className="font-semibold">{HEBREW.projectNew}</span>
-            <span className="text-xs text-muted-foreground">{HEBREW.projectQuickCreate}</span>
-          </span>
+          <span className="font-semibold">{HEBREW.projectNew}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="aspect-square h-auto min-h-24 flex-col items-start justify-between rounded-2xl p-3 text-right"
+          className="h-20 flex-col items-start justify-between rounded-2xl p-3 text-right sm:h-24"
           onClick={() => setTaskOpen(true)}
         >
           <span className="rounded-xl bg-primary/10 p-2 text-primary">
             <ListTodo className="h-5 w-5" />
           </span>
-          <span className="flex flex-col items-start">
-            <span className="font-semibold">{HEBREW.taskNew}</span>
-            <span className="text-xs text-muted-foreground">{HEBREW.taskQuickAssign}</span>
-          </span>
+          <span className="font-semibold">{HEBREW.taskNew}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="aspect-square h-auto min-h-24 flex-col items-start justify-between rounded-2xl p-3 text-right"
+          className="h-20 flex-col items-start justify-between rounded-2xl p-3 text-right sm:h-24"
           onClick={() => {
             if (financeNavLoading) return;
             setFinanceNavLoading(true);
@@ -546,44 +873,248 @@ export default function DashboardActions({
           <span className="rounded-xl bg-primary/10 p-2 text-primary">
             <Landmark className="h-5 w-5" />
           </span>
-          <span className="flex flex-col items-start">
-            <span className="font-semibold">{HEBREW.financial}</span>
-            <span className="text-xs text-muted-foreground">{HEBREW.financialOpen}</span>
-          </span>
+          <span className="font-semibold">{HEBREW.financial}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="aspect-square h-auto min-h-24 flex-col items-start justify-between rounded-2xl p-3 text-right"
+          className="h-20 flex-col items-start justify-between rounded-2xl p-3 text-right sm:h-24"
           onClick={() => setExpenseOpen(true)}
         >
           <span className="rounded-xl bg-primary/10 p-2 text-primary">
             <ArrowDownCircle className="h-5 w-5" />
           </span>
-          <span className="flex flex-col items-start">
-            <span className="font-semibold">{HEBREW.expenseNew}</span>
-            <span className="text-xs text-muted-foreground">{HEBREW.expenseQuickRegister}</span>
-          </span>
+          <span className="font-semibold">{HEBREW.expenseNew}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="aspect-square h-auto min-h-24 flex-col items-start justify-between rounded-2xl p-3 text-right"
+          className="h-20 flex-col items-start justify-between rounded-2xl p-3 text-right sm:h-24"
           onClick={() => setIncomeOpen(true)}
         >
           <span className="rounded-xl bg-primary/10 p-2 text-primary">
             <ArrowUpCircle className="h-5 w-5" />
           </span>
-          <span className="flex flex-col items-start">
-            <span className="font-semibold">{HEBREW.incomeNew}</span>
-            <span className="text-xs text-muted-foreground">{HEBREW.incomeQuickRegister}</span>
-          </span>
+          <span className="font-semibold">{HEBREW.incomeNew}</span>
         </Button>
       </AdaptiveGrid>
 
-      <Dialog open={orderOpen} onOpenChange={setOrderOpen}>
+      <Dialog
+        open={manualSessionOpen}
+        onOpenChange={(open) => {
+          if (!open && manualSessionSubmitting) return;
+          setManualSessionOpen(open);
+          if (!open) resetManualSessionForm();
+        }}
+      >
+        <AdaptiveDialog size="form2xl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{"הוספת משמרת"}</DialogTitle>
+            <DialogDescription>{HEBREW.manualSessionDescription}</DialogDescription>
+          </DialogHeader>
+
+          <fieldset disabled={manualSessionSubmitting} className="contents">
+            <div className="grid gap-3 md:grid-cols-2">
+              {canManageWorkerSessions ? (
+                <label className="space-y-2 text-right text-sm">
+                  <span className="font-medium">{HEBREW.worker}</span>
+                  <select
+                    className={`${fieldClass} text-right`}
+                    value={manualSessionUserId}
+                    onChange={(e) => setManualSessionUserId(e.target.value)}
+                  >
+                    <option value="">{HEBREW.selectWorker}</option>
+                    {workerUsers.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              <label className="space-y-2 text-right text-sm">
+                <span className="font-medium">{HEBREW.domain}</span>
+                <select
+                  className={`${fieldClass} text-right`}
+                  value={manualSessionDomain}
+                  onChange={(e) => {
+                    const nextDomain = e.target.value as ExpenseBusinessDomain;
+                    setManualSessionDomain(nextDomain);
+                    if (nextDomain !== "logistics_projects") setManualSessionProjectId("");
+                    if (nextDomain !== "property_management") setManualSessionPropertyId("");
+                  }}
+                >
+                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                    <option key={domain} value={domain}>
+                      {getBusinessDomainLabel(domain)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {manualSessionDomain === "logistics_projects" ? (
+                <label className="space-y-2 text-right text-sm">
+                  <span className="font-medium">{HEBREW.project}</span>
+                  <select
+                    className={`${fieldClass} text-right`}
+                    value={manualSessionProjectId}
+                    onChange={(e) => setManualSessionProjectId(e.target.value)}
+                  >
+                    <option value="">{HEBREW.selectProject}</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              {manualSessionDomain === "property_management" ? (
+                <label className="space-y-2 text-right text-sm">
+                  <span className="font-medium">נכס</span>
+                  <select
+                    className={`${fieldClass} text-right`}
+                    value={manualSessionPropertyId}
+                    onChange={(e) => setManualSessionPropertyId(e.target.value)}
+                  >
+                    <option value="">בחרו נכס</option>
+                    {properties.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {property.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
+                <label className="space-y-2 text-right text-sm">
+                  <span className="font-medium">כניסה</span>
+                  <DateTimeInput
+                    value={manualSessionClockIn}
+                    onChange={(e) => setManualSessionClockIn(e.target.value)}
+                  />
+                </label>
+
+                <label className="space-y-2 text-right text-sm">
+                  <span className="font-medium">סה״כ שעות</span>
+                  <Input
+                    inputMode="decimal"
+                    value={manualSessionDuration}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      if (!nextValue.trim()) {
+                        setManualSessionClockOut("");
+                        return;
+                      }
+                      const parsedHours = Number(nextValue);
+                      const clockInIso = toIso(manualSessionClockIn);
+                      if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !clockInIso) return;
+                      const nextClockOut = new Date(new Date(clockInIso).getTime() + parsedHours * 60 * 60 * 1000);
+                      if (Number.isNaN(nextClockOut.getTime())) return;
+                      const pad = (n: number) => String(n).padStart(2, "0");
+                      setManualSessionClockOut(
+                        `${nextClockOut.getFullYear()}-${pad(nextClockOut.getMonth() + 1)}-${pad(nextClockOut.getDate())}T${pad(nextClockOut.getHours())}:${pad(nextClockOut.getMinutes())}`
+                      );
+                    }}
+                    placeholder="למשל 8"
+                  />
+                </label>
+
+                <label className="space-y-2 text-right text-sm">
+                  <span className="font-medium">יציאה</span>
+                  <DateTimeInput
+                    value={manualSessionClockOut}
+                    onChange={(e) => setManualSessionClockOut(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <label className="space-y-2 text-right text-sm">
+                <span className="font-medium">מחיר</span>
+                <Input
+                  inputMode="decimal"
+                  value={manualSessionLaborCost}
+                  onChange={(e) => setManualSessionLaborCost(e.target.value)}
+                  placeholder="אופציונלי"
+                />
+                <span className="block text-xs text-muted-foreground">
+                  {suggestedManualSessionAmount !== null
+                    ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedManualSessionAmount)}`
+                    : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
+                </span>
+              </label>
+
+              {canManageWorkerSessions ? (
+                <>
+                  <label className="space-y-2 text-right text-sm">
+                    <span className="font-medium">שולם עכשיו</span>
+                    <select
+                      className={`${fieldClass} text-right`}
+                      value={manualSessionPaymentChoice === "none" ? "no" : "yes"}
+                      onChange={(e) => {
+                        if (e.target.value === "no") {
+                          setManualSessionPaymentChoice("none");
+                          setManualSessionPaidAmount("");
+                          return;
+                        }
+                        setManualSessionPaymentChoice("partial");
+                      }}
+                    >
+                      <option value="no">לא</option>
+                      <option value="yes">כן</option>
+                    </select>
+                  </label>
+
+                  {manualSessionPaymentChoice !== "none" ? (
+                    <label className="space-y-2 text-right text-sm">
+                      <span className="font-medium">כמה שולם</span>
+                      <Input
+                        inputMode="decimal"
+                        value={manualSessionPaidAmount}
+                        onChange={(e) => setManualSessionPaidAmount(e.target.value)}
+                        placeholder="אם ריק, יירשם מלוא סכום המשמרת"
+                      />
+                    </label>
+                  ) : null}
+                </>
+              ) : null}
+
+              <label className="space-y-2 text-right text-sm md:col-span-2">
+                <span className="font-medium">{HEBREW.notes}</span>
+                <Textarea
+                  value={manualSessionNotes}
+                  onChange={(e) => setManualSessionNotes(e.target.value)}
+                  placeholder="הערות פנימיות..."
+                />
+              </label>
+            </div>
+          </fieldset>
+
+          {manualSessionError ? <p className="text-sm text-destructive">{manualSessionError}</p> : null}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setManualSessionOpen(false)} disabled={manualSessionSubmitting}>
+              {HEBREW.cancel}
+            </Button>
+            <Button type="button" onClick={() => void saveManualSession()} disabled={manualSessionSubmitting}>
+              {manualSessionSubmitting ? HEBREW.saving : HEBREW.saveManualSession}
+            </Button>
+          </div>
+        </AdaptiveDialog>
+      </Dialog>
+
+      <Dialog
+        open={orderOpen}
+        onOpenChange={(open) => {
+          if (!open && orderActionLocked) return;
+          setOrderOpen(open);
+        }}
+      >
         <AdaptiveDialog size="newOrder">
           <DialogHeader>
             <DialogTitle>{HEBREW.orderNew}</DialogTitle>
@@ -596,8 +1127,13 @@ export default function DashboardActions({
             customersError={null}
             productsError={null}
             embedded
-            onCancel={() => setOrderOpen(false)}
+            onActionLockedChange={setOrderActionLocked}
+            onCancel={() => {
+              setOrderActionLocked(false);
+              setOrderOpen(false);
+            }}
             onSubmitted={() => {
+              setOrderActionLocked(false);
               setOrderOpen(false);
               router.refresh();
               toast.success(HEBREW.orderSaved);
@@ -609,6 +1145,7 @@ export default function DashboardActions({
       <Dialog
         open={projectOpen}
         onOpenChange={(open) => {
+          if (!open && projectSubmitting) return;
           setProjectOpen(open);
           if (!open) resetProjectForm();
         }}
@@ -669,6 +1206,7 @@ export default function DashboardActions({
                   value={projectStatus}
                   onChange={(e) => setProjectStatus(e.target.value)}
                 >
+                  <option value="quote">{HEBREW.statusQuote}</option>
                   <option value="planned">{HEBREW.statusPlanned}</option>
                   <option value="active">{HEBREW.statusActive}</option>
                   <option value="on_hold">{HEBREW.statusOnHold}</option>
@@ -742,6 +1280,7 @@ export default function DashboardActions({
       <Dialog
         open={taskOpen}
         onOpenChange={(open) => {
+          if (!open && taskSubmitting) return;
           setTaskOpen(open);
           if (!open) resetTaskForm();
         }}
@@ -819,6 +1358,7 @@ export default function DashboardActions({
       <Dialog
         open={expenseOpen}
         onOpenChange={(open) => {
+          if (!open && expenseSubmitting) return;
           setExpenseOpen(open);
           if (!open) resetExpenseForm();
         }}
@@ -944,6 +1484,7 @@ export default function DashboardActions({
       <Dialog
         open={incomeOpen}
         onOpenChange={(open) => {
+          if (!open && incomeSubmitting) return;
           setIncomeOpen(open);
           if (!open) resetIncomeForm();
         }}
@@ -1070,4 +1611,14 @@ export default function DashboardActions({
       </Dialog>
     </>
   );
+}
+
+function getBusinessDomainLabel(value: string | null | undefined) {
+  if (value === "general_business") return "כללי";
+  if (value === "property_management") return "ניהול נכסים";
+  if (value === "sales") return "מכירות";
+  if (value === "logistics_projects") return "פרויקטים";
+  if (value === "home") return "בית";
+  if (value === "charity") return "צדקה";
+  return value || "כללי";
 }

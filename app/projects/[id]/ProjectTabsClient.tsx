@@ -1,9 +1,10 @@
 ﻿"use client";
 
+import type { AuditRecordInfo } from "@/lib/audit";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
-import { DateInput } from "@/components/ui/date-input";
+import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +45,15 @@ import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
   mapProjectTypeToExpenseDomain,
 } from "@/lib/expenses";
-import { addMinutes, formatMinutes, sessionWorkedMinutes, type WorkSessionRow } from "@/lib/payroll";
+import {
+  addMinutes,
+  calculateSessionLaborCost,
+  formatMinutes,
+  getActiveSalaryAgreementForDate,
+  sessionWorkedMinutes,
+  type SalaryAgreementRow,
+  type WorkSessionRow,
+} from "@/lib/payroll";
 import { getStatusDotClasses } from "@/lib/ui/status-color-classes";
 import {
   getTaskPriorityColor,
@@ -120,9 +129,15 @@ export type AssignableUser = {
   active: boolean | null;
 };
 
+export type ProjectSalaryAgreement = SalaryAgreementRow;
+
 type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
 type TaskPriority = "low" | "medium" | "high" | "urgent";
 type CustomerPaymentStatus = "paid" | "partial" | "unpaid" | "unpriced";
+type PendingProjectDeletion =
+  | { kind: "expense"; item: ExpenseListItem }
+  | { kind: "session"; item: ExpenseListItem }
+  | { kind: "payment"; payment: PaymentRow };
 
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
@@ -150,6 +165,52 @@ function formatDateTime(value: string | null) {
   return formatShortDateTime(value, "—");
 }
 
+function paymentRecordedByLabel(payment: PaymentRow, {
+  paymentRecordedByNameByValue,
+  paymentAuditById,
+}: {
+  paymentRecordedByNameByValue: Record<string, string>;
+  paymentAuditById: Record<string, AuditRecordInfo>;
+}) {
+  const recordedByValue = typeof payment.recorded_by === "string" ? payment.recorded_by : null;
+  if (recordedByValue && paymentRecordedByNameByValue[recordedByValue]) {
+    return `הוזן ע״י ${paymentRecordedByNameByValue[recordedByValue]}`;
+  }
+
+  const audit = paymentAuditById[payment.id];
+  if (audit?.action === "create") {
+    return `הוזן ע״י ${audit.actorName}`;
+  }
+
+  return null;
+}
+
+function expenseRecordedByLabel(item: ExpenseListItem, {
+  expenseRecordedByNameByValue,
+  expenseAuditById,
+}: {
+  expenseRecordedByNameByValue: Record<string, string>;
+  expenseAuditById: Record<string, AuditRecordInfo>;
+}) {
+  if (item.source_type !== "expense") return null;
+
+  const expenseId = getString(item.expense, "id");
+  const recordedByValue = getString(item.expense, "recorded_by");
+
+  if (recordedByValue && expenseRecordedByNameByValue[recordedByValue]) {
+    return `הוזן ע״י ${expenseRecordedByNameByValue[recordedByValue]}`;
+  }
+
+  if (expenseId) {
+    const audit = expenseAuditById[expenseId];
+    if (audit?.action === "create") {
+      return `הוזן ע״י ${audit.actorName}`;
+    }
+  }
+
+  return null;
+}
+
 function deriveCustomerPaymentStatus(totalDue: number | null, paidTotal: number): CustomerPaymentStatus {
   if (totalDue === null || totalDue <= 0) return "unpriced";
   if (paidTotal + 0.009 >= totalDue) return "paid";
@@ -165,6 +226,17 @@ function customerPaymentStatusLabel(status: CustomerPaymentStatus) {
 function customerPaymentStatusBadgeClasses(status: CustomerPaymentStatus) {
   if (status === "unpriced") return "border-slate-200 bg-slate-100 text-slate-700";
   return paymentStatusClasses(status);
+}
+
+function sessionPaymentStatus(session: WorkSessionRow | null | undefined) {
+  const explicitStatus = typeof session?.payment_status === "string" ? session.payment_status : "";
+  if (explicitStatus) return explicitStatus;
+
+  const paidAmount = Math.max(0, toNumber(session?.paid_amount) ?? 0);
+  const laborCost = Math.max(0, toNumber(session?.labor_cost) ?? 0);
+  if (!(paidAmount > 0)) return "unpaid";
+  if (laborCost > 0 && paidAmount + 0.009 < laborCost) return "partial";
+  return "paid";
 }
 
 function getString(row: Record<string, unknown> | null, key: string) {
@@ -266,9 +338,15 @@ export default function ProjectTabsClient({
   assignableUsersError,
   expenses,
   expensesError,
+  expenseRecordedByNameByValue,
+  expenseAuditById,
   payments,
   paymentsError,
+  paymentRecordedByNameByValue,
+  paymentAuditById,
+  paymentAuditError,
   workerBalance,
+  salaryAgreements,
 }: {
   overview: ProjectOverview;
   financials: ProjectFinancials;
@@ -291,9 +369,15 @@ export default function ProjectTabsClient({
   assignableUsersError: string | null;
   expenses: ExpenseListItem[];
   expensesError: string | null;
+  expenseRecordedByNameByValue: Record<string, string>;
+  expenseAuditById: Record<string, AuditRecordInfo>;
   payments: PaymentRow[];
   paymentsError: string | null;
+  paymentRecordedByNameByValue: Record<string, string>;
+  paymentAuditById: Record<string, AuditRecordInfo>;
+  paymentAuditError: string | null;
   workerBalance: ProjectWorkerBalance;
+  salaryAgreements: ProjectSalaryAgreement[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -665,6 +749,7 @@ export default function ProjectTabsClient({
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [pendingDeletion, setPendingDeletion] = useState<PendingProjectDeletion | null>(null);
   const [updateBasePriceOpen, setUpdateBasePriceOpen] = useState(false);
   const [updateBasePriceSaving, setUpdateBasePriceSaving] = useState(false);
   const [updateBasePriceValue, setUpdateBasePriceValue] = useState<string>("");
@@ -951,6 +1036,92 @@ export default function ProjectTabsClient({
     }
   }
 
+  function requestDeleteExpense(item: ExpenseListItem) {
+    setPendingDeletion({ kind: "expense", item });
+  }
+
+  function requestDeleteSession(item: ExpenseListItem) {
+    setPendingDeletion({ kind: "session", item });
+  }
+
+  function requestDeletePayment(payment: PaymentRow) {
+    setPendingDeletion({ kind: "payment", payment });
+  }
+
+  async function confirmPendingDeletion() {
+    const pending = pendingDeletion;
+    if (!pending) return;
+
+    if (pending.kind === "expense") {
+      await deleteExpense(pending.item);
+      return;
+    }
+    if (pending.kind === "session") {
+      await deleteSession(pending.item);
+      return;
+    }
+    await deletePayment(pending.payment);
+  }
+
+  useEffect(() => {
+    if (!deletingExpenseId && !deletingSessionId && !deletingPaymentId) {
+      setPendingDeletion((current) => {
+        if (!current) return null;
+        if (current.kind === "expense") {
+          const expenseId =
+            getString(current.item.project_expense, "expense_id") ?? getString(current.item.expense, "id");
+          return expenseId && expensesUi.some((row) => {
+            const rowId = getString(row.project_expense, "expense_id") ?? getString(row.expense, "id");
+            return rowId === expenseId;
+          })
+            ? current
+            : null;
+        }
+        if (current.kind === "session") {
+          const sessionId = current.item.session?.id ?? "";
+          return sessionId && expensesUi.some((row) => row.source_type === "session" && row.session?.id === sessionId)
+            ? current
+            : null;
+        }
+        return paymentsUi.some((row) => row.id === current.payment.id) ? current : null;
+      });
+    }
+  }, [deletingExpenseId, deletingPaymentId, deletingSessionId, expensesUi, paymentsUi]);
+
+  const pendingDeletionDetails = useMemo(() => {
+    if (!pendingDeletion) return null;
+    if (pendingDeletion.kind === "expense") {
+      const expenseName =
+        getFirstString(pendingDeletion.item.expense, ["name", "description"]) ??
+        getFirstString(pendingDeletion.item.project_expense, ["name", "expense_name"]) ??
+        "הוצאה";
+      return {
+        title: "מחיקת הוצאה",
+        description: "הפעולה תמחק את ההוצאה מהפרויקט ומהפיננסי.",
+        label: expenseName,
+        busy: Boolean(deletingExpenseId),
+      };
+    }
+    if (pendingDeletion.kind === "session") {
+      const workerName = pendingDeletion.item.session?.clock_in
+        ? `משמרת מ־${formatDateTime(pendingDeletion.item.session.clock_in)}`
+        : "משמרת עובד";
+      return {
+        title: "מחיקת משמרת",
+        description: "הפעולה תמחק את המשמרת מהפרויקט ומרישומי השכר.",
+        label: workerName,
+        busy: Boolean(deletingSessionId),
+      };
+    }
+    return {
+      title: "מחיקת הכנסה",
+      description: "הפעולה תמחק את ההכנסה מרשימת התשלומים של הפרויקט.",
+      label:
+        `${formatIls(toNumber(pendingDeletion.payment.amount_total) ?? null)} • ${formatDate(pendingDeletion.payment.payment_date ?? null)}`,
+      busy: Boolean(deletingPaymentId),
+    };
+  }, [deletingExpenseId, deletingPaymentId, deletingSessionId, pendingDeletion]);
+
   async function updateBasePrice(next: number) {
     setUpdateBasePriceSaving(true);
     const toastId = "update-base-price";
@@ -1014,10 +1185,15 @@ export default function ProjectTabsClient({
       !isSession && Array.isArray(item.expense?.attachments)
         ? (item.expense.attachments as FinancialAttachment[])
         : [];
+    const insertedByLabel = expenseRecordedByLabel(item, {
+      expenseRecordedByNameByValue,
+      expenseAuditById,
+    });
 
     const billed = session
       ? isSessionBillable(session)
       : Boolean(item.project_expense?.["billed_to_customer"]);
+    const currentSessionPaymentStatus = session ? sessionPaymentStatus(session) : "";
 
     return (
       <div
@@ -1044,9 +1220,19 @@ export default function ProjectTabsClient({
               </span>
             ) : null}
           </div>
+          {session ? (
+            <div className="mt-2">
+              <StatusBadge value={currentSessionPaymentStatus} type="payment" />
+            </div>
+          ) : null}
           {session?.notes ? (
             <div className="text-xs text-muted-foreground mt-1 truncate">
               {session.notes}
+            </div>
+          ) : null}
+          {!session && insertedByLabel ? (
+            <div className="text-xs text-muted-foreground mt-1">
+              {insertedByLabel}
             </div>
           ) : null}
           {attachments.length > 0 ? (
@@ -1111,7 +1297,7 @@ export default function ProjectTabsClient({
               type="button"
               variant="destructive"
               size="sm"
-              onClick={() => void (session ? deleteSession(item) : deleteExpense(item))}
+              onClick={() => (session ? requestDeleteSession(item) : requestDeleteExpense(item))}
               disabled={
                 session
                   ? deletingSessionId === session.id
@@ -1250,6 +1436,11 @@ export default function ProjectTabsClient({
                     const reference = p.reference_number ?? "";
                     const paymentStatus = typeof p.payment_status === "string" ? p.payment_status : "";
                     const dueDate = typeof p.due_date === "string" ? p.due_date : null;
+                    const insertedByLabel = paymentRecordedByLabel(p, {
+                      paymentRecordedByNameByValue,
+                      paymentAuditById,
+                    });
+                    const paymentAudit = paymentAuditById[p.id] ?? null;
 
                     return (
                       <div key={p.id} className="py-3 flex items-start justify-between gap-4">
@@ -1270,6 +1461,17 @@ export default function ProjectTabsClient({
                           {p.notes ? (
                             <div className="text-xs text-muted-foreground mt-1 truncate">
                               {p.notes}
+                            </div>
+                          ) : null}
+                          {insertedByLabel ? (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {insertedByLabel}
+                            </div>
+                          ) : null}
+                          {!insertedByLabel && paymentAudit ? (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {paymentAudit.actionLabel} ע״י {paymentAudit.actorName}
+                              {paymentAudit.createdAt ? ` · ${formatDateTime(paymentAudit.createdAt)}` : ""}
                             </div>
                           ) : null}
                           {Array.isArray(p.attachments) && p.attachments.length > 0 ? (
@@ -1324,7 +1526,7 @@ export default function ProjectTabsClient({
                               type="button"
                               variant="destructive"
                               size="sm"
-                              onClick={() => void deletePayment(p)}
+                              onClick={() => requestDeletePayment(p)}
                               disabled={deletingPaymentId === p.id}
                             >
                               {deletingPaymentId === p.id ? "מוחק..." : "מחק"}
@@ -1338,7 +1540,14 @@ export default function ProjectTabsClient({
               )}
 
               <div className="mt-3 mt-auto flex items-center justify-between border-t pt-3">
-                <span className="text-muted-foreground">סה״כ הכנסות</span>
+                <div className="space-y-1">
+                  <span className="block text-muted-foreground">סה״כ הכנסות</span>
+                  {paymentAuditError ? (
+                    <span className="block text-xs text-muted-foreground">
+                      לא ניתן לטעון כרגע מי רשם את כל התשלומים.
+                    </span>
+                  ) : null}
+                </div>
                 <span className="font-medium">{formatIls(paymentsTotal)}</span>
               </div>
             </CardContent>
@@ -1887,6 +2096,47 @@ export default function ProjectTabsClient({
       </Dialog>
 
       <Dialog
+        open={Boolean(pendingDeletion)}
+        onOpenChange={(open) => {
+          if (!open && !pendingDeletionDetails?.busy) {
+            setPendingDeletion(null);
+          }
+        }}
+      >
+        <AdaptiveDialog size="formMd">
+          <DialogHeader>
+            <DialogTitle>{pendingDeletionDetails?.title ?? "אישור מחיקה"}</DialogTitle>
+            <DialogDescription>
+              {pendingDeletionDetails?.description ?? "הפעולה תתבצע רק לאחר אישור."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="text-sm">
+            למחוק את <span className="font-medium">{pendingDeletionDetails?.label ?? "הרשומה"}</span>?
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={pendingDeletionDetails?.busy}
+              onClick={() => setPendingDeletion(null)}
+            >
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!pendingDeletion || pendingDeletionDetails?.busy}
+              onClick={() => void confirmPendingDeletion()}
+            >
+              {pendingDeletionDetails?.busy ? "מוחק..." : "מחיקה"}
+            </Button>
+          </DialogFooter>
+        </AdaptiveDialog>
+      </Dialog>
+
+      <Dialog
         open={updateBasePriceOpen}
         onOpenChange={(open) => {
           setUpdateBasePriceOpen(open);
@@ -1965,6 +2215,7 @@ export default function ProjectTabsClient({
         defaultSessionClockIn={firstWorkerSessionDefaults.clockIn}
         defaultSessionClockOut={firstWorkerSessionDefaults.clockOut}
         users={assignableUsers.filter((user) => user.active !== false)}
+        salaryAgreements={salaryAgreements}
         editingItem={editingExpense}
         onSaved={(saved) => {
           if (saved.source_type === "session" && saved.session?.id) {
@@ -2871,6 +3122,7 @@ function AddExpenseDialog({
   defaultSessionClockIn,
   defaultSessionClockOut,
   users,
+  salaryAgreements,
   editingItem,
   onSaved,
 }: {
@@ -2882,6 +3134,7 @@ function AddExpenseDialog({
   defaultSessionClockIn: string | null;
   defaultSessionClockOut: string | null;
   users: AssignableUser[];
+  salaryAgreements: ProjectSalaryAgreement[];
   editingItem: ExpenseListItem | null;
   onSaved: (saved: ExpenseListItem) => void;
 }) {
@@ -2925,12 +3178,51 @@ function AddExpenseDialog({
   const [sessionBillableToCustomer, setSessionBillableToCustomer] = useState(false);
   const [billToCustomerAmount, setBillToCustomerAmount] = useState("");
   const [billToCustomerAmountTouched, setBillToCustomerAmountTouched] = useState(false);
+  const [workerPaymentMode, setWorkerPaymentMode] = useState<"none" | "paid" | "partial">("none");
+  const [workerPaymentAmount, setWorkerPaymentAmount] = useState("");
+  const [workerPaymentAmountTouched, setWorkerPaymentAmountTouched] = useState(false);
   const finalCategory =
     category === OTHER_PROJECT_EXPENSE_CATEGORY ? categoryOther.trim() : category.trim();
   const isSessionMode = isEditingSession || (!isEditing && finalCategory === EMPLOYEE_WAGE_CATEGORY);
   const movedAmountToNotesRef = useRef(false);
+  const lastAutoWorkerPaymentAmountRef = useRef("");
+  const originalWorkerPaymentAmountRef = useRef(0);
   const laborCostNumber = Number(laborCost);
   const billToCustomerAmountNumber = Number(billToCustomerAmount);
+  const workerPaymentAmountNumber = Number(workerPaymentAmount);
+  const clockInIsoValue = toIsoDateTime(clockIn);
+  const clockOutIsoValue = toIsoDateTime(clockOut);
+  const workedMinutesForDraft =
+    clockInIsoValue && clockOutIsoValue
+      ? Math.max(
+          0,
+          Math.round((new Date(clockOutIsoValue).getTime() - new Date(clockInIsoValue).getTime()) / 60000)
+        )
+      : 0;
+  const activeSalaryAgreement = useMemo(() => {
+    if (!sessionUserId || !clockInIsoValue) return null;
+    return getActiveSalaryAgreementForDate(
+      salaryAgreements.filter((agreement) => agreement.user_id === sessionUserId),
+      new Date(clockInIsoValue)
+    );
+  }, [clockInIsoValue, salaryAgreements, sessionUserId]);
+  const suggestedWorkerPaymentAmount = useMemo(() => {
+    if (!isSessionMode) return null;
+    if (activeSalaryAgreement?.salary_type === "hourly") {
+      return calculateSessionLaborCost(activeSalaryAgreement, workedMinutesForDraft);
+    }
+    return laborCost.trim() && Number.isFinite(laborCostNumber) && laborCostNumber > 0
+      ? laborCostNumber
+      : null;
+  }, [activeSalaryAgreement, isSessionMode, laborCost, laborCostNumber, workedMinutesForDraft]);
+  const existingWorkerPaidAmount =
+    isEditingSession && (toNumber(editingSession?.paid_amount) ?? 0) > 0
+      ? Math.max(0, toNumber(editingSession?.paid_amount) ?? 0)
+      : 0;
+  const remainingWorkerOwedAmount =
+    suggestedWorkerPaymentAmount === null
+      ? null
+      : Math.max(0, suggestedWorkerPaymentAmount - existingWorkerPaidAmount);
   const canSubmit =
     Boolean(finalCategory) &&
     (isSessionMode
@@ -2938,11 +3230,15 @@ function AddExpenseDialog({
         Boolean(clockOut) &&
         Boolean(sessionUserId) &&
         (!laborCost.trim() || (Number.isFinite(laborCostNumber) && laborCostNumber > 0)) &&
+        (workerPaymentMode === "none" ||
+          (workerPaymentAmount.trim() &&
+            Number.isFinite(workerPaymentAmountNumber) &&
+            workerPaymentAmountNumber > 0)) &&
         (!sessionBillableToCustomer ||
           (Number.isFinite(billToCustomerAmountNumber) && billToCustomerAmountNumber > 0)) &&
-        Boolean(toIsoDateTime(clockIn)) &&
-        Boolean(toIsoDateTime(clockOut)) &&
-        new Date(toIsoDateTime(clockOut)) > new Date(toIsoDateTime(clockIn))
+        Boolean(clockInIsoValue) &&
+        Boolean(clockOutIsoValue) &&
+        new Date(clockOutIsoValue) > new Date(clockInIsoValue)
       : Number.isFinite(Number(amount)) &&
         Number(amount) > 0 &&
         Boolean(expenseDate));
@@ -2998,6 +3294,15 @@ function AddExpenseDialog({
           ? "חייב להיות גדול מ-0"
           : null
     : null;
+  const workerPaymentAmountError = isSessionMode && workerPaymentMode !== "none"
+    ? !workerPaymentAmount.trim()
+      ? "שדה חובה"
+      : !Number.isFinite(workerPaymentAmountNumber)
+        ? "חייב להיות מספר"
+        : workerPaymentAmountNumber <= 0
+          ? "חייב להיות גדול מ-0"
+          : null
+    : null;
   const showAmountError = (submitAttempted || amountTouched) && Boolean(amountError);
   const showCategoryError =
     (submitAttempted || categoryTouched || categoryOtherTouched) && Boolean(categoryError);
@@ -3008,6 +3313,8 @@ function AddExpenseDialog({
   const showLaborCostError = (submitAttempted || laborCostTouched) && Boolean(laborCostError);
   const showBillToCustomerAmountError =
     (submitAttempted || billToCustomerAmountTouched) && Boolean(billToCustomerAmountError);
+  const showWorkerPaymentAmountError =
+    (submitAttempted || workerPaymentAmountTouched) && Boolean(workerPaymentAmountError);
   const addExpenseValidationMessage = (() => {
     if (!submitAttempted || submitting || canSubmit) return "";
     const missing: string[] = [];
@@ -3019,18 +3326,47 @@ function AddExpenseDialog({
     if (sessionUserError) missing.push("עובד");
     if (laborCostError) missing.push("עלות עבודה");
     if (billToCustomerAmountError) missing.push("סכום לחיוב לקוח");
+    if (workerPaymentAmountError) missing.push("סכום ששולם לעובד");
     return missing.length > 0
       ? `\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e9\u05de\u05d5\u05e8: ${missing.join(", ")}`
       : "";
   })();
 
   const durationHours = (() => {
-    const clockInIso = toIsoDateTime(clockIn);
-    const clockOutIso = toIsoDateTime(clockOut);
-    if (!clockInIso || !clockOutIso) return "";
-    const minutes = Math.round((new Date(clockOutIso).getTime() - new Date(clockInIso).getTime()) / 60000);
+    if (!clockInIsoValue || !clockOutIsoValue) return "";
+    const minutes = Math.round((new Date(clockOutIsoValue).getTime() - new Date(clockInIsoValue).getTime()) / 60000);
     return minutes > 0 ? String(Number((minutes / 60).toFixed(2))) : "";
   })();
+
+  useEffect(() => {
+    if (!isSessionMode || workerPaymentMode === "none") return;
+    if (
+      isEditingSession &&
+      originalWorkerPaymentAmountRef.current > 0 &&
+      workerPaymentMode === "partial" &&
+      !workerPaymentAmountTouched
+    ) {
+      return;
+    }
+    const nextAutoValue =
+      suggestedWorkerPaymentAmount !== null ? String(Number(suggestedWorkerPaymentAmount.toFixed(2))) : "";
+
+    if (
+      workerPaymentAmount.trim() === "" ||
+      workerPaymentAmount === lastAutoWorkerPaymentAmountRef.current ||
+      !workerPaymentAmountTouched
+    ) {
+      setWorkerPaymentAmount(nextAutoValue);
+      lastAutoWorkerPaymentAmountRef.current = nextAutoValue;
+    }
+  }, [
+    isEditingSession,
+    isSessionMode,
+    suggestedWorkerPaymentAmount,
+    workerPaymentAmount,
+    workerPaymentAmountTouched,
+    workerPaymentMode,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -3045,6 +3381,7 @@ function AddExpenseDialog({
     setClockOutTouched(false);
     setLaborCostTouched(false);
     setBillToCustomerAmountTouched(false);
+    setWorkerPaymentAmountTouched(false);
     setAmount(
       editingExpense && toNumber(editingExpense["amount"]) !== null
         ? String(toNumber(editingExpense["amount"]))
@@ -3083,6 +3420,18 @@ function AddExpenseDialog({
     setBilledToCustomer(Boolean(editingItem?.project_expense?.["billed_to_customer"]));
     setAttachmentFiles([]);
     setExistingAttachments(Array.isArray(editingExpense?.attachments) ? (editingExpense.attachments as FinancialAttachment[]) : []);
+    const existingPaidAmount = isEditingSession ? toNumber(editingSession?.paid_amount) ?? 0 : 0;
+    const nextWorkerPaymentMode =
+      existingPaidAmount > 0
+        ? editingSession?.payment_status === "partial"
+          ? "partial"
+          : "paid"
+        : "none";
+    const nextWorkerPaymentAmount = existingPaidAmount > 0 ? String(existingPaidAmount) : "";
+    setWorkerPaymentMode(nextWorkerPaymentMode);
+    setWorkerPaymentAmount(nextWorkerPaymentAmount);
+    lastAutoWorkerPaymentAmountRef.current = nextWorkerPaymentAmount;
+    originalWorkerPaymentAmountRef.current = existingPaidAmount;
     const currentLaborCost =
       isEditingSession && toNumber(editingSession?.labor_cost) !== null
         ? String(toNumber(editingSession?.labor_cost))
@@ -3181,6 +3530,14 @@ function AddExpenseDialog({
       if (!sessionUserId) return;
       if (laborCost.trim() && (!Number.isFinite(laborCostNumber) || laborCostNumber <= 0)) return;
       if (
+        workerPaymentMode !== "none" &&
+        (!workerPaymentAmount.trim() ||
+          !Number.isFinite(workerPaymentAmountNumber) ||
+          workerPaymentAmountNumber <= 0)
+      ) {
+        return;
+      }
+      if (
         sessionBillableToCustomer &&
         (!Number.isFinite(billToCustomerAmountNumber) || billToCustomerAmountNumber <= 0)
       ) {
@@ -3239,6 +3596,69 @@ function AddExpenseDialog({
           return;
         }
 
+        if (workerPaymentMode !== "none") {
+          const sessionLaborCost = toNumber(savedSession.labor_cost);
+          const sessionPaymentDate = dateOnly(savedSession.clock_out ?? savedSession.clock_in);
+
+          if (!sessionPaymentDate) {
+            toast.error("שגיאה ברישום תשלום לעובד", { description: "Missing payment date" });
+          } else if (sessionLaborCost === null || sessionLaborCost <= 0) {
+            toast.error("לא ניתן לרשום תשלום לעובד", {
+              description: "יש להזין עלות עבודה או לחשב עלות אוטומטית לפני רישום תשלום.",
+            });
+          } else {
+            const desiredPaymentAmount =
+              workerPaymentMode === "paid" ? sessionLaborCost : workerPaymentAmountNumber;
+            const existingPaidAmount = isEditingSession ? originalWorkerPaymentAmountRef.current : 0;
+            const paymentAmount = Number(
+              Math.max(0, (desiredPaymentAmount ?? 0) - existingPaidAmount).toFixed(2)
+            );
+
+            if ((desiredPaymentAmount ?? 0) + 0.009 < existingPaidAmount) {
+              toast.error("לא ניתן להפחית תשלום קיים מהמסך הזה", {
+                description: "כדי להקטין או לבטל תשלום שכבר נרשם, יש לערוך או למחוק אותו במסך השכר.",
+              });
+            } else if (!Number.isFinite(desiredPaymentAmount) || (desiredPaymentAmount ?? 0) <= 0) {
+              toast.error("שגיאה ברישום תשלום לעובד", { description: "Missing payment amount" });
+            } else if (paymentAmount <= 0.009) {
+              // Existing payments already cover the requested amount.
+            } else {
+              try {
+                const paymentRes = await fetch("/api/payroll/worker-payments", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    user_id: savedSession.user_id,
+                    payment_date: sessionPaymentDate,
+                    amount: paymentAmount,
+                    payment_method: null,
+                    reference_number: null,
+                    notes: null,
+                    allocations: [
+                      {
+                        source_type: "session",
+                        source_id: savedSession.id,
+                        amount: paymentAmount,
+                      },
+                    ],
+                  }),
+                });
+
+                const paymentJson = await paymentRes.json().catch(() => ({}));
+                if (!paymentRes.ok) {
+                  toast.error("שגיאה ברישום תשלום לעובד", {
+                    description: typeof paymentJson?.error === "string" ? paymentJson.error : "",
+                  });
+                } else {
+                  toast.success("התשלום לעובד נשמר");
+                }
+              } catch (e: unknown) {
+                toast.error("שגיאה ברישום תשלום לעובד", { description: getErrorMessage(e) });
+              }
+            }
+          }
+        }
+
         toast.success(isEditingSession ? "המשמרת עודכנה" : "המשמרת נוספה");
         setAmount("");
         setCategory("");
@@ -3256,6 +3676,10 @@ function AddExpenseDialog({
         setOriginalLaborCost("");
         setSessionBillableToCustomer(false);
         setBillToCustomerAmount("");
+        setWorkerPaymentMode("none");
+        setWorkerPaymentAmount("");
+        setWorkerPaymentAmountTouched(false);
+        lastAutoWorkerPaymentAmountRef.current = "";
         onSaved({
           source_type: "session",
           project_expense: null,
@@ -3471,12 +3895,11 @@ function AddExpenseDialog({
             </div>
           ) : null}
 
-          <AdaptiveGrid variant="formTwo">
-            {isSessionMode ? (
+          {isSessionMode ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1">
                 <div className="text-sm font-medium">שעת התחלה *</div>
-                <Input
-                  type="datetime-local"
+                <DateTimeInput
                   value={clockIn}
                   onChange={(e) => {
                     setClockIn(e.target.value);
@@ -3486,11 +3909,62 @@ function AddExpenseDialog({
                   aria-invalid={showClockInError}
                   className={showClockInError ? "border-destructive focus-visible:ring-destructive" : ""}
                 />
+                <div className="text-xs text-muted-foreground">
+                  אפשר להקליד ישירות בפורמט יום/חודש/שנה ושעה.
+                </div>
                 {showClockInError ? (
                   <div className="text-xs text-destructive">{clockInError}</div>
                 ) : null}
               </div>
-            ) : null}
+              <div className="space-y-1">
+                <div className="text-sm font-medium">שעת סיום *</div>
+                <DateTimeInput
+                  value={clockOut}
+                  onChange={(e) => {
+                    setClockOut(e.target.value);
+                    setClockOutTouched(true);
+                  }}
+                  onBlur={() => setClockOutTouched(true)}
+                  aria-invalid={showClockOutError}
+                  className={showClockOutError ? "border-destructive focus-visible:ring-destructive" : ""}
+                />
+                <div className="text-xs text-muted-foreground">מוצג ונערך בפורמט dd/mm/yy hh:mm.</div>
+                {showClockOutError ? (
+                  <div className="text-xs text-destructive">{clockOutError}</div>
+                ) : null}
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm font-medium">משך (שעות)</div>
+                <Input
+                  inputMode="numeric"
+                  value={durationHours}
+                  onChange={(e) => {
+                    const nextValue = e.target.value;
+                    if (!nextValue.trim()) {
+                      setClockOut("");
+                      setClockOutTouched(true);
+                      return;
+                    }
+                    const parsedHours = Number(nextValue);
+                    if (!Number.isFinite(parsedHours) || parsedHours <= 0) return;
+                    const nextClockOut = addMinutes(
+                      toIsoDateTime(clockIn),
+                      Math.round(parsedHours * 60)
+                    );
+                    if (!nextClockOut) return;
+                    setClockOut(toLocalDateTimeValue(nextClockOut.toISOString()));
+                    setClockOutTouched(true);
+                  }}
+                  placeholder="למשל 8"
+                />
+                <div className="text-xs text-muted-foreground">
+                  שינוי משך בשעות יעדכן את שעת הסיום אוטומטית.
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4 *"}</div>
               <select
@@ -3559,6 +4033,17 @@ function AddExpenseDialog({
                   <div className="text-xs text-muted-foreground">
                     אם משאירים ריק, העלות תחושב אוטומטית לפי הסכם השכר והשעות הנוספות.
                   </div>
+                  <div className="text-xs text-muted-foreground">
+                    {suggestedWorkerPaymentAmount !== null
+                      ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedWorkerPaymentAmount)}`
+                      : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
+                  </div>
+                  {isEditingSession && suggestedWorkerPaymentAmount !== null ? (
+                    <div className="text-xs text-muted-foreground">
+                      שולם עד עכשיו: {formatIls(existingWorkerPaidAmount)}{" "}
+                      {`• יתרה לתשלום: ${formatIls(remainingWorkerOwedAmount)}`}
+                    </div>
+                  ) : null}
                   {showLaborCostError ? (
                     <div className="text-xs text-destructive">{laborCostError}</div>
                   ) : null}
@@ -3605,55 +4090,7 @@ function AddExpenseDialog({
           ) : null}
 
           <AdaptiveGrid variant="formTwo">
-            {isSessionMode ? (
-              <>
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">שעת סיום *</div>
-                  <Input
-                    type="datetime-local"
-                    value={clockOut}
-                    onChange={(e) => {
-                      setClockOut(e.target.value);
-                      setClockOutTouched(true);
-                    }}
-                    onBlur={() => setClockOutTouched(true)}
-                    aria-invalid={showClockOutError}
-                    className={showClockOutError ? "border-destructive focus-visible:ring-destructive" : ""}
-                  />
-                  {showClockOutError ? (
-                    <div className="text-xs text-destructive">{clockOutError}</div>
-                  ) : null}
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">משך (שעות)</div>
-                  <Input
-                    inputMode="numeric"
-                    value={durationHours}
-                    onChange={(e) => {
-                      const nextValue = e.target.value;
-                      if (!nextValue.trim()) {
-                        setClockOut("");
-                        setClockOutTouched(true);
-                        return;
-                      }
-                      const parsedHours = Number(nextValue);
-                      if (!Number.isFinite(parsedHours) || parsedHours <= 0) return;
-                      const nextClockOut = addMinutes(
-                        toIsoDateTime(clockIn),
-                        Math.round(parsedHours * 60)
-                      );
-                      if (!nextClockOut) return;
-                      setClockOut(toLocalDateTimeValue(nextClockOut.toISOString()));
-                      setClockOutTouched(true);
-                    }}
-                    placeholder="למשל 8"
-                  />
-                  <div className="text-xs text-muted-foreground">
-                    שינוי משך בשעות יעדכן את שעת הסיום אוטומטית.
-                  </div>
-                </div>
-              </>
-            ) : (
+            {isSessionMode ? null : (
               <>
                 <div className="space-y-1">
                   <div className="text-sm font-medium">{"\u05ea\u05d0\u05e8\u05d9\u05da *"}</div>
@@ -3680,8 +4117,8 @@ function AddExpenseDialog({
             )}
           </AdaptiveGrid>
 
-          {isSessionMode ? (
-            <div className="space-y-3 rounded-lg border p-3">
+            {isSessionMode ? (
+              <div className="space-y-3 rounded-lg border p-3">
                 <AdaptiveGrid variant="formTwo">
                 <div className="space-y-2 text-sm">
                   <label className="flex items-center gap-2 pt-7">
@@ -3729,14 +4166,82 @@ function AddExpenseDialog({
                     <div className="text-xs text-destructive">{billToCustomerAmountError}</div>
                   ) : null}
                 </div>
-              ) : null}
-            </div>
-          ) : null}
+                ) : null}
+              </div>
+            ) : null}
 
-          {!isSessionMode ? (
-            <div className="flex flex-col gap-2 text-sm">
-              <label className="flex items-center gap-2">
-                <input
+            {isSessionMode ? (
+              <div className="space-y-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">תשלום לעובד</div>
+                  <select
+                    value={workerPaymentMode}
+                    onChange={(e) => {
+                      const next = (e.target.value as "none" | "paid" | "partial") || "none";
+                      setWorkerPaymentMode(next);
+                      if (next === "none") {
+                        setWorkerPaymentAmount("");
+                        setWorkerPaymentAmountTouched(false);
+                        lastAutoWorkerPaymentAmountRef.current = "";
+                      } else if (next === "paid" && suggestedWorkerPaymentAmount !== null) {
+                        const nextAmount = String(Number(suggestedWorkerPaymentAmount.toFixed(2)));
+                        setWorkerPaymentAmount(nextAmount);
+                        setWorkerPaymentAmountTouched(false);
+                        lastAutoWorkerPaymentAmountRef.current = nextAmount;
+                      }
+                    }}
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="none">לא שולם</option>
+                    <option value="paid">שולם במלואו</option>
+                    <option value="partial">שולם חלקית</option>
+                  </select>
+                  <div className="text-xs text-muted-foreground">
+                    אפשר לרשום כאן תשלום לעובד (מלא או חלקי) שיקוזז מהיתרה בפרויקט.
+                  </div>
+                </div>
+
+                {workerPaymentMode !== "none" ? (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">סכום לתשלום לעובד *</div>
+                    <Input
+                      inputMode="numeric"
+                      value={workerPaymentAmount}
+                      onChange={(e) => {
+                        setWorkerPaymentAmount(e.target.value);
+                        setWorkerPaymentAmountTouched(true);
+                      }}
+                      onBlur={() => setWorkerPaymentAmountTouched(true)}
+                      placeholder={
+                        workerPaymentMode === "paid"
+                          ? "מחושב אוטומטית"
+                          : "למשל 300"
+                      }
+                      aria-invalid={showWorkerPaymentAmountError}
+                      readOnly={workerPaymentMode === "paid"}
+                      className={
+                        showWorkerPaymentAmountError
+                          ? "border-destructive focus-visible:ring-destructive"
+                          : ""
+                      }
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      {activeSalaryAgreement?.salary_type === "hourly"
+                        ? "הסכום מחושב אוטומטית לפי ההסכם השעתי והשעות שהוזנו."
+                        : "אם לעובד אין הסכם שעתי פעיל, הסכום נלקח מעלות העבודה שהוזנה."}
+                    </div>
+                    {showWorkerPaymentAmountError ? (
+                      <div className="text-xs text-destructive">{workerPaymentAmountError}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {!isSessionMode ? (
+              <div className="flex flex-col gap-2 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
                   type="checkbox"
                   checked={billedToCustomer}
                   onChange={(e) => setBilledToCustomer(e.target.checked)}

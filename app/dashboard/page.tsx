@@ -1,14 +1,16 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { AdaptiveGrid, PageStack, ResponsiveMetricValue } from "@/components/layout/page-layout";
-import { requireProfile } from "@/lib/auth/requireProfile";
+import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import DashboardActions from "@/app/dashboard/DashboardActions";
 import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard";
 import { getAlertsData } from "@/lib/alerts";
+import { ensureMonthlySalaryPaymentTask } from "@/lib/monthly-tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCashFlowPageData } from "@/lib/cashflow";
+import type { SalaryAgreementRow } from "@/lib/payroll";
 
 type Row = Record<string, unknown>;
 
@@ -58,8 +60,17 @@ function countActiveAlerts(unpaidInvoicesCount: number, lowInventoryCount: numbe
   return [unpaidInvoicesCount, lowInventoryCount, overdueTasksCount].filter((count) => count > 0).length;
 }
 
+function isUserRole(value: string | null): value is UserRole {
+  return value === "admin" || value === "office" || value === "worker" || value === "worker_no_access";
+}
+
 export default async function DashboardPage() {
   const { profile, supabase } = await requireProfile();
+
+  if (profile.role === "admin") {
+    await ensureMonthlySalaryPaymentTask(supabase, { assignedUserId: profile.id });
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const recentCashFlowFrom = new Date(today);
@@ -67,12 +78,15 @@ export default async function DashboardPage() {
 
   const [
     { data: dashboardRow, error: dashboardError },
+    activeProjectsCountResult,
     { data: projectRows, error: projectError },
     { data: orderRows, error: orderError },
     { data: propertyRows, error: propertyError },
     { data: productRows, error: productError },
     { data: customerRows, error: customerError },
     { data: userRows, error: userError },
+    { data: salaryAgreementRows, error: salaryAgreementError },
+    { data: currentOpenSessionRow, error: currentOpenSessionError },
     cashFlowOverviewResult,
     alertsResult,
   ] = await Promise.all([
@@ -81,6 +95,10 @@ export default async function DashboardPage() {
       .select("active_projects_count,open_tasks_count,overdue_tasks_count,low_inventory_count")
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from("project_dashboard_view")
+      .select("id", { count: "estimated", head: true })
+      .not("status", "in", '(\"quote\",\"done\",\"completed\",\"cancelled\",\"canceled\",\"archived\",\"closed\")'),
     supabase
       .from("project_dashboard_view")
       .select("id,name,project_type,status,customer_id,customer_name,open_tasks,updated_at")
@@ -107,7 +125,19 @@ export default async function DashboardPage() {
       .select("customer_id,customer_name,phone,email,address")
       .order("customer_name", { ascending: true })
       .range(0, 49),
-    supabase.from("users").select("id,full_name,email,active").order("full_name", { ascending: true }).range(0, 499),
+    supabase.from("users").select("id,full_name,email,role,active").order("full_name", { ascending: true }).range(0, 499),
+    supabase
+      .from("salary_agreements")
+      .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours")
+      .order("valid_from", { ascending: false }),
+    supabase
+      .from("attendance_sessions")
+      .select("id,clock_in")
+      .eq("user_id", profile.id)
+      .is("clock_out", null)
+      .order("clock_in", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     getCashFlowPageData(supabase, {
       from: recentCashFlowFrom.toISOString().slice(0, 10),
       to: today.toISOString().slice(0, 10),
@@ -118,11 +148,10 @@ export default async function DashboardPage() {
         data: null,
         error: error?.message ?? "שגיאה בטעינת נתוני תזרים",
       })),
-    getAlertsData(supabase),
+    getAlertsData(supabase, { viewerRole: profile.role }),
   ]);
 
-  const activeProjectsCount =
-    getNumber((dashboardRow as Row | null) ?? undefined, "active_projects_count") ?? 0;
+  const activeProjectsCount = typeof activeProjectsCountResult.count === "number" ? activeProjectsCountResult.count : 0;
   const openTasksCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "open_tasks_count") ?? 0;
   const overdueTasksCount =
@@ -159,14 +188,27 @@ export default async function DashboardPage() {
       const id = getString(row, "id") ?? "";
       const fullName = getString(row, "full_name");
       const email = getString(row, "email");
+      const role = getString(row, "role");
       return {
         id,
         label: fullName && fullName.trim() ? fullName : email ?? "",
+        role: isUserRole(role) ? role : undefined,
         active: row.active,
       };
     })
     .filter((row) => row.id && row.label && row.active !== false)
-    .map((row) => ({ id: row.id, label: row.label }));
+    .map((row) => ({ id: row.id, label: row.label, role: row.role }));
+
+  const currentOpenSession =
+    currentOpenSessionRow && typeof currentOpenSessionRow.clock_in === "string"
+      ? {
+          id: typeof currentOpenSessionRow.id === "string" ? currentOpenSessionRow.id : "",
+          clock_in: currentOpenSessionRow.clock_in,
+        }
+      : null;
+  void currentOpenSessionError;
+  void salaryAgreementError;
+  const salaryAgreements = ((salaryAgreementRows ?? []) as SalaryAgreementRow[]) ?? [];
 
   const customerOptions = ((customerRows ?? []) as Row[])
     .map((row) => ({
@@ -199,7 +241,9 @@ export default async function DashboardPage() {
     userError ? `משתמשים: ${userError.message}` : null,
     cashFlowOverviewResult.error ? `תזרים: ${cashFlowOverviewResult.error}` : null,
     alertsResult.errors.dashboard ? `התראות: ${alertsResult.errors.dashboard}` : null,
+    alertsResult.errors.projects ? `פרויקטים: ${alertsResult.errors.projects}` : null,
     alertsResult.errors.invoices ? `התראות חשבוניות: ${alertsResult.errors.invoices}` : null,
+    alertsResult.errors.payroll ? `התראות שכר: ${alertsResult.errors.payroll}` : null,
   ].filter(Boolean) as string[];
 
   return (
@@ -219,88 +263,88 @@ export default async function DashboardPage() {
           </Card>
         ) : null}
 
-        <AdaptiveGrid variant="dashboardMetrics">
-          <MetricCard
-            title="תחומים פעילים"
-            value={formatCount(activeDomainCount)}
-            subtitle={topDomainName !== "אין פעילות" ? `מוביל כרגע: ${topDomainName}` : topDomainName}
-          />
-          <MetricCard
-            title="תנועות אחרונות"
-            value={formatCount(recentTransactionCount)}
-            subtitle="לפי תחומים, בלי חשיפת סכומים"
-          />
-          <MetricCard
-            title="פרויקטים פתוחים"
-            value={formatCount(activeProjectsCount)}
-            subtitle="פעילים עכשיו"
-          />
-          <MetricCard
-            title="דורש תשומת לב"
-            value={formatCount(attentionCount)}
-            subtitle={attentionCount > 0 ? "יש פריטים לבדיקה" : "הכול יציב"}
-          />
-          <MetricCard
-            title="משימות פתוחות"
-            value={formatCount(openTasksCount)}
-            subtitle={overdueTasksCount > 0 ? `${formatCount(overdueTasksCount)} באיחור` : "ללא איחור"}
-          />
-        </AdaptiveGrid>
+        <Card>
+          <CardContent className="pt-6">
+            <DashboardActions
+              customers={customerOptions as Row[]}
+              products={(productRows ?? []) as Row[]}
+              projects={activeProjectOptions}
+              orders={orderOptions}
+              properties={propertyOptions}
+              users={activeUsers}
+              currentUserId={profile.id}
+              currentUserRole={profile.role}
+              currentOpenSession={currentOpenSession}
+              salaryAgreements={salaryAgreements}
+            />
+          </CardContent>
+        </Card>
 
-        <AdaptiveGrid variant="dashboardMain">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">פעולות מהירות</CardTitle>
-              <CardDescription>פתיחה מהירה של טפסים.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DashboardActions
-                customers={customerOptions as Row[]}
-                products={(productRows ?? []) as Row[]}
-                projects={activeProjectOptions}
-                orders={orderOptions}
-                properties={propertyOptions}
-                users={activeUsers}
-                currentUserId={profile.id}
-              />
-            </CardContent>
-          </Card>
-
-          <CashFlowOverviewCard
-            rows={cashFlowDomainBreakdown}
-            transactionCount={recentTransactionCount}
-          />
-        </AdaptiveGrid>
-
-        <AdaptiveGrid variant="dashboardMain">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="text-lg">התראות</CardTitle>
-                  <CardDescription>רק מה שדורש תשומת לב.</CardDescription>
-                </div>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/alerts">לכל ההתראות</Link>
-                </Button>
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-lg">התראות</CardTitle>
+                <CardDescription>רק מה שדורש תשומת לב.</CardDescription>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {alertItems.map((alert) => (
-                <Link
-                  key={alert.id}
-                  href="/alerts"
-                  className="flex items-center justify-between rounded-2xl border p-4 transition-colors hover:bg-muted/40"
-                >
-                  <div className="space-y-1">
-                    <div className="font-medium">{alert.title}</div>
-                    <div className="text-sm text-muted-foreground">{alert.description}</div>
-                  </div>
-                  <Badge variant={badgeVariantForAlert(alert.severity)}>{formatCount(alert.count)}</Badge>
-                </Link>
-              ))}
-            </CardContent>
-          </Card>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/alerts">לכל ההתראות</Link>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {alertItems.map((alert) => (
+              <Link
+                key={alert.id}
+                href="/alerts"
+                className="flex items-center justify-between rounded-2xl border p-4 transition-colors hover:bg-muted/40"
+              >
+                <div className="space-y-1">
+                  <div className="font-medium">{alert.title}</div>
+                  <div className="text-sm text-muted-foreground">{alert.description}</div>
+                </div>
+                <Badge variant={badgeVariantForAlert(alert.severity)}>{formatCount(alert.count)}</Badge>
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+
+        <AdaptiveGrid variant="dashboardMain">
+          <div className="space-y-3">
+            <div className="space-y-1 text-right">
+              <div className="text-lg font-semibold">סיכום</div>
+              <div className="text-sm text-muted-foreground">תמונת מצב מהירה בלי להוריד פוקוס מהפעולות.</div>
+            </div>
+            <AdaptiveGrid variant="dashboardMetrics">
+              <MetricCard
+                title="תחומים פעילים"
+                value={formatCount(activeDomainCount)}
+                subtitle={topDomainName !== "אין פעילות" ? `מוביל כרגע: ${topDomainName}` : topDomainName}
+              />
+              <MetricCard
+                title="תנועות אחרונות"
+                value={formatCount(recentTransactionCount)}
+                subtitle="לפי תחומים, בלי חשיפת סכומים"
+              />
+              <MetricCard
+                title="פרויקטים פתוחים"
+                value={formatCount(activeProjectsCount)}
+                subtitle="פעילים עכשיו"
+              />
+              <MetricCard
+                title="דורש תשומת לב"
+                value={formatCount(attentionCount)}
+                subtitle={attentionCount > 0 ? "יש פריטים לבדיקה" : "הכול יציב"}
+              />
+              <MetricCard
+                title="משימות פתוחות"
+                value={formatCount(openTasksCount)}
+                subtitle={overdueTasksCount > 0 ? `${formatCount(overdueTasksCount)} באיחור` : "ללא איחור"}
+              />
+            </AdaptiveGrid>
+          </div>
+
+          <CashFlowOverviewCard rows={cashFlowDomainBreakdown} transactionCount={recentTransactionCount} />
         </AdaptiveGrid>
       </PageStack>
     </AppShell>

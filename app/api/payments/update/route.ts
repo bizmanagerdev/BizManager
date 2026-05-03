@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, user, profile } = access.value;
 
     const { data: existingPayment, error: existingPaymentError } = await supabase
       .from("payments")
@@ -103,6 +104,16 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (paymentError) return NextResponse.json({ error: paymentError.message }, { status: 400 });
+    if (payment?.id) {
+      await logAuditEvent({
+        supabase,
+        tableName: "payments",
+        recordId: payment.id,
+        action: "update",
+        changedBy: profile.id,
+        userRole: profile.role,
+      });
+    }
 
     return NextResponse.json({ payment });
   } catch (err: unknown) {

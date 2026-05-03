@@ -1,4 +1,5 @@
 ﻿import { NextResponse } from "next/server";
+import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 const BUCKET = "business-documents";
@@ -7,7 +8,7 @@ export async function POST(req: Request) {
   try {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
 
     const body = (await req.json()) as { document_id?: string };
     const documentId = typeof body.document_id === "string" ? body.document_id : "";
@@ -28,6 +29,15 @@ export async function POST(req: Request) {
 
     const { error: docDeleteError } = await supabase.from("documents").delete().eq("id", documentId);
     if (docDeleteError) return NextResponse.json({ error: docDeleteError.message }, { status: 400 });
+
+    await logAuditEvent({
+      supabase,
+      tableName: "documents",
+      recordId: documentId,
+      action: "delete",
+      changedBy: profile.id,
+      userRole: profile.role,
+    });
 
     if (storageKey) {
       const { error: storageError } = await supabase.storage.from(BUCKET).remove([storageKey]);

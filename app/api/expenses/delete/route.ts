@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 export async function POST(req: Request) {
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
 
     const { data: expenseRow, error: expenseReadError } = await supabase
       .from("expenses")
@@ -51,6 +52,15 @@ export async function POST(req: Request) {
     if (expenseDeleteError) {
       return NextResponse.json({ error: expenseDeleteError.message }, { status: 400 });
     }
+
+    await logAuditEvent({
+      supabase,
+      tableName: "expenses",
+      recordId: expenseId,
+      action: "delete",
+      changedBy: profile.id,
+      userRole: profile.role,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {

@@ -763,6 +763,7 @@ export default function DocumentsArchiveClient({
       <Dialog
         open={uploadDialogOpen}
         onOpenChange={(open) => {
+          if (!open && uploading) return;
           setUploadDialogOpen(open);
           if (!open) {
             setUploadCategory("");
@@ -883,6 +884,7 @@ export default function DocumentsArchiveClient({
       <Dialog
         open={Boolean(editDialogDoc)}
         onOpenChange={(open) => {
+          if (!open && isPending) return;
           if (!open) {
             setEditDialogDoc(null);
             setEditTagValue("");
@@ -913,6 +915,7 @@ export default function DocumentsArchiveClient({
                 setEditDialogDoc(null);
                 setEditTagValue("");
               }}
+              disabled={isPending}
             >
               ביטול
             </Button>
@@ -926,6 +929,7 @@ export default function DocumentsArchiveClient({
       <Dialog
         open={Boolean(deleteDialogDoc)}
         onOpenChange={(open) => {
+          if (!open && isPending) return;
           if (!open) setDeleteDialogDoc(null);
         }}
       >
@@ -940,7 +944,12 @@ export default function DocumentsArchiveClient({
             האם למחוק את <span className="font-medium">{deleteDialogDoc?.title ?? "המסמך"}</span>?
           </div>
           <DialogFooter className="mt-6">
-            <Button type="button" variant="secondary" onClick={() => setDeleteDialogDoc(null)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setDeleteDialogDoc(null)}
+              disabled={isPending}
+            >
               ביטול
             </Button>
             <Button

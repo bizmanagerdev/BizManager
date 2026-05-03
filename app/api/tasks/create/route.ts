@@ -1,4 +1,5 @@
 ﻿import { NextResponse } from "next/server";
+import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 export async function POST(req: Request) {
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
 
     const { data, error } = await supabase
       .from("tasks")
@@ -47,6 +48,16 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (data?.id) {
+      await logAuditEvent({
+        supabase,
+        tableName: "tasks",
+        recordId: data.id,
+        action: "create",
+        changedBy: profile.id,
+        userRole: profile.role,
+      });
+    }
 
     return NextResponse.json({ task: data });
   } catch (err: unknown) {

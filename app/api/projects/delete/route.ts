@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 const DOCUMENTS_BUCKET = "business-documents";
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
 
     const { data: project, error: projectReadError } = await supabase
       .from("projects")
@@ -187,6 +188,15 @@ export async function POST(req: Request) {
     if (projectDeleteError) {
       return NextResponse.json({ error: projectDeleteError.message }, { status: 400 });
     }
+
+    await logAuditEvent({
+      supabase,
+      tableName: "projects",
+      recordId: id,
+      action: "delete",
+      changedBy: profile.id,
+      userRole: profile.role,
+    });
 
     if (storageKeys.length > 0) {
       const { error: storageDeleteError } = await supabase.storage

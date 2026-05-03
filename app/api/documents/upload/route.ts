@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 const BUCKET = "business-documents";
@@ -16,7 +17,7 @@ export async function POST(req: Request) {
   try {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, user, profile } = access.value;
 
     const form = await req.formData();
     const file = form.get("file");
@@ -77,6 +78,15 @@ export async function POST(req: Request) {
       await supabase.storage.from(BUCKET).remove([storagePath]);
       return NextResponse.json({ error: linkError.message }, { status: 400 });
     }
+
+    await logAuditEvent({
+      supabase,
+      tableName: "documents",
+      recordId: documentId,
+      action: "upload",
+      changedBy: profile.id,
+      userRole: profile.role,
+    });
 
     return NextResponse.json({
       document: {

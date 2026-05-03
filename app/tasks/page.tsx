@@ -1,5 +1,6 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { ensureMonthlySalaryPaymentTask } from "@/lib/monthly-tasks";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -36,6 +37,10 @@ export default async function TasksPage({
   const to = page * PAGE_SIZE - 1;
 
   const { profile, supabase } = await requireProfile();
+
+  if (profile.role === "admin") {
+    await ensureMonthlySalaryPaymentTask(supabase, { assignedUserId: profile.id });
+  }
 
   const { data, error, count } = await supabase
     .from("task_overview_view")

@@ -3,11 +3,13 @@ import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import ProjectDetailsActions from "@/app/projects/[id]/ProjectDetailsActions";
+import { getLatestAuditByRecordIds } from "@/lib/audit";
 import type {
   AssignableUser,
   ExpenseListItem,
   ProjectFinancials,
   ProjectOverview,
+  ProjectSalaryAgreement,
   ProjectTaskProgress,
   ProjectWorkerBalance,
 } from "@/app/projects/[id]/ProjectTabsClient";
@@ -112,6 +114,14 @@ function formatIls(value: number | string | null | undefined) {
   }).format(amount);
 }
 
+function userDisplayName(row: UnknownRow | null | undefined) {
+  const fullName = getFirstString(row, ["full_name"]);
+  if (fullName && fullName.trim()) return fullName.trim();
+  const email = getFirstString(row, ["email"]);
+  if (email && email.trim()) return email.trim();
+  return "משתמש";
+}
+
 type CustomerPaymentStatus = "paid" | "partial" | "unpaid" | "unpriced";
 
 function deriveCustomerPaymentStatus(totalDue: number | null, paidTotal: number) {
@@ -204,6 +214,25 @@ export default async function ProjectPage({
     .order("full_name", { ascending: true })
     .range(0, 199);
 
+  const assignableUserIds = Array.from(
+    new Set(
+      (assignableUsers ?? [])
+        .map((user) => (typeof user.id === "string" ? user.id : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { data: salaryAgreements } =
+    assignableUserIds.length > 0
+      ? await supabase
+          .from("salary_agreements")
+          .select(
+            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+          )
+          .in("user_id", assignableUserIds)
+          .order("valid_from", { ascending: false })
+      : { data: [] as ProjectSalaryAgreement[] };
+
   const { data: customers } = await supabase
     .from("customer_overview_view")
     .select("customer_id,customer_name,phone")
@@ -235,6 +264,46 @@ export default async function ProjectPage({
           .order("expense_date", { ascending: false })
           .in("id", expenseIds)
       : { data: [] as ExpenseRow[], error: null };
+
+  const expenseAuditResult = await getLatestAuditByRecordIds(supabase, {
+    tableName: "expenses",
+    recordIds: expenseIds,
+  });
+
+  const expenseRecordedByValues = Array.from(
+    new Set(
+      (expenses ?? [])
+        .map((row) => (typeof row.recorded_by === "string" ? row.recorded_by : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const [expenseRecordedByIdUsersResult, expenseRecordedByAuthUsersResult] = await Promise.all([
+    expenseRecordedByValues.length > 0
+      ? supabase
+          .from("users")
+          .select("id,auth_user_id,full_name,email")
+          .in("id", expenseRecordedByValues)
+      : Promise.resolve({ data: [] as UnknownRow[], error: null }),
+    expenseRecordedByValues.length > 0
+      ? supabase
+          .from("users")
+          .select("id,auth_user_id,full_name,email")
+          .in("auth_user_id", expenseRecordedByValues)
+      : Promise.resolve({ data: [] as UnknownRow[], error: null }),
+  ]);
+
+  const expenseRecordedByNameByValue: Record<string, string> = {};
+  for (const row of [
+    ...((expenseRecordedByIdUsersResult.data ?? []) as UnknownRow[]),
+    ...((expenseRecordedByAuthUsersResult.data ?? []) as UnknownRow[]),
+  ]) {
+    const displayName = userDisplayName(row);
+    const userId = getFirstString(row, ["id"]);
+    const authUserId = getFirstString(row, ["auth_user_id"]);
+    if (userId) expenseRecordedByNameByValue[userId] = displayName;
+    if (authUserId) expenseRecordedByNameByValue[authUserId] = displayName;
+  }
 
   const expensesById = new Map<string, ExpenseRow>();
   (expenses ?? []).forEach((e) => {
@@ -317,15 +386,51 @@ export default async function ProjectPage({
     .order("clock_in", { ascending: false })
     .range(0, 99);
 
+  const attendanceSessionIds = Array.from(
+    new Set(
+      (attendanceSessions ?? [])
+        .map((session) => (typeof session.id === "string" ? session.id : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { data: sessionDebtItems } =
+    attendanceSessionIds.length > 0
+      ? await supabase
+          .from("worker_debt_items_view")
+          .select("source_id,paid_amount,owed_amount,payment_status,last_payment_date")
+          .eq("source_type", "session")
+          .in("source_id", attendanceSessionIds)
+      : { data: [] as Array<Record<string, unknown>> };
+
+  const sessionDebtById = new Map<string, Record<string, unknown>>();
+  (sessionDebtItems ?? []).forEach((row) => {
+    if (typeof row.source_id === "string") sessionDebtById.set(row.source_id, row);
+  });
+
   const combinedExpenseList = [
     ...expenseList,
     ...((attendanceSessions ?? []) as AttendanceSessionRow[]).map(
-      (session): ExpenseListItem => ({
-        source_type: "session",
-        project_expense: null,
-        expense: null,
-        session,
-      })
+      (session): ExpenseListItem => {
+        const debtItem = sessionDebtById.get(session.id) ?? null;
+        const paidAmount = debtItem?.paid_amount;
+        const owedAmount = debtItem?.owed_amount;
+        return {
+          source_type: "session",
+          project_expense: null,
+          expense: null,
+          session: {
+            ...session,
+            paid_amount:
+              typeof paidAmount === "number" || typeof paidAmount === "string" ? paidAmount : null,
+            owed_amount:
+              typeof owedAmount === "number" || typeof owedAmount === "string" ? owedAmount : null,
+            payment_status: typeof debtItem?.payment_status === "string" ? debtItem.payment_status : null,
+            last_payment_date:
+              typeof debtItem?.last_payment_date === "string" ? debtItem.last_payment_date : null,
+          },
+        };
+      }
     ),
   ].sort((a, b) => {
     const ad =
@@ -352,9 +457,49 @@ export default async function ProjectPage({
     new Set(
       (payments ?? [])
         .map((row) => (typeof row.id === "string" ? row.id : null))
+      .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const paymentAuditResult = await getLatestAuditByRecordIds(supabase, {
+    tableName: "payments",
+    recordIds: paymentIds,
+  });
+
+  const paymentRecordedByValues = Array.from(
+    new Set(
+      (payments ?? [])
+        .map((row) => (typeof row.recorded_by === "string" ? row.recorded_by : null))
         .filter((value): value is string => Boolean(value))
     )
   );
+
+  const [paymentRecordedByIdUsersResult, paymentRecordedByAuthUsersResult] = await Promise.all([
+    paymentRecordedByValues.length > 0
+      ? supabase
+          .from("users")
+          .select("id,auth_user_id,full_name,email")
+          .in("id", paymentRecordedByValues)
+      : Promise.resolve({ data: [] as UnknownRow[], error: null }),
+    paymentRecordedByValues.length > 0
+      ? supabase
+          .from("users")
+          .select("id,auth_user_id,full_name,email")
+          .in("auth_user_id", paymentRecordedByValues)
+      : Promise.resolve({ data: [] as UnknownRow[], error: null }),
+  ]);
+
+  const paymentRecordedByNameByValue: Record<string, string> = {};
+  for (const row of [
+    ...((paymentRecordedByIdUsersResult.data ?? []) as UnknownRow[]),
+    ...((paymentRecordedByAuthUsersResult.data ?? []) as UnknownRow[]),
+  ]) {
+    const displayName = userDisplayName(row);
+    const userId = getFirstString(row, ["id"]);
+    const authUserId = getFirstString(row, ["auth_user_id"]);
+    if (userId) paymentRecordedByNameByValue[userId] = displayName;
+    if (authUserId) paymentRecordedByNameByValue[authUserId] = displayName;
+  }
 
   const { data: paymentLinks } =
     paymentIds.length > 0
@@ -722,9 +867,15 @@ export default async function ProjectPage({
             expensesError={
               projectExpensesError?.message ?? expensesError?.message ?? attendanceSessionsError?.message ?? null
             }
+            expenseRecordedByNameByValue={expenseRecordedByNameByValue}
+            expenseAuditById={expenseAuditResult.byRecordId}
             payments={paymentsWithPhotos}
             paymentsError={paymentsError}
+            paymentRecordedByNameByValue={paymentRecordedByNameByValue}
+            paymentAuditById={paymentAuditResult.byRecordId}
+            paymentAuditError={paymentAuditResult.error}
             workerBalance={workerBalance ?? null}
+            salaryAgreements={(salaryAgreements ?? []) as ProjectSalaryAgreement[]}
           />
         )}
       </div>

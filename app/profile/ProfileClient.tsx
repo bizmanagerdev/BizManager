@@ -2,14 +2,17 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import { EXPENSE_BUSINESS_DOMAINS, type ExpenseBusinessDomain } from "@/lib/expenses";
 import {
+  calculateSessionLaborCost,
   formatCurrency,
   formatDate,
   formatDateTime,
@@ -57,6 +60,11 @@ function nowLocal(offsetMinutes = 0) {
 function toIso(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function toLocalDateTimeValue(date: Date) {
+  const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return adjusted.toISOString().slice(0, 16);
 }
 
 export default function ProfileClient({ profile, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions }: Props) {
@@ -135,6 +143,23 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
         if (!response.ok) return setActionError(json.error ?? "הפעולה נכשלה.");
         setSessionNote("");
         setSessionDomain("general_business");
+        router.refresh();
+      } catch (error: unknown) {
+        setActionError(error instanceof Error ? error.message : "Unknown error");
+      }
+    });
+  }
+  async function deleteSession(sessionId: string) {
+    setActionError("");
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/profile/session/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+        const json = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) return setActionError(json.error ?? "מחיקת המשמרת נכשלה.");
         router.refresh();
       } catch (error: unknown) {
         setActionError(error instanceof Error ? error.message : "Unknown error");
@@ -294,6 +319,25 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
     const saveError = formError(isManual || Boolean(session?.clock_out));
     const duration = editedDuration();
     const currentSplitError = session?.clock_out ? splitError(session) : "";
+    const editedMinutes = (() => {
+      const start = toIso(sessionEditClockIn);
+      const end = sessionEditClockOut ? toIso(sessionEditClockOut) : "";
+      if (!start || !end) return 0;
+      const minutes = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000);
+      return minutes > 0 ? minutes : 0;
+    })();
+    const editedDurationHours = editedMinutes > 0
+      ? (() => {
+          const hours = editedMinutes / 60;
+          return Number.isInteger(hours) ? String(hours) : String(Math.round(hours * 100) / 100);
+        })()
+      : "";
+    const suggestedAmount = (() => {
+      const reference = toIso(sessionEditClockIn);
+      if (!reference || editedMinutes <= 0) return null;
+      const agreement = getCurrentSalaryAgreement(agreements, new Date(reference));
+      return calculateSessionLaborCost(agreement, editedMinutes);
+    })();
     return (
       <div dir="rtl" className="space-y-4 text-right">
         <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
@@ -303,16 +347,29 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
             <Button type="button" size="sm" variant="ghost" onClick={closeEditor}>סגור</Button>
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת התחלה</span><Input type="datetime-local" className="text-right" value={sessionEditClockIn} onChange={(event) => setSessionEditClockIn(event.target.value)} /></label>
-          <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת סיום</span><Input type="datetime-local" className="text-right" value={sessionEditClockOut} onChange={(event) => setSessionEditClockOut(event.target.value)} /></label>
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת התחלה</span><DateTimeInput value={sessionEditClockIn} onChange={(event) => setSessionEditClockIn(event.target.value)} /></label>
+          <label className="space-y-1"><span className="block text-xs text-muted-foreground">סה״כ שעות</span><Input inputMode="decimal" className="text-right" value={editedDurationHours} onChange={(event) => {
+            const nextValue = event.target.value;
+            if (!nextValue.trim()) {
+              setSessionEditClockOut("");
+              return;
+            }
+            const parsedHours = Number(nextValue);
+            const start = toIso(sessionEditClockIn);
+            if (!start || !Number.isFinite(parsedHours) || parsedHours <= 0) return;
+            const nextClockOut = new Date(new Date(start).getTime() + parsedHours * 60 * 60 * 1000);
+            if (Number.isNaN(nextClockOut.getTime())) return;
+            setSessionEditClockOut(toLocalDateTimeValue(nextClockOut));
+          }} placeholder="למשל 8" /></label>
+          <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת סיום</span><DateTimeInput value={sessionEditClockOut} onChange={(event) => setSessionEditClockOut(event.target.value)} /></label>
         </div>
         <div className="grid gap-3 md:grid-cols-[220px_220px_minmax(0,1fr)]">
           <label className="space-y-1"><span className="block text-xs text-muted-foreground">תחום</span><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-right text-sm" value={sessionEditDomain} onChange={(event) => setEditorDomain(event.target.value as ExpenseBusinessDomain)}>{EXPENSE_BUSINESS_DOMAINS.map((domain) => <option key={domain} value={domain}>{getBusinessDomainLabel(domain)}</option>)}</select></label>
           {sessionEditDomain === "logistics_projects" ? linkField("פרויקט", sessionEditProjectId, setSessionEditProjectId, projectOptions) : sessionEditDomain === "property_management" ? linkField("נכס", sessionEditPropertyId, setSessionEditPropertyId, propertyOptions) : <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">אין צורך בבחירה נוספת.</div>}
           <label className="space-y-1"><span className="block text-xs text-muted-foreground">הערות</span><textarea className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-right text-sm outline-none" value={sessionEditNotes} onChange={(event) => setSessionEditNotes(event.target.value)} /></label>
         </div>
-        <div className="flex flex-row-reverse flex-wrap gap-3 text-xs text-muted-foreground">{duration ? <div className="rounded-full border px-3 py-1">משך: {duration}</div> : null}{session?.clock_out ? <div className="rounded-full border px-3 py-1">משך מקורי: {formatMinutes(sessionWorkedMinutes(session))}</div> : null}</div>
+        <div className="flex flex-row-reverse flex-wrap gap-3 text-xs text-muted-foreground">{duration ? <div className="rounded-full border px-3 py-1">משך: {duration}</div> : null}{session?.clock_out ? <div className="rounded-full border px-3 py-1">משך מקורי: {formatMinutes(sessionWorkedMinutes(session))}</div> : null}{suggestedAmount !== null ? <div className="rounded-full border px-3 py-1">{`מגיע לפי המשמרת: ${formatCurrency(suggestedAmount)}`}</div> : null}</div>
         {saveError ? <div className="text-sm text-destructive">{saveError}</div> : null}
         {session?.clock_out ? <div className="space-y-3 border-t pt-4">
           <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
@@ -398,7 +455,22 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
                   </div>
                   <div className="mt-1 text-muted-foreground">תחום: {getBusinessDomainLabel(session.business_domain)} | יציאה: {formatDateTime(session.clock_out)}</div>
                   {session.notes ? <div className="mt-2 text-muted-foreground">{session.notes}</div> : null}
-                  <div className="mt-3 flex flex-row-reverse flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => openSessionEditor(session)}>עריכת משמרת</Button></div>
+                  <div className="mt-3 flex flex-row-reverse flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => openSessionEditor(session)}>עריכת משמרת</Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={isPending}
+                      onClick={() => {
+                        if (!confirm("למחוק את המשמרת הזו?")) return;
+                        void deleteSession(session.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      מחיקה
+                    </Button>
+                  </div>
                 </div>)}
               </div>
             </CardContent>
@@ -412,7 +484,13 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
         </TabsContent>
       </Tabs>
 
-      <Dialog open={manualEditorOpen} onOpenChange={(open) => { if (!open) closeEditor(); }}>
+      <Dialog
+        open={manualEditorOpen}
+        onOpenChange={(open) => {
+          if (!open && isPending) return;
+          if (!open) closeEditor();
+        }}
+      >
         <DialogContent className="max-w-4xl" dir="rtl">
           <DialogHeader className="text-right">
             <DialogTitle>הוספת משמרת ידנית</DialogTitle>
@@ -421,7 +499,13 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(editorSession)} onOpenChange={(open) => { if (!open) closeEditor(); }}>
+      <Dialog
+        open={Boolean(editorSession)}
+        onOpenChange={(open) => {
+          if (!open && isPending) return;
+          if (!open) closeEditor();
+        }}
+      >
         <DialogContent className="max-w-5xl" dir="rtl">
           <DialogHeader className="text-right">
             <DialogTitle>עריכת משמרת</DialogTitle>

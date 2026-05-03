@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, user, profile } = access.value;
 
     let businessDomain = businessDomainInput;
 
@@ -157,6 +158,15 @@ export async function POST(req: Request) {
 
       projectExpense = (link as Record<string, unknown> | null) ?? null;
     }
+
+    await logAuditEvent({
+      supabase,
+      tableName: "expenses",
+      recordId: expense.id,
+      action: "create",
+      changedBy: profile.id,
+      userRole: profile.role,
+    });
 
     return NextResponse.json({ expense, projectExpense });
   } catch (err: unknown) {

@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { LockKeyhole, Pencil, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import { LockKeyhole, Pencil, Plus, Trash2 } from "lucide-react";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +22,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { getBusinessDomainLabel } from "@/lib/expenses";
+import { getPaymentStatusLabel as getSharedPaymentStatusLabel } from "@/lib/ui/status-colors";
 import {
+  calculateSessionLaborCost,
   formatCurrency,
   formatDate,
   formatDateTime,
@@ -152,6 +155,12 @@ type WorkerPaymentFormState = {
   allocations: WorkerPaymentAllocationFormState[];
 };
 
+type PendingSalaryDeletion =
+  | { kind: "session"; sessionId: string; workerLabel: string }
+  | { kind: "worker"; userId: string; workerLabel: string }
+  | { kind: "agreement"; agreementId: string; userId: string; workerLabel: string }
+  | { kind: "payment"; paymentId: string; userId: string; amountLabel: string };
+
 const DEFAULT_SESSION_FORM: SessionFormState = {
   session_id: "",
   user_id: "",
@@ -257,6 +266,7 @@ export default function SalaryCenterClient({
   const [workerPaymentDialogOpen, setWorkerPaymentDialogOpen] = useState(false);
   const [workerPaymentForm, setWorkerPaymentForm] = useState<WorkerPaymentFormState>(DEFAULT_WORKER_PAYMENT_FORM);
   const [workerPaymentError, setWorkerPaymentError] = useState("");
+  const [pendingDeletion, setPendingDeletion] = useState<PendingSalaryDeletion | null>(null);
   const [sessionError, setSessionError] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -750,14 +760,7 @@ export default function SalaryCenterClient({
     const session = publicSessions.find((item) => item.id === sessionId) ?? null;
     const worker = session ? usersById.get(session.user_id) ?? null : null;
     const workerLabel = worker?.full_name ?? worker?.email ?? "העובד";
-    const confirmed = window.confirm(`למחוק את המשמרת של ${workerLabel}?`);
-    if (!confirmed) return;
-
-    runAction(async () => {
-      await postJson("/api/payroll/sessions/delete", { session_id: sessionId });
-      setMessage("המשמרת נמחקה.");
-      await refreshAll();
-    });
+    setPendingDeletion({ kind: "session", sessionId, workerLabel });
   }
 
   function saveWorkerAccess() {
@@ -775,22 +778,16 @@ export default function SalaryCenterClient({
       });
       setMessage("פרטי הגישה עודכנו.");
       await refreshAll({ reloadProtected: false });
+      setWorkerAccessDialogOpen(false);
     });
   }
 
   function deleteSelectedWorker() {
     if (!selectedWorker) return;
-    const confirmed = window.confirm("למחוק את העובד הזה? הפעולה תשבית אותו, תבטל גישה למערכת, ותשמור את כל ההיסטוריה.");
-    if (!confirmed) return;
-
-    runAction(async () => {
-      await postJson("/api/payroll/workers/delete", {
-        user_id: selectedWorker.id,
-      });
-      setWorkerAccessDialogOpen(false);
-      setSelectedWorkerId("");
-      setMessage("העובד הוסר מהרשימה הפעילה.");
-      await refreshAll();
+    setPendingDeletion({
+      kind: "worker",
+      userId: selectedWorker.id,
+      workerLabel: selectedWorker.full_name ?? selectedWorker.email ?? "העובד",
     });
   }
 
@@ -853,17 +850,11 @@ export default function SalaryCenterClient({
   function deleteAgreement(agreement: SalaryAgreementRow) {
     const worker = publicUsers.find((user) => user.id === agreement.user_id);
     const workerLabel = worker?.full_name ?? worker?.email ?? "העובד";
-    const confirmed = window.confirm(`למחוק את המשכורת של ${workerLabel}?`);
-    if (!confirmed) return;
-
-    runAction(async () => {
-      await postJson("/api/payroll/salary-agreements", {
-        action: "delete",
-        agreement_id: agreement.id,
-        user_id: agreement.user_id,
-      });
-      setMessage("המשכורת נמחקה.");
-      await refreshAll();
+    setPendingDeletion({
+      kind: "agreement",
+      agreementId: agreement.id,
+      userId: agreement.user_id,
+      workerLabel,
     });
   }
 
@@ -878,6 +869,7 @@ export default function SalaryCenterClient({
       setOverrideForm(DEFAULT_OVERRIDE_FORM);
       setMessage("החרגת השכר נוספה.");
       await refreshAll();
+      setOverrideDialogOpen(false);
     });
   }
 
@@ -1118,16 +1110,57 @@ export default function SalaryCenterClient({
   }
 
   function deleteWorkerPayment(payment: WorkerPaymentRow) {
-    const confirmed = window.confirm("למחוק את התשלום הזה?");
-    if (!confirmed) return;
+    setPendingDeletion({
+      kind: "payment",
+      paymentId: payment.id,
+      userId: payment.user_id,
+      amountLabel: formatCurrency(toNumber(payment.amount) ?? 0),
+    });
+  }
+
+  function confirmPendingDeletion() {
+    const pending = pendingDeletion;
+    if (!pending) return;
 
     runAction(async () => {
+      if (pending.kind === "session") {
+        await postJson("/api/payroll/sessions/delete", { session_id: pending.sessionId });
+        setMessage("המשמרת נמחקה.");
+        setPendingDeletion(null);
+        await refreshAll();
+        return;
+      }
+
+      if (pending.kind === "worker") {
+        await postJson("/api/payroll/workers/delete", {
+          user_id: pending.userId,
+        });
+        setWorkerAccessDialogOpen(false);
+        setSelectedWorkerId("");
+        setMessage("העובד הוסר מהרשימה הפעילה.");
+        setPendingDeletion(null);
+        await refreshAll();
+        return;
+      }
+
+      if (pending.kind === "agreement") {
+        await postJson("/api/payroll/salary-agreements", {
+          action: "delete",
+          agreement_id: pending.agreementId,
+          user_id: pending.userId,
+        });
+        setMessage("המשכורת נמחקה.");
+        setPendingDeletion(null);
+        await refreshAll();
+        return;
+      }
+
       const response = await fetch("/api/payroll/worker-payments", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          payment_id: payment.id,
-          user_id: payment.user_id,
+          payment_id: pending.paymentId,
+          user_id: pending.userId,
         }),
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
@@ -1135,16 +1168,47 @@ export default function SalaryCenterClient({
         throw new Error(json.error ?? "Request failed.");
       }
 
-      if (workerPaymentForm.payment_id === payment.id) {
+      if (workerPaymentForm.payment_id === pending.paymentId) {
         setWorkerPaymentDialogOpen(false);
         setWorkerPaymentForm(DEFAULT_WORKER_PAYMENT_FORM);
         setWorkerPaymentError("");
       }
 
       setMessage("תשלום לעובד נמחק.");
+      setPendingDeletion(null);
       await refreshAll();
     });
   }
+
+  const pendingDeletionDetails = useMemo(() => {
+    if (!pendingDeletion) return null;
+    if (pendingDeletion.kind === "session") {
+      return {
+        title: "מחיקת משמרת",
+        description: "הפעולה תמחק את המשמרת ואת הקישור שלה לחובות העובד.",
+        label: pendingDeletion.workerLabel,
+      };
+    }
+    if (pendingDeletion.kind === "worker") {
+      return {
+        title: "מחיקת עובד",
+        description: "הפעולה תשבית את העובד, תבטל גישה למערכת ותשמור את ההיסטוריה.",
+        label: pendingDeletion.workerLabel,
+      };
+    }
+    if (pendingDeletion.kind === "agreement") {
+      return {
+        title: "מחיקת משכורת",
+        description: "הפעולה תמחק את הסכם השכר של העובד.",
+        label: pendingDeletion.workerLabel,
+      };
+    }
+    return {
+      title: "מחיקת תשלום",
+      description: "הפעולה תמחק את התשלום ואת ההקצאות שלו לחובות העובד.",
+      label: pendingDeletion.amountLabel,
+    };
+  }, [pendingDeletion]);
 
   const selectedWorkerSessions = useMemo(
     () => publicSessions.filter((session) => session.user_id === selectedWorkerId),
@@ -1204,6 +1268,43 @@ export default function SalaryCenterClient({
     sessionMode === "edit" &&
     sessionDialogWorker?.pay_tracking_mode === "session" &&
     Boolean(sessionDialogDebtItem);
+  const sessionDialogWorkedMinutes = useMemo(() => {
+    const start = new Date(sessionForm.clock_in).getTime();
+    const end = new Date(sessionForm.clock_out).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+    return Math.round((end - start) / 60000);
+  }, [sessionForm.clock_in, sessionForm.clock_out]);
+  const sessionDialogDurationHours = useMemo(() => {
+    if (sessionDialogWorkedMinutes <= 0) return "";
+    const hours = sessionDialogWorkedMinutes / 60;
+    return Number.isInteger(hours) ? String(hours) : String(Math.round(hours * 100) / 100);
+  }, [sessionDialogWorkedMinutes]);
+  const sessionDialogAgreement = useMemo(() => {
+    if (!sessionForm.user_id || !sessionForm.clock_in) return null;
+    return getCurrentSalaryAgreement(
+      agreementsByUserId.get(sessionForm.user_id) ?? [],
+      new Date(sessionForm.clock_in)
+    );
+  }, [agreementsByUserId, sessionForm.clock_in, sessionForm.user_id]);
+  const sessionDialogSuggestedAmount = useMemo(() => {
+    if (sessionForm.labor_cost.trim()) {
+      const parsed = Number(sessionForm.labor_cost);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+    if (sessionDialogWorkedMinutes <= 0) return null;
+    return calculateSessionLaborCost(sessionDialogAgreement, sessionDialogWorkedMinutes);
+  }, [sessionDialogAgreement, sessionDialogWorkedMinutes, sessionForm.labor_cost]);
+
+  useEffect(() => {
+    if (!sessionForm.mark_paid_now || sessionDialogSuggestedAmount === null) return;
+    setSessionForm((current) => {
+      if (current.paid_amount_now.trim()) return current;
+      return {
+        ...current,
+        paid_amount_now: String(Number(sessionDialogSuggestedAmount.toFixed(2))),
+      };
+    });
+  }, [sessionDialogSuggestedAmount, sessionForm.mark_paid_now]);
 
   function buildDebtItemTitle(item: WorkerDebtItemRow) {
     if (item.source_type === "payslip") {
@@ -1294,12 +1395,6 @@ export default function SalaryCenterClient({
             <Button variant="outline" onClick={() => lockSalaryData()}>
               <LockKeyhole className="h-4 w-4" />
               {"נעילת נתוני שכר"}
-            </Button>
-          ) : null}
-          {canManageSalary && salaryUnlocked ? (
-            <Button variant="ghost" onClick={() => void loadProtectedData()} disabled={loadingProtected}>
-              <RefreshCcw className="h-4 w-4" />
-              {"רענון נתוני שכר"}
             </Button>
           ) : null}
         </div>
@@ -2097,7 +2192,13 @@ export default function SalaryCenterClient({
         </TabsContent>
       </Tabs>
 
-      <Dialog open={Boolean(selectedWorker)} onOpenChange={(open) => !open && setSelectedWorkerId("")}>
+      <Dialog
+        open={Boolean(selectedWorker)}
+        onOpenChange={(open) => {
+          if (!open && isPending) return;
+          if (!open) setSelectedWorkerId("");
+        }}
+      >
         <DialogContent className="max-h-[90vh] w-full overflow-y-auto text-right sm:max-w-4xl" dir="rtl">
           {selectedWorker ? (
             <>
@@ -2106,27 +2207,46 @@ export default function SalaryCenterClient({
               </DialogHeader>
               <div className="mt-6 space-y-5">
                 <Card>
-                  <CardContent className="space-y-3 py-5">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <InfoRow label="שם מלא" value={selectedWorker.full_name ?? "—"} />
-                      {selectedWorker.system_access !== false ? (
-                        <InfoRow label="אימייל" value={selectedWorker.email ?? "—"} />
-                      ) : null}
-                      <InfoRow label="טלפון" value={selectedWorker.phone ?? "—"} />
-                      <InfoRow label="תפקיד" value={getRoleLabel(selectedWorker.role)} />
-                      <InfoRow label="סטטוס" value={selectedWorker.active === false ? "לא פעיל" : "פעיל"} />
-                      <InfoRow
-                        label="אופן מעקב תשלום"
-                        value={selectedWorker.pay_tracking_mode === "payslip" ? "לפי תלוש" : "לפי משמרות"}
-                      />
-                    </div>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Button onClick={() => setWorkerAccessDialogOpen(true)} disabled={isPending}>
-                        {"עדכון פרטי עובד"}
-                      </Button>
-                      <Button variant="destructive" onClick={() => deleteSelectedWorker()} disabled={isPending}>
-                        {"מחק עובד"}
-                      </Button>
+                  <CardContent className="space-y-3 py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap gap-2 text-sm">
+                        <div className="flex items-center gap-2 rounded-lg border bg-muted/10 px-3 py-1.5">
+                          <span className="text-muted-foreground">שם מלא</span>
+                          <span className="font-medium">{selectedWorker.full_name ?? "—"}</span>
+                        </div>
+                        {selectedWorker.system_access !== false ? (
+                          <div className="flex items-center gap-2 rounded-lg border bg-muted/10 px-3 py-1.5">
+                            <span className="text-muted-foreground">אימייל</span>
+                            <span className="font-medium">{selectedWorker.email ?? "—"}</span>
+                          </div>
+                        ) : null}
+                        <div className="flex items-center gap-2 rounded-lg border bg-muted/10 px-3 py-1.5">
+                          <span className="text-muted-foreground">טלפון</span>
+                          <span className="font-medium">{selectedWorker.phone ?? "—"}</span>
+                        </div>
+                        <div className="flex items-center gap-2 rounded-lg border bg-muted/10 px-3 py-1.5">
+                          <span className="text-muted-foreground">תפקיד</span>
+                          <span className="font-medium">{getRoleLabel(selectedWorker.role)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 rounded-lg border bg-muted/10 px-3 py-1.5">
+                          <span className="text-muted-foreground">סטטוס</span>
+                          <span className="font-medium">{selectedWorker.active === false ? "לא פעיל" : "פעיל"}</span>
+                        </div>
+                        <div className="flex items-center gap-2 rounded-lg border bg-muted/10 px-3 py-1.5">
+                          <span className="text-muted-foreground">אופן מעקב תשלום</span>
+                          <span className="font-medium">
+                            {selectedWorker.pay_tracking_mode === "payslip" ? "לפי תלוש" : "לפי משמרות"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button onClick={() => setWorkerAccessDialogOpen(true)} disabled={isPending}>
+                          {"עדכון פרטי עובד"}
+                        </Button>
+                        <Button variant="destructive" onClick={() => deleteSelectedWorker()} disabled={isPending}>
+                          {"מחק עובד"}
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -2140,16 +2260,19 @@ export default function SalaryCenterClient({
                   <Card>
                     <CardContent className="space-y-4 py-5">
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="text-lg font-semibold">כספים לעובד</div>
+                        <div className="text-lg font-semibold">כספים</div>
                         <Button onClick={() => openWorkerPaymentDialog()} disabled={isPending || selectedWorkerOpenDebtItems.length === 0}>
                           הוספת תשלום
                         </Button>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-4">
-                        <MiniStat label="סה״כ חוב" value={formatCurrency(selectedWorkerBalance?.earned_amount ?? 0)} />
+                        <MiniStat label="סה״כ" value={formatCurrency(selectedWorkerBalance?.earned_amount ?? 0)} />
                         <MiniStat label="שולם" value={formatCurrency(selectedWorkerBalance?.paid_amount ?? 0)} />
-                        <MiniStat label="יתרה" value={formatCurrency(selectedWorkerBalance?.owed_amount ?? 0)} />
-                        <MiniStat label="סטטוס תשלום" value={paymentStatusLabel(selectedWorkerBalance?.payment_status)} />
+                        <MiniStat label="חוב" value={formatCurrency(selectedWorkerBalance?.owed_amount ?? 0)} />
+                        <MiniStat
+                          label="סטטוס"
+                          value={sharedPaymentStatusLabel(selectedWorkerBalance?.payment_status)}
+                        />
                       </div>
                       <div className="space-y-2">
                         <div className="font-medium">היסטוריית תשלומים</div>
@@ -2157,23 +2280,23 @@ export default function SalaryCenterClient({
                           <div className="text-sm text-muted-foreground">אין תשלומים שמורים לעובד הזה.</div>
                         ) : (
                           selectedWorkerPayments.map((payment) => (
-                            <div key={payment.id} className="rounded-2xl border p-3 text-sm">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div key={payment.id} className="rounded-xl border px-3 py-2 text-sm">
+                              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                 <div className="font-medium">{formatCurrency(payment.amount)}</div>
-                                <div>{formatDate(payment.payment_date)}</div>
+                                <div className="text-muted-foreground">{formatDate(payment.payment_date)}</div>
+                                <div className="text-muted-foreground">
+                                  {[payment.payment_method, payment.reference_number].filter(Boolean).join(" • ") || "ללא פירוט"}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Button variant="outline" size="sm" onClick={() => openEditWorkerPaymentDialog(payment)}>
+                                    {"ערוך"}
+                                  </Button>
+                                  <Button variant="destructive" size="sm" onClick={() => deleteWorkerPayment(payment)}>
+                                    {"מחק"}
+                                  </Button>
+                                </div>
                               </div>
-                              <div className="mt-1 text-muted-foreground">
-                                {[payment.payment_method, payment.reference_number].filter(Boolean).join(" • ") || "ללא פירוט"}
-                              </div>
-                              {payment.notes ? <div className="mt-1 text-muted-foreground">{payment.notes}</div> : null}
-                              <div className="mt-3 flex flex-wrap justify-end gap-2">
-                                <Button variant="outline" size="sm" onClick={() => openEditWorkerPaymentDialog(payment)}>
-                                  {"ערוך"}
-                                </Button>
-                                <Button variant="destructive" size="sm" onClick={() => deleteWorkerPayment(payment)}>
-                                  {"מחק"}
-                                </Button>
-                              </div>
+                              {payment.notes ? <div className="mt-1 text-xs text-muted-foreground">{payment.notes}</div> : null}
                             </div>
                           ))
                         )}
@@ -2192,7 +2315,7 @@ export default function SalaryCenterClient({
                     </div>
                     <div className="space-y-2">
                       {selectedWorkerSessions.slice(0, 12).map((session) => (
-                        <div key={session.id} className="rounded-2xl border p-3 text-sm">
+                        <div key={session.id} className="rounded-xl border px-3 py-2 text-sm">
                           {(() => {
                             const payrollPeriod = getSessionPayrollPeriod(session);
                             const debtItem = workerDebtItemsBySourceKey.get(`session:${session.id}`) ?? null;
@@ -2223,17 +2346,17 @@ export default function SalaryCenterClient({
                             <div className="mt-1 text-right text-muted-foreground">{`הערות: ${session.notes}`}</div>
                           ) : null}
                           {debtItem ? (
-                            <div className="mt-2 flex flex-wrap justify-end gap-3 text-xs text-muted-foreground">
+                            <div className="mt-1 flex flex-wrap justify-end gap-3 text-xs text-muted-foreground">
                               <span>{`שולם: ${formatCurrency(debtItem.paid_amount)}`}</span>
                               <span>{`יתרה: ${formatCurrency(debtItem.owed_amount)}`}</span>
                             </div>
                           ) : null}
                           {!session.locked ? (
-                            <div className="mt-3 flex flex-wrap justify-end gap-2">
-                              <Button variant="outline" onClick={() => openEditSession(session)}>
+                            <div className="mt-1 flex flex-wrap justify-end gap-2">
+                              <Button variant="outline" size="sm" onClick={() => openEditSession(session)}>
                                 {"עריכה"}
                               </Button>
-                              <Button variant="ghost" onClick={() => deleteSession(session.id)}>
+                              <Button variant="ghost" size="sm" onClick={() => deleteSession(session.id)}>
                                 {"מחיקה"}
                               </Button>
                             </div>
@@ -2374,7 +2497,13 @@ export default function SalaryCenterClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={workerAccessDialogOpen} onOpenChange={setWorkerAccessDialogOpen}>
+      <Dialog
+        open={workerAccessDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && isPending) return;
+          setWorkerAccessDialogOpen(open);
+        }}
+      >
         <DialogContent dir="rtl" className="max-w-xl">
           <DialogHeader className="text-right">
             <DialogTitle>{"עדכון פרטי עובד"}</DialogTitle>
@@ -2462,13 +2591,12 @@ export default function SalaryCenterClient({
             <Button variant="destructive" onClick={() => deleteSelectedWorker()} disabled={isPending}>
               {"מחק עובד"}
             </Button>
-            <Button variant="outline" onClick={() => setWorkerAccessDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setWorkerAccessDialogOpen(false)} disabled={isPending}>
               {"ביטול"}
             </Button>
             <Button
               onClick={() => {
                 saveWorkerAccess();
-                setWorkerAccessDialogOpen(false);
               }}
               disabled={isPending}
             >
@@ -2478,7 +2606,13 @@ export default function SalaryCenterClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={agreementDialogOpen} onOpenChange={setAgreementDialogOpen}>
+      <Dialog
+        open={agreementDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && isPending) return;
+          setAgreementDialogOpen(open);
+        }}
+      >
         <DialogContent dir="rtl" className="max-w-2xl">
           <DialogHeader className="text-right">
             <DialogTitle>{agreementForm.agreement_id ? "עריכת משכורת" : "הוספת משכורת"}</DialogTitle>
@@ -2585,7 +2719,7 @@ export default function SalaryCenterClient({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAgreementDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setAgreementDialogOpen(false)} disabled={isPending}>
               {"ביטול"}
             </Button>
             <Button
@@ -2598,7 +2732,13 @@ export default function SalaryCenterClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
+      <Dialog
+        open={overrideDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && isPending) return;
+          setOverrideDialogOpen(open);
+        }}
+      >
         <DialogContent dir="rtl" className="max-w-xl">
           <DialogHeader className="text-right">
             <DialogTitle>{"הוספת החרגת שכר"}</DialogTitle>
@@ -2627,13 +2767,12 @@ export default function SalaryCenterClient({
             </Field>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOverrideDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setOverrideDialogOpen(false)} disabled={isPending}>
               {"ביטול"}
             </Button>
             <Button
               onClick={() => {
                 saveOverride();
-                setOverrideDialogOpen(false);
               }}
               disabled={isPending}
             >
@@ -2646,6 +2785,7 @@ export default function SalaryCenterClient({
       <Dialog
         open={createUserOpen}
         onOpenChange={(open) => {
+          if (!open && isPending) return;
           setCreateUserOpen(open);
           if (!open) resetCreateUserForm();
         }}
@@ -2771,7 +2911,7 @@ export default function SalaryCenterClient({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateUserOpen(false)}>
+            <Button variant="outline" onClick={() => setCreateUserOpen(false)} disabled={isPending}>
               {"ביטול"}
             </Button>
             <Button onClick={() => createUser()} disabled={isPending}>
@@ -2781,7 +2921,13 @@ export default function SalaryCenterClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={workerPaymentDialogOpen} onOpenChange={setWorkerPaymentDialogOpen}>
+      <Dialog
+        open={workerPaymentDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && isPending) return;
+          setWorkerPaymentDialogOpen(open);
+        }}
+      >
         <DialogContent dir="rtl" className="max-w-3xl">
           <DialogHeader className="text-right">
             <DialogTitle>{workerPaymentForm.payment_id ? "עדכון תשלום לעובד" : "הוספת תשלום לעובד"}</DialogTitle>
@@ -2878,7 +3024,7 @@ export default function SalaryCenterClient({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setWorkerPaymentDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setWorkerPaymentDialogOpen(false)} disabled={isPending}>
               {"ביטול"}
             </Button>
             <Button
@@ -2891,7 +3037,13 @@ export default function SalaryCenterClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={sessionDialogOpen} onOpenChange={setSessionDialogOpen}>
+      <Dialog
+        open={sessionDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && isPending) return;
+          setSessionDialogOpen(open);
+        }}
+      >
         <DialogContent dir="rtl" className="max-w-2xl">
           <DialogHeader className="text-right">
             <DialogTitle>{sessionMode === "create" ? "הוספת משמרת" : "עריכת משמרת"}</DialogTitle>
@@ -2938,18 +3090,6 @@ export default function SalaryCenterClient({
                 <option value="charity">{"צדקה"}</option>
               </select>
             </Field>
-            <Field label="כניסה">
-              <DateTimeInput
-                value={sessionForm.clock_in}
-                onChange={(event) => setSessionForm((current) => ({ ...current, clock_in: event.target.value }))}
-              />
-            </Field>
-            <Field label="יציאה">
-              <DateTimeInput
-                value={sessionForm.clock_out}
-                onChange={(event) => setSessionForm((current) => ({ ...current, clock_out: event.target.value }))}
-              />
-            </Field>
             {sessionForm.business_domain === "logistics_projects" ? (
               <Field label="פרויקט">
                 <select
@@ -2982,6 +3122,40 @@ export default function SalaryCenterClient({
                 </select>
               </Field>
             ) : null}
+            <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
+              <Field label="כניסה">
+                <DateTimeInput
+                  value={sessionForm.clock_in}
+                  onChange={(event) => setSessionForm((current) => ({ ...current, clock_in: event.target.value }))}
+                />
+              </Field>
+              <Field label="סה״כ שעות">
+                <Input
+                  inputMode="decimal"
+                  value={sessionDialogDurationHours}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    if (!nextValue.trim()) {
+                      setSessionForm((current) => ({ ...current, clock_out: "" }));
+                      return;
+                    }
+                    const parsedHours = Number(nextValue);
+                    const start = new Date(sessionForm.clock_in).getTime();
+                    if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !Number.isFinite(start)) return;
+                    const nextClockOut = new Date(start + parsedHours * 60 * 60 * 1000);
+                    if (Number.isNaN(nextClockOut.getTime())) return;
+                    setSessionForm((current) => ({ ...current, clock_out: toDateTimeLocalValue(nextClockOut) }));
+                  }}
+                  placeholder="למשל 8"
+                />
+              </Field>
+              <Field label="יציאה">
+                <DateTimeInput
+                  value={sessionForm.clock_out}
+                  onChange={(event) => setSessionForm((current) => ({ ...current, clock_out: event.target.value }))}
+                />
+              </Field>
+            </div>
             <Field label="מחיר">
               <Input
                 inputMode="decimal"
@@ -2991,6 +3165,11 @@ export default function SalaryCenterClient({
                 }
                 placeholder="אופציונלי"
               />
+              <div className="mt-1 text-xs text-muted-foreground">
+                {sessionDialogSuggestedAmount !== null
+                  ? `סה״כ לתשלום עבור המשמרת: ${formatCurrency(sessionDialogSuggestedAmount)}`
+                  : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
+              </div>
             </Field>
             <Field label="חיוב לקוח">
               <select
@@ -3086,7 +3265,10 @@ export default function SalaryCenterClient({
                       <MiniStat label="עלות משמרת" value={formatCurrency(sessionDialogDebtItem.earned_amount)} />
                       <MiniStat label="שולם" value={formatCurrency(sessionDialogDebtItem.paid_amount)} />
                       <MiniStat label="יתרה" value={formatCurrency(sessionDialogDebtItem.owed_amount)} />
-                      <MiniStat label="סטטוס" value={paymentStatusLabel(sessionDialogDebtItem.payment_status)} />
+                      <MiniStat
+                        label="סטטוס"
+                        value={sharedPaymentStatusLabel(sessionDialogDebtItem.payment_status)}
+                      />
                     </div>
                     {sessionDialogPaymentAllocations.length > 0 ? (
                       <div className="space-y-2">
@@ -3145,11 +3327,44 @@ export default function SalaryCenterClient({
           ) : null}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSessionDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setSessionDialogOpen(false)} disabled={isPending}>
               {"ביטול"}
             </Button>
             <Button onClick={() => saveSession()} disabled={isPending}>
               {"שמירה"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(pendingDeletion)}
+        onOpenChange={(open) => {
+          if (!open && !isPending) {
+            setPendingDeletion(null);
+          }
+        }}
+      >
+        <DialogContent dir="rtl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{pendingDeletionDetails?.title ?? "אישור מחיקה"}</DialogTitle>
+            <DialogDescription>
+              {pendingDeletionDetails?.description ?? "הפעולה תתבצע רק לאחר אישור."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-right text-sm">
+            למחוק את <span className="font-medium">{pendingDeletionDetails?.label ?? "הרשומה"}</span>?
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDeletion(null)} disabled={isPending}>
+              {"ביטול"}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => confirmPendingDeletion()}
+              disabled={isPending || !pendingDeletion}
+            >
+              {isPending ? "מוחק..." : "מחיקה"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3177,16 +3392,7 @@ function SummaryCard({
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border bg-muted/10 p-3">
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
+function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="rounded-2xl border bg-muted/10 p-3">
       <div className="text-sm text-muted-foreground">{label}</div>
@@ -3228,17 +3434,9 @@ function StatusPill({
 }
 
 function PaymentStatusBadge({ status }: { status: string | null | undefined }) {
-  const normalized = status === "paid" || status === "partial" || status === "overpaid" ? status : "unpaid";
-  const tone =
-    normalized === "paid"
-      ? "success"
-      : normalized === "partial"
-        ? "warning"
-        : normalized === "overpaid"
-          ? "danger"
-          : "muted";
-
-  return <StatusPill tone={tone}>{paymentStatusLabel(normalized)}</StatusPill>;
+  const normalized =
+    status === "paid" || status === "partial" || status === "overpaid" ? status : "unpaid";
+  return <StatusBadge value={normalized} type="payment" />;
 }
 
 function paymentStatusLabel(status: string | null | undefined) {
@@ -3246,6 +3444,11 @@ function paymentStatusLabel(status: string | null | undefined) {
   if (status === "partial") return "שולם חלקית";
   if (status === "overpaid") return "שולם יתר";
   return "לא שולם";
+}
+
+function sharedPaymentStatusLabel(status: string | null | undefined) {
+  if (status === "overpaid") return paymentStatusLabel(status);
+  return getSharedPaymentStatusLabel(status ?? "unpaid");
 }
 
 function RoleBadge({ role }: { role: string | null | undefined }) {

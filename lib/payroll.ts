@@ -17,6 +17,10 @@ export type WorkSessionRow = {
   business_domain: string | null;
   project_id: string | null;
   property_id: string | null;
+  paid_amount?: number | string | null;
+  owed_amount?: number | string | null;
+  payment_status?: string | null;
+  last_payment_date?: string | null;
 };
 
 export type SalaryAgreementRow = {

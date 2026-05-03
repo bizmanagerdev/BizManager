@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import {
@@ -63,7 +64,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, user, profile } = access.value;
 
     let businessDomain: ExpenseBusinessDomain | null = isExpenseBusinessDomain(body.business_domain)
       ? body.business_domain
@@ -139,6 +140,16 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (data?.id) {
+      await logAuditEvent({
+        supabase,
+        tableName: "payments",
+        recordId: data.id,
+        action: "create",
+        changedBy: profile.id,
+        userRole: profile.role,
+      });
+    }
 
     return NextResponse.json({ payment: data });
   } catch (err: unknown) {

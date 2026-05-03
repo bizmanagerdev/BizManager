@@ -25,7 +25,7 @@ export default async function AlertsPage() {
   const { profile, supabase } = await requireProfile();
   const todayIso = new Date().toISOString().slice(0, 10);
   const [{ alerts, errors }, projectScheduleResult] = await Promise.all([
-    getAlertsData(supabase),
+    getAlertsData(supabase, { viewerRole: profile.role }),
     getScheduleEntries(supabase).then(
       (entries) => ({ entries, error: null as string | null }),
       (error: { message?: string }) => ({
@@ -34,8 +34,8 @@ export default async function AlertsPage() {
       })
     ),
   ]);
-  const activeAlertsCount = alerts.filter((alert) => alert.count > 0).length;
-  const pageErrors = [errors.dashboard, errors.invoices, projectScheduleResult.error].filter(
+  const activeAlertsCount = alerts.filter((alert) => (alert.countsAsActiveAlert ?? true) && alert.count > 0).length;
+  const pageErrors = [errors.dashboard, errors.invoices, errors.payroll, errors.projects, projectScheduleResult.error].filter(
     Boolean
   ) as string[];
 

@@ -11,6 +11,7 @@ export type AlertItem = {
   href: string;
   count: number;
   severity: AlertSeverity;
+  countsAsActiveAlert?: boolean;
 };
 
 export type AlertsResult = {
@@ -18,6 +19,8 @@ export type AlertsResult = {
   errors: {
     dashboard: string | null;
     invoices: string | null;
+    payroll: string | null;
+    projects: string | null;
   };
 };
 
@@ -52,10 +55,40 @@ function isInvoiceUnpaid(row: Row) {
   );
 }
 
-export async function getAlertsData(supabase: SupabaseClient): Promise<AlertsResult> {
+function nextMonthDueDateIso(periodEndDateIso: string) {
+  const parts = periodEndDateIso.split("-");
+  if (parts.length < 2) return "";
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return "";
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  return `${nextYear}-${String(nextMonth).padStart(2, "0")}-10`;
+}
+
+function currencyFormatterHeIl() {
+  return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 2 });
+}
+
+export async function getAlertsData(
+  supabase: SupabaseClient,
+  options?: { viewerRole?: string | null }
+): Promise<AlertsResult> {
+  const viewerRole = options?.viewerRole ?? null;
+  const inactiveProjectStatuses = [
+    "quote",
+    "done",
+    "completed",
+    "cancelled",
+    "canceled",
+    "archived",
+    "closed",
+  ];
   const [
     { data: dashboardRow, error: dashboardError },
     { data: invoiceRows, error: invoiceError },
+    payrollDebtResult,
+    activeProjectsCountResult,
   ] = await Promise.all([
     supabase
       .from("operations_dashboard_view")
@@ -67,6 +100,18 @@ export async function getAlertsData(supabase: SupabaseClient): Promise<AlertsRes
       .select("id,payment_status,status,balance_due,amount_due,open_amount,remaining_amount")
       .order("created_at", { ascending: false })
       .range(0, 199),
+    viewerRole === "admin"
+      ? supabase
+          .from("worker_debt_items_view")
+          .select("user_id,source_date,owed_amount,source_type")
+          .eq("source_type", "payslip")
+          .gt("owed_amount", 0.009)
+          .range(0, 1999)
+      : Promise.resolve({ data: [], error: null } as { data: unknown[]; error: { message?: string } | null }),
+    supabase
+      .from("project_dashboard_view")
+      .select("id", { count: "estimated", head: true })
+      .not("status", "in", `(${inactiveProjectStatuses.map((value) => `"${value}"`).join(",")})`),
   ]);
 
   const invoiceSourceMissing =
@@ -81,8 +126,61 @@ export async function getAlertsData(supabase: SupabaseClient): Promise<AlertsRes
   const overdueTasksCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "overdue_tasks_count") ?? 0;
 
+  const activeProjectsCount =
+    typeof (activeProjectsCountResult as { count?: number | null }).count === "number"
+      ? ((activeProjectsCountResult as { count: number }).count ?? 0)
+      : 0;
+
+  const payrollDebtRows = (payrollDebtResult.data ?? []) as Array<{
+    user_id?: string | null;
+    source_date?: string | null;
+    owed_amount?: number | string | null;
+  }>;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const overduePayslipDebtRows = payrollDebtRows.filter((row) => {
+    const userId = typeof row.user_id === "string" ? row.user_id : "";
+    const sourceDate = typeof row.source_date === "string" ? row.source_date : "";
+    const owedAmount = typeof row.owed_amount === "number" || typeof row.owed_amount === "string" ? Number(row.owed_amount) : 0;
+    if (!userId || !sourceDate || !Number.isFinite(owedAmount) || owedAmount <= 0.009) return false;
+    const dueIso = nextMonthDueDateIso(sourceDate);
+    return Boolean(dueIso) && todayIso > dueIso;
+  });
+  const overdueUserIds = new Set(overduePayslipDebtRows.map((row) => (typeof row.user_id === "string" ? row.user_id : "")).filter(Boolean));
+  const overduePayslipCount = overduePayslipDebtRows.length;
+  const overdueWorkersCount = overdueUserIds.size;
+  const overdueOwedTotal = overduePayslipDebtRows.reduce((sum, row) => {
+    const owedAmount = typeof row.owed_amount === "number" || typeof row.owed_amount === "string" ? Number(row.owed_amount) : 0;
+    return sum + (Number.isFinite(owedAmount) ? owedAmount : 0);
+  }, 0);
+
+  const moneyOwedToWorkersAlert: AlertItem | null =
+    viewerRole === "admin"
+      ? {
+          id: "worker-wages-due",
+          title: "שכר עובדים לתשלום",
+          description:
+            overduePayslipCount > 0
+              ? `יש ${overdueWorkersCount} עובדים עם תלוש שכר שלא שולם בזמן (סה\"כ ${currencyFormatterHeIl().format(overdueOwedTotal)}).`
+              : "אין תלושי שכר באיחור לתשלום",
+          href: "/payroll",
+          count: overduePayslipCount,
+          severity: overduePayslipCount > 0 ? "danger" : "info",
+          countsAsActiveAlert: true,
+        }
+      : null;
+
   return {
     alerts: [
+      {
+        id: "active-projects",
+        title: "פרויקטים פעילים",
+        description: activeProjectsCount > 0 ? `יש ${activeProjectsCount} פרויקטים פעילים` : "אין פרויקטים פעילים",
+        href: "/projects",
+        count: activeProjectsCount,
+        severity: "info",
+        countsAsActiveAlert: false,
+      },
+      ...(moneyOwedToWorkersAlert ? [moneyOwedToWorkersAlert] : []),
       {
         id: "unpaid-invoices",
         title: "חשבוניות לא משולמות",
@@ -94,6 +192,7 @@ export async function getAlertsData(supabase: SupabaseClient): Promise<AlertsRes
         href: "/invoices",
         count: unpaidInvoices.length,
         severity: invoiceSourceMissing ? "info" : unpaidInvoices.length > 0 ? "danger" : "info",
+        countsAsActiveAlert: !invoiceSourceMissing,
       },
       {
         id: "low-inventory",
@@ -103,6 +202,7 @@ export async function getAlertsData(supabase: SupabaseClient): Promise<AlertsRes
         href: "/inventory",
         count: lowInventoryCount,
         severity: lowInventoryCount > 0 ? "warning" : "info",
+        countsAsActiveAlert: true,
       },
       {
         id: "overdue-tasks",
@@ -112,11 +212,14 @@ export async function getAlertsData(supabase: SupabaseClient): Promise<AlertsRes
         href: "/tasks",
         count: overdueTasksCount,
         severity: overdueTasksCount > 0 ? "danger" : "info",
+        countsAsActiveAlert: true,
       },
     ],
     errors: {
       dashboard: dashboardError?.message ?? null,
       invoices: invoiceSourceMissing ? null : invoiceError?.message ?? null,
+      payroll: viewerRole === "admin" ? payrollDebtResult.error?.message ?? null : null,
+      projects: (activeProjectsCountResult as { error?: { message?: string } | null }).error?.message ?? null,
     },
   };
 }

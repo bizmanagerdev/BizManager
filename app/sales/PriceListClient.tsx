@@ -394,7 +394,13 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
       )}
       {tableError ? <p className="text-sm text-destructive">{tableError}</p> : null}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (!open && createLoading) return;
+          setCreateOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>הוספת מוצר</DialogTitle>
@@ -453,7 +459,13 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
         </DialogContent>
       </Dialog>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          if (!open && editLoading) return;
+          setEditOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>עריכת מוצר</DialogTitle>
@@ -512,7 +524,13 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
         </DialogContent>
       </Dialog>
 
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+      <Dialog
+        open={deleteConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && deleteLoadingId) return;
+          setDeleteConfirmOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>אישור מחיקה</DialogTitle>
@@ -524,6 +542,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
             <Button
               type="button"
               variant="secondary"
+              disabled={Boolean(deleteLoadingId)}
               onClick={() => {
                 setDeleteConfirmOpen(false);
                 setPendingDelete(null);

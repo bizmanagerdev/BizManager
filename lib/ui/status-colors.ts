@@ -2,7 +2,14 @@ export type StatusColor = "success" | "warning" | "danger" | "info" | "neutral";
 
 export type StatusBadgeType = "payment" | "project" | "task" | "priority" | "order";
 
-export type PaymentStatus = "pending" | "cleared" | "rejected";
+export type PaymentStatus =
+  | "pending"
+  | "cleared"
+  | "rejected"
+  | "paid"
+  | "partial"
+  | "unpaid"
+  | "overpaid";
 export type ProjectStatus = "quote" | "planned" | "active" | "on_hold" | "completed" | "cancelled";
 export type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
@@ -43,12 +50,17 @@ export function normalizeOrderStatus(status: string | null | undefined): OrderSt
 
 export function getPaymentStatusColor(status: string): StatusColor {
   switch (normalizeValue(status)) {
-    case "pending":
-      return "warning";
+    case "paid":
     case "cleared":
       return "success";
+    case "partial":
+      return "info";
+    case "unpaid":
+    case "overpaid":
     case "rejected":
       return "danger";
+    case "pending":
+      return "warning";
     default:
       return "neutral";
   }
@@ -125,6 +137,14 @@ export function getOrderStatusColor(status: string): StatusColor {
 
 export function getPaymentStatusLabel(status: string) {
   switch (normalizeValue(status)) {
+    case "paid":
+      return "שולם";
+    case "partial":
+      return "שולם חלקית";
+    case "unpaid":
+      return "לא שולם";
+    case "overpaid":
+      return "שולם יתר";
     case "pending":
       return "ממתין לפירעון";
     case "cleared":

@@ -333,6 +333,7 @@ export default function TaskDetailClient(props: Props) {
       <Dialog
         open={deleteOpen}
         onOpenChange={(open) => {
+          if (!open && deleting) return;
           setDeleteOpen(open);
           if (!open) {
             setDeleteId(null);

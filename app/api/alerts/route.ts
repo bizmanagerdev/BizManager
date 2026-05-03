@@ -6,8 +6,8 @@ export async function GET() {
   const access = await requireRouteAccess();
   if (!access.ok) return access.response;
 
-  const { supabase } = access.value;
-  const { alerts, errors } = await getAlertsData(supabase);
+  const { supabase, profile } = access.value;
+  const { alerts, errors } = await getAlertsData(supabase, { viewerRole: profile.role });
 
   return NextResponse.json({
     alerts,

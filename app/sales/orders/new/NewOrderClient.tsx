@@ -222,6 +222,7 @@ export default function NewOrderClient({
   embedded = false,
   onCancel,
   onSubmitted,
+  onActionLockedChange,
   initialStatusOverride,
   allowOrderStatusEdit = false,
 }: {
@@ -235,6 +236,7 @@ export default function NewOrderClient({
   embedded?: boolean;
   onCancel?: () => void;
   onSubmitted?: (orderId: string) => void;
+  onActionLockedChange?: (locked: boolean) => void;
   initialStatusOverride?: string;
   allowOrderStatusEdit?: boolean;
 }) {
@@ -274,6 +276,10 @@ export default function NewOrderClient({
   const [createCustomerError, setCreateCustomerError] = useState<string | null>(null);
   const [createCustomerSubmitting, setCreateCustomerSubmitting] = useState(false);
   const actionLocked = submitting || createCustomerSubmitting;
+
+  useEffect(() => {
+    onActionLockedChange?.(actionLocked);
+  }, [actionLocked, onActionLockedChange]);
 
   const initialCustomerOptions = useMemo(
     () =>
@@ -685,6 +691,10 @@ export default function NewOrderClient({
     const address = createCustomerAddress.trim();
     if (!name) {
       setCreateCustomerError("יש להזין שם לקוח.");
+      return;
+    }
+    if (!createCustomerPhone.trim()) {
+      setCreateCustomerError("יש להזין מספר טלפון.");
       return;
     }
     if (!email) {
@@ -1403,6 +1413,7 @@ export default function NewOrderClient({
       <Dialog
         open={createCustomerOpen}
         onOpenChange={(next) => {
+          if (!next && createCustomerSubmitting) return;
           setCreateCustomerOpen(next);
           if (!next && !createCustomerSubmitting) {
             setCreateCustomerError(null);
@@ -1414,7 +1425,7 @@ export default function NewOrderClient({
           <DialogHeader>
             <DialogTitle>הוספת לקוח חדש</DialogTitle>
             <DialogDescription>
-              הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, אימייל, עיר וכתובת.
+              הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון, אימייל, עיר וכתובת.
             </DialogDescription>
           </DialogHeader>
 
@@ -1435,7 +1446,7 @@ export default function NewOrderClient({
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm font-medium">טלפון</label>
+              <label className="text-sm font-medium">טלפון *</label>
               <Input
                 value={createCustomerPhone}
                 onChange={(e) => setCreateCustomerPhone(e.target.value)}

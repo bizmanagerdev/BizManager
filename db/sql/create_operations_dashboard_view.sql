@@ -67,6 +67,7 @@ project_counts as (
     count(*)::bigint as active_projects_count
   from public.project_dashboard_view pdv
   where lower(coalesce(pdv.status, '')) not in (
+    'quote',
     'done',
     'completed',
     'cancelled',

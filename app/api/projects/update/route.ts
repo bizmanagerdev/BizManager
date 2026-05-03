@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 type UpdateProjectPayload = {
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
 
     const { data: updated, error: updateError } = await supabase
       .from("projects")
@@ -106,6 +107,15 @@ export async function POST(req: Request) {
       )
       .eq("id", updated.id)
       .maybeSingle();
+
+    await logAuditEvent({
+      supabase,
+      tableName: "projects",
+      recordId: updated.id,
+      action: "update",
+      changedBy: profile.id,
+      userRole: profile.role,
+    });
 
     return NextResponse.json({ project: dashboardRow ?? updated });
   } catch (err: unknown) {

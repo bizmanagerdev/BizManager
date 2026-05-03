@@ -85,7 +85,13 @@ export default function DeleteProjectButton({
 
   return (
     <div className="space-y-1">
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && loading) return;
+          setOpen(next);
+        }}
+      >
         <Button
           type="button"
           variant="destructive"

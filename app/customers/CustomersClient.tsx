@@ -229,6 +229,7 @@ export default function CustomersClient({
     setCreateErr("");
     const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
     if (!name.trim()) return setCreateErr("יש למלא שם לקוח.");
+    if (!phone.trim()) return setCreateErr("יש למלא מספר טלפון.");
     if (!finalCity) return setCreateErr("יש לבחור עיר.");
     const preparedContacts = createContacts
       .map((contact) => ({
@@ -597,7 +598,7 @@ export default function CustomersClient({
           }
         }}
         title="הוספת לקוח"
-        description="שדות חובה: שם ועיר."
+        description="שדות חובה: שם, טלפון ועיר."
         submitLabel={createLoading ? "יוצר..." : "יצירת לקוח"}
         onSubmit={() => void createCustomer()}
         error={createErr}
@@ -606,7 +607,7 @@ export default function CustomersClient({
         <Field label="שם לקוח *">
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="טלפון">
+        <Field label="טלפון *">
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
         </Field>
         <Field label="וואטסאפ">
@@ -643,17 +644,15 @@ export default function CustomersClient({
         <div className="space-y-3 rounded-md border p-3">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <div className="text-sm font-medium">Contact People</div>
-              <div className="text-xs text-muted-foreground">
-                Add the people we should be able to reach for this customer.
-              </div>
+              <div className="text-sm font-medium">אנשי קשר</div>
+              <div className="text-xs text-muted-foreground">אפשר להוסיף כבר עכשיו את אנשי הקשר של הלקוח.</div>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={addCreateContact}>
-              Add Contact
+              הוספת איש קשר
             </Button>
           </div>
           {createContacts.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No contacts added yet.</p>
+            <p className="text-xs text-muted-foreground">עדיין לא נוספו אנשי קשר.</p>
           ) : null}
           {createContacts.map((contact, index) => (
             <div
@@ -661,17 +660,17 @@ export default function CustomersClient({
               className="space-y-3 rounded-md border bg-background p-3"
             >
               <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-medium">Contact {index + 1}</div>
+                <div className="text-sm font-medium">איש קשר {index + 1}</div>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={() => removeCreateContact(index)}
                 >
-                  Remove
+                  הסרה
                 </Button>
               </div>
-              <Field label="Full Name *">
+              <Field label="שם מלא *">
                 <Input
                   value={contact.full_name}
                   onChange={(e) =>
@@ -679,20 +678,20 @@ export default function CustomersClient({
                   }
                 />
               </Field>
-              <Field label="Role">
+              <Field label="תפקיד">
                 <Input
                   value={contact.role}
                   onChange={(e) => updateCreateContact(index, { role: e.target.value })}
                 />
               </Field>
               <AdaptiveGrid variant="formTwo">
-                <Field label="Phone">
+                <Field label="טלפון">
                   <Input
                     value={contact.phone}
                     onChange={(e) => updateCreateContact(index, { phone: e.target.value })}
                   />
                 </Field>
-                <Field label="WhatsApp">
+                <Field label="וואטסאפ">
                   <Input
                     value={contact.whatsapp}
                     onChange={(e) =>
@@ -701,13 +700,13 @@ export default function CustomersClient({
                   />
                 </Field>
               </AdaptiveGrid>
-              <Field label="Email">
+              <Field label="אימייל">
                 <Input
                   value={contact.email}
                   onChange={(e) => updateCreateContact(index, { email: e.target.value })}
                 />
               </Field>
-              <Field label="Notes">
+              <Field label="הערות">
                 <Textarea
                   value={contact.notes}
                   onChange={(e) => updateCreateContact(index, { notes: e.target.value })}
@@ -725,7 +724,7 @@ export default function CustomersClient({
                     })
                   }
                 />
-                <span>Primary Contact</span>
+                <span>איש קשר ראשי</span>
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -735,7 +734,7 @@ export default function CustomersClient({
                     updateCreateContact(index, { active: e.target.checked })
                   }
                 />
-                <span>Active</span>
+                <span>פעיל</span>
               </label>
             </div>
           ))}
@@ -1124,7 +1123,13 @@ function CustomerDialog({
   children: React.ReactNode;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && submitting) return;
+        onOpenChange(next);
+      }}
+    >
       <AdaptiveDialog size="formLg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
