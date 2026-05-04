@@ -24,7 +24,9 @@ export async function POST(req: Request) {
     const file = form.get("file");
 
     const entityType =
-      entityTypeValue === "expense" || entityTypeValue === "payment" ? entityTypeValue : null;
+      entityTypeValue === "expense" || entityTypeValue === "payment" || entityTypeValue === "session"
+        ? entityTypeValue
+        : null;
 
     if (!entityType) {
       return NextResponse.json({ error: "Missing or invalid entity_type" }, { status: 400 });
@@ -42,7 +44,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `File too large (max ${MAX_BYTES} bytes)` }, { status: 413 });
     }
 
-    const table = entityType === "expense" ? "expenses" : "payments";
+    const table =
+      entityType === "expense"
+        ? "expenses"
+        : entityType === "payment"
+          ? "payments"
+          : "attendance_sessions";
     const { data: entity, error: entityError } = await supabase
       .from(table)
       .select("id,project_id")

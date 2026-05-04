@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import TaskDetailClient from "@/app/tasks/[id]/TaskDetailClient";
 
 const DOCUMENTS_BUCKET = "business-documents";
@@ -35,6 +36,7 @@ type DocumentRow = {
   file_name: string | null;
   storage_key: string | null;
   uploaded_at: string | null;
+  uploaded_by?: string | null;
 };
 
 type ProjectLookupRow = {
@@ -50,6 +52,7 @@ type Attachment = {
   size_bytes: number | null;
   original_name: string | null;
   created_at: string;
+  uploader_name: string | null;
   url: string | null;
 };
 
@@ -124,10 +127,16 @@ export default async function TaskPage({
 
         const { data: docs, error: docsError } = await supabase
           .from("documents")
-          .select("id,document_type,file_name,storage_key,uploaded_at")
+          .select("id,document_type,file_name,storage_key,uploaded_at,uploaded_by")
           .in("id", docIds);
 
         if (!docsError && docs) {
+          const uploaderNames = await resolveUserDisplayNamesForValues(
+            supabase,
+            (docs as DocumentRow[])
+              .map((doc) => (typeof doc.uploaded_by === "string" ? doc.uploaded_by : null))
+              .filter((value): value is string => Boolean(value))
+          );
           const docById = new Map<string, DocumentRow>(
             (docs as DocumentRow[]).map((d) => [String(d.id), d])
           );
@@ -157,6 +166,8 @@ export default async function TaskPage({
               created_at:
                 (typeof doc.uploaded_at === "string" && doc.uploaded_at) ||
                 (typeof l.created_at === "string" ? l.created_at : new Date().toISOString()),
+              uploader_name:
+                typeof doc.uploaded_by === "string" ? uploaderNames[doc.uploaded_by] ?? null : null,
               url: signError ? null : signed?.signedUrl ?? null,
             };
           })

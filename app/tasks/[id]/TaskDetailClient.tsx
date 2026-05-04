@@ -44,6 +44,7 @@ type TaskAttachment = {
   size_bytes: number | null;
   original_name: string | null;
   created_at: string;
+  uploader_name?: string | null;
   url: string | null;
 };
 
@@ -270,6 +271,7 @@ export default function TaskDetailClient(props: Props) {
                   a.original_name ?? null,
                   formatBytes(a.size_bytes),
                   a.created_at ? formatIsoStamp(a.created_at) : null,
+                  a.uploader_name ? `הוזן ע״י ${a.uploader_name}` : null,
                 ]
                   .filter(Boolean)
                   .join(" \u2022 ");

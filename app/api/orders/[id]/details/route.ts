@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 
 type Row = Record<string, unknown>;
 
@@ -45,7 +46,7 @@ export async function GET(
       .eq("order_id", id),
     supabase
       .from("payments")
-      .select("id,payment_date,amount_total,payment_method,reference_number,notes,created_at")
+      .select("id,payment_date,amount_total,payment_method,reference_number,notes,created_at,recorded_by")
       .eq("order_id", id)
       .order("payment_date", { ascending: false }),
     supabase
@@ -110,11 +111,46 @@ export async function GET(
   const paymentStatus = getString(financialRow, "payment_status") ?? "unpaid";
   const paymentCount = getNumber(financialRow, "payment_count") ?? (payments ?? []).length;
   const remainingBalance = getNumber(financialRow, "remaining_balance") ?? 0;
+  const paymentIds = Array.from(
+    new Set(
+      ((payments ?? []) as Row[])
+        .map((payment) => getString(payment, "id"))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const paymentRecordedByValues = Array.from(
+    new Set(
+      ((payments ?? []) as Row[])
+        .map((payment) => getString(payment, "recorded_by"))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const [paymentAuditResult, paymentRecordedByNameByValue] = await Promise.all([
+    getLatestAuditByRecordIds(supabase, {
+      tableName: "payments",
+      recordIds: paymentIds,
+    }),
+    resolveUserDisplayNamesForValues(supabase, paymentRecordedByValues),
+  ]);
+  const paymentsWithRecordedBy = ((payments ?? []) as Row[]).map((payment) => {
+    const recordedByValue = getString(payment, "recorded_by");
+    const paymentId = getString(payment, "id");
+    const audit = paymentId ? paymentAuditResult.byRecordId[paymentId] : null;
+    const recordedByDisplay =
+      (recordedByValue ? paymentRecordedByNameByValue[recordedByValue] : null) ??
+      (audit?.action === "create" ? audit.actorName : null);
+
+    return {
+      ...payment,
+      recorded_by_display: recordedByDisplay,
+      recorded_by_created_at: audit?.action === "create" ? audit.createdAt : null,
+    };
+  });
 
   return NextResponse.json({
     order,
     orderItems: orderItems ?? [],
-    payments: payments ?? [],
+    payments: paymentsWithRecordedBy,
     customer,
     products: products ?? [],
     totalAmount,

@@ -3,7 +3,7 @@ import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import ProjectDetailsActions from "@/app/projects/[id]/ProjectDetailsActions";
-import { getLatestAuditByRecordIds } from "@/lib/audit";
+import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import type {
   AssignableUser,
   ExpenseListItem,
@@ -64,6 +64,7 @@ type DocumentRow = {
   storage_key: string | null;
   uploaded_at: string | null;
   created_at: string | null;
+  uploaded_by?: string | null;
 };
 
 type AttendanceSessionRow = WorkSessionRow;
@@ -408,6 +409,61 @@ export default async function ProjectPage({
     if (typeof row.source_id === "string") sessionDebtById.set(row.source_id, row);
   });
 
+  const { data: sessionLinks } =
+    attendanceSessionIds.length > 0
+      ? await supabase
+          .from("document_links")
+          .select("document_id,entity_type,entity_id,created_at")
+          .eq("entity_type", "session")
+          .in("entity_id", attendanceSessionIds)
+      : { data: [] as UnknownRow[] };
+
+  const sessionDocumentIds = Array.from(
+    new Set(
+      (sessionLinks ?? [])
+        .map((row) => (typeof row.document_id === "string" ? row.document_id : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { data: sessionDocuments } =
+    sessionDocumentIds.length > 0
+      ? await supabase
+          .from("documents")
+          .select("id,title,file_name,storage_key,uploaded_at,document_type")
+          .in("id", sessionDocumentIds)
+      : { data: [] as UnknownRow[] };
+
+  const sessionDocumentById = new Map<string, UnknownRow>();
+  (sessionDocuments ?? []).forEach((row) => {
+    if (typeof row.id === "string") sessionDocumentById.set(row.id, row);
+  });
+
+  const sessionAttachmentByEntityId = new Map<string, FinancialAttachment[]>();
+  for (const link of sessionLinks ?? []) {
+    const entityId = typeof link.entity_id === "string" ? link.entity_id : null;
+    const documentId = typeof link.document_id === "string" ? link.document_id : null;
+    if (!entityId || !documentId) continue;
+    const doc = sessionDocumentById.get(documentId);
+    const storageKey = getFirstString(doc, ["storage_key"]);
+    const fileName = getFirstString(doc, ["file_name"]);
+    const documentType = getFirstString(doc, ["document_type"]);
+    const uploadedAt = getFirstString(doc, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]);
+    const { data: signed } = storageKey
+      ? await supabase.storage.from(DOCUMENTS_BUCKET).createSignedUrl(storageKey, 60 * 60)
+      : { data: null };
+    const existing = sessionAttachmentByEntityId.get(entityId) ?? [];
+    existing.push({
+      document_id: documentId,
+      file_name: fileName,
+      storage_key: storageKey,
+      uploaded_at: uploadedAt,
+      document_type: documentType,
+      url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
+    });
+    sessionAttachmentByEntityId.set(entityId, existing);
+  }
+
   const combinedExpenseList = [
     ...expenseList,
     ...((attendanceSessions ?? []) as AttendanceSessionRow[]).map(
@@ -428,6 +484,7 @@ export default async function ProjectPage({
             payment_status: typeof debtItem?.payment_status === "string" ? debtItem.payment_status : null,
             last_payment_date:
               typeof debtItem?.last_payment_date === "string" ? debtItem.last_payment_date : null,
+            attachments: sessionAttachmentByEntityId.get(session.id) ?? [],
           },
         };
       }
@@ -588,7 +645,7 @@ export default async function ProjectPage({
     projectDocumentIds.length > 0
       ? await supabase
           .from("documents")
-          .select("id,document_type,title,file_name,storage_key,uploaded_at")
+          .select("id,document_type,title,file_name,storage_key,uploaded_at,uploaded_by")
           .in("id", projectDocumentIds)
       : { data: [] as DocumentRow[], error: null };
 
@@ -599,6 +656,18 @@ export default async function ProjectPage({
   (projectDocumentsRaw ?? []).forEach((row) => {
     if (typeof row.id === "string") projectDocumentsById.set(row.id, row);
   });
+
+  const projectDocumentUploadedByValues = Array.from(
+    new Set(
+      ((projectDocumentsRaw ?? []) as DocumentRow[])
+        .map((row) => (typeof row.uploaded_by === "string" ? row.uploaded_by : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const projectDocumentUploaderNames = await resolveUserDisplayNamesForValues(
+    supabase,
+    projectDocumentUploadedByValues
+  );
 
   const projectDocumentsUnique = await Promise.all(
     (projectDocumentLinks ?? [])
@@ -613,6 +682,7 @@ export default async function ProjectPage({
         const fileName = getFirstString(row, ["file_name"]);
         const title = getFirstString(row, ["title"]);
         const documentType = getFirstString(row, ["document_type"]);
+        const uploadedBy = getFirstString(row, ["uploaded_by"]);
         const entityType = getFirstString(link, ["entity_type"]);
         const entityId = getFirstString(link, ["entity_id"]);
         const uploadedAt =
@@ -634,6 +704,7 @@ export default async function ProjectPage({
           entity_type: entityType,
           entity_id: entityId,
           uploaded_at: uploadedAt,
+          uploaded_by_name: uploadedBy ? projectDocumentUploaderNames[uploadedBy] ?? null : null,
           url,
         };
       })
@@ -651,6 +722,7 @@ export default async function ProjectPage({
       entity_type: string | null;
       entity_id: string | null;
       uploaded_at: string | null;
+      uploaded_by_name: string | null;
       url: string | null;
     } => Boolean(document)
   );
@@ -772,6 +844,8 @@ export default async function ProjectPage({
                     project={overview}
                     customerOptions={customerOptions}
                     managerOptions={managerOptions}
+                    projectDocuments={normalizedProjectDocuments}
+                    projectDocumentsError={projectDocumentsErrorMessage}
                   />
                 ) : null}
               </div>

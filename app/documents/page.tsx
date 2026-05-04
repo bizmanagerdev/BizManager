@@ -1,5 +1,6 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DocumentsArchiveClient, {
   type DocumentArchiveFilters,
   type DocumentArchiveItem,
@@ -26,6 +27,7 @@ type DocumentRow = {
   storage_key: string | null;
   uploaded_at: string | null;
   notes: string | null;
+  uploaded_by?: string | null;
 };
 
 type DocumentLinkRow = {
@@ -144,7 +146,7 @@ export default async function DocumentsPage({
 
   const { data: documentsRaw, error: documentsError, count } = await supabase
     .from("documents")
-    .select("id,document_type,title,file_name,storage_key,uploaded_at,notes", {
+    .select("id,document_type,title,file_name,storage_key,uploaded_at,notes,uploaded_by", {
       count: "estimated",
     })
     .order("uploaded_at", { ascending: false, nullsFirst: false })
@@ -152,6 +154,14 @@ export default async function DocumentsPage({
 
   const documents = (documentsRaw ?? []) as DocumentRow[];
   const documentIds = documents.map((doc) => doc.id);
+  const documentUploadedByValues = Array.from(
+    new Set(
+      documents
+        .map((doc) => (typeof doc.uploaded_by === "string" ? doc.uploaded_by : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const documentUploaderNames = await resolveUserDisplayNamesForValues(supabase, documentUploadedByValues);
 
   const { data: linksRaw, error: linksError } =
     documentIds.length > 0
@@ -394,6 +404,8 @@ export default async function DocumentsPage({
         storage_key: storageKey,
         uploaded_at: normalizeString(doc.uploaded_at) || normalizeString(latestLinkCreatedAt) || null,
         created_at: normalizeString(latestLinkCreatedAt) || null,
+        uploaded_by_name:
+          typeof doc.uploaded_by === "string" ? documentUploaderNames[doc.uploaded_by] ?? null : null,
         url: typeof signedUrlData?.signedUrl === "string" ? signedUrlData.signedUrl : null,
         entity_types: Array.from(
           new Set(linkedEntityList.map((item) => item.type).filter(Boolean))

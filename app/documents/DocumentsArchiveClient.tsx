@@ -73,6 +73,7 @@ export type DocumentArchiveItem = {
   storage_key: string | null;
   uploaded_at: string | null;
   created_at: string | null;
+  uploaded_by_name: string | null;
   url: string | null;
   entity_types: string[];
   linked_entities: ArchiveLinkedEntity[];
@@ -238,17 +239,6 @@ export default function DocumentsArchiveClient({
       .sort((a, b) => a.label.localeCompare(b.label, "he"));
   }, [customerId, customerName, documents]);
 
-  const projectFilterOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const doc of documents) {
-      for (const project of doc.projects) {
-        if (!map.has(project.id)) map.set(project.id, project.label);
-      }
-    }
-    return Array.from(map.entries())
-      .map(([id, label]) => ({ id, label }))
-      .sort((a, b) => a.label.localeCompare(b.label, "he"));
-  }, [documents]);
 
   const documentTypeOptions = useMemo(() => {
     return Array.from(
@@ -661,6 +651,7 @@ export default function DocumentsArchiveClient({
                             </div>
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                               <span>הועלה: {formatDate(doc.uploaded_at)}</span>
+                              {doc.uploaded_by_name ? <span>הוזן ע״י: {doc.uploaded_by_name}</span> : null}
                               {doc.file_name ? <span>קובץ: {doc.file_name}</span> : null}
                               {doc.storage_key ? <span>נתיב: {doc.storage_key}</span> : null}
                             </div>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { logAuditEvent } from "@/lib/audit";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import {
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "שעת הסיום חייבת להיות אחרי שעת ההתחלה." }, { status: 400 });
     }
 
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
 
     const { data: selectedUser, error: selectedUserError } = await supabase
       .from("users")
@@ -197,10 +198,31 @@ export async function POST(req: Request) {
       if (refreshed.error) {
         return NextResponse.json({ error: refreshed.error.message }, { status: 400 });
       }
+      if (refreshed.data?.id) {
+        await logAuditEvent({
+          supabase,
+          tableName: WORK_SESSIONS_TABLE,
+          recordId: refreshed.data.id,
+          action: "create",
+          changedBy: profile.id,
+          userRole: profile.role,
+        });
+      }
       return NextResponse.json({ session: refreshed.data });
     }
 
     await regenerateEditablePayslipsForUsers(supabase, [selectedUserId]);
+
+    if (data?.id) {
+      await logAuditEvent({
+        supabase,
+        tableName: WORK_SESSIONS_TABLE,
+        recordId: data.id,
+        action: "create",
+        changedBy: profile.id,
+        userRole: profile.role,
+      });
+    }
 
     return NextResponse.json({ session: data });
   } catch (error: unknown) {

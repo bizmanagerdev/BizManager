@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { FileText, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import {
@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -67,7 +68,7 @@ type ContactDraft = {
 };
 
 const projectsDesktopGridClass =
-  "2xl:grid-cols-[minmax(180px,1.3fr)_minmax(88px,0.7fr)_minmax(96px,0.8fr)_minmax(110px,0.9fr)_minmax(140px,1fr)_minmax(120px,0.95fr)_minmax(90px,0.7fr)_minmax(150px,1fr)]";
+  "2xl:grid-cols-[minmax(180px,1.3fr)_minmax(88px,0.7fr)_minmax(96px,0.8fr)_minmax(110px,0.9fr)_minmax(140px,1fr)_minmax(120px,0.95fr)_minmax(90px,0.7fr)_minmax(110px,0.75fr)_minmax(150px,1fr)]";
 const quotesDesktopGridClass =
   "2xl:grid-cols-[minmax(180px,1.2fr)_minmax(88px,0.7fr)_minmax(96px,0.8fr)_minmax(110px,0.9fr)_minmax(140px,1fr)_minmax(120px,0.95fr)_minmax(90px,0.7fr)_minmax(140px,0.95fr)_minmax(110px,0.8fr)]";
 
@@ -130,6 +131,22 @@ function textToItemsToMove(value: string) {
     .map((item) => item.trim())
     .filter(Boolean);
   return items.length > 0 ? items : null;
+}
+
+async function uploadProjectDocument(projectId: string, file: File) {
+  const form = new FormData();
+  form.set("project_id", projectId);
+  form.set("file", file);
+  form.set("category", file.type.startsWith("image/") ? "project_photo" : "project_document");
+
+  const res = await fetch("/api/projects/documents/upload", {
+    method: "POST",
+    body: form,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof json?.error === "string" ? json.error : "העלאת הקובץ נכשלה.");
+  }
 }
 
 function formatIls(amount: number) {
@@ -350,6 +367,7 @@ export default function ProjectsClient({
   );
   const [createNotes, setCreateNotes] = useState("");
   const [createItemsToMove, setCreateItemsToMove] = useState("");
+  const [createAttachmentFiles, setCreateAttachmentFiles] = useState<File[]>([]);
 
   const [customerOptionsState, setCustomerOptionsState] = useState<Option[]>(customerOptions);
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
@@ -791,7 +809,14 @@ export default function ProjectsClient({
       }
 
       if (json.project) {
-        setProjects((prev) => [json.project as ProjectRow, ...prev]);
+        const createdProject = json.project as ProjectRow;
+        const createdProjectId = getString(createdProject, "id");
+        if (createdProjectId) {
+          for (const file of createAttachmentFiles) {
+            await uploadProjectDocument(createdProjectId, file);
+          }
+        }
+        setProjects((prev) => [createdProject, ...prev]);
       }
 
       setCreateOpen(false);
@@ -811,6 +836,7 @@ export default function ProjectsClient({
       );
       setCreateNotes("");
       setCreateItemsToMove("");
+      setCreateAttachmentFiles([]);
       router.refresh();
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "שגיאה לא ידועה";
@@ -1099,7 +1125,10 @@ export default function ProjectsClient({
         </div>
       </div>
 
-      <AdaptiveStack variant="toolbar" className="hidden min-w-0 md:flex md:flex-col xl:flex-row xl:items-end xl:justify-between">
+      <AdaptiveStack
+        variant="toolbar"
+        className="hidden min-w-0 md:flex md:flex-col md:gap-4 xl:flex-row xl:items-end xl:justify-between xl:gap-6"
+      >
         <AdaptiveGrid variant="projectsToolbarControls" className="min-w-0 lg:grid-cols-4">
           <div className="min-w-0 lg:col-span-2">
             <label className="text-sm text-muted-foreground">חיפוש</label>
@@ -1182,6 +1211,7 @@ export default function ProjectsClient({
         <div>לקוח</div>
         <div>{activeTab === "quotes" ? "מחיר" : "רווח"}</div>
         <div>משימות פתוחות</div>
+        {activeTab === "quotes" ? null : <div>דף עבודה</div>}
         {activeTab === "quotes" ? <div>אישור הצעה</div> : null}
         <div>פעולות</div>
       </div>
@@ -1281,6 +1311,43 @@ export default function ProjectsClient({
                   >
                     {openTasks === null ? "-" : openTasks}
                   </Link>
+
+                  {currentStatus === "quote" ? null : (
+                    <div className="flex shrink-0 items-center md:justify-start">
+                      <div className="flex items-center gap-2 overflow-visible">
+                        <Button
+                          asChild
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-10 w-10 rounded-xl"
+                          aria-label="שליחת דף עבודה ב-WhatsApp"
+                          title="שליחת דף עבודה ב-WhatsApp"
+                        >
+                          <Link
+                            href={`/projects/${id}/export?mode=worker`}
+                            prefetch
+                            onClick={() => emitNavigationStart()}
+                          >
+                            <MessageCircle className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-10 w-10 rounded-xl"
+                          aria-label="דף עבודה / שיתוף / הדפסה / הורדה"
+                          title="דף עבודה / שיתוף / הדפסה / הורדה"
+                        >
+                          <Link href={`/projects/${id}/export?mode=worker`} prefetch onClick={() => emitNavigationStart()}>
+                            <FileText className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   {currentStatus === "quote" ? (
                     <div className="flex shrink-0 items-center md:justify-start">
@@ -1409,7 +1476,15 @@ export default function ProjectsClient({
         </AdaptiveDialog>
       </Dialog>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (!open && !createSubmitting) {
+            setCreateAttachmentFiles([]);
+          }
+          setCreateOpen(open);
+        }}
+      >
         <AdaptiveDialog size="form2xl">
           <DialogHeader>
             <DialogTitle>{createStatus === "quote" ? "הצעת מחיר חדשה" : "הוספת פרויקט חדש"}</DialogTitle>
@@ -1612,6 +1687,36 @@ export default function ProjectsClient({
                 </p>
               </div>
             ) : null}
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">תמונות / מסמכים</label>
+              <div className="flex items-center gap-2">
+                <FileUploadActions
+                  files={createAttachmentFiles}
+                  multiple
+                  onFilesSelected={setCreateAttachmentFiles}
+                  chooseLabel={createAttachmentFiles.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                  chooseVariant="outline"
+                  size="sm"
+                />
+                {createAttachmentFiles.length > 0 ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setCreateAttachmentFiles([])}>
+                    נקה בחירה
+                  </Button>
+                ) : null}
+              </div>
+              {createAttachmentFiles.length > 0 ? (
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {createAttachmentFiles.map((file) => (
+                    <div key={`${file.name}-${file.size}`}>{file.name}</div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground">
+                  אפשר להעלות קבצים או לצלם תמונה ישירות מהמכשיר.
+                </div>
+              )}
+            </div>
 
             {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
 

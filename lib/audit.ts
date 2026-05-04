@@ -95,11 +95,13 @@ function buildSummary(tableName: string, action: string) {
 }
 
 function actorDisplayName(actor: AuditActorRow) {
-  return typeof actor.full_name === "string" && actor.full_name.trim()
-    ? actor.full_name.trim()
-    : typeof actor.email === "string" && actor.email.trim()
-      ? actor.email.trim()
-      : "משתמש";
+  if (typeof actor.full_name === "string" && actor.full_name.trim()) {
+    return actor.full_name.trim();
+  }
+  if (typeof actor.email === "string" && actor.email.trim()) {
+    return actor.email.trim();
+  }
+  return "משתמש";
 }
 
 export async function resolveUserDisplayNamesForValues(
@@ -126,36 +128,20 @@ export async function resolveUserDisplayNamesForValues(
     ...((byAuthUserIdResult.data ?? []) as AuditActorRow[]),
   ]) {
     const displayName = actorDisplayName(row);
-    if (typeof row.id === "string" && row.id) map[row.id] = displayName;
-    if (typeof row.auth_user_id === "string" && row.auth_user_id) map[row.auth_user_id] = displayName;
+    if (typeof row.id === "string" && row.id) {
+      map[row.id] = displayName;
+    }
+    if (typeof row.auth_user_id === "string" && row.auth_user_id) {
+      map[row.auth_user_id] = displayName;
+    }
   }
 
   return map;
 }
 
 async function getActorNames(supabase: SupabaseClient, actorIds: string[]) {
-  if (actorIds.length === 0) return new Map<string, string>();
-
-  const { data, error } = await supabase
-    .from("users")
-    .select("id,full_name,email")
-    .in("id", actorIds);
-
-  if (error) {
-    return new Map<string, string>();
-  }
-
-  const map = new Map<string, string>();
-  for (const actor of (data ?? []) as AuditActorRow[]) {
-    const name =
-      typeof actor.full_name === "string" && actor.full_name.trim()
-        ? actor.full_name.trim()
-        : typeof actor.email === "string" && actor.email.trim()
-          ? actor.email.trim()
-          : "משתמש";
-    map.set(actor.id, name);
-  }
-  return map;
+  const resolved = await resolveUserDisplayNamesForValues(supabase, actorIds);
+  return new Map(Object.entries(resolved));
 }
 
 function normalizeAuditRows(rows: AuditLogRow[], actorNames: Map<string, string>) {
@@ -237,23 +223,30 @@ export async function getLatestAuditByRecordIds(
   {
     tableName,
     recordIds,
+    actions,
   }: {
     tableName: string;
     recordIds: string[];
+    actions?: string[];
   }
 ) {
   if (recordIds.length === 0) {
     return { byRecordId: {} as Record<string, AuditRecordInfo>, error: null as string | null };
   }
 
-  const rowLimit = Math.min(Math.max(recordIds.length * 6, 50), 500);
-  const { data, error } = await supabase
+  const rowLimit = Math.min(Math.max(recordIds.length * 3, 50), 5000);
+  let query = supabase
     .from("audit_logs")
     .select("id,table_name,record_id,action,changed_by,user_role,created_at")
     .eq("table_name", tableName)
     .in("record_id", recordIds)
-    .order("created_at", { ascending: false })
-    .range(0, rowLimit - 1);
+    .order("created_at", { ascending: false });
+
+  if (actions && actions.length > 0) {
+    query = query.in("action", actions);
+  }
+
+  const { data, error } = await query.range(0, rowLimit - 1);
 
   if (error) {
     return { byRecordId: {} as Record<string, AuditRecordInfo>, error: error.message };

@@ -279,7 +279,7 @@ function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "
   return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
 }
 
-async function uploadFinancialAttachment(entityType: "expense" | "payment", entityId: string, file: File) {
+async function uploadFinancialAttachment(entityType: "expense" | "payment" | "session", entityId: string, file: File) {
   const form = new FormData();
   form.set("entity_type", entityType);
   form.set("entity_id", entityId);
@@ -362,6 +362,7 @@ export default function ProjectTabsClient({
     entity_type: string | null;
     entity_id: string | null;
     uploaded_at: string | null;
+    uploaded_by_name: string | null;
     url: string | null;
   }>;
   projectDocumentsError: string | null;
@@ -1160,7 +1161,6 @@ export default function ProjectTabsClient({
   function renderExpenseRow(item: ExpenseListItem, idx: number, options?: { showBillableBadge?: boolean; billedList?: boolean }) {
     const expenseId = getString(item.project_expense, "expense_id");
     const session = item.source_type === "session" ? item.session : null;
-    const isSession = Boolean(session);
     const amount = session ? sessionLaborCost(session) : toNumber(item.expense?.amount);
     const billedAmount = session
       ? sessionBillToCustomerAmount(session)
@@ -1181,8 +1181,11 @@ export default function ProjectTabsClient({
         getString(item.expense, "vendor_name") ??
         getString(item.expense, "vendor") ??
         (expenseId ? `הוצאה ${expenseId.slice(0, 8)}` : "הוצאה");
-    const attachments =
-      !isSession && Array.isArray(item.expense?.attachments)
+    const attachments = session
+      ? Array.isArray(session.attachments)
+        ? session.attachments
+        : []
+      : Array.isArray(item.expense?.attachments)
         ? (item.expense.attachments as FinancialAttachment[])
         : [];
     const insertedByLabel = expenseRecordedByLabel(item, {
@@ -1854,6 +1857,7 @@ export default function ProjectTabsClient({
                           <span>{when}</span>
                           <span>מקושר ל: {where}</span>
                           {d.document_type ? <span>קטגוריה: {d.document_type}</span> : null}
+                          {d.uploaded_by_name ? <span>הוזן ע״י: {d.uploaded_by_name}</span> : null}
                         </div>
                       </div>
 
@@ -3419,7 +3423,15 @@ function AddExpenseDialog({
     setNotes(isEditingSession ? editingSession?.notes ?? "" : getString(editingExpense, "notes") ?? "");
     setBilledToCustomer(Boolean(editingItem?.project_expense?.["billed_to_customer"]));
     setAttachmentFiles([]);
-    setExistingAttachments(Array.isArray(editingExpense?.attachments) ? (editingExpense.attachments as FinancialAttachment[]) : []);
+    setExistingAttachments(
+      isEditingSession
+        ? Array.isArray(editingSession?.attachments)
+          ? editingSession.attachments
+          : []
+        : Array.isArray(editingExpense?.attachments)
+          ? (editingExpense.attachments as FinancialAttachment[])
+          : []
+    );
     const existingPaidAmount = isEditingSession ? toNumber(editingSession?.paid_amount) ?? 0 : 0;
     const nextWorkerPaymentMode =
       existingPaidAmount > 0
@@ -3659,6 +3671,12 @@ function AddExpenseDialog({
           }
         }
 
+        const uploadedAttachments: FinancialAttachment[] = [];
+        for (const file of attachmentFiles) {
+          const attachment = await uploadFinancialAttachment("session", savedSession.id, file);
+          if (attachment?.document_id) uploadedAttachments.push(attachment);
+        }
+
         toast.success(isEditingSession ? "המשמרת עודכנה" : "המשמרת נוספה");
         setAmount("");
         setCategory("");
@@ -3684,7 +3702,10 @@ function AddExpenseDialog({
           source_type: "session",
           project_expense: null,
           expense: null,
-          session: savedSession,
+          session: {
+            ...savedSession,
+            attachments: [...existingAttachments, ...uploadedAttachments],
+          },
         });
       } catch (e: unknown) {
         toast.error(isEditingSession ? "שגיאה בעדכון משמרת" : "שגיאה בהוספת משמרת", {
@@ -4263,64 +4284,62 @@ function AddExpenseDialog({
             />
           </div>
 
-          {!isSessionMode ? (
-            <div className="space-y-2">
-              <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
-              <div className="flex items-center gap-2">
-                <FileUploadActions
-                  files={attachmentFiles}
-                  multiple
-                  onFilesSelected={setAttachmentFiles}
-                  chooseLabel={attachmentFiles.length > 0 || existingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
-                  chooseVariant="outline"
-                  size="sm"
-                />
-                {attachmentFiles.length > 0 ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
-                    נקה בחירה
-                  </Button>
-                ) : null}
-              </div>
+          <div className="space-y-2">
+            <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
+            <div className="flex items-center gap-2">
+              <FileUploadActions
+                files={attachmentFiles}
+                multiple
+                onFilesSelected={setAttachmentFiles}
+                chooseLabel={attachmentFiles.length > 0 || existingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                chooseVariant="outline"
+                size="sm"
+              />
               {attachmentFiles.length > 0 ? (
-                <div className="space-y-1 text-xs text-muted-foreground">
-                  {attachmentFiles.map((file) => (
-                    <div key={`${file.name}-${file.size}`}>{file.name}</div>
-                  ))}
-                </div>
-              ) : null}
-              {existingAttachments.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="text-xs text-muted-foreground">קבצים קיימים</div>
-                  <div className="flex flex-wrap gap-2">
-                    {existingAttachments.map((attachment) => (
-                      <a
-                        key={attachment.document_id}
-                        href={attachment.url ?? "#"}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
-                      >
-                        {attachment.file_name ?? "קובץ"}
-                      </a>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {existingAttachments
-                      .filter((attachment) => attachment.url && isImageAttachment(attachment))
-                      .map((attachment) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          key={`${attachment.document_id}-preview`}
-                          src={attachment.url ?? ""}
-                          alt={attachment.file_name ?? "קובץ"}
-                          className="h-20 w-20 rounded-lg border object-cover"
-                        />
-                      ))}
-                  </div>
-                </div>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setAttachmentFiles([])}>
+                  נקה בחירה
+                </Button>
               ) : null}
             </div>
-          ) : null}
+            {attachmentFiles.length > 0 ? (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                {attachmentFiles.map((file) => (
+                  <div key={`${file.name}-${file.size}`}>{file.name}</div>
+                ))}
+              </div>
+            ) : null}
+            {existingAttachments.length > 0 ? (
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">קבצים קיימים</div>
+                <div className="flex flex-wrap gap-2">
+                  {existingAttachments.map((attachment) => (
+                    <a
+                      key={attachment.document_id}
+                      href={attachment.url ?? "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
+                    >
+                      {attachment.file_name ?? "קובץ"}
+                    </a>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {existingAttachments
+                    .filter((attachment) => attachment.url && isImageAttachment(attachment))
+                    .map((attachment) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={`${attachment.document_id}-preview`}
+                        src={attachment.url ?? ""}
+                        alt={attachment.file_name ?? "קובץ"}
+                        className="h-20 w-20 rounded-lg border object-cover"
+                      />
+                    ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <DialogFooter className="mt-6">
             {!canSubmit && !submitting ? (

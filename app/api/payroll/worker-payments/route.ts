@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { logAuditEvent } from "@/lib/audit";
 
 type WorkerPaymentAllocationInput = {
   source_type?: "session" | "payslip";
@@ -240,6 +241,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     if (deleteExistingAllocations.error) {
       return NextResponse.json({ error: deleteExistingAllocations.error.message }, { status: 400 });
     }
+
   }
 
   const allocationRows = normalizedAllocations.map((allocation) => ({
@@ -271,6 +273,15 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
   if (paymentResult.error) {
     return NextResponse.json({ error: paymentResult.error.message }, { status: 400 });
   }
+
+  await logAuditEvent({
+    supabase,
+    tableName: "worker_payments",
+    recordId: existingPaymentId,
+    action: mode === "create" ? "create" : "update",
+    changedBy: profile.id,
+    userRole: profile.role,
+  });
 
   return NextResponse.json({
     payment: paymentResult.data,
@@ -304,7 +315,7 @@ export async function DELETE(req: Request) {
     const body = (await req.json().catch(() => ({}))) as Pick<WorkerPaymentPayload, "payment_id" | "user_id">;
     const paymentId = typeof body.payment_id === "string" ? body.payment_id.trim() : "";
     const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
 
     if (!paymentId) {
       return NextResponse.json({ error: "payment_id is required." }, { status: 400 });
@@ -330,6 +341,15 @@ export async function DELETE(req: Request) {
     if (deleteResult.error) {
       return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
     }
+
+    await logAuditEvent({
+      supabase,
+      tableName: "worker_payments",
+      recordId: paymentId,
+      action: "delete",
+      changedBy: profile.id,
+      userRole: profile.role,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {

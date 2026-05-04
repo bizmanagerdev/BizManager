@@ -399,6 +399,8 @@ export default function SalaryCenterClient({
     });
     return next;
   }, [protectedData]);
+  const workerPaymentRecordedByNameById = protectedData?.workerPaymentRecordedByNameById ?? {};
+  const sessionRecordedByNameById = protectedData?.sessionRecordedByNameById ?? {};
   const workerPaymentsById = useMemo(
     () => new Map((protectedData?.workerPayments ?? []).map((payment) => [payment.id, payment])),
     [protectedData]
@@ -2297,6 +2299,11 @@ export default function SalaryCenterClient({
                                 </div>
                               </div>
                               {payment.notes ? <div className="mt-1 text-xs text-muted-foreground">{payment.notes}</div> : null}
+                              {workerPaymentRecordedByNameById[payment.id] ? (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  {`הוזן ע״י ${workerPaymentRecordedByNameById[payment.id]}`}
+                                </div>
+                              ) : null}
                             </div>
                           ))
                         )}
@@ -2344,6 +2351,11 @@ export default function SalaryCenterClient({
                           </div>
                           {session.notes ? (
                             <div className="mt-1 text-right text-muted-foreground">{`הערות: ${session.notes}`}</div>
+                          ) : null}
+                          {sessionRecordedByNameById[session.id] ? (
+                            <div className="mt-1 text-right text-xs text-muted-foreground">
+                              {`הוזן ע״י ${sessionRecordedByNameById[session.id]}`}
+                            </div>
                           ) : null}
                           {debtItem ? (
                             <div className="mt-1 flex flex-wrap justify-end gap-3 text-xs text-muted-foreground">

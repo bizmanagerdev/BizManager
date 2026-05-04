@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { logAuditEvent } from "@/lib/audit";
 import { collectLockedSessionIds, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import type { PayrollPeriodRow } from "@/lib/payroll";
 import { WORK_SESSIONS_TABLE } from "@/lib/payroll";
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing session_id." }, { status: 400 });
     }
 
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
     const [sessionResult, periodsResult] = await Promise.all([
       supabase.from(WORK_SESSIONS_TABLE).select("id,user_id,clock_in").eq("id", sessionId).maybeSingle(),
       supabase.from("payroll_periods").select("id,period_month,start_date,end_date,status").range(0, 119),
@@ -36,6 +37,14 @@ export async function POST(req: Request) {
     }
 
     await regenerateEditablePayslipsForUsers(supabase, [sessionResult.data.user_id ?? ""]);
+    await logAuditEvent({
+      supabase,
+      tableName: WORK_SESSIONS_TABLE,
+      recordId: sessionId,
+      action: "delete",
+      changedBy: profile.id,
+      userRole: profile.role,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {

@@ -1,6 +1,7 @@
 ﻿import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/sales/orders/[id]/DeleteOrderButton";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
@@ -8,7 +9,7 @@ import {
   paymentMethodLabel,
   paymentStatusClasses,
 } from "@/lib/orders/paymentStatus";
-import { formatShortDate } from "@/lib/date";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 
 type Row = Record<string, unknown>;
 
@@ -37,6 +38,35 @@ function formatCurrency(value: number) {
 
 function formatDate(value: string | null) {
   return formatShortDate(value);
+}
+
+function formatDateTime(value: string | null) {
+  return formatShortDateTime(value, "-");
+}
+
+function paymentInsertedByLabel(
+  payment: Row,
+  {
+    paymentRecordedByNameByValue,
+    paymentAuditById,
+  }: {
+    paymentRecordedByNameByValue: Record<string, string>;
+    paymentAuditById: Record<string, { action: string; actorName: string; createdAt: string | null }>;
+  }
+) {
+  const recordedByValue = getString(payment, "recorded_by");
+  if (recordedByValue && paymentRecordedByNameByValue[recordedByValue]) {
+    return `הוזן ע״י ${paymentRecordedByNameByValue[recordedByValue]}`;
+  }
+
+  const paymentId = getString(payment, "id");
+  if (!paymentId) return null;
+  const audit = paymentAuditById[paymentId];
+  if (audit?.action === "create") {
+    return `הוזן ע״י ${audit.actorName}${audit.createdAt ? ` | ${formatDateTime(audit.createdAt)}` : ""}`;
+  }
+
+  return null;
 }
 
 function formatOrderStatus(status: string | null) {
@@ -104,7 +134,7 @@ export default async function SalesOrderPage({
         .eq("order_id", id),
       supabase
         .from("payments")
-        .select("id,payment_date,amount_total,payment_method,reference_number,notes,created_at")
+        .select("id,payment_date,amount_total,payment_method,reference_number,notes,created_at,recorded_by")
         .eq("order_id", id)
         .order("payment_date", { ascending: false }),
       supabase
@@ -161,6 +191,27 @@ export default async function SalesOrderPage({
   const remainingBalance = getNumber((financials as Row) ?? {}, "remaining_balance") ?? 0;
   const paymentCount = getNumber((financials as Row) ?? {}, "payment_count") ?? (payments ?? []).length;
   const paymentStatus = getString((financials as Row) ?? {}, "payment_status") ?? "unpaid";
+  const paymentIds = Array.from(
+    new Set(
+      ((payments ?? []) as Row[])
+        .map((payment) => getString(payment, "id"))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const paymentRecordedByValues = Array.from(
+    new Set(
+      ((payments ?? []) as Row[])
+        .map((payment) => getString(payment, "recorded_by"))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const [paymentAuditResult, paymentRecordedByNameByValue] = await Promise.all([
+    getLatestAuditByRecordIds(supabase, {
+      tableName: "payments",
+      recordIds: paymentIds,
+    }),
+    resolveUserDisplayNamesForValues(supabase, paymentRecordedByValues),
+  ]);
 
   const deliveryDocumentIds = Array.from(
     new Set(
@@ -310,6 +361,10 @@ export default async function SalesOrderPage({
                 (() => {
                   const amount = getNumber(payment as Row, "amount_total") ?? 0;
                   const isRefund = amount < 0;
+                  const insertedByLabel = paymentInsertedByLabel(payment as Row, {
+                    paymentRecordedByNameByValue,
+                    paymentAuditById: paymentAuditResult.byRecordId,
+                  });
 
                   return (
                     <div
@@ -337,6 +392,9 @@ export default async function SalesOrderPage({
                         <div className="mt-1 text-muted-foreground">
                           הערות: {getString(payment as Row, "notes")}
                         </div>
+                      ) : null}
+                      {insertedByLabel ? (
+                        <div className="mt-1 text-muted-foreground">{insertedByLabel}</div>
                       ) : null}
                     </div>
                   );

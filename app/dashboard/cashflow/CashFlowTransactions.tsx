@@ -61,6 +61,9 @@ export default function CashFlowTransactions({ basePath, result, searchParams }:
                   <div className="mt-3 space-y-2 text-sm">
                     <div>{row.description ?? "ללא תיאור"}</div>
                     <div className="text-muted-foreground">{row.reference ?? "ללא אסמכתא"}</div>
+                    {row.recordedByName ? (
+                      <div className="text-muted-foreground">הוזן ע״י {row.recordedByName}</div>
+                    ) : null}
                     <div className="font-semibold">{formatCurrency(row.amount)}</div>
                   </div>
                 </article>
@@ -73,7 +76,7 @@ export default function CashFlowTransactions({ basePath, result, searchParams }:
                   <tr className="border-b">
                     <th className="px-3 py-2 font-medium">תאריך</th>
                     <th className="px-3 py-2 font-medium">סוג</th>
-                    <th className="px-3 py-2 font-medium">תחום / פרויקט</th>
+                    <th className="px-3 py-2 font-medium">תחום / מקור</th>
                     <th className="px-3 py-2 font-medium">תיאור</th>
                     <th className="px-3 py-2 font-medium">סכום</th>
                   </tr>
@@ -93,9 +96,10 @@ export default function CashFlowTransactions({ basePath, result, searchParams }:
                       </td>
                       <td className="px-3 py-3">
                         <div>{row.description ?? "ללא תיאור"}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {row.reference ?? "ללא אסמכתא"}
-                        </div>
+                        <div className="text-xs text-muted-foreground">{row.reference ?? "ללא אסמכתא"}</div>
+                        {row.recordedByName ? (
+                          <div className="text-xs text-muted-foreground">הוזן ע״י {row.recordedByName}</div>
+                        ) : null}
                       </td>
                       <td className="px-3 py-3 font-medium">{formatCurrency(row.amount)}</td>
                     </tr>

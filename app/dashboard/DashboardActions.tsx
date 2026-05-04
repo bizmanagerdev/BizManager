@@ -14,15 +14,21 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import NewOrderClient from "@/app/sales/orders/new/NewOrderClient";
+import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import type { UserRole } from "@/lib/auth/requireProfile";
-import { EXPENSE_BUSINESS_DOMAINS, mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
+import {
+  EXPENSE_BUSINESS_DOMAINS,
+  mapProjectTypeToExpenseDomain,
+  type ExpenseBusinessDomain,
+} from "@/lib/expenses";
 import {
   calculateSessionLaborCost,
   getActiveSalaryAgreementForDate,
   type SalaryAgreementRow,
 } from "@/lib/payroll";
+import type { FinancialAttachment } from "@/lib/payments";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -108,6 +114,32 @@ function formatIls(value: number | null) {
   }).format(value);
 }
 
+function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
+  const name = attachment.file_name?.toLowerCase() ?? "";
+  return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
+}
+
+async function uploadFinancialAttachment(
+  entityType: "expense" | "payment" | "session",
+  entityId: string,
+  file: File
+) {
+  const form = new FormData();
+  form.set("entity_type", entityType);
+  form.set("entity_id", entityId);
+  form.set("file", file);
+
+  const res = await fetch("/api/financial-attachments/upload", {
+    method: "POST",
+    body: form,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof json?.error === "string" ? json.error : "Upload failed");
+  }
+  return (json?.attachment ?? null) as FinancialAttachment | null;
+}
+
 const fieldClass =
   "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
@@ -119,6 +151,7 @@ const DASHBOARD_EXPENSE_CATEGORY_OPTIONS = [
   "\u05d0\u05d7\u05e8",
 ] as const;
 const OTHER_EXPENSE_CATEGORY = "\u05d0\u05d7\u05e8";
+const EMPLOYEE_WAGE_CATEGORY = "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3";
 const HEBREW = {
   saveErrorUnknown: "\u05e9\u05d2\u05d9\u05d0\u05d4 \u05dc\u05d0 \u05d9\u05d3\u05d5\u05e2\u05d4",
   cancel: "\u05d1\u05d9\u05d8\u05d5\u05dc",
@@ -179,9 +212,9 @@ const HEBREW = {
   financialOpen:
     "\u05de\u05e2\u05d1\u05e8 \u05dc\u05de\u05e1\u05da \u05d4\u05db\u05e1\u05e4\u05d9\u05dd \u05d4\u05de\u05dc\u05d0",
   expenseNew: "\u05d4\u05d5\u05e6\u05d0\u05d4 \u05d7\u05d3\u05e9\u05d4",
-  expenseQuickRegister: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
+  expenseQuickRegister: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05dc\u05e4\u05d9 \u05ea\u05d7\u05d5\u05dd",
   expenseDialogDescription:
-    "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05d7\u05d3\u05e9\u05d4 \u05d5\u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8.",
+    "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05d7\u05d3\u05e9\u05d4 \u05dc\u05e4\u05d9 \u05ea\u05d7\u05d5\u05dd, \u05e2\u05dd \u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05d4\u05d6\u05de\u05e0\u05d4 \u05d0\u05d5 \u05e0\u05db\u05e1 \u05dc\u05e4\u05d9 \u05d4\u05e6\u05d5\u05e8\u05da.",
   amount: "\u05e1\u05db\u05d5\u05dd",
   date: "\u05ea\u05d0\u05e8\u05d9\u05da",
   category: "\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4",
@@ -193,7 +226,7 @@ const HEBREW = {
   includesVat: "\u05db\u05d5\u05dc\u05dc \u05de\u05e2\u05f4\u05de 18%",
   saveExpense: "\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4",
   expenseRequired:
-    "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4 \u05d5\u05ea\u05d0\u05e8\u05d9\u05da.",
+    "\u05d9\u05e9 \u05dc\u05de\u05dc\u05d0 \u05d0\u05ea \u05db\u05dc \u05e9\u05d3\u05d5\u05ea \u05d4\u05d7\u05d5\u05d1\u05d4.",
   expenseInvalidAmount: "\u05d9\u05e9 \u05dc\u05d4\u05d6\u05d9\u05df \u05e1\u05db\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05ea\u05e7\u05d9\u05df.",
   expenseCreateFailed: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
   expenseSaved: "\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
@@ -263,8 +296,6 @@ export default function DashboardActions({
   salaryAgreements: SalaryAgreementRow[];
 }) {
   const router = useRouter();
-  void orders;
-  void properties;
 
   const [orderActionLocked, setOrderActionLocked] = useState(false);
 
@@ -299,7 +330,10 @@ export default function DashboardActions({
 
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [expenseError, setExpenseError] = useState<string | null>(null);
+  const [expenseBusinessDomain, setExpenseBusinessDomain] = useState<ExpenseBusinessDomain>("logistics_projects");
   const [expenseProjectId, setExpenseProjectId] = useState(projects[0]?.id ?? "");
+  const [expenseOrderId, setExpenseOrderId] = useState("");
+  const [expensePropertyId, setExpensePropertyId] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("");
   const [expenseCategoryOther, setExpenseCategoryOther] = useState("");
@@ -308,6 +342,15 @@ export default function DashboardActions({
   const [expenseNotes, setExpenseNotes] = useState("");
   const [expenseIncludedInBase, setExpenseIncludedInBase] = useState(false);
   const [expenseBilledToCustomer, setExpenseBilledToCustomer] = useState(false);
+  const [expenseWorkerUserId, setExpenseWorkerUserId] = useState("");
+  const [expenseClockIn, setExpenseClockIn] = useState(nowLocal(-60));
+  const [expenseClockOut, setExpenseClockOut] = useState(nowLocal());
+  const [expenseLaborCost, setExpenseLaborCost] = useState("");
+  const [expenseWorkerPaymentChoice, setExpenseWorkerPaymentChoice] = useState<PaymentChoice>("none");
+  const [expenseWorkerPaidAmount, setExpenseWorkerPaidAmount] = useState("");
+  const [expenseBillToCustomerAmount, setExpenseBillToCustomerAmount] = useState("");
+  const [expenseAttachmentFiles, setExpenseAttachmentFiles] = useState<File[]>([]);
+  const [expenseExistingAttachments, setExpenseExistingAttachments] = useState<FinancialAttachment[]>([]);
 
   const [incomeSubmitting, setIncomeSubmitting] = useState(false);
   const [incomeError, setIncomeError] = useState<string | null>(null);
@@ -319,6 +362,8 @@ export default function DashboardActions({
   const [incomeRequiresSplit, setIncomeRequiresSplit] = useState(false);
   const [incomeReference, setIncomeReference] = useState("");
   const [incomeNotes, setIncomeNotes] = useState("");
+  const [incomeAttachmentFiles, setIncomeAttachmentFiles] = useState<File[]>([]);
+  const [incomeExistingAttachments, setIncomeExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [financeNavLoading, setFinanceNavLoading] = useState(false);
   const [selfSessionSubmitting, setSelfSessionSubmitting] = useState(false);
   const [manualSessionSubmitting, setManualSessionSubmitting] = useState(false);
@@ -384,6 +429,58 @@ export default function DashboardActions({
     });
   }, [canManageWorkerSessions, manualSessionPaymentChoice, suggestedManualSessionAmount]);
 
+  const finalExpenseCategory =
+    expenseCategory === OTHER_EXPENSE_CATEGORY ? expenseCategoryOther.trim() : expenseCategory.trim();
+  const expenseIsWorkerPayment = finalExpenseCategory === EMPLOYEE_WAGE_CATEGORY;
+  const expenseTargetUserId = canManageWorkerSessions ? expenseWorkerUserId : currentUserId ?? "";
+  const expenseDuration = useMemo(
+    () => durationHours(expenseClockIn, expenseClockOut),
+    [expenseClockIn, expenseClockOut]
+  );
+  const expenseWorkedMinutes = useMemo(() => {
+    const start = new Date(expenseClockIn).getTime();
+    const end = new Date(expenseClockOut).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+    return Math.round((end - start) / 60000);
+  }, [expenseClockIn, expenseClockOut]);
+  const activeExpenseSessionAgreement = useMemo(() => {
+    if (!expenseIsWorkerPayment || !expenseTargetUserId) return null;
+    const referenceDate = toIso(expenseClockIn);
+    if (!referenceDate) return null;
+    return getActiveSalaryAgreementForDate(
+      salaryAgreements.filter((agreement) => agreement.user_id === expenseTargetUserId),
+      new Date(referenceDate)
+    );
+  }, [expenseClockIn, expenseIsWorkerPayment, expenseTargetUserId, salaryAgreements]);
+  const suggestedExpenseWorkerAmount = useMemo(() => {
+    if (!expenseIsWorkerPayment) return null;
+    if (expenseLaborCost.trim()) {
+      const parsed = Number(expenseLaborCost);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+    if (expenseWorkedMinutes <= 0) return null;
+    return calculateSessionLaborCost(activeExpenseSessionAgreement, expenseWorkedMinutes);
+  }, [activeExpenseSessionAgreement, expenseIsWorkerPayment, expenseLaborCost, expenseWorkedMinutes]);
+
+  useEffect(() => {
+    if (!expenseIsWorkerPayment || !canManageWorkerSessions || expenseWorkerPaymentChoice === "none" || suggestedExpenseWorkerAmount === null) {
+      return;
+    }
+    setExpenseWorkerPaidAmount((current) => {
+      if (expenseWorkerPaymentChoice === "paid") {
+        return String(Number(suggestedExpenseWorkerAmount.toFixed(2)));
+      }
+      return current.trim()
+        ? current
+        : String(Number(suggestedExpenseWorkerAmount.toFixed(2)));
+    });
+  }, [
+    canManageWorkerSessions,
+    expenseIsWorkerPayment,
+    expenseWorkerPaymentChoice,
+    suggestedExpenseWorkerAmount,
+  ]);
+
   function resetProjectForm() {
     setProjectError(null);
     setProjectName("");
@@ -410,7 +507,10 @@ export default function DashboardActions({
 
   function resetExpenseForm() {
     setExpenseError(null);
+    setExpenseBusinessDomain("logistics_projects");
     setExpenseProjectId(projects[0]?.id ?? "");
+    setExpenseOrderId("");
+    setExpensePropertyId("");
     setExpenseAmount("");
     setExpenseCategory("");
     setExpenseCategoryOther("");
@@ -419,6 +519,15 @@ export default function DashboardActions({
     setExpenseNotes("");
     setExpenseIncludedInBase(false);
     setExpenseBilledToCustomer(false);
+    setExpenseWorkerUserId(canManageWorkerSessions ? workerUsers[0]?.id ?? "" : currentUserId ?? "");
+    setExpenseClockIn(nowLocal(-60));
+    setExpenseClockOut(nowLocal());
+    setExpenseLaborCost("");
+    setExpenseWorkerPaymentChoice("none");
+    setExpenseWorkerPaidAmount("");
+    setExpenseBillToCustomerAmount("");
+    setExpenseAttachmentFiles([]);
+    setExpenseExistingAttachments([]);
   }
 
   function resetIncomeForm() {
@@ -431,6 +540,8 @@ export default function DashboardActions({
     setIncomeRequiresSplit(false);
     setIncomeReference("");
     setIncomeNotes("");
+    setIncomeAttachmentFiles([]);
+    setIncomeExistingAttachments([]);
   }
 
   function resetManualSessionForm() {
@@ -534,9 +645,158 @@ export default function DashboardActions({
 
   async function createExpense() {
     setExpenseError(null);
-    const finalExpenseCategory =
-      expenseCategory === OTHER_EXPENSE_CATEGORY ? expenseCategoryOther.trim() : expenseCategory.trim();
-    if (!expenseProjectId || !finalExpenseCategory || !expenseDate) {
+    const linkedProjectId = expenseBusinessDomain === "logistics_projects" ? expenseProjectId : "";
+    const linkedOrderId = expenseBusinessDomain === "sales" ? expenseOrderId : "";
+    const linkedPropertyId = expenseBusinessDomain === "property_management" ? expensePropertyId : "";
+
+    if (!finalExpenseCategory) {
+      setExpenseError(HEBREW.expenseRequired);
+      return;
+    }
+    if (expenseBusinessDomain === "logistics_projects" && !linkedProjectId) {
+      setExpenseError(HEBREW.sessionInvalidProject);
+      return;
+    }
+    if (expenseBusinessDomain === "property_management" && !linkedPropertyId) {
+      setExpenseError(HEBREW.sessionInvalidProperty);
+      return;
+    }
+
+    if (expenseIsWorkerPayment) {
+      if (!expenseTargetUserId) {
+        setExpenseError(HEBREW.sessionInvalidWorker);
+        return;
+      }
+
+      const clockInIso = toIso(expenseClockIn);
+      const clockOutIso = toIso(expenseClockOut);
+      if (!clockInIso || !clockOutIso || new Date(clockOutIso) <= new Date(clockInIso)) {
+        setExpenseError(HEBREW.sessionInvalidTimes);
+        return;
+      }
+
+      const laborCostNumber =
+        expenseLaborCost.trim() === "" ? null : Number(expenseLaborCost);
+      if (
+        expenseLaborCost.trim() !== "" &&
+        (laborCostNumber === null || !Number.isFinite(laborCostNumber) || laborCostNumber <= 0)
+      ) {
+        setExpenseError("יש להזין עלות עבודה תקינה.");
+        return;
+      }
+
+      const workerPaidAmountNumber =
+        expenseWorkerPaymentChoice === "none" || !expenseWorkerPaidAmount.trim()
+          ? suggestedExpenseWorkerAmount
+          : Number(expenseWorkerPaidAmount);
+      if (
+        canManageWorkerSessions &&
+        expenseWorkerPaymentChoice !== "none" &&
+        (!Number.isFinite(workerPaidAmountNumber) || workerPaidAmountNumber === null || workerPaidAmountNumber <= 0)
+      ) {
+        setExpenseError("יש להזין סכום ששולם לעובד.");
+        return;
+      }
+
+      const billToCustomerAmountNumber =
+        !expenseBilledToCustomer || !expenseBillToCustomerAmount.trim()
+          ? null
+          : Number(expenseBillToCustomerAmount);
+      if (
+        expenseBilledToCustomer &&
+        (!Number.isFinite(billToCustomerAmountNumber) || billToCustomerAmountNumber === null || billToCustomerAmountNumber <= 0)
+      ) {
+        setExpenseError("יש להזין סכום לחיוב לקוח.");
+        return;
+      }
+
+      setExpenseSubmitting(true);
+      try {
+        const endpoint = canManageWorkerSessions ? "/api/payroll/sessions/create" : "/api/profile/session/create";
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            user_id: expenseTargetUserId,
+            business_domain: expenseBusinessDomain,
+            project_id: linkedProjectId || null,
+            property_id: linkedPropertyId || null,
+            notes: expenseNotes.trim() || null,
+            clock_in: clockInIso,
+            clock_out: clockOutIso,
+            labor_cost: laborCostNumber,
+            is_billable_to_customer: expenseBilledToCustomer,
+            bill_to_customer_amount: expenseBilledToCustomer ? billToCustomerAmountNumber : null,
+            billing_status: expenseBilledToCustomer ? "billable" : "not_billable",
+          }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          session?: { id?: string; user_id?: string; clock_in?: string; clock_out?: string; labor_cost?: number | string | null };
+        };
+        if (!res.ok || !json.session) {
+          setExpenseError(json.error ?? HEBREW.expenseCreateFailed);
+          return;
+        }
+
+        if (
+          canManageWorkerSessions &&
+          expenseWorkerPaymentChoice !== "none" &&
+          json.session.id &&
+          json.session.user_id &&
+          Number.isFinite(workerPaidAmountNumber) &&
+          workerPaidAmountNumber !== null &&
+          workerPaidAmountNumber > 0
+        ) {
+          const paymentDateSource = json.session.clock_out || json.session.clock_in || new Date().toISOString();
+          const paymentResponse = await fetch("/api/payroll/worker-payments", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              user_id: json.session.user_id,
+              payment_date: paymentDateSource.slice(0, 10),
+              amount: workerPaidAmountNumber,
+              payment_method: null,
+              reference_number: null,
+              notes: `תשלום שסומן מתוך הדשבורד עבור משמרת ${paymentDateSource.slice(0, 10)}`,
+              allocations: [
+                {
+                  source_type: "session",
+                  source_id: json.session.id,
+                  amount: workerPaidAmountNumber,
+                },
+              ],
+            }),
+          });
+          const paymentJson = (await paymentResponse.json().catch(() => ({}))) as { error?: string };
+          if (!paymentResponse.ok) {
+            throw new Error(paymentJson.error ?? "שמירת התשלום לעובד נכשלה.");
+          }
+        }
+
+        const sessionId = typeof json.session.id === "string" ? json.session.id : "";
+        for (const file of expenseAttachmentFiles) {
+          if (!sessionId) break;
+          await uploadFinancialAttachment("session", sessionId, file);
+        }
+
+        setExpenseOpen(false);
+        resetExpenseForm();
+        router.refresh();
+        toast.success(
+          canManageWorkerSessions && expenseWorkerPaymentChoice !== "none"
+            ? "הוצאות השכר נשמרו והתשלום לעובד נרשם."
+            : HEBREW.expenseSaved
+        );
+      } catch (error: unknown) {
+        setExpenseError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
+      } finally {
+        setExpenseSubmitting(false);
+      }
+      return;
+    }
+
+    if (!expenseDate) {
       setExpenseError(HEBREW.expenseRequired);
       return;
     }
@@ -553,14 +813,17 @@ export default function DashboardActions({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          project_id: expenseProjectId,
+          business_domain: expenseBusinessDomain,
+          project_id: linkedProjectId || null,
+          order_id: linkedOrderId || null,
+          property_id: linkedPropertyId || null,
           amount,
           category: finalExpenseCategory,
           expense_date: expenseDate,
           description: expenseDescription.trim() || null,
           notes: expenseNotes.trim() || null,
-          included_in_base_price: expenseIncludedInBase,
-          billed_to_customer: expenseBilledToCustomer,
+          included_in_base_price: expenseBusinessDomain === "logistics_projects" ? expenseIncludedInBase : false,
+          billed_to_customer: expenseBusinessDomain === "logistics_projects" ? expenseBilledToCustomer : false,
         }),
       });
 
@@ -568,6 +831,12 @@ export default function DashboardActions({
       if (!res.ok || !json.expense) {
         setExpenseError(json.error ?? HEBREW.expenseCreateFailed);
         return;
+      }
+
+      const expenseId = getString(json.expense, "id");
+      for (const file of expenseAttachmentFiles) {
+        if (!expenseId) break;
+        await uploadFinancialAttachment("expense", expenseId, file);
       }
 
       setExpenseOpen(false);
@@ -620,6 +889,12 @@ export default function DashboardActions({
       if (!res.ok || !json.payment) {
         setIncomeError(json.error ?? HEBREW.incomeCreateFailed);
         return;
+      }
+
+      const paymentId = getString(json.payment, "id");
+      for (const file of incomeAttachmentFiles) {
+        if (!paymentId) break;
+        await uploadFinancialAttachment("payment", paymentId, file);
       }
 
       setIncomeOpen(false);
@@ -1372,41 +1647,88 @@ export default function DashboardActions({
           <fieldset disabled={expenseSubmitting} className="contents">
             <div className="grid gap-4">
               <label className="space-y-2 text-sm">
-                <span>{HEBREW.project}</span>
+                <span>{HEBREW.domain}</span>
                 <select
                   className={fieldClass}
-                  value={expenseProjectId}
-                  onChange={(e) => setExpenseProjectId(e.target.value)}
+                  value={expenseBusinessDomain}
+                  onChange={(e) => {
+                    const nextDomain = e.target.value as ExpenseBusinessDomain;
+                    setExpenseBusinessDomain(nextDomain);
+                    if (nextDomain !== "logistics_projects") {
+                      setExpenseProjectId("");
+                      setExpenseIncludedInBase(false);
+                      setExpenseBilledToCustomer(false);
+                      setExpenseBillToCustomerAmount("");
+                    } else if (!expenseProjectId && projects[0]?.id) {
+                      setExpenseProjectId(projects[0].id);
+                    }
+                    if (nextDomain !== "sales") setExpenseOrderId("");
+                    if (nextDomain !== "property_management") setExpensePropertyId("");
+                  }}
                 >
-                  <option value="">{HEBREW.selectProject}</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name} | {project.customerName}
+                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                    <option key={domain} value={domain}>
+                      {getBusinessDomainLabel(domain)}
                     </option>
                   ))}
                 </select>
               </label>
 
-              <AdaptiveGrid variant="formTwoLoose">
+              {expenseBusinessDomain === "logistics_projects" ? (
                 <label className="space-y-2 text-sm">
-                  <span>{HEBREW.amount}</span>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={expenseAmount}
-                    onChange={(e) => setExpenseAmount(e.target.value)}
-                  />
+                  <span>{HEBREW.project}</span>
+                  <select
+                    className={fieldClass}
+                    value={expenseProjectId}
+                    onChange={(e) => setExpenseProjectId(e.target.value)}
+                  >
+                    <option value="">{HEBREW.selectProject}</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name} | {project.customerName}
+                      </option>
+                    ))}
+                  </select>
                 </label>
+              ) : null}
 
+              {expenseBusinessDomain === "sales" && !expenseIsWorkerPayment ? (
                 <label className="space-y-2 text-sm">
-                  <span>{HEBREW.date}</span>
-                  <DateInput
-                    value={expenseDate}
-                    onChange={(e) => setExpenseDate(e.target.value)}
-                  />
+                  <span>הזמנה</span>
+                  <select
+                    className={fieldClass}
+                    value={expenseOrderId}
+                    onChange={(e) => setExpenseOrderId(e.target.value)}
+                  >
+                    <option value="">ללא הזמנה</option>
+                    {orders.map((order) => (
+                      <option key={order.id} value={order.id}>
+                        {order.name}
+                        {order.subtitle ? ` | ${order.subtitle}` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-              </AdaptiveGrid>
+              ) : null}
+
+              {expenseBusinessDomain === "property_management" ? (
+                <label className="space-y-2 text-sm">
+                  <span>נכס</span>
+                  <select
+                    className={fieldClass}
+                    value={expensePropertyId}
+                    onChange={(e) => setExpensePropertyId(e.target.value)}
+                  >
+                    <option value="">בחרו נכס</option>
+                    {properties.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {property.name}
+                        {property.subtitle ? ` | ${property.subtitle}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
 
               <label className="space-y-2 text-sm">
                 <span>{HEBREW.category}</span>
@@ -1434,37 +1756,258 @@ export default function DashboardActions({
                 </label>
               ) : null}
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.description}</span>
-                <Input
-                  value={expenseDescription}
-                  onChange={(e) => setExpenseDescription(e.target.value)}
-                />
-              </label>
+              {expenseIsWorkerPayment && canManageWorkerSessions ? (
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.worker}</span>
+                  <select
+                    className={fieldClass}
+                    value={expenseWorkerUserId}
+                    onChange={(e) => setExpenseWorkerUserId(e.target.value)}
+                  >
+                    <option value="">{HEBREW.selectWorker}</option>
+                    {workerUsers.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
 
-              <div className="flex flex-col gap-2 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={expenseIncludedInBase}
-                    onChange={(e) => setExpenseIncludedInBase(e.target.checked)}
-                  />
-                  <span>{HEBREW.includedInBase}</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={expenseBilledToCustomer}
-                    onChange={(e) => setExpenseBilledToCustomer(e.target.checked)}
-                  />
-                  <span>{HEBREW.billedToCustomer}</span>
-                </label>
-              </div>
+              {expenseIsWorkerPayment ? (
+                <>
+                  <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
+                    <label className="space-y-2 text-sm">
+                      <span>כניסה</span>
+                      <DateTimeInput
+                        value={expenseClockIn}
+                        onChange={(e) => setExpenseClockIn(e.target.value)}
+                      />
+                    </label>
+
+                    <label className="space-y-2 text-sm">
+                      <span>סה״כ שעות</span>
+                      <Input
+                        inputMode="decimal"
+                        value={expenseDuration}
+                        onChange={(e) => {
+                          const nextValue = e.target.value;
+                          if (!nextValue.trim()) {
+                            setExpenseClockOut("");
+                            return;
+                          }
+                          const parsedHours = Number(nextValue);
+                          const clockInIso = toIso(expenseClockIn);
+                          if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !clockInIso) return;
+                          const nextClockOut = new Date(new Date(clockInIso).getTime() + parsedHours * 60 * 60 * 1000);
+                          if (Number.isNaN(nextClockOut.getTime())) return;
+                          const pad = (n: number) => String(n).padStart(2, "0");
+                          setExpenseClockOut(
+                            `${nextClockOut.getFullYear()}-${pad(nextClockOut.getMonth() + 1)}-${pad(nextClockOut.getDate())}T${pad(nextClockOut.getHours())}:${pad(nextClockOut.getMinutes())}`
+                          );
+                        }}
+                        placeholder="למשל 8"
+                      />
+                    </label>
+
+                    <label className="space-y-2 text-sm">
+                      <span>יציאה</span>
+                      <DateTimeInput
+                        value={expenseClockOut}
+                        onChange={(e) => setExpenseClockOut(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <label className="space-y-2 text-sm">
+                    <span>עלות עבודה</span>
+                    <Input
+                      inputMode="decimal"
+                      value={expenseLaborCost}
+                      onChange={(e) => setExpenseLaborCost(e.target.value)}
+                      placeholder="אופציונלי"
+                    />
+                    <span className="block text-xs text-muted-foreground">
+                      {suggestedExpenseWorkerAmount !== null
+                        ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedExpenseWorkerAmount)}`
+                        : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
+                    </span>
+                  </label>
+
+                  <div className="space-y-3 rounded-xl border p-3">
+                    {expenseBusinessDomain === "logistics_projects" ? (
+                      <>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={expenseBilledToCustomer}
+                            onChange={(e) => {
+                              setExpenseBilledToCustomer(e.target.checked);
+                              if (!e.target.checked) setExpenseBillToCustomerAmount("");
+                            }}
+                          />
+                          <span>{HEBREW.billedToCustomer}</span>
+                        </label>
+
+                        {expenseBilledToCustomer ? (
+                          <label className="space-y-2 text-sm">
+                            <span>סכום לחיוב לקוח</span>
+                            <Input
+                              inputMode="decimal"
+                              value={expenseBillToCustomerAmount}
+                              onChange={(e) => setExpenseBillToCustomerAmount(e.target.value)}
+                              placeholder="למשל 650"
+                            />
+                          </label>
+                        ) : null}
+                      </>
+                    ) : null}
+
+                    {canManageWorkerSessions ? (
+                      <>
+                        <label className="space-y-2 text-sm">
+                          <span>תשלום לעובד</span>
+                          <select
+                            className={fieldClass}
+                            value={expenseWorkerPaymentChoice}
+                            onChange={(e) => setExpenseWorkerPaymentChoice(e.target.value as PaymentChoice)}
+                          >
+                            <option value="none">לא שולם</option>
+                            <option value="paid">שולם במלואו</option>
+                            <option value="partial">שולם חלקית</option>
+                          </select>
+                        </label>
+
+                        {expenseWorkerPaymentChoice !== "none" ? (
+                          <label className="space-y-2 text-sm">
+                            <span>כמה שולם</span>
+                            <Input
+                              inputMode="decimal"
+                              value={expenseWorkerPaidAmount}
+                              onChange={(e) => setExpenseWorkerPaidAmount(e.target.value)}
+                              placeholder="אם ריק, יירשם מלוא סכום המשמרת"
+                            />
+                          </label>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <AdaptiveGrid variant="formTwoLoose">
+                    <label className="space-y-2 text-sm">
+                      <span>{HEBREW.amount}</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={expenseAmount}
+                        onChange={(e) => setExpenseAmount(e.target.value)}
+                      />
+                    </label>
+
+                    <label className="space-y-2 text-sm">
+                      <span>{HEBREW.date}</span>
+                      <DateInput
+                        value={expenseDate}
+                        onChange={(e) => setExpenseDate(e.target.value)}
+                      />
+                    </label>
+                  </AdaptiveGrid>
+
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.description}</span>
+                    <Input
+                      value={expenseDescription}
+                      onChange={(e) => setExpenseDescription(e.target.value)}
+                    />
+                  </label>
+
+                  {expenseBusinessDomain === "logistics_projects" ? (
+                    <div className="flex flex-col gap-2 text-sm">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={expenseIncludedInBase}
+                          onChange={(e) => setExpenseIncludedInBase(e.target.checked)}
+                        />
+                        <span>{HEBREW.includedInBase}</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={expenseBilledToCustomer}
+                          onChange={(e) => setExpenseBilledToCustomer(e.target.checked)}
+                        />
+                        <span>{HEBREW.billedToCustomer}</span>
+                      </label>
+                    </div>
+                  ) : null}
+                </>
+              )}
 
               <label className="space-y-2 text-sm">
                 <span>{HEBREW.notes}</span>
                 <Textarea value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} />
               </label>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
+                <div className="flex items-center gap-2">
+                  <FileUploadActions
+                    files={expenseAttachmentFiles}
+                    multiple
+                    onFilesSelected={setExpenseAttachmentFiles}
+                    chooseLabel={expenseAttachmentFiles.length > 0 || expenseExistingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                    chooseVariant="outline"
+                    size="sm"
+                  />
+                  {expenseAttachmentFiles.length > 0 ? (
+                    <Button type="button" variant="secondary" size="sm" onClick={() => setExpenseAttachmentFiles([])}>
+                      נקה בחירה
+                    </Button>
+                  ) : null}
+                </div>
+                {expenseAttachmentFiles.length > 0 ? (
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    {expenseAttachmentFiles.map((file) => (
+                      <div key={`${file.name}-${file.size}`}>{file.name}</div>
+                    ))}
+                  </div>
+                ) : null}
+                {expenseExistingAttachments.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground">קבצים קיימים</div>
+                    <div className="flex flex-wrap gap-2">
+                      {expenseExistingAttachments.map((attachment) => (
+                        <a
+                          key={attachment.document_id}
+                          href={attachment.url ?? "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
+                        >
+                          {attachment.file_name ?? "קובץ"}
+                        </a>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {expenseExistingAttachments
+                        .filter((attachment) => attachment.url && isImageAttachment(attachment))
+                        .map((attachment) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={`${attachment.document_id}-preview`}
+                            src={attachment.url ?? ""}
+                            alt={attachment.file_name ?? "קובץ"}
+                            className="h-20 w-20 rounded-lg border object-cover"
+                          />
+                        ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </fieldset>
 
@@ -1594,6 +2137,63 @@ export default function DashboardActions({
                 <span>{HEBREW.notes}</span>
                 <Textarea value={incomeNotes} onChange={(e) => setIncomeNotes(e.target.value)} />
               </label>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
+                <div className="flex items-center gap-2">
+                  <FileUploadActions
+                    files={incomeAttachmentFiles}
+                    multiple
+                    onFilesSelected={setIncomeAttachmentFiles}
+                    chooseLabel={incomeAttachmentFiles.length > 0 || incomeExistingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                    chooseVariant="outline"
+                    size="sm"
+                  />
+                  {incomeAttachmentFiles.length > 0 ? (
+                    <Button type="button" variant="secondary" size="sm" onClick={() => setIncomeAttachmentFiles([])}>
+                      נקה בחירה
+                    </Button>
+                  ) : null}
+                </div>
+                {incomeAttachmentFiles.length > 0 ? (
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    {incomeAttachmentFiles.map((file) => (
+                      <div key={`${file.name}-${file.size}`}>{file.name}</div>
+                    ))}
+                  </div>
+                ) : null}
+                {incomeExistingAttachments.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground">קבצים קיימים</div>
+                    <div className="flex flex-wrap gap-2">
+                      {incomeExistingAttachments.map((attachment) => (
+                        <a
+                          key={attachment.document_id}
+                          href={attachment.url ?? "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
+                        >
+                          {attachment.file_name ?? "קובץ"}
+                        </a>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {incomeExistingAttachments
+                        .filter((attachment) => attachment.url && isImageAttachment(attachment))
+                        .map((attachment) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={`${attachment.document_id}-preview`}
+                            src={attachment.url ?? ""}
+                            alt={attachment.file_name ?? "קובץ"}
+                            className="h-20 w-20 rounded-lg border object-cover"
+                          />
+                        ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </fieldset>
 

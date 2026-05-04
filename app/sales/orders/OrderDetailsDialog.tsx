@@ -475,6 +475,11 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                         {getString(payment, "notes") ? (
                           <div className="mt-1 text-muted-foreground">הערות: {getString(payment, "notes")}</div>
                         ) : null}
+                        {getString(payment, "recorded_by_display") ? (
+                          <div className="mt-1 text-muted-foreground">
+                            הוזן ע״י {getString(payment, "recorded_by_display")}
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import {
   EXPENSE_BUSINESS_DOMAINS,
   getBusinessDomainLabel,
@@ -30,6 +31,7 @@ type PaymentRow = {
   project_id: string | null;
   order_id: string | null;
   property_id: string | null;
+  recorded_by: string | null;
 };
 
 type ExpenseRow = {
@@ -43,6 +45,7 @@ type ExpenseRow = {
   project_id: string | null;
   order_id: string | null;
   property_id: string | null;
+  recorded_by: string | null;
 };
 
 type OrderRow = {
@@ -78,6 +81,7 @@ export type CashFlowTransaction = {
   project_name: string | null;
   description: string | null;
   reference: string | null;
+  recordedByName: string | null;
 };
 
 export type CashFlowSummary = {
@@ -475,7 +479,7 @@ async function loadCashFlowEntries(
       : scanRows<PaymentRow>(
           supabase,
           "payments",
-          "id,payment_date,amount_total,payment_method,reference_number,business_domain,notes,project_id,order_id,property_id",
+          "id,payment_date,amount_total,payment_method,reference_number,business_domain,notes,project_id,order_id,property_id,recorded_by",
           "payment_date",
           filters
         ),
@@ -484,7 +488,7 @@ async function loadCashFlowEntries(
       : scanRows<ExpenseRow>(
           supabase,
           "expenses",
-          "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id",
+          "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by",
           "expense_date",
           filters
         ),
@@ -505,12 +509,17 @@ async function loadCashFlowEntries(
     ...paymentRows.map((row) => row.property_id),
     ...expenseRows.map((row) => row.property_id),
   ]);
+  const recordedByValues = uniqueStrings([
+    ...paymentRows.map((row) => row.recorded_by),
+    ...expenseRows.map((row) => row.recorded_by),
+  ]);
 
-  const [projectsById, ordersById, propertiesById, propertyCustomersById] = await Promise.all([
+  const [projectsById, ordersById, propertiesById, propertyCustomersById, recordedByNames] = await Promise.all([
     fetchProjectsByIds(supabase, projectIds),
     fetchOrdersByIds(supabase, orderIds),
     fetchPropertiesByIds(supabase, propertyIds),
     fetchPropertyCustomerLinks(supabase, propertyIds),
+    resolveUserDisplayNamesForValues(supabase, recordedByValues),
   ]);
 
   const paymentEntries = paymentRows.flatMap((row) => {
@@ -570,6 +579,8 @@ async function loadCashFlowEntries(
         }),
         description: buildPaymentDescription(row),
         reference: buildPaymentReference(row),
+        recordedByName:
+          typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? null : null,
       },
     ];
   });
@@ -631,6 +642,8 @@ async function loadCashFlowEntries(
         }),
         description: buildExpenseDescription(row),
         reference: buildExpenseReference(row),
+        recordedByName:
+          typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? null : null,
       },
     ];
   });

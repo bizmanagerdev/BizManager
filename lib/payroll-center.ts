@@ -1,10 +1,12 @@
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
+import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import {
   calculateSessionLaborCost,
   getActiveSalaryAgreementForDate,
   monthKeyFromDate,
   sessionWorkedMinutes,
   toNumber,
+  WORK_SESSIONS_TABLE,
   type PayrollPeriodRow,
   type PayslipRow,
   type SalaryAgreementRow,
@@ -64,6 +66,8 @@ export type SalaryCenterProtectedPayload = {
   workerPaymentAllocations: WorkerPaymentAllocationRow[];
   workerDebtItems: WorkerDebtItemRow[];
   workerBalances: WorkerBalanceRow[];
+  workerPaymentRecordedByNameById: Record<string, string>;
+  sessionRecordedByNameById: Record<string, string>;
   summary: {
     totalLaborCostThisMonth: number;
     unpaidOrUnfinishedPayslips: number;
@@ -415,6 +419,8 @@ export async function fetchSalaryCenterProtectedPayload(
     workerPaymentAllocations: [],
     workerDebtItems: [],
     workerBalances: [],
+    workerPaymentRecordedByNameById: {},
+    sessionRecordedByNameById: {},
     summary: {
       totalLaborCostThisMonth: 0,
       unpaidOrUnfinishedPayslips: 0,
@@ -528,6 +534,47 @@ export async function fetchSalaryCenterProtectedPayload(
   const totalLaborCostThisMonth = sessionLaborCostThisMonth + monthlyAgreementTotal;
   const workerBalances = ((workerBalancesResult.data ?? []) as WorkerBalanceRow[]).filter((row) => row.user_id);
   const totalWorkerOwed = workerBalances.reduce((sum, row) => sum + toNumber(row.owed_amount), 0);
+  const auditSupabase = supabase as Parameters<typeof resolveUserDisplayNamesForValues>[0];
+  const paymentRecordedByValues = Array.from(
+    new Set(
+      workerPayments
+        .map((payment) => (typeof payment.recorded_by === "string" ? payment.recorded_by : null))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const [paymentRecordedByNames, workerPaymentCreateAudit, sessionCreateAudit] = await Promise.all([
+    resolveUserDisplayNamesForValues(auditSupabase, paymentRecordedByValues),
+    getLatestAuditByRecordIds(auditSupabase, {
+      tableName: "worker_payments",
+      recordIds: workerPaymentIds,
+      actions: ["create"],
+    }),
+    getLatestAuditByRecordIds(auditSupabase, {
+      tableName: WORK_SESSIONS_TABLE,
+      recordIds: ((sessionCostsResult.data ?? []) as Array<{ id: string }>).map((row) => row.id).filter(Boolean),
+      actions: ["create"],
+    }),
+  ]);
+
+  const workerPaymentRecordedByNameById: Record<string, string> = {};
+  workerPayments.forEach((payment) => {
+    const recordedByValue = typeof payment.recorded_by === "string" ? payment.recorded_by : null;
+    if (recordedByValue && paymentRecordedByNames[recordedByValue]) {
+      workerPaymentRecordedByNameById[payment.id] = paymentRecordedByNames[recordedByValue];
+      return;
+    }
+    const audit = workerPaymentCreateAudit.byRecordId[payment.id];
+    if (audit?.actorName) {
+      workerPaymentRecordedByNameById[payment.id] = audit.actorName;
+    }
+  });
+
+  const sessionRecordedByNameById: Record<string, string> = {};
+  Object.entries(sessionCreateAudit.byRecordId).forEach(([sessionId, audit]) => {
+    if (audit.actorName) {
+      sessionRecordedByNameById[sessionId] = audit.actorName;
+    }
+  });
 
   let unpaidOrUnfinishedPayslips = 0;
   if (currentPeriod && normalizePayrollStatus(currentPeriod.status) !== "paid") {
@@ -555,6 +602,8 @@ export async function fetchSalaryCenterProtectedPayload(
       (row) => row.user_id && row.source_id
     ),
     workerBalances,
+    workerPaymentRecordedByNameById,
+    sessionRecordedByNameById,
     sessionCosts: ((sessionCostsResult.data ?? []) as Array<SessionCostRow & { user_id: string }>).map(
       (row) => ({
         id: row.id,

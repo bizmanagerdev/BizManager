@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { logAuditEvent } from "@/lib/audit";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { collectLockedSessionIds, recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import {
@@ -86,7 +87,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Clock-out must be after clock-in." }, { status: 400 });
     }
 
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
     const [sessionResult, periodsResult, siblingsResult, agreementsResult] = await Promise.all([
       supabase
         .from(WORK_SESSIONS_TABLE)
@@ -195,10 +196,31 @@ export async function POST(req: Request) {
       if (refreshed.error) {
         return NextResponse.json({ error: refreshed.error.message }, { status: 400 });
       }
+      if (refreshed.data?.id) {
+        await logAuditEvent({
+          supabase,
+          tableName: WORK_SESSIONS_TABLE,
+          recordId: refreshed.data.id,
+          action: "update",
+          changedBy: profile.id,
+          userRole: profile.role,
+        });
+      }
       return NextResponse.json({ session: refreshed.data });
     }
 
     await regenerateEditablePayslipsForUsers(supabase, [previousUserId, userId]);
+
+    if (updateResult.data?.id) {
+      await logAuditEvent({
+        supabase,
+        tableName: WORK_SESSIONS_TABLE,
+        recordId: updateResult.data.id,
+        action: "update",
+        changedBy: profile.id,
+        userRole: profile.role,
+      });
+    }
 
     return NextResponse.json({ session: updateResult.data });
   } catch (error: unknown) {

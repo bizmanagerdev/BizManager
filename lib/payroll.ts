@@ -1,4 +1,5 @@
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import type { FinancialAttachment } from "@/lib/payments";
 
 export const WORK_SESSIONS_TABLE = "attendance_sessions";
 export const PAYROLL_ADMIN_COOKIE = "payroll_admin_unlocked";
@@ -21,6 +22,7 @@ export type WorkSessionRow = {
   owed_amount?: number | string | null;
   payment_status?: string | null;
   last_payment_date?: string | null;
+  attachments?: FinancialAttachment[];
 };
 
 export type SalaryAgreementRow = {
