@@ -59,7 +59,7 @@ type TaskLookupRow = {
 type TaskMetaRow = {
   id: string;
   project_id: string | null;
-  customer_id: string | null;
+  property_id: string | null;
 };
 
 type CustomerLookupRow = {
@@ -212,7 +212,7 @@ export default async function DocumentsPage({
           .in("task_id", Array.from(taskIds))
       : Promise.resolve({ data: [] as TaskLookupRow[], error: null }),
     taskIds.size > 0
-      ? supabase.from("tasks").select("id,project_id,customer_id").in("id", Array.from(taskIds))
+      ? supabase.from("tasks").select("id,project_id,property_id").in("id", Array.from(taskIds))
       : Promise.resolve({ data: [] as TaskMetaRow[], error: null }),
     orderIds.size > 0
       ? supabase
@@ -223,9 +223,18 @@ export default async function DocumentsPage({
   ]);
 
   const taskMetaRows = (tasksMetaResult.data ?? []) as TaskMetaRow[];
+  const projectCustomerIdByProjectId = new Map<string, string>();
+  ((allProjectsResult.data ?? []) as ProjectLookupRow[]).forEach((row) => {
+    const projectId = normalizeString(row.id);
+    const customerId = normalizeString(row.customer_id);
+    if (!projectId || !customerId) return;
+    projectCustomerIdByProjectId.set(projectId, customerId);
+  });
+
   const derivedCustomerIds = new Set<string>(Array.from(customerIds));
   for (const row of taskMetaRows) {
-    const customerId = normalizeString(row.customer_id);
+    const projectId = normalizeString(row.project_id);
+    const customerId = projectId ? normalizeString(projectCustomerIdByProjectId.get(projectId)) : null;
     if (customerId) derivedCustomerIds.add(customerId);
   }
 
@@ -334,7 +343,7 @@ export default async function DocumentsPage({
             }
           }
 
-          const customerId = normalizeString(taskMeta?.customer_id);
+          const customerId = null;
           if (customerId) {
             relatedCustomers.set(customerId, {
               id: customerId,

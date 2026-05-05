@@ -22,7 +22,8 @@ type TaskRow = {
   description: string | null;
   notes: string | null;
   project_id: string | null;
-  customer_id: string | null;
+  property_id: string | null;
+  business_domain: string | null;
 };
 
 type DocumentLinkRow = {
@@ -54,6 +55,13 @@ type Attachment = {
   created_at: string;
   uploader_name: string | null;
   url: string | null;
+};
+
+type UserRow = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  active: boolean | null;
 };
 
 function inferKindFromFilename(name: string | null) {
@@ -95,6 +103,17 @@ export default async function TaskPage({
   const { returnTo } = (await searchParams) ?? {};
   const { profile, supabase } = await requireProfile();
 
+  const { data: userRows } = await supabase
+    .from("users")
+    .select("id,full_name,email,active")
+    .order("full_name", { ascending: true })
+    .range(0, 499);
+
+  const userOptions = ((userRows ?? []) as UserRow[])
+    .filter((u) => u.active !== false && typeof u.id === "string" && u.id)
+    .map((u) => ({ id: u.id, label: u.full_name ?? u.email ?? "" }))
+    .filter((u) => Boolean(u.label));
+
   const { data: overview, error: overviewError } = await supabase
     .from("task_overview_view")
     .select(
@@ -105,7 +124,7 @@ export default async function TaskPage({
 
   const { data: taskRow, error: taskError } = await supabase
     .from("tasks")
-    .select("id,description,notes,project_id,customer_id")
+    .select("id,description,notes,project_id,property_id,business_domain")
     .eq("id", id)
     .maybeSingle<TaskRow>();
 
@@ -188,6 +207,15 @@ export default async function TaskPage({
         ? overview.project_id
         : null;
 
+  const propertyId =
+    typeof taskRow?.property_id === "string" ? taskRow.property_id : null;
+
+  const fixedTarget = projectId
+    ? { type: "project" as const, id: projectId }
+    : propertyId
+      ? { type: "property" as const, id: propertyId }
+      : null;
+
   const { data: projectOverview } = projectId
     ? await supabase
         .from("project_overview_view")
@@ -232,6 +260,8 @@ export default async function TaskPage({
             description={taskRow?.description ?? null}
             notes={taskRow?.notes ?? null}
             attachments={attachments}
+            userOptions={userOptions}
+            fixedTarget={fixedTarget}
           />
         )}
       </div>

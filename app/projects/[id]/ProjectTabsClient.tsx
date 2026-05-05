@@ -43,7 +43,10 @@ import {
 } from "@/lib/payments";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
+  EXPENSE_BUSINESS_DOMAINS,
+  getBusinessDomainLabel,
   mapProjectTypeToExpenseDomain,
+  type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import {
   addMinutes,
@@ -61,6 +64,7 @@ import {
   getTaskStatusColor,
   getTaskStatusLabel,
 } from "@/lib/ui/status-colors";
+import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
 
 export type ProjectOverview = {
   id: string;
@@ -1691,7 +1695,7 @@ export default function ProjectTabsClient({
       <TabsContent value="tasks" className="mx-auto mt-4 w-full max-w-6xl">
         <ProjectTasksTab
           projectId={overview.id}
-          customerId={overview.customer_id}
+          projectType={overview.project_type}
           totalTasks={totalTasks}
           completedTasks={completedTasks}
           openTasks={openTasks}
@@ -2286,7 +2290,7 @@ export default function ProjectTabsClient({
 
 function ProjectTasksTab({
   projectId,
-  customerId,
+  projectType,
   totalTasks,
   completedTasks,
   openTasks,
@@ -2299,7 +2303,7 @@ function ProjectTasksTab({
   onTaskUpdated,
 }: {
   projectId: string;
-  customerId: string;
+  projectType: string | null;
   totalTasks: number;
   completedTasks: number;
   openTasks: number;
@@ -2314,6 +2318,8 @@ function ProjectTasksTab({
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [savingStatus, setSavingStatus] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<{
@@ -2336,11 +2342,49 @@ function ProjectTasksTab({
     setLocalTasks(tasks);
   }, [tasks]);
 
+  const [taskQuery, setTaskQuery] = useState("");
+  const [filterTaskStatus, setFilterTaskStatus] = useState<TaskStatus | "">("");
+  const [filterTaskPriority, setFilterTaskPriority] = useState<TaskPriority | "">("");
+  const [filterAssigneeId, setFilterAssigneeId] = useState<string>("");
+
+  const visibleTasks = useMemo(() => {
+    const q = taskQuery.trim().toLowerCase();
+    return localTasks.filter((t) => {
+      const taskStatus =
+        (getFirstString(t, ["status", "task_status"]) ?? "todo") as TaskStatus;
+      const taskPriority =
+        (getFirstString(t, ["priority"]) ?? "") as TaskPriority | "";
+
+      const assigneeId = getFirstString(t, ["assigned_user_id"]) ?? "";
+      const assigneeName =
+        getFirstString(t, [
+          "assigned_user_name",
+          "assigned_to_name",
+          "assignee_name",
+          "assigned_to_full_name",
+        ]) ??
+        (assigneeId ? usersById.get(assigneeId)?.full_name ?? usersById.get(assigneeId)?.email ?? "" : "");
+
+      const title =
+        getFirstString(t, ["subject", "title", "name", "task_title", "summary"]) ?? "";
+
+      if (filterTaskStatus && taskStatus !== filterTaskStatus) return false;
+      if (filterTaskPriority && taskPriority !== filterTaskPriority) return false;
+      if (filterAssigneeId && assigneeId !== filterAssigneeId) return false;
+      if (!q) return true;
+      const hay = `${title} ${assigneeName}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [filterAssigneeId, filterTaskPriority, filterTaskStatus, localTasks, taskQuery, usersById]);
+
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState<string>("");
   const [assignedUserId, setAssignedUserId] = useState<string>("");
   const [createFiles, setCreateFiles] = useState<File[]>([]);
+  const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain>(() =>
+    mapProjectTypeToExpenseDomain(projectType)
+  );
 
   const statusOptions = useMemo(() => {
     return ["todo", "in_progress", "blocked", "done", "cancelled"] as TaskStatus[];
@@ -2360,7 +2404,8 @@ function ProjectTasksTab({
     Boolean(dueDate) &&
     Boolean(assignedUserId) &&
     Boolean(effectivePriority) &&
-    Boolean(effectiveStatus);
+    Boolean(effectiveStatus) &&
+    Boolean(businessDomain);
 
   const subjectError = !subject.trim();
   const dueDateError = !dueDate;
@@ -2382,8 +2427,8 @@ function ProjectTasksTab({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          business_domain: businessDomain,
           project_id: projectId,
-          customer_id: customerId,
           subject,
           description: description.trim() ? description : undefined,
           due_date: dueDate ? dueDate : null,
@@ -2586,64 +2631,105 @@ function ProjectTasksTab({
             </div>
           </div>
 
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 mb-3">
+            <div className="space-y-1 lg:col-span-2">
+              <div className="text-xs text-muted-foreground">חיפוש</div>
+              <Input
+                value={taskQuery}
+                onChange={(e) => setTaskQuery(e.target.value)}
+                placeholder="חיפוש משימות..."
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">סטטוס</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={filterTaskStatus}
+                onChange={(e) => setFilterTaskStatus(e.target.value as TaskStatus | "")}
+              >
+                <option value="">הכל</option>
+                {statusOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {taskStatusLabel(s)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">עדיפות</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={filterTaskPriority}
+                onChange={(e) => setFilterTaskPriority(e.target.value as TaskPriority | "")}
+              >
+                <option value="">הכל</option>
+                {priorityOptions.map((p) => (
+                  <option key={p} value={p}>
+                    {taskPriorityLabel(p)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">משויך</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={filterAssigneeId}
+                onChange={(e) => setFilterAssigneeId(e.target.value)}
+              >
+                <option value="">הכל</option>
+                {assignableUsers
+                  .filter((u) => u.active !== false)
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name ?? u.email}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+
           {error ? (
             <div className="text-destructive text-sm">
               שגיאה בטעינת משימות: {error}
             </div>
           ) : tasks.length === 0 ? (
             <div className="text-muted-foreground">אין משימות להצגה.</div>
+          ) : visibleTasks.length === 0 ? (
+            <div className="text-muted-foreground">אין משימות לפי הסינון.</div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <table className="min-w-[760px] w-full text-sm">
-                <thead className="bg-muted/50 text-muted-foreground">
-                  <tr>
-                    <th className="text-right font-medium px-3 py-2">משימה</th>
-                    <th className="text-right font-medium px-3 py-2">תאריך יעד</th>
-                    <th className="text-right font-medium px-3 py-2">משויך</th>
-                    <th className="text-right font-medium px-3 py-2">עדיפות</th>
-                    <th className="text-right font-medium px-3 py-2">סטטוס</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {localTasks.map((t) => {
-                    const taskId =
-                      getFirstString(t, ["task_id", "id"]) ?? "";
-                    const title =
-                      getFirstString(t, [
-                        "subject",
-                        "title",
-                        "name",
-                        "task_title",
-                        "summary",
-                      ]) ?? "משימה";
-                    const status =
-                      (getFirstString(t, ["status", "task_status"]) ??
-                        "todo") as TaskStatus;
-                    const due =
-                      getFirstDate(t, ["due_date", "deadline", "end_date"]) ??
-                      null;
-                    const priority =
-                      (getFirstString(t, ["priority"]) ?? "") as TaskPriority | "";
-                    const assignee =
-                      getFirstString(t, [
-                        "assigned_user_name",
-                        "assigned_to_name",
-                        "assignee_name",
-                        "assigned_to_full_name",
-                      ]) ??
-                      (() => {
-                        const id = getFirstString(t, ["assigned_user_id"]);
-                        if (!id) return null;
-                        const u = usersById.get(id);
-                        return u?.full_name ?? u?.email ?? null;
-                      })() ??
-                      null;
+            <>
+              <div className="space-y-2 md:hidden">
+                {visibleTasks.map((t) => {
+                  const taskId = getFirstString(t, ["task_id", "id"]) ?? "";
+                  const title =
+                    getFirstString(t, ["subject", "title", "name", "task_title", "summary"]) ??
+                    "משימה";
+                  const status =
+                    (getFirstString(t, ["status", "task_status"]) ?? "todo") as TaskStatus;
+                  const due =
+                    getFirstDate(t, ["due_date", "deadline", "end_date"]) ?? null;
+                  const priority =
+                    (getFirstString(t, ["priority"]) ?? "") as TaskPriority | "";
+                  const assignee =
+                    getFirstString(t, [
+                      "assigned_user_name",
+                      "assigned_to_name",
+                      "assignee_name",
+                      "assigned_to_full_name",
+                    ]) ??
+                    (() => {
+                      const id = getFirstString(t, ["assigned_user_id"]);
+                      if (!id) return null;
+                      const u = usersById.get(id);
+                      return u?.full_name ?? u?.email ?? null;
+                    })() ??
+                    null;
 
-                    const disabled = !taskId || updatingId === taskId;
-
-                    return (
-                      <tr key={taskId || title} className="hover:bg-muted/30">
-                        <td className="px-3 py-2">
+                  return (
+                    <Card key={taskId || title}>
+                      <CardContent className="p-3 space-y-2 text-sm">
+                        <div className="flex items-start justify-between gap-2">
                           {taskId ? (
                             <Link
                               href={`/tasks/${taskId}?returnTo=${encodeURIComponent(
@@ -2654,57 +2740,166 @@ function ProjectTasksTab({
                               {title}
                             </Link>
                           ) : (
-                            <span className="font-medium">{title}</span>
+                            <div className="font-medium">{title}</div>
                           )}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap">
-                          {due ? formatDate(due) : "—"}
-                        </td>
-                        <td className="px-3 py-2">
-                          {assignee ? assignee : "—"}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap">
-                          {priority ? (
-                            <PriorityDropdown
-                              priority={priority}
-                              options={priorityOptions}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={!taskId}
+                            onClick={() => {
+                              setEditId(taskId);
+                              setEditOpen(true);
+                            }}
+                          >
+                            עריכה
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap gap-2 items-center">
+                          {priority ? <StatusBadge value={priority} type="priority" /> : null}
+                          <StatusBadge value={status} type="task" />
+                        </div>
+                        <div className="grid grid-cols-1 gap-1 text-xs text-muted-foreground">
+                          <div>
+                            יעד:{" "}
+                            <span className="text-foreground">
+                              {due ? formatDate(due) : "—"}
+                            </span>
+                          </div>
+                          <div>
+                            משויך:{" "}
+                            <span className="text-foreground">{assignee ?? "—"}</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              <div className="hidden md:block rounded-md border overflow-x-auto">
+                <table className="min-w-[760px] w-full text-sm">
+                  <thead className="bg-muted/50 text-muted-foreground">
+                    <tr>
+                      <th className="text-right font-medium px-3 py-2">משימה</th>
+                      <th className="text-right font-medium px-3 py-2">תאריך יעד</th>
+                      <th className="text-right font-medium px-3 py-2">משויך</th>
+                      <th className="text-right font-medium px-3 py-2">עדיפות</th>
+                      <th className="text-right font-medium px-3 py-2">סטטוס</th>
+                      <th className="text-right font-medium px-3 py-2">פעולות</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {visibleTasks.map((t) => {
+                      const taskId = getFirstString(t, ["task_id", "id"]) ?? "";
+                      const title =
+                        getFirstString(t, [
+                          "subject",
+                          "title",
+                          "name",
+                          "task_title",
+                          "summary",
+                        ]) ?? "משימה";
+                      const status =
+                        (getFirstString(t, ["status", "task_status"]) ?? "todo") as TaskStatus;
+                      const due =
+                        getFirstDate(t, ["due_date", "deadline", "end_date"]) ?? null;
+                      const priority =
+                        (getFirstString(t, ["priority"]) ?? "") as TaskPriority | "";
+                      const assignee =
+                        getFirstString(t, [
+                          "assigned_user_name",
+                          "assigned_to_name",
+                          "assignee_name",
+                          "assigned_to_full_name",
+                        ]) ??
+                        (() => {
+                          const id = getFirstString(t, ["assigned_user_id"]);
+                          if (!id) return null;
+                          const u = usersById.get(id);
+                          return u?.full_name ?? u?.email ?? null;
+                        })() ??
+                        null;
+
+                      const disabled = !taskId || updatingId === taskId;
+
+                      return (
+                        <tr key={taskId || title} className="hover:bg-muted/30">
+                          <td className="px-3 py-2">
+                            {taskId ? (
+                              <Link
+                                href={`/tasks/${taskId}?returnTo=${encodeURIComponent(
+                                  `/projects/${projectId}?tab=tasks`
+                                )}`}
+                                className="font-medium text-primary hover:underline"
+                              >
+                                {title}
+                              </Link>
+                            ) : (
+                              <span className="font-medium">{title}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {due ? formatDate(due) : "—"}
+                          </td>
+                          <td className="px-3 py-2">{assignee ? assignee : "—"}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {priority ? (
+                              <PriorityDropdown
+                                priority={priority}
+                                options={priorityOptions}
+                                disabled={disabled}
+                                onSelect={(next) => {
+                                  if (next === priority) return;
+                                  requestPriorityChange({
+                                    id: taskId,
+                                    next,
+                                    subject: title,
+                                    current: priority,
+                                  });
+                                }}
+                              />
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <StatusDropdown
+                              status={status}
+                              options={statusOptions}
                               disabled={disabled}
                               onSelect={(next) => {
-                                if (next === priority) return;
-                                requestPriorityChange({
+                                if (next === status) return;
+                                requestStatusChange({
                                   id: taskId,
                                   next,
                                   subject: title,
-                                  current: priority,
+                                  current: status,
                                 });
                               }}
                             />
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          <StatusDropdown
-                            status={status}
-                            options={statusOptions}
-                            disabled={disabled}
-                            onSelect={(next) => {
-                              if (next === status) return;
-                              requestStatusChange({
-                                id: taskId,
-                                next,
-                                subject: title,
-                                current: status,
-                              });
-                            }}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={!taskId}
+                              onClick={() => {
+                                setEditId(taskId);
+                                setEditOpen(true);
+                              }}
+                            >
+                              עריכה
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -2872,6 +3067,20 @@ function ProjectTasksTab({
 
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
+                <div className="text-sm font-medium">דומיין *</div>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={businessDomain}
+                  onChange={(e) => setBusinessDomain(e.target.value as ExpenseBusinessDomain)}
+                >
+                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                    <option key={domain} value={domain}>
+                      {getBusinessDomainLabel(domain)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
                 <div className="text-sm font-medium">עדיפות *</div>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -2954,6 +3163,22 @@ function ProjectTasksTab({
           </form>
         </AdaptiveDialog>
       </Dialog>
+
+      <TaskUpsertDialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) setEditId(null);
+        }}
+        mode="edit"
+        taskId={editId}
+        users={assignableUsers
+          .filter((u) => u.active !== false)
+          .map((u) => ({ id: u.id, label: u.full_name ?? u.email }))}
+        fixedTarget={{ type: "project", id: projectId }}
+        defaultProjectType={projectType}
+        onSaved={onChange}
+      />
     </>
   );
 }

@@ -1,12 +1,28 @@
 ﻿import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { isExpenseBusinessDomain } from "@/lib/expenses";
+
+function validateTaskLinkArgs(args: {
+  businessDomain: string | null;
+  hasProject: boolean;
+  hasProperty: boolean;
+}) {
+  if (args.businessDomain === "logistics_projects") {
+    return args.hasProject && !args.hasProperty;
+  }
+  if (args.businessDomain === "property_management") {
+    return !args.hasProject && args.hasProperty;
+  }
+  return !args.hasProject && !args.hasProperty;
+}
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
       project_id?: string;
-      customer_id?: string;
+      property_id?: string;
+      business_domain?: string | null;
       subject?: string;
       description?: string;
       due_date?: string | null;
@@ -15,8 +31,9 @@ export async function POST(req: Request) {
       status?: string | null;
     };
 
-    const projectId = typeof body.project_id === "string" ? body.project_id : "";
-    const customerId = typeof body.customer_id === "string" ? body.customer_id : null;
+    const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
+    const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
+    const businessDomain = isExpenseBusinessDomain(body.business_domain) ? body.business_domain : null;
     const subject = typeof body.subject === "string" ? body.subject.trim() : "";
     const description = typeof body.description === "string" ? body.description.trim() : null;
     const dueDate = typeof body.due_date === "string" ? body.due_date : body.due_date ?? null;
@@ -24,8 +41,16 @@ export async function POST(req: Request) {
     const priority = typeof body.priority === "string" ? body.priority : body.priority ?? null;
     const status = typeof body.status === "string" ? body.status : body.status ?? null;
 
-    if (!projectId || !customerId || !subject || !dueDate || !assignedUserId || !priority || !status) {
+    const hasProject = Boolean(projectId);
+    const hasProperty = Boolean(propertyId);
+    if (!businessDomain || !subject || !dueDate || !assignedUserId || !priority || !status) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+    if (!validateTaskLinkArgs({ businessDomain, hasProject, hasProperty })) {
+      return NextResponse.json(
+        { error: "Invalid linked target for selected business_domain" },
+        { status: 400 }
+      );
     }
 
     const access = await requireRouteAccess();
@@ -35,8 +60,9 @@ export async function POST(req: Request) {
     const { data, error } = await supabase
       .from("tasks")
       .insert({
-        project_id: projectId,
-        customer_id: customerId,
+        business_domain: businessDomain,
+        project_id: hasProject ? projectId : null,
+        property_id: hasProperty ? propertyId : null,
         assigned_user_id: assignedUserId,
         subject,
         description,
@@ -44,7 +70,9 @@ export async function POST(req: Request) {
         priority,
         status,
       })
-      .select("id,project_id,customer_id,assigned_user_id,subject,description,due_date,priority,status,created_at,updated_at")
+      .select(
+        "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,priority,status,created_at,updated_at"
+      )
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });

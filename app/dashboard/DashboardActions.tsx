@@ -615,8 +615,8 @@ export default function DashboardActions({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          business_domain: mapProjectTypeToExpenseDomain(selectedProject.type),
           project_id: selectedProject.id,
-          customer_id: selectedProject.customerId,
           subject: taskSubject.trim(),
           description: taskDescription.trim() || null,
           due_date: taskDueDate,

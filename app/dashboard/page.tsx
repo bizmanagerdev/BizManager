@@ -5,7 +5,7 @@ import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import DashboardActions from "@/app/dashboard/DashboardActions";
 import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard";
 import { getAlertsData } from "@/lib/alerts";
-import { ensureMonthlySalaryPaymentTask } from "@/lib/monthly-tasks";
+import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,8 +67,8 @@ function isUserRole(value: string | null): value is UserRole {
 export default async function DashboardPage() {
   const { profile, supabase } = await requireProfile();
 
-  if (profile.role === "admin") {
-    await ensureMonthlySalaryPaymentTask(supabase, { assignedUserId: profile.id });
+  if (profile.role === "admin" || profile.role === "office") {
+    await ensureRecurringTasksForDate(supabase);
   }
 
   const today = new Date();

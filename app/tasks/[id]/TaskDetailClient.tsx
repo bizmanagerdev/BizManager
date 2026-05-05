@@ -10,6 +10,7 @@ import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
 import {
   Dialog,
   DialogContent,
@@ -71,6 +72,8 @@ type Props = {
   description: string | null;
   notes: string | null;
   attachments: TaskAttachment[];
+  userOptions: Array<{ id: string; label: string }>;
+  fixedTarget: { type: "project" | "property"; id: string } | null;
 };
 
 export default function TaskDetailClient(props: Props) {
@@ -82,6 +85,7 @@ export default function TaskDetailClient(props: Props) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteName, setDeleteName] = useState<string>("");
   const [deleting, setDeleting] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const descriptionText = (props.description ?? "").trim();
 
   const entries = useMemo(() => {
@@ -199,8 +203,17 @@ export default function TaskDetailClient(props: Props) {
   return (
     <div className="space-y-3">
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 flex-row items-start justify-between gap-3">
           <CardTitle className="text-lg">{props.subject}</CardTitle>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={!props.fixedTarget?.id || props.userOptions.length === 0}
+            onClick={() => setEditOpen(true)}
+          >
+            עריכה
+          </Button>
         </CardHeader>
         <CardContent className="text-sm">
           <div className="flex flex-wrap gap-2 items-center">
@@ -238,6 +251,16 @@ export default function TaskDetailClient(props: Props) {
           </div>
         </CardContent>
       </Card>
+
+      <TaskUpsertDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        mode="edit"
+        taskId={props.taskId}
+        users={props.userOptions}
+        fixedTarget={props.fixedTarget}
+        onSaved={() => router.refresh()}
+      />
 
       <Card>
         <CardHeader className="pb-3">

@@ -1,0 +1,446 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import { Button } from "@/components/ui/button";
+import { DateInput } from "@/components/ui/date-input";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  EXPENSE_BUSINESS_DOMAINS,
+  getBusinessDomainLabel,
+  isExpenseBusinessDomain,
+  mapProjectTypeToExpenseDomain,
+  type ExpenseBusinessDomain,
+} from "@/lib/expenses";
+
+export type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+export type TaskPriority = "low" | "medium" | "high" | "urgent";
+export type TaskTargetType = "project" | "property";
+
+export type TaskOption = { id: string; label: string };
+export type UserOption = { id: string; label: string };
+
+type Mode = "create" | "edit";
+
+type Props = {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  mode: Mode;
+  taskId?: string | null;
+  users: UserOption[];
+  projects?: TaskOption[];
+  properties?: TaskOption[];
+  fixedTarget?: { type: TaskTargetType; id: string } | null;
+  defaultProjectType?: string | null;
+  onSaved?: () => void;
+};
+
+function getErrorMessage(err: unknown) {
+  return err instanceof Error ? err.message : "Unknown error";
+}
+
+const STATUS_OPTIONS: TaskStatus[] = ["todo", "in_progress", "blocked", "done", "cancelled"];
+const PRIORITY_OPTIONS: TaskPriority[] = ["low", "medium", "high", "urgent"];
+
+function targetTypeForDomain(domain: ExpenseBusinessDomain): TaskTargetType | null {
+  if (domain === "logistics_projects") return "project";
+  if (domain === "property_management") return "property";
+  return null;
+}
+
+function allowedDomainsForFixedTarget(
+  fixedTarget: Props["fixedTarget"] | undefined,
+  defaultDomain: ExpenseBusinessDomain
+) {
+  if (!fixedTarget) return [...EXPENSE_BUSINESS_DOMAINS];
+  if (fixedTarget.type === "property") return ["property_management"] as ExpenseBusinessDomain[];
+  return [defaultDomain];
+}
+
+export function TaskUpsertDialog(props: Props) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const defaultDomain = useMemo<ExpenseBusinessDomain>(() => {
+    if (props.defaultProjectType) return mapProjectTypeToExpenseDomain(props.defaultProjectType);
+    return "general_business";
+  }, [props.defaultProjectType]);
+
+  const [projectId, setProjectId] = useState("");
+  const [propertyId, setPropertyId] = useState("");
+  const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain>(defaultDomain);
+
+  const [subject, setSubject] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState("");
+  const [priority, setPriority] = useState<TaskPriority>("medium");
+  const [status, setStatus] = useState<TaskStatus>("todo");
+
+  const projects = props.projects ?? [];
+  const properties = props.properties ?? [];
+
+  const effectiveTarget = props.fixedTarget ?? null;
+  const allowedDomains = useMemo(
+    () => allowedDomainsForFixedTarget(props.fixedTarget, defaultDomain),
+    [defaultDomain, props.fixedTarget]
+  );
+  const effectiveDomain = allowedDomains.includes(businessDomain) ? businessDomain : allowedDomains[0] ?? defaultDomain;
+  const derivedTargetType = targetTypeForDomain(effectiveDomain);
+  const showTargetPicker = !effectiveTarget;
+
+  const targetOk = effectiveTarget
+    ? Boolean(effectiveTarget.id)
+    : derivedTargetType === "project"
+      ? Boolean(projectId)
+      : derivedTargetType === "property"
+        ? Boolean(propertyId)
+        : true;
+
+  const canSubmit =
+    Boolean(subject.trim()) &&
+    Boolean(dueDate) &&
+    Boolean(assignedUserId) &&
+    Boolean(businessDomain) &&
+    Boolean(priority) &&
+    Boolean(status) &&
+    targetOk;
+
+  async function loadTask(taskId: string) {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/tasks/get", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: taskId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error ?? "Failed to load task");
+      const task = (json?.task ?? null) as Record<string, unknown> | null;
+      if (!task) throw new Error("Task not found");
+
+      const domainRaw = typeof task.business_domain === "string" ? task.business_domain : null;
+      const nextDomain = isExpenseBusinessDomain(domainRaw) ? domainRaw : defaultDomain;
+      setBusinessDomain(
+        allowedDomains.includes(nextDomain) ? nextDomain : (allowedDomains[0] ?? defaultDomain)
+      );
+
+      const nextProjectId = typeof task.project_id === "string" ? task.project_id : "";
+      const nextPropertyId = typeof task.property_id === "string" ? task.property_id : "";
+      if (nextProjectId) {
+        setProjectId(nextProjectId);
+        setPropertyId("");
+      } else if (nextPropertyId) {
+        setPropertyId(nextPropertyId);
+        setProjectId("");
+      } else {
+        setProjectId("");
+        setPropertyId("");
+      }
+
+      setSubject(typeof task.subject === "string" ? task.subject : "");
+      setDescription(typeof task.description === "string" ? task.description : "");
+      setDueDate(typeof task.due_date === "string" ? task.due_date : "");
+      setAssignedUserId(typeof task.assigned_user_id === "string" ? task.assigned_user_id : "");
+
+      const priorityRaw = typeof task.priority === "string" ? task.priority : null;
+      setPriority((PRIORITY_OPTIONS.includes(priorityRaw as TaskPriority) ? priorityRaw : "medium") as TaskPriority);
+
+      const statusRaw = typeof task.status === "string" ? task.status : null;
+      setStatus((STATUS_OPTIONS.includes(statusRaw as TaskStatus) ? statusRaw : "todo") as TaskStatus);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function resetForCreate() {
+    setProjectId(effectiveTarget?.type === "project" ? effectiveTarget.id : "");
+    setPropertyId(effectiveTarget?.type === "property" ? effectiveTarget.id : "");
+    const nextDomain =
+      effectiveTarget?.type === "property"
+        ? "property_management"
+        : allowedDomains.includes(defaultDomain)
+          ? defaultDomain
+          : (allowedDomains[0] ?? defaultDomain);
+    setBusinessDomain(nextDomain);
+    setSubject("");
+    setDescription("");
+    setDueDate("");
+    setAssignedUserId("");
+    setPriority("medium");
+    setStatus("todo");
+  }
+
+  useEffect(() => {
+    if (!props.open) return;
+    if (props.mode === "edit" && props.taskId) {
+      void loadTask(props.taskId);
+      return;
+    }
+    if (props.mode === "create") {
+      resetForCreate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.open, props.mode, props.taskId]);
+
+  useEffect(() => {
+    if (!allowedDomains.includes(businessDomain)) {
+      setBusinessDomain(allowedDomains[0] ?? defaultDomain);
+    }
+  }, [allowedDomains, businessDomain, defaultDomain]);
+
+  function handleBusinessDomainChange(nextDomain: ExpenseBusinessDomain) {
+    setBusinessDomain(nextDomain);
+    if (effectiveTarget) return;
+
+    const nextTargetType = targetTypeForDomain(nextDomain);
+    if (nextTargetType === "property") {
+      setProjectId("");
+    } else if (nextTargetType === "project") {
+      setPropertyId("");
+    } else {
+      setProjectId("");
+      setPropertyId("");
+    }
+  }
+
+  async function submit() {
+    if (!canSubmit) return;
+    setSaving(true);
+    try {
+      if (props.mode === "create") {
+        const res = await fetch("/api/tasks/create", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            business_domain: effectiveDomain,
+            project_id:
+              (effectiveTarget?.type ?? derivedTargetType) === "project"
+                ? effectiveTarget?.id ?? projectId
+                : null,
+            property_id:
+              (effectiveTarget?.type ?? derivedTargetType) === "property"
+                ? effectiveTarget?.id ?? propertyId
+                : null,
+            subject: subject.trim(),
+            description: description.trim() ? description.trim() : null,
+            due_date: dueDate,
+            assigned_user_id: assignedUserId,
+            priority,
+            status,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error("שגיאה ביצירת משימה", { description: json?.error ?? "" });
+          return;
+        }
+        toast.success("המשימה נוצרה");
+      } else {
+        const res = await fetch("/api/tasks/update", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            id: props.taskId,
+            business_domain: effectiveDomain,
+            project_id:
+              (effectiveTarget?.type ?? derivedTargetType) === "project"
+                ? effectiveTarget?.id ?? projectId
+                : null,
+            property_id:
+              (effectiveTarget?.type ?? derivedTargetType) === "property"
+                ? effectiveTarget?.id ?? propertyId
+                : null,
+            subject: subject.trim(),
+            description: description.trim() ? description.trim() : null,
+            due_date: dueDate,
+            assigned_user_id: assignedUserId,
+            priority,
+            status,
+          }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error("שגיאה בעדכון משימה", { description: json?.error ?? "" });
+          return;
+        }
+        toast.success("המשימה עודכנה");
+      }
+
+      props.onSaved?.();
+      props.onOpenChange(false);
+      router.refresh();
+    } catch (error: unknown) {
+      toast.error(props.mode === "create" ? "שגיאה ביצירת משימה" : "שגיאה בעדכון משימה", {
+        description: getErrorMessage(error),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={props.open}
+      onOpenChange={(next) => {
+        if (!next && (saving || loading)) return;
+        props.onOpenChange(next);
+      }}
+    >
+      <AdaptiveDialog size="formLg">
+        <DialogHeader>
+          <DialogTitle>{props.mode === "create" ? "הוספת משימה" : "עריכת משימה"}</DialogTitle>
+          <DialogDescription>
+            {props.mode === "create"
+              ? "יצירת משימה חדשה."
+              : loading
+                ? "טוען נתוני משימה..."
+                : "עדכון פרטי משימה."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          className="mt-4 space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
+          }}
+        >
+          <div className="space-y-1">
+            <div className="text-sm font-medium">דומיין *</div>
+            <select
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={effectiveDomain}
+              onChange={(e) => handleBusinessDomainChange(e.target.value as ExpenseBusinessDomain)}
+            >
+              {allowedDomains.map((domain) => (
+                <option key={domain} value={domain}>
+                  {getBusinessDomainLabel(domain)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {showTargetPicker && derivedTargetType === "project" ? (
+            <div className="space-y-1">
+              <div className="text-sm font-medium">פרויקט *</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+              >
+                <option value="">בחר פרויקט...</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          {showTargetPicker && derivedTargetType === "property" ? (
+            <div className="space-y-1">
+              <div className="text-sm font-medium">נכס *</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={propertyId}
+                onChange={(e) => setPropertyId(e.target.value)}
+              >
+                <option value="">בחר נכס...</option>
+                {properties.map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          <div className="space-y-1">
+            <div className="text-sm font-medium">כותרת *</div>
+            <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-sm font-medium">תיאור (אופציונלי)</div>
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+
+          <AdaptiveGrid variant="formTwo">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">תאריך יעד *</div>
+              <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <div className="text-sm font-medium">שיוך למשתמש *</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={assignedUserId}
+                onChange={(e) => setAssignedUserId(e.target.value)}
+              >
+                <option value="">בחר משתמש...</option>
+                {props.users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </AdaptiveGrid>
+
+          <AdaptiveGrid variant="formTwo">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">עדיפות *</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as TaskPriority)}
+              >
+                {PRIORITY_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <div className="text-sm font-medium">סטטוס *</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as TaskStatus)}
+              >
+                {STATUS_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </AdaptiveGrid>
+
+          <DialogFooter className="mt-6">
+            <Button type="button" variant="secondary" onClick={() => props.onOpenChange(false)}>
+              ביטול
+            </Button>
+            <Button type="submit" disabled={!canSubmit || saving || loading}>
+              {saving ? "שומר..." : props.mode === "create" ? "יצירה" : "שמירה"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </AdaptiveDialog>
+    </Dialog>
+  );
+}
