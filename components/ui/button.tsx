@@ -16,7 +16,7 @@ const buttonVariants = cva(
         outline:
           "border-primary/25 bg-gradient-to-r from-primary/92 to-primary text-primary-foreground shadow-lg shadow-primary/15 hover:-translate-y-0.5 hover:from-primary hover:to-destructive hover:shadow-xl hover:shadow-destructive/20",
         secondary:
-          "border-warning/20 bg-warning text-warning-foreground shadow-lg shadow-warning/20 hover:-translate-y-0.5 hover:bg-warning/90",
+          "border-primary/18 bg-primary/10 text-primary shadow-md shadow-primary/10 hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-lg hover:shadow-primary/15",
         ghost:
           "border-destructive/15 bg-gradient-to-r from-accent via-accent to-destructive/20 text-accent-foreground shadow-md shadow-destructive/10 hover:-translate-y-0.5 hover:from-destructive hover:to-primary hover:text-primary-foreground hover:shadow-lg hover:shadow-destructive/20",
         link: "text-primary underline-offset-4 hover:underline",

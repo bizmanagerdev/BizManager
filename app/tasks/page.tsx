@@ -1,7 +1,7 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
-import TasksPageClient, { type TaskListItem } from "@/app/tasks/TasksPageClient";
+import TasksPageClient, { type TaskListItem } from "./TasksPageClient";
 
 export const revalidate = 30;
 const PAGE_SIZE = 50;

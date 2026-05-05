@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import {
+  emitProgressActivityEnd,
+  emitProgressActivityStart,
+} from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
@@ -22,6 +26,7 @@ import {
   mapProjectTypeToExpenseDomain,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
+import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 
 export type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
@@ -64,6 +69,7 @@ function allowedDomainsForFixedTarget(
 ) {
   if (!fixedTarget) return [...EXPENSE_BUSINESS_DOMAINS];
   if (fixedTarget.type === "property") return ["property_management"] as ExpenseBusinessDomain[];
+  if (fixedTarget.type === "project") return ["logistics_projects"] as ExpenseBusinessDomain[];
   return [defaultDomain];
 }
 
@@ -218,6 +224,7 @@ export function TaskUpsertDialog(props: Props) {
   async function submit() {
     if (!canSubmit) return;
     setSaving(true);
+    emitProgressActivityStart();
     try {
       if (props.mode === "create") {
         const res = await fetch("/api/tasks/create", {
@@ -286,6 +293,7 @@ export function TaskUpsertDialog(props: Props) {
         description: getErrorMessage(error),
       });
     } finally {
+      emitProgressActivityEnd();
       setSaving(false);
     }
   }
@@ -410,7 +418,7 @@ export function TaskUpsertDialog(props: Props) {
               >
                 {PRIORITY_OPTIONS.map((option) => (
                   <option key={option} value={option}>
-                    {option}
+                    {getTaskPriorityLabel(option)}
                   </option>
                 ))}
               </select>
@@ -424,7 +432,7 @@ export function TaskUpsertDialog(props: Props) {
               >
                 {STATUS_OPTIONS.map((option) => (
                   <option key={option} value={option}>
-                    {option}
+                    {getTaskStatusLabel(option)}
                   </option>
                 ))}
               </select>

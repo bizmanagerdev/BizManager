@@ -24,6 +24,7 @@ import {
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import type { TaskOption, TaskPriority, TaskStatus, UserOption } from "@/components/tasks/TaskUpsertDialog";
+import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 
 type TemplateItem = {
   id: string;
@@ -515,7 +516,7 @@ export default function RecurringTasksClient(props: Props) {
                 >
                   {PRIORITY_OPTIONS.map((priority) => (
                     <option key={priority} value={priority}>
-                      {priority}
+                      {getTaskPriorityLabel(priority)}
                     </option>
                   ))}
                 </select>
@@ -529,7 +530,7 @@ export default function RecurringTasksClient(props: Props) {
                 >
                   {STATUS_OPTIONS.map((status) => (
                     <option key={status} value={status}>
-                      {status}
+                      {getTaskStatusLabel(status)}
                     </option>
                   ))}
                 </select>

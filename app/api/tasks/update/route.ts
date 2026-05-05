@@ -25,6 +25,16 @@ function validateTaskLinkArgs(args: {
   return !args.hasProject && !args.hasProperty;
 }
 
+function normalizeTaskWriteError(message: string) {
+  if (
+    message.includes('null value in column "project_id"') ||
+    message.includes('null value in column "property_id"')
+  ) {
+    return 'Task link columns are still using the old database constraint. Run db/sql/make_tasks_project_and_property_nullable.sql.';
+  }
+  return message;
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
@@ -155,7 +165,9 @@ export async function POST(req: Request) {
       )
       .maybeSingle();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error) {
+      return NextResponse.json({ error: normalizeTaskWriteError(error.message) }, { status: 400 });
+    }
     if (data?.id) {
       await logAuditEvent({
         supabase,

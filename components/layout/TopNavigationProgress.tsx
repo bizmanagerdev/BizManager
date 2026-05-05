@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 const NAV_START_EVENT = "app:navigation-start";
+const ACTIVITY_START_EVENT = "app:progress-activity-start";
+const ACTIVITY_END_EVENT = "app:progress-activity-end";
 const ROUTE_LOADING_SELECTOR = "[data-route-loading='true']";
 const SKELETON_APPEAR_WAIT_MS = 1400;
 const MIN_VISIBLE_MS = 500;
@@ -12,6 +14,16 @@ const FAILSAFE_MS = 12000;
 export function emitNavigationStart() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(NAV_START_EVENT));
+}
+
+export function emitProgressActivityStart() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(ACTIVITY_START_EVENT));
+}
+
+export function emitProgressActivityEnd() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(ACTIVITY_END_EVENT));
 }
 
 function hasRouteLoadingSkeleton() {
@@ -26,7 +38,9 @@ export function TopNavigationProgress() {
   const [visible, setVisible] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  const visibleRef = useRef(false);
   const pendingRouteChangeRef = useRef(false);
+  const activityCountRef = useRef(0);
   const fromRouteKeyRef = useRef("");
   const navStartedAtRef = useRef<number>(0);
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -64,6 +78,12 @@ export function TopNavigationProgress() {
     }, wait);
   }
 
+  function finalizeIfIdle() {
+    if (pendingRouteChangeRef.current) return;
+    if (activityCountRef.current > 0) return;
+    hideAfterMinVisible();
+  }
+
   function monitorSkeletonLifecycle() {
     clearAllTimers();
     disconnectObserver();
@@ -80,13 +100,13 @@ export function TopNavigationProgress() {
 
       if (seenSkeletonRef.current) {
         disconnectObserver();
-        hideAfterMinVisible();
+        finalizeIfIdle();
         return;
       }
 
       if (Date.now() - startCheckAt >= SKELETON_APPEAR_WAIT_MS) {
         disconnectObserver();
-        hideAfterMinVisible();
+        finalizeIfIdle();
       }
     });
 
@@ -95,7 +115,7 @@ export function TopNavigationProgress() {
     // Backup: if no DOM mutation happens, still decide after window.
     finalizeTimerRef.current = setTimeout(() => {
       disconnectObserver();
-      hideAfterMinVisible();
+      finalizeIfIdle();
     }, SKELETON_APPEAR_WAIT_MS);
 
     // Hard failsafe.
@@ -103,33 +123,59 @@ export function TopNavigationProgress() {
       if (!visible) return;
       disconnectObserver();
       clearAllTimers();
-      hideAfterMinVisible();
+      finalizeIfIdle();
     }, FAILSAFE_MS);
   }
 
   useEffect(() => {
-    function start() {
+    function ensureStarted() {
       clearAllTimers();
       disconnectObserver();
       navStartedAtRef.current = Date.now();
-      fromRouteKeyRef.current = routeKey;
-      pendingRouteChangeRef.current = true;
-      seenSkeletonRef.current = false;
-      setVisible(true);
-      setProgress((prev) => (prev > 18 ? prev : 18));
+      if (!visibleRef.current) {
+        setVisible(true);
+        setProgress((prev) => (prev > 18 ? prev : 18));
+      } else {
+        setProgress((prev) => (prev > 18 ? prev : 18));
+      }
 
       progressTimerRef.current = setInterval(() => {
         setProgress((prev) => (prev >= 90 ? prev : prev + 6));
       }, 120);
     }
 
-    window.addEventListener(NAV_START_EVENT, start);
+    function startNavigation() {
+      ensureStarted();
+      fromRouteKeyRef.current = routeKey;
+      pendingRouteChangeRef.current = true;
+      seenSkeletonRef.current = false;
+    }
+
+    function startActivity() {
+      activityCountRef.current += 1;
+      ensureStarted();
+    }
+
+    function endActivity() {
+      activityCountRef.current = Math.max(0, activityCountRef.current - 1);
+      finalizeIfIdle();
+    }
+
+    window.addEventListener(NAV_START_EVENT, startNavigation);
+    window.addEventListener(ACTIVITY_START_EVENT, startActivity);
+    window.addEventListener(ACTIVITY_END_EVENT, endActivity);
     return () => {
-      window.removeEventListener(NAV_START_EVENT, start);
+      window.removeEventListener(NAV_START_EVENT, startNavigation);
+      window.removeEventListener(ACTIVITY_START_EVENT, startActivity);
+      window.removeEventListener(ACTIVITY_END_EVENT, endActivity);
       clearAllTimers();
       disconnectObserver();
     };
   }, [routeKey]);
+
+  useEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) return;

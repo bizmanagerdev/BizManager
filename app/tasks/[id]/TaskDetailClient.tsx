@@ -4,6 +4,10 @@ import Image from "next/image";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import {
+  emitProgressActivityEnd,
+  emitProgressActivityStart,
+} from "@/components/layout/TopNavigationProgress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
@@ -74,7 +78,23 @@ type Props = {
   attachments: TaskAttachment[];
   userOptions: Array<{ id: string; label: string }>;
   fixedTarget: { type: "project" | "property"; id: string } | null;
+  returnTo?: string | null;
 };
+
+function DetailItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null | undefined;
+}) {
+  return (
+    <div className="rounded-md border bg-muted/20 px-3 py-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-sm font-medium">{value || "—"}</div>
+    </div>
+  );
+}
 
 export default function TaskDetailClient(props: Props) {
   const router = useRouter();
@@ -86,6 +106,7 @@ export default function TaskDetailClient(props: Props) {
   const [deleteName, setDeleteName] = useState<string>("");
   const [deleting, setDeleting] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [taskDeleting, setTaskDeleting] = useState(false);
   const descriptionText = (props.description ?? "").trim();
 
   const entries = useMemo(() => {
@@ -93,7 +114,7 @@ export default function TaskDetailClient(props: Props) {
     if (!raw) return [];
     return raw
       .split("\n\n")
-      .map((t) => t.trim())
+      .map((text) => text.trim())
       .filter(Boolean)
       .map((text) => {
         const match = text.match(/^\[(.+?)\]\s(.+?):\s([\s\S]*)$/);
@@ -110,6 +131,7 @@ export default function TaskDetailClient(props: Props) {
   async function addComment() {
     if (!message.trim()) return;
     setSubmitting(true);
+    emitProgressActivityStart();
     try {
       const res = await fetch("/api/tasks/add-comment", {
         method: "POST",
@@ -118,19 +140,20 @@ export default function TaskDetailClient(props: Props) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("\u05E9\u05D2\u05D9\u05D0\u05D4 \u05D1\u05D4\u05D5\u05E1\u05E4\u05EA \u05D4\u05E2\u05E8\u05D4", {
+        toast.error("שגיאה בהוספת תגובה", {
           description: json?.error ?? "",
         });
         return;
       }
-      toast.success("\u05D4\u05D4\u05E2\u05E8\u05D4 \u05E0\u05D5\u05E1\u05E4\u05D4");
+      toast.success("התגובה נוספה");
       setMessage("");
       router.refresh();
-    } catch (e: unknown) {
-      toast.error("\u05E9\u05D2\u05D9\u05D0\u05D4 \u05D1\u05D4\u05D5\u05E1\u05E4\u05EA \u05D4\u05E2\u05E8\u05D4", {
-        description: getErrorMessage(e),
+    } catch (error: unknown) {
+      toast.error("שגיאה בהוספת תגובה", {
+        description: getErrorMessage(error),
       });
     } finally {
+      emitProgressActivityEnd();
       setSubmitting(false);
     }
   }
@@ -138,6 +161,7 @@ export default function TaskDetailClient(props: Props) {
   async function uploadAttachments(files: FileList | File[] | null) {
     if (!files || files.length === 0) return;
     setUploading(true);
+    emitProgressActivityStart();
     try {
       for (const file of Array.from(files)) {
         const form = new FormData();
@@ -150,20 +174,21 @@ export default function TaskDetailClient(props: Props) {
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
-          toast.error("\u05E9\u05D2\u05D9\u05D0\u05D4 \u05D1\u05D4\u05E2\u05DC\u05D0\u05EA \u05E7\u05D5\u05D1\u05E5", {
+          toast.error("שגיאה בהעלאת קובץ", {
             description: json?.error ?? "",
           });
           return;
         }
       }
 
-      toast.success("\u05D4\u05E7\u05D1\u05E6\u05D9\u05DD \u05D4\u05D5\u05E2\u05DC\u05D5");
+      toast.success("הקבצים הועלו");
       router.refresh();
-    } catch (e: unknown) {
-      toast.error("\u05E9\u05D2\u05D9\u05D0\u05D4 \u05D1\u05D4\u05E2\u05DC\u05D0\u05EA \u05E7\u05D5\u05D1\u05E5", {
-        description: getErrorMessage(e),
+    } catch (error: unknown) {
+      toast.error("שגיאה בהעלאת קובץ", {
+        description: getErrorMessage(error),
       });
     } finally {
+      emitProgressActivityEnd();
       setUploading(false);
     }
   }
@@ -177,6 +202,7 @@ export default function TaskDetailClient(props: Props) {
   async function confirmDeleteAttachment() {
     if (!deleteId) return;
     setDeleting(true);
+    emitProgressActivityStart();
     try {
       const res = await fetch("/api/documents/delete", {
         method: "POST",
@@ -193,61 +219,91 @@ export default function TaskDetailClient(props: Props) {
       setDeleteId(null);
       setDeleteName("");
       router.refresh();
-    } catch (e: unknown) {
-      toast.error("שגיאה במחיקה", { description: getErrorMessage(e) });
+    } catch (error: unknown) {
+      toast.error("שגיאה במחיקה", { description: getErrorMessage(error) });
     } finally {
+      emitProgressActivityEnd();
       setDeleting(false);
+    }
+  }
+
+  async function deleteTask() {
+    const ok = window.confirm(`למחוק את המשימה "${props.subject}"?`);
+    if (!ok) return;
+
+    setTaskDeleting(true);
+    emitProgressActivityStart();
+    try {
+      const res = await fetch("/api/tasks/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: props.taskId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error("שגיאה במחיקת משימה", { description: json?.error ?? "" });
+        return;
+      }
+      toast.success("המשימה נמחקה");
+      router.push(props.returnTo ?? "/tasks");
+      router.refresh();
+    } catch (error: unknown) {
+      toast.error("שגיאה במחיקת משימה", { description: getErrorMessage(error) });
+    } finally {
+      emitProgressActivityEnd();
+      setTaskDeleting(false);
     }
   }
 
   return (
     <div className="space-y-3">
       <Card>
-        <CardHeader className="pb-3 flex-row items-start justify-between gap-3">
-          <CardTitle className="text-lg">{props.subject}</CardTitle>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={!props.fixedTarget?.id || props.userOptions.length === 0}
-            onClick={() => setEditOpen(true)}
-          >
-            עריכה
-          </Button>
-        </CardHeader>
-        <CardContent className="text-sm">
-          <div className="flex flex-wrap gap-2 items-center">
-            <StatusBadge value={props.status} type="task" />
-            {props.priority ? (
-              <StatusBadge value={props.priority} type="priority" />
-            ) : null}
+        <CardHeader className="space-y-3 pb-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 space-y-2">
+              <CardTitle className="text-lg leading-tight">{props.subject}</CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge value={props.status} type="task" />
+                {props.priority ? <StatusBadge value={props.priority} type="priority" /> : null}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!props.fixedTarget?.id || props.userOptions.length === 0}
+                onClick={() => setEditOpen(true)}
+              >
+                עריכה
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={taskDeleting}
+                onClick={() => void deleteTask()}
+              >
+                {taskDeleting ? "מוחק..." : "מחיקה"}
+              </Button>
+            </div>
           </div>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-muted-foreground">
-            <div>
-              {"\u05EA\u05D0\u05E8\u05D9\u05DA \u05D9\u05E2\u05D3"}:{" "}
-              <span className="text-foreground">{formatDate(props.dueDate)}</span>
-            </div>
-            <div>
-              {"\u05DE\u05E9\u05D5\u05D9\u05DA"}:{" "}
-              <span className="text-foreground">{props.assignedUserName ?? "—"}</span>
-            </div>
-            <div>
-              {"\u05E4\u05E8\u05D5\u05D9\u05E7\u05D8"}:{" "}
-              <span className="text-foreground">{props.projectName ?? "—"}</span>
-            </div>
-            <div>
-              {"\u05DC\u05E7\u05D5\u05D7"}:{" "}
-              <span className="text-foreground">{props.customerName ?? "—"}</span>
-            </div>
+        </CardHeader>
+
+        <CardContent className="space-y-3 pt-0 text-sm">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <DetailItem label="תאריך יעד" value={formatDate(props.dueDate)} />
+            <DetailItem label="משויך" value={props.assignedUserName} />
+            <DetailItem label="פרויקט" value={props.projectName} />
+            <DetailItem label="לקוח" value={props.customerName} />
           </div>
 
-          <div className="mt-3 pt-3 border-t">
-            <div className="text-xs text-muted-foreground">{"\u05EA\u05D9\u05D0\u05D5\u05E8"}</div>
-            {descriptionText ? (
-              <div className="mt-1 whitespace-pre-wrap">{descriptionText}</div>
-            ) : (
-              <div className="mt-1 text-muted-foreground">{"\u05D0\u05D9\u05DF \u05EA\u05D9\u05D0\u05D5\u05E8."}</div>
-            )}
+          <div className="rounded-md border bg-muted/10 px-3 py-2">
+            <div className="text-[11px] text-muted-foreground">תיאור</div>
+            <div className="mt-1 whitespace-pre-wrap text-sm">
+              {descriptionText || "אין תיאור."}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -263,90 +319,91 @@ export default function TaskDetailClient(props: Props) {
       />
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">
-            {"\u05E7\u05D1\u05E6\u05D9\u05DD \u05DE\u05E6\u05D5\u05E8\u05E4\u05D9\u05DD"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <FileUploadActions
-              files={[]}
-              accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
-              multiple
-              disabled={uploading}
-              onFilesSelected={(files) => void uploadAttachments(files)}
-              chooseLabel={uploading ? "\u05DE\u05E2\u05DC\u05D4..." : "\u05D4\u05D5\u05E1\u05E4\u05EA \u05E7\u05D1\u05E6\u05D9\u05DD"}
-            />
-            <div className="text-xs text-muted-foreground">
-              {props.attachments.length} {"\u05E7\u05D1\u05E6\u05D9\u05DD"}
+        <CardHeader className="pb-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-base">קבצים מצורפים</CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-muted-foreground">
+                {props.attachments.length} קבצים
+              </div>
+              <FileUploadActions
+                files={[]}
+                accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
+                multiple
+                disabled={uploading}
+                onFilesSelected={(files) => void uploadAttachments(files)}
+                chooseLabel={uploading ? "מעלה..." : "הוספת קבצים"}
+              />
             </div>
           </div>
+        </CardHeader>
 
+        <CardContent className="pt-0 text-sm">
           {props.attachments.length === 0 ? (
-            <div className="text-muted-foreground">
-              {"\u05D0\u05D9\u05DF \u05E7\u05D1\u05E6\u05D9\u05DD \u05DE\u05E6\u05D5\u05E8\u05E4\u05D9\u05DD."}
-            </div>
+            <div className="text-muted-foreground">אין קבצים מצורפים.</div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {props.attachments.map((a) => {
+            <div className="space-y-2">
+              {props.attachments.map((attachment) => {
                 const meta = [
-                  a.original_name ?? null,
-                  formatBytes(a.size_bytes),
-                  a.created_at ? formatIsoStamp(a.created_at) : null,
-                  a.uploader_name ? `הוזן ע״י ${a.uploader_name}` : null,
+                  formatBytes(attachment.size_bytes),
+                  attachment.created_at ? formatIsoStamp(attachment.created_at) : null,
+                  attachment.uploader_name ? `הועלה ע"י ${attachment.uploader_name}` : null,
                 ]
                   .filter(Boolean)
-                  .join(" \u2022 ");
+                  .join(" • ");
 
                 return (
-                  <div key={a.id} className="rounded-md border bg-card p-2">
-                    {a.url && a.kind === "image" ? (
-                      <a href={a.url} target="_blank" rel="noreferrer">
-                        <Image
-                          src={a.url}
-                          alt={a.original_name ?? "image"}
-                          width={1200}
-                          height={704}
-                          unoptimized
-                          className="h-44 w-full rounded-md object-cover"
-                        />
-                      </a>
-                    ) : a.url && a.kind === "video" ? (
-                      <video
-                        className="h-44 w-full rounded-md bg-muted object-cover"
-                        src={a.url}
-                        controls
-                      />
-                    ) : a.url ? (
-                      <a
-                        href={a.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block rounded-md border bg-muted/30 p-3 text-primary hover:underline"
-                      >
-                        {a.original_name ?? "file"}
-                      </a>
-                    ) : (
-                      <div className="rounded-md border bg-muted/30 p-3 text-muted-foreground">
-                        {"\u05DC\u05D0 \u05E0\u05D9\u05EA\u05DF \u05DC\u05D8\u05E2\u05D5\u05DF \u05EA\u05E6\u05D5\u05D2\u05D4."}
+                  <div
+                    key={attachment.id}
+                    className="flex flex-col gap-2 rounded-md border px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      {attachment.url && attachment.kind === "image" ? (
+                        <a href={attachment.url} target="_blank" rel="noreferrer">
+                          <Image
+                            src={attachment.url}
+                            alt={attachment.original_name ?? "image"}
+                            width={80}
+                            height={80}
+                            unoptimized
+                            className="h-12 w-12 rounded-md object-cover"
+                          />
+                        </a>
+                      ) : attachment.url && attachment.kind === "video" ? (
+                        <video className="h-12 w-12 rounded-md bg-muted object-cover" src={attachment.url} />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground">
+                          קובץ
+                        </div>
+                      )}
+
+                      <div className="min-w-0">
+                        {attachment.url ? (
+                          <a
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block truncate font-medium text-primary hover:underline"
+                          >
+                            {attachment.original_name ?? "קובץ"}
+                          </a>
+                        ) : (
+                          <div className="truncate font-medium">{attachment.original_name ?? "קובץ"}</div>
+                        )}
+                        {meta ? (
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground">{meta}</div>
+                        ) : null}
                       </div>
-                    )}
-
-                    {meta ? (
-                      <div className="mt-2 text-xs text-muted-foreground truncate">{meta}</div>
-                    ) : null}
-
-                    <div className="mt-2 flex justify-end">
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => openDeleteAttachment(a.id, a.original_name)}
-                      >
-                        מחיקה
-                      </Button>
                     </div>
+
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => openDeleteAttachment(attachment.id, attachment.original_name)}
+                    >
+                      מחיקה
+                    </Button>
                   </div>
                 );
               })}
@@ -370,12 +427,12 @@ export default function TaskDetailClient(props: Props) {
           <DialogHeader>
             <DialogTitle>מחיקת קובץ</DialogTitle>
             <DialogDescription>
-              פעולה זו תמחק את הקובץ מ־Storage ואת הרשומה מהמערכת (אם יש הרשאה).
+              פעולה זו תמחק את הקובץ מהאחסון ואת הרשומה שלו מהמערכת.
             </DialogDescription>
           </DialogHeader>
 
           <div className="text-sm">
-            למחוק את: <span className="font-medium">{deleteName || "קובץ"}</span> ?
+            למחוק את <span className="font-medium">{deleteName || "הקובץ"}</span>?
           </div>
 
           <DialogFooter className="mt-4">
@@ -400,41 +457,41 @@ export default function TaskDetailClient(props: Props) {
       </Dialog>
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">{"\u05EA\u05D2\u05D5\u05D1\u05D5\u05EA"}</CardTitle>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">תגובות</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm space-y-3">
+
+        <CardContent className="space-y-3 pt-0 text-sm">
           {entries.length === 0 ? (
-            <div className="text-muted-foreground">
-              {"\u05D0\u05D9\u05DF \u05D4\u05E2\u05E8\u05D5\u05EA \u05DC\u05D4\u05E6\u05D2\u05D4."}
-            </div>
+            <div className="text-muted-foreground">אין תגובות להצגה.</div>
           ) : (
             <div className="space-y-2">
-              {entries.map((e, idx) => (
-                <div key={idx} className="rounded-md border bg-card p-3">
-                  {e.stamp && e.author ? (
+              {entries.map((entry, index) => (
+                <div key={index} className="rounded-md border px-3 py-2">
+                  {entry.stamp && entry.author ? (
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <span className="text-xs font-mono text-muted-foreground">
-                        [{formatIsoStamp(e.stamp)}]
+                      <span className="text-[11px] text-muted-foreground">
+                        {formatIsoStamp(entry.stamp)}
                       </span>
-                      <span className="text-sm font-medium">{e.author}:</span>
+                      <span className="text-sm font-medium">{entry.author}</span>
                     </div>
                   ) : null}
-                  <div className="mt-1 whitespace-pre-wrap">{e.message ?? e.raw}</div>
+                  <div className="mt-1 whitespace-pre-wrap">{entry.message ?? entry.raw}</div>
                 </div>
               ))}
             </div>
           )}
 
-          <div className="pt-2 border-t space-y-2">
+          <div className="space-y-2 border-t pt-3">
             <Textarea
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder={"\u05DB\u05EA\u05D5\u05D1 \u05EA\u05D2\u05D5\u05D1\u05D4..."}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="כתבו תגובה..."
+              className="min-h-24"
             />
             <div className="flex justify-end">
               <Button disabled={submitting || !message.trim()} onClick={() => void addComment()}>
-                {submitting ? "\u05E9\u05D5\u05DE\u05E8..." : "\u05D4\u05D5\u05E1\u05E4\u05EA \u05EA\u05D2\u05D5\u05D1\u05D4"}
+                {submitting ? "שומר..." : "הוספת תגובה"}
               </Button>
             </div>
           </div>

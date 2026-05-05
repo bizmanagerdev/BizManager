@@ -30,7 +30,11 @@ import { ClientOnly } from "@/components/ClientOnly";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import {
+  emitNavigationStart,
+  emitProgressActivityEnd,
+  emitProgressActivityStart,
+} from "@/components/layout/TopNavigationProgress";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
   paymentMethodLabel,
@@ -2318,6 +2322,7 @@ function ProjectTasksTab({
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [savingStatus, setSavingStatus] = useState(false);
@@ -2382,6 +2387,7 @@ function ProjectTasksTab({
   const [dueDate, setDueDate] = useState<string>("");
   const [assignedUserId, setAssignedUserId] = useState<string>("");
   const [createFiles, setCreateFiles] = useState<File[]>([]);
+  const [propertyTargetId, setPropertyTargetId] = useState("");
   const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain>(() =>
     mapProjectTypeToExpenseDomain(projectType)
   );
@@ -2399,36 +2405,44 @@ function ProjectTasksTab({
 
   const effectiveStatus = (status || statusOptions[0] || "todo") as TaskStatus;
   const effectivePriority = (priority || priorityOptions[0] || "") as TaskPriority;
+  const projectLinkRequired = businessDomain === "logistics_projects";
+  const propertyLinkRequired = businessDomain === "property_management";
   const canSubmit =
     Boolean(subject.trim()) &&
     Boolean(dueDate) &&
     Boolean(assignedUserId) &&
     Boolean(effectivePriority) &&
     Boolean(effectiveStatus) &&
-    Boolean(businessDomain);
+    Boolean(businessDomain) &&
+    (!propertyLinkRequired || Boolean(propertyTargetId.trim())) &&
+    (!projectLinkRequired || Boolean(projectId));
 
   const subjectError = !subject.trim();
   const dueDateError = !dueDate;
   const assignedUserError = !assignedUserId;
+  const propertyTargetError = propertyLinkRequired && !propertyTargetId.trim();
   const createTaskValidationMessage = (() => {
     if (creating || canSubmit) return "";
     const missing: string[] = [];
     if (subjectError) missing.push("כותרת");
     if (dueDateError) missing.push("תאריך יעד");
     if (assignedUserError) missing.push("שיוך למשתמש");
+    if (propertyTargetError) missing.push("מזהה נכס");
     return missing.length > 0 ? `חסרים שדות חובה: ${missing.join(", ")}` : "";
   })();
 
   async function createTask() {
     if (!canSubmit) return;
     setCreating(true);
+    emitProgressActivityStart();
     try {
       const res = await fetch("/api/tasks/create", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           business_domain: businessDomain,
-          project_id: projectId,
+          project_id: projectLinkRequired ? projectId : null,
+          property_id: propertyLinkRequired ? propertyTargetId.trim() : null,
           subject,
           description: description.trim() ? description : undefined,
           due_date: dueDate ? dueDate : null,
@@ -2475,6 +2489,7 @@ function ProjectTasksTab({
       setDescription("");
       setDueDate("");
       setAssignedUserId("");
+      setPropertyTargetId("");
       setPriority("");
       setStatus("");
       setCreateFiles([]);
@@ -2482,12 +2497,14 @@ function ProjectTasksTab({
     } catch (e: unknown) {
       toast.error("שגיאה ביצירת משימה", { description: getErrorMessage(e) });
     } finally {
+      emitProgressActivityEnd();
       setCreating(false);
     }
   }
 
   async function updateStatus(id: string, status: TaskStatus) {
     setUpdatingId(id);
+    emitProgressActivityStart();
     try {
       const res = await fetch("/api/tasks/update-status", {
         method: "POST",
@@ -2514,12 +2531,14 @@ function ProjectTasksTab({
       toast.error("שגיאה בעדכון סטטוס", { description: getErrorMessage(e) });
       return false;
     } finally {
+      emitProgressActivityEnd();
       setUpdatingId(null);
     }
   }
 
   async function updatePriority(id: string, priority: TaskPriority) {
     setUpdatingId(id);
+    emitProgressActivityStart();
     try {
       const res = await fetch("/api/tasks/update-priority", {
         method: "POST",
@@ -2546,6 +2565,7 @@ function ProjectTasksTab({
       toast.error("שגיאה בעדכון עדיפות", { description: getErrorMessage(e) });
       return false;
     } finally {
+      emitProgressActivityEnd();
       setUpdatingId(null);
     }
   }
@@ -2598,6 +2618,37 @@ function ProjectTasksTab({
       }
     } finally {
       setSavingPriority(false);
+    }
+  }
+
+  async function deleteTask(id: string, subject: string) {
+    const ok = window.confirm(`למחוק את המשימה "${subject}"?`);
+    if (!ok) return;
+
+    setDeletingTaskId(id);
+    emitProgressActivityStart();
+    try {
+      const res = await fetch("/api/tasks/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error("שגיאה במחיקת משימה", { description: json?.error ?? "" });
+        return;
+      }
+
+      toast.success("המשימה נמחקה");
+      setLocalTasks((prev) =>
+        prev.filter((row) => (getFirstString(row, ["task_id", "id"]) ?? "") !== id)
+      );
+      onChange();
+    } catch (e: unknown) {
+      toast.error("שגיאה במחיקת משימה", { description: getErrorMessage(e) });
+    } finally {
+      emitProgressActivityEnd();
+      setDeletingTaskId(null);
     }
   }
 
@@ -2746,13 +2797,22 @@ function ProjectTasksTab({
                             type="button"
                             variant="outline"
                             size="sm"
-                            disabled={!taskId}
+                            disabled={!taskId || deletingTaskId === taskId}
                             onClick={() => {
                               setEditId(taskId);
                               setEditOpen(true);
                             }}
                           >
                             עריכה
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            disabled={!taskId || deletingTaskId === taskId}
+                            onClick={() => void deleteTask(taskId, title)}
+                          >
+                            {deletingTaskId === taskId ? "מוחק..." : "מחיקה"}
                           </Button>
                         </div>
                         <div className="flex flex-wrap gap-2 items-center">
@@ -2821,7 +2881,7 @@ function ProjectTasksTab({
                         })() ??
                         null;
 
-                      const disabled = !taskId || updatingId === taskId;
+                      const disabled = !taskId || updatingId === taskId || deletingTaskId === taskId;
 
                       return (
                         <tr key={taskId || title} className="hover:bg-muted/30">
@@ -2880,18 +2940,29 @@ function ProjectTasksTab({
                             />
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={!taskId}
-                              onClick={() => {
-                                setEditId(taskId);
-                                setEditOpen(true);
-                              }}
-                            >
-                              עריכה
-                            </Button>
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={!taskId || deletingTaskId === taskId}
+                                onClick={() => {
+                                  setEditId(taskId);
+                                  setEditOpen(true);
+                                }}
+                              >
+                                עריכה
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                disabled={!taskId || deletingTaskId === taskId}
+                                onClick={() => void deleteTask(taskId, title)}
+                              >
+                                {deletingTaskId === taskId ? "מוחק..." : "מחיקה"}
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2981,13 +3052,22 @@ function ProjectTasksTab({
         open={createOpen}
         onOpenChange={(open) => {
           setCreateOpen(open);
-          if (!open) setCreateFiles([]);
+          if (!open) {
+            setCreateFiles([]);
+            setPropertyTargetId("");
+          }
         }}
       >
         <AdaptiveDialog size="formLg">
           <DialogHeader>
             <DialogTitle>הוספת משימה</DialogTitle>
-            <DialogDescription>משימה תתווסף לפרויקט ותופיע ברשימה.</DialogDescription>
+            <DialogDescription>
+              {projectLinkRequired
+                ? "משימה תתווסף לפרויקט ותופיע ברשימה."
+                : propertyLinkRequired
+                  ? "הזינו את מזהה הנכס שאליו המשימה קשורה."
+                  : "משימה כללית ללא קישור ישיר לפרויקט או נכס."}
+            </DialogDescription>
           </DialogHeader>
 
           <form
@@ -3071,7 +3151,13 @@ function ProjectTasksTab({
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={businessDomain}
-                  onChange={(e) => setBusinessDomain(e.target.value as ExpenseBusinessDomain)}
+                  onChange={(e) => {
+                    const nextDomain = e.target.value as ExpenseBusinessDomain;
+                    setBusinessDomain(nextDomain);
+                    if (nextDomain !== "property_management") {
+                      setPropertyTargetId("");
+                    }
+                  }}
                 >
                   {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
                     <option key={domain} value={domain}>
@@ -3109,6 +3195,33 @@ function ProjectTasksTab({
                 </select>
               </div>
             </AdaptiveGrid>
+
+            {projectLinkRequired ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">מזהה פרויקט</div>
+                <Input value={projectId} readOnly disabled />
+              </div>
+            ) : null}
+
+            {propertyLinkRequired ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">מזהה נכס *</div>
+                <Input
+                  value={propertyTargetId}
+                  onChange={(e) => setPropertyTargetId(e.target.value)}
+                  placeholder="הזינו מזהה נכס"
+                  aria-invalid={propertyTargetError}
+                  className={
+                    propertyTargetError
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  }
+                />
+                {propertyTargetError ? (
+                  <div className="text-xs text-destructive">שדה חובה</div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="space-y-1">
               <div className="text-sm font-medium">
