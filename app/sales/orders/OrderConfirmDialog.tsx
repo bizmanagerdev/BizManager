@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
@@ -19,7 +21,6 @@ import {
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
   derivePaymentStatus,
-  paymentMethodLabel,
   paymentStatusClasses,
   paymentStatusLabel,
 } from "@/lib/orders/paymentStatus";

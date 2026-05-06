@@ -21,85 +21,21 @@ export default function ProjectWorkerExportActions({
   const [activeMode, setActiveMode] = useState<ShareMode>(null);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
 
-  const buildPdfFile = useCallback(async () => {
+  const openPrintDialog = useCallback(async () => {
     const exportElement = document.getElementById(exportContentId);
     if (!exportElement) {
       throw new Error("לא נמצא תוכן הייצוא ליצירת PDF.");
     }
 
-    const [{ toCanvas }, { jsPDF }] = await Promise.all([import("html-to-image"), import("jspdf")]);
-
-    const canvas = await toCanvas(exportElement, {
-      pixelRatio: 2,
-      backgroundColor: "#ffffff",
-      cacheBust: true,
-      width: exportElement.scrollWidth,
-      height: exportElement.scrollHeight,
-      canvasWidth: exportElement.scrollWidth,
-      canvasHeight: exportElement.scrollHeight,
-    });
-
-    const imageData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4",
-      compress: true,
-    });
-
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const imageWidth = pageWidth;
-    const imageHeight = (canvas.height * imageWidth) / canvas.width;
-    let remainingHeight = imageHeight;
-    let offsetY = 0;
-
-    pdf.addImage(imageData, "PNG", 0, offsetY, imageWidth, imageHeight, undefined, "FAST");
-    remainingHeight -= pageHeight;
-
-    while (remainingHeight > 0) {
-      offsetY = remainingHeight - imageHeight;
-      pdf.addPage();
-      pdf.addImage(imageData, "PNG", 0, offsetY, imageWidth, imageHeight, undefined, "FAST");
-      remainingHeight -= pageHeight;
-    }
-
-    const pdfBlob = pdf.output("blob");
-    return new File([pdfBlob], pdfFileName, { type: "application/pdf" });
-  }, [exportContentId, pdfFileName]);
-
-  function downloadFile(file: File) {
-    const objectUrl = URL.createObjectURL(file);
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = file.name;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-  }
+    window.print();
+  }, [exportContentId]);
 
   const sharePdfToWhatsApp = useCallback(async () => {
     setActiveMode("whatsapp");
     setShareMessage(null);
     try {
-      const file = await buildPdfFile();
-      if (
-        typeof navigator !== "undefined" &&
-        typeof navigator.share === "function" &&
-        typeof navigator.canShare === "function" &&
-        navigator.canShare({ files: [file] })
-      ) {
-        await navigator.share({
-          title: shareTitle,
-          text: shareTitle,
-          files: [file],
-        });
-        return;
-      }
-
-      downloadFile(file);
-      setShareMessage("ה-PDF ירד למכשיר. אפשר לצרף אותו עכשיו ל-WhatsApp.");
+      await openPrintDialog();
+      setShareMessage(`שמרו את ${shareTitle} כ-PDF בשם ${pdfFileName} דרך חלון ההדפסה ואז צרפו אותו ל-WhatsApp.`);
     } catch (error: unknown) {
       if (error instanceof Error && error.name === "AbortError") {
         return;
@@ -108,7 +44,7 @@ export default function ProjectWorkerExportActions({
     } finally {
       setActiveMode(null);
     }
-  }, [buildPdfFile, shareTitle]);
+  }, [openPrintDialog, pdfFileName, shareTitle]);
 
   const isBusy = activeMode !== null;
 

@@ -79,7 +79,9 @@ export async function GET(
   const { data: customer, error: customerError } = customerId
     ? await supabase
         .from("customers")
-        .select("id,name,name_for_invoice,email,phone,address")
+        .select(
+          "id,name,name_for_invoice,email,phone,address,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error"
+        )
         .eq("id", customerId)
         .maybeSingle()
     : { data: null, error: null };
@@ -147,10 +149,49 @@ export async function GET(
     };
   });
 
+  const [
+    { data: orderMorningDocuments, error: orderMorningDocumentsError },
+    { data: paymentMorningDocuments, error: paymentMorningDocumentsError },
+  ] = await Promise.all([
+    supabase
+      .from("morning_documents")
+      .select(
+        "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at"
+      )
+      .eq("order_id", id)
+      .order("issued_at", { ascending: false }),
+    paymentIds.length > 0
+      ? supabase
+          .from("morning_documents")
+          .select(
+            "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at"
+          )
+          .in("payment_id", paymentIds)
+          .order("issued_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (orderMorningDocumentsError) {
+    return NextResponse.json({ error: orderMorningDocumentsError.message }, { status: 400 });
+  }
+  if (paymentMorningDocumentsError) {
+    return NextResponse.json({ error: paymentMorningDocumentsError.message }, { status: 400 });
+  }
+
+  const morningDocuments = Array.from(
+    new Map(
+      [...((orderMorningDocuments ?? []) as Row[]), ...((paymentMorningDocuments ?? []) as Row[])].map((row) => [
+        getString(row, "id") ?? crypto.randomUUID(),
+        row,
+      ])
+    ).values()
+  );
+
   return NextResponse.json({
     order,
     orderItems: orderItems ?? [],
     payments: paymentsWithRecordedBy,
+    morningDocuments,
     customer,
     products: products ?? [],
     totalAmount,

@@ -272,7 +272,7 @@ export default function SalaryCenterClient({
   const [error, setError] = useState("");
   const [protectedData, setProtectedData] = useState<SalaryCenterProtectedPayload | null>(null);
   const [protectedError, setProtectedError] = useState("");
-  const [loadingProtected, setLoadingProtected] = useState(false);
+  const [, setLoadingProtected] = useState(false);
   const [salaryUnlocked, setSalaryUnlocked] = useState(initiallyUnlocked);
   const [workerForm, setWorkerForm] = useState<WorkerFormState>({
     full_name: "",
@@ -489,12 +489,6 @@ export default function SalaryCenterClient({
           (agreementsByUserId.get(user.id) ?? []).length > 0
       ),
     [agreementsByUserId, filteredWorkers]
-  );
-
-  const isAttendanceWorker = useCallback(
-    (user: Pick<SalaryCenterUserRow, "role"> | null | undefined) =>
-      user?.role === "worker" || user?.role === "worker_no_access",
-    []
   );
 
   const filteredSessions = useMemo(() => {
@@ -1266,10 +1260,6 @@ export default function SalaryCenterClient({
       )
     );
   }, [sessionForm.session_id, workerPaymentAllocationsBySessionId, workerPaymentsById]);
-  const canManageSessionPayments =
-    sessionMode === "edit" &&
-    sessionDialogWorker?.pay_tracking_mode === "session" &&
-    Boolean(sessionDialogDebtItem);
   const sessionDialogWorkedMinutes = useMemo(() => {
     const start = new Date(sessionForm.clock_in).getTime();
     const end = new Date(sessionForm.clock_out).getTime();

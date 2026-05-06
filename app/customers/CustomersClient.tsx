@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatShortDate } from "@/lib/date";
+import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
 import {
   Dialog,
   DialogDescription,
@@ -166,6 +167,10 @@ export default function CustomersClient({
     () => rows.find((row) => s(row, "customer_id") === detailsCustomerId) ?? null,
     [rows, detailsCustomerId]
   );
+
+  useEffect(() => {
+    setRows(initialRows);
+  }, [initialRows]);
 
   useEffect(() => {
     if (!initialDetailsCustomerId) return;
@@ -975,6 +980,16 @@ function CustomerDetailsDialog({
                   עריכת לקוח
                 </Button>
               </div>
+
+              <MorningCustomerCard
+                customerId={id}
+                morningClientId={s(row, "morning_client_id") || null}
+                morningMatchStatus={s(row, "morning_match_status") || null}
+                morningSyncedAt={s(row, "morning_synced_at") || null}
+                morningLastSyncError={s(row, "morning_last_sync_error") || null}
+                morningDocuments={Array.isArray(row.morning_documents) ? (row.morning_documents as never[]) : []}
+                onChanged={() => router.refresh()}
+              />
 
               <div className="space-y-2 rounded-md border bg-background p-3">
                 <div className="flex items-center justify-between gap-2">

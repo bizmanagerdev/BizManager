@@ -15,6 +15,7 @@ import type {
 } from "@/app/projects/[id]/ProjectTabsClient";
 import { PAYMENT_SELECT } from "@/lib/payments";
 import type { FinancialAttachment } from "@/lib/payments";
+import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { WorkSessionRow } from "@/lib/payroll";
 import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import { Badge } from "@/components/ui/badge";
@@ -625,6 +626,37 @@ export default async function ProjectPage({
 
   const paymentsError = paymentsQueryError?.message ?? null;
 
+  const [
+    { data: projectMorningDocuments, error: projectMorningDocumentsError },
+    { data: paymentMorningDocuments, error: paymentMorningDocumentsError },
+  ] = await Promise.all([
+    supabase
+      .from("morning_documents")
+      .select(
+        "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at"
+      )
+      .eq("project_id", id)
+      .order("issued_at", { ascending: false }),
+    paymentIds.length > 0
+      ? supabase
+          .from("morning_documents")
+          .select(
+            "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at"
+          )
+          .in("payment_id", paymentIds)
+          .order("issued_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const morningDocuments = Array.from(
+    new Map(
+      [
+        ...((projectMorningDocuments ?? []) as Record<string, unknown>[]),
+        ...((paymentMorningDocuments ?? []) as Record<string, unknown>[]),
+      ].map((row) => [getFirstString(row, ["id"]) ?? crypto.randomUUID(), row])
+    ).values()
+  ) as MorningLocalDocument[];
+
   const { data: projectDocumentLinks, error: projectDocumentsError } = await supabase
     .from("document_links")
     .select("document_id,entity_type,entity_id,created_at")
@@ -945,6 +977,10 @@ export default async function ProjectPage({
             expenseAuditById={expenseAuditResult.byRecordId}
             payments={paymentsWithPhotos}
             paymentsError={paymentsError}
+            morningDocuments={morningDocuments}
+            morningDocumentsError={
+              projectMorningDocumentsError?.message ?? paymentMorningDocumentsError?.message ?? null
+            }
             paymentRecordedByNameByValue={paymentRecordedByNameByValue}
             paymentAuditById={paymentAuditResult.byRecordId}
             paymentAuditError={paymentAuditResult.error}

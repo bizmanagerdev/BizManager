@@ -24,8 +24,10 @@ import {
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
+import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { formatOrderDate } from "@/lib/orders/format";
 import { paymentMethodLabel, paymentStatusClasses } from "@/lib/orders/paymentStatus";
+import type { MorningLocalDocument } from "@/lib/morning/types";
 
 type Row = Record<string, unknown>;
 
@@ -33,6 +35,7 @@ type DetailsResponse = {
   order: Row;
   orderItems: Row[];
   payments: Row[];
+  morningDocuments: MorningLocalDocument[];
   customer: Row | null;
   products: Row[];
   totalAmount: number;
@@ -218,6 +221,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DetailsResponse | null>(null);
+  const [refreshSeed, setRefreshSeed] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -247,7 +251,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [open, orderId]);
+  }, [open, orderId, refreshSeed]);
 
   const productMap = useMemo(() => {
     const map = new Map<string, Row>();
@@ -293,6 +297,10 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
   const customerPhone = getString((data?.customer ?? {}) as Row, "phone");
   const fullAddress = getString((data?.customer ?? {}) as Row, "address") ?? "-";
   const orderNotes = getString((data?.order ?? {}) as Row, "notes");
+  const orderMorningDocuments = data?.morningDocuments ?? [];
+  const orderLevelMorningDocuments = orderMorningDocuments.filter((document) => !document.payment_id);
+  const resolvedCustomerId =
+    getString((data?.customer ?? {}) as Row, "id") ?? getString((data?.order ?? {}) as Row, "customer_id") ?? "";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -397,6 +405,24 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
               </SectionCard>
             </div>
 
+            {resolvedCustomerId ? (
+              <SectionCard
+                title="Morning"
+                subtitle="מסמכי הזמנה וחשבונות"
+                icon={<FileText className="h-4 w-4" />}
+                iconClassName="border border-emerald-200 bg-emerald-50 text-emerald-700"
+              >
+                <MorningDocumentsPanel
+                  customerId={resolvedCustomerId}
+                  orderId={orderId}
+                  documents={orderLevelMorningDocuments}
+                  allowQuote
+                  allowInvoice
+                  onChanged={() => setRefreshSeed((current) => current + 1)}
+                />
+              </SectionCard>
+            ) : null}
+
             <ExpandableSection
               title="פריטי הזמנה"
               count={summary.itemCount}
@@ -450,10 +476,14 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                   {data.payments.map((payment, index) => {
                     const amount = getNumber(payment, "amount_total") ?? 0;
                     const isRefund = amount < 0;
+                    const paymentId = getString(payment, "id") ?? "";
+                    const paymentMorningDocuments = orderMorningDocuments.filter(
+                      (document) => document.payment_id === paymentId
+                    );
 
                     return (
                       <div
-                        key={getString(payment, "id") ?? `payment-${index}`}
+                        key={paymentId || `payment-${index}`}
                         className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm"
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -480,6 +510,20 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                             הוזן ע״י {getString(payment, "recorded_by_display")}
                           </div>
                         ) : null}
+                        {!isRefund && paymentId && resolvedCustomerId ? (
+                          <div className="mt-3 border-t border-border/60 pt-3">
+                            <MorningDocumentsPanel
+                              customerId={resolvedCustomerId}
+                              orderId={orderId}
+                              paymentId={paymentId}
+                              documents={paymentMorningDocuments}
+                              allowReceipt
+                              allowInvoiceReceipt
+                              compact
+                              onChanged={() => setRefreshSeed((current) => current + 1)}
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -494,6 +538,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
             orderId={orderId}
             totalAmount={data?.totalAmount ?? 0}
             paidAmount={data?.totalPaid ?? 0}
+            onCreated={() => setRefreshSeed((current) => current + 1)}
           />
           <OrderEditDialog orderId={orderId} buttonLabel="עריכת הזמנה" />
           <OrderConfirmDialog orderId={orderId} buttonLabel="אישור אספקה" />

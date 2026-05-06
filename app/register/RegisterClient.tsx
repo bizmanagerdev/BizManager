@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useMemo, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -18,7 +18,7 @@ export default function RegisterClient() {
   }, [searchParams]);
 
   const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(prefillEmail);
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [notes, setNotes] = useState("");
@@ -27,10 +27,6 @@ export default function RegisterClient() {
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [navLoading, setNavLoading] = useState(false);
-
-  useEffect(() => {
-    if (prefillEmail) setEmail(prefillEmail);
-  }, [prefillEmail]);
 
   function onChange(setter: (v: string) => void) {
     return (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildPaymentInsert } from "@/lib/payments";
 import {
@@ -78,7 +79,7 @@ function safeExtensionFromFilename(name: string) {
   return ext.replace(/[^a-z0-9]/g, "").slice(0, 10);
 }
 
-async function cleanupUploadedDocument(supabase: any, uploaded: UploadedDocument[]) {
+async function cleanupUploadedDocument(supabase: SupabaseClient, uploaded: UploadedDocument[]) {
   if (uploaded.length === 0) return;
 
   for (const document of uploaded) {
@@ -175,7 +176,7 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
-    let uploadedDocuments: UploadedDocument[] = [];
+    const uploadedDocuments: UploadedDocument[] = [];
 
     const subtotal = normalizedItems.reduce(
       (sum, item) => sum + item.quantity_ordered * item.unit_price - item.discount_amount,

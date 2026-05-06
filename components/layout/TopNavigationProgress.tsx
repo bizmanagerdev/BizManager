@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 const NAV_START_EVENT = "app:navigation-start";
@@ -48,7 +48,7 @@ export function TopNavigationProgress() {
   const observerRef = useRef<MutationObserver | null>(null);
   const seenSkeletonRef = useRef(false);
 
-  function clearAllTimers() {
+  const clearAllTimers = useCallback(() => {
     if (progressTimerRef.current) {
       clearInterval(progressTimerRef.current);
       progressTimerRef.current = null;
@@ -57,16 +57,16 @@ export function TopNavigationProgress() {
       clearTimeout(finalizeTimerRef.current);
       finalizeTimerRef.current = null;
     }
-  }
+  }, []);
 
-  function disconnectObserver() {
+  const disconnectObserver = useCallback(() => {
     if (observerRef.current) {
       observerRef.current.disconnect();
       observerRef.current = null;
     }
-  }
+  }, []);
 
-  function hideAfterMinVisible() {
+  const hideAfterMinVisible = useCallback(() => {
     const elapsed = Date.now() - navStartedAtRef.current;
     const wait = Math.max(0, MIN_VISIBLE_MS - elapsed);
     finalizeTimerRef.current = setTimeout(() => {
@@ -76,15 +76,15 @@ export function TopNavigationProgress() {
         setProgress(0);
       }, 280);
     }, wait);
-  }
+  }, []);
 
-  function finalizeIfIdle() {
+  const finalizeIfIdle = useCallback(() => {
     if (pendingRouteChangeRef.current) return;
     if (activityCountRef.current > 0) return;
     hideAfterMinVisible();
-  }
+  }, [hideAfterMinVisible]);
 
-  function monitorSkeletonLifecycle() {
+  const monitorSkeletonLifecycle = useCallback(() => {
     clearAllTimers();
     disconnectObserver();
 
@@ -125,7 +125,7 @@ export function TopNavigationProgress() {
       clearAllTimers();
       finalizeIfIdle();
     }, FAILSAFE_MS);
-  }
+  }, [clearAllTimers, disconnectObserver, finalizeIfIdle, visible]);
 
   useEffect(() => {
     function ensureStarted() {
@@ -171,7 +171,7 @@ export function TopNavigationProgress() {
       clearAllTimers();
       disconnectObserver();
     };
-  }, [routeKey]);
+  }, [clearAllTimers, disconnectObserver, finalizeIfIdle, routeKey]);
 
   useEffect(() => {
     visibleRef.current = visible;
@@ -184,8 +184,7 @@ export function TopNavigationProgress() {
 
     pendingRouteChangeRef.current = false;
     monitorSkeletonLifecycle();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeKey, visible]);
+  }, [monitorSkeletonLifecycle, routeKey, visible]);
 
   if (!visible) return null;
 

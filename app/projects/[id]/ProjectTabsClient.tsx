@@ -69,6 +69,8 @@ import {
   getTaskStatusLabel,
 } from "@/lib/ui/status-colors";
 import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
+import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
+import type { MorningLocalDocument } from "@/lib/morning/types";
 
 export type ProjectOverview = {
   id: string;
@@ -350,6 +352,8 @@ export default function ProjectTabsClient({
   expenseAuditById,
   payments,
   paymentsError,
+  morningDocuments,
+  morningDocumentsError,
   paymentRecordedByNameByValue,
   paymentAuditById,
   paymentAuditError,
@@ -382,6 +386,8 @@ export default function ProjectTabsClient({
   expenseAuditById: Record<string, AuditRecordInfo>;
   payments: PaymentRow[];
   paymentsError: string | null;
+  morningDocuments: MorningLocalDocument[];
+  morningDocumentsError: string | null;
   paymentRecordedByNameByValue: Record<string, string>;
   paymentAuditById: Record<string, AuditRecordInfo>;
   paymentAuditError: string | null;
@@ -396,6 +402,7 @@ export default function ProjectTabsClient({
   const [docsFilterCategory, setDocsFilterCategory] = useState<string>("");
   const [expensesUi, setExpensesUi] = useState<ExpenseListItem[]>(expenses);
   const [paymentsUi, setPaymentsUi] = useState<PaymentRow[]>(payments);
+  const [morningBillingOpen, setMorningBillingOpen] = useState(false);
   const [projectTasksUi, setProjectTasksUi] =
     useState<Record<string, unknown>[]>(projectTasks);
   const firstWorkerSessionDefaults = useMemo(() => {
@@ -423,6 +430,11 @@ export default function ProjectTabsClient({
   useEffect(() => {
     setPaymentsUi(payments);
   }, [payments]);
+
+  const projectMorningDocuments = useMemo(
+    () => morningDocuments.filter((document) => !document.payment_id),
+    [morningDocuments]
+  );
 
   useEffect(() => {
     setProjectTasksUi(projectTasks);
@@ -1131,12 +1143,6 @@ export default function ProjectTabsClient({
     };
   }, [deletingExpenseId, deletingPaymentId, deletingSessionId, pendingDeletion]);
 
-  function openGreenInvoicePlaceholder() {
-    toast.info("שליחת קבלה / חשבונית תחובר בהמשך", {
-      description: "נחבר כאן בהמשך את ה-API של חשבונית ירוקה לשליחה ישירה ללקוח.",
-    });
-  }
-
   async function updateBasePrice(next: number) {
     setUpdateBasePriceSaving(true);
     const toastId = "update-base-price";
@@ -1426,7 +1432,7 @@ export default function ProjectTabsClient({
             <CardHeader className="pb-3 flex-row items-center justify-between">
               <CardTitle className="text-base">הכנסות</CardTitle>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => openGreenInvoicePlaceholder()}>
+                <Button type="button" variant="outline" size="sm" onClick={() => setMorningBillingOpen(true)}>
                   שליחת קבלה / חשבונית
                 </Button>
                 <Button
@@ -1458,6 +1464,9 @@ export default function ProjectTabsClient({
                     const reference = p.reference_number ?? "";
                     const paymentStatus = typeof p.payment_status === "string" ? p.payment_status : "";
                     const dueDate = typeof p.due_date === "string" ? p.due_date : null;
+                    const paymentMorningDocuments = morningDocuments.filter(
+                      (document) => document.payment_id === p.id
+                    );
                     const insertedByLabel = paymentRecordedByLabel(p, {
                       paymentRecordedByNameByValue,
                       paymentAuditById,
@@ -1494,6 +1503,20 @@ export default function ProjectTabsClient({
                             <div className="text-xs text-muted-foreground mt-1">
                               {paymentAudit.actionLabel} ע״י {paymentAudit.actorName}
                               {paymentAudit.createdAt ? ` · ${formatDateTime(paymentAudit.createdAt)}` : ""}
+                            </div>
+                          ) : null}
+                          {amount !== null && amount > 0 && overview.customer_id ? (
+                            <div className="mt-3 border-t border-border/60 pt-3">
+                              <MorningDocumentsPanel
+                                customerId={overview.customer_id}
+                                projectId={overview.id}
+                                paymentId={p.id}
+                                documents={paymentMorningDocuments}
+                                allowReceipt
+                                allowInvoiceReceipt
+                                compact
+                                onChanged={() => router.refresh()}
+                              />
                             </div>
                           ) : null}
                           {Array.isArray(p.attachments) && p.attachments.length > 0 ? (
@@ -1906,6 +1929,88 @@ export default function ProjectTabsClient({
           </CardContent>
         </Card>
       </TabsContent>
+
+      <Dialog open={morningBillingOpen} onOpenChange={setMorningBillingOpen}>
+        <AdaptiveDialog size="details4xl">
+          <DialogHeader>
+            <DialogTitle>מסמכי Morning</DialogTitle>
+            <DialogDescription>
+              הנפקת חשבונית לפרויקט, קבלות לתשלומים, ומעקב אחרי המסמכים שהופקו.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {morningDocumentsError ? (
+              <div className="text-sm text-destructive">שגיאה בטעינת מסמכי Morning: {morningDocumentsError}</div>
+            ) : null}
+
+            {overview.customer_id ? (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">חשבונית לפרויקט</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <MorningDocumentsPanel
+                    customerId={overview.customer_id}
+                    projectId={overview.id}
+                    documents={projectMorningDocuments}
+                    allowInvoice
+                    onChanged={() => router.refresh()}
+                  />
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="text-sm text-muted-foreground">לא נמצא לקוח משויך לפרויקט, ולכן אי אפשר להפיק מסמך Morning.</div>
+            )}
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">קבלות לפי תשלום</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {paymentsUi.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">אין תשלומים להצגה.</div>
+                ) : (
+                  paymentsUi.map((payment) => {
+                    const amount = toNumber(payment.amount_total);
+                    const paymentMorningDocuments = morningDocuments.filter(
+                      (document) => document.payment_id === payment.id
+                    );
+
+                    return (
+                      <div key={`morning-payment-${payment.id}`} className="rounded-xl border p-3">
+                        <div className="mb-2 text-sm font-medium">
+                          {amount !== null ? formatIls(amount) : "תשלום"} · {formatDate(payment.payment_date ?? payment.created_at ?? null)}
+                        </div>
+                        {amount !== null && amount > 0 && overview.customer_id ? (
+                          <MorningDocumentsPanel
+                            customerId={overview.customer_id}
+                            projectId={overview.id}
+                            paymentId={payment.id}
+                            documents={paymentMorningDocuments}
+                            allowReceipt
+                            allowInvoiceReceipt
+                            compact
+                            onChanged={() => router.refresh()}
+                          />
+                        ) : (
+                          <div className="text-xs text-muted-foreground">אי אפשר להפיק קבלה עבור החזר או תשלום לא תקין.</div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button type="button" variant="secondary" onClick={() => setMorningBillingOpen(false)}>
+              סגירה
+            </Button>
+          </DialogFooter>
+        </AdaptiveDialog>
+      </Dialog>
 
       <Dialog
         open={uploadDocsOpen}

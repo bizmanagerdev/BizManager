@@ -68,8 +68,20 @@ export default async function CustomersPage({
   const { data: customerRows, error: customerRowsError } = customerIds.length
     ? await supabase
         .from("customers")
-        .select("id,whatsapp")
+        .select(
+          "id,whatsapp,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error"
+        )
         .in("id", customerIds)
+    : { data: [], error: null };
+
+  const { data: morningDocumentRows, error: morningDocumentsError } = customerIds.length
+    ? await supabase
+        .from("morning_documents")
+        .select(
+          "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at"
+        )
+        .in("customer_id", customerIds)
+        .order("issued_at", { ascending: false })
     : { data: [], error: null };
 
   const { data: projectRows, error: projectRowsError } = customerIds.length
@@ -102,6 +114,15 @@ export default async function CustomersPage({
     const id = typeof row?.id === "string" ? row.id.trim() : "";
     if (!id) return;
     customerById.set(id, row);
+  });
+
+  const morningDocumentsByCustomerId = new Map<string, Row[]>();
+  ((morningDocumentRows ?? []) as Row[]).forEach((row) => {
+    const customerId = typeof row?.customer_id === "string" ? row.customer_id.trim() : "";
+    if (!customerId) return;
+    const list = morningDocumentsByCustomerId.get(customerId) ?? [];
+    list.push(row);
+    morningDocumentsByCustomerId.set(customerId, list);
   });
 
   const financialByProjectId = new Map<string, Row>();
@@ -201,6 +222,13 @@ export default async function CustomersPage({
       open_balance: Math.max(totalSales - totalPaid, 0),
       last_payment_at: lastPaymentAt,
       whatsapp: typeof customer?.whatsapp === "string" ? customer.whatsapp : null,
+      morning_client_id: typeof customer?.morning_client_id === "string" ? customer.morning_client_id : null,
+      morning_synced_at: typeof customer?.morning_synced_at === "string" ? customer.morning_synced_at : null,
+      morning_match_status:
+        typeof customer?.morning_match_status === "string" ? customer.morning_match_status : null,
+      morning_last_sync_error:
+        typeof customer?.morning_last_sync_error === "string" ? customer.morning_last_sync_error : null,
+      morning_documents: morningDocumentsByCustomerId.get(id) ?? [],
       contacts: contactsByCustomerId.get(id) ?? [],
     };
   });
@@ -209,6 +237,7 @@ export default async function CustomersPage({
     overviewError?.message ??
     contactsError?.message ??
     customerRowsError?.message ??
+    morningDocumentsError?.message ??
     projectRowsError?.message ??
     projectFinancialError?.message ??
     projectPaymentError?.message ??

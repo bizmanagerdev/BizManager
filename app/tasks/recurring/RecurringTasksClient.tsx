@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
 import {
   Dialog,

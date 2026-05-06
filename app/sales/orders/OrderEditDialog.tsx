@@ -60,25 +60,15 @@ export default function OrderEditDialog({
   initialStatusOverride?: string;
   allowOrderStatusEdit?: boolean;
 }) {
-  if (allowOrderStatusEdit || initialStatusOverride === "delivered") {
-    return (
-      <OrderConfirmDialog
-        orderId={orderId}
-        buttonLabel={buttonLabel}
-        title={title}
-        description={description}
-        defaultStatus={initialStatusOverride ?? "delivered"}
-      />
-    );
-  }
-
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<EditPayload | null>(null);
+  const shouldUseConfirmDialog = allowOrderStatusEdit || initialStatusOverride === "delivered";
 
   useEffect(() => {
+    if (shouldUseConfirmDialog) return;
     if (!open) return;
 
     let cancelled = false;
@@ -106,7 +96,19 @@ export default function OrderEditDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, orderId]);
+  }, [open, orderId, shouldUseConfirmDialog]);
+
+  if (shouldUseConfirmDialog) {
+    return (
+      <OrderConfirmDialog
+        orderId={orderId}
+        buttonLabel={buttonLabel}
+        title={title}
+        description={description}
+        defaultStatus={initialStatusOverride ?? "delivered"}
+      />
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
