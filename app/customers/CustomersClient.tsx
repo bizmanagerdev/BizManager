@@ -538,6 +538,7 @@ export default function CustomersClient({
           const id = s(row, "customer_id");
           const customerName = s(row, "customer_name") || "לקוח";
           const linkedMorningClientId = s(row, "morning_client_id");
+          const openBalance = n(row, "open_balance");
           return (
             <Card key={id || customerName} className="overflow-hidden">
               <CardContent className="p-0">
@@ -549,6 +550,11 @@ export default function CustomersClient({
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-semibold">{customerName}</span>
+                    {openBalance > 0 ? (
+                      <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                        חוב פתוח
+                      </span>
+                    ) : null}
                     {row.active === false ? (
                       <span className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">
                         לא פעיל
@@ -986,9 +992,83 @@ function CustomerDetailsDialog({
                 <div>
                   <span className="text-muted-foreground">הערות:</span> {s(row, "notes") || "-"}
                 </div>
-                <Button type="button" size="sm" variant="outline" onClick={() => onEdit(row)}>
-                  עריכת לקוח
-                </Button>
+                <div className="grid gap-2 pt-1 sm:grid-cols-2">
+                  <Button type="button" size="sm" variant="outline" onClick={() => onEdit(row)}>
+                    עריכת לקוח
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!id || isNavigating}
+                    onClick={() =>
+                      navigateToCustomerPage(
+                        "projects",
+                        `/projects?customer_id=${encodeURIComponent(id)}${
+                          customerNameParam
+                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                            : ""
+                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                      )
+                    }
+                  >
+                    {isNavigating && navigationTarget === "projects" ? "פותח פרויקטים..." : "צפייה בפרויקטים"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!id || isNavigating}
+                    onClick={() =>
+                      navigateToCustomerPage(
+                        "sales",
+                        `/sales?customer_id=${encodeURIComponent(id)}${
+                          customerNameParam
+                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                            : ""
+                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                      )
+                    }
+                  >
+                    {isNavigating && navigationTarget === "sales" ? "פותח הזמנות..." : "צפייה בהזמנות"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!id || isNavigating}
+                    onClick={() =>
+                      navigateToCustomerPage(
+                        "financial",
+                        `/financial?customer_id=${encodeURIComponent(id)}${
+                          customerNameParam
+                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                            : ""
+                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                      )
+                    }
+                  >
+                    {isNavigating && navigationTarget === "financial" ? "פותח מידע פיננסי..." : "מידע פיננסי"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!id || isNavigating}
+                    onClick={() =>
+                      navigateToCustomerPage(
+                        "documents",
+                        `/documents?customer_id=${encodeURIComponent(id)}${
+                          customerNameParam
+                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                            : ""
+                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                      )
+                    }
+                  >
+                    {isNavigating && navigationTarget === "documents" ? "פותח מסמכים..." : "קבלות ומסמכים"}
+                  </Button>
+                </div>
               </div>
 
               <MorningCustomerCard
@@ -1045,80 +1125,6 @@ function CustomerDetailsDialog({
               </div>
             </AdaptiveGrid>
 
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!id || isNavigating}
-                onClick={() =>
-                  navigateToCustomerPage(
-                    "projects",
-                    `/projects?customer_id=${encodeURIComponent(id)}${
-                      customerNameParam
-                        ? `&customer_name=${encodeURIComponent(customerNameParam)}`
-                        : ""
-                    }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
-                  )
-                }
-              >
-                {isNavigating && navigationTarget === "projects" ? "פותח פרויקטים..." : "צפייה בפרויקטים"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!id || isNavigating}
-                onClick={() =>
-                  navigateToCustomerPage(
-                    "sales",
-                    `/sales?customer_id=${encodeURIComponent(id)}${
-                      customerNameParam
-                        ? `&customer_name=${encodeURIComponent(customerNameParam)}`
-                        : ""
-                    }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
-                  )
-                }
-              >
-                {isNavigating && navigationTarget === "sales" ? "פותח הזמנות..." : "צפייה בהזמנות"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!id || isNavigating}
-                onClick={() =>
-                  navigateToCustomerPage(
-                    "financial",
-                    `/financial?customer_id=${encodeURIComponent(id)}${
-                      customerNameParam
-                        ? `&customer_name=${encodeURIComponent(customerNameParam)}`
-                        : ""
-                    }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
-                  )
-                }
-              >
-                {isNavigating && navigationTarget === "financial" ? "פותח מידע פיננסי..." : "מידע פיננסי"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!id || isNavigating}
-                onClick={() =>
-                  navigateToCustomerPage(
-                    "documents",
-                    `/documents?customer_id=${encodeURIComponent(id)}${
-                      customerNameParam
-                        ? `&customer_name=${encodeURIComponent(customerNameParam)}`
-                        : ""
-                    }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
-                  )
-                }
-              >
-                {isNavigating && navigationTarget === "documents" ? "פותח מסמכים..." : "קבלות ומסמכים"}
-              </Button>
-            </div>
           </div>
         ) : null}
       </AdaptiveDialog>
