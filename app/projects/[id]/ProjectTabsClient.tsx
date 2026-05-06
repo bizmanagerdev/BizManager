@@ -1131,6 +1131,12 @@ export default function ProjectTabsClient({
     };
   }, [deletingExpenseId, deletingPaymentId, deletingSessionId, pendingDeletion]);
 
+  function openGreenInvoicePlaceholder() {
+    toast.info("שליחת קבלה / חשבונית תחובר בהמשך", {
+      description: "נחבר כאן בהמשך את ה-API של חשבונית ירוקה לשליחה ישירה ללקוח.",
+    });
+  }
+
   async function updateBasePrice(next: number) {
     setUpdateBasePriceSaving(true);
     const toastId = "update-base-price";
@@ -1419,17 +1425,22 @@ export default function ProjectTabsClient({
           <Card>
             <CardHeader className="pb-3 flex-row items-center justify-between">
               <CardTitle className="text-base">הכנסות</CardTitle>
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                onClick={() => {
-                  setEditingPayment(null);
-                  setAddIncomeOpen(true);
-                }}
-              >
-                הוספת הכנסה
-              </Button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => openGreenInvoicePlaceholder()}>
+                  שליחת קבלה / חשבונית
+                </Button>
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  onClick={() => {
+                    setEditingPayment(null);
+                    setAddIncomeOpen(true);
+                  }}
+                >
+                  הוספת הכנסה
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="flex min-h-[28rem] flex-col text-sm">
               {paymentsError ? (

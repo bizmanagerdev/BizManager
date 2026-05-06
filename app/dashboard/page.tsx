@@ -5,6 +5,7 @@ import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import DashboardActions from "@/app/dashboard/DashboardActions";
 import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard";
 import { getAlertsData } from "@/lib/alerts";
+import { getScheduleEntries } from "@/lib/projectSchedule";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,7 @@ export default async function DashboardPage() {
     { data: currentOpenSessionRow, error: currentOpenSessionError },
     cashFlowOverviewResult,
     alertsResult,
+    scheduleEntriesResult,
   ] = await Promise.all([
     supabase
       .from("operations_dashboard_view")
@@ -149,6 +151,12 @@ export default async function DashboardPage() {
         error: error?.message ?? "שגיאה בטעינת נתוני תזרים",
       })),
     getAlertsData(supabase, { viewerRole: profile.role }),
+    getScheduleEntries(supabase)
+      .then((data) => ({ data, error: null as string | null }))
+      .catch((error: { message?: string }) => ({
+        data: [],
+        error: error?.message ?? "שגיאה בטעינת לוח הזמנים",
+      })),
   ]);
 
   const activeProjectsCount = typeof activeProjectsCountResult.count === "number" ? activeProjectsCountResult.count : 0;
@@ -244,6 +252,7 @@ export default async function DashboardPage() {
     alertsResult.errors.projects ? `פרויקטים: ${alertsResult.errors.projects}` : null,
     alertsResult.errors.invoices ? `התראות חשבוניות: ${alertsResult.errors.invoices}` : null,
     alertsResult.errors.payroll ? `התראות שכר: ${alertsResult.errors.payroll}` : null,
+    scheduleEntriesResult.error ? `לוח זמנים: ${scheduleEntriesResult.error}` : null,
   ].filter(Boolean) as string[];
 
   return (
@@ -276,6 +285,8 @@ export default async function DashboardPage() {
               currentUserRole={profile.role}
               currentOpenSession={currentOpenSession}
               salaryAgreements={salaryAgreements}
+              scheduleEntries={scheduleEntriesResult.data ?? []}
+              todayIso={today.toISOString().slice(0, 10)}
             />
           </CardContent>
         </Card>
@@ -344,7 +355,7 @@ export default async function DashboardPage() {
             </AdaptiveGrid>
           </div>
 
-          <CashFlowOverviewCard rows={cashFlowDomainBreakdown} transactionCount={recentTransactionCount} />
+          <CashFlowOverviewCard rows={cashFlowDomainBreakdown} />
         </AdaptiveGrid>
       </PageStack>
     </AppShell>

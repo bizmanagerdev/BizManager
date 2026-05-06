@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -8,7 +9,6 @@ import {
   ArrowUpCircle,
   Clock3,
   FolderKanban,
-  Landmark,
   ListTodo,
   PlayCircle,
   ShoppingCart,
@@ -29,7 +29,10 @@ import {
   type SalaryAgreementRow,
 } from "@/lib/payroll";
 import type { FinancialAttachment } from "@/lib/payments";
+import type { CalendarEntry } from "@/lib/projectSchedule";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Dialog,
   DialogDescription,
@@ -103,6 +106,57 @@ function durationHours(clockIn: string, clockOut: string) {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return "";
   const hours = (end - start) / 3600000;
   return Number.isInteger(hours) ? String(hours) : String(Math.round(hours * 100) / 100);
+}
+
+function toDateOnly(value: string | null | undefined) {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (match) {
+    const [, year, month, day] = match;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function startOfWeek(date: Date) {
+  const value = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  value.setDate(value.getDate() - value.getDay());
+  return value;
+}
+
+function addDays(date: Date, days: number) {
+  const value = new Date(date);
+  value.setDate(value.getDate() + days);
+  return value;
+}
+
+function isSameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function isWithinDayRange(day: Date, start: Date, end: Date) {
+  return day >= start && day <= end;
+}
+
+function formatWeekDay(date: Date) {
+  return new Intl.DateTimeFormat("he-IL", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(date);
+}
+
+function formatWeekRangeLabel(start: Date, end: Date) {
+  return `${new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long" }).format(start)} - ${new Intl.DateTimeFormat(
+    "he-IL",
+    { day: "numeric", month: "long", year: "numeric" }
+  ).format(end)}`;
+}
+
+function entryTypeLabel(kind: CalendarEntry["kind"]) {
+  return kind === "task" ? "משימה" : "פרויקט";
 }
 
 function formatIls(value: number | null) {
@@ -208,9 +262,12 @@ const HEBREW = {
     "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05d0\u05d7\u05e8\u05d0\u05d9, \u05ea\u05d0\u05e8\u05d9\u05da \u05d9\u05e2\u05d3 \u05d5\u05e0\u05d5\u05e9\u05d0.",
   taskCreateFailed: "\u05d9\u05e6\u05d9\u05e8\u05ea \u05d4\u05de\u05e9\u05d9\u05de\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
   taskSaved: "\u05d4\u05de\u05e9\u05d9\u05de\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
-  financial: "\u05e4\u05d9\u05e0\u05e0\u05e1\u05d9\u05dd",
-  financialOpen:
-    "\u05de\u05e2\u05d1\u05e8 \u05dc\u05de\u05e1\u05da \u05d4\u05db\u05e1\u05e4\u05d9\u05dd \u05d4\u05de\u05dc\u05d0",
+  thisWeek: "\u05de\u05d4 \u05d9\u05e9 \u05d4\u05e9\u05d1\u05d5\u05e2",
+  thisWeekOpen:
+    "\u05de\u05e2\u05d1\u05e8 \u05de\u05d4\u05d9\u05e8 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8\u05d9\u05dd \u05d5\u05dc\u05e2\u05d1\u05d5\u05d3\u05d4 \u05d4\u05e7\u05e8\u05d5\u05d1\u05d4",
+  ordersByCity: "\u05d4\u05d6\u05de\u05e0\u05d5\u05ea \u05dc\u05e4\u05d9 \u05e2\u05d9\u05e8",
+  ordersByCityOpen:
+    "\u05de\u05e2\u05d1\u05e8 \u05dc\u05ea\u05e6\u05d5\u05d2\u05ea \u05de\u05e9\u05dc\u05d5\u05d7\u05d9\u05dd \u05de\u05e7\u05d5\u05d1\u05e6\u05ea \u05dc\u05e4\u05d9 \u05e2\u05d9\u05e8",
   expenseNew: "\u05d4\u05d5\u05e6\u05d0\u05d4 \u05d7\u05d3\u05e9\u05d4",
   expenseQuickRegister: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05dc\u05e4\u05d9 \u05ea\u05d7\u05d5\u05dd",
   expenseDialogDescription:
@@ -283,6 +340,8 @@ export default function DashboardActions({
   currentUserRole,
   currentOpenSession,
   salaryAgreements,
+  scheduleEntries,
+  todayIso,
 }: {
   customers: Row[];
   products: Row[];
@@ -294,11 +353,14 @@ export default function DashboardActions({
   currentUserRole?: UserRole;
   currentOpenSession?: OpenSessionInfo | null;
   salaryAgreements: SalaryAgreementRow[];
+  scheduleEntries: CalendarEntry[];
+  todayIso: string;
 }) {
   const router = useRouter();
 
   const [orderActionLocked, setOrderActionLocked] = useState(false);
 
+  const [weekOverviewOpen, setWeekOverviewOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
@@ -364,9 +426,11 @@ export default function DashboardActions({
   const [incomeNotes, setIncomeNotes] = useState("");
   const [incomeAttachmentFiles, setIncomeAttachmentFiles] = useState<File[]>([]);
   const [incomeExistingAttachments, setIncomeExistingAttachments] = useState<FinancialAttachment[]>([]);
-  const [financeNavLoading, setFinanceNavLoading] = useState(false);
   const [selfSessionSubmitting, setSelfSessionSubmitting] = useState(false);
   const [manualSessionSubmitting, setManualSessionSubmitting] = useState(false);
+  const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
+  const weekStart = useMemo(() => startOfWeek(today), [today]);
+  const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
   const [manualSessionError, setManualSessionError] = useState<string | null>(null);
   const [manualSessionUserId, setManualSessionUserId] = useState("");
   const [manualSessionDomain, setManualSessionDomain] = useState<ExpenseBusinessDomain>("general_business");
@@ -382,6 +446,25 @@ export default function DashboardActions({
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
+  );
+  const weeklyBuckets = useMemo(() => {
+    return Array.from({ length: 7 }).map((_, index) => {
+      const day = addDays(weekStart, index);
+      const entries = scheduleEntries.filter((entry) => {
+        const start = toDateOnly(entry.startDate);
+        const end = toDateOnly(entry.endDate) ?? start;
+        if (!start || !end) return false;
+        return isWithinDayRange(day, start, end);
+      });
+      return {
+        day,
+        entries,
+      };
+    });
+  }, [scheduleEntries, weekStart]);
+  const weeklyEntryCount = useMemo(
+    () => weeklyBuckets.reduce((sum, bucket) => sum + bucket.entries.length, 0),
+    [weeklyBuckets]
   );
   const workerUsers = useMemo(
     () => users.filter((user) => user.role === "worker" || user.role === "worker_no_access"),
@@ -1137,18 +1220,27 @@ export default function DashboardActions({
           type="button"
           variant="outline"
           className="h-20 flex-col items-start justify-between rounded-2xl p-3 text-right sm:h-24"
-          onClick={() => {
-            if (financeNavLoading) return;
-            setFinanceNavLoading(true);
-            emitNavigationStart();
-            router.push("/financial");
-          }}
-          disabled={financeNavLoading}
+          onClick={() => setWeekOverviewOpen(true)}
         >
           <span className="rounded-xl bg-primary/10 p-2 text-primary">
-            <Landmark className="h-5 w-5" />
+            <FolderKanban className="h-5 w-5" />
           </span>
-          <span className="font-semibold">{HEBREW.financial}</span>
+          <span className="font-semibold">{HEBREW.thisWeek}</span>
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="h-20 flex-col items-start justify-between rounded-2xl p-3 text-right sm:h-24"
+          onClick={() => {
+            emitNavigationStart();
+            router.push("/sales?tab=deliveries");
+          }}
+        >
+          <span className="rounded-xl bg-primary/10 p-2 text-primary">
+            <ShoppingCart className="h-5 w-5" />
+          </span>
+          <span className="font-semibold">{HEBREW.ordersByCity}</span>
         </Button>
 
         <Button
@@ -1175,6 +1267,63 @@ export default function DashboardActions({
           <span className="font-semibold">{HEBREW.incomeNew}</span>
         </Button>
       </AdaptiveGrid>
+
+      <Dialog open={weekOverviewOpen} onOpenChange={setWeekOverviewOpen}>
+        <AdaptiveDialog size="form2xl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{HEBREW.thisWeek}</DialogTitle>
+            <DialogDescription>{`${formatWeekRangeLabel(weekStart, weekEnd)} • ${weeklyEntryCount} פריטים השבוע`}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {weeklyBuckets.map((bucket) => (
+              <div key={bucket.day.toISOString()} className="rounded-2xl border p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="text-sm text-muted-foreground">
+                    {bucket.entries.length > 0 ? `${bucket.entries.length} פריטים` : "אין פריטים"}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isSameDay(bucket.day, today) ? <Badge variant="default">היום</Badge> : null}
+                    <div className="font-semibold">{formatWeekDay(bucket.day)}</div>
+                  </div>
+                </div>
+
+                {bucket.entries.length > 0 ? (
+                  <div className="space-y-2">
+                    {bucket.entries.map((entry) => (
+                      <Link
+                        key={`${entry.kind}-${entry.id}-${bucket.day.toISOString()}`}
+                        href={entry.href}
+                        onClick={() => setWeekOverviewOpen(false)}
+                        className="block rounded-xl border bg-background p-3 transition hover:border-primary/40 hover:bg-primary/5"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="font-medium">{entry.title}</div>
+                            <Badge variant={entry.kind === "task" ? "warning" : "secondary"}>{entryTypeLabel(entry.kind)}</Badge>
+                            {entry.priority ? <StatusBadge value={entry.priority} type="priority" /> : null}
+                            {entry.status ? (
+                              <StatusBadge value={entry.status} type={entry.kind === "task" ? "task" : "project"} />
+                            ) : null}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {entry.startDate === entry.endDate || !entry.endDate
+                              ? entry.startDate ?? ""
+                              : `${entry.startDate ?? ""} - ${entry.endDate}`}
+                          </div>
+                        </div>
+                        <div className="mt-1 text-sm text-muted-foreground">{entry.subtitle}</div>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">אין פרויקטים או משימות ליום הזה.</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </AdaptiveDialog>
+      </Dialog>
 
       <Dialog
         open={manualSessionOpen}
