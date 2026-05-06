@@ -107,6 +107,23 @@ function pickNumber(obj: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
+function pickIsoDate(obj: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "string" && value.trim()) {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+      return value.trim();
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const millis = value > 10_000_000_000 ? value : value * 1000;
+      const parsed = new Date(millis);
+      if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+    }
+  }
+  return null;
+}
+
 function normalizeMorningClient(input: unknown): MorningClient {
   const row = ensureObject(input);
   const emails = Array.isArray(row.emails) ? row.emails : [];
@@ -144,6 +161,7 @@ function normalizeMorningDocument(input: unknown): MorningDocumentResult {
     currency: pickString(row, ["currency"]) ?? "ILS",
     morningUrl: pickString(url, ["he", "origin", "en"]) ?? pickString(row, ["viewUrl", "documentUrl"]),
     pdfUrl: pickString(row, ["pdfUrl", "pdf", "downloadUrl"]),
+    issuedAt: pickIsoDate(row, ["issueDate", "date", "creationDate", "createdAt"]),
     raw: row,
   };
 }

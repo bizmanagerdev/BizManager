@@ -70,6 +70,8 @@ const ils = (v: number) =>
 const dateText = (v: string) => {
   return formatShortDate(v);
 };
+const morningClientUrl = (morningClientId: string) =>
+  `https://app.greeninvoice.co.il/incomes/clients/${encodeURIComponent(morningClientId)}/documents`;
 const makeEmptyContactDraft = (): ContactDraft => ({
   full_name: "",
   role: "",
@@ -535,13 +537,14 @@ export default function CustomersClient({
         {filtered.map((row) => {
           const id = s(row, "customer_id");
           const customerName = s(row, "customer_name") || "לקוח";
+          const linkedMorningClientId = s(row, "morning_client_id");
           return (
             <Card key={id || customerName} className="overflow-hidden">
-              <CardContent>
+              <CardContent className="p-0">
                 <AdaptiveGrid variant="customerCard">
                 <button
                   type="button"
-                  className="min-w-0 text-right"
+                  className="min-w-0 text-right leading-tight"
                   onClick={() => setDetailsCustomerId(id)}
                 >
                   <div className="flex flex-wrap items-center gap-2">
@@ -552,11 +555,18 @@ export default function CustomersClient({
                       </span>
                     ) : null}
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">
+                  <div className="truncate text-[11px] text-muted-foreground">
                     {s(row, "email") || "-"} | {s(row, "phone") || "-"}
                   </div>
                 </button>
                 <div className="flex flex-wrap items-center justify-end gap-2">
+                  {linkedMorningClientId ? (
+                    <Button asChild size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700">
+                      <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
+                        Morning
+                      </a>
+                    </Button>
+                  ) : null}
                   <Button asChild size="sm" variant="outline">
                     <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>
                       הוספת פרויקט

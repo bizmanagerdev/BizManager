@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
@@ -18,6 +18,17 @@ type MatchCandidate = {
   taxId?: string | null;
 };
 
+function buildMorningClientUrl(morningClientId: string | null | undefined) {
+  if (!morningClientId) return null;
+
+  const template = process.env.NEXT_PUBLIC_MORNING_CLIENT_URL_TEMPLATE?.trim();
+  if (template) {
+    return template.includes("{id}") ? template.replaceAll("{id}", encodeURIComponent(morningClientId)) : template;
+  }
+
+  return `https://app.greeninvoice.co.il/incomes/clients/${encodeURIComponent(morningClientId)}/documents`;
+}
+
 function statusLabel(status: string | null | undefined) {
   switch (status) {
     case "matched":
@@ -25,7 +36,7 @@ function statusLabel(status: string | null | undefined) {
     case "manual_review":
       return "דורש בדיקה";
     case "ignored":
-      return "התעלמות";
+      return "הוחרג";
     case "unmatched":
     default:
       return "לא מקושר";
@@ -64,6 +75,8 @@ export default function MorningCustomerCard({
   const [busyKey, setBusyKey] = useState("");
   const [candidates, setCandidates] = useState<MatchCandidate[]>([]);
   const [documents, setDocuments] = useState<MorningLocalDocument[]>(morningDocuments);
+  const isLinked = Boolean(morningClientId);
+  const morningClientUrl = buildMorningClientUrl(morningClientId);
 
   useEffect(() => {
     setDocuments(morningDocuments);
@@ -79,7 +92,7 @@ export default function MorningCustomerCard({
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(json.error ?? "יצירת לקוח ב-Morning נכשלה.");
-      toast.success("לקוח Morning נוצר או עודכן");
+      toast.success("לקוח Morning נוצר בהצלחה.");
       onChanged?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "יצירת לקוח ב-Morning נכשלה.");
@@ -97,11 +110,11 @@ export default function MorningCustomerCard({
         body: JSON.stringify({ customerId }),
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(json.error ?? "סנכרון לקוח ל-Morning נכשל.");
-      toast.success("פרטי החיוב סונכרנו ל-Morning");
+      if (!response.ok) throw new Error(json.error ?? "סנכרון פרטי חיוב ל-Morning נכשל.");
+      toast.success("פרטי החיוב סונכרנו ל-Morning.");
       onChanged?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "סנכרון לקוח ל-Morning נכשל.");
+      toast.error(error instanceof Error ? error.message : "סנכרון פרטי חיוב ל-Morning נכשל.");
     } finally {
       setBusyKey("");
     }
@@ -126,7 +139,7 @@ export default function MorningCustomerCard({
       if (json.shouldAutoMatch && json.bestCandidate?.morningClientId) {
         await confirmLink(json.bestCandidate.morningClientId);
       } else if (nextCandidates.length === 0) {
-        toast.info("לא נמצאה התאמה אוטומטית. אפשר ליצור לקוח חדש ב-Morning.");
+        toast.info("לא נמצאה התאמה אוטומטית ב-Morning. אפשר ליצור לקוח חדש.");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "בדיקת התאמות Morning נכשלה.");
@@ -147,15 +160,20 @@ export default function MorningCustomerCard({
         }),
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(json.error ?? "קישור לקוח ל-Morning נכשל.");
-      toast.success("הלקוח קושר ל-Morning");
+      if (!response.ok) throw new Error(json.error ?? "קישור הלקוח ל-Morning נכשל.");
+      toast.success("הלקוח קושר ל-Morning.");
       setCandidates([]);
       onChanged?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "קישור לקוח ל-Morning נכשל.");
+      toast.error(error instanceof Error ? error.message : "קישור הלקוח ל-Morning נכשל.");
     } finally {
       setBusyKey("");
     }
+  }
+
+  function openMorningClient() {
+    if (!morningClientUrl) return;
+    window.open(morningClientUrl, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -166,32 +184,50 @@ export default function MorningCustomerCard({
           {morningLastSyncError ? "שגיאת סנכרון" : statusLabel(morningMatchStatus)}
         </Badge>
       </div>
+
       <div className="space-y-1 text-muted-foreground">
-        <div>מזהה לקוח Morning: {morningClientId || "—"}</div>
-        <div>סנכרון אחרון: {morningSyncedAt || "—"}</div>
+        <div>מזהה לקוח Morning: {morningClientId || "-"}</div>
+        <div>סנכרון אחרון: {morningSyncedAt || "-"}</div>
         {morningLastSyncError ? <div className="text-destructive">{morningLastSyncError}</div> : null}
       </div>
+
       <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={() => void loadMatches()} disabled={busyKey === "match"}>
-          {busyKey === "match" ? "בודק..." : "קישור לקוח Morning"}
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => void createRemoteClient()} disabled={busyKey === "create"}>
-          {busyKey === "create" ? "יוצר..." : "יצירת לקוח ב-Morning"}
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => void syncRemoteClient()} disabled={busyKey === "sync"}>
-          {busyKey === "sync" ? "מסנכרן..." : "סנכרון פרטי חיוב"}
-        </Button>
+        {isLinked ? (
+          <>
+            <Button type="button" size="sm" variant="outline" onClick={() => void syncRemoteClient()} disabled={busyKey === "sync"}>
+              {busyKey === "sync" ? "מסנכרן..." : "סנכרון פרטי חיוב"}
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={openMorningClient} disabled={!morningClientUrl}>
+              פתיחה ב-Morning
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button type="button" size="sm" variant="outline" onClick={() => void loadMatches()} disabled={busyKey === "match"}>
+              {busyKey === "match" ? "בודק..." : "איתור לקוח Morning"}
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => void createRemoteClient()} disabled={busyKey === "create"}>
+              {busyKey === "create" ? "יוצר..." : "יצירת לקוח ב-Morning"}
+            </Button>
+          </>
+        )}
       </div>
+
+      {isLinked && documents.length === 0 ? (
+        <div className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+          כרגע לא מוצגים כאן מסמכי עבר מ-Morning. אפשר לפתוח את כרטיס הלקוח ישירות ב-Morning מהכפתור כאן.
+        </div>
+      ) : null}
 
       {candidates.length > 0 ? (
         <div className="space-y-2 rounded-xl border border-dashed p-3">
-          <div className="font-medium">הצעות התאמה</div>
+          <div className="font-medium">התאמות אפשריות ב-Morning</div>
           {candidates.map((candidate) => (
             <div key={candidate.morningClientId} className="rounded-lg border p-2">
               <div className="font-medium">{candidate.morningClientName}</div>
               <div className="text-xs text-muted-foreground">{candidate.reason}</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {candidate.email || "—"} • {candidate.phone || "—"} • {candidate.taxId || "—"}
+                {candidate.email || "-"} • {candidate.phone || "-"} • {candidate.taxId || "-"}
               </div>
               <div className="mt-2">
                 <Button
@@ -201,7 +237,7 @@ export default function MorningCustomerCard({
                   onClick={() => void confirmLink(candidate.morningClientId)}
                   disabled={busyKey === `link:${candidate.morningClientId}`}
                 >
-                  {busyKey === `link:${candidate.morningClientId}` ? "מקשר..." : "קשר ללקוח הזה"}
+                  {busyKey === `link:${candidate.morningClientId}` ? "מקשר..." : "קישור ללקוח זה"}
                 </Button>
               </div>
             </div>

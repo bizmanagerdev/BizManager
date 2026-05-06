@@ -12,7 +12,7 @@ const gridVariants = {
   quickActions: "grid grid-cols-2 gap-3 lg:grid-cols-3",
   customersToolbar: "grid gap-3 lg:grid-cols-8",
   customersFilters: "grid gap-3 lg:grid-cols-4",
-  customerCard: "grid gap-3 p-3 md:grid-cols-[1fr_auto] md:items-center",
+  customerCard: "grid gap-2 p-2.5 md:grid-cols-[1fr_auto] md:items-center",
   customerStats: "grid gap-4 md:grid-cols-2 xl:grid-cols-4",
   customerPanels: "grid gap-4 lg:grid-cols-2",
   projectsToolbarControls: "grid grid-cols-1 gap-3 sm:grid-cols-3 lg:w-auto",

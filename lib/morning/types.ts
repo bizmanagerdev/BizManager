@@ -47,6 +47,7 @@ export type MorningDocumentResult = {
   currency: string;
   morningUrl: string | null;
   pdfUrl: string | null;
+  issuedAt?: string | null;
   raw: Record<string, unknown>;
 };
 
