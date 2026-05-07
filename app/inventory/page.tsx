@@ -54,7 +54,11 @@ export default async function InventoryPage({
     .map((row) => getString(row, "id"))
     .filter((value): value is string => Boolean(value));
 
-  const [{ data: inventoryRows, error: inventoryError }, { data: movements, error: movementsError }] =
+  const [
+    { data: inventoryRows, error: inventoryError },
+    { data: movements, error: movementsError },
+    { data: soldMovements, error: soldMovementsError },
+  ] =
     productIds.length > 0
       ? await Promise.all([
           supabase
@@ -67,8 +71,18 @@ export default async function InventoryPage({
             .in("product_id", productIds)
             .order("created_at", { ascending: false })
             .range(0, MOVEMENTS_PAGE_SIZE - 1),
+          supabase
+            .from("inventory_movements")
+            .select("product_id,movement_type,quantity,source_type")
+            .eq("movement_type", "out")
+            .eq("source_type", "order")
+            .in("product_id", productIds),
         ])
-      : [{ data: [], error: null }, { data: [], error: null }];
+      : [
+          { data: [], error: null },
+          { data: [], error: null },
+          { data: [], error: null },
+        ];
 
   const totalCount = typeof count === "number" ? count : ((products ?? []) as Row[]).length;
   const hasPreviousPage = page > 1;
@@ -89,8 +103,10 @@ export default async function InventoryPage({
 
         {inventoryError ? (
           <p className="text-sm text-destructive">שגיאה בטעינת מלאי: {inventoryError.message}</p>
-        ) : movementsError ? (
-          <p className="text-sm text-destructive">שגיאה בטעינת תנועות מלאי: {movementsError.message}</p>
+        ) : movementsError || soldMovementsError ? (
+          <p className="text-sm text-destructive">
+            שגיאה בטעינת תנועות מלאי: {movementsError?.message ?? soldMovementsError?.message}
+          </p>
         ) : productsError ? (
           <p className="text-sm text-destructive">שגיאה בטעינת מוצרים: {productsError.message}</p>
         ) : (
@@ -98,6 +114,7 @@ export default async function InventoryPage({
             <SalesInventoryClient
               products={(products ?? []) as Row[]}
               inventoryRows={(inventoryRows ?? []) as Row[]}
+              soldMovements={(soldMovements ?? []) as Row[]}
               movements={(movements ?? []) as Row[]}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">

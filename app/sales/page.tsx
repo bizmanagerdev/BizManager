@@ -126,7 +126,11 @@ async function loadProductPageData(supabase: SupabaseClient, page: number) {
     .map((row) => getString(row, "id"))
     .filter((value): value is string => Boolean(value));
 
-  const [{ data: inventoryRows, error: inventoryError }, { data: purchasedMovements, error: movementsError }] =
+  const [
+    { data: inventoryRows, error: inventoryError },
+    { data: purchasedMovements, error: purchasedMovementsError },
+    { data: soldMovements, error: soldMovementsError },
+  ] =
     productIds.length > 0
       ? await Promise.all([
           supabase
@@ -138,17 +142,28 @@ async function loadProductPageData(supabase: SupabaseClient, page: number) {
             .select("product_id,movement_type,quantity")
             .eq("movement_type", "in")
             .in("product_id", productIds),
+          supabase
+            .from("inventory_movements")
+            .select("product_id,movement_type,quantity,source_type")
+            .eq("movement_type", "out")
+            .eq("source_type", "order")
+            .in("product_id", productIds),
         ])
-      : [{ data: [], error: null }, { data: [], error: null }];
+      : [
+          { data: [], error: null },
+          { data: [], error: null },
+          { data: [], error: null },
+        ];
 
   return {
     products: (products ?? []) as Row[],
     inventoryRows: (inventoryRows ?? []) as Row[],
     purchasedMovements: (purchasedMovements ?? []) as Row[],
+    soldMovements: (soldMovements ?? []) as Row[],
     count: typeof count === "number" ? count : ((products ?? []) as Row[]).length,
     productsError,
     inventoryError,
-    movementsError,
+    movementsError: purchasedMovementsError?.message ? purchasedMovementsError : soldMovementsError,
   };
 }
 
@@ -362,7 +377,16 @@ export default async function SalesPage({
   }
 
   if (activeTab === "price-list") {
-    const { products, inventoryRows, purchasedMovements, count, productsError, inventoryError, movementsError } =
+    const {
+      products,
+      inventoryRows,
+      purchasedMovements,
+      soldMovements,
+      count,
+      productsError,
+      inventoryError,
+      movementsError,
+    } =
       await loadProductPageData(supabase, pricePage);
 
     const purchasedByProductId = new Map<string, number>();
@@ -372,6 +396,15 @@ export default async function SalesPage({
       const qty = getNumber(row, "quantity") ?? 0;
       if (!Number.isFinite(qty)) return;
       purchasedByProductId.set(productId, (purchasedByProductId.get(productId) ?? 0) + qty);
+    });
+
+    const soldByProductId = new Map<string, number>();
+    soldMovements.forEach((row) => {
+      const productId = getString(row, "product_id");
+      if (!productId) return;
+      const qty = getNumber(row, "quantity") ?? 0;
+      if (!Number.isFinite(qty)) return;
+      soldByProductId.set(productId, (soldByProductId.get(productId) ?? 0) + qty);
     });
 
     const inventoryByProductId = new Map<string, number | null>();
@@ -389,6 +422,7 @@ export default async function SalesPage({
         unitPrice: productUnitPrice(row),
         stock: inventoryByProductId.get(getString(row, "id") ?? "") ?? null,
         purchasedAmount: purchasedByProductId.get(getString(row, "id") ?? "") ?? 0,
+        soldAmount: soldByProductId.get(getString(row, "id") ?? "") ?? 0,
         description: getString(row, "description"),
         active: row.active === false ? false : true,
       }))
@@ -460,7 +494,7 @@ export default async function SalesPage({
   }
 
   if (activeTab === "inventory") {
-    const { products, inventoryRows, movements, count, productsError, inventoryError, movementsError } =
+    const { products, inventoryRows, soldMovements, movements, count, productsError, inventoryError, movementsError } =
       await loadInventoryPageData(supabase, inventoryPage);
 
     const hasPreviousPage = inventoryPage > 1;
@@ -473,7 +507,12 @@ export default async function SalesPage({
           <p className="text-sm text-destructive">שגיאה בטעינת מלאי: {loadError}</p>
         ) : (
           <>
-            <SalesInventoryClient products={products} inventoryRows={inventoryRows} movements={movements} />
+            <SalesInventoryClient
+              products={products}
+              inventoryRows={inventoryRows}
+              soldMovements={soldMovements}
+              movements={movements}
+            />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {inventoryPage} • מציגים {products.length} מתוך {count}

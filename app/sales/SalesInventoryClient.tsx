@@ -23,6 +23,7 @@ type InventoryItem = {
   quantityOnHand: number;
   quantityReserved: number;
   available: number;
+  soldAmount: number;
 };
 
 type AdjustmentType =
@@ -124,10 +125,12 @@ function formatDateTime(value: string | null) {
 export default function SalesInventoryClient({
   products,
   inventoryRows,
+  soldMovements,
   movements,
 }: {
   products: Row[];
   inventoryRows: Row[];
+  soldMovements: Row[];
   movements: Row[];
 }) {
   const [items, setItems] = useState<InventoryItem[]>(() => {
@@ -146,6 +149,15 @@ export default function SalesInventoryClient({
     products.forEach((p) => {
       const id = getString(p, "id");
       if (id) productById.set(id, p);
+    });
+
+    const soldByProduct = new Map<string, number>();
+    soldMovements.forEach((row) => {
+      const productId = getString(row, "product_id");
+      if (!productId) return;
+      const qty = getNumber(row, "quantity") ?? 0;
+      if (!Number.isFinite(qty) || qty <= 0) return;
+      soldByProduct.set(productId, (soldByProduct.get(productId) ?? 0) + qty);
     });
 
     const byProductId = new Map<string, InventoryItem>();
@@ -167,6 +179,7 @@ export default function SalesInventoryClient({
         quantityOnHand,
         quantityReserved: 0,
         available: quantityOnHand,
+        soldAmount: soldByProduct.get(id) ?? 0,
       });
     });
 
@@ -183,6 +196,7 @@ export default function SalesInventoryClient({
         quantityOnHand,
         quantityReserved,
         available: quantityOnHand - quantityReserved,
+        soldAmount: soldByProduct.get(productId) ?? 0,
       });
     });
 
@@ -302,6 +316,7 @@ export default function SalesInventoryClient({
             quantityOnHand: nextOnHand,
             quantityReserved: nextReserved,
             available: nextOnHand - nextReserved,
+            soldAmount: 0,
           };
           return [...prev, next].sort((a, b) => a.productName.localeCompare(b.productName, "he"));
         }
@@ -359,7 +374,7 @@ export default function SalesInventoryClient({
             <p className="text-sm text-muted-foreground">אין מוצרים להצגה במלאי.</p>
           ) : (
             <div className="overflow-x-auto rounded-md border">
-              <table className="min-w-[980px] w-full text-sm">
+              <table className="min-w-[1080px] w-full text-sm">
                 <thead className="bg-muted/50 text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 text-right font-medium">מוצר</th>
@@ -367,6 +382,7 @@ export default function SalesInventoryClient({
                     <th className="px-3 py-2 text-right font-medium">במלאי</th>
                     <th className="px-3 py-2 text-right font-medium">שמור</th>
                     <th className="px-3 py-2 text-right font-medium">זמין</th>
+                    <th className="px-3 py-2 text-right font-medium">נמכר</th>
                     <th className="px-3 py-2 text-right font-medium">פעולות</th>
                   </tr>
                 </thead>
@@ -385,6 +401,7 @@ export default function SalesInventoryClient({
                         <td className={`px-3 py-2 font-medium ${isLow ? "text-red-700" : ""}`}>
                           {item.available}
                         </td>
+                        <td className="px-3 py-2">{item.soldAmount}</td>
                         <td className="px-3 py-2">
                           <Button
                             type="button"

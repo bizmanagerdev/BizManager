@@ -21,6 +21,7 @@ type ProductRow = {
   unitPrice: number | null;
   stock: number | null;
   purchasedAmount: number;
+  soldAmount: number;
   description?: string | null;
   active?: boolean;
 };
@@ -150,6 +151,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
           (typeof json.product.in_stock === "number" ? json.product.in_stock : null) ??
           null,
         purchasedAmount,
+        soldAmount: 0,
         description:
           (typeof json.product.description === "string" ? json.product.description : null) ||
           (createDescription.trim() || null),
@@ -264,6 +266,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
           (typeof json.product.in_stock === "number" ? json.product.in_stock : null) ??
           null,
         purchasedAmount: rows.find((row) => row.id === editId)?.purchasedAmount ?? 0,
+        soldAmount: rows.find((row) => row.id === editId)?.soldAmount ?? 0,
         description:
           (typeof json.product.description === "string" ? json.product.description : null) ||
           (editDescription.trim() || null),
@@ -349,7 +352,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
         <p className="text-sm text-muted-foreground">אין מוצרים להצגה במחירון.</p>
       ) : (
         <div className="overflow-x-auto rounded-md border">
-          <table className="min-w-[920px] w-full text-sm">
+          <table className="min-w-[1040px] w-full text-sm">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-right font-medium">מוצר</th>
@@ -357,6 +360,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
                 <th className="px-3 py-2 text-right font-medium">מחיר</th>
                 <th className="px-3 py-2 text-right font-medium">מלאי נוכחי</th>
                 <th className="px-3 py-2 text-right font-medium">כמות שנרכשה</th>
+                <th className="px-3 py-2 text-right font-medium">כמות שנמכרה</th>
                 <th className="px-3 py-2 text-right font-medium">סטטוס</th>
                 <th className="px-3 py-2 text-right font-medium">פעולות</th>
               </tr>
@@ -369,6 +373,7 @@ export default function PriceListClient({ initialProducts }: { initialProducts: 
                   <td className="px-3 py-2">{formatCurrency(product.unitPrice)}</td>
                   <td className="px-3 py-2">{product.stock ?? "-"}</td>
                   <td className="px-3 py-2">{product.purchasedAmount}</td>
+                  <td className="px-3 py-2">{product.soldAmount}</td>
                   <td className="px-3 py-2">{product.active === false ? "לא פעיל" : "פעיל"}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
