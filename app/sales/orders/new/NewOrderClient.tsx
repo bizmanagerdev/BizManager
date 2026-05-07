@@ -513,6 +513,17 @@ export default function NewOrderClient({
       .slice(0, 80);
   }, [productOptions, productQuery]);
 
+  const selectedLineByProductId = useMemo(
+    () =>
+      new Map(
+        lines.map((line, index) => [
+          line.product_id,
+          { line, index },
+        ])
+      ),
+    [lines]
+  );
+
   const filteredCustomers = useMemo(() => {
     const q = customerQuery.trim().toLowerCase();
     const qPhone = normalizePhone(customerQuery);
@@ -608,6 +619,24 @@ export default function NewOrderClient({
 
   function removeLine(index: number) {
     setLines((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function incrementLine(index: number) {
+    setLines((prev) =>
+      prev.map((line, i) =>
+        i === index ? { ...line, quantity_ordered: line.quantity_ordered + 1 } : line
+      )
+    );
+  }
+
+  function decrementLine(index: number) {
+    setLines((prev) =>
+      prev.map((line, i) =>
+        i === index
+          ? { ...line, quantity_ordered: Math.max(1, line.quantity_ordered - 1) }
+          : line
+      )
+    );
   }
 
   function addPaymentDraft() {
@@ -1047,22 +1076,50 @@ export default function NewOrderClient({
               ) : null}
             </div>
 
-            <div className="max-h-60 space-y-2 overflow-auto rounded-md border p-2">
-              {filteredProducts.map((product) => (
-                <div key={product.id} className="flex items-center justify-between gap-3 rounded-md border p-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{product.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {product.code ? `קוד: ${product.code} | ` : ""}
-                      מחיר: {formatCurrency(product.unitPrice)}
-                      {product.stock !== null ? ` | מלאי: ${product.stock}` : ""}
-                    </p>
-                  </div>
-                  <Button type="button" size="sm" onClick={() => addProduct(product.id)} disabled={actionLocked}>
-                    הוסף
-                  </Button>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">בחירת מוצרים</div>
+              <div className="max-h-[26rem] overflow-auto rounded-xl border border-border/70 bg-muted/10 p-2.5">
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+                  {filteredProducts.map((product) => {
+                    const selected = selectedLineByProductId.get(product.id);
+                    return (
+                      <button
+                        key={product.id}
+                        type="button"
+                        disabled={actionLocked}
+                        onClick={() => addProduct(product.id)}
+                        className={`group aspect-square rounded-xl border p-2.5 text-right transition ${
+                          selected
+                            ? "border-primary bg-primary/10 shadow-sm"
+                            : "border-border/70 bg-background hover:border-primary/40 hover:bg-primary/5"
+                        } ${actionLocked ? "cursor-not-allowed opacity-70" : ""}`}
+                      >
+                        <div className="flex h-full flex-col justify-between">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="line-clamp-3 text-sm font-semibold leading-5">
+                              {product.name}
+                            </div>
+                            {selected ? (
+                              <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+                                {selected.line.quantity_ordered}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="space-y-1 text-xs text-muted-foreground">
+                            {product.code ? <div className="truncate">קוד: {product.code}</div> : null}
+                            <div>מחיר: {formatCurrency(product.unitPrice)}</div>
+                            {product.stock !== null ? <div>מלאי: {product.stock}</div> : null}
+                            <div className="pt-1 font-medium text-primary">
+                              {selected ? "לחץ להוסיף עוד" : "לחץ להוספה"}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
               {filteredProducts.length === 0 ? (
                 <p className="text-sm text-muted-foreground">לא נמצאו מוצרים.</p>
               ) : null}
@@ -1071,82 +1128,128 @@ export default function NewOrderClient({
             <div className="space-y-2">
               <p className="text-sm font-medium">מוצרים שנבחרו ({lines.length})</p>
               {lines.length === 0 ? <p className="text-sm text-muted-foreground">עדיין לא נוספו מוצרים.</p> : null}
-              {lines.map((line, index) => {
-                const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
-                return (
-                  <div key={`${line.product_id}-${index}`} className="space-y-2 rounded-md border p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium">{line.product_name}</p>
-                      <Button type="button" size="sm" variant="outline" onClick={() => removeLine(index)} disabled={actionLocked}>
-                        הסר
-                      </Button>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-4">
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">כמות</label>
-                        <Input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={line.quantity_ordered}
-                          disabled={actionLocked}
-                          onChange={(e) =>
-                            updateLine(index, {
-                              quantity_ordered: toPositiveInt(Number(e.target.value || 1)),
-                            })
-                          }
-                          placeholder="כמות"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">מחיר יחידה</label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={line.unit_price}
-                          disabled={actionLocked}
-                          onChange={(e) =>
-                            updateLine(index, { unit_price: toNonNegativeInt(Number(e.target.value || 0)) })
-                          }
-                          placeholder="מחיר יחידה"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">הנחת שורה</label>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={line.discount_amount}
-                          disabled={actionLocked}
-                          onChange={(e) =>
-                            updateLine(index, {
-                              discount_amount: toNonNegativeInt(Number(e.target.value || 0)),
-                            })
-                          }
-                          placeholder="הנחת שורה"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">סה״כ שורה</label>
-                        <div className="flex h-10 items-center rounded-md border px-3 text-sm">
-                          {formatCurrency(lineTotal)}
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {lines.map((line, index) => {
+                  const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
+                  return (
+                    <div key={`${line.product_id}-${index}`} className="rounded-2xl border border-border/70 bg-background p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">{line.product_name}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            מחיר יחידה: {formatCurrency(line.unit_price)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">סה״כ: {formatCurrency(lineTotal)}</p>
                         </div>
+                        <button
+                          type="button"
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-border/70 text-sm font-semibold transition hover:bg-muted"
+                          onClick={() => removeLine(index)}
+                          disabled={actionLocked}
+                          aria-label={`הסרת ${line.product_name}`}
+                        >
+                          ×
+                        </button>
                       </div>
+
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 text-lg font-semibold transition hover:bg-muted"
+                            onClick={() => decrementLine(index)}
+                            disabled={actionLocked || line.quantity_ordered <= 1}
+                            aria-label={`הפחתת כמות של ${line.product_name}`}
+                          >
+                            -
+                          </button>
+                          <div className="min-w-12 rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-center text-sm font-semibold">
+                            {line.quantity_ordered}
+                          </div>
+                          <button
+                            type="button"
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 text-lg font-semibold transition hover:bg-muted"
+                            onClick={() => incrementLine(index)}
+                            disabled={actionLocked}
+                            aria-label={`הגדלת כמות של ${line.product_name}`}
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        <div className="text-xs text-muted-foreground">לחץ על המוצר למעלה כדי להוסיף עוד</div>
+                      </div>
+
+                      <details className="mt-4 rounded-xl border border-dashed p-3" open={Boolean(line.discount_amount || line.notes)}>
+                        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                          פרטי שורה נוספים
+                        </summary>
+                        <div className="mt-3 space-y-3">
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">כמות</label>
+                            <Input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={line.quantity_ordered}
+                              disabled={actionLocked}
+                              onChange={(e) =>
+                                updateLine(index, {
+                                  quantity_ordered: toPositiveInt(Number(e.target.value || 1)),
+                                })
+                              }
+                              placeholder="כמות"
+                            />
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <label className="text-xs text-muted-foreground">מחיר יחידה</label>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={line.unit_price}
+                                disabled={actionLocked}
+                                onChange={(e) =>
+                                  updateLine(index, {
+                                    unit_price: toNonNegativeInt(Number(e.target.value || 0)),
+                                  })
+                                }
+                                placeholder="מחיר יחידה"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs text-muted-foreground">הנחת שורה</label>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={line.discount_amount}
+                                disabled={actionLocked}
+                                onChange={(e) =>
+                                  updateLine(index, {
+                                    discount_amount: toNonNegativeInt(Number(e.target.value || 0)),
+                                  })
+                                }
+                                placeholder="הנחת שורה"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">הערה לשורה</label>
+                            <Input
+                              value={line.notes}
+                              disabled={actionLocked}
+                              onChange={(e) => updateLine(index, { notes: e.target.value })}
+                              placeholder="הערה לשורה (אופציונלי)"
+                            />
+                          </div>
+                        </div>
+                      </details>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">הערה לשורה</label>
-                      <Input
-                        value={line.notes}
-                        disabled={actionLocked}
-                        onChange={(e) => updateLine(index, { notes: e.target.value })}
-                        placeholder="הערה לשורה (אופציונלי)"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-2">
@@ -1224,37 +1327,42 @@ export default function NewOrderClient({
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">סטטוס תשלום</label>
-              <Input value={paymentStatusLabel(paymentStatus)} readOnly />
-              <p className="text-xs text-muted-foreground">
-                הסטטוס מחושב אוטומטית לפי סכום ההזמנה מול התשלומים בפועל.
-              </p>
-            </div>
+            <details className="rounded-md border border-dashed p-3" open={Boolean(effectiveOrderDiscount || notes)}>
+              <summary className="cursor-pointer text-sm font-medium">פרטים נוספים להזמנה</summary>
+              <div className="mt-3 space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">סטטוס תשלום</label>
+                  <Input value={paymentStatusLabel(paymentStatus)} readOnly />
+                  <p className="text-xs text-muted-foreground">
+                    הסטטוס מחושב אוטומטית לפי סכום ההזמנה מול התשלומים בפועל.
+                  </p>
+                </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">הנחת הזמנה</label>
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                value={orderDiscount}
-                disabled={actionLocked}
-                onChange={(e) => setOrderDiscount(String(toNonNegativeInt(Number(e.target.value || 0))))}
-                placeholder="הזן סכום הנחה"
-              />
-            </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">הנחת הזמנה</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={orderDiscount}
+                    disabled={actionLocked}
+                    onChange={(e) => setOrderDiscount(String(toNonNegativeInt(Number(e.target.value || 0))))}
+                    placeholder="הזן סכום הנחה"
+                  />
+                </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">הערות</label>
-              <Textarea
-                value={notes}
-                disabled={actionLocked}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={3}
-                placeholder="הערות להזמנה (אופציונלי)"
-              />
-            </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">הערות</label>
+                  <Textarea
+                    value={notes}
+                    disabled={actionLocked}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    placeholder="הערות להזמנה (אופציונלי)"
+                  />
+                </div>
+              </div>
+            </details>
 
             <div className="space-y-3 rounded-md border p-3">
               <div className="flex items-center justify-between gap-2">
@@ -1339,43 +1447,48 @@ export default function NewOrderClient({
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">אמצעי תשלום *</label>
-                      <select
-                        value={payment.payment_method}
-                        disabled={actionLocked}
-                        onChange={(e) => updatePaymentDraft(index, { payment_method: e.target.value })}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        <option value="">בחר אמצעי תשלום...</option>
-                        {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">מספר אסמכתא</label>
-                      <Input
-                        value={payment.reference_number}
-                        disabled={actionLocked}
-                        onChange={(e) => updatePaymentDraft(index, { reference_number: e.target.value })}
-                        placeholder="אופציונלי"
-                      />
-                    </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">אמצעי תשלום *</label>
+                    <select
+                      value={payment.payment_method}
+                      disabled={actionLocked}
+                      onChange={(e) => updatePaymentDraft(index, { payment_method: e.target.value })}
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">בחר אמצעי תשלום...</option>
+                      {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">הערות לתשלום</label>
-                    <Input
-                      value={payment.notes}
-                      disabled={actionLocked}
-                      onChange={(e) => updatePaymentDraft(index, { notes: e.target.value })}
-                      placeholder="אופציונלי"
-                    />
-                  </div>
+                  <details className="rounded-md border border-dashed p-3" open={Boolean(payment.reference_number || payment.notes)}>
+                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                      פרטי תשלום נוספים
+                    </summary>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">מספר אסמכתא</label>
+                        <Input
+                          value={payment.reference_number}
+                          disabled={actionLocked}
+                          onChange={(e) => updatePaymentDraft(index, { reference_number: e.target.value })}
+                          placeholder="אופציונלי"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">הערות לתשלום</label>
+                        <Input
+                          value={payment.notes}
+                          disabled={actionLocked}
+                          onChange={(e) => updatePaymentDraft(index, { notes: e.target.value })}
+                          placeholder="אופציונלי"
+                        />
+                      </div>
+                    </div>
+                  </details>
                 </div>
               ))}
 
@@ -1510,130 +1623,135 @@ export default function NewOrderClient({
               />
             </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">הערות</label>
-              <Textarea
-                value={createCustomerNotes}
-                onChange={(e) => setCreateCustomerNotes(e.target.value)}
-                rows={3}
-                placeholder="הערות על הלקוח (אופציונלי)"
-              />
-            </div>
-
-            <div className="space-y-3 rounded-md border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-medium">אנשי קשר</div>
-                  <div className="text-xs text-muted-foreground">
-                    אפשר להוסיף אנשי קשר כבר ביצירת הלקוח.
-                  </div>
+            <details className="rounded-md border border-dashed p-3" open={Boolean(createCustomerNotes || createCustomerContacts.length > 0)}>
+              <summary className="cursor-pointer text-sm font-medium">פרטים נוספים ללקוח</summary>
+              <div className="mt-3 space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">הערות</label>
+                  <Textarea
+                    value={createCustomerNotes}
+                    onChange={(e) => setCreateCustomerNotes(e.target.value)}
+                    rows={3}
+                    placeholder="הערות על הלקוח (אופציונלי)"
+                  />
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={addCreateCustomerContact}>
-                  הוספת איש קשר
-                </Button>
-              </div>
-              {createCustomerContacts.length === 0 ? (
-                <p className="text-xs text-muted-foreground">עדיין לא נוספו אנשי קשר.</p>
-              ) : null}
-              {createCustomerContacts.map((contact, index) => (
-                <div
-                  key={`order-create-customer-contact-${index}`}
-                  className="space-y-3 rounded-md border bg-background p-3"
-                >
+
+                <div className="space-y-3 rounded-md border p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-medium">איש קשר {index + 1}</div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeCreateCustomerContact(index)}
-                    >
-                      הסרה
+                    <div>
+                      <div className="text-sm font-medium">אנשי קשר</div>
+                      <div className="text-xs text-muted-foreground">
+                        אפשר להוסיף אנשי קשר כבר ביצירת הלקוח.
+                      </div>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={addCreateCustomerContact}>
+                      הוספת איש קשר
                     </Button>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">שם מלא *</label>
-                    <Input
-                      value={contact.full_name}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, { full_name: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">תפקיד</label>
-                    <Input
-                      value={contact.role}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, { role: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">טלפון</label>
-                      <Input
-                        value={contact.phone}
-                        onChange={(e) =>
-                          updateCreateCustomerContact(index, { phone: e.target.value })
-                        }
-                      />
+                  {createCustomerContacts.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">עדיין לא נוספו אנשי קשר.</p>
+                  ) : null}
+                  {createCustomerContacts.map((contact, index) => (
+                    <div
+                      key={`order-create-customer-contact-${index}`}
+                      className="space-y-3 rounded-md border bg-background p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-medium">איש קשר {index + 1}</div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeCreateCustomerContact(index)}
+                        >
+                          הסרה
+                        </Button>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium">שם מלא *</label>
+                        <Input
+                          value={contact.full_name}
+                          onChange={(e) =>
+                            updateCreateCustomerContact(index, { full_name: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium">תפקיד</label>
+                        <Input
+                          value={contact.role}
+                          onChange={(e) =>
+                            updateCreateCustomerContact(index, { role: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium">טלפון</label>
+                          <Input
+                            value={contact.phone}
+                            onChange={(e) =>
+                              updateCreateCustomerContact(index, { phone: e.target.value })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium">וואטסאפ</label>
+                          <Input
+                            value={contact.whatsapp}
+                            onChange={(e) =>
+                              updateCreateCustomerContact(index, { whatsapp: e.target.value })
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium">אימייל</label>
+                        <Input
+                          value={contact.email}
+                          onChange={(e) =>
+                            updateCreateCustomerContact(index, { email: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium">הערות</label>
+                        <Textarea
+                          value={contact.notes}
+                          onChange={(e) =>
+                            updateCreateCustomerContact(index, { notes: e.target.value })
+                          }
+                          rows={2}
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={contact.is_primary}
+                          onChange={(e) =>
+                            updateCreateCustomerContact(index, {
+                              is_primary: e.target.checked,
+                              active: e.target.checked ? true : contact.active,
+                            })
+                          }
+                        />
+                        <span>איש קשר ראשי</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={contact.active}
+                          onChange={(e) =>
+                            updateCreateCustomerContact(index, { active: e.target.checked })
+                          }
+                        />
+                        <span>פעיל</span>
+                      </label>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">וואטסאפ</label>
-                      <Input
-                        value={contact.whatsapp}
-                        onChange={(e) =>
-                          updateCreateCustomerContact(index, { whatsapp: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">אימייל</label>
-                    <Input
-                      value={contact.email}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, { email: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">הערות</label>
-                    <Textarea
-                      value={contact.notes}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, { notes: e.target.value })
-                      }
-                      rows={2}
-                    />
-                  </div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={contact.is_primary}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, {
-                          is_primary: e.target.checked,
-                          active: e.target.checked ? true : contact.active,
-                        })
-                      }
-                    />
-                    <span>איש קשר ראשי</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={contact.active}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, { active: e.target.checked })
-                      }
-                    />
-                    <span>פעיל</span>
-                  </label>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            </details>
 
             {createCustomerError ? (
               <p className="text-sm text-destructive">{createCustomerError}</p>

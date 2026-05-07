@@ -2,14 +2,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import AppShell from "@/components/layout/AppShell";
+import SalesDeliveriesQueue from "@/app/sales/SalesDeliveriesQueue";
 import SalesInventoryClient from "@/app/sales/SalesInventoryClient";
 import SalesOrdersClient from "@/app/sales/SalesOrdersClient";
 import PriceListClient from "@/app/sales/PriceListClient";
 import SalesTabsNav from "@/app/sales/SalesTabsNav";
-import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 
 type Row = Record<string, unknown>;
 
@@ -17,6 +16,22 @@ export const revalidate = 30;
 
 const PAGE_SIZE = 50;
 const MOVEMENTS_PAGE_SIZE = 200;
+const CLOSED_ORDER_STATUSES = [
+  "delivered",
+  "completed",
+  "closed",
+  "cancelled",
+  "סופקה",
+  "הושלמה",
+  "סגורה",
+  "בוטלה",
+];
+
+function applyOpenOrdersFilter<TQuery extends { not: (...args: [string, string, string]) => TQuery }>(
+  query: TQuery
+) {
+  return query.not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`);
+}
 
 function getString(row: Row, key: string) {
   const value = row[key];
@@ -31,15 +46,6 @@ function getNumber(row: Row, key: string) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
-}
-
-function formatCurrency(value: number | null) {
-  if (value === null) return "-";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 2,
-  }).format(value);
 }
 
 function productName(row: Row) {
@@ -196,7 +202,7 @@ export default async function SalesPage({
       ? params.customer_page.trim()
       : null;
   const activeTab =
-    params.tab === "inventory" || params.tab === "price-list" || params.tab === "deliveries"
+    params.tab === "closed" || params.tab === "inventory" || params.tab === "price-list" || params.tab === "deliveries"
       ? params.tab
       : "orders";
 
@@ -206,20 +212,88 @@ export default async function SalesPage({
   const deliveriesPage = parsePage(params.deliveriesPage);
 
   const { profile, supabase } = await requireProfile();
+  const [
+    { count: openOrdersCount },
+    { count: closedOrdersCount },
+    { count: productsCount },
+    { count: deliveriesCount },
+  ] = await Promise.all([
+    (() => {
+      let query = applyOpenOrdersFilter(
+        supabase
+        .from("order_overview_view")
+        .select("order_id", { count: "estimated", head: true })
+      );
+      if (customerId) query = query.eq("customer_id", customerId);
+      return query;
+    })(),
+    (() => {
+      let query = supabase
+        .from("order_overview_view")
+        .select("order_id", { count: "estimated", head: true })
+        .in("status", CLOSED_ORDER_STATUSES);
+      if (customerId) query = query.eq("customer_id", customerId);
+      return query;
+    })(),
+    supabase.from("products").select("id", { count: "estimated", head: true }),
+    (() => {
+      let query = applyOpenOrdersFilter(
+        supabase
+        .from("delivery_overview_view")
+        .select("order_id,status", { count: "estimated", head: true })
+      );
+      if (customerId) query = query.eq("customer_id", customerId);
+      return query;
+    })(),
+  ]);
+
+  const salesTabCounts = {
+    orders: typeof openOrdersCount === "number" ? openOrdersCount : 0,
+    closed: typeof closedOrdersCount === "number" ? closedOrdersCount : 0,
+    inventory: typeof productsCount === "number" ? productsCount : 0,
+    "price-list": typeof productsCount === "number" ? productsCount : 0,
+    deliveries: typeof deliveriesCount === "number" ? deliveriesCount : 0,
+  } as const;
 
   let content: ReactNode = null;
 
-  if (activeTab === "orders") {
+  if (activeTab === "orders" || activeTab === "closed") {
     const { from, to } = pageRange(ordersPage);
-    let ordersQuery = supabase
-      .from("order_overview_view")
-      .select(
-        "order_id,customer_id,customer_name,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,payment_count",
-        { count: "estimated" }
-      )
-      .order("order_date", { ascending: false });
+    let ordersQuery =
+      activeTab === "orders"
+        ? applyOpenOrdersFilter(
+            supabase
+              .from("order_overview_view")
+              .select(
+                "order_id,customer_id,customer_name,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,payment_count",
+                { count: "estimated" }
+              )
+              .order("order_date", { ascending: false })
+          )
+        : supabase
+            .from("order_overview_view")
+            .select(
+              "order_id,customer_id,customer_name,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,payment_count",
+              { count: "estimated" }
+            )
+            .order("order_date", { ascending: false });
 
     if (customerId) ordersQuery = ordersQuery.eq("customer_id", customerId);
+    if (activeTab === "closed") {
+      ordersQuery = ordersQuery.in("status", CLOSED_ORDER_STATUSES);
+    }
+    if (false && activeTab === "closed") {
+      ordersQuery = ordersQuery.in("status", [
+        "delivered",
+        "completed",
+        "closed",
+        "cancelled",
+        "סופקה",
+        "הושלמה",
+        "סגורה",
+        "בוטלה",
+      ]);
+    }
 
     const { data, error, count } = await ordersQuery.range(from, to);
     const rows = (data ?? []) as Row[];
@@ -236,7 +310,7 @@ export default async function SalesPage({
             <SalesOrdersClient orders={rows} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
-                עמוד {ordersPage} • מוצגים {rows.length} מתוך {totalCount}
+                עמוד {ordersPage} • מציגים {rows.length} מתוך {totalCount}
               </div>
               <div className="flex gap-2">
                 {hasPreviousPage ? (
@@ -334,7 +408,7 @@ export default async function SalesPage({
             <PriceListClient initialProducts={productRows} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
-                עמוד {pricePage} • מוצגים {products.length} מתוך {count}
+                עמוד {pricePage} • מציגים {products.length} מתוך {count}
               </div>
               <div className="flex gap-2">
                 {hasPreviousPage ? (
@@ -402,7 +476,7 @@ export default async function SalesPage({
             <SalesInventoryClient products={products} inventoryRows={inventoryRows} movements={movements} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
-                עמוד {inventoryPage} • מוצגים {products.length} מתוך {count}
+                עמוד {inventoryPage} • מציגים {products.length} מתוך {count}
               </div>
               <div className="flex gap-2">
                 {hasPreviousPage ? (
@@ -455,13 +529,15 @@ export default async function SalesPage({
 
   if (activeTab === "deliveries") {
     const { from, to } = pageRange(deliveriesPage);
-    let deliveriesQuery = supabase
-      .from("delivery_overview_view")
-      .select(
-        "order_id,customer_id,customer_name,customer_phone,customer_address,customer_city,order_date,created_at,status,total_amount,notes",
-        { count: "estimated" }
-      )
-      .order("order_date", { ascending: false });
+    let deliveriesQuery = applyOpenOrdersFilter(
+      supabase
+        .from("delivery_overview_view")
+        .select(
+          "order_id,customer_id,customer_name,customer_phone,customer_address,customer_city,order_date,created_at,status,total_amount,notes",
+          { count: "estimated" }
+        )
+        .order("order_date", { ascending: false })
+    );
 
     if (customerId) deliveriesQuery = deliveriesQuery.eq("customer_id", customerId);
 
@@ -527,63 +603,10 @@ export default async function SalesPage({
           <p className="text-sm text-muted-foreground">אין כרגע הזמנות מקובצות למשלוחים.</p>
         ) : (
           <>
-            <div className="rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-              בחרו הזמנה מתוך רשימת המשלוחים ולחצו על <span className="font-medium text-foreground">אישור אספקה</span>.
-            </div>
-            <div className="space-y-3">
-              {deliveriesByCityAndCustomer.map(([city, customerGroups]) => (
-                <Card key={city}>
-                  <CardContent className="space-y-3 p-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-base font-semibold">{city}</h3>
-                      <span className="text-sm text-muted-foreground">
-                        {customerGroups.length} לקוחות •{" "}
-                        {customerGroups.reduce((sum, [, group]) => sum + group.orders.length, 0)} משלוחים
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {customerGroups.map(([customerKey, group]) => (
-                        <div key={customerKey} className="rounded-md border p-3 text-sm">
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="font-medium">{group.customerName}</div>
-                            <div className="text-muted-foreground">{group.orders.length} משלוחים</div>
-                          </div>
-                          <div className="mt-1 text-muted-foreground">
-                            טלפון: {group.customerPhone ?? "-"} | כתובת: {group.address}
-                          </div>
-                          <div className="mt-3 space-y-2">
-                            {group.orders.map((delivery) => (
-                              <div key={delivery.id} className="rounded-md bg-muted/40 p-3">
-                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                  <div className="font-medium">הזמנה #{delivery.id.slice(0, 8)}</div>
-                                  <div className="text-muted-foreground">
-                                    {delivery.orderDate ?? "-"} | {delivery.status}
-                                  </div>
-                                </div>
-                                <div className="mt-1 text-muted-foreground">
-                                  סכום: {formatCurrency(delivery.totalAmount)}
-                                  {delivery.notes ? ` | הערות: ${delivery.notes}` : ""}
-                                </div>
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  <OrderConfirmDialog orderId={delivery.id} buttonLabel="אישור אספקה" />
-                                  <Button asChild type="button" variant="secondary" size="sm">
-                                    <Link href={`/sales/orders/${delivery.id}`}>לפרטי ההזמנה</Link>
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <SalesDeliveriesQueue deliveriesByCityAndCustomer={deliveriesByCityAndCustomer} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
-                עמוד {deliveriesPage} • מוצגים {deliveries.length} מתוך {totalCount}
+                עמוד {deliveriesPage} • מציגים {deliveries.length} מתוך {totalCount}
               </div>
               <div className="flex gap-2">
                 {hasPreviousPage ? (
@@ -639,11 +662,7 @@ export default async function SalesPage({
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">מכירות</h1>
             {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
-            <p className="text-sm text-muted-foreground">
-              הזמנות, מלאי, מחירון ומעקב משלוחים לכל עיר.
-            </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -660,7 +679,7 @@ export default async function SalesPage({
           </div>
         </div>
 
-        <SalesTabsNav activeTab={activeTab} />
+        <SalesTabsNav activeTab={activeTab} counts={salesTabCounts} />
         {content}
       </div>
     </AppShell>

@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import LoadingDots from "@/app/sales/orders/LoadingDots";
 import NewOrderClient from "@/app/sales/orders/new/NewOrderClient";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 
@@ -121,7 +122,12 @@ export default function OrderEditDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        {loading ? <p className="text-sm text-muted-foreground">טוען נתוני עריכה...</p> : null}
+        {loading ? (
+          <LoadingDots
+            label="טוען נתוני עריכה"
+            description="מכין את פרטי הלקוח, המוצרים והתשלומים לעריכה."
+          />
+        ) : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
         {data ? (

@@ -9,6 +9,8 @@ import {
   AdaptiveGrid,
   PageStack,
 } from "@/components/layout/page-layout";
+import { NavLink } from "@/components/NavLink";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
 type Row = Record<string, unknown>;
 type FilterMode = "all" | "yes" | "no";
@@ -83,15 +86,31 @@ const makeEmptyContactDraft = (): ContactDraft => ({
   active: true,
 });
 
+function customerFlagBadgeClass(tone: "success" | "danger" | "neutral") {
+  switch (tone) {
+    case "success":
+      return "border-emerald-200 bg-emerald-100 text-emerald-800";
+    case "danger":
+      return "border-rose-200 bg-rose-100 text-rose-800";
+    default:
+      return "border-slate-200 bg-slate-100 text-slate-700";
+  }
+}
+
 export default function CustomersClient({
   initialRows,
-  initialDetailsCustomerId = "",
+  initialEditCustomerId = "",
+  initialAddContactCustomerId = "",
+  currentPage = 1,
 }: {
   initialRows: Row[];
-  initialDetailsCustomerId?: string;
+  initialEditCustomerId?: string;
+  initialAddContactCustomerId?: string;
+  currentPage?: number;
 }) {
   const [rows, setRows] = useState(initialRows);
-  const [detailsCustomerId, setDetailsCustomerId] = useState(initialDetailsCustomerId);
+  const [handledInitialEdit, setHandledInitialEdit] = useState(false);
+  const [handledInitialAddContact, setHandledInitialAddContact] = useState(false);
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [withProjects, setWithProjects] = useState<FilterMode>("all");
@@ -165,19 +184,25 @@ export default function CustomersClient({
     });
   }, [rows, query, withProjects, withOrders, withDebt, activeOnly]);
 
-  const detailsRow = useMemo(
-    () => rows.find((row) => s(row, "customer_id") === detailsCustomerId) ?? null,
-    [rows, detailsCustomerId]
-  );
-
   useEffect(() => {
     setRows(initialRows);
   }, [initialRows]);
 
   useEffect(() => {
-    if (!initialDetailsCustomerId) return;
-    setDetailsCustomerId((current) => current || initialDetailsCustomerId);
-  }, [initialDetailsCustomerId]);
+    if (handledInitialEdit || !initialEditCustomerId || rows.length === 0) return;
+    const row = rows.find((current) => s(current, "customer_id") === initialEditCustomerId);
+    if (!row) return;
+    openEdit(row);
+    setHandledInitialEdit(true);
+  }, [handledInitialEdit, initialEditCustomerId, rows]);
+
+  useEffect(() => {
+    if (handledInitialAddContact || !initialAddContactCustomerId || rows.length === 0) return;
+    const row = rows.find((current) => s(current, "customer_id") === initialAddContactCustomerId);
+    if (!row) return;
+    openAddContact(row);
+    setHandledInitialAddContact(true);
+  }, [handledInitialAddContact, initialAddContactCustomerId, rows]);
 
   function resetCreateForm() {
     setName("");
@@ -467,6 +492,17 @@ export default function CustomersClient({
     }
   }
 
+  function customerDetailsHref(customerId: string) {
+    const base = `/customers/${encodeURIComponent(customerId)}`;
+    return currentPage > 1 ? `${base}?return_page=${currentPage}` : base;
+  }
+
+  function openCustomerDetails(customerId: string) {
+    if (!customerId) return;
+    emitNavigationStart();
+    window.location.href = customerDetailsHref(customerId);
+  }
+
   return (
     <PageStack>
       <AdaptiveGrid variant="customersToolbar">
@@ -533,7 +569,7 @@ export default function CustomersClient({
 
       <div className="text-sm text-muted-foreground">נמצאו {filtered.length} לקוחות</div>
 
-      <div className="space-y-2">
+      <div className="space-y-2 md:hidden">
         {filtered.map((row) => {
           const id = s(row, "customer_id");
           const customerName = s(row, "customer_name") || "לקוח";
@@ -543,33 +579,33 @@ export default function CustomersClient({
             <Card key={id || customerName} className="overflow-hidden">
               <CardContent className="p-0">
                 <AdaptiveGrid variant="customerCard">
-                <button
-                  type="button"
+                <NavLink
+                  to={customerDetailsHref(id)}
                   className="min-w-0 text-right leading-tight"
-                  onClick={() => setDetailsCustomerId(id)}
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-semibold">{customerName}</span>
                     {openBalance > 0 ? (
-                      <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                      <Badge className={customerFlagBadgeClass("danger")}>
                         חוב פתוח
-                      </span>
+                      </Badge>
                     ) : null}
                     {row.active === false ? (
-                      <span className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">
+                      <Badge className={customerFlagBadgeClass("danger")}>
                         לא פעיל
-                      </span>
+                      </Badge>
                     ) : null}
+                    {linkedMorningClientId ? <Badge className={customerFlagBadgeClass("success")}>Morning</Badge> : null}
                   </div>
                   <div className="truncate text-[11px] text-muted-foreground">
                     {s(row, "email") || "-"} | {s(row, "phone") || "-"}
                   </div>
-                </button>
+                </NavLink>
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   {linkedMorningClientId ? (
-                    <Button asChild size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700">
+                    <Button asChild size="sm" variant="outline">
                       <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
-                        Morning
+                        פתיחת Morning
                       </a>
                     </Button>
                   ) : null}
@@ -587,7 +623,7 @@ export default function CustomersClient({
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => setDetailsCustomerId(id)}
+                    onClick={() => openCustomerDetails(id)}
                   >
                     פרטי לקוח
                   </Button>
@@ -599,15 +635,108 @@ export default function CustomersClient({
         })}
       </div>
 
-      <CustomerDetailsDialog
-        row={detailsRow}
-        open={Boolean(detailsRow)}
-        onOpenChange={(next) => {
-          if (!next) setDetailsCustomerId("");
-        }}
-        onEdit={openEdit}
-        onAddContact={openAddContact}
-      />
+      <Card className="hidden overflow-hidden border-border/70 shadow-sm md:block">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1120px] text-sm">
+            <thead className="bg-muted/40 text-muted-foreground">
+              <tr className="border-b border-border/70 text-right">
+                <th className="px-4 py-3 font-medium">לקוח</th>
+                <th className="px-4 py-3 font-medium">טלפון ואימייל</th>
+                <th className="px-4 py-3 font-medium">כתובת</th>
+                <th className="px-4 py-3 font-medium">Morning</th>
+                <th className="px-4 py-3 font-medium">הזמנות</th>
+                <th className="px-4 py-3 font-medium">פרויקטים</th>
+                <th className="px-4 py-3 font-medium">יתרה פתוחה</th>
+                <th className="px-4 py-3 font-medium">סטטוס</th>
+                <th className="px-4 py-3 font-medium">פעולות</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/70">
+              {filtered.map((row) => {
+                const id = s(row, "customer_id");
+                const customerName = s(row, "customer_name") || "לקוח";
+                const linkedMorningClientId = s(row, "morning_client_id");
+                const openBalance = n(row, "open_balance");
+
+                return (
+                  <tr key={`${id || customerName}-desktop`} className="align-top hover:bg-muted/20">
+                    <td className="px-4 py-4">
+                      <button
+                        type="button"
+                        className="min-w-0 text-right"
+                        onClick={() => openCustomerDetails(id)}
+                      >
+                        <div className="font-medium">{customerName}</div>
+                      </button>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="min-w-[220px]">
+                        <div>{s(row, "phone") || "-"}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{s(row, "email") || "-"}</div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="max-w-[260px] text-muted-foreground">{s(row, "address") || "-"}</div>
+                    </td>
+                    <td className="px-4 py-4">
+                      {linkedMorningClientId ? (
+                        <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
+                          <Badge className={customerFlagBadgeClass("success")}>Morning</Badge>
+                        </a>
+                      ) : (
+                        <Badge className={customerFlagBadgeClass("neutral")}>ללא</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-4">{n(row, "orders_count")}</td>
+                    <td className="px-4 py-4">{n(row, "projects_count")}</td>
+                    <td className="px-4 py-4 font-medium">{ils(openBalance)}</td>
+                    <td className="px-4 py-4">
+                      <div className="flex flex-wrap gap-2">
+                        {openBalance > 0 ? (
+                          <Badge className={customerFlagBadgeClass("danger")}>
+                            חוב פתוח
+                          </Badge>
+                        ) : null}
+                        {row.active === false ? (
+                          <Badge className={customerFlagBadgeClass("danger")}>
+                            לא פעיל
+                          </Badge>
+                        ) : (
+                          <Badge className={customerFlagBadgeClass("success")}>
+                            פעיל
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex min-w-[320px] flex-wrap gap-2">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>
+                            הוספת פרויקט
+                          </Link>
+                        </Button>
+                        <Button asChild size="sm">
+                          <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>
+                            הוספת הזמנה
+                          </Link>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openCustomerDetails(id)}
+                        >
+                          פרטי לקוח
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       <CustomerDialog
         open={createOpen}
@@ -910,6 +1039,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CustomerDetailsDialog({
   row,
   open,

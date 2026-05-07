@@ -1203,20 +1203,155 @@ export default function ProjectsClient({
             : `נמצאו ${rows.length} פרויקטים`}
       </div>
 
-      <div className={`hidden rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground 2xl:grid ${desktopGridClass} 2xl:items-center 2xl:gap-5 sm:px-4`}>
-        <div>פרויקט</div>
-        <div>סטטוס</div>
-        <div>תאריך התחלה</div>
-        <div>תשלום</div>
-        <div>לקוח</div>
-        <div>{activeTab === "quotes" ? "מחיר" : "רווח"}</div>
-        <div>משימות פתוחות</div>
-        {activeTab === "quotes" ? null : <div>דף עבודה</div>}
-        {activeTab === "quotes" ? <div>אישור הצעה</div> : null}
-        <div>פעולות</div>
-      </div>
+      <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1280px] text-sm">
+            <thead className="bg-muted/40 text-muted-foreground">
+              <tr className="border-b border-border/70 text-right">
+                <th className="px-4 py-3 font-medium">פרויקט</th>
+                <th className="px-4 py-3 font-medium">סטטוס</th>
+                <th className="px-4 py-3 font-medium">תאריך התחלה</th>
+                <th className="px-4 py-3 font-medium">תשלום</th>
+                <th className="px-4 py-3 font-medium">לקוח</th>
+                <th className="px-4 py-3 font-medium">{activeTab === "quotes" ? "מחיר" : "מחיר / רווח"}</th>
+                <th className="px-4 py-3 font-medium">משימות פתוחות</th>
+                <th className="px-4 py-3 font-medium">{activeTab === "quotes" ? "אישור הצעה" : "מסמכים"}</th>
+                <th className="px-4 py-3 font-medium">פעולות</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/70">
+              {rows.map((row) => {
+                const id = getString(row, "id") ?? "";
+                const profit = profitValue(row);
+                const actualPrice = actualPriceValue(row);
+                const currentStatus = statusValue(row);
+                const openTasks = getNumber(row, "open_tasks");
+                const paymentStatus = paymentStatusValue(row);
+                const startDate = formatDate(getString(row, "start_date"));
+                const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
-      <div className="grid gap-2 sm:gap-2.5">
+                return (
+                  <tr key={`${id}-table`} className="align-top hover:bg-muted/20">
+                    <td className="px-4 py-4">
+                      <Link
+                        href={detailHref}
+                        prefetch
+                        className="block min-w-[180px]"
+                        onClick={() => emitNavigationStart()}
+                      >
+                        <div className="font-medium">{projectDisplayName(row)}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">#{id.slice(0, 8)}</div>
+                      </Link>
+                    </td>
+                    <td className="px-4 py-4">
+                      <StatusBadge value={currentStatus} type="project" />
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">{startDate}</td>
+                    <td className="px-4 py-4">
+                      <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
+                        {paymentStatusLabel(paymentStatus)}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-4">{clientDisplayName(row)}</td>
+                    <td className="px-4 py-4">
+                      {currentStatus === "quote" ? (
+                        actualPrice === null ? "-" : formatIls(actualPrice)
+                      ) : (
+                        <div className="space-y-0.5">
+                          <div className="text-xs text-muted-foreground">
+                            מחיר: {actualPrice === null ? "-" : formatIls(actualPrice)}
+                          </div>
+                          <div className={profit !== null && profit < 0 ? "text-destructive" : ""}>
+                            רווח: {profit === null ? "-" : formatIls(profit)}
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-4">{openTasks === null ? "-" : openTasks}</td>
+                    <td className="px-4 py-4">
+                      {currentStatus === "quote" ? (
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          className="w-full min-w-[120px] xl:w-auto"
+                          onClick={() => openApproveQuote(row)}
+                        >
+                          אישור הצעה
+                        </Button>
+                      ) : (
+                        <div className="flex min-w-[100px] items-center gap-2">
+                          <Button
+                            asChild
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9 rounded-xl"
+                            aria-label="שליחת דף עבודה ב-WhatsApp"
+                            title="שליחת דף עבודה ב-WhatsApp"
+                          >
+                            <Link
+                              href={`/projects/${id}/export?mode=worker`}
+                              prefetch
+                              onClick={() => emitNavigationStart()}
+                            >
+                              <MessageCircle className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                          <Button
+                            asChild
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9 rounded-xl"
+                            aria-label="דף עבודה / שיתוף / הדפסה / הורדה"
+                            title="דף עבודה / שיתוף / הדפסה / הורדה"
+                          >
+                            <Link
+                              href={`/projects/${id}/export?mode=worker`}
+                              prefetch
+                              onClick={() => emitNavigationStart()}
+                            >
+                              <FileText className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex min-w-[110px] items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9 rounded-xl"
+                          onClick={() => openEditProject(row)}
+                          aria-label={currentStatus === "quote" ? "עריכת הצעת מחיר" : "עריכת פרויקט"}
+                          title={currentStatus === "quote" ? "עריכת הצעת מחיר" : "עריכת פרויקט"}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <DeleteProjectButton
+                          projectId={id}
+                          projectName={projectDisplayName(row)}
+                          size="icon"
+                          className="h-9 w-9 rounded-xl"
+                          ariaLabel={currentStatus === "quote" ? "מחיקת הצעת מחיר" : "מחיקת פרויקט"}
+                          onDeleted={() => removeProject(id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </DeleteProjectButton>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div className="grid gap-2 sm:gap-2.5 xl:hidden">
         {rows.map((row) => {
           const id = getString(row, "id") ?? "";
           const profit = profitValue(row);

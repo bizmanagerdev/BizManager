@@ -383,37 +383,38 @@ export default function TasksPageClient(props: Props) {
             })}
           </div>
 
-          <div className="hidden overflow-x-auto rounded-md border md:block">
+          <Card className="hidden overflow-hidden border-border/70 shadow-sm md:block">
+            <div className="overflow-x-auto">
             <table className="min-w-[1100px] w-full text-sm">
-              <thead className="bg-muted/50 text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-right font-medium">משימה</th>
-                  <th className="px-3 py-2 text-right font-medium">מקושר ל</th>
-                  <th className="px-3 py-2 text-right font-medium">דומיין</th>
-                  <th className="px-3 py-2 text-right font-medium">תאריך יעד</th>
-                  <th className="px-3 py-2 text-right font-medium">משויך</th>
-                  <th className="px-3 py-2 text-right font-medium">עדיפות</th>
-                  <th className="px-3 py-2 text-right font-medium">סטטוס</th>
-                  <th className="px-3 py-2 text-right font-medium">פעולות</th>
+              <thead className="bg-muted/40 text-muted-foreground">
+                <tr className="border-b border-border/70">
+                  <th className="px-4 py-3 text-right font-medium">משימה</th>
+                  <th className="px-4 py-3 text-right font-medium">מקושר ל</th>
+                  <th className="px-4 py-3 text-right font-medium">דומיין</th>
+                  <th className="px-4 py-3 text-right font-medium">תאריך יעד</th>
+                  <th className="px-4 py-3 text-right font-medium">משויך</th>
+                  <th className="px-4 py-3 text-right font-medium">עדיפות</th>
+                  <th className="px-4 py-3 text-right font-medium">סטטוס</th>
+                  <th className="px-4 py-3 text-right font-medium">פעולות</th>
                 </tr>
               </thead>
 
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-border/70">
                 {filteredTasks.map((task) => {
                   const where = task.project_name ?? task.property_name ?? "—";
                   return (
-                    <tr key={task.id} className="hover:bg-muted/30">
-                      <td className="px-3 py-2">
+                    <tr key={task.id} className="align-top hover:bg-muted/20">
+                      <td className="px-4 py-4">
                         <span className="font-medium">{task.subject || "משימה"}</span>
                       </td>
-                      <td className="px-3 py-2">{where}</td>
-                      <td className="px-3 py-2">{domainLabel(task.business_domain)}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{formatShortDate(task.due_date)}</td>
-                      <td className="px-3 py-2">{task.assigned_user_name ?? "—"}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-4 py-4">{where}</td>
+                      <td className="px-4 py-4">{domainLabel(task.business_domain)}</td>
+                      <td className="px-4 py-4 whitespace-nowrap">{formatShortDate(task.due_date)}</td>
+                      <td className="px-4 py-4">{task.assigned_user_name ?? "—"}</td>
+                      <td className="px-4 py-4">
                         {task.priority ? <StatusBadge value={task.priority} type="priority" /> : "—"}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-4 py-4">
                         <select
                           className="h-8 min-w-[120px] rounded-md border border-input bg-background px-2 text-xs"
                           value={task.status ?? "todo"}
@@ -427,8 +428,8 @@ export default function TasksPageClient(props: Props) {
                           ))}
                         </select>
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <div className="flex gap-2">
+                      <td className="px-4 py-4">
+                        <div className="flex min-w-[220px] flex-wrap gap-2">
                           <Button asChild type="button" variant="outline" size="sm">
                             <Link href={`/tasks/${encodeURIComponent(task.id)}`} onClick={handleNavigationStart}>פרטים</Link>
                           </Button>
@@ -460,7 +461,8 @@ export default function TasksPageClient(props: Props) {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </Card>
 
           <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
             <div className="text-muted-foreground">

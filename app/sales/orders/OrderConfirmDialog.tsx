@@ -4,12 +4,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +15,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import LoadingDots from "@/app/sales/orders/LoadingDots";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
   derivePaymentStatus,
@@ -88,16 +88,38 @@ function normalizeQty(value: string) {
   return Math.max(1, Math.round(parsed));
 }
 
-function shouldApplyDefaultStatus(currentStatus: string, defaultStatus: string | undefined) {
-  if (!defaultStatus) return false;
-  return ["draft", "confirmed", "processing", "out_for_delivery"].includes(currentStatus);
+function Section({
+  step,
+  title,
+  description,
+  children,
+}: {
+  step: string;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-border/70 bg-card/70 p-4">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
+          {step}
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold">{title}</h3>
+          {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
 }
 
 export default function OrderConfirmDialog({
   orderId,
   buttonLabel = "אישור אספקה",
-  title = "אישור / אספקת הזמנה",
-  description = "עדכון כמויות, סטטוס, תשלום ותמונת אספקה במסך אחד.",
+  title = "אישור אספקת הזמנה",
+  description = "עדכון כמויות סופיות, תשלום, החזר והוכחת אספקה במסך אחד.",
   defaultStatus = "delivered",
 }: {
   orderId: string;
@@ -113,7 +135,6 @@ export default function OrderConfirmDialog({
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<EditPayload | null>(null);
   const [lines, setLines] = useState<OrderItem[]>([]);
-  const [orderStatus, setOrderStatus] = useState(defaultStatus);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -126,8 +147,6 @@ export default function OrderConfirmDialog({
   const [refundNotes, setRefundNotes] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [deliveryImages, setDeliveryImages] = useState<File[]>([]);
-  const [openSection, setOpenSection] = useState<"items" | "payment" | "delivery">("items");
-  const deliveryImage = deliveryImages[0] ?? null;
 
   useEffect(() => {
     if (!open) return;
@@ -140,11 +159,8 @@ export default function OrderConfirmDialog({
       try {
         const res = await fetch(`/api/orders/${orderId}/edit-data`, { cache: "no-store" });
         const json = (await res.json().catch(() => ({}))) as EditPayload & { error?: string };
-        if (!res.ok) {
-          throw new Error(json.error ?? "טעינת נתוני האישור נכשלה.");
-        }
-        if (cancelled) return;
-        setData(json);
+        if (!res.ok) throw new Error(json.error ?? "טעינת נתוני האישור נכשלה.");
+        if (!cancelled) setData(json);
       } catch (err: unknown) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "טעינת נתוני האישור נכשלה.");
@@ -163,11 +179,6 @@ export default function OrderConfirmDialog({
   useEffect(() => {
     if (!data) return;
     setLines(data.initialOrder.items);
-    setOrderStatus(
-      shouldApplyDefaultStatus(data.initialOrder.status, defaultStatus)
-        ? defaultStatus
-        : data.initialOrder.status
-    );
     setPaymentAmount("");
     setPaymentDate(getTodayDate());
     setPaymentMethod("");
@@ -180,9 +191,8 @@ export default function OrderConfirmDialog({
     setRefundNotes("");
     setDeliveryNotes(data.initialOrder.notes ?? "");
     setDeliveryImages([]);
-    setOpenSection("items");
     setError(null);
-  }, [data, defaultStatus]);
+  }, [data]);
 
   const existingPaid = useMemo(
     () => (data?.initialPayments ?? []).reduce((sum, payment) => sum + (payment.amount_total || 0), 0),
@@ -200,8 +210,7 @@ export default function OrderConfirmDialog({
 
   const totalAmount = subtotal - (data?.initialOrder.discount_amount ?? 0);
   const paymentAmountNumber = Number(paymentAmount || 0);
-  const pendingPaymentAmount =
-    Number.isFinite(paymentAmountNumber) && paymentAmountNumber > 0 ? paymentAmountNumber : 0;
+  const pendingPaymentAmount = Number.isFinite(paymentAmountNumber) && paymentAmountNumber > 0 ? paymentAmountNumber : 0;
   const projectedPaid = existingPaid + pendingPaymentAmount;
   const projectedRemaining = Math.max(totalAmount - projectedPaid, 0);
   const refundDue = Math.max(projectedPaid - totalAmount, 0);
@@ -210,6 +219,7 @@ export default function OrderConfirmDialog({
   const finalRemainingAfterRefund = Math.max(totalAmount - finalPaidAfterRefund, 0);
   const finalPaymentStatus = derivePaymentStatus(totalAmount, finalPaidAfterRefund);
   const projectedPaymentStatus = derivePaymentStatus(totalAmount, projectedPaid);
+  const finalStatus = defaultStatus || "delivered";
 
   function updateQuantity(index: number, nextValue: string) {
     setLines((prev) =>
@@ -217,10 +227,6 @@ export default function OrderConfirmDialog({
         lineIndex === index ? { ...line, quantity_ordered: normalizeQty(nextValue) } : line
       )
     );
-  }
-
-  function toggleSection(section: "items" | "payment" | "delivery") {
-    setOpenSection(section);
   }
 
   async function submit() {
@@ -272,7 +278,7 @@ export default function OrderConfirmDialog({
         order_id: data.initialOrder.id,
         customer_id: data.initialOrder.customer_id,
         order_date: data.initialOrder.order_date,
-        status: orderStatus,
+        status: finalStatus,
         payment_status: finalPaymentStatus,
         discount_amount: data.initialOrder.discount_amount,
         notes: deliveryNotes.trim(),
@@ -340,9 +346,7 @@ export default function OrderConfirmDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
-        if (!nextOpen) {
-          setError(null);
-        }
+        if (!nextOpen) setError(null);
       }}
     >
       <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => setOpen(true)}>
@@ -351,383 +355,312 @@ export default function OrderConfirmDialog({
       <DialogContent className="flex max-h-[92svh] w-[calc(100vw-1rem)] max-w-4xl flex-col overflow-hidden p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description ? "" : ""}</DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          {loading ? <p className="text-sm text-muted-foreground">טוען נתוני הזמנה...</p> : null}
+          {loading ? (
+            <LoadingDots
+              label="טוען את פרטי ההזמנה"
+              description="אוסף את הכמויות, התשלום והתמונות כדי שתוכלו לאשר אספקה בביטחון."
+            />
+          ) : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
           {data ? (
             <div className="space-y-5">
-            <div className="hidden grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-4">
-              <div>
-                <div className="text-muted-foreground">תאריך הזמנה</div>
-                <div className="font-medium">{formatDate(data.initialOrder.order_date)}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">שולם עד עכשיו</div>
-                <div className="font-medium">{formatCurrency(existingPaid)}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">סכום הזמנה</div>
-                <div className="font-medium">{formatCurrency(totalAmount)}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">
-                  {refundDue > 0 ? "החזר נדרש אחרי שמירה" : "יתרה אחרי שמירה"}
-                  {deliveryImages.length > 1 ? (
-                    <p className="text-xs text-muted-foreground">
-                      {`נבחרו ${deliveryImages.length} תמונות: ${deliveryImages.map((image) => image.name).join(", ")}`}
-                    </p>
-                  ) : null}
-                  {!deliveryImage ? null : null}
-                </div>
-                <div className={`font-medium ${refundDue > 0 ? "text-amber-700" : ""}`}>
-                  {formatCurrency(refundDue > 0 ? refundDue : projectedRemaining)}
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-md border p-4">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-2 rounded-xl border border-primary/15 bg-gradient-to-r from-accent to-destructive/15 px-3 py-2 text-right text-accent-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-                onClick={() => toggleSection("items")}
-              >
-                <h3 className="text-sm font-semibold">כמויות פריטים</h3>
-                <ChevronDown
-                  className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
-                    openSection === "items" ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-              {openSection === "items" ? <div className="mt-4 space-y-2">
-                {lines.map((line, index) => {
-                  const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
-                  return (
-                    <div key={`${line.product_id}-${index}`} className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_120px_140px]">
-                      <div>
-                        <div className="font-medium">{line.product_name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          מחיר יחידה: {formatCurrency(line.unit_price)}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium">כמות</label>
-                        <Input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={line.quantity_ordered}
-                          onChange={(e) => updateQuantity(index, e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="text-xs font-medium">סה&quot;כ שורה</div>
-                        <div className="h-10 rounded-md border bg-muted/20 px-3 py-2 text-sm">
-                          {formatCurrency(lineTotal)}
-                        </div>
-                      </div>
+              <section className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
+                <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
+                    <div className="text-xs text-muted-foreground">תאריך הזמנה</div>
+                    <div className="mt-1 font-medium">{formatDate(data.initialOrder.order_date)}</div>
+                  </div>
+                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
+                    <div className="text-xs text-muted-foreground">שולם עד עכשיו</div>
+                    <div className="mt-1 font-medium">{formatCurrency(existingPaid)}</div>
+                  </div>
+                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
+                    <div className="text-xs text-muted-foreground">סה״כ הזמנה מעודכן</div>
+                    <div className="mt-1 font-medium">{formatCurrency(totalAmount)}</div>
+                  </div>
+                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
+                    <div className="text-xs text-muted-foreground">{refundDue > 0 ? "החזר נדרש" : "יתרה אחרי אישור"}</div>
+                    <div className={`mt-1 font-medium ${refundDue > 0 ? "text-amber-700" : ""}`}>
+                      {formatCurrency(refundDue > 0 ? refundDue : projectedRemaining)}
                     </div>
-                  );
-                })}
-              </div> : null}
-            </div>
-
-            <div className="rounded-md border p-4">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-2 rounded-xl border border-primary/15 bg-gradient-to-r from-accent to-destructive/15 px-3 py-2 text-right text-accent-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-                onClick={() => toggleSection("payment")}
-              >
-                  <h3 className="text-sm font-semibold">סטטוס ותשלום</h3>
-                  <ChevronDown
-                    className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
-                      openSection === "payment" ? "rotate-180" : ""
-                    }`}
-                  />
-              </button>
-              {openSection === "payment" ? <div className="mt-4 space-y-3 rounded-md border p-4">
-                <h3 className="text-sm font-semibold">סטטוס ותשלום</h3>
-
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">סטטוס הזמנה</label>
-                  <select
-                    value={orderStatus}
-                    onChange={(e) => setOrderStatus(e.target.value)}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="draft">פתוחה</option>
-                    <option value="confirmed">מאושרת</option>
-                    <option value="processing">בטיפול</option>
-                    <option value="out_for_delivery">במשלוח</option>
-                    <option value="delivered">סופקה</option>
-                    <option value="completed">הושלמה</option>
-                    <option value="cancelled">בוטלה</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">סטטוס תשלום</label>
-                  <div>
-                    <span
-                      className={`inline-flex rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(finalPaymentStatus)}`}
-                    >
-                      {paymentStatusLabel(finalPaymentStatus)}
-                    </span>
                   </div>
-                  <p className="hidden text-xs text-muted-foreground">
-                    הסטטוס מחושב אוטומטית לפי הסכום ששולם בפועל אחרי תשלומים והחזרים.
-                  </p>
-                  {deliveryImages.length > 1 ? (
-                    <p className="hidden text-xs text-muted-foreground">
-                      {`נבחרו ${deliveryImages.length} תמונות: ${deliveryImages.map((image) => image.name).join(", ")}`}
-                    </p>
-                  ) : null}
-                  {!deliveryImage ? null : null}
                 </div>
+              </section>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+              <Section step="1" title="כמויות סופיות" description="עדכן את הכמות שנמסרה בפועל לכל פריט.">
+                <div className="space-y-2">
+                  {lines.map((line, index) => {
+                    const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
+                    return (
+                      <div
+                        key={`${line.product_id}-${index}`}
+                        className="grid gap-3 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-[1fr_120px_140px]"
+                      >
+                        <div>
+                          <div className="font-medium">{line.product_name}</div>
+                          <div className="text-xs text-muted-foreground">מחיר יחידה: {formatCurrency(line.unit_price)}</div>
+                          {line.notes ? <div className="mt-1 text-xs text-muted-foreground">הערות: {line.notes}</div> : null}
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium">כמות</label>
+                          <Input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={line.quantity_ordered}
+                            onChange={(e) => updateQuantity(index, e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-xs font-medium">סה״כ שורה</div>
+                          <div className="h-10 rounded-md border bg-muted/20 px-3 py-2 text-sm">{formatCurrency(lineTotal)}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Section>
+
+              <Section step="2" title="תשלום והחזר" description="רשום מה נגבה במסירה, ואם צריך גם החזר ללקוח.">
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-border/60 bg-muted/20 p-3 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">אחרי התשלום הזה</span>
+                      <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(projectedPaymentStatus)}`}>
+                        {paymentStatusLabel(projectedPaymentStatus)}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">שולם</span>
+                      <span>{formatCurrency(projectedPaid)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">{refundDue > 0 ? "החזר ללקוח" : "יתרה"}</span>
+                      <span className={refundDue > 0 ? "font-medium text-amber-700" : ""}>
+                        {formatCurrency(refundDue > 0 ? refundDue : projectedRemaining)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">סכום תשלום</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={paymentAmount}
+                        onChange={(e) => setPaymentAmount(e.target.value)}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">תאריך תשלום</label>
+                      <DateInput value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">אמצעי תשלום</label>
+                      <select
+                        value={paymentMethod}
+                        onChange={(e) => setPaymentMethod(e.target.value)}
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="">בחר אמצעי תשלום...</option>
+                        {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">אסמכתא</label>
+                      <Input
+                        value={referenceNumber}
+                        onChange={(e) => setReferenceNumber(e.target.value)}
+                        placeholder="אופציונלי"
+                      />
+                    </div>
+                  </div>
+
                   <div className="space-y-1">
-                    <label className="text-sm font-medium">סכום תשלום</label>
+                    <label className="text-sm font-medium">הערת תשלום</label>
                     <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={paymentAmount}
-                      onChange={(e) => setPaymentAmount(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">תאריך תשלום</label>
-                    <DateInput
-                      value={paymentDate}
-                      onChange={(e) => setPaymentDate(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">אמצעי תשלום</label>
-                    <select
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="">בחר אמצעי תשלום...</option>
-                      {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">אסמכתא</label>
-                    <Input
-                      value={referenceNumber}
-                      onChange={(e) => setReferenceNumber(e.target.value)}
+                      value={paymentNotes}
+                      onChange={(e) => setPaymentNotes(e.target.value)}
                       placeholder="אופציונלי"
                     />
                   </div>
-                </div>
 
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">הערת תשלום</label>
-                  <Input
-                    value={paymentNotes}
-                    onChange={(e) => setPaymentNotes(e.target.value)}
-                    placeholder="אופציונלי"
-                  />
-                </div>
-
-                <div className="rounded-md border bg-muted/20 p-3 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">אחרי התשלום הזה</span>
-                    <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(projectedPaymentStatus)}`}>
-                      {paymentStatusLabel(projectedPaymentStatus)}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">שולם</span>
-                    <span>{formatCurrency(projectedPaid)}</span>
-                  </div>
-                  <div className="mt-1 flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">
-                      {refundDue > 0 ? "החזר ללקוח" : "יתרה"}
-                    </span>
-                    <span className={refundDue > 0 ? "font-medium text-amber-700" : undefined}>
-                      {formatCurrency(refundDue > 0 ? refundDue : projectedRemaining)}
-                    </span>
-                  </div>
                   {refundDue > 0 ? (
-                    <div className="mt-2 text-xs text-amber-700">
-                      הסכום ששולם גבוה מההזמנה המעודכנת. יש להחזיר ללקוח {formatCurrency(refundDue)}.
+                    <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-3">
+                      <label className="flex items-center gap-2 text-sm font-medium">
+                        <input type="checkbox" checked={recordRefund} onChange={(e) => setRecordRefund(e.target.checked)} />
+                        <span>לרשום החזר עכשיו</span>
+                      </label>
+
+                      <div className="text-sm">
+                        סכום החזר: <span className="font-semibold text-amber-700">{formatCurrency(refundDue)}</span>
+                      </div>
+
+                      {recordRefund ? (
+                        <>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <label className="text-sm font-medium">תאריך החזר</label>
+                              <DateInput value={refundDate} onChange={(e) => setRefundDate(e.target.value)} />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-sm font-medium">אמצעי החזר</label>
+                              <select
+                                value={refundMethod}
+                                onChange={(e) => setRefundMethod(e.target.value)}
+                                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              >
+                                <option value="">בחר אמצעי החזר...</option>
+                                {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
+                                  <option key={`refund-${option.value}`} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <label className="text-sm font-medium">אסמכתא להחזר</label>
+                              <Input
+                                value={refundReferenceNumber}
+                                onChange={(e) => setRefundReferenceNumber(e.target.value)}
+                                placeholder="אופציונלי"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-sm font-medium">הערת החזר</label>
+                              <Input
+                                value={refundNotes}
+                                onChange={(e) => setRefundNotes(e.target.value)}
+                                placeholder="למשל: הוחזר עקב שינוי בכמויות"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="rounded-2xl border border-border/60 bg-background/80 p-3 text-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-muted-foreground">אחרי רישום ההחזר</span>
+                              <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(finalPaymentStatus)}`}>
+                                {paymentStatusLabel(finalPaymentStatus)}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex items-center justify-between gap-2">
+                              <span className="text-muted-foreground">שולם נטו</span>
+                              <span>{formatCurrency(finalPaidAfterRefund)}</span>
+                            </div>
+                            <div className="mt-1 flex items-center justify-between gap-2">
+                              <span className="text-muted-foreground">יתרה</span>
+                              <span>{formatCurrency(finalRemainingAfterRefund)}</span>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-xs text-amber-700">ההחזר לא יירשם במערכת עד שתסמן ותמלא פרטי החזר.</div>
+                      )}
                     </div>
                   ) : null}
                 </div>
+              </Section>
 
-                {refundDue > 0 ? (
-                  <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50/60 p-3">
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        checked={recordRefund}
-                        onChange={(e) => setRecordRefund(e.target.checked)}
-                      />
-                      לרשום החזר עכשיו
-                    </label>
+              <Section step="3" title="הוכחת אספקה" description="צרף תמונות ועדכן הערות מסירה.">
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">העלאת תמונה</label>
+                    <FileUploadActions
+                      files={deliveryImages}
+                      accept="image/*"
+                      multiple
+                      onFilesSelected={setDeliveryImages}
+                      chooseLabel="בחר תמונות"
+                      className="flex-wrap"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      אפשר לצרף הוכחת אספקה חדשה בלי למחוק תמונות קיימות.
+                    </p>
+                  </div>
 
-                    <div className="text-sm">
-                      סכום החזר: <span className="font-semibold text-amber-700">{formatCurrency(refundDue)}</span>
-                    </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">הערות אספקה</label>
+                    <Textarea
+                      value={deliveryNotes}
+                      onChange={(e) => setDeliveryNotes(e.target.value)}
+                      rows={4}
+                      placeholder="הערות למסירה, חוסרים, מצב אספקה..."
+                    />
+                  </div>
 
-                    {recordRefund ? (
-                      <>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium">תאריך החזר</label>
-                            <DateInput
-                              value={refundDate}
-                              onChange={(e) => setRefundDate(e.target.value)}
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium">אמצעי החזר</label>
-                            <select
-                              value={refundMethod}
-                              onChange={(e) => setRefundMethod(e.target.value)}
-                              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                            >
-                              <option value="">בחר אמצעי החזר...</option>
-                              {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
-                                <option key={`refund-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium">אסמכתא להחזר</label>
-                            <Input
-                              value={refundReferenceNumber}
-                              onChange={(e) => setRefundReferenceNumber(e.target.value)}
-                              placeholder="אופציונלי"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium">הערת החזר</label>
-                            <Input
-                              value={refundNotes}
-                              onChange={(e) => setRefundNotes(e.target.value)}
-                              placeholder="למשל: הוחזר עקב חוסר בפריטים"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="rounded-md border bg-background/70 p-3 text-sm">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-muted-foreground">אחרי רישום ההחזר</span>
-                            <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(finalPaymentStatus)}`}>
-                              {paymentStatusLabel(finalPaymentStatus)}
-                            </span>
-                          </div>
-                          <div className="mt-2 flex items-center justify-between gap-2">
-                            <span className="text-muted-foreground">שולם נטו</span>
-                            <span>{formatCurrency(finalPaidAfterRefund)}</span>
-                          </div>
-                          <div className="mt-1 flex items-center justify-between gap-2">
-                            <span className="text-muted-foreground">יתרה</span>
-                            <span>{formatCurrency(finalRemainingAfterRefund)}</span>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="text-xs text-amber-700">
-                        ההחזר לא יירשם במערכת עד שתסמן ותמלא פרטי החזר.
+                  {(data.deliveryImages ?? []).length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium">תמונות קיימות</div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {(data.deliveryImages ?? []).map((image) => (
+                          <a
+                            key={image.id}
+                            href={image.url ?? "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-xl border border-border/70 bg-background/70 p-2 text-sm"
+                          >
+                            {image.url ? (
+                              <img
+                                src={image.url}
+                                alt={image.file_name ?? "Delivery image"}
+                                className="mb-2 h-32 w-full rounded object-cover"
+                              />
+                            ) : null}
+                            <div className="font-medium">{image.file_name ?? "תמונה"}</div>
+                            <div className="text-xs text-muted-foreground">{formatDate(image.uploaded_at)}</div>
+                          </a>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                ) : null}
-              </div> : null}
-            </div>
-
-            <div className="rounded-md border p-4">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-2 rounded-xl border border-primary/15 bg-gradient-to-r from-accent to-destructive/15 px-3 py-2 text-right text-accent-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-                onClick={() => toggleSection("delivery")}
-              >
-                  <h3 className="text-sm font-semibold">אספקה</h3>
-                  <ChevronDown
-                    className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
-                      openSection === "delivery" ? "rotate-180" : ""
-                    }`}
-                  />
-              </button>
-              {openSection === "delivery" ? <div className="mt-4 space-y-3 rounded-md border p-4">
-                <h3 className="text-sm font-semibold">תמונת אספקה</h3>
-
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">העלאת תמונה</label>
-                  <FileUploadActions
-                    files={deliveryImages}
-                    accept="image/*"
-                    multiple
-                    onFilesSelected={setDeliveryImages}
-                    chooseLabel="בחר תמונות"
-                    className="flex-wrap"
-                  />
-                  <p className="hidden text-xs text-muted-foreground">
-                    {deliveryImage ? `נבחר קובץ: ${deliveryImage.name}` : "אפשר לצרף תמונת אספקה אחת בכל שמירה."}
-                  </p>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">הערות אספקה</label>
-                  <Textarea
-                    value={deliveryNotes}
-                    onChange={(e) => setDeliveryNotes(e.target.value)}
-                    rows={5}
-                    placeholder="הערות למסירה, חוסרים, מצב אספקה..."
-                  />
-                </div>
-
-                {(data.deliveryImages ?? []).length > 0 ? (
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium">תמונות קיימות</div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {(data.deliveryImages ?? []).map((image) => (
-                        <a
-                          key={image.id}
-                          href={image.url ?? "#"}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="rounded-md border p-2 text-sm"
-                        >
-                          {image.url ? (
-                            <img
-                              src={image.url}
-                              alt={image.file_name ?? "Delivery image"}
-                              className="mb-2 h-32 w-full rounded object-cover"
-                            />
-                          ) : null}
-                          <div className="font-medium">{image.file_name ?? "תמונה"}</div>
-                          <div className="text-xs text-muted-foreground">{formatDate(image.uploaded_at)}</div>
-                        </a>
-                      ))}
                     </div>
-                  </div>
-                ) : null}
-              </div> : null}
-            </div>
+                  ) : null}
+                </div>
+              </Section>
 
+              <Section step="4" title="אישור" description="האישור יעדכן את המלאי, התשלום, ההחזר והסטטוס להזמנה שסופקה.">
+                <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">סטטוס אחרי שמירה</span>
+                    <span className="font-medium">סופקה</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">סטטוס תשלום</span>
+                    <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(finalPaymentStatus)}`}>
+                      {paymentStatusLabel(finalPaymentStatus)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">שולם נטו</span>
+                    <span>{formatCurrency(finalPaidAfterRefund)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">יתרה</span>
+                    <span>{formatCurrency(finalRemainingAfterRefund)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">תמונות חדשות</span>
+                    <span>{deliveryImages.length}</span>
+                  </div>
+                </div>
+              </Section>
             </div>
           ) : null}
         </div>
@@ -737,7 +670,7 @@ export default function OrderConfirmDialog({
             ביטול
           </Button>
           <Button type="button" onClick={() => void submit()} disabled={submitting || loading || !data}>
-            {submitting ? "שומר..." : "שמירת אישור"}
+            {submitting ? "שומר..." : "אישור אספקה"}
           </Button>
         </DialogFooter>
       </DialogContent>

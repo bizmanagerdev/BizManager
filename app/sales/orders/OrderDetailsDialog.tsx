@@ -1,19 +1,26 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import {
   CalendarDays,
   ChevronDown,
   CreditCard,
+  FileImage,
   FileText,
   MapPin,
   Package,
   ScrollText,
   UserRound,
+  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
+import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
+import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
+import DeleteOrderButton from "@/app/sales/orders/[id]/DeleteOrderButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Dialog,
   DialogContent,
@@ -22,22 +29,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
-import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
-import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
+import { StatusBadge } from "@/components/ui/status-badge";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
-import { formatOrderDate } from "@/lib/orders/format";
 import { formatRelativeDateLabel } from "@/lib/date";
+import { formatOrderDate } from "@/lib/orders/format";
 import { paymentMethodLabel, paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
 type Row = Record<string, unknown>;
+
+type DeliveryImage = {
+  id: string;
+  file_name: string | null;
+  uploaded_at: string | null;
+  url: string | null;
+};
 
 type DetailsResponse = {
   order: Row;
   orderItems: Row[];
   payments: Row[];
   morningDocuments: MorningLocalDocument[];
+  deliveryImages: DeliveryImage[];
   customer: Row | null;
   products: Row[];
   totalAmount: number;
@@ -67,27 +80,6 @@ function formatCurrency(value: number) {
     currency: "ILS",
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-export function formatOrderStatus(status: string | null) {
-  switch ((status ?? "").toLowerCase()) {
-    case "draft":
-      return "פתוחה";
-    case "confirmed":
-      return "מאושרת";
-    case "processing":
-      return "בטיפול";
-    case "out_for_delivery":
-      return "במשלוח";
-    case "delivered":
-      return "סופקה";
-    case "completed":
-      return "הושלמה";
-    case "cancelled":
-      return "בוטלה";
-    default:
-      return status ?? "-";
-  }
 }
 
 function formatPaymentStatus(status: string | null) {
@@ -127,6 +119,7 @@ export function orderStatusClasses(status: string) {
     case "closed":
       return "border-transparent bg-emerald-100 text-black";
     case "draft":
+      return "border-transparent bg-red-100 text-red-800";
     case "confirmed":
     case "processing":
     case "out_for_delivery":
@@ -138,76 +131,72 @@ export function orderStatusClasses(status: string) {
   }
 }
 
-function SummaryRow({
-  label,
-  value,
-  valueClassName = "",
-}: {
-  label: string;
-  value: string;
-  valueClassName?: string;
-}) {
+function SummaryMetric({ label, value, valueClassName = "" }: { label: string; value: string; valueClassName?: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={valueClassName}>{value}</span>
+    <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`mt-1 text-sm font-medium ${valueClassName}`}>{value}</div>
     </div>
   );
 }
 
-function SectionCard({
-  title,
-  subtitle,
-  icon,
-  iconClassName = "bg-sky-50 text-sky-700 border border-sky-200",
-  children,
+function SummaryInfo({
+  icon: Icon,
+  label,
+  value,
+  tone = "sky",
 }: {
-  title: string;
-  subtitle?: string;
-  icon: ReactNode;
-  iconClassName?: string;
-  children: ReactNode;
+  icon: LucideIcon;
+  label: string;
+  value: ReactNode;
+  tone?: "sky" | "emerald" | "red";
 }) {
+  const toneClass =
+    tone === "red"
+      ? "border-red-200 bg-red-50 text-red-700"
+      : tone === "emerald"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : "border-sky-200 bg-sky-50 text-sky-700";
+
   return (
-    <section className="rounded-2xl border border-border/70 bg-card/70 p-4">
-      <div className="mb-3 flex items-start gap-3">
-        <div className={`flex h-9 w-9 items-center justify-center rounded-xl shadow-sm ${iconClassName}`}>
-          {icon}
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold">{title}</h3>
-          {subtitle ? <p className="text-xs text-muted-foreground">{subtitle}</p> : null}
-        </div>
+    <div className="flex items-start gap-3 rounded-2xl border border-border/60 bg-background/80 p-3">
+      <div className={`flex h-9 w-9 items-center justify-center rounded-xl border ${toneClass}`}>
+        <Icon className="h-4 w-4" />
       </div>
-      {children}
-    </section>
+      <div className="min-w-0">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="mt-1 text-sm font-medium leading-6">{value}</div>
+      </div>
+    </div>
   );
 }
 
 function ExpandableSection({
   title,
+  subtitle,
   count,
-  icon,
-  iconClassName = "bg-sky-50 text-sky-700 border border-sky-200",
+  icon: Icon,
   children,
 }: {
   title: string;
-  count: number;
-  icon: ReactNode;
-  iconClassName?: string;
+  subtitle?: string;
+  count?: string;
+  icon: LucideIcon;
   children: ReactNode;
 }) {
   return (
-    <details className="group rounded-2xl border border-border/70 bg-card/70 p-4">
+    <details className="group rounded-2xl border border-border/70 bg-card/70 p-4" open>
       <summary className="cursor-pointer list-none">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className={`flex h-9 w-9 items-center justify-center rounded-xl shadow-sm ${iconClassName}`}>
-              {icon}
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700">
+              <Icon className="h-4 w-4" />
             </div>
             <div>
               <div className="text-sm font-semibold">{title}</div>
-              <div className="text-xs text-muted-foreground">{count} רשומות</div>
+              <div className="text-xs text-muted-foreground">
+                {subtitle ?? count ?? ""}
+              </div>
             </div>
           </div>
           <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
@@ -236,9 +225,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
       try {
         const res = await fetch(`/api/orders/${orderId}/details`, { cache: "no-store" });
         const json = (await res.json().catch(() => ({}))) as DetailsResponse & { error?: string };
-        if (!res.ok) {
-          throw new Error(json.error ?? "טעינת פרטי ההזמנה נכשלה.");
-        }
+        if (!res.ok) throw new Error(json.error ?? "טעינת פרטי ההזמנה נכשלה.");
         if (!cancelled) setData(json);
       } catch (err: unknown) {
         if (!cancelled) {
@@ -276,7 +263,6 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
     const total = data?.totalAmount ?? 0;
     const paid = data?.totalPaid ?? 0;
     const remaining = Math.max(total - paid, 0);
-    const lastPayment = (data?.payments ?? [])[0] ?? null;
 
     return {
       subtotal,
@@ -284,7 +270,6 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
       total,
       paid,
       remaining,
-      lastPayment,
       itemCount: items.length,
       activityCount: (data?.payments ?? []).length,
     };
@@ -298,35 +283,26 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
   const customerEmail = getString((data?.customer ?? {}) as Row, "email");
   const customerPhone = getString((data?.customer ?? {}) as Row, "phone");
   const fullAddress = getString((data?.customer ?? {}) as Row, "address") ?? "-";
+  const customerCity = fullAddress.split("|")[0]?.trim() || "-";
   const orderNotes = getString((data?.order ?? {}) as Row, "notes");
   const orderMorningDocuments = data?.morningDocuments ?? [];
   const orderLevelMorningDocuments = orderMorningDocuments.filter((document) => !document.payment_id);
+  const deliveryImages = data?.deliveryImages ?? [];
   const resolvedCustomerId =
     getString((data?.customer ?? {}) as Row, "id") ?? getString((data?.order ?? {}) as Row, "customer_id") ?? "";
   const orderDate = getString((data?.order ?? {}) as Row, "order_date");
   const normalizedStatus = normalizeOrderStatus(getString((data?.order ?? {}) as Row, "status"));
   const isOpenOrder = !["delivered", "completed", "closed", "cancelled"].includes(normalizedStatus);
-  const orderDateTone = isOpenOrder
-    ? "border border-red-200 bg-red-50 text-red-700"
-    : "border border-sky-200 bg-sky-50 text-sky-700";
-  const orderDateAccent = isOpenOrder ? "text-red-700" : "text-foreground";
-  const orderDateAgeAccent = isOpenOrder ? "font-medium text-red-600" : "text-muted-foreground";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="w-full sm:w-auto"
-        onClick={() => setOpen(true)}
-      >
+      <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => setOpen(true)}>
         פרטי הזמנה
       </Button>
       <DialogContent className="max-h-[90svh] w-[calc(100vw-1rem)] max-w-5xl overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>הזמנה #{orderId.slice(0, 8)}</DialogTitle>
-          <DialogDescription>סיכום הזמנה, לקוח, כתובת למשלוח ותשלום.</DialogDescription>
+          <DialogDescription>מרכז ניהול להזמנה, תשלום, מסמכים ואישור אספקה.</DialogDescription>
         </DialogHeader>
 
         {loading ? <p className="text-sm text-muted-foreground">טוען פרטי הזמנה...</p> : null}
@@ -334,30 +310,16 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
 
         {data ? (
           <div className="space-y-5">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <SectionCard
-                title="תאריך הזמנה"
-                subtitle={isOpenOrder ? "הזמנה פתוחה" : "הזמנה קיימת"}
-                icon={<CalendarDays className="h-4 w-4" />}
-                iconClassName={orderDateTone}
-              >
-                <div className="space-y-1">
-                  <div className={`text-xl font-semibold ${orderDateAccent}`}>
-                    {formatOrderDate(orderDate)}
+            <section className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">הזמנה #{orderId.slice(0, 8)}</div>
+                    <div className="text-2xl font-semibold">{customerName}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {[customerPhone, customerEmail].filter(Boolean).join(" · ") || "-"}
+                    </div>
                   </div>
-                  <div className={`text-sm ${orderDateAgeAccent}`}>
-                    {formatRelativeDateLabel(orderDate)}
-                  </div>
-                </div>
-              </SectionCard>
-
-              <SectionCard
-                title="סיכום הזמנה"
-                subtitle={`${summary.itemCount} פריטים`}
-                icon={<FileText className="h-4 w-4" />}
-                iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
-              >
-                <div className="space-y-3">
                   <div className="flex flex-wrap gap-2">
                     <StatusBadge
                       value={getString(data.order, "status") ?? ""}
@@ -368,97 +330,49 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                       {formatPaymentStatus(data.paymentStatus)}
                     </Badge>
                   </div>
-                  <SummaryRow label="סכום ביניים" value={formatCurrency(summary.subtotal)} />
-                  {summary.discount > 0 ? (
-                    <SummaryRow
-                      label="הנחה"
-                      value={`-${formatCurrency(summary.discount)}`}
-                      valueClassName="text-emerald-700"
-                    />
-                  ) : null}
-                  <SummaryRow label="סה״כ" value={formatCurrency(summary.total)} valueClassName="font-semibold" />
-                  <SummaryRow label="שולם" value={formatCurrency(summary.paid)} />
-                  <SummaryRow label="יתרה" value={formatCurrency(summary.remaining)} />
                 </div>
-              </SectionCard>
 
-              <SectionCard
-                title="לקוח"
-                icon={<UserRound className="h-4 w-4" />}
-                iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
-              >
-                <div className="space-y-1 text-sm">
-                  <div className="font-medium">{customerName}</div>
-                  <div className="text-muted-foreground">
-                    {[customerEmail, customerPhone].filter(Boolean).join(" · ") || "-"}
-                  </div>
+                <div className="grid gap-3 lg:grid-cols-3">
+                  <SummaryInfo
+                    icon={CalendarDays}
+                    label="תאריך הזמנה"
+                    tone={isOpenOrder ? "red" : "sky"}
+                    value={
+                      <div className="space-y-1">
+                        <div className={isOpenOrder ? "text-red-700" : ""}>{formatOrderDate(orderDate)}</div>
+                        <div className={`text-xs ${isOpenOrder ? "font-medium text-red-600" : "text-muted-foreground"}`}>
+                          {formatRelativeDateLabel(orderDate)}
+                        </div>
+                      </div>
+                    }
+                  />
+                  <SummaryInfo icon={UserRound} label="לקוח וטלפון" value={<span>{customerName} · {customerPhone ?? "-"}</span>} />
+                  <SummaryInfo icon={MapPin} label="עיר וכתובת" value={<span>{customerCity} · {fullAddress}</span>} />
                 </div>
-              </SectionCard>
 
-              <SectionCard
-                title="כתובת למשלוח"
-                icon={<MapPin className="h-4 w-4" />}
-                iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
-              >
-                <div className="space-y-3 text-sm">
-                  <div className="leading-6">{fullAddress}</div>
-                  {orderNotes ? (
-                    <div className="rounded-xl border border-border/70 bg-background/70 p-3">
-                      <div className="mb-1 text-xs font-medium text-muted-foreground">הערות</div>
-                      <div className="leading-6">{orderNotes}</div>
-                    </div>
-                  ) : null}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <SummaryMetric label="סכום ביניים" value={formatCurrency(summary.subtotal)} />
+                  <SummaryMetric label="הנחה" value={summary.discount > 0 ? `-${formatCurrency(summary.discount)}` : "-"} valueClassName={summary.discount > 0 ? "text-emerald-700" : ""} />
+                  <SummaryMetric label="סה״כ" value={formatCurrency(summary.total)} />
+                  <SummaryMetric label="שולם" value={formatCurrency(summary.paid)} />
+                  <SummaryMetric label="יתרה" value={formatCurrency(summary.remaining)} valueClassName={summary.remaining > 0 ? "text-amber-700" : ""} />
                 </div>
-              </SectionCard>
 
-              <SectionCard
-                title="תשלום"
-                icon={<CreditCard className="h-4 w-4" />}
-                iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
-              >
-                <div className="space-y-1 text-sm">
-                  <div className="font-medium">
-                    {summary.lastPayment
-                      ? paymentMethodLabel(getString(summary.lastPayment, "payment_method"))
-                      : "אין תשלום רשום"}
-                  </div>
-                  <div className="text-muted-foreground">
-                    {summary.lastPayment
-                      ? `${formatPaymentStatus(data.paymentStatus)} · ${formatOrderDate(
-                          getString(summary.lastPayment, "payment_date") ??
-                            getString(summary.lastPayment, "created_at")
-                        )}`
-                      : formatPaymentStatus(data.paymentStatus)}
-                  </div>
-                  <div className="text-base font-semibold">{formatCurrency(summary.paid)}</div>
+                <div className="flex flex-wrap gap-2">
+                  <OrderPaymentDialog
+                    orderId={orderId}
+                    totalAmount={data.totalAmount ?? 0}
+                    paidAmount={data.totalPaid ?? 0}
+                    onCreated={() => setRefreshSeed((current) => current + 1)}
+                  />
+                  <OrderConfirmDialog orderId={orderId} buttonLabel="אישור אספקה" />
+                  <OrderEditDialog orderId={orderId} buttonLabel="עריכת הזמנה" />
+                  <DeleteOrderButton orderId={orderId} />
                 </div>
-              </SectionCard>
-            </div>
+              </div>
+            </section>
 
-            {resolvedCustomerId ? (
-              <SectionCard
-                title="Morning"
-                subtitle="מסמכי הזמנה וחשבונות"
-                icon={<FileText className="h-4 w-4" />}
-                iconClassName="border border-emerald-200 bg-emerald-50 text-emerald-700"
-              >
-                <MorningDocumentsPanel
-                  customerId={resolvedCustomerId}
-                  orderId={orderId}
-                  documents={orderLevelMorningDocuments}
-                  allowQuote
-                  allowInvoice
-                  onChanged={() => setRefreshSeed((current) => current + 1)}
-                />
-              </SectionCard>
-            ) : null}
-
-            <ExpandableSection
-              title="פריטי הזמנה"
-              count={summary.itemCount}
-              icon={<Package className="h-4 w-4" />}
-              iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
-            >
+            <ExpandableSection title="פריטים" subtitle={`${summary.itemCount} פריטים`} icon={Package}>
               {(data.orderItems ?? []).length === 0 ? (
                 <p className="text-sm text-muted-foreground">לא נמצאו פריטים להזמנה זו.</p>
               ) : (
@@ -486,6 +400,12 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                         <div className="mt-1 text-muted-foreground">
                           כמות: {quantity} · מחיר יחידה: {formatCurrency(unitPrice)}
                         </div>
+                        {(getNumber(item, "discount_amount") ?? 0) > 0 ? (
+                          <div className="mt-1 text-emerald-700">הנחת שורה: -{formatCurrency(getNumber(item, "discount_amount") ?? 0)}</div>
+                        ) : null}
+                        {getString(item, "notes") ? (
+                          <div className="mt-1 text-muted-foreground">הערות: {getString(item, "notes")}</div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -493,12 +413,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
               )}
             </ExpandableSection>
 
-            <ExpandableSection
-              title="פעילות"
-              count={summary.activityCount}
-              icon={<ScrollText className="h-4 w-4" />}
-              iconClassName="border border-sky-200 bg-sky-50 text-sky-700"
-            >
+            <ExpandableSection title="תשלומים, החזרים ופעילות" subtitle={`${summary.activityCount} רשומות`} icon={ScrollText}>
               {(data.payments ?? []).length === 0 ? (
                 <p className="text-sm text-muted-foreground">עדיין לא הוזנו תשלומים.</p>
               ) : (
@@ -521,24 +436,18 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                             {isRefund ? `החזר ${formatCurrency(Math.abs(amount))}` : formatCurrency(amount)}
                           </span>
                           <span className="text-muted-foreground">
-                            {formatOrderDate(
-                              getString(payment, "payment_date") ?? getString(payment, "created_at")
-                            )}
+                            {formatOrderDate(getString(payment, "payment_date") ?? getString(payment, "created_at"))}
                           </span>
                         </div>
                         <div className="mt-1 text-muted-foreground">
                           {isRefund ? "אמצעי החזר" : "אמצעי"}: {paymentMethodLabel(getString(payment, "payment_method"))}
-                          {getString(payment, "reference_number")
-                            ? ` · אסמכתא: ${getString(payment, "reference_number")}`
-                            : ""}
+                          {getString(payment, "reference_number") ? ` · אסמכתא: ${getString(payment, "reference_number")}` : ""}
                         </div>
                         {getString(payment, "notes") ? (
                           <div className="mt-1 text-muted-foreground">הערות: {getString(payment, "notes")}</div>
                         ) : null}
                         {getString(payment, "recorded_by_display") ? (
-                          <div className="mt-1 text-muted-foreground">
-                            הוזן ע״י {getString(payment, "recorded_by_display")}
-                          </div>
+                          <div className="mt-1 text-muted-foreground">הוזן ע״י {getString(payment, "recorded_by_display")}</div>
                         ) : null}
                         {!isRefund && paymentId && resolvedCustomerId ? (
                           <div className="mt-3 border-t border-border/60 pt-3">
@@ -560,18 +469,63 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                 </div>
               )}
             </ExpandableSection>
+
+            <ExpandableSection title="הוכחת אספקה" subtitle={`${deliveryImages.length} תמונות`} icon={FileImage}>
+              {deliveryImages.length === 0 ? (
+                <p className="text-sm text-muted-foreground">עדיין לא הועלו תמונות אספקה להזמנה זו.</p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {deliveryImages.map((image) => (
+                    <a
+                      key={image.id}
+                      href={image.url ?? "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm"
+                    >
+                      {image.url ? (
+                        <img
+                          src={image.url}
+                          alt={image.file_name ?? "Delivery proof"}
+                          className="mb-3 h-40 w-full rounded-lg object-cover"
+                        />
+                      ) : null}
+                      <div className="font-medium">{image.file_name ?? "תמונת אספקה"}</div>
+                      <div className="text-xs text-muted-foreground">{formatOrderDate(image.uploaded_at)}</div>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </ExpandableSection>
+
+            <ExpandableSection title="מסמכים ו-Morning" subtitle={`${orderMorningDocuments.length} מסמכים`} icon={FileText}>
+              {resolvedCustomerId ? (
+                <MorningDocumentsPanel
+                  customerId={resolvedCustomerId}
+                  orderId={orderId}
+                  documents={orderLevelMorningDocuments}
+                  allowQuote
+                  allowInvoice
+                  onChanged={() => setRefreshSeed((current) => current + 1)}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">לא נמצא לקוח מקושר למסמכי Morning.</p>
+              )}
+            </ExpandableSection>
+
+            <ExpandableSection title="הערות" subtitle={orderNotes ? "קיימות הערות להזמנה" : "ללא הערות"} icon={CreditCard}>
+              {orderNotes ? (
+                <div className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm leading-6">
+                  {orderNotes}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">לא נוספו הערות להזמנה זו.</p>
+              )}
+            </ExpandableSection>
           </div>
         ) : null}
 
-        <DialogFooter className="mt-2 flex flex-wrap items-center justify-end gap-2 border-t pt-4">
-          <OrderPaymentDialog
-            orderId={orderId}
-            totalAmount={data?.totalAmount ?? 0}
-            paidAmount={data?.totalPaid ?? 0}
-            onCreated={() => setRefreshSeed((current) => current + 1)}
-          />
-          <OrderEditDialog orderId={orderId} buttonLabel="עריכת הזמנה" />
-          <OrderConfirmDialog orderId={orderId} buttonLabel="אישור אספקה" />
+        <DialogFooter className="mt-2 border-t pt-4">
           <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
             סגירה
           </Button>

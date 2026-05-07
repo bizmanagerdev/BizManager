@@ -1,0 +1,17 @@
+
+> bizmanager@0.1.0 dev:insecure
+> set NODE_TLS_REJECT_UNAUTHORIZED=0&& next dev
+
+Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/child_process:420:11)
+    at spawn (node:child_process:753:9)
+    at fork (node:child_process:171:10)
+    at C:\BizManager\BizManager\node_modules\next\dist\cli\next-dev.js:243:45
+    at new Promise (<anonymous>)
+    at startServer (C:\BizManager\BizManager\node_modules\next\dist\cli\next-dev.js:212:16)
+    at runDevServer (C:\BizManager\BizManager\node_modules\next\dist\cli\next-dev.js:334:23)
+    at Module.nextDev (C:\BizManager\BizManager\node_modules\next\dist\cli\next-dev.js:342:11) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'spawn'
+}

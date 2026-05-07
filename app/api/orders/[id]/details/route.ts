@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { derivePaymentStatus } from "@/lib/orders/paymentStatus";
 
 type Row = Record<string, unknown>;
+const BUCKET = "business-documents";
 
 function getString(row: Row | null | undefined, key: string) {
   const value = row?.[key];
@@ -107,12 +109,41 @@ export async function GET(
     return NextResponse.json({ error: productsError.message }, { status: 400 });
   }
 
+  const derivedSubtotal = ((orderItems ?? []) as Row[]).reduce((sum, item) => {
+    const quantity = getNumber(item, "quantity_ordered") ?? 0;
+    const unitPrice = getNumber(item, "unit_price") ?? 0;
+    return sum + quantity * unitPrice;
+  }, 0);
+  const derivedLineDiscount = ((orderItems ?? []) as Row[]).reduce(
+    (sum, item) => sum + (getNumber(item, "discount_amount") ?? 0),
+    0
+  );
+  const derivedOrderDiscount = getNumber(order as Row, "discount_amount") ?? 0;
+  const derivedTotalAmount = Math.max(derivedSubtotal - derivedLineDiscount - derivedOrderDiscount, 0);
+  const derivedTotalPaid = ((payments ?? []) as Row[]).reduce(
+    (sum, payment) => sum + (getNumber(payment, "amount_total") ?? 0),
+    0
+  );
+  const derivedRemainingBalance = Math.max(derivedTotalAmount - derivedTotalPaid, 0);
+  const derivedPaymentStatus = derivePaymentStatus(derivedTotalAmount, derivedTotalPaid);
+
   const financialRow = (financials as Row | null) ?? null;
-  const totalAmount = getNumber(financialRow, "total_amount") ?? 0;
-  const totalPaid = getNumber(financialRow, "total_paid") ?? 0;
-  const paymentStatus = getString(financialRow, "payment_status") ?? "unpaid";
+  const viewTotalAmount = getNumber(financialRow, "total_amount");
+  const viewTotalPaid = getNumber(financialRow, "total_paid");
+  const viewPaymentStatus = getString(financialRow, "payment_status");
+  const useDerivedFinancials =
+    viewTotalAmount === null ||
+    (Math.abs((viewTotalAmount ?? 0) - derivedTotalAmount) > 0.009 && derivedTotalAmount > 0) ||
+    Math.abs((viewTotalPaid ?? 0) - derivedTotalPaid) > 0.009;
+  const totalAmount = useDerivedFinancials ? derivedTotalAmount : viewTotalAmount ?? 0;
+  const totalPaid = useDerivedFinancials ? derivedTotalPaid : viewTotalPaid ?? 0;
+  const paymentStatus = useDerivedFinancials
+    ? derivedPaymentStatus
+    : viewPaymentStatus ?? derivePaymentStatus(totalAmount, totalPaid);
   const paymentCount = getNumber(financialRow, "payment_count") ?? (payments ?? []).length;
-  const remainingBalance = getNumber(financialRow, "remaining_balance") ?? 0;
+  const remainingBalance = useDerivedFinancials
+    ? derivedRemainingBalance
+    : getNumber(financialRow, "remaining_balance") ?? Math.max(totalAmount - totalPaid, 0);
   const paymentIds = Array.from(
     new Set(
       ((payments ?? []) as Row[])
@@ -187,11 +218,70 @@ export async function GET(
     ).values()
   );
 
+  const { data: deliveryLinks, error: deliveryLinksError } = await supabase
+    .from("document_links")
+    .select("document_id,created_at")
+    .eq("entity_type", "order")
+    .eq("entity_id", id);
+
+  if (deliveryLinksError) {
+    return NextResponse.json({ error: deliveryLinksError.message }, { status: 400 });
+  }
+
+  const deliveryDocumentIds = Array.from(
+    new Set(
+      ((deliveryLinks ?? []) as Row[])
+        .map((row) => getString(row, "document_id"))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { data: deliveryDocuments, error: deliveryDocumentsError } =
+    deliveryDocumentIds.length > 0
+      ? await supabase
+          .from("documents")
+          .select("id,file_name,storage_key,uploaded_at,document_type")
+          .in("id", deliveryDocumentIds)
+      : { data: [], error: null };
+
+  if (deliveryDocumentsError) {
+    return NextResponse.json({ error: deliveryDocumentsError.message }, { status: 400 });
+  }
+
+  const deliveryDocumentMap = new Map<string, Row>();
+  ((deliveryDocuments ?? []) as Row[]).forEach((row) => {
+    const documentId = getString(row, "id");
+    if (documentId) deliveryDocumentMap.set(documentId, row);
+  });
+
+  const deliveryImages = await Promise.all(
+    ((deliveryLinks ?? []) as Row[]).map(async (link) => {
+      const documentId = getString(link, "document_id");
+      if (!documentId) return null;
+      const document = deliveryDocumentMap.get(documentId);
+      if (!document) return null;
+      if (getString(document, "document_type") !== "order_delivery_image") return null;
+
+      const storageKey = getString(document, "storage_key");
+      const { data: signed } = storageKey
+        ? await supabase.storage.from(BUCKET).createSignedUrl(storageKey, 60 * 60)
+        : { data: null };
+
+      return {
+        id: documentId,
+        file_name: getString(document, "file_name"),
+        uploaded_at: getString(document, "uploaded_at") ?? getString(link, "created_at"),
+        url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
+      };
+    })
+  );
+
   return NextResponse.json({
     order,
     orderItems: orderItems ?? [],
     payments: paymentsWithRecordedBy,
     morningDocuments,
+    deliveryImages: deliveryImages.filter((row): row is NonNullable<typeof row> => Boolean(row)),
     customer,
     products: products ?? [],
     totalAmount,

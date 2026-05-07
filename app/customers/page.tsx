@@ -43,7 +43,7 @@ function rowId(row: Row) {
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ page?: string; customer_id?: string }>;
+  searchParams?: Promise<{ page?: string; edit_customer_id?: string; add_contact_customer_id?: string }>;
 }) {
   const params = (await searchParams) ?? {};
   const page = parsePage(params.page);
@@ -262,11 +262,17 @@ export default async function CustomersPage({
           <>
             <CustomersClient
               initialRows={rowsWithContacts}
-              initialDetailsCustomerId={
-                typeof params.customer_id === "string" && params.customer_id.trim()
-                  ? params.customer_id.trim()
+              initialEditCustomerId={
+                typeof params.edit_customer_id === "string" && params.edit_customer_id.trim()
+                  ? params.edit_customer_id.trim()
                   : ""
               }
+              initialAddContactCustomerId={
+                typeof params.add_contact_customer_id === "string" && params.add_contact_customer_id.trim()
+                  ? params.add_contact_customer_id.trim()
+                  : ""
+              }
+              currentPage={page}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
