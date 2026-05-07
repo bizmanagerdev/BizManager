@@ -6,6 +6,7 @@ import SalesInventoryClient from "@/app/sales/SalesInventoryClient";
 import SalesOrdersClient from "@/app/sales/SalesOrdersClient";
 import PriceListClient from "@/app/sales/PriceListClient";
 import SalesTabsNav from "@/app/sales/SalesTabsNav";
+import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -526,6 +527,9 @@ export default async function SalesPage({
           <p className="text-sm text-muted-foreground">אין כרגע הזמנות מקובצות למשלוחים.</p>
         ) : (
           <>
+            <div className="rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              בחרו הזמנה מתוך רשימת המשלוחים ולחצו על <span className="font-medium text-foreground">אישור אספקה</span>.
+            </div>
             <div className="space-y-3">
               {deliveriesByCityAndCustomer.map(([city, customerGroups]) => (
                 <Card key={city}>
@@ -560,6 +564,12 @@ export default async function SalesPage({
                                 <div className="mt-1 text-muted-foreground">
                                   סכום: {formatCurrency(delivery.totalAmount)}
                                   {delivery.notes ? ` | הערות: ${delivery.notes}` : ""}
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <OrderConfirmDialog orderId={delivery.id} buttonLabel="אישור אספקה" />
+                                  <Button asChild type="button" variant="secondary" size="sm">
+                                    <Link href={`/sales/orders/${delivery.id}`}>לפרטי ההזמנה</Link>
+                                  </Button>
                                 </div>
                               </div>
                             ))}

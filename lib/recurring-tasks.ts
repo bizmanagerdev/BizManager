@@ -30,6 +30,12 @@ type EnsureRecurringResult = {
   error?: string;
 };
 
+type EnsureRecurringCacheStore = Map<string, Promise<EnsureRecurringResult>>;
+
+declare global {
+  var __bizmanagerRecurringEnsureCache: EnsureRecurringCacheStore | undefined;
+}
+
 function parsePositiveDay(value: number | string | null | undefined, fallback: number) {
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   if (!Number.isFinite(parsed)) return fallback;
@@ -68,7 +74,18 @@ function looksLikeUniqueViolation(message: string) {
   return value.includes("duplicate key") || value.includes("23505");
 }
 
-export async function ensureRecurringTasksForDate(
+function getEnsureRecurringCache() {
+  if (!globalThis.__bizmanagerRecurringEnsureCache) {
+    globalThis.__bizmanagerRecurringEnsureCache = new Map<string, Promise<EnsureRecurringResult>>();
+  }
+  return globalThis.__bizmanagerRecurringEnsureCache;
+}
+
+function ensureCacheKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+async function runEnsureRecurringTasksForDate(
   supabase: SupabaseClient,
   options?: { today?: Date }
 ): Promise<EnsureRecurringResult> {
@@ -174,6 +191,37 @@ export async function ensureRecurringTasksForDate(
   }
 
   return { ok: true, createdCount, skippedMissingSchema: false };
+}
+
+export function ensureRecurringTasksForDate(
+  supabase: SupabaseClient,
+  options?: { today?: Date }
+) {
+  return ensureRecurringTasksForDateCached(supabase, options);
+}
+
+export function ensureRecurringTasksForDateCached(
+  supabase: SupabaseClient,
+  options?: { today?: Date }
+) {
+  const today = options?.today ?? new Date();
+  const key = ensureCacheKey(today);
+  const cache = getEnsureRecurringCache();
+  const existing = cache.get(key);
+  if (existing) return existing;
+
+  const promise = runEnsureRecurringTasksForDate(supabase, { ...options, today })
+    .then((result) => {
+      if (!result.ok) cache.delete(key);
+      return result;
+    })
+    .catch((error) => {
+      cache.delete(key);
+      throw error;
+    });
+
+  cache.set(key, promise);
+  return promise;
 }
 
 export function recurringTaskDomainLabel(value: string | null | undefined) {

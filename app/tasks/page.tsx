@@ -83,31 +83,35 @@ export default async function TasksPage({
 
   const tasksError = tasksResult.error?.message ?? null;
   const taskRows = (tasksResult.data ?? []) as TaskRow[];
+  const projectRows = (projectsResult.data ?? []) as Row[];
+  const propertyRows = (propertiesResult.data ?? []) as Row[];
+  const userRows = (usersResult.data ?? []) as Row[];
+
+  const projectsById = new Map(
+    projectRows
+      .map((row) => [getString(row, "id"), getString(row, "name")] as const)
+      .filter((entry): entry is readonly [string, string | null] => Boolean(entry[0]))
+  );
+
+  const propertiesById = new Map(
+    propertyRows
+      .map((row) => [getString(row, "id"), getString(row, "address")] as const)
+      .filter((entry): entry is readonly [string, string | null] => Boolean(entry[0]))
+  );
+
+  const usersById = new Map(
+    userRows
+      .map((row) => [getString(row, "id"), getString(row, "full_name") ?? getString(row, "email")] as const)
+      .filter((entry): entry is readonly [string, string | null] => Boolean(entry[0]))
+  );
 
   const tasks: TaskListItem[] = taskRows.map((row) => {
     const projectId = typeof row.project_id === "string" ? row.project_id : null;
     const propertyId = typeof row.property_id === "string" ? row.property_id : null;
-
-    const projectName = projectId
-      ? (() => {
-          const match = ((projectsResult.data ?? []) as Row[]).find((p) => getString(p, "id") === projectId);
-          return match ? getString(match, "name") : null;
-        })()
-      : null;
-
-    const propertyName = propertyId
-      ? (() => {
-          const match = ((propertiesResult.data ?? []) as Row[]).find((p) => getString(p, "id") === propertyId);
-          return match ? getString(match, "address") : null;
-        })()
-      : null;
-
-    const assignedName = (() => {
-      const userId = typeof row.assigned_user_id === "string" ? row.assigned_user_id : null;
-      if (!userId) return null;
-      const match = ((usersResult.data ?? []) as Row[]).find((u) => getString(u, "id") === userId);
-      return match ? (getString(match, "full_name") ?? getString(match, "email")) : null;
-    })();
+    const userId = typeof row.assigned_user_id === "string" ? row.assigned_user_id : null;
+    const projectName = projectId ? projectsById.get(projectId) ?? null : null;
+    const propertyName = propertyId ? propertiesById.get(propertyId) ?? null : null;
+    const assignedName = userId ? usersById.get(userId) ?? null : null;
 
     return {
       id: row.id,
@@ -134,7 +138,7 @@ export default async function TasksPage({
   const prevHref = hasPreviousPage ? buildTasksHref(page - 1) : null;
   const nextHref = hasNextPage ? buildTasksHref(page + 1) : null;
 
-  const projectOptions = ((projectsResult.data ?? []) as Row[])
+  const projectOptions = projectRows
     .map((p) => {
       const id = getString(p, "id") ?? "";
       const name = getString(p, "name") ?? "";
@@ -144,12 +148,12 @@ export default async function TasksPage({
     })
     .filter((p) => p.id && p.label);
 
-  const propertyOptions = ((propertiesResult.data ?? []) as Row[])
+  const propertyOptions = propertyRows
     .filter((p) => p.is_active !== false)
     .map((p) => ({ id: getString(p, "id") ?? "", label: getString(p, "address") ?? "" }))
     .filter((p) => p.id && p.label);
 
-  const userOptions = ((usersResult.data ?? []) as Row[])
+  const userOptions = userRows
     .filter((u) => u.active !== false)
     .map((u) => ({
       id: getString(u, "id") ?? "",

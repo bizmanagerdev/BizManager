@@ -14,6 +14,7 @@ import {
   type UserOption,
 } from "@/components/tasks/TaskUpsertDialog";
 import {
+  emitNavigationStart,
   emitProgressActivityEnd,
   emitProgressActivityStart,
 } from "@/components/layout/TopNavigationProgress";
@@ -61,6 +62,10 @@ function normalize(value: string) {
 function domainLabel(domain: string | null) {
   if (!domain) return "—";
   return isExpenseBusinessDomain(domain) ? getBusinessDomainLabel(domain) : domain;
+}
+
+function handleNavigationStart() {
+  emitNavigationStart();
 }
 
 export default function TasksPageClient(props: Props) {
@@ -202,7 +207,7 @@ export default function TasksPageClient(props: Props) {
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button asChild type="button" variant="outline">
-          <Link href="/tasks/recurring">משימות קבועות</Link>
+          <Link href="/tasks/recurring" onClick={handleNavigationStart}>משימות קבועות</Link>
         </Button>
         <Button type="button" onClick={() => setCreateOpen(true)}>
           הוספת משימה
@@ -316,7 +321,7 @@ export default function TasksPageClient(props: Props) {
                       <div className="font-medium">{task.subject || "משימה"}</div>
                       <div className="flex gap-2">
                         <Button asChild type="button" variant="outline" size="sm">
-                          <Link href={`/tasks/${encodeURIComponent(task.id)}`}>פרטים</Link>
+                          <Link href={`/tasks/${encodeURIComponent(task.id)}`} onClick={handleNavigationStart}>פרטים</Link>
                         </Button>
                         <Button
                           type="button"
@@ -425,7 +430,7 @@ export default function TasksPageClient(props: Props) {
                       <td className="px-3 py-2 whitespace-nowrap">
                         <div className="flex gap-2">
                           <Button asChild type="button" variant="outline" size="sm">
-                            <Link href={`/tasks/${encodeURIComponent(task.id)}`}>פרטים</Link>
+                            <Link href={`/tasks/${encodeURIComponent(task.id)}`} onClick={handleNavigationStart}>פרטים</Link>
                           </Button>
                           <Button
                             type="button"
@@ -464,7 +469,7 @@ export default function TasksPageClient(props: Props) {
             <div className="flex gap-2">
               {props.hasPreviousPage && props.prevHref ? (
                 <Button asChild variant="outline" size="sm">
-                  <Link href={props.prevHref}>הקודם</Link>
+                  <Link href={props.prevHref} onClick={handleNavigationStart}>הקודם</Link>
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" disabled>
@@ -473,7 +478,7 @@ export default function TasksPageClient(props: Props) {
               )}
               {props.hasNextPage && props.nextHref ? (
                 <Button asChild variant="outline" size="sm">
-                  <Link href={props.nextHref}>הבא</Link>
+                  <Link href={props.nextHref} onClick={handleNavigationStart}>הבא</Link>
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" disabled>
