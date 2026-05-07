@@ -543,7 +543,8 @@ export default function NewOrderClient({
   );
 
   const orderDiscountNumber = Number(orderDiscount || 0);
-  const totalAmount = subtotal - (Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0);
+  const effectiveOrderDiscount = Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0;
+  const totalAmount = subtotal - effectiveOrderDiscount;
   const existingPaidTotal = useMemo(
     () => initialPayments.reduce((sum, payment) => sum + payment.amount_total, 0),
     [initialPayments]
@@ -1210,6 +1211,16 @@ export default function NewOrderClient({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סכום ביניים</span>
                 <span>{formatCurrency(subtotal)}</span>
+              </div>
+              {effectiveOrderDiscount > 0 ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">הנחת הזמנה</span>
+                  <span className="font-medium text-emerald-700">-{formatCurrency(effectiveOrderDiscount)}</span>
+                </div>
+              ) : null}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">סכום סופי</span>
+                <span className="font-semibold">{formatCurrency(totalAmount)}</span>
               </div>
             </div>
 

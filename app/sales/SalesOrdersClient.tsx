@@ -117,11 +117,12 @@ export function statusLabel(value: string) {
 
 export function orderStatusBadgeClasses(status: string) {
   switch (normalizeOrderStatus(status)) {
+    case "draft":
+      return "border-transparent bg-red-100 text-red-800";
     case "delivered":
     case "completed":
     case "closed":
       return "border-transparent bg-emerald-100 text-black";
-    case "draft":
     case "confirmed":
     case "processing":
     case "out_for_delivery":
@@ -135,11 +136,12 @@ export function orderStatusBadgeClasses(status: string) {
 
 function orderStatusBorderClasses(status: string) {
   switch (normalizeOrderStatus(status)) {
+    case "draft":
+      return "border-red-300";
     case "delivered":
     case "completed":
     case "closed":
       return "border-emerald-300";
-    case "draft":
     case "confirmed":
     case "processing":
     case "out_for_delivery":
@@ -340,7 +342,7 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 md:min-w-0">
-                    <StatusBadge value={row.status} type="order" />
+                    <StatusBadge value={row.status} type="order" className={orderStatusBadgeClasses(row.status)} />
                     <Badge className={paymentStatusClasses(row.paymentStatus)}>
                       {paymentStatusLabel(row.paymentStatus)}
                     </Badge>

@@ -1,5 +1,6 @@
 ﻿import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/sales/orders/[id]/DeleteOrderButton";
@@ -9,7 +10,7 @@ import {
   paymentMethodLabel,
   paymentStatusClasses,
 } from "@/lib/orders/paymentStatus";
-import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 
 type Row = Record<string, unknown>;
 
@@ -81,6 +82,21 @@ function formatOrderStatus(status: string | null) {
       return "הושלמה";
     default:
       return status ?? "-";
+  }
+}
+
+function normalizeOrderStatus(status: string | null) {
+  switch ((status ?? "").toLowerCase()) {
+    case "approved":
+      return "confirmed";
+    case "in_progress":
+      return "processing";
+    case "ready":
+      return "out_for_delivery";
+    case "done":
+      return "completed";
+    default:
+      return (status ?? "").toLowerCase();
   }
 }
 
@@ -191,6 +207,9 @@ export default async function SalesOrderPage({
   const remainingBalance = getNumber((financials as Row) ?? {}, "remaining_balance") ?? 0;
   const paymentCount = getNumber((financials as Row) ?? {}, "payment_count") ?? (payments ?? []).length;
   const paymentStatus = getString((financials as Row) ?? {}, "payment_status") ?? "unpaid";
+  const orderDate = getString((order as Row) ?? {}, "order_date");
+  const normalizedStatus = normalizeOrderStatus(getString((order as Row) ?? {}, "status"));
+  const isOpenOrder = !["delivered", "completed", "closed", "cancelled"].includes(normalizedStatus);
   const paymentIds = Array.from(
     new Set(
       ((payments ?? []) as Row[])
@@ -298,7 +317,34 @@ export default async function SalesOrderPage({
         ) : null}
 
         {order ? (
-          <div className="rounded-md border p-4 text-sm">
+          <div className="space-y-4">
+            <div
+              className={`rounded-2xl border p-4 ${
+                isOpenOrder ? "border-red-200 bg-red-50/80" : "border-sky-200 bg-sky-50/70"
+              }`}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <div className={`text-xs font-medium ${isOpenOrder ? "text-red-700" : "text-sky-700"}`}>
+                    תאריך הזמנה
+                  </div>
+                  <div className={`text-2xl font-semibold ${isOpenOrder ? "text-red-800" : "text-foreground"}`}>
+                    {formatDate(orderDate)}
+                  </div>
+                  <div className={`text-sm ${isOpenOrder ? "font-medium text-red-700" : "text-muted-foreground"}`}>
+                    {formatRelativeDateLabel(orderDate)}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge value={getString(order as Row, "status") ?? ""} type="order" />
+                  <span className={`rounded-full border px-2.5 py-1 text-xs ${paymentStatusClasses(paymentStatus)}`}>
+                    {formatPaymentStatus(paymentStatus)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-md border p-4 text-sm">
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">לקוח</span>
@@ -319,7 +365,7 @@ export default async function SalesOrderPage({
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">תאריך הזמנה</span>
-                <span>{formatDate(getString(order as Row, "order_date"))}</span>
+                <span>{formatDate(orderDate)}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סטטוס הזמנה</span>
@@ -348,6 +394,7 @@ export default async function SalesOrderPage({
                 <span>{paymentCount}</span>
               </div>
             </div>
+          </div>
           </div>
         ) : null}
 

@@ -121,11 +121,11 @@ export function getTaskPriorityColor(priority: string): StatusColor {
 export function getOrderStatusColor(status: string): StatusColor {
   switch (normalizeOrderStatus(status)) {
     case "draft":
-      return "neutral";
+      return "danger";
     case "reserved":
       return "warning";
     case "delivered":
-      return "info";
+      return "success";
     case "closed":
       return "success";
     case "cancelled":

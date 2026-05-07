@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CalendarDays,
   ChevronDown,
   CreditCard,
   FileText,
@@ -26,6 +27,7 @@ import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { formatOrderDate } from "@/lib/orders/format";
+import { formatRelativeDateLabel } from "@/lib/date";
 import { paymentMethodLabel, paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
@@ -301,6 +303,14 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
   const orderLevelMorningDocuments = orderMorningDocuments.filter((document) => !document.payment_id);
   const resolvedCustomerId =
     getString((data?.customer ?? {}) as Row, "id") ?? getString((data?.order ?? {}) as Row, "customer_id") ?? "";
+  const orderDate = getString((data?.order ?? {}) as Row, "order_date");
+  const normalizedStatus = normalizeOrderStatus(getString((data?.order ?? {}) as Row, "status"));
+  const isOpenOrder = !["delivered", "completed", "closed", "cancelled"].includes(normalizedStatus);
+  const orderDateTone = isOpenOrder
+    ? "border border-red-200 bg-red-50 text-red-700"
+    : "border border-sky-200 bg-sky-50 text-sky-700";
+  const orderDateAccent = isOpenOrder ? "text-red-700" : "text-foreground";
+  const orderDateAgeAccent = isOpenOrder ? "font-medium text-red-600" : "text-muted-foreground";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -326,6 +336,22 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
           <div className="space-y-5">
             <div className="grid gap-4 lg:grid-cols-2">
               <SectionCard
+                title="תאריך הזמנה"
+                subtitle={isOpenOrder ? "הזמנה פתוחה" : "הזמנה קיימת"}
+                icon={<CalendarDays className="h-4 w-4" />}
+                iconClassName={orderDateTone}
+              >
+                <div className="space-y-1">
+                  <div className={`text-xl font-semibold ${orderDateAccent}`}>
+                    {formatOrderDate(orderDate)}
+                  </div>
+                  <div className={`text-sm ${orderDateAgeAccent}`}>
+                    {formatRelativeDateLabel(orderDate)}
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard
                 title="סיכום הזמנה"
                 subtitle={`${summary.itemCount} פריטים`}
                 icon={<FileText className="h-4 w-4" />}
@@ -333,7 +359,11 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
               >
                 <div className="space-y-3">
                   <div className="flex flex-wrap gap-2">
-                    <StatusBadge value={getString(data.order, "status") ?? ""} type="order" />
+                    <StatusBadge
+                      value={getString(data.order, "status") ?? ""}
+                      type="order"
+                      className={orderStatusClasses(getString(data.order, "status") ?? "")}
+                    />
                     <Badge className={paymentStatusClasses(data.paymentStatus)}>
                       {formatPaymentStatus(data.paymentStatus)}
                     </Badge>
