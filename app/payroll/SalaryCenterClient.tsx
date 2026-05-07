@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { LockKeyhole, Pencil, Plus, Trash2 } from "lucide-react";
@@ -344,6 +345,12 @@ export default function SalaryCenterClient({
   const protectedPeriods = protectedData?.periods ?? [];
   const periodsForUi = protectedPeriods.length > 0 ? protectedPeriods : publicPeriods;
   const periodsById = useMemo(() => new Map(periodsForUi.map((period) => [period.id, period])), [periodsForUi]);
+  const selectedPeriodForExport =
+    (selectedPeriodId ? periodsById.get(selectedPeriodId) ?? null : null) ??
+    getCurrentPayrollPeriod(periodsForUi);
+  const selectedSalariedExportHref = `/api/payroll/salaried-hours-export?period_month=${encodeURIComponent(
+    selectedPeriodForExport?.period_month ?? currentMonthKey
+  )}`;
   const agreements = useMemo(() => protectedData?.agreements ?? [], [protectedData]);
   const payslips = useMemo(() => protectedData?.payslips ?? [], [protectedData]);
   const payslipItems = useMemo(() => protectedData?.payslipItems ?? [], [protectedData]);
@@ -2017,6 +2024,11 @@ export default function SalaryCenterClient({
                       >
                         {"יצירת תלושים לכל העובדים"}
                       </Button>
+                      <Button asChild variant="outline">
+                        <Link href={`/api/payroll/salaried-hours-export?period_month=${encodeURIComponent(period.period_month)}`}>
+                          {"יצוא גלובלי לאקסל"}
+                        </Link>
+                      </Button>
                       <Button
                         variant="outline"
                         onClick={() => {
@@ -2048,9 +2060,12 @@ export default function SalaryCenterClient({
                       ))}
                     </select>
                   </Field>
-                  <div className="flex items-end">
+                  <div className="flex flex-wrap items-end gap-2">
                     <Button onClick={() => runPeriodAction("generate")} disabled={!selectedPeriodId || isPending}>
                       {"יצירת / רענון תלושים"}
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href={selectedSalariedExportHref}>{"יצוא גלובלי לאקסל"}</Link>
                     </Button>
                   </div>
                 </CardContent>
