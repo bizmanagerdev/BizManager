@@ -18,7 +18,7 @@ export default async function MorningCustomersSettingsPage() {
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold">Morning: התאמת לקוחות</h1>
-            <p className="text-sm text-muted-foreground">מסך בקרה לקישור בטוח בין לקוחות BizManager ללקוחות Morning.</p>
+            <p className="text-sm text-muted-foreground">מסך בקרה לקישור בטוח בין לקוחות BizH ללקוחות Morning.</p>
           </div>
           <Button asChild variant="outline">
             <Link href="/settings">חזרה להגדרות</Link>

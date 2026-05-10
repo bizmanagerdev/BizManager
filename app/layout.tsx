@@ -1,11 +1,13 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import PwaRegistration from "@/components/pwa/PwaRegistration";
 
 export const metadata: Metadata = {
-  title: "BIZMANAGER",
+  title: "BizH",
   description: "מערכת ניהול עסק",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: [
       { url: "/favicon.ico?v=3", sizes: "any" },
@@ -14,6 +16,15 @@ export const metadata: Metadata = {
     shortcut: "/favicon.ico?v=3",
     apple: "/icon.svg?v=3",
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "BizH",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f766e",
 };
 
 export default function RootLayout({
@@ -25,6 +36,7 @@ export default function RootLayout({
     <html lang="he" dir="rtl" suppressHydrationWarning>
       <body className="antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <PwaRegistration />
           {children}
           <Toaster />
         </ThemeProvider>

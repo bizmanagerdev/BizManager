@@ -1,0 +1,20 @@
+{
+  "id": "/projects",
+  "name": "BizH Projects",
+  "short_name": "BizH",
+  "description": "Mobile access to the BizH projects workspace.",
+  "start_url": "/projects",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

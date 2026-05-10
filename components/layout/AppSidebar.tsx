@@ -13,8 +13,9 @@ interface Props {
   logo?: ReactNode;
 }
 
-export function AppSidebar({ items, appName = "BIZMANAGER", logo }: Props) {
+export function AppSidebar({ items, appName = "BizH", logo }: Props) {
   const [collapsed, setCollapsed] = useState(true);
+  const appMark = appName === "BizH" ? "H" : appName.charAt(0);
 
   return (
     <aside
@@ -28,7 +29,7 @@ export function AppSidebar({ items, appName = "BIZMANAGER", logo }: Props) {
           {logo ?? (
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-destructive via-destructive to-primary shadow-lg shadow-destructive/20">
               <span className="text-sm font-black text-primary-foreground">
-                {appName.charAt(0)}
+                {appMark}
               </span>
             </div>
           )}

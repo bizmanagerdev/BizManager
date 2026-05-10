@@ -33,6 +33,9 @@ export async function middleware(req: NextRequest) {
     path.startsWith("/register") ||
     path.startsWith("/forgot-password") ||
     path.startsWith("/reset-password") ||
+    path === "/manifest.webmanifest" ||
+    path === "/sw.js" ||
+    path.startsWith("/icon") ||
     path.startsWith("/api");
 
   if (session && path.startsWith("/login")) {

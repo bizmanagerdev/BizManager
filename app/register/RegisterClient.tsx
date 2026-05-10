@@ -115,7 +115,7 @@ export default function RegisterClient() {
   return (
     <AuthScreen
       title="יצירת חשבון"
-      description="פתיחת חשבון חדש והתחלה מהירה עם BizManager."
+      description="פתיחת חשבון חדש והתחלה מהירה עם BizH."
       footer={
         <>
           כבר יש לך חשבון?{" "}

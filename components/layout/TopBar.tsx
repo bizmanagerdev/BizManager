@@ -32,11 +32,12 @@ type AlertItem = {
 };
 
 export function TopBar({
-  appName = "BIZMANAGER",
+  appName = "BizH",
   logo,
   userName,
   showSearch = true,
 }: Props) {
+  const appMark = appName === "BizH" ? "H" : appName.charAt(0);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(true);
   const [alertsError, setAlertsError] = useState<string | null>(null);
@@ -84,7 +85,7 @@ export function TopBar({
         {logo ?? (
           <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-destructive to-primary shadow-md shadow-destructive/20">
             <span className="text-xs font-black text-primary-foreground">
-              {appName.charAt(0)}
+              {appMark}
             </span>
           </div>
         )}

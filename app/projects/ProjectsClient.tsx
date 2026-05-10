@@ -67,11 +67,6 @@ type ContactDraft = {
   active: boolean;
 };
 
-const projectsDesktopGridClass =
-  "2xl:grid-cols-[minmax(180px,1.3fr)_minmax(88px,0.7fr)_minmax(96px,0.8fr)_minmax(110px,0.9fr)_minmax(140px,1fr)_minmax(120px,0.95fr)_minmax(90px,0.7fr)_minmax(110px,0.75fr)_minmax(150px,1fr)]";
-const quotesDesktopGridClass =
-  "2xl:grid-cols-[minmax(180px,1.2fr)_minmax(88px,0.7fr)_minmax(96px,0.8fr)_minmax(110px,0.9fr)_minmax(140px,1fr)_minmax(120px,0.95fr)_minmax(90px,0.7fr)_minmax(140px,0.95fr)_minmax(110px,0.8fr)]";
-
 const defaultStatusOptions = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
 const defaultProjectTypeOptions = ["logistics", "moving", "construction"];
 const cityOptions = [
@@ -484,8 +479,23 @@ export default function ProjectsClient({
   }, [activeTab, projects]);
   const hasActiveToolbarFilters =
     query.trim().length > 0 || status !== "all" || sort !== defaultSortForTab(activeTab);
-  const desktopGridClass = activeTab === "quotes" ? quotesDesktopGridClass : projectsDesktopGridClass;
-
+  const activeFilterSummary = [
+    query.trim() ? `חיפוש: ${query.trim()}` : null,
+    status !== "all" ? `סטטוס: ${statusLabel(status)}` : null,
+    sort !== defaultSortForTab(activeTab)
+      ? `מיון: ${
+          sort === "recent"
+            ? "אחרונים"
+            : sort === "start_date"
+              ? "תאריך התחלה - ישן לחדש"
+              : sort === "start_date_desc"
+                ? "תאריך התחלה - חדש לישן"
+                : "רווח (גבוה לנמוך)"
+        }`
+      : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" • ");
   const projectTypeOptions = useMemo(() => {
     return defaultProjectTypeOptions;
   }, []);
@@ -545,6 +555,12 @@ export default function ProjectsClient({
 
   function defaultCreateStatusForTab(tab: ProjectsView) {
     return tab === "quotes" ? "quote" : "planned";
+  }
+
+  function resetFilters() {
+    setQuery("");
+    setSort(defaultSortForTab(activeTab));
+    setStatus(activeTab === "quotes" ? "quote" : activeTab === "closed" ? "completed" : "all");
   }
 
   const openCreateDialog = useCallback((nextTab: ProjectsView = activeTab) => {
@@ -1042,11 +1058,11 @@ export default function ProjectsClient({
       </Tabs>
 
       <div className="space-y-3 md:hidden">
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Button
             type="button"
             variant="outline"
-            className="h-11 flex-1 justify-center gap-2"
+            className="h-11 justify-center gap-2"
             onClick={() => setMobileFiltersOpen((current) => !current)}
             aria-expanded={mobileFiltersOpen}
             aria-controls="projects-mobile-filters"
@@ -1054,13 +1070,13 @@ export default function ProjectsClient({
             <SlidersHorizontal className="h-4 w-4" />
             {mobileFiltersOpen ? "הסתרת חיפוש וסינון" : "חיפוש וסינון"}
           </Button>
-          <Button type="button" className="h-11 flex-1" onClick={() => openCreateDialog(activeTab)}>
+          <Button type="button" className="h-11" onClick={() => openCreateDialog(activeTab)}>
             {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
           </Button>
           <Button
             type="button"
             variant="outline"
-            className="h-11 flex-1"
+            className="col-span-2 h-11"
             onClick={() => {
               setMonthlySummaryOpen(true);
               void loadMonthlySummary();
@@ -1071,7 +1087,9 @@ export default function ProjectsClient({
         </div>
 
         {hasActiveToolbarFilters && !mobileFiltersOpen ? (
-          <div className="text-xs text-muted-foreground">קיים חיפוש או סינון פעיל.</div>
+          <div className="rounded-xl border border-border/60 bg-card px-3 py-2 text-xs text-muted-foreground">
+            {activeFilterSummary || "קיים חיפוש או סינון פעיל."}
+          </div>
         ) : null}
 
         <div
@@ -1121,6 +1139,19 @@ export default function ProjectsClient({
               <option value="start_date_desc">תאריך התחלה - חדש לישן</option>
               <option value="profit_desc">רווח (גבוה לנמוך)</option>
             </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Button type="button" variant="secondary" className="h-11" onClick={resetFilters}>
+              איפוס מסננים
+            </Button>
+            <Button
+              type="button"
+              className="h-11"
+              onClick={() => setMobileFiltersOpen(false)}
+            >
+              הצגת התוצאות
+            </Button>
           </div>
         </div>
       </div>
@@ -1351,7 +1382,7 @@ export default function ProjectsClient({
         </div>
       </Card>
 
-      <div className="grid gap-2 sm:gap-2.5 xl:hidden">
+      <div className="grid gap-2.5 xl:hidden">
         {rows.map((row) => {
           const id = getString(row, "id") ?? "";
           const profit = profitValue(row);
@@ -1363,188 +1394,130 @@ export default function ProjectsClient({
           const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
           return (
-            <Card key={id} className="transition-shadow hover:shadow-md">
-              <CardContent className="p-3 sm:p-4">
-                <div className={`flex flex-col gap-3 2xl:grid ${desktopGridClass} 2xl:items-center 2xl:gap-5`}>
-                  <Link
-                    href={detailHref}
-                    prefetch
-                    className="min-w-0"
-                    onClick={() => emitNavigationStart()}
-                  >
-                    <div className="min-w-0">
-                      <div className="text-base font-semibold">{projectDisplayName(row)}</div>
-                      <div className="text-sm text-muted-foreground">
-                        #{id.slice(0, 8)}
+            <Card key={id} className="overflow-hidden border-border/70 shadow-sm transition-shadow hover:shadow-md">
+              <CardContent className="p-4">
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-base font-semibold">{projectDisplayName(row)}</div>
+                        <div className="mt-1 truncate text-sm text-muted-foreground">{clientDisplayName(row)}</div>
+                      </div>
+                      <div className="shrink-0 text-xs text-muted-foreground">#{id.slice(0, 8)}</div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <StatusBadge value={currentStatus} type="project" />
+                      <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
+                        {paymentStatusLabel(paymentStatus)}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
+                        <div className="text-xs text-muted-foreground">תאריך התחלה</div>
+                        <div className="mt-1 font-medium">{startDate}</div>
+                      </div>
+                      <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
+                        <div className="text-xs text-muted-foreground">משימות פתוחות</div>
+                        <div className="mt-1 font-medium">{openTasks === null ? "-" : openTasks}</div>
+                      </div>
+                      <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
+                        <div className="text-xs text-muted-foreground">מחיר</div>
+                        <div className="mt-1 font-medium">
+                          {actualPrice === null ? "-" : formatIls(actualPrice)}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
+                        <div className="text-xs text-muted-foreground">
+                          {currentStatus === "quote" ? "סטטוס הצעה" : "רווח"}
+                        </div>
+                        <div className={`mt-1 font-medium ${profit !== null && profit < 0 ? "text-destructive" : ""}`}>
+                          {currentStatus === "quote"
+                            ? statusLabel(currentStatus)
+                            : profit === null
+                              ? "-"
+                              : formatIls(profit)}
+                        </div>
                       </div>
                     </div>
-                  </Link>
+                  </div>
 
-                  <Link
-                    href={detailHref}
-                    prefetch
-                    className="min-w-0 text-sm"
-                    onClick={() => emitNavigationStart()}
-                  >
-                    <StatusBadge value={currentStatus} type="project" />
-                  </Link>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button asChild type="button" className="col-span-2 h-11 rounded-xl">
+                      <Link href={detailHref} prefetch onClick={() => emitNavigationStart()}>
+                        פתיחת פרויקט
+                      </Link>
+                    </Button>
 
-                  <Link
-                    href={detailHref}
-                    prefetch
-                    className="min-w-0 text-sm"
-                    onClick={() => emitNavigationStart()}
-                  >
-                    {startDate}
-                  </Link>
-
-                  <Link
-                    href={detailHref}
-                    prefetch
-                    className="min-w-0 text-sm"
-                    onClick={() => emitNavigationStart()}
-                  >
-                    <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
-                      {paymentStatusLabel(paymentStatus)}
-                    </Badge>
-                  </Link>
-
-                  <Link
-                    href={detailHref}
-                    prefetch
-                    className="min-w-0 text-sm"
-                    onClick={() => emitNavigationStart()}
-                  >
-                    {clientDisplayName(row)}
-                  </Link>
-
-                  <Link
-                    href={detailHref}
-                    prefetch
-                    className="min-w-0 text-sm"
-                    onClick={() => emitNavigationStart()}
-                  >
                     {currentStatus === "quote" ? (
-                      actualPrice === null ? "-" : formatIls(actualPrice)
-                    ) : (
-                      <div className="space-y-0.5">
-                        <div className="text-xs text-muted-foreground">
-                          מחיר: {actualPrice === null ? "-" : formatIls(actualPrice)}
-                        </div>
-                        <div className={profit !== null && profit < 0 ? "text-destructive" : ""}>
-                          רווח: {profit === null ? "-" : formatIls(profit)}
-                        </div>
-                      </div>
-                    )}
-                  </Link>
-
-                  <Link
-                    href={detailHref}
-                    prefetch
-                    className="min-w-0 text-sm"
-                    onClick={() => emitNavigationStart()}
-                  >
-                    {openTasks === null ? "-" : openTasks}
-                  </Link>
-
-                  {currentStatus === "quote" ? null : (
-                    <div className="flex shrink-0 items-center md:justify-start">
-                      <div className="flex items-center gap-2 overflow-visible">
+                      <>
                         <Button
-                          asChild
+                          type="button"
+                          variant="secondary"
+                          className="h-11 rounded-xl"
+                          onClick={() => openApproveQuote(row)}
+                        >
+                          אישור הצעה
+                        </Button>
+                        <Button
                           type="button"
                           variant="outline"
-                          size="icon"
-                          className="h-10 w-10 rounded-xl"
-                          aria-label="שליחת דף עבודה ב-WhatsApp"
-                          title="שליחת דף עבודה ב-WhatsApp"
+                          className="h-11 rounded-xl"
+                          onClick={() => openEditProject(row)}
                         >
+                          <Pencil className="h-4 w-4" />
+                          עריכה
+                        </Button>
+                        <DeleteProjectButton
+                          projectId={id}
+                          projectName={projectDisplayName(row)}
+                          className="col-span-2 h-11 w-full rounded-xl"
+                          ariaLabel="מחיקת הצעת מחיר"
+                          onDeleted={() => removeProject(id)}
+                        >
+                          מחיקת הצעה
+                        </DeleteProjectButton>
+                      </>
+                    ) : (
+                      <>
+                        <Button asChild type="button" variant="outline" className="h-11 rounded-xl">
                           <Link
                             href={`/projects/${id}/export?mode=worker`}
                             prefetch
                             onClick={() => emitNavigationStart()}
                           >
                             <MessageCircle className="h-4 w-4" />
+                            WhatsApp
                           </Link>
                         </Button>
-                        <Button
-                          asChild
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-10 w-10 rounded-xl"
-                          aria-label="דף עבודה / שיתוף / הדפסה / הורדה"
-                          title="דף עבודה / שיתוף / הדפסה / הורדה"
-                        >
-                          <Link href={`/projects/${id}/export?mode=worker`} prefetch onClick={() => emitNavigationStart()}>
+                        <Button asChild type="button" variant="outline" className="h-11 rounded-xl">
+                          <Link
+                            href={`/projects/${id}/export?mode=worker`}
+                            prefetch
+                            onClick={() => emitNavigationStart()}
+                          >
                             <FileText className="h-4 w-4" />
+                            דף עבודה
                           </Link>
                         </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {currentStatus === "quote" ? (
-                    <div className="flex shrink-0 items-center md:justify-start">
-                      <Button
-                        type="button"
-                        variant="default"
-                        size="sm"
-                        className="h-10 w-full rounded-xl px-3 2xl:w-auto"
-                        onClick={() => openApproveQuote(row)}
-                      >
-                        אישור הצעה
-                      </Button>
-                    </div>
-                  ) : null}
-
-                  <div className="flex shrink-0 items-center gap-1.5 md:justify-start">
-                    {currentStatus === "quote" ? (
-                      <>
                         <Button
                           type="button"
                           variant="outline"
-                          size="icon"
-                          className="h-10 w-10 rounded-xl"
+                          className="h-11 rounded-xl"
                           onClick={() => openEditProject(row)}
-                          aria-label="עריכת הצעת מחיר"
-                          title="עריכת הצעת מחיר"
                         >
                           <Pencil className="h-4 w-4" />
+                          עריכה
                         </Button>
                         <DeleteProjectButton
                           projectId={id}
                           projectName={projectDisplayName(row)}
-                          size="icon"
-                          className="h-10 w-10 rounded-xl"
-                          ariaLabel="מחיקת הצעת מחיר"
-                          onDeleted={() => removeProject(id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </DeleteProjectButton>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-11 w-11 rounded-xl"
-                          onClick={() => openEditProject(row)}
-                          aria-label="עריכת פרויקט"
-                          title="עריכת פרויקט"
-                        >
-                          <Pencil />
-                        </Button>
-                        <DeleteProjectButton
-                          projectId={id}
-                          projectName={projectDisplayName(row)}
-                          size="icon"
-                          className="h-11 w-11 rounded-xl"
+                          className="h-11 w-full rounded-xl"
                           ariaLabel="מחיקת פרויקט"
                           onDeleted={() => removeProject(id)}
                         >
-                          <Trash2 />
+                          מחיקה
                         </DeleteProjectButton>
                       </>
                     )}

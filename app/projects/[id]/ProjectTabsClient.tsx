@@ -1221,9 +1221,9 @@ export default function ProjectTabsClient({
     return (
       <div
         key={session ? session.id : expenseId ?? String(idx)}
-        className="py-3 flex items-start justify-between gap-4"
+        className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
       >
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="font-medium truncate">{title}</div>
           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
             <span>{formatDate(createdAt)}</span>
@@ -1289,8 +1289,8 @@ export default function ProjectTabsClient({
             </div>
           ) : null}
         </div>
-        <div className="shrink-0 text-left">
-          <div className="font-medium">
+        <div className="flex flex-col gap-2 sm:shrink-0 sm:items-end sm:text-left">
+          <div className="font-medium sm:text-left">
             {options?.billedList
               ? billedAmount === null
                 ? "—"
@@ -1299,7 +1299,7 @@ export default function ProjectTabsClient({
                 ? "—"
                 : formatIls(amount)}
           </div>
-          <div className="mt-2 flex gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:flex">
             <Button
               type="button"
               variant="outline"
@@ -1346,29 +1346,32 @@ export default function ProjectTabsClient({
       fallback={<div className="text-muted-foreground text-base">טוען…</div>}
     >
       <Tabs value={tabValue} onValueChange={setTab} dir="rtl">
-      <TabsList className="mx-auto flex h-auto w-fit max-w-full flex-wrap justify-center gap-2 overflow-visible border-b-0 bg-transparent p-0 shadow-none [&>*]:min-w-[8.5rem] [&>*]:flex-none [&>*]:rounded-t-xl [&>*]:border [&>*]:border-foreground/25 [&>*]:bg-gradient-to-b [&>*]:from-foreground/10 [&>*]:to-foreground/22 [&>*]:px-5 [&>*]:py-3 [&>*]:text-base [&>*]:font-semibold [&>*]:text-foreground [&>*]:shadow-sm [&>*]:transition-colors [&>*]:hover:border-foreground/40 [&>*]:hover:from-foreground/16 [&>*]:hover:to-foreground/28 [&>*]:hover:text-foreground [&>*]:data-[state=active]:border-foreground [&>*]:data-[state=active]:bg-none [&>*]:data-[state=active]:bg-foreground [&>*]:data-[state=active]:text-background">
-        <TabsTrigger value="overview">כספים</TabsTrigger>
-        <TabsTrigger value="tasks" className="gap-2">
-          <span>משימות</span>
-          <Badge variant="secondary" className="rounded-full px-2 py-0 text-[11px]">
-            {completion}%
-          </Badge>
-        </TabsTrigger>
-        <TabsTrigger value="documents" className="gap-2">
-          <span>מסמכים</span>
-          <Badge variant="secondary" className="rounded-full px-2 py-0 text-[11px]">
-            {projectDocuments.length}
-          </Badge>
-        </TabsTrigger>
-      </TabsList>
+        <TabsList className="sticky top-2 z-10 grid h-auto w-full grid-cols-3 gap-2 overflow-visible border-b-0 bg-transparent p-0 shadow-none sm:top-4 sm:mx-auto sm:max-w-3xl [&>*]:min-w-0 [&>*]:rounded-2xl [&>*]:border [&>*]:border-foreground/20 [&>*]:bg-card/95 [&>*]:px-3 [&>*]:py-3 [&>*]:text-sm [&>*]:font-semibold [&>*]:text-foreground [&>*]:shadow-sm [&>*]:backdrop-blur [&>*]:transition-colors [&>*]:hover:border-foreground/35 [&>*]:hover:bg-card [&>*]:data-[state=active]:border-foreground [&>*]:data-[state=active]:bg-foreground [&>*]:data-[state=active]:text-background sm:[&>*]:text-base">
+          <TabsTrigger value="overview" className="flex-col gap-1">
+            <span>כספים</span>
+            <span className="text-[11px] opacity-80">מצב כספי</span>
+          </TabsTrigger>
+          <TabsTrigger value="tasks" className="flex-col gap-1">
+            <span>משימות</span>
+            <Badge variant="secondary" className="rounded-full px-2 py-0 text-[11px]">
+              {completion}%
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="documents" className="flex-col gap-1">
+            <span>מסמכים</span>
+            <Badge variant="secondary" className="rounded-full px-2 py-0 text-[11px]">
+              {projectDocuments.length}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
 
-      <TabsContent value="overview" className="mx-auto mt-4 w-full max-w-6xl space-y-3">
+        <TabsContent value="overview" className="mx-auto mt-4 w-full max-w-6xl space-y-3">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">סיכום כספי</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid gap-3 text-sm md:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">מחיר בסיס שסוכם</div>
                 <div className="mt-2 flex items-center justify-between gap-3">
@@ -1429,9 +1432,9 @@ export default function ProjectTabsClient({
 
         <div className="grid gap-3 xl:grid-cols-2">
           <Card>
-            <CardHeader className="pb-3 flex-row items-center justify-between">
+            <CardHeader className="flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-base">הכנסות</CardTitle>
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
                 <Button type="button" variant="outline" size="sm" onClick={() => setMorningBillingOpen(true)}>
                   שליחת קבלה / חשבונית
                 </Button>
@@ -1474,8 +1477,8 @@ export default function ProjectTabsClient({
                     const paymentAudit = paymentAuditById[p.id] ?? null;
 
                     return (
-                      <div key={p.id} className="py-3 flex items-start justify-between gap-4">
-                        <div className="min-w-0">
+                      <div key={p.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                        <div className="min-w-0 flex-1">
                           <div className="font-medium truncate">
                             {reference ? `אסמכתא: ${reference}` : "הכנסה"}
                           </div>
@@ -1550,11 +1553,11 @@ export default function ProjectTabsClient({
                             </div>
                           ) : null}
                         </div>
-                        <div className="shrink-0 text-left">
-                          <div className="font-medium">
+                        <div className="flex flex-col gap-2 sm:shrink-0 sm:items-end sm:text-left">
+                          <div className="font-medium sm:text-left">
                             {amount === null ? "—" : formatIls(amount)}
                           </div>
-                          <div className="mt-2 flex gap-2">
+                          <div className="grid grid-cols-2 gap-2 sm:flex">
                             <Button
                               type="button"
                               variant="outline"
@@ -1584,7 +1587,7 @@ export default function ProjectTabsClient({
                 </div>
               )}
 
-              <div className="mt-3 mt-auto flex items-center justify-between border-t pt-3">
+              <div className="mt-3 mt-auto flex items-center justify-between gap-3 border-t pt-3">
                 <div className="space-y-1">
                   <span className="block text-muted-foreground">סה״כ הכנסות</span>
                   {paymentAuditError ? (
@@ -1599,7 +1602,7 @@ export default function ProjectTabsClient({
           </Card>
 
           <Card>
-            <CardHeader className="pb-3 flex-row items-center justify-between">
+            <CardHeader className="flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-base">הוצאות</CardTitle>
               <Button
                 type="button"
@@ -1755,14 +1758,14 @@ export default function ProjectTabsClient({
         />
       </TabsContent>
 
-      <TabsContent value="documents" className="mx-auto mt-4 w-full max-w-6xl">
+        <TabsContent value="documents" className="mx-auto mt-4 w-full max-w-6xl">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">מסמכים</CardTitle>
           </CardHeader>
           <CardContent className="text-sm space-y-3">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div className="min-w-[240px] space-y-1">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+              <div className="min-w-0 flex-1 space-y-1 sm:min-w-[240px]">
                 <div className="text-xs text-muted-foreground">קטגוריה</div>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
@@ -1778,7 +1781,7 @@ export default function ProjectTabsClient({
                 </select>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:items-center">
                 <Button
                   variant="secondary"
                   disabled={docsUploading}
@@ -1878,9 +1881,9 @@ export default function ProjectTabsClient({
                   return (
                     <div
                       key={d.document_id}
-                      className="p-3 flex items-start justify-between gap-3"
+                      className="flex flex-col gap-3 p-3 sm:flex-row sm:items-start sm:justify-between"
                     >
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="font-medium truncate">
                           {d.url ? (
                             <a
@@ -1903,7 +1906,7 @@ export default function ProjectTabsClient({
                         </div>
                       </div>
 
-                      <div className="shrink-0 flex items-center gap-2">
+                      <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
                         <Button
                           type="button"
                           variant="secondary"
@@ -1928,7 +1931,7 @@ export default function ProjectTabsClient({
             )}
           </CardContent>
         </Card>
-      </TabsContent>
+        </TabsContent>
 
       <Dialog open={morningBillingOpen} onOpenChange={setMorningBillingOpen}>
         <AdaptiveDialog size="details4xl">
@@ -2771,7 +2774,7 @@ function ProjectTasksTab({
   return (
     <>
       <Card>
-        <CardHeader className="pb-3 flex-row items-center justify-between">
+        <CardHeader className="flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base">משימות</CardTitle>
           <Button
             type="button"
@@ -2783,7 +2786,7 @@ function ProjectTasksTab({
           </Button>
         </CardHeader>
         <CardContent className="text-sm">
-          <div className="flex flex-wrap gap-2 mb-3">
+          <div className="mb-3 grid grid-cols-3 gap-2">
             <div className="rounded-md border bg-card px-3 py-2">
               <div className="text-xs text-muted-foreground">סה״כ</div>
               <div className="font-medium">{totalTasks}</div>
@@ -2798,8 +2801,8 @@ function ProjectTasksTab({
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 mb-3">
-            <div className="space-y-1 lg:col-span-2">
+          <div className="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-1 xl:col-span-2">
               <div className="text-xs text-muted-foreground">חיפוש</div>
               <Input
                 value={taskQuery}
@@ -2895,7 +2898,7 @@ function ProjectTasksTab({
 
                   return (
                     <Card key={taskId || title}>
-                      <CardContent className="p-3 space-y-2 text-sm">
+                      <CardContent className="space-y-3 p-3 text-sm">
                         <div className="flex items-start justify-between gap-2">
                           {taskId ? (
                             <Link
@@ -2909,27 +2912,6 @@ function ProjectTasksTab({
                           ) : (
                             <div className="font-medium">{title}</div>
                           )}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={!taskId || deletingTaskId === taskId}
-                            onClick={() => {
-                              setEditId(taskId);
-                              setEditOpen(true);
-                            }}
-                          >
-                            עריכה
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            disabled={!taskId || deletingTaskId === taskId}
-                            onClick={() => void deleteTask(taskId, title)}
-                          >
-                            {deletingTaskId === taskId ? "מוחק..." : "מחיקה"}
-                          </Button>
                         </div>
                         <div className="flex flex-wrap gap-2 items-center">
                           {priority ? <StatusBadge value={priority} type="priority" /> : null}
@@ -2946,6 +2928,31 @@ function ProjectTasksTab({
                             משויך:{" "}
                             <span className="text-foreground">{assignee ?? "—"}</span>
                           </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-10"
+                            disabled={!taskId || deletingTaskId === taskId}
+                            onClick={() => {
+                              setEditId(taskId);
+                              setEditOpen(true);
+                            }}
+                          >
+                            עריכה
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="h-10"
+                            disabled={!taskId || deletingTaskId === taskId}
+                            onClick={() => void deleteTask(taskId, title)}
+                          >
+                            {deletingTaskId === taskId ? "מוחק..." : "מחיקה"}
+                          </Button>
                         </div>
                       </CardContent>
                     </Card>
