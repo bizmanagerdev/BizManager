@@ -71,6 +71,7 @@ type OpenSessionInfo = {
 };
 
 type PaymentChoice = "none" | "paid" | "partial";
+type ProjectDialogStep = "customer" | "details";
 
 function getString(row: Row, key: string) {
   const value = row[key];
@@ -370,8 +371,10 @@ export default function DashboardActions({
 
   const [projectSubmitting, setProjectSubmitting] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
+  const [projectStep, setProjectStep] = useState<ProjectDialogStep>("customer");
   const [projectName, setProjectName] = useState("");
   const [projectCustomerId, setProjectCustomerId] = useState("");
+  const [projectCustomerOptions, setProjectCustomerOptions] = useState<Row[]>(customers);
   const [projectType, setProjectType] = useState("logistics");
   const [projectStatus, setProjectStatus] = useState("planned");
   const [projectPrice, setProjectPrice] = useState("");
@@ -379,6 +382,15 @@ export default function DashboardActions({
   const [projectStartDate, setProjectStartDate] = useState(getTodayDate());
   const [projectEndDate, setProjectEndDate] = useState(nextMonth(getTodayDate()));
   const [projectNotes, setProjectNotes] = useState("");
+  const [projectCreateCustomerOpen, setProjectCreateCustomerOpen] = useState(false);
+  const [projectCreateCustomerSubmitting, setProjectCreateCustomerSubmitting] = useState(false);
+  const [projectCreateCustomerError, setProjectCreateCustomerError] = useState<string | null>(null);
+  const [projectCreateCustomerName, setProjectCreateCustomerName] = useState("");
+  const [projectCreateCustomerPhone, setProjectCreateCustomerPhone] = useState("");
+  const [projectCreateCustomerEmail, setProjectCreateCustomerEmail] = useState("");
+  const [projectCreateCustomerCity, setProjectCreateCustomerCity] = useState("");
+  const [projectCreateCustomerAddress, setProjectCreateCustomerAddress] = useState("");
+  const [projectCreateCustomerNotes, setProjectCreateCustomerNotes] = useState("");
 
   const [taskSubmitting, setTaskSubmitting] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
@@ -546,6 +558,10 @@ export default function DashboardActions({
   }, [activeExpenseSessionAgreement, expenseIsWorkerPayment, expenseLaborCost, expenseWorkedMinutes]);
 
   useEffect(() => {
+    setProjectCustomerOptions(customers);
+  }, [customers]);
+
+  useEffect(() => {
     if (!expenseIsWorkerPayment || !canManageWorkerSessions || expenseWorkerPaymentChoice === "none" || suggestedExpenseWorkerAmount === null) {
       return;
     }
@@ -566,8 +582,10 @@ export default function DashboardActions({
 
   function resetProjectForm() {
     setProjectError(null);
+    setProjectStep("customer");
     setProjectName("");
     setProjectCustomerId("");
+    setProjectCustomerOptions(customers);
     setProjectType("logistics");
     setProjectStatus("planned");
     setProjectPrice("");
@@ -575,6 +593,19 @@ export default function DashboardActions({
     setProjectStartDate(getTodayDate());
     setProjectEndDate(nextMonth(getTodayDate()));
     setProjectNotes("");
+    resetProjectCustomerCreateForm();
+  }
+
+  function resetProjectCustomerCreateForm() {
+    setProjectCreateCustomerOpen(false);
+    setProjectCreateCustomerSubmitting(false);
+    setProjectCreateCustomerError(null);
+    setProjectCreateCustomerName("");
+    setProjectCreateCustomerPhone("");
+    setProjectCreateCustomerEmail("");
+    setProjectCreateCustomerCity("");
+    setProjectCreateCustomerAddress("");
+    setProjectCreateCustomerNotes("");
   }
 
   function resetTaskForm() {
@@ -683,6 +714,55 @@ export default function DashboardActions({
       setProjectSubmitting(false);
     }
   }
+
+  async function createProjectCustomer() {
+    setProjectCreateCustomerError(null);
+
+    if (!projectCreateCustomerName.trim() || !projectCreateCustomerCity.trim()) {
+      setProjectCreateCustomerError("יש למלא שם לקוח ועיר.");
+      return;
+    }
+
+    setProjectCreateCustomerSubmitting(true);
+    try {
+      const res = await fetch("/api/customers/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: projectCreateCustomerName.trim(),
+          phone: projectCreateCustomerPhone.trim() || null,
+          email: projectCreateCustomerEmail.trim() || null,
+          city: projectCreateCustomerCity.trim(),
+          address: projectCreateCustomerAddress.trim() || null,
+          notes: projectCreateCustomerNotes.trim() || null,
+        }),
+      });
+
+      const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: Row };
+      const createdCustomer = json.customer;
+      const customerId = createdCustomer ? getString(createdCustomer, "id") : "";
+      if (!res.ok || !createdCustomer || !customerId) {
+        setProjectCreateCustomerError(json.error ?? "יצירת לקוח נכשלה.");
+        return;
+      }
+
+      setProjectCustomerOptions((prev) => {
+        const next = [createdCustomer, ...prev.filter((row) => getString(row, "id") !== customerId)];
+        return next;
+      });
+      setProjectCustomerId(customerId);
+      setProjectStep("details");
+      resetProjectCustomerCreateForm();
+      toast.success("הלקוח נוצר ונבחר לפרויקט.");
+    } catch (error: unknown) {
+      setProjectCreateCustomerError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
+    } finally {
+      setProjectCreateCustomerSubmitting(false);
+    }
+  }
+
+  const selectedProjectCustomer =
+    projectCustomerOptions.find((customer) => getString(customer, "id") === projectCustomerId) ?? null;
 
   async function createTask() {
     setTaskError(null);
@@ -1577,125 +1657,319 @@ export default function DashboardActions({
         <AdaptiveDialog size="form2xl">
           <DialogHeader>
             <DialogTitle>{HEBREW.projectNew}</DialogTitle>
-            <DialogDescription>{HEBREW.projectDialogDescription}</DialogDescription>
+            <DialogDescription>
+              {projectStep === "customer"
+                ? "שלב 1 מתוך 2: בוחרים או מוסיפים לקוח לפרויקט."
+                : "שלב 2 מתוך 2: משלימים את פרטי הפרויקט."}
+            </DialogDescription>
           </DialogHeader>
 
           <fieldset disabled={projectSubmitting} className="contents">
-            <AdaptiveGrid variant="formTwoLoose">
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.projectName}</span>
-                <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
-              </label>
+            {projectStep === "customer" ? (
+              <div className="grid gap-4">
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.customer}</span>
+                  <select
+                    className={fieldClass}
+                    value={projectCustomerId}
+                    onChange={(e) => setProjectCustomerId(e.target.value)}
+                  >
+                    <option value="">{HEBREW.selectCustomer}</option>
+                    {projectCustomerOptions.map((customer) => {
+                      const id = getString(customer, "id");
+                      const name =
+                        getString(customer, "name") ||
+                        getString(customer, "name_for_invoice") ||
+                        HEBREW.customerFallback;
+                      return (
+                        <option key={id} value={id}>
+                          {name}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.customer}</span>
-                <select
-                  className={fieldClass}
-                  value={projectCustomerId}
-                  onChange={(e) => setProjectCustomerId(e.target.value)}
-                >
-                  <option value="">{HEBREW.selectCustomer}</option>
-                  {customers.map((customer) => {
-                    const id = getString(customer, "id");
-                    const name =
-                      getString(customer, "name") ||
-                      getString(customer, "name_for_invoice") ||
-                      HEBREW.customerFallback;
-                    return (
-                      <option key={id} value={id}>
-                        {name}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
+                {selectedProjectCustomer ? (
+                  <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm">
+                    <div className="font-medium">
+                      {getString(selectedProjectCustomer, "name") ||
+                        getString(selectedProjectCustomer, "name_for_invoice") ||
+                        HEBREW.customerFallback}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {getString(selectedProjectCustomer, "phone") ||
+                        getString(selectedProjectCustomer, "email") ||
+                        "הלקוח שנבחר ישויך לפרויקט החדש."}
+                    </div>
+                  </div>
+                ) : null}
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.projectType}</span>
-                <select
-                  className={fieldClass}
-                  value={projectType}
-                  onChange={(e) => setProjectType(e.target.value)}
-                >
-                  <option value="logistics">{HEBREW.logistics}</option>
-                  <option value="moving">{HEBREW.moving}</option>
-                  <option value="construction">{HEBREW.construction}</option>
-                </select>
-              </label>
+                <div className="flex flex-wrap justify-between gap-2 rounded-2xl border border-dashed border-border/80 bg-background/70 p-4">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">לא מצאתם את הלקוח?</div>
+                    <div className="text-xs text-muted-foreground">
+                      אפשר להוסיף לקוח חדש ואז לחזור ישר לפרטי הפרויקט.
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setProjectCreateCustomerOpen(true);
+                      setProjectCreateCustomerError(null);
+                    }}
+                  >
+                    לקוח חדש
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm">
+                  <div className="text-xs text-muted-foreground">לקוח נבחר</div>
+                  <div className="mt-1 font-medium">
+                    {selectedProjectCustomer
+                      ? getString(selectedProjectCustomer, "name") ||
+                        getString(selectedProjectCustomer, "name_for_invoice") ||
+                        HEBREW.customerFallback
+                      : HEBREW.customerFallback}
+                  </div>
+                </div>
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.status}</span>
-                <select
-                  className={fieldClass}
-                  value={projectStatus}
-                  onChange={(e) => setProjectStatus(e.target.value)}
-                >
-                  <option value="quote">{HEBREW.statusQuote}</option>
-                  <option value="planned">{HEBREW.statusPlanned}</option>
-                  <option value="active">{HEBREW.statusActive}</option>
-                  <option value="on_hold">{HEBREW.statusOnHold}</option>
-                  <option value="completed">{HEBREW.statusCompleted}</option>
-                  <option value="cancelled">{HEBREW.statusCancelled}</option>
-                </select>
-              </label>
+                <AdaptiveGrid variant="formTwoLoose">
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.projectName}</span>
+                    <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+                  </label>
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.basePrice}</span>
-                <Input
-                  type="number"
-                  min="0"
-                  value={projectPrice}
-                  onChange={(e) => setProjectPrice(e.target.value)}
-                />
-              </label>
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.projectType}</span>
+                    <select
+                      className={fieldClass}
+                      value={projectType}
+                      onChange={(e) => setProjectType(e.target.value)}
+                    >
+                      <option value="logistics">{HEBREW.logistics}</option>
+                      <option value="moving">{HEBREW.moving}</option>
+                      <option value="construction">{HEBREW.construction}</option>
+                    </select>
+                  </label>
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.projectManager}</span>
-                <select
-                  className={fieldClass}
-                  value={projectManagerId}
-                  onChange={(e) => setProjectManagerId(e.target.value)}
-                >
-                  <option value="">{HEBREW.unassigned}</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.status}</span>
+                    <select
+                      className={fieldClass}
+                      value={projectStatus}
+                      onChange={(e) => setProjectStatus(e.target.value)}
+                    >
+                      <option value="quote">{HEBREW.statusQuote}</option>
+                      <option value="planned">{HEBREW.statusPlanned}</option>
+                      <option value="active">{HEBREW.statusActive}</option>
+                      <option value="on_hold">{HEBREW.statusOnHold}</option>
+                      <option value="completed">{HEBREW.statusCompleted}</option>
+                      <option value="cancelled">{HEBREW.statusCancelled}</option>
+                    </select>
+                  </label>
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.startDate}</span>
-                <DateInput
-                  value={projectStartDate}
-                  onChange={(e) => setProjectStartDate(e.target.value)}
-                />
-              </label>
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.basePrice}</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={projectPrice}
+                      onChange={(e) => setProjectPrice(e.target.value)}
+                    />
+                  </label>
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.endDate}</span>
-                <DateInput
-                  value={projectEndDate}
-                  onChange={(e) => setProjectEndDate(e.target.value)}
-                />
-              </label>
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.projectManager}</span>
+                    <select
+                      className={fieldClass}
+                      value={projectManagerId}
+                      onChange={(e) => setProjectManagerId(e.target.value)}
+                    >
+                      <option value="">{HEBREW.unassigned}</option>
+                      {users.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-              <label className="space-y-2 text-sm col-span-full">
-                <span>{HEBREW.notes}</span>
-                <Textarea value={projectNotes} onChange={(e) => setProjectNotes(e.target.value)} />
-              </label>
-            </AdaptiveGrid>
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.startDate}</span>
+                    <DateInput
+                      value={projectStartDate}
+                      onChange={(e) => setProjectStartDate(e.target.value)}
+                    />
+                  </label>
+
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.endDate}</span>
+                    <DateInput
+                      value={projectEndDate}
+                      onChange={(e) => setProjectEndDate(e.target.value)}
+                    />
+                  </label>
+
+                  <label className="space-y-2 text-sm col-span-full">
+                    <span>{HEBREW.notes}</span>
+                    <Textarea value={projectNotes} onChange={(e) => setProjectNotes(e.target.value)} />
+                  </label>
+                </AdaptiveGrid>
+              </div>
+            )}
           </fieldset>
 
           {projectError ? <p className="text-sm text-destructive">{projectError}</p> : null}
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setProjectOpen(false)} disabled={projectSubmitting}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setProjectOpen(false)}
+              disabled={projectSubmitting}
+            >
               {HEBREW.cancel}
             </Button>
-            <Button type="button" onClick={() => void createProject()} disabled={projectSubmitting}>
-              {projectSubmitting ? HEBREW.saving : HEBREW.saveProject}
+            {projectStep === "details" ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setProjectStep("customer")}
+                disabled={projectSubmitting}
+              >
+                חזרה ללקוח
+              </Button>
+            ) : null}
+            {projectStep === "customer" ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  if (!projectCustomerId) {
+                    setProjectError(HEBREW.projectRequired);
+                    return;
+                  }
+                  setProjectError(null);
+                  setProjectStep("details");
+                }}
+                disabled={projectSubmitting}
+              >
+                המשך לפרטי פרויקט
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={() => void createProject()}
+                disabled={projectSubmitting}
+              >
+                {projectSubmitting ? HEBREW.saving : HEBREW.saveProject}
+              </Button>
+            )}
+          </div>
+        </AdaptiveDialog>
+      </Dialog>
+
+      <Dialog
+        open={projectCreateCustomerOpen}
+        onOpenChange={(open) => {
+          if (!open && projectCreateCustomerSubmitting) return;
+          setProjectCreateCustomerOpen(open);
+          if (!open) {
+            setProjectCreateCustomerError(null);
+          }
+        }}
+      >
+        <AdaptiveDialog size="formLg">
+          <DialogHeader>
+            <DialogTitle>הוספת לקוח חדש</DialogTitle>
+            <DialogDescription>
+              יוצרים לקוח חדש בלי לצאת מהדשבורד, ואז חוזרים מיד לפתיחת הפרויקט.
+            </DialogDescription>
+          </DialogHeader>
+
+          <fieldset disabled={projectCreateCustomerSubmitting} className="contents">
+            <div className="grid gap-4">
+              <AdaptiveGrid variant="formTwoLoose">
+                <label className="space-y-2 text-sm">
+                  <span>שם לקוח</span>
+                  <Input
+                    value={projectCreateCustomerName}
+                    onChange={(e) => setProjectCreateCustomerName(e.target.value)}
+                    placeholder="שם מלא או שם חברה"
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span>טלפון</span>
+                  <Input
+                    value={projectCreateCustomerPhone}
+                    onChange={(e) => setProjectCreateCustomerPhone(e.target.value)}
+                    placeholder="0501234567"
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span>אימייל</span>
+                  <Input
+                    type="email"
+                    value={projectCreateCustomerEmail}
+                    onChange={(e) => setProjectCreateCustomerEmail(e.target.value)}
+                    placeholder="name@example.com"
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm">
+                  <span>עיר</span>
+                  <Input
+                    value={projectCreateCustomerCity}
+                    onChange={(e) => setProjectCreateCustomerCity(e.target.value)}
+                    placeholder="למשל ירושלים"
+                  />
+                </label>
+              </AdaptiveGrid>
+
+              <label className="space-y-2 text-sm">
+                <span>כתובת</span>
+                <Input
+                  value={projectCreateCustomerAddress}
+                  onChange={(e) => setProjectCreateCustomerAddress(e.target.value)}
+                  placeholder="רחוב, מספר, קומה..."
+                />
+              </label>
+
+              <label className="space-y-2 text-sm">
+                <span>הערות</span>
+                <Textarea
+                  value={projectCreateCustomerNotes}
+                  onChange={(e) => setProjectCreateCustomerNotes(e.target.value)}
+                  placeholder="פרטים חשובים על הלקוח"
+                />
+              </label>
+            </div>
+          </fieldset>
+
+          {projectCreateCustomerError ? (
+            <p className="text-sm text-destructive">{projectCreateCustomerError}</p>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={resetProjectCustomerCreateForm}
+              disabled={projectCreateCustomerSubmitting}
+            >
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void createProjectCustomer()}
+              disabled={projectCreateCustomerSubmitting}
+            >
+              {projectCreateCustomerSubmitting ? HEBREW.saving : "שמירת לקוח"}
             </Button>
           </div>
         </AdaptiveDialog>

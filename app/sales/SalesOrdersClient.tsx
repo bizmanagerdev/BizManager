@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -126,8 +126,6 @@ function shouldShowPaymentAction(row: OrderView) {
 
 export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
   const [query, setQuery] = useState("");
-  const [activityFilter, setActivityFilter] = useState<"all" | "active" | "inactive">("all");
-  const [cityFilter, setCityFilter] = useState("all");
   const [paymentSnapshot] = useState(() => new Map<string, number>());
 
   const orderRows = useMemo(() => {
@@ -161,23 +159,11 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
     return mappedOrders.filter((row): row is OrderView => row !== null);
   }, [orders, paymentSnapshot]);
 
-  const cities = useMemo(() => {
-    const set = new Set<string>();
-    orderRows.forEach((row) => {
-      if (row.customerCity) set.add(row.customerCity);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "he"));
-  }, [orderRows]);
-
   const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (!q) return orderRows;
 
     return orderRows.filter((row) => {
-      if (activityFilter === "active" && !isActiveOrder(row.status)) return false;
-      if (activityFilter === "inactive" && isActiveOrder(row.status)) return false;
-      if (cityFilter !== "all" && (row.customerCity ?? "") !== cityFilter) return false;
-      if (!q) return true;
-
       return (
         row.id.toLowerCase().includes(q) ||
         row.customerName.toLowerCase().includes(q) ||
@@ -186,108 +172,32 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
         (row.customerCity ?? "").toLowerCase().includes(q)
       );
     });
-  }, [orderRows, query, activityFilter, cityFilter]);
-
-  const hasActiveFilters = query.trim().length > 0 || activityFilter !== "all" || cityFilter !== "all";
-
-  function clearFilters() {
-    setQuery("");
-    setActivityFilter("all");
-    setCityFilter("all");
-  }
+  }, [orderRows, query]);
 
   return (
     <div className="space-y-4">
-      <Card className="border-border/70 bg-card shadow-sm">
-        <CardContent className="space-y-4 p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="חיפוש לפי לקוח, טלפון, אימייל, עיר או מספר הזמנה"
-                className="h-11 pr-10"
-              />
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="inline-flex rounded-lg border border-input bg-background p-1">
-                <Button
-                  type="button"
-                  variant={activityFilter === "all" ? "default" : "ghost"}
-                  size="sm"
-                  className="h-8 px-3"
-                  onClick={() => setActivityFilter("all")}
-                >
-                  הכל
-                </Button>
-                <Button
-                  type="button"
-                  variant={activityFilter === "active" ? "default" : "ghost"}
-                  size="sm"
-                  className="h-8 px-3"
-                  onClick={() => setActivityFilter("active")}
-                >
-                  פעילות
-                </Button>
-                <Button
-                  type="button"
-                  variant={activityFilter === "inactive" ? "default" : "ghost"}
-                  size="sm"
-                  className="h-8 px-3"
-                  onClick={() => setActivityFilter("inactive")}
-                >
-                  לא פעילות
-                </Button>
-              </div>
-              <select
-                value={cityFilter}
-                onChange={(e) => setCityFilter(e.target.value)}
-                className="h-11 min-w-[170px] rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="all">כל הערים</option>
-                {cities.map((city) => (
-                  <option key={city} value={city}>
-                    {city}
-                  </option>
-                ))}
-              </select>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={clearFilters}
-                className={hasActiveFilters ? "" : "invisible pointer-events-none"}
-                aria-hidden={!hasActiveFilters}
-                tabIndex={hasActiveFilters ? 0 : -1}
-              >
-                <X className="ml-1 h-4 w-4" />
-                ניקוי
-              </Button>
-            </div>
-          </div>
+      <div className="space-y-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="חיפוש לפי לקוח, טלפון, אימייל, עיר או מספר הזמנה"
+            className="h-11 pr-10"
+          />
+        </div>
 
-          <div className="text-xs text-muted-foreground">
-            טיפ: אפשר לחפש גם לפי מספר הזמנה חלקי, לדוגמה `a1b2c3d4`.
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-sm text-muted-foreground">נמצאו {filteredRows.length} הזמנות</div>
-        <Badge
-          variant="outline"
-          className={`text-xs ${hasActiveFilters ? "" : "invisible pointer-events-none"}`}
-          aria-hidden={!hasActiveFilters}
-        >
-          מוצג לפי סינון
-        </Badge>
+        <div className="text-xs text-muted-foreground">
+          טיפ: אפשר לחפש גם לפי מספר הזמנה חלקי, לדוגמה `a1b2c3d4`.
+        </div>
       </div>
+
+      <div className="text-sm text-muted-foreground">נמצאו {filteredRows.length} הזמנות</div>
 
       {filteredRows.length === 0 ? (
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
-            לא נמצאו הזמנות לפי הסינון שנבחר.
+            לא נמצאו הזמנות לפי החיפוש.
           </CardContent>
         </Card>
       ) : (

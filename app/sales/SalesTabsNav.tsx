@@ -1,9 +1,4 @@
-"use client";
-
-import { useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Link from "next/link";
 
 type SalesTab = "orders" | "closed" | "inventory" | "price-list" | "deliveries";
 
@@ -15,77 +10,113 @@ const tabs: Array<{ id: SalesTab; label: string }> = [
   { id: "deliveries", label: "משלוחים" },
 ];
 
+type SalesTabsSearchParams = {
+  tab?: string;
+  customer_id?: string;
+  customer_name?: string;
+  customer_page?: string;
+  ordersPage?: string;
+  inventoryPage?: string;
+  pricePage?: string;
+  deliveriesPage?: string;
+};
+
+function buildTabHref(nextTab: SalesTab, searchParams: SalesTabsSearchParams) {
+  const params = new URLSearchParams();
+
+  if (nextTab !== "orders") {
+    params.set("tab", nextTab);
+  }
+
+  if (searchParams.customer_id) params.set("customer_id", searchParams.customer_id);
+  if (searchParams.customer_name) params.set("customer_name", searchParams.customer_name);
+  if (searchParams.customer_page) params.set("customer_page", searchParams.customer_page);
+
+  const query = params.toString();
+  return query ? `/sales?${query}` : "/sales";
+}
+
+function getTabLabel(tab: { id: SalesTab; label: string }, counts: Record<SalesTab, number>) {
+  if (tab.id === "inventory" || tab.id === "price-list") {
+    return tab.label;
+  }
+
+  return `${tab.label} (${counts[tab.id] ?? 0})`;
+}
+
+function triggerClassName(isActive: boolean) {
+  return [
+    "inline-flex",
+    "min-h-[52px]",
+    "min-w-0",
+    "items-center",
+    "justify-center",
+    "whitespace-normal",
+    "rounded-xl",
+    "px-3",
+    "py-2",
+    "text-center",
+    "text-sm",
+    "font-medium",
+    "leading-tight",
+    "ring-offset-background",
+    "transition-all",
+    "focus-visible:outline-none",
+    "focus-visible:ring-2",
+    "focus-visible:ring-ring",
+    "focus-visible:ring-offset-2",
+    isActive
+      ? "bg-gradient-to-r from-primary to-destructive text-primary-foreground shadow-lg shadow-primary/20"
+      : "text-muted-foreground hover:text-foreground",
+  ].join(" ");
+}
+
 export default function SalesTabsNav({
   activeTab,
   counts,
+  searchParams,
 }: {
   activeTab: SalesTab;
   counts: Record<SalesTab, number>;
+  searchParams: SalesTabsSearchParams;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
-  const [pendingTo, setPendingTo] = useState<SalesTab | null>(null);
-
-  const effectivePending = pendingTo !== null && pendingTo !== activeTab ? pendingTo : null;
-  const selected = effectivePending ?? activeTab;
-  const isLoading = isPending || effectivePending !== null;
-
-  function getTabLabel(tab: { id: SalesTab; label: string }) {
-    if (tab.id === "inventory" || tab.id === "price-list") {
-      return tab.label;
-    }
-    return `${tab.label} (${counts[tab.id] ?? 0})`;
-  }
-
-  function handleTabChange(value: string) {
-    const next = (tabs.find((tab) => tab.id === value)?.id ?? "orders") as SalesTab;
-    if (next === activeTab || isLoading) return;
-
-    emitNavigationStart();
-    setPendingTo(next);
-
-    const params = new URLSearchParams(searchParams.toString());
-    if (next === "orders") params.delete("tab");
-    else params.set("tab", next);
-    const qs = params.toString();
-    const url = qs ? `${pathname}?${qs}` : pathname;
-
-    startTransition(() => {
-      router.push(url, { scroll: false });
-    });
-  }
-
   return (
-    <Tabs value={selected} onValueChange={handleTabChange}>
+    <>
       <div className="hidden items-center justify-center md:flex">
-        <TabsList className="flex w-fit max-w-full justify-center overflow-hidden">
-          {tabs.map((tab) => (
-            <TabsTrigger
-              key={tab.id}
-              value={tab.id}
-              className="min-w-0 whitespace-normal px-3 text-center leading-tight"
-              disabled={isLoading}
-            >
-              {getTabLabel(tab)}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <div className="inline-flex h-14 w-fit max-w-full items-center justify-center overflow-hidden rounded-2xl border border-white/60 bg-white/70 p-1 text-muted-foreground shadow-sm">
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeTab;
+
+            return (
+              <Link
+                key={tab.id}
+                href={buildTabHref(tab.id, searchParams)}
+                aria-current={isActive ? "page" : undefined}
+                className={triggerClassName(isActive)}
+              >
+                {getTabLabel(tab, counts)}
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
-      <TabsList className="mx-auto grid w-full grid-cols-5 justify-center overflow-hidden md:hidden">
-        {tabs.map((tab) => (
-          <TabsTrigger
-            key={tab.id}
-            value={tab.id}
-            className="min-w-0 whitespace-normal px-3 text-center leading-tight"
-            disabled={isLoading}
-          >
-            {getTabLabel(tab)}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </Tabs>
+      <div className="mx-auto grid h-14 w-full grid-cols-5 justify-center overflow-hidden rounded-2xl border border-white/60 bg-white/70 p-1 text-muted-foreground shadow-sm md:hidden">
+        {tabs.map((tab) => {
+          const isActive = tab.id === activeTab;
+
+          return (
+            <Link
+              key={tab.id}
+              href={buildTabHref(tab.id, searchParams)}
+              aria-current={isActive ? "page" : undefined}
+              className={triggerClassName(isActive)}
+            >
+              {getTabLabel(tab, counts)}
+            </Link>
+          );
+        })}
+      </div>
+    </>
   );
 }

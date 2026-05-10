@@ -788,7 +788,7 @@ export default async function SalesPage({
           </div>
         </div>
 
-        <SalesTabsNav activeTab={activeTab} counts={salesTabCounts} />
+        <SalesTabsNav activeTab={activeTab} counts={salesTabCounts} searchParams={params} />
         {content}
       </div>
     </AppShell>
