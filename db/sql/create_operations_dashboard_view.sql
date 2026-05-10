@@ -5,6 +5,7 @@
 --   project_dashboard_view
 --   task_overview_view
 --   inventory
+--   products
 --
 -- Note:
 -- - `unpaid_invoices_count` is not included here yet because the current schema list
@@ -89,9 +90,11 @@ task_counts as (
 inventory_counts as (
   select
     count(*) filter (
-      where coalesce(i.quantity_on_hand, 0) - coalesce(i.quantity_reserved, 0) <= 5
+      where coalesce(i.quantity_on_hand, 0) - coalesce(i.quantity_reserved, 0) <= coalesce(p.low_stock_threshold, 5)
     )::bigint as low_inventory_count
-  from public.inventory i
+  from public.products p
+  left join public.inventory i on i.product_id = p.id
+  where coalesce(p.active, true) = true
 )
 select
   mb.current_month_start as current_month,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -28,16 +28,9 @@ export default function SalesTabsNav({
   const [isPending, startTransition] = useTransition();
   const [pendingTo, setPendingTo] = useState<SalesTab | null>(null);
 
-  const currentTab = useMemo<SalesTab>(() => {
-    const tab = searchParams.get("tab");
-    if (tab === "closed" || tab === "inventory" || tab === "price-list" || tab === "deliveries") {
-      return tab;
-    }
-    return "orders";
-  }, [searchParams]);
-
-  const selected = pendingTo ?? currentTab ?? activeTab;
-  const isLoading = isPending || pendingTo !== null;
+  const effectivePending = pendingTo !== null && pendingTo !== activeTab ? pendingTo : null;
+  const selected = effectivePending ?? activeTab;
+  const isLoading = isPending || effectivePending !== null;
 
   function getTabLabel(tab: { id: SalesTab; label: string }) {
     if (tab.id === "inventory" || tab.id === "price-list") {
@@ -48,7 +41,7 @@ export default function SalesTabsNav({
 
   function handleTabChange(value: string) {
     const next = (tabs.find((tab) => tab.id === value)?.id ?? "orders") as SalesTab;
-    if (next === currentTab || isLoading) return;
+    if (next === activeTab || isLoading) return;
 
     emitNavigationStart();
     setPendingTo(next);
@@ -61,7 +54,6 @@ export default function SalesTabsNav({
 
     startTransition(() => {
       router.push(url, { scroll: false });
-      setTimeout(() => setPendingTo(null), 700);
     });
   }
 

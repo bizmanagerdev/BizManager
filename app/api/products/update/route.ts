@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
-const DEFAULT_PRODUCT_CATEGORY_ID = "18caa32d-3639-4c42-9b26-5ddcb5504fed";
-
 type UpdateProductPayload = {
   id?: string;
   name?: string;
   sku?: string | null;
   barcode?: string | null;
+  category_id?: string | null;
   unit_price?: number | string | null;
   base_cost?: number | string | null;
   purchased_amount?: number | string | null;
+  low_stock_threshold?: number | string | null;
   description?: string | null;
   active?: boolean;
 };
@@ -24,6 +24,17 @@ function toNumber(value: unknown) {
   return NaN;
 }
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? error.code : null;
+  const message = "message" in error ? error.message : null;
+  return (
+    code === "42703" &&
+    typeof message === "string" &&
+    message.toLowerCase().includes(columnName.toLowerCase())
+  );
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as UpdateProductPayload;
@@ -32,10 +43,12 @@ export async function POST(req: Request) {
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const sku = typeof body.sku === "string" ? body.sku.trim() : null;
     const barcode = typeof body.barcode === "string" ? body.barcode.trim() : null;
+    const categoryId = typeof body.category_id === "string" ? body.category_id.trim() : "";
     const description = typeof body.description === "string" ? body.description.trim() : null;
     const unitPriceRaw = body.unit_price;
     const baseCostRaw = body.base_cost;
     const purchasedAmountRaw = body.purchased_amount;
+    const lowStockThresholdRaw = body.low_stock_threshold;
     const active = typeof body.active === "boolean" ? body.active : true;
 
     const unitPrice =
@@ -50,12 +63,19 @@ export async function POST(req: Request) {
       purchasedAmountRaw === undefined || purchasedAmountRaw === null || purchasedAmountRaw === ""
         ? 0
         : toNumber(purchasedAmountRaw);
+    const lowStockThreshold =
+      lowStockThresholdRaw === undefined || lowStockThresholdRaw === null || lowStockThresholdRaw === ""
+        ? 5
+        : toNumber(lowStockThresholdRaw);
 
     if (!id) {
       return NextResponse.json({ error: "מזהה מוצר חסר." }, { status: 400 });
     }
     if (!name) {
       return NextResponse.json({ error: "שם מוצר הוא שדה חובה." }, { status: 400 });
+    }
+    if (!categoryId) {
+      return NextResponse.json({ error: "יש לבחור קטגוריה." }, { status: 400 });
     }
     if (unitPrice !== null && (!Number.isFinite(unitPrice) || unitPrice < 0)) {
       return NextResponse.json({ error: "מחיר מוצר אינו תקין." }, { status: 400 });
@@ -67,25 +87,47 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "כמות שנרכשה אינה תקינה." }, { status: 400 });
     }
 
+    if (!Number.isFinite(lowStockThreshold) || lowStockThreshold < 0) {
+      return NextResponse.json({ error: "סף מלאי נמוך אינו תקין." }, { status: 400 });
+    }
+
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
 
-    const { data, error } = await supabase
+    const updatePayload = {
+      name,
+      sku: sku || null,
+      barcode: barcode || null,
+      category_id: categoryId,
+      description: description || null,
+      base_price: unitPrice ?? 0,
+      base_cost: baseCost ?? 0,
+      active,
+      low_stock_threshold: lowStockThreshold,
+    };
+
+    let warning: string | null = null;
+    let updateResult = await supabase
       .from("products")
-      .update({
-        name,
-        sku: sku || null,
-        barcode: barcode || null,
-        category_id: DEFAULT_PRODUCT_CATEGORY_ID,
-        description: description || null,
-        base_price: unitPrice ?? 0,
-        base_cost: baseCost ?? 0,
-        active,
-      })
+      .update(updatePayload)
       .eq("id", id)
-      .select("id,name,sku,barcode,description,base_price,base_cost,active")
+      .select("id,name,sku,barcode,description,base_price,base_cost,active,category_id,low_stock_threshold")
       .maybeSingle();
+
+    if (isMissingColumnError(updateResult.error, "low_stock_threshold")) {
+      const { low_stock_threshold: removedLowStockThreshold, ...fallbackUpdatePayload } = updatePayload;
+      void removedLowStockThreshold;
+      warning = "סף מלאי נמוך לא נשמר כי עדכון בסיס הנתונים עדיין לא הוחל.";
+      updateResult = await supabase
+        .from("products")
+        .update(fallbackUpdatePayload)
+        .eq("id", id)
+        .select("id,name,sku,barcode,description,base_price,base_cost,active,category_id")
+        .maybeSingle();
+    }
+
+    const { data, error } = updateResult;
 
     if (error) {
       return NextResponse.json({ error: `עדכון מוצר נכשל: ${error.message}` }, { status: 400 });
@@ -113,7 +155,17 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ product: data });
+    let categoryName: string | null = null;
+    if (typeof data.category_id === "string" && data.category_id) {
+      const { data: categoryRow } = await supabase
+        .from("product_categories")
+        .select("name")
+        .eq("id", data.category_id)
+        .maybeSingle();
+      categoryName = typeof categoryRow?.name === "string" ? categoryRow.name : null;
+    }
+
+    return NextResponse.json({ product: { ...data, category_name: categoryName }, warning });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "שגיאה לא ידועה";
     return NextResponse.json({ error: message }, { status: 500 });

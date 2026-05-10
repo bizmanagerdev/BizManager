@@ -66,6 +66,23 @@ function productUnitPrice(row: Row) {
   return getNumber(row, "base_price");
 }
 
+function productCategoryName(row: Row, categoryById: Map<string, string>) {
+  const categoryId = getString(row, "category_id");
+  if (!categoryId) return null;
+  return categoryById.get(categoryId) ?? null;
+}
+
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? error.code : null;
+  const message = "message" in error ? error.message : null;
+  return (
+    code === "42703" &&
+    typeof message === "string" &&
+    message.toLowerCase().includes(columnName.toLowerCase())
+  );
+}
+
 function parsePage(value: string | undefined) {
   const page = Number(value ?? "1");
   return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
@@ -116,7 +133,7 @@ async function loadProductPageData(supabase: SupabaseClient, page: number) {
     count,
   } = await supabase
     .from("products")
-    .select("id,name,sku,barcode,description,base_price,base_cost,active", {
+    .select("id,name,sku,barcode,description,base_price,base_cost,active,category_id", {
       count: "estimated",
     })
     .order("name", { ascending: true })
@@ -130,40 +147,57 @@ async function loadProductPageData(supabase: SupabaseClient, page: number) {
     { data: inventoryRows, error: inventoryError },
     { data: purchasedMovements, error: purchasedMovementsError },
     { data: soldMovements, error: soldMovementsError },
+    { data: categoryRows, error: categoriesError },
+    thresholdResult,
   ] =
-    productIds.length > 0
-      ? await Promise.all([
-          supabase
+    await Promise.all([
+      productIds.length > 0
+        ? supabase
             .from("inventory")
             .select("product_id,quantity_on_hand,quantity_reserved,updated_at")
-            .in("product_id", productIds),
-          supabase
+            .in("product_id", productIds)
+        : Promise.resolve({ data: [], error: null }),
+      productIds.length > 0
+        ? supabase
             .from("inventory_movements")
             .select("product_id,movement_type,quantity")
             .eq("movement_type", "in")
-            .in("product_id", productIds),
-          supabase
+            .in("product_id", productIds)
+        : Promise.resolve({ data: [], error: null }),
+      productIds.length > 0
+        ? supabase
             .from("inventory_movements")
             .select("product_id,movement_type,quantity,source_type")
             .eq("movement_type", "out")
             .eq("source_type", "order")
-            .in("product_id", productIds),
-        ])
-      : [
-          { data: [], error: null },
-          { data: [], error: null },
-          { data: [], error: null },
-        ];
+            .in("product_id", productIds)
+        : Promise.resolve({ data: [], error: null }),
+      supabase.from("product_categories").select("id,name,active").order("name", { ascending: true }),
+      productIds.length > 0
+        ? supabase.from("products").select("id,low_stock_threshold").in("id", productIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+  const thresholdRows = isMissingColumnError(thresholdResult.error, "low_stock_threshold")
+    ? []
+    : ((thresholdResult.data ?? []) as Row[]);
+  const thresholdsError = isMissingColumnError(thresholdResult.error, "low_stock_threshold")
+    ? null
+    : thresholdResult.error;
 
   return {
     products: (products ?? []) as Row[],
     inventoryRows: (inventoryRows ?? []) as Row[],
     purchasedMovements: (purchasedMovements ?? []) as Row[],
     soldMovements: (soldMovements ?? []) as Row[],
+    categoryRows: (categoryRows ?? []) as Row[],
+    thresholdRows,
     count: typeof count === "number" ? count : ((products ?? []) as Row[]).length,
     productsError,
     inventoryError,
     movementsError: purchasedMovementsError?.message ? purchasedMovementsError : soldMovementsError,
+    categoriesError,
+    thresholdsError,
   };
 }
 
@@ -382,10 +416,14 @@ export default async function SalesPage({
       inventoryRows,
       purchasedMovements,
       soldMovements,
+      categoryRows,
+      thresholdRows,
       count,
       productsError,
       inventoryError,
       movementsError,
+      categoriesError,
+      thresholdsError,
     } =
       await loadProductPageData(supabase, pricePage);
 
@@ -414,10 +452,28 @@ export default async function SalesPage({
       inventoryByProductId.set(productId, getNumber(row, "quantity_on_hand"));
     });
 
+    const categoryById = new Map<string, string>();
+    categoryRows.forEach((row) => {
+      const id = getString(row, "id");
+      const name = getString(row, "name");
+      if (!id || !name) return;
+      categoryById.set(id, name);
+    });
+
+    const thresholdById = new Map<string, number | null>();
+    thresholdRows.forEach((row) => {
+      const id = getString(row, "id");
+      if (!id) return;
+      thresholdById.set(id, getNumber(row, "low_stock_threshold"));
+    });
+
     const productRows = products
       .map((row) => ({
         id: getString(row, "id") ?? "",
         name: productName(row),
+        categoryId: getString(row, "category_id"),
+        category: productCategoryName(row, categoryById),
+        lowStockThreshold: thresholdById.get(getString(row, "id") ?? "") ?? 5,
         code: productCode(row),
         unitPrice: productUnitPrice(row),
         stock: inventoryByProductId.get(getString(row, "id") ?? "") ?? null,
@@ -429,9 +485,23 @@ export default async function SalesPage({
       .filter((row) => row.id)
       .sort((a, b) => a.name.localeCompare(b.name, "he"));
 
+    const categoryOptions = categoryRows
+      .map((row) => ({
+        id: getString(row, "id") ?? "",
+        name: getString(row, "name") ?? "",
+        active: row.active !== false,
+      }))
+      .filter((row) => row.id && row.name);
+
     const hasPreviousPage = pricePage > 1;
     const hasNextPage = pricePage * PAGE_SIZE < count;
-    const loadError = productsError?.message ?? inventoryError?.message ?? movementsError?.message ?? null;
+    const loadError =
+      productsError?.message ??
+      inventoryError?.message ??
+      movementsError?.message ??
+      categoriesError?.message ??
+      thresholdsError?.message ??
+      null;
 
     content = (
       <>
@@ -439,7 +509,7 @@ export default async function SalesPage({
           <p className="text-sm text-destructive">שגיאה בטעינת מחירון: {loadError}</p>
         ) : (
           <>
-            <PriceListClient initialProducts={productRows} />
+            <PriceListClient initialProducts={productRows} initialCategories={categoryOptions} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {pricePage} • מציגים {products.length} מתוך {count}

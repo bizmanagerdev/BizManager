@@ -39,6 +39,11 @@ function getNumber(row: Row | null | undefined, key: string) {
   return null;
 }
 
+function getBoolean(row: Row | null | undefined, key: string) {
+  const value = row?.[key];
+  return typeof value === "boolean" ? value : null;
+}
+
 function isInvoiceUnpaid(row: Row) {
   const paymentStatus = (getString(row, "payment_status") ?? "").toLowerCase();
   const status = (getString(row, "status") ?? "").toLowerCase();
@@ -89,6 +94,8 @@ export async function getAlertsData(
     { data: invoiceRows, error: invoiceError },
     payrollDebtResult,
     activeProjectsCountResult,
+    inventoryProductsResult,
+    inventoryRowsResult,
   ] = await Promise.all([
     supabase
       .from("operations_dashboard_view")
@@ -112,6 +119,8 @@ export async function getAlertsData(
       .from("project_dashboard_view")
       .select("id", { count: "estimated", head: true })
       .not("status", "in", `(${inactiveProjectStatuses.map((value) => `"${value}"`).join(",")})`),
+    supabase.from("products").select("id,active,low_stock_threshold"),
+    supabase.from("inventory").select("product_id,quantity_on_hand,quantity_reserved"),
   ]);
 
   const invoiceSourceMissing =
@@ -121,10 +130,37 @@ export async function getAlertsData(
     ? []
     : ((invoiceRows ?? []) as Row[]).filter((row) => isInvoiceUnpaid(row));
 
-  const lowInventoryCount =
-    getNumber((dashboardRow as Row | null) ?? undefined, "low_inventory_count") ?? 0;
   const overdueTasksCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "overdue_tasks_count") ?? 0;
+
+  const inventoryProductsErrorCode = (inventoryProductsResult.error as { code?: string } | null)?.code ?? null;
+  const inventoryProducts =
+    inventoryProductsErrorCode === "42703"
+      ? (
+          await supabase.from("products").select("id,active")
+        )
+      : inventoryProductsResult;
+
+  const inventoryByProductId = new Map<string, { onHand: number; reserved: number }>();
+  ((inventoryRowsResult.data ?? []) as Row[]).forEach((row) => {
+    const productId = getString(row, "product_id");
+    if (!productId) return;
+    inventoryByProductId.set(productId, {
+      onHand: getNumber(row, "quantity_on_hand") ?? 0,
+      reserved: getNumber(row, "quantity_reserved") ?? 0,
+    });
+  });
+
+  const lowInventoryCount = ((inventoryProducts.data ?? []) as Row[]).reduce((count, row) => {
+    const id = getString(row, "id");
+    if (!id) return count;
+    if (getBoolean(row, "active") === false) return count;
+
+    const threshold = getNumber(row, "low_stock_threshold") ?? 5;
+    const inventory = inventoryByProductId.get(id);
+    const available = (inventory?.onHand ?? 0) - (inventory?.reserved ?? 0);
+    return available <= threshold ? count + 1 : count;
+  }, 0);
 
   const activeProjectsCount =
     typeof (activeProjectsCountResult as { count?: number | null }).count === "number"
@@ -216,7 +252,11 @@ export async function getAlertsData(
       },
     ],
     errors: {
-      dashboard: dashboardError?.message ?? null,
+      dashboard:
+        dashboardError?.message ??
+        inventoryRowsResult.error?.message ??
+        inventoryProducts.error?.message ??
+        null,
       invoices: invoiceSourceMissing ? null : invoiceError?.message ?? null,
       payroll: viewerRole === "admin" ? payrollDebtResult.error?.message ?? null : null,
       projects: (activeProjectsCountResult as { error?: { message?: string } | null }).error?.message ?? null,
