@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type ChangeEvent } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
@@ -12,18 +11,15 @@ export default function LoginClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [email, setEmail] = useState<string>(
-    (searchParams.get("email") ?? "").trim()
-  );
+  const [email, setEmail] = useState<string>((searchParams.get("email") ?? "").trim());
   const [password, setPassword] = useState<string>("");
   const [err, setErr] = useState<string | null>(null);
-  const [showSignUpPrompt, setShowSignUpPrompt] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
-  const [navTarget, setNavTarget] = useState<"forgot" | "register" | null>(null);
+  const [navTarget, setNavTarget] = useState<"forgot" | null>(null);
 
-  function navigateWithProgress(href: string, target: "forgot" | "register") {
+  function navigateWithProgress(href: string) {
     if (loading) return;
-    setNavTarget(target);
+    setNavTarget("forgot");
     emitNavigationStart();
     router.push(href);
   }
@@ -32,7 +28,6 @@ export default function LoginClient() {
     if (loading) return;
 
     setErr(null);
-    setShowSignUpPrompt(false);
     setLoading(true);
 
     const trimmedEmail = email.trim();
@@ -51,15 +46,8 @@ export default function LoginClient() {
       });
 
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as Partial<{
-          error: string;
-        }>;
-
-        const message = data.error ?? "Sign in failed.";
-        setErr(message);
-        setShowSignUpPrompt(
-          message.toLowerCase().includes("invalid email or password")
-        );
+        const data = (await res.json().catch(() => ({}))) as Partial<{ error: string }>;
+        setErr(data.error ?? "Sign in failed.");
         setLoading(false);
         return;
       }
@@ -85,21 +73,6 @@ export default function LoginClient() {
     <AuthScreen
       title="התחברות"
       description="גישה מהירה למערכת וניהול העסק ממקום אחד."
-      footer={
-        <>
-          אין לך חשבון?{" "}
-          <Link
-            className="font-semibold text-destructive hover:underline"
-            href={
-              email.trim()
-                ? `/register?email=${encodeURIComponent(email.trim())}`
-                : "/register"
-            }
-          >
-            יצירת חשבון
-          </Link>
-        </>
-      }
     >
       <form
         className="space-y-4"
@@ -133,66 +106,28 @@ export default function LoginClient() {
         </div>
 
         {err ? (
-          <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {err}
-          </p>
+          <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{err}</p>
         ) : null}
-        {loading ? (
-          <p className="text-sm text-muted-foreground">מתחבר/ת...</p>
-        ) : null}
+        {loading ? <p className="text-sm text-muted-foreground">מתחבר/ת...</p> : null}
 
         <Button type="submit" className="w-full" disabled={loading}>
           {loading ? "מתחבר/ת..." : "התחברות"}
         </Button>
 
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() =>
-              navigateWithProgress(
-                `/forgot-password${
-                  email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
-                }`,
-                "forgot"
-              )
-            }
-            disabled={loading || navTarget !== null}
-          >
-            שכחתי סיסמה
-          </Button>
-
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() =>
-              navigateWithProgress(
-                `/register${
-                  email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""
-                }`,
-                "register"
-              )
-            }
-            disabled={loading || navTarget !== null}
-          >
-            יצירת חשבון
-          </Button>
-        </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() =>
+            navigateWithProgress(
+              `/forgot-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ""}`
+            )
+          }
+          disabled={loading || navTarget !== null}
+          className="w-full"
+        >
+          שכחתי סיסמה
+        </Button>
       </form>
-
-      {showSignUpPrompt ? (
-        <p className="rounded-xl bg-muted/70 px-4 py-3 text-sm text-muted-foreground">
-          עדיין אין לך חשבון?{" "}
-          <button
-            type="button"
-            className="font-semibold text-destructive hover:underline"
-            onClick={() => navigateWithProgress(`/register?email=${encodeURIComponent(email.trim())}`, "register")}
-            disabled={loading || navTarget !== null}
-          >
-            להרשמה
-          </button>
-        </p>
-      ) : null}
     </AuthScreen>
   );
 }

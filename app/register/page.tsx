@@ -1,11 +1,5 @@
-import { Suspense } from "react";
-import RegisterClient from "@/app/register/RegisterClient";
+import { redirect } from "next/navigation";
 
 export default function RegisterPage() {
-  return (
-    <Suspense>
-      <RegisterClient />
-    </Suspense>
-  );
+  redirect("/login");
 }
-
