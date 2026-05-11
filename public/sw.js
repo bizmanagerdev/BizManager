@@ -1,5 +1,12 @@
-const CACHE_NAME = "bizh-pwa-v3";
-const APP_ASSETS = ["/favicon.ico", "/icon.svg", "/manifest.webmanifest"];
+const CACHE_NAME = "bizh-pwa-v4";
+const APP_ASSETS = [
+  "/favicon.ico",
+  "/icon.svg",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/apple-touch-icon.png",
+  "/manifest.webmanifest",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -25,18 +32,17 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
+  // Let Next.js assets and API responses come from the network so deploys
+  // show up immediately and dynamic data does not get stuck in cache.
+  if (url.pathname.startsWith("/_next/") || url.pathname.startsWith("/api/")) {
+    return;
+  }
+
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          return response;
-        })
+        .then((response) => response)
         .catch(async () => {
-          const cached = await caches.match(request);
-          if (cached) return cached;
-
           return new Response(
             `<!doctype html>
 <html lang="en">
@@ -87,18 +93,27 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  event.respondWith(
-    (async () => {
-      const cached = await caches.match(request);
-      if (cached) return cached;
+  if (APP_ASSETS.includes(url.pathname)) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
 
-      try {
-        const response = await fetch(request);
-        if (response.ok) {
+        return fetch(request).then((response) => {
+          if (!response.ok) return response;
+
           const copy = response.clone();
           void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-        }
-        return response;
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  event.respondWith(
+    (async () => {
+      try {
+        return await fetch(request);
       } catch {
         return new Response("Offline", {
           status: 503,
