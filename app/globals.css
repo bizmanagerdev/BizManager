@@ -224,3 +224,10 @@
     pointer-events: none;
   }
 }
+aside > div:first-child > div > span {
+  display: none !important;
+}
+
+header.sticky > div:first-child > span {
+  display: none !important;
+}

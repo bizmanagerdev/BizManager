@@ -25,7 +25,7 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
       )}
     >
       <div className="flex h-16 items-center border-b border-sidebar-border/80 px-4">
-        <div className="flex items-center overflow-hidden">
+        <div className="flex items-center gap-2 overflow-hidden">
           {logo ?? (
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-destructive via-destructive to-primary shadow-lg shadow-destructive/20">
               <span className="text-sm font-black text-primary-foreground">
@@ -33,6 +33,14 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
               </span>
             </div>
           )}
+          <span
+            className={cn(
+              "block whitespace-nowrap text-sm font-semibold text-white",
+              collapsed ? "hidden lg:inline" : "inline"
+            )}
+          >
+            {appName}
+          </span>
         </div>
       </div>
 

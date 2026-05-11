@@ -52,6 +52,7 @@ type ProjectOption = {
   type?: string;
   customerId: string;
   customerName: string;
+  startDate?: string;
 };
 
 type UserOption = {
@@ -123,6 +124,12 @@ function nextMonth(dateString: string) {
   const date = new Date(`${dateString}T00:00:00`);
   date.setMonth(date.getMonth() + 1);
   return date.toISOString().slice(0, 10);
+}
+
+function normalizeDateOnly(value: string | null | undefined) {
+  if (!value) return "";
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+  return match ? match[1] : "";
 }
 
 function nowLocal(offsetMinutes = 0) {
@@ -422,6 +429,7 @@ export default function DashboardActions({
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [incomeOpen, setIncomeOpen] = useState(false);
   const [manualSessionOpen, setManualSessionOpen] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState(users);
 
   const [projectSubmitting, setProjectSubmitting] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -443,6 +451,7 @@ export default function DashboardActions({
   const [projectCreateCustomerReturnToProject, setProjectCreateCustomerReturnToProject] = useState(false);
   const [projectCreateCustomerName, setProjectCreateCustomerName] = useState("");
   const [projectCreateCustomerPhone, setProjectCreateCustomerPhone] = useState("");
+  const [projectCreateCustomerWhatsapp, setProjectCreateCustomerWhatsapp] = useState("");
   const [projectCreateCustomerEmail, setProjectCreateCustomerEmail] = useState("");
   const [projectCreateCustomerCity, setProjectCreateCustomerCity] = useState("");
   const [projectCreateCustomerCityOther, setProjectCreateCustomerCityOther] = useState("");
@@ -469,7 +478,7 @@ export default function DashboardActions({
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("");
   const [expenseCategoryOther, setExpenseCategoryOther] = useState("");
-  const [expenseDate, setExpenseDate] = useState(getTodayDate());
+  const [expenseDate, setExpenseDate] = useState(normalizeDateOnly(projects[0]?.startDate) || getTodayDate());
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseNotes, setExpenseNotes] = useState("");
   const [expenseIncludedInBase, setExpenseIncludedInBase] = useState(false);
@@ -483,12 +492,17 @@ export default function DashboardActions({
   const [expenseBillToCustomerAmount, setExpenseBillToCustomerAmount] = useState("");
   const [expenseAttachmentFiles, setExpenseAttachmentFiles] = useState<File[]>([]);
   const [expenseExistingAttachments, setExpenseExistingAttachments] = useState<FinancialAttachment[]>([]);
+  const [expenseNewWorkerOpen, setExpenseNewWorkerOpen] = useState(false);
+  const [expenseNewWorkerSubmitting, setExpenseNewWorkerSubmitting] = useState(false);
+  const [expenseNewWorkerError, setExpenseNewWorkerError] = useState<string | null>(null);
+  const [expenseNewWorkerName, setExpenseNewWorkerName] = useState("");
+  const [expenseNewWorkerPhone, setExpenseNewWorkerPhone] = useState("");
 
   const [incomeSubmitting, setIncomeSubmitting] = useState(false);
   const [incomeError, setIncomeError] = useState<string | null>(null);
   const [incomeProjectId, setIncomeProjectId] = useState(projects[0]?.id ?? "");
   const [incomeAmount, setIncomeAmount] = useState("");
-  const [incomeDate, setIncomeDate] = useState(getTodayDate());
+  const [incomeDate, setIncomeDate] = useState(normalizeDateOnly(projects[0]?.startDate) || getTodayDate());
   const [incomeMethod, setIncomeMethod] = useState("bank_transfer");
   const [incomeDueDate, setIncomeDueDate] = useState("");
   const [incomeRequiresSplit, setIncomeRequiresSplit] = useState(false);
@@ -517,6 +531,10 @@ export default function DashboardActions({
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
   );
+  const defaultProjectDate = useMemo(
+    () => normalizeDateOnly(projects[0]?.startDate) || getTodayDate(),
+    [projects]
+  );
   const weeklyBuckets = useMemo(() => {
     return Array.from({ length: 7 }).map((_, index) => {
       const day = addDays(weekStart, index);
@@ -537,8 +555,8 @@ export default function DashboardActions({
     [weeklyBuckets]
   );
   const workerUsers = useMemo(
-    () => users.filter((user) => user.role === "worker" || user.role === "worker_no_access"),
-    [users]
+    () => availableUsers.filter((user) => user.role === "worker" || user.role === "worker_no_access"),
+    [availableUsers]
   );
   const canManageWorkerSessions = currentUserRole === "admin";
   const manualSessionTargetId = canManageWorkerSessions ? manualSessionUserId : currentUserId ?? "";
@@ -615,9 +633,17 @@ export default function DashboardActions({
     return calculateSessionLaborCost(activeExpenseSessionAgreement, expenseWorkedMinutes);
   }, [activeExpenseSessionAgreement, expenseIsWorkerPayment, expenseLaborCost, expenseWorkedMinutes]);
 
+  function getProjectStartDate(projectId: string) {
+    return normalizeDateOnly(projectById.get(projectId)?.startDate) || getTodayDate();
+  }
+
   useEffect(() => {
     setProjectCustomerOptions(customers);
   }, [customers]);
+
+  useEffect(() => {
+    setAvailableUsers(users);
+  }, [users]);
 
   useEffect(() => {
     if (!expenseIsWorkerPayment || !canManageWorkerSessions || expenseWorkerPaymentChoice === "none" || suggestedExpenseWorkerAmount === null) {
@@ -662,6 +688,7 @@ export default function DashboardActions({
     setProjectCreateCustomerReturnToProject(false);
     setProjectCreateCustomerName("");
     setProjectCreateCustomerPhone("");
+    setProjectCreateCustomerWhatsapp("");
     setProjectCreateCustomerEmail("");
     setProjectCreateCustomerCity("");
     setProjectCreateCustomerCityOther("");
@@ -704,7 +731,7 @@ export default function DashboardActions({
     setExpenseAmount("");
     setExpenseCategory("");
     setExpenseCategoryOther("");
-    setExpenseDate(getTodayDate());
+    setExpenseDate(defaultProjectDate);
     setExpenseDescription("");
     setExpenseNotes("");
     setExpenseIncludedInBase(false);
@@ -718,13 +745,18 @@ export default function DashboardActions({
     setExpenseBillToCustomerAmount("");
     setExpenseAttachmentFiles([]);
     setExpenseExistingAttachments([]);
+    setExpenseNewWorkerOpen(false);
+    setExpenseNewWorkerSubmitting(false);
+    setExpenseNewWorkerError(null);
+    setExpenseNewWorkerName("");
+    setExpenseNewWorkerPhone("");
   }
 
   function resetIncomeForm() {
     setIncomeError(null);
     setIncomeProjectId(projects[0]?.id ?? "");
     setIncomeAmount("");
-    setIncomeDate(getTodayDate());
+    setIncomeDate(defaultProjectDate);
     setIncomeMethod("bank_transfer");
     setIncomeDueDate("");
     setIncomeRequiresSplit(false);
@@ -802,8 +834,8 @@ export default function DashboardActions({
         : projectCreateCustomerCity.trim();
     const address = projectCreateCustomerAddress.trim();
 
-    if (!name || !projectCreateCustomerPhone.trim() || !email || !city || !address) {
-      setProjectCreateCustomerError("יש למלא את כל שדות החובה: שם, טלפון, אימייל, עיר וכתובת.");
+    if (!name || !projectCreateCustomerPhone.trim() || !city || !address) {
+      setProjectCreateCustomerError("יש למלא את כל שדות החובה: שם, טלפון, עיר וכתובת.");
       return;
     }
 
@@ -846,7 +878,8 @@ export default function DashboardActions({
         body: JSON.stringify({
           name,
           phone: projectCreateCustomerPhone.trim() || null,
-          email,
+          whatsapp: projectCreateCustomerWhatsapp.trim() || null,
+          email: email || null,
           city,
           address,
           notes: projectCreateCustomerNotes.trim() || null,
@@ -1176,6 +1209,64 @@ export default function DashboardActions({
       setExpenseError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
     } finally {
       setExpenseSubmitting(false);
+    }
+  }
+
+  async function createExpenseWorker() {
+    setExpenseNewWorkerError(null);
+
+    const fullName = expenseNewWorkerName.trim();
+    const phone = expenseNewWorkerPhone.trim();
+    if (!fullName || !phone) {
+      setExpenseNewWorkerError("יש למלא שם וטלפון לעובד החדש.");
+      return;
+    }
+
+    setExpenseNewWorkerSubmitting(true);
+    try {
+      const res = await fetch("/api/users/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          full_name: fullName,
+          email: null,
+          phone,
+          password: "",
+          role: "worker_no_access",
+          system_access: false,
+          pay_tracking_mode: "session",
+        }),
+      });
+
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        user?: { id?: string; full_name?: string | null; email?: string | null; role?: UserRole };
+      };
+      const createdUser = json.user;
+      if (!res.ok || !createdUser?.id) {
+        setExpenseNewWorkerError(json.error ?? "שגיאה ביצירת עובד.");
+        return;
+      }
+
+      const label = createdUser.full_name?.trim() || createdUser.email?.trim() || "עובד חדש";
+      setAvailableUsers((current) => {
+        const nextUser: UserOption = {
+          id: createdUser.id ?? "",
+          label,
+          role: createdUser.role ?? "worker_no_access",
+        };
+        const withoutDuplicate = current.filter((user) => user.id !== nextUser.id);
+        return [nextUser, ...withoutDuplicate];
+      });
+      setExpenseWorkerUserId(createdUser.id);
+      setExpenseNewWorkerOpen(false);
+      setExpenseNewWorkerName("");
+      setExpenseNewWorkerPhone("");
+      toast.success("העובד נוסף ונבחר להוצאה.");
+    } catch (error: unknown) {
+      setExpenseNewWorkerError(error instanceof Error ? error.message : "שגיאה ביצירת עובד.");
+    } finally {
+      setExpenseNewWorkerSubmitting(false);
     }
   }
 
@@ -2117,8 +2208,8 @@ export default function DashboardActions({
             <DialogTitle>הוספת לקוח חדש</DialogTitle>
             <DialogDescription>
               {projectCreateCustomerReturnToProject
-                ? "הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון, אימייל, עיר וכתובת."
-                : "יוצרים לקוח חדש ישירות מהדשבורד. שדות חובה: שם, טלפון, אימייל, עיר וכתובת."}
+                ? "הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון, עיר וכתובת."
+                : "יוצרים לקוח חדש ישירות מהדשבורד. שדות חובה: שם, טלפון, עיר וכתובת."}
             </DialogDescription>
           </DialogHeader>
 
@@ -2139,17 +2230,28 @@ export default function DashboardActions({
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-sm font-medium">טלפון *</label>
-                <Input
-                  value={projectCreateCustomerPhone}
-                  onChange={(e) => setProjectCreateCustomerPhone(e.target.value)}
-                  placeholder="0501234567"
-                />
-              </div>
+              <AdaptiveGrid variant="formTwo">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">טלפון *</label>
+                  <Input
+                    value={projectCreateCustomerPhone}
+                    onChange={(e) => setProjectCreateCustomerPhone(e.target.value)}
+                    placeholder="0501234567"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">וואטסאפ</label>
+                  <Input
+                    value={projectCreateCustomerWhatsapp}
+                    onChange={(e) => setProjectCreateCustomerWhatsapp(e.target.value)}
+                    placeholder="0501234567"
+                  />
+                </div>
+              </AdaptiveGrid>
 
               <div className="space-y-1">
-                <label className="text-sm font-medium">אימייל *</label>
+                <label className="text-sm font-medium">אימייל</label>
                 <Input
                   type="email"
                   value={projectCreateCustomerEmail}
@@ -2461,6 +2563,7 @@ export default function DashboardActions({
                       setExpenseBillToCustomerAmount("");
                     } else if (!expenseProjectId && projects[0]?.id) {
                       setExpenseProjectId(projects[0].id);
+                      setExpenseDate(getProjectStartDate(projects[0].id));
                     }
                     if (nextDomain !== "sales") setExpenseOrderId("");
                     if (nextDomain !== "property_management") setExpensePropertyId("");
@@ -2480,7 +2583,11 @@ export default function DashboardActions({
                   <select
                     className={fieldClass}
                     value={expenseProjectId}
-                    onChange={(e) => setExpenseProjectId(e.target.value)}
+                    onChange={(e) => {
+                      const nextProjectId = e.target.value;
+                      setExpenseProjectId(nextProjectId);
+                      setExpenseDate(getProjectStartDate(nextProjectId));
+                    }}
                   >
                     <option value="">{HEBREW.selectProject}</option>
                     {projects.map((project) => (
@@ -2557,21 +2664,77 @@ export default function DashboardActions({
               ) : null}
 
               {expenseIsWorkerPayment && canManageWorkerSessions ? (
-                <label className="space-y-2 text-sm">
-                  <span>{HEBREW.worker}</span>
-                  <select
-                    className={fieldClass}
-                    value={expenseWorkerUserId}
-                    onChange={(e) => setExpenseWorkerUserId(e.target.value)}
-                  >
-                    <option value="">{HEBREW.selectWorker}</option>
-                    {workerUsers.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="space-y-3">
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.worker}</span>
+                    <select
+                      className={fieldClass}
+                      value={expenseWorkerUserId}
+                      onChange={(e) => setExpenseWorkerUserId(e.target.value)}
+                    >
+                      <option value="">{HEBREW.selectWorker}</option>
+                      {workerUsers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {!expenseNewWorkerOpen ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setExpenseNewWorkerOpen(true)}>
+                      עובד חדש
+                    </Button>
+                  ) : (
+                    <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
+                      <div className="text-sm font-medium">הוספת עובד חדש</div>
+                      <Input
+                        value={expenseNewWorkerName}
+                        onChange={(e) => setExpenseNewWorkerName(e.target.value)}
+                        placeholder="שם עובד"
+                      />
+                      <Input
+                        value={expenseNewWorkerPhone}
+                        onChange={(e) => setExpenseNewWorkerPhone(e.target.value)}
+                        placeholder="טלפון עובד"
+                      />
+                      <div className="text-xs text-muted-foreground">
+                        עובד חדש ייווצר כרשומת עובד בלבד, בלי גישה למערכת.
+                      </div>
+                      {expenseNewWorkerError ? (
+                        <div className="text-sm text-destructive">{expenseNewWorkerError}</div>
+                      ) : null}
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => void createExpenseWorker()}
+                          disabled={
+                            expenseNewWorkerSubmitting ||
+                            !expenseNewWorkerName.trim() ||
+                            !expenseNewWorkerPhone.trim()
+                          }
+                        >
+                          {expenseNewWorkerSubmitting ? "שומר..." : "הוסף עובד"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={expenseNewWorkerSubmitting}
+                          onClick={() => {
+                            setExpenseNewWorkerOpen(false);
+                            setExpenseNewWorkerError(null);
+                            setExpenseNewWorkerName("");
+                            setExpenseNewWorkerPhone("");
+                          }}
+                        >
+                          ביטול
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : null}
 
               {expenseIsWorkerPayment ? (
@@ -2845,7 +3008,11 @@ export default function DashboardActions({
                 <select
                   className={fieldClass}
                   value={incomeProjectId}
-                  onChange={(e) => setIncomeProjectId(e.target.value)}
+                  onChange={(e) => {
+                    const nextProjectId = e.target.value;
+                    setIncomeProjectId(nextProjectId);
+                    setIncomeDate(getProjectStartDate(nextProjectId));
+                  }}
                 >
                   <option value="">{HEBREW.selectProject}</option>
                   {projects.map((project) => (

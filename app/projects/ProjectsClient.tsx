@@ -477,11 +477,14 @@ export default function ProjectsClient({
     );
     return filtered.sort();
   }, [activeTab, projects]);
+  const hasImplicitTabStatus =
+    (activeTab === "quotes" && status === "quote") ||
+    (activeTab === "closed" && status === "completed");
   const hasActiveToolbarFilters =
-    query.trim().length > 0 || status !== "all" || sort !== defaultSortForTab(activeTab);
+    query.trim().length > 0 || (!hasImplicitTabStatus && status !== "all") || sort !== defaultSortForTab(activeTab);
   const activeFilterSummary = [
     query.trim() ? `חיפוש: ${query.trim()}` : null,
-    status !== "all" ? `סטטוס: ${statusLabel(status)}` : null,
+    !hasImplicitTabStatus && status !== "all" ? `סטטוס: ${statusLabel(status)}` : null,
     sort !== defaultSortForTab(activeTab)
       ? `מיון: ${
           sort === "recent"
@@ -1033,7 +1036,7 @@ export default function ProjectsClient({
         <div className="hidden items-center justify-center gap-3 md:flex">
           <TabsList className="flex w-fit max-w-full justify-center overflow-hidden">
             <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="quotes">
-              הצעות מחיר ({quoteCount})
+              הוצאות ({quoteCount})
             </TabsTrigger>
             <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="projects">
               פרויקטים ({projectCount})
@@ -1046,7 +1049,7 @@ export default function ProjectsClient({
 
         <TabsList className="mx-auto grid w-full grid-cols-3 justify-center overflow-hidden md:hidden">
           <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="quotes">
-            הצעות מחיר ({quoteCount})
+            הוצאות ({quoteCount})
           </TabsTrigger>
           <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="projects">
             פרויקטים ({projectCount})
@@ -1058,6 +1061,9 @@ export default function ProjectsClient({
       </Tabs>
 
       <div className="space-y-3 md:hidden">
+        <Button type="button" className="h-11 w-full" onClick={() => openCreateDialog(activeTab)}>
+          {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
+        </Button>
         <div className="grid grid-cols-2 gap-2">
           <Button
             type="button"
@@ -1070,13 +1076,10 @@ export default function ProjectsClient({
             <SlidersHorizontal className="h-4 w-4" />
             {mobileFiltersOpen ? "הסתרת חיפוש וסינון" : "חיפוש וסינון"}
           </Button>
-          <Button type="button" className="h-11" onClick={() => openCreateDialog(activeTab)}>
-            {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
-          </Button>
           <Button
             type="button"
             variant="outline"
-            className="col-span-2 h-11"
+            className="h-11"
             onClick={() => {
               setMonthlySummaryOpen(true);
               void loadMonthlySummary();
@@ -1389,7 +1392,6 @@ export default function ProjectsClient({
           const actualPrice = actualPriceValue(row);
           const currentStatus = statusValue(row);
           const openTasks = getNumber(row, "open_tasks");
-          const paymentStatus = paymentStatusValue(row);
           const startDate = formatDate(getString(row, "start_date"));
           const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
@@ -1404,13 +1406,6 @@ export default function ProjectsClient({
                         <div className="mt-1 truncate text-sm text-muted-foreground">{clientDisplayName(row)}</div>
                       </div>
                       <div className="shrink-0 text-xs text-muted-foreground">#{id.slice(0, 8)}</div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <StatusBadge value={currentStatus} type="project" />
-                      <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
-                        {paymentStatusLabel(paymentStatus)}
-                      </Badge>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-sm">

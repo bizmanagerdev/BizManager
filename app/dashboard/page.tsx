@@ -103,7 +103,7 @@ export default async function DashboardPage() {
       .not("status", "in", '(\"quote\",\"done\",\"completed\",\"cancelled\",\"canceled\",\"archived\",\"closed\")'),
     supabase
       .from("project_dashboard_view")
-      .select("id,name,project_type,status,customer_id,customer_name,open_tasks,updated_at")
+      .select("id,name,project_type,status,customer_id,customer_name,open_tasks,start_date,updated_at")
       .order("updated_at", { ascending: false })
       .range(0, 99),
     supabase
@@ -172,6 +172,7 @@ export default async function DashboardPage() {
       name: firstString(row, ["name"], "פרויקט"),
       customerId: getString(row, "customer_id") ?? "",
       customerName: firstString(row, ["customer_name"], "לקוח"),
+      startDate: getString(row, "start_date") ?? "",
     }))
     .filter((row) => row.id && row.customerId);
 

@@ -90,6 +90,7 @@ export function TopBar({
             </span>
           </div>
         )}
+        <span className="text-base font-bold tracking-[0.2em] text-primary">{appName}</span>
       </div>
 
       <div className="flex-1 lg:flex-none" />
