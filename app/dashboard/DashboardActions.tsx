@@ -1490,13 +1490,12 @@ export default function DashboardActions({
           type="button"
           variant="outline"
           className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
-          onClick={() => void startOwnSession()}
-          disabled={Boolean(currentOpenSession) || selfSessionSubmitting}
+          onClick={() => setWeekOverviewOpen(true)}
         >
           <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
-            <PlayCircle className="h-5 w-5" />
+            <FolderKanban className="h-5 w-5" />
           </span>
-          <span className="font-semibold">{HEBREW.selfSessionStart}</span>
+          <span className="font-semibold">{HEBREW.thisWeek}</span>
         </Button>
 
         <Button
@@ -1504,14 +1503,14 @@ export default function DashboardActions({
           variant="outline"
           className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
           onClick={() => {
-            resetManualSessionForm();
-            setManualSessionOpen(true);
+            emitNavigationStart();
+            router.push("/sales?tab=deliveries");
           }}
         >
           <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
-            <Clock3 className="h-5 w-5" />
+            <ShoppingCart className="h-5 w-5" />
           </span>
-          <span className="font-semibold">{HEBREW.manualSessionNew}</span>
+          <span className="font-semibold">{HEBREW.ordersByCity}</span>
         </Button>
 
         <Button
@@ -1597,12 +1596,13 @@ export default function DashboardActions({
           type="button"
           variant="outline"
           className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
-          onClick={() => setWeekOverviewOpen(true)}
+          onClick={() => void startOwnSession()}
+          disabled={Boolean(currentOpenSession) || selfSessionSubmitting}
         >
           <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
-            <FolderKanban className="h-5 w-5" />
+            <PlayCircle className="h-5 w-5" />
           </span>
-          <span className="font-semibold">{HEBREW.thisWeek}</span>
+          <span className="font-semibold">{HEBREW.selfSessionStart}</span>
         </Button>
 
         <Button
@@ -1610,14 +1610,14 @@ export default function DashboardActions({
           variant="outline"
           className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
           onClick={() => {
-            emitNavigationStart();
-            router.push("/sales?tab=deliveries");
+            resetManualSessionForm();
+            setManualSessionOpen(true);
           }}
         >
           <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
-            <ShoppingCart className="h-5 w-5" />
+            <Clock3 className="h-5 w-5" />
           </span>
-          <span className="font-semibold">{HEBREW.ordersByCity}</span>
+          <span className="font-semibold">{HEBREW.manualSessionNew}</span>
         </Button>
       </AdaptiveGrid>
 

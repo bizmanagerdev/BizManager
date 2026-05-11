@@ -882,12 +882,12 @@ export default async function ProjectPage({
                 ) : null}
               </div>
 
-              <div className="flex flex-wrap items-start gap-x-8 gap-y-4 rounded-2xl border border-border/70 bg-background/70 p-4 text-sm">
-                <div className="min-w-[10rem] space-y-1">
+              <div className="grid grid-cols-2 gap-3 rounded-2xl border border-border/70 bg-background/70 p-3 text-sm sm:grid-cols-2 sm:p-4 lg:flex lg:flex-wrap lg:items-start lg:gap-x-8 lg:gap-y-4">
+                <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">לקוח:</div>
                   <div className="font-medium">{customerName || "—"}</div>
                 </div>
-                <div className="min-w-[10rem] space-y-1">
+                <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">טלפון לקוח:</div>
                   {customerPhone ? (
                     <a href={`tel:${customerPhone}`} className="font-medium hover:underline">
@@ -897,44 +897,44 @@ export default async function ProjectPage({
                     <div className="font-medium">—</div>
                   )}
                 </div>
-                <div className="min-w-[10rem] space-y-1">
+                <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">תשלום לקוח:</div>
                   <Badge className={customerPaymentStatusClasses(customerPaymentStatus)}>
                     {customerPaymentStatusLabel(customerPaymentStatus)}
                   </Badge>
                 </div>
-                <div className="min-w-[8rem] space-y-1">
+                <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">סטטוס:</div>
                   <div className="font-medium">{status ? projectStatusLabel(status) : "—"}</div>
                 </div>
-                <div className="min-w-[8rem] space-y-1">
+                <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">רווח:</div>
                   <div className="font-medium">{formatIls(grossProfit)}</div>
                 </div>
-                <div className="min-w-[8rem] space-y-1">
+                <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">משימות פתוחות:</div>
                   <div className="font-medium">{openTasks}</div>
                 </div>
-                <div className="min-w-[8rem] space-y-1">
+                <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">התחלה:</div>
                   <div className="font-medium">{formatDate(startDate)}</div>
                 </div>
-                <div className="min-w-[8rem] space-y-1">
+                <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">סיום:</div>
                   <div className="font-medium">{formatDate(endDate)}</div>
                 </div>
-                <div className="min-w-[10rem] space-y-1">
+                <div className="col-span-2 min-w-0 space-y-1 lg:col-span-1">
                   <div className="text-xs font-medium text-muted-foreground">מנהל פרויקט:</div>
                   <div className="font-medium">{managerName || "לא הוגדר"}</div>
                 </div>
-                <div className="min-w-[16rem] max-w-[28rem] space-y-1">
+                <div className="hidden min-w-[16rem] max-w-[28rem] space-y-1 lg:block">
                   <div className="text-xs font-medium text-muted-foreground">הערות:</div>
                   <div className="whitespace-pre-wrap font-medium text-sm">
                     {projectNotes || "—"}
                   </div>
                 </div>
                 {projectType === "moving" ? (
-                  <div className="min-w-[16rem] space-y-1">
+                  <div className="hidden min-w-[16rem] space-y-1 lg:block">
                     <div className="text-xs font-medium text-muted-foreground">פריטים להעברה:</div>
                     {itemsToMove.length > 0 ? (
                       <ul className="list-inside list-disc space-y-1 font-medium">
