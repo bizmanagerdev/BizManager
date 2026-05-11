@@ -19,14 +19,9 @@ export function AuthScreen({ title, description, children, footer }: Props) {
       </div>
 
       <div className="relative z-10 w-full max-w-md">
-        <div className="mb-6 flex items-center justify-center gap-3">
+        <div className="mb-6 flex items-center justify-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
             <span className="text-lg font-black">H</span>
-          </div>
-          <div className="text-right">
-            <p className="rounded-full border border-border/80 bg-white/85 px-3 py-1 text-xs font-bold uppercase tracking-[0.28em] text-primary shadow-sm">
-              BIZH
-            </p>
           </div>
         </div>
 
