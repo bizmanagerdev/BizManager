@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 
 type SalesTab = "orders" | "closed" | "inventory" | "price-list" | "deliveries";
 
@@ -93,6 +96,7 @@ export default function SalesTabsNav({
                 href={buildTabHref(tab.id, searchParams)}
                 aria-current={isActive ? "page" : undefined}
                 className={triggerClassName(isActive)}
+                onClick={() => emitNavigationStart()}
               >
                 {getTabLabel(tab, counts)}
               </Link>
@@ -111,6 +115,7 @@ export default function SalesTabsNav({
               href={buildTabHref(tab.id, searchParams)}
               aria-current={isActive ? "page" : undefined}
               className={triggerClassName(isActive)}
+              onClick={() => emitNavigationStart()}
             >
               {getTabLabel(tab, counts)}
             </Link>

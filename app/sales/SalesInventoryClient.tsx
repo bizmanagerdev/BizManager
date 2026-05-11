@@ -34,6 +34,79 @@ type AdjustmentType =
   | "manual_in"
   | "manual_out";
 
+function buildInventoryItems(
+  products: Row[],
+  inventoryRows: Row[],
+  soldAmountByProductId: Record<string, number>,
+  movements: Row[]
+) {
+  const movementNetByProduct = new Map<string, number>();
+  movements.forEach((row) => {
+    const productId = getString(row, "product_id");
+    if (!productId) return;
+    const qty = getNumber(row, "quantity") ?? 0;
+    if (!Number.isFinite(qty) || qty <= 0) return;
+    const movementType = (getString(row, "movement_type") ?? "").toLowerCase();
+    const signed =
+      movementType === "out"
+        ? -qty
+        : movementType === "in" || movementType === "adjustment"
+          ? qty
+          : 0;
+    movementNetByProduct.set(productId, (movementNetByProduct.get(productId) ?? 0) + signed);
+  });
+
+  const productById = new Map<string, Row>();
+  products.forEach((p) => {
+    const id = getString(p, "id");
+    if (id) productById.set(id, p);
+  });
+
+  const byProductId = new Map<string, InventoryItem>();
+
+  productById.forEach((p, id) => {
+    const productStockFallback =
+      getNumber(p, "stock") ??
+      getNumber(p, "quantity") ??
+      getNumber(p, "available_quantity") ??
+      getNumber(p, "in_stock") ??
+      0;
+    const movementFallback = movementNetByProduct.get(id) ?? 0;
+    const quantityOnHand = productStockFallback !== 0 ? productStockFallback : movementFallback;
+
+    byProductId.set(id, {
+      productId: id,
+      productName: productName(p),
+      sku: getString(p, "sku"),
+      quantityOnHand,
+      quantityReserved: 0,
+      available: quantityOnHand,
+      soldAmount: soldAmountByProductId[id] ?? 0,
+    });
+  });
+
+  inventoryRows.forEach((row) => {
+    const productId = getString(row, "product_id");
+    if (!productId) return;
+    const p = productById.get(productId);
+    const quantityOnHand = getNumber(row, "quantity_on_hand") ?? 0;
+    const quantityReserved = getNumber(row, "quantity_reserved") ?? 0;
+    byProductId.set(productId, {
+      productId,
+      productName: p ? productName(p) : productId,
+      sku: p ? getString(p, "sku") : null,
+      quantityOnHand,
+      quantityReserved,
+      available: quantityOnHand - quantityReserved,
+      soldAmount: soldAmountByProductId[productId] ?? 0,
+    });
+  });
+
+  return Array.from(byProductId.values()).sort((a, b) =>
+    a.productName.localeCompare(b.productName, "he")
+  );
+}
+
 function getString(row: Row, key: string) {
   const value = row[key];
   return typeof value === "string" ? value : null;
@@ -83,6 +156,12 @@ function formatMovementType(value: string | null) {
       return "כניסה";
     case "out":
       return "יציאה";
+    case "reserve":
+      return "שמירה";
+    case "release":
+      return "שחרור";
+    case "adjustment":
+      return "התאמה";
     default:
       return value ?? "-";
   }
@@ -125,85 +204,17 @@ function formatDateTime(value: string | null) {
 export default function SalesInventoryClient({
   products,
   inventoryRows,
-  soldMovements,
+  soldAmountByProductId = {},
   movements,
 }: {
   products: Row[];
   inventoryRows: Row[];
-  soldMovements: Row[];
+  soldAmountByProductId?: Record<string, number>;
   movements: Row[];
 }) {
-  const [items, setItems] = useState<InventoryItem[]>(() => {
-    const movementNetByProduct = new Map<string, number>();
-    movements.forEach((row) => {
-      const productId = getString(row, "product_id");
-      if (!productId) return;
-      const qty = getNumber(row, "quantity") ?? 0;
-      if (!Number.isFinite(qty) || qty <= 0) return;
-      const movementType = (getString(row, "movement_type") ?? "").toLowerCase();
-      const signed = movementType === "out" ? -qty : qty;
-      movementNetByProduct.set(productId, (movementNetByProduct.get(productId) ?? 0) + signed);
-    });
-
-    const productById = new Map<string, Row>();
-    products.forEach((p) => {
-      const id = getString(p, "id");
-      if (id) productById.set(id, p);
-    });
-
-    const soldByProduct = new Map<string, number>();
-    soldMovements.forEach((row) => {
-      const productId = getString(row, "product_id");
-      if (!productId) return;
-      const qty = getNumber(row, "quantity") ?? 0;
-      if (!Number.isFinite(qty) || qty <= 0) return;
-      soldByProduct.set(productId, (soldByProduct.get(productId) ?? 0) + qty);
-    });
-
-    const byProductId = new Map<string, InventoryItem>();
-
-    productById.forEach((p, id) => {
-      const productStockFallback =
-        getNumber(p, "stock") ??
-        getNumber(p, "quantity") ??
-        getNumber(p, "available_quantity") ??
-        getNumber(p, "in_stock") ??
-        0;
-      const movementFallback = movementNetByProduct.get(id) ?? 0;
-      const quantityOnHand = productStockFallback !== 0 ? productStockFallback : movementFallback;
-
-      byProductId.set(id, {
-        productId: id,
-        productName: productName(p),
-        sku: getString(p, "sku"),
-        quantityOnHand,
-        quantityReserved: 0,
-        available: quantityOnHand,
-        soldAmount: soldByProduct.get(id) ?? 0,
-      });
-    });
-
-    inventoryRows.forEach((row) => {
-      const productId = getString(row, "product_id");
-      if (!productId) return;
-      const p = productById.get(productId);
-      const quantityOnHand = getNumber(row, "quantity_on_hand") ?? 0;
-      const quantityReserved = getNumber(row, "quantity_reserved") ?? 0;
-      byProductId.set(productId, {
-        productId,
-        productName: p ? productName(p) : productId,
-        sku: p ? getString(p, "sku") : null,
-        quantityOnHand,
-        quantityReserved,
-        available: quantityOnHand - quantityReserved,
-        soldAmount: soldByProduct.get(productId) ?? 0,
-      });
-    });
-
-    return Array.from(byProductId.values()).sort((a, b) =>
-      a.productName.localeCompare(b.productName, "he")
-    );
-  });
+  const [items, setItems] = useState<InventoryItem[]>(() =>
+    buildInventoryItems(products, inventoryRows, soldAmountByProductId, movements)
+  );
 
   const [movementRows, setMovementRows] = useState<Row[]>(movements);
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
@@ -253,6 +264,11 @@ export default function SalesInventoryClient({
     const timeout = setTimeout(() => quantityInputRef.current?.focus(), 120);
     return () => clearTimeout(timeout);
   }, [adjustmentOpen]);
+
+  useEffect(() => {
+    setItems(buildInventoryItems(products, inventoryRows, soldAmountByProductId, movements));
+    setMovementRows(movements);
+  }, [products, inventoryRows, soldAmountByProductId, movements]);
 
   function resetAdjustmentForm(nextProductId = "") {
     setProductId(nextProductId);

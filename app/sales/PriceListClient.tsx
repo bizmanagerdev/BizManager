@@ -630,7 +630,7 @@ export default function PriceListClient({
             <Field label="שם מוצר *">
               <Input value={createName} onChange={(e) => setCreateName(e.target.value)} />
             </Field>
-            <Field label="קוד מוצר">
+            <Field label="קוד מוצר *">
               <Input value={createCode} onChange={(e) => setCreateCode(e.target.value)} />
             </Field>
             <Field label="קטגוריה *">
@@ -742,7 +742,7 @@ export default function PriceListClient({
             <Field label="שם מוצר *">
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
             </Field>
-            <Field label="קוד מוצר">
+            <Field label="קוד מוצר *">
               <Input value={editCode} onChange={(e) => setEditCode(e.target.value)} />
             </Field>
             <Field label="קטגוריה *">

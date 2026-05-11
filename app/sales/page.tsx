@@ -147,6 +147,7 @@ async function loadProductPageData(supabase: SupabaseClient, page: number) {
     { data: inventoryRows, error: inventoryError },
     { data: purchasedMovements, error: purchasedMovementsError },
     { data: soldMovements, error: soldMovementsError },
+    { data: customerReturnMovements, error: customerReturnMovementsError },
     { data: categoryRows, error: categoriesError },
     thresholdResult,
   ] =
@@ -172,6 +173,15 @@ async function loadProductPageData(supabase: SupabaseClient, page: number) {
             .eq("source_type", "order")
             .in("product_id", productIds)
         : Promise.resolve({ data: [], error: null }),
+      productIds.length > 0
+        ? supabase
+            .from("inventory_movements")
+            .select("product_id,movement_type,quantity,source_type,notes")
+            .eq("movement_type", "in")
+            .eq("source_type", "manual_adjustment")
+            .in("product_id", productIds)
+            .or("notes.ilike.%החזרת לקוח%,notes.ilike.%customer return%")
+        : Promise.resolve({ data: [], error: null }),
       supabase.from("product_categories").select("id,name,active").order("name", { ascending: true }),
       productIds.length > 0
         ? supabase.from("products").select("id,low_stock_threshold").in("id", productIds)
@@ -190,12 +200,18 @@ async function loadProductPageData(supabase: SupabaseClient, page: number) {
     inventoryRows: (inventoryRows ?? []) as Row[],
     purchasedMovements: (purchasedMovements ?? []) as Row[],
     soldMovements: (soldMovements ?? []) as Row[],
+    customerReturnMovements: (customerReturnMovements ?? []) as Row[],
     categoryRows: (categoryRows ?? []) as Row[],
     thresholdRows,
     count: typeof count === "number" ? count : ((products ?? []) as Row[]).length,
     productsError,
     inventoryError,
-    movementsError: purchasedMovementsError?.message ? purchasedMovementsError : soldMovementsError,
+    movementsError:
+      purchasedMovementsError?.message
+        ? purchasedMovementsError
+        : soldMovementsError?.message
+          ? soldMovementsError
+          : customerReturnMovementsError,
     categoriesError,
     thresholdsError,
   };
@@ -416,6 +432,7 @@ export default async function SalesPage({
       inventoryRows,
       purchasedMovements,
       soldMovements,
+      customerReturnMovements,
       categoryRows,
       thresholdRows,
       count,
@@ -443,6 +460,14 @@ export default async function SalesPage({
       const qty = getNumber(row, "quantity") ?? 0;
       if (!Number.isFinite(qty)) return;
       soldByProductId.set(productId, (soldByProductId.get(productId) ?? 0) + qty);
+    });
+
+    customerReturnMovements.forEach((row) => {
+      const productId = getString(row, "product_id");
+      if (!productId) return;
+      const qty = getNumber(row, "quantity") ?? 0;
+      if (!Number.isFinite(qty)) return;
+      soldByProductId.set(productId, Math.max(0, (soldByProductId.get(productId) ?? 0) - qty));
     });
 
     const inventoryByProductId = new Map<string, number | null>();
@@ -564,8 +589,32 @@ export default async function SalesPage({
   }
 
   if (activeTab === "inventory") {
-    const { products, inventoryRows, soldMovements, movements, count, productsError, inventoryError, movementsError } =
-      await loadInventoryPageData(supabase, inventoryPage);
+    const {
+      products,
+      inventoryRows,
+      soldMovements,
+      customerReturnMovements,
+      movements,
+      count,
+      productsError,
+      inventoryError,
+      movementsError,
+    } = await loadInventoryPageData(supabase, inventoryPage);
+
+    const soldAmountByProductId = Object.fromEntries(
+      products
+        .map((product) => getString(product, "id"))
+        .filter((value): value is string => Boolean(value))
+        .map((productId) => {
+          const soldQty = soldMovements
+            .filter((row) => getString(row, "product_id") === productId)
+            .reduce((sum, row) => sum + (getNumber(row, "quantity") ?? 0), 0);
+          const returnedQty = customerReturnMovements
+            .filter((row) => getString(row, "product_id") === productId)
+            .reduce((sum, row) => sum + (getNumber(row, "quantity") ?? 0), 0);
+          return [productId, Math.max(0, soldQty - returnedQty)];
+        })
+    );
 
     const hasPreviousPage = inventoryPage > 1;
     const hasNextPage = inventoryPage * PAGE_SIZE < count;
@@ -580,7 +629,7 @@ export default async function SalesPage({
             <SalesInventoryClient
               products={products}
               inventoryRows={inventoryRows}
-              soldMovements={soldMovements}
+              soldAmountByProductId={soldAmountByProductId}
               movements={movements}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">

@@ -17,6 +17,16 @@ function getString(row: Row, key: string) {
   return typeof value === "string" ? value : null;
 }
 
+function getNumber(row: Row, key: string) {
+  const value = row[key];
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function parsePage(value: string | undefined) {
   const page = Number(value ?? "1");
   return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
@@ -58,6 +68,7 @@ export default async function InventoryPage({
     { data: inventoryRows, error: inventoryError },
     { data: movements, error: movementsError },
     { data: soldMovements, error: soldMovementsError },
+    { data: customerReturnMovements, error: customerReturnMovementsError },
   ] =
     productIds.length > 0
       ? await Promise.all([
@@ -77,12 +88,32 @@ export default async function InventoryPage({
             .eq("movement_type", "out")
             .eq("source_type", "order")
             .in("product_id", productIds),
+          supabase
+            .from("inventory_movements")
+            .select("product_id,movement_type,quantity,source_type,notes")
+            .eq("movement_type", "in")
+            .eq("source_type", "manual_adjustment")
+            .in("product_id", productIds)
+            .or("notes.ilike.%החזרת לקוח%,notes.ilike.%customer return%"),
         ])
       : [
           { data: [], error: null },
           { data: [], error: null },
           { data: [], error: null },
+          { data: [], error: null },
         ];
+
+  const soldAmountByProductId = Object.fromEntries(
+    productIds.map((productId) => {
+      const soldQty = ((soldMovements ?? []) as Row[])
+        .filter((row) => getString(row, "product_id") === productId)
+        .reduce((sum, row) => sum + (getNumber(row, "quantity") ?? 0), 0);
+      const returnedQty = ((customerReturnMovements ?? []) as Row[])
+        .filter((row) => getString(row, "product_id") === productId)
+        .reduce((sum, row) => sum + (getNumber(row, "quantity") ?? 0), 0);
+      return [productId, Math.max(0, soldQty - returnedQty)];
+    })
+  );
 
   const totalCount = typeof count === "number" ? count : ((products ?? []) as Row[]).length;
   const hasPreviousPage = page > 1;
@@ -103,9 +134,9 @@ export default async function InventoryPage({
 
         {inventoryError ? (
           <p className="text-sm text-destructive">שגיאה בטעינת מלאי: {inventoryError.message}</p>
-        ) : movementsError || soldMovementsError ? (
+        ) : movementsError || soldMovementsError || customerReturnMovementsError ? (
           <p className="text-sm text-destructive">
-            שגיאה בטעינת תנועות מלאי: {movementsError?.message ?? soldMovementsError?.message}
+            שגיאה בטעינת תנועות מלאי: {movementsError?.message ?? soldMovementsError?.message ?? customerReturnMovementsError?.message}
           </p>
         ) : productsError ? (
           <p className="text-sm text-destructive">שגיאה בטעינת מוצרים: {productsError.message}</p>
@@ -114,7 +145,7 @@ export default async function InventoryPage({
             <SalesInventoryClient
               products={(products ?? []) as Row[]}
               inventoryRows={(inventoryRows ?? []) as Row[]}
-              soldMovements={(soldMovements ?? []) as Row[]}
+              soldAmountByProductId={soldAmountByProductId}
               movements={(movements ?? []) as Row[]}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">

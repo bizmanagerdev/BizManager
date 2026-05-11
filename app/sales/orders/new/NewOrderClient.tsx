@@ -172,27 +172,6 @@ function extractCityFromAddress(address: string | null) {
   return first || null;
 }
 
-function orderStatusLabel(status: string) {
-  switch (status) {
-    case "draft":
-      return "פתוחה";
-    case "confirmed":
-      return "מאושרת";
-    case "processing":
-      return "בטיפול";
-    case "out_for_delivery":
-      return "במשלוח";
-    case "delivered":
-      return "סופקה";
-    case "completed":
-      return "הושלמה";
-    case "cancelled":
-      return "בוטלה";
-    default:
-      return status || "-";
-  }
-}
-
 const CITY_OPTIONS = [
   "ירושלים",
   "בני ברק",
@@ -211,6 +190,17 @@ const CITY_OPTIONS = [
   "אחר",
 ];
 
+const ORDER_STATUS_OPTIONS = [
+  { value: "draft", label: "פתוחה" },
+  { value: "confirmed", label: "מאושרת" },
+  { value: "processing", label: "בטיפול" },
+  { value: "out_for_delivery", label: "במשלוח" },
+  { value: "delivered", label: "סופקה" },
+  { value: "completed", label: "הושלמה" },
+  { value: "closed", label: "סגורה" },
+  { value: "cancelled", label: "בוטלה" },
+] as const;
+
 export default function NewOrderClient({
   customers,
   products,
@@ -224,7 +214,6 @@ export default function NewOrderClient({
   onSubmitted,
   onActionLockedChange,
   initialStatusOverride,
-  allowOrderStatusEdit = false,
 }: {
   customers: Row[];
   products: Row[];
@@ -1269,8 +1258,8 @@ export default function NewOrderClient({
           <CardHeader>
             <CardTitle>סקירת הזמנה</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-2 text-sm">
+          <CardContent className="space-y-3">
+            <div className="grid gap-1.5 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">לקוח</span>
                 <span>{selectedCustomer?.name || "-"}</span>
@@ -1279,7 +1268,7 @@ export default function NewOrderClient({
                 <span className="text-muted-foreground">עיר לקוח</span>
                 <span>{selectedCustomer?.city || "-"}</span>
               </div>
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 <label className="text-sm font-medium">תאריך הזמנה *</label>
                 <DateInput
                   value={orderDate}
@@ -1287,21 +1276,20 @@ export default function NewOrderClient({
                   placeholder="בחר תאריך הזמנה"
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 <label className="text-sm font-medium">סטטוס הזמנה</label>
-                {allowOrderStatusEdit ? (
-                  <select
-                    value={orderStatus}
-                    onChange={(e) => setOrderStatus(e.target.value)}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="draft">פתוחה</option>
-                    <option value="closed">סגורה</option>
-                    <option value="delivered">סופקה</option>
-                  </select>
-                ) : (
-                  <Input value={orderStatusLabel(orderStatus)} readOnly />
-                )}
+                <select
+                  value={orderStatus}
+                  onChange={(e) => setOrderStatus(e.target.value)}
+                  disabled={actionLocked}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  {ORDER_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">סטטוס תשלום</span>
@@ -1329,8 +1317,8 @@ export default function NewOrderClient({
 
             <details className="rounded-md border border-dashed p-3" open={Boolean(effectiveOrderDiscount || notes)}>
               <summary className="cursor-pointer text-sm font-medium">פרטים נוספים להזמנה</summary>
-              <div className="mt-3 space-y-3">
-                <div className="space-y-1">
+              <div className="mt-3 space-y-2.5">
+                <div className="space-y-0.5">
                   <label className="text-sm font-medium">סטטוס תשלום</label>
                   <Input value={paymentStatusLabel(paymentStatus)} readOnly />
                   <p className="text-xs text-muted-foreground">
@@ -1338,7 +1326,7 @@ export default function NewOrderClient({
                   </p>
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   <label className="text-sm font-medium">הנחת הזמנה</label>
                   <Input
                     type="number"
@@ -1351,7 +1339,7 @@ export default function NewOrderClient({
                   />
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   <label className="text-sm font-medium">הערות</label>
                   <Textarea
                     value={notes}
@@ -1545,7 +1533,7 @@ export default function NewOrderClient({
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>הוספת לקוח חדש</DialogTitle>
             <DialogDescription>

@@ -31,6 +31,9 @@ declare
   v_stock_on_hand numeric;
   v_stock_reserved numeric;
   v_stock_available numeric;
+  v_normalized_status text;
+  v_quantity_delivered numeric;
+  v_inventory_movement_type text;
 begin
   if p_customer_id is null then
     raise exception 'customer_id is required';
@@ -41,6 +44,8 @@ begin
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'items must be a non-empty array';
   end if;
+
+  v_normalized_status := lower(coalesce(nullif(trim(p_status), ''), 'draft'));
 
   insert into public.orders (
     customer_id,
@@ -55,7 +60,7 @@ begin
   ) values (
     p_customer_id,
     p_order_date,
-    coalesce(nullif(trim(p_status), ''), 'draft'),
+    v_normalized_status,
     coalesce(p_subtotal, 0),
     coalesce(p_discount_amount, 0),
     coalesce(p_total_amount, 0),
@@ -101,6 +106,17 @@ begin
         v_qty;
     end if;
 
+    v_quantity_delivered := case
+      when v_normalized_status in ('delivered', 'completed') then v_qty
+      else 0
+    end;
+
+    v_inventory_movement_type := case
+      when v_normalized_status in ('delivered', 'completed') then 'out'
+      when v_normalized_status = 'cancelled' then null
+      else 'reserve'
+    end;
+
     insert into public.order_items (
       order_id,
       product_id,
@@ -113,31 +129,32 @@ begin
       v_order_id,
       v_product_id,
       v_qty,
-      v_qty,
+      v_quantity_delivered,
       v_unit_price,
       v_line_discount,
       nullif(trim(coalesce(v_item->>'notes', '')), '')
     )
     returning id into v_item_id;
 
-    -- Inventory movement (out) for each sales item.
-    insert into public.inventory_movements (
-      product_id,
-      movement_type,
-      quantity,
-      source_type,
-      source_id,
-      performed_by,
-      notes
-    ) values (
-      v_product_id,
-      'out',
-      v_qty,
-      'order',
-      v_order_id,
-      p_created_by,
-      concat('Sales order item ', v_item_id)
-    );
+    if v_inventory_movement_type is not null then
+      insert into public.inventory_movements (
+        product_id,
+        movement_type,
+        quantity,
+        source_type,
+        source_id,
+        performed_by,
+        notes
+      ) values (
+        v_product_id,
+        v_inventory_movement_type,
+        v_qty,
+        'order',
+        v_order_id,
+        p_created_by,
+        concat('Sales order item ', v_item_id)
+      );
+    end if;
   end loop;
 
   return v_order_id;

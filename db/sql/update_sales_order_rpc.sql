@@ -26,10 +26,13 @@ declare
   v_qty numeric;
   v_unit_price numeric;
   v_line_discount numeric;
-  v_existing_qty numeric;
+  v_existing_movement_qty numeric;
   v_stock_on_hand numeric;
   v_stock_reserved numeric;
   v_stock_available numeric;
+  v_target_status text;
+  v_quantity_delivered numeric;
+  v_inventory_movement_type text;
 begin
   if p_order_id is null then
     raise exception 'order_id is required';
@@ -44,7 +47,14 @@ begin
     raise exception 'items must be a non-empty array';
   end if;
 
-  if not exists (select 1 from public.orders where id = p_order_id for update) then
+  select
+    coalesce(nullif(lower(trim(p_status)), ''), lower(coalesce(o.status, 'draft')))
+  into v_target_status
+  from public.orders o
+  where o.id = p_order_id
+  for update;
+
+  if not found then
     raise exception 'order not found';
   end if;
 
@@ -61,11 +71,12 @@ begin
       raise exception 'Invalid order item payload';
     end if;
 
-    select coalesce(sum(oi.quantity_ordered), 0)
-    into v_existing_qty
-    from public.order_items oi
-    where oi.order_id = p_order_id
-      and oi.product_id = v_product_id;
+    select coalesce(sum(im.quantity), 0)
+    into v_existing_movement_qty
+    from public.inventory_movements im
+    where im.source_type = 'order'
+      and im.source_id = p_order_id
+      and im.product_id = v_product_id;
 
     select
       coalesce(i.quantity_on_hand, 0),
@@ -82,7 +93,7 @@ begin
       v_stock_reserved := 0;
     end if;
 
-    v_stock_available := greatest(v_stock_on_hand - v_stock_reserved, 0) + v_existing_qty;
+    v_stock_available := greatest(v_stock_on_hand - v_stock_reserved, 0) + v_existing_movement_qty;
 
     if v_stock_available < v_qty then
       raise exception
@@ -101,7 +112,7 @@ begin
   update public.orders
   set customer_id = p_customer_id,
       order_date = p_order_date,
-      status = coalesce(nullif(trim(p_status), ''), status, 'draft'),
+      status = coalesce(nullif(trim(v_target_status), ''), 'draft'),
       subtotal = coalesce(p_subtotal, 0),
       discount_amount = coalesce(p_discount_amount, 0),
       total_amount = coalesce(p_total_amount, 0),
@@ -118,6 +129,17 @@ begin
     v_unit_price := coalesce((v_item->>'unit_price')::numeric, 0);
     v_line_discount := coalesce((v_item->>'discount_amount')::numeric, 0);
 
+    v_quantity_delivered := case
+      when v_target_status in ('delivered', 'completed') then v_qty
+      else 0
+    end;
+
+    v_inventory_movement_type := case
+      when v_target_status in ('delivered', 'completed') then 'out'
+      when v_target_status = 'cancelled' then null
+      else 'reserve'
+    end;
+
     insert into public.order_items (
       order_id,
       product_id,
@@ -130,30 +152,32 @@ begin
       p_order_id,
       v_product_id,
       v_qty,
-      v_qty,
+      v_quantity_delivered,
       v_unit_price,
       v_line_discount,
       nullif(trim(coalesce(v_item->>'notes', '')), '')
     )
     returning id into v_item_id;
 
-    insert into public.inventory_movements (
-      product_id,
-      movement_type,
-      quantity,
-      source_type,
-      source_id,
-      performed_by,
-      notes
-    ) values (
-      v_product_id,
-      'out',
-      v_qty,
-      'order',
-      p_order_id,
-      p_updated_by,
-      concat('Sales order item ', v_item_id, ' updated')
-    );
+    if v_inventory_movement_type is not null then
+      insert into public.inventory_movements (
+        product_id,
+        movement_type,
+        quantity,
+        source_type,
+        source_id,
+        performed_by,
+        notes
+      ) values (
+        v_product_id,
+        v_inventory_movement_type,
+        v_qty,
+        'order',
+        p_order_id,
+        p_updated_by,
+        concat('Sales order item ', v_item_id, ' updated')
+      );
+    end if;
   end loop;
 
   return p_order_id;

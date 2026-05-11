@@ -11,7 +11,6 @@ security definer
 set search_path = public
 as $$
 declare
-  v_has_inventory_order_id boolean;
   v_has_financial_order_id boolean;
   v_deleted_count int;
 begin
@@ -23,24 +22,12 @@ begin
     select 1
     from information_schema.columns
     where table_schema = 'public'
-      and table_name = 'inventory_movements'
-      and column_name = 'order_id'
-  ) into v_has_inventory_order_id;
-
-  select exists(
-    select 1
-    from information_schema.columns
-    where table_schema = 'public'
       and table_name = 'financial_records'
       and column_name = 'order_id'
   ) into v_has_financial_order_id;
 
-  if v_has_inventory_order_id then
-    delete from public.inventory_movements where order_id = p_order_id;
-  end if;
-
   delete from public.inventory_movements
-  where reference_type = 'order' and reference_id = p_order_id;
+  where source_type = 'order' and source_id = p_order_id;
 
   if v_has_financial_order_id then
     delete from public.financial_records where order_id = p_order_id;
