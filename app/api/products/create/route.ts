@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
     const categoryResult = await resolveExistingCategoryId(supabase, categoryId);
-    if (!categoryResult.categoryId) {
+    if (categoryResult.categoryId === null) {
       return NextResponse.json(
         { error: `Product creation failed: could not resolve a product category. ${categoryResult.error}` },
         { status: 400 }
