@@ -1036,7 +1036,7 @@ export default function ProjectsClient({
         <div className="hidden items-center justify-center gap-3 md:flex">
           <TabsList className="flex w-fit max-w-full justify-center overflow-hidden">
             <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="quotes">
-              הוצאות ({quoteCount})
+              הצאות ({quoteCount})
             </TabsTrigger>
             <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="projects">
               פרויקטים ({projectCount})
@@ -1049,7 +1049,7 @@ export default function ProjectsClient({
 
         <TabsList className="mx-auto grid w-full grid-cols-3 justify-center overflow-hidden md:hidden">
           <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="quotes">
-            הוצאות ({quoteCount})
+            הצאות ({quoteCount})
           </TabsTrigger>
           <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="projects">
             פרויקטים ({projectCount})
