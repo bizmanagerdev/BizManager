@@ -2014,7 +2014,6 @@ export default function ProjectsClient({
               <Input
                 value={createCustomerName}
                 onChange={(e) => setCreateCustomerName(e.target.value)}
-                placeholder="שם מלא או שם חברה"
               />
             </div>
 
@@ -2024,7 +2023,6 @@ export default function ProjectsClient({
                 <Input
                   value={createCustomerPhone}
                   onChange={(e) => setCreateCustomerPhone(e.target.value)}
-                  placeholder="0501234567"
                 />
               </div>
 
@@ -2033,7 +2031,6 @@ export default function ProjectsClient({
                 <Input
                   value={createCustomerWhatsapp}
                   onChange={(e) => setCreateCustomerWhatsapp(e.target.value)}
-                  placeholder="0501234567"
                 />
               </div>
             </AdaptiveGrid>
@@ -2043,7 +2040,6 @@ export default function ProjectsClient({
               <Input
                 value={createCustomerEmail}
                 onChange={(e) => setCreateCustomerEmail(e.target.value)}
-                placeholder="name@example.com"
               />
             </div>
 
@@ -2069,7 +2065,6 @@ export default function ProjectsClient({
                 <Input
                   value={createCustomerCityOther}
                   onChange={(e) => setCreateCustomerCityOther(e.target.value)}
-                  placeholder="הזן עיר"
                 />
               </div>
             ) : null}
@@ -2079,7 +2074,6 @@ export default function ProjectsClient({
               <Input
                 value={createCustomerAddress}
                 onChange={(e) => setCreateCustomerAddress(e.target.value)}
-                placeholder="רחוב, מספר בית, דירה"
               />
             </div>
 
@@ -2089,7 +2083,6 @@ export default function ProjectsClient({
                 value={createCustomerNotes}
                 onChange={(e) => setCreateCustomerNotes(e.target.value)}
                 rows={3}
-                placeholder="הערות על הלקוח (אופציונלי)"
               />
             </div>
 

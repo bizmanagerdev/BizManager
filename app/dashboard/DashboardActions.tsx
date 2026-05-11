@@ -473,6 +473,7 @@ export default function DashboardActions({
   const [expenseError, setExpenseError] = useState<string | null>(null);
   const [expenseBusinessDomain, setExpenseBusinessDomain] = useState<ExpenseBusinessDomain>("logistics_projects");
   const [expenseProjectId, setExpenseProjectId] = useState(projects[0]?.id ?? "");
+  const [expenseProjectQuery, setExpenseProjectQuery] = useState("");
   const [expenseOrderId, setExpenseOrderId] = useState("");
   const [expensePropertyId, setExpensePropertyId] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
@@ -500,7 +501,11 @@ export default function DashboardActions({
 
   const [incomeSubmitting, setIncomeSubmitting] = useState(false);
   const [incomeError, setIncomeError] = useState<string | null>(null);
+  const [incomeBusinessDomain, setIncomeBusinessDomain] = useState<ExpenseBusinessDomain>("logistics_projects");
   const [incomeProjectId, setIncomeProjectId] = useState(projects[0]?.id ?? "");
+  const [incomeProjectQuery, setIncomeProjectQuery] = useState("");
+  const [incomeOrderId, setIncomeOrderId] = useState("");
+  const [incomePropertyId, setIncomePropertyId] = useState("");
   const [incomeAmount, setIncomeAmount] = useState("");
   const [incomeDate, setIncomeDate] = useState(normalizeDateOnly(projects[0]?.startDate) || getTodayDate());
   const [incomeMethod, setIncomeMethod] = useState("bank_transfer");
@@ -530,6 +535,32 @@ export default function DashboardActions({
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
+  );
+  const filteredExpenseProjects = useMemo(() => {
+    const q = expenseProjectQuery.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter((project) => {
+      const name = project.name.toLowerCase();
+      const customer = project.customerName.toLowerCase();
+      return name.includes(q) || customer.includes(q);
+    });
+  }, [expenseProjectQuery, projects]);
+  const filteredIncomeProjects = useMemo(() => {
+    const q = incomeProjectQuery.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter((project) => {
+      const name = project.name.toLowerCase();
+      const customer = project.customerName.toLowerCase();
+      return name.includes(q) || customer.includes(q);
+    });
+  }, [incomeProjectQuery, projects]);
+  const selectedExpenseProject = useMemo(
+    () => projects.find((project) => project.id === expenseProjectId) ?? null,
+    [expenseProjectId, projects]
+  );
+  const selectedIncomeProject = useMemo(
+    () => projects.find((project) => project.id === incomeProjectId) ?? null,
+    [incomeProjectId, projects]
   );
   const defaultProjectDate = useMemo(
     () => normalizeDateOnly(projects[0]?.startDate) || getTodayDate(),
@@ -726,6 +757,7 @@ export default function DashboardActions({
     setExpenseError(null);
     setExpenseBusinessDomain("logistics_projects");
     setExpenseProjectId(projects[0]?.id ?? "");
+    setExpenseProjectQuery("");
     setExpenseOrderId("");
     setExpensePropertyId("");
     setExpenseAmount("");
@@ -754,7 +786,11 @@ export default function DashboardActions({
 
   function resetIncomeForm() {
     setIncomeError(null);
+    setIncomeBusinessDomain("logistics_projects");
     setIncomeProjectId(projects[0]?.id ?? "");
+    setIncomeProjectQuery("");
+    setIncomeOrderId("");
+    setIncomePropertyId("");
     setIncomeAmount("");
     setIncomeDate(defaultProjectDate);
     setIncomeMethod("bank_transfer");
@@ -834,8 +870,8 @@ export default function DashboardActions({
         : projectCreateCustomerCity.trim();
     const address = projectCreateCustomerAddress.trim();
 
-    if (!name || !projectCreateCustomerPhone.trim() || !city || !address) {
-      setProjectCreateCustomerError("יש למלא את כל שדות החובה: שם, טלפון, עיר וכתובת.");
+    if (!name || !projectCreateCustomerPhone.trim() || !city) {
+      setProjectCreateCustomerError("יש למלא את כל שדות החובה: שם, טלפון ועיר.");
       return;
     }
 
@@ -1272,8 +1308,22 @@ export default function DashboardActions({
 
   async function createIncome() {
     setIncomeError(null);
-    if (!incomeProjectId || !incomeDate || !incomeMethod.trim()) {
+    const linkedProjectId = incomeBusinessDomain === "logistics_projects" ? incomeProjectId : "";
+    const linkedOrderId = incomeBusinessDomain === "sales" ? incomeOrderId : "";
+    const linkedPropertyId = incomeBusinessDomain === "property_management" ? incomePropertyId : "";
+
+    if (!incomeDate || !incomeMethod.trim()) {
       setIncomeError(HEBREW.incomeRequired);
+      return;
+    }
+    if (!linkedProjectId && !linkedOrderId && !linkedPropertyId) {
+      setIncomeError(
+        incomeBusinessDomain === "sales"
+          ? "יש לבחור הזמנה להכנסה."
+          : incomeBusinessDomain === "property_management"
+            ? "יש לבחור נכס להכנסה."
+            : "יש לבחור פרויקט להכנסה."
+      );
       return;
     }
     if (incomeMethod === "check" && !incomeDueDate) {
@@ -1293,8 +1343,13 @@ export default function DashboardActions({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          business_domain: mapProjectTypeToExpenseDomain(projectById.get(incomeProjectId)?.type ?? null),
-          project_id: incomeProjectId,
+          business_domain:
+            incomeBusinessDomain === "logistics_projects"
+              ? mapProjectTypeToExpenseDomain(projectById.get(linkedProjectId)?.type ?? null)
+              : incomeBusinessDomain,
+          project_id: linkedProjectId || null,
+          order_id: linkedOrderId || null,
+          property_id: linkedPropertyId || null,
           amount_total: amount,
           payment_date: incomeDate,
           due_date: incomeMethod === "check" ? incomeDueDate : null,
@@ -2208,8 +2263,8 @@ export default function DashboardActions({
             <DialogTitle>הוספת לקוח חדש</DialogTitle>
             <DialogDescription>
               {projectCreateCustomerReturnToProject
-                ? "הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון, עיר וכתובת."
-                : "יוצרים לקוח חדש ישירות מהדשבורד. שדות חובה: שם, טלפון, עיר וכתובת."}
+                ? "הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון ועיר."
+                : "יוצרים לקוח חדש ישירות מהדשבורד. שדות חובה: שם, טלפון ועיר."}
             </DialogDescription>
           </DialogHeader>
 
@@ -2226,7 +2281,6 @@ export default function DashboardActions({
                 <Input
                   value={projectCreateCustomerName}
                   onChange={(e) => setProjectCreateCustomerName(e.target.value)}
-                  placeholder="שם מלא או שם חברה"
                 />
               </div>
 
@@ -2236,7 +2290,6 @@ export default function DashboardActions({
                   <Input
                     value={projectCreateCustomerPhone}
                     onChange={(e) => setProjectCreateCustomerPhone(e.target.value)}
-                    placeholder="0501234567"
                   />
                 </div>
 
@@ -2245,7 +2298,6 @@ export default function DashboardActions({
                   <Input
                     value={projectCreateCustomerWhatsapp}
                     onChange={(e) => setProjectCreateCustomerWhatsapp(e.target.value)}
-                    placeholder="0501234567"
                   />
                 </div>
               </AdaptiveGrid>
@@ -2256,7 +2308,6 @@ export default function DashboardActions({
                   type="email"
                   value={projectCreateCustomerEmail}
                   onChange={(e) => setProjectCreateCustomerEmail(e.target.value)}
-                  placeholder="name@example.com"
                 />
               </div>
 
@@ -2282,17 +2333,15 @@ export default function DashboardActions({
                   <Input
                     value={projectCreateCustomerCityOther}
                     onChange={(e) => setProjectCreateCustomerCityOther(e.target.value)}
-                    placeholder="הזן עיר"
                   />
                 </div>
               ) : null}
 
               <div className="space-y-1">
-                <label className="text-sm font-medium">כתובת *</label>
+                <label className="text-sm font-medium">כתובת</label>
                 <Input
                   value={projectCreateCustomerAddress}
                   onChange={(e) => setProjectCreateCustomerAddress(e.target.value)}
-                  placeholder="רחוב, מספר בית, דירה"
                 />
               </div>
 
@@ -2308,7 +2357,6 @@ export default function DashboardActions({
                       value={projectCreateCustomerNotes}
                       onChange={(e) => setProjectCreateCustomerNotes(e.target.value)}
                       rows={3}
-                      placeholder="הערות על הלקוח (אופציונלי)"
                     />
                   </div>
 
@@ -2578,25 +2626,55 @@ export default function DashboardActions({
               </label>
 
               {expenseBusinessDomain === "logistics_projects" ? (
-                <label className="space-y-2 text-sm">
+                <div className="space-y-2 text-sm">
                   <span>{HEBREW.project}</span>
-                  <select
-                    className={fieldClass}
-                    value={expenseProjectId}
-                    onChange={(e) => {
-                      const nextProjectId = e.target.value;
-                      setExpenseProjectId(nextProjectId);
-                      setExpenseDate(getProjectStartDate(nextProjectId));
-                    }}
-                  >
-                    <option value="">{HEBREW.selectProject}</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name} | {project.customerName}
-                      </option>
+                  <Input
+                    value={expenseProjectQuery}
+                    onChange={(e) => setExpenseProjectQuery(e.target.value)}
+                  />
+                  {selectedExpenseProject ? (
+                    <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                      <p className="font-medium">פרויקט נבחר: {selectedExpenseProject.name}</p>
+                      <p className="text-muted-foreground">
+                        {selectedExpenseProject.customerName || "ללא לקוח"}
+                        {normalizeDateOnly(selectedExpenseProject.startDate)
+                          ? ` | תאריך: ${normalizeDateOnly(selectedExpenseProject.startDate)}`
+                          : ""}
+                      </p>
+                    </div>
+                  ) : null}
+                  <div className="max-h-64 space-y-2 overflow-auto rounded-md border p-2">
+                    {filteredExpenseProjects.map((project) => (
+                      <button
+                        key={project.id}
+                        type="button"
+                        onClick={() => {
+                          setExpenseProjectId(project.id);
+                          setExpenseProjectQuery(project.name);
+                          setExpenseDate(getProjectStartDate(project.id));
+                        }}
+                        className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
+                          project.id === expenseProjectId
+                            ? "border-primary/20 bg-gradient-to-r from-primary to-destructive text-primary-foreground shadow-lg shadow-primary/20"
+                            : "border-primary/10 bg-gradient-to-r from-accent to-destructive/15 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+                        }`}
+                      >
+                        <div className="font-medium">{project.name}</div>
+                        <div
+                          className={`text-xs ${
+                            project.id === expenseProjectId ? "text-primary-foreground/80" : "text-accent-foreground/80"
+                          }`}
+                        >
+                          {project.customerName || "ללא לקוח"}
+                          {normalizeDateOnly(project.startDate) ? ` | ${normalizeDateOnly(project.startDate)}` : ""}
+                        </div>
+                      </button>
                     ))}
-                  </select>
-                </label>
+                    {filteredExpenseProjects.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground">לא נמצאו פרויקטים לחיפוש הזה.</div>
+                    ) : null}
+                  </div>
+                </div>
               ) : null}
 
               {expenseBusinessDomain === "sales" && !expenseIsWorkerPayment ? (
@@ -3004,24 +3082,120 @@ export default function DashboardActions({
           <fieldset disabled={incomeSubmitting} className="contents">
             <div className="grid gap-4">
               <label className="space-y-2 text-sm">
-                <span>{HEBREW.project}</span>
+                <span>{HEBREW.domain}</span>
                 <select
                   className={fieldClass}
-                  value={incomeProjectId}
+                  value={incomeBusinessDomain}
                   onChange={(e) => {
-                    const nextProjectId = e.target.value;
-                    setIncomeProjectId(nextProjectId);
-                    setIncomeDate(getProjectStartDate(nextProjectId));
+                    const nextDomain = e.target.value as ExpenseBusinessDomain;
+                    setIncomeBusinessDomain(nextDomain);
+                    if (nextDomain !== "logistics_projects") {
+                      setIncomeProjectId("");
+                    } else if (!incomeProjectId && projects[0]?.id) {
+                      setIncomeProjectId(projects[0].id);
+                      setIncomeDate(getProjectStartDate(projects[0].id));
+                    }
+                    if (nextDomain !== "sales") setIncomeOrderId("");
+                    if (nextDomain !== "property_management") setIncomePropertyId("");
                   }}
                 >
-                  <option value="">{HEBREW.selectProject}</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name} | {project.customerName}
+                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                    <option key={domain} value={domain}>
+                      {getBusinessDomainLabel(domain)}
                     </option>
                   ))}
                 </select>
               </label>
+
+              {incomeBusinessDomain === "logistics_projects" ? (
+                <div className="space-y-2 text-sm">
+                  <span>{HEBREW.project}</span>
+                  <Input
+                    value={incomeProjectQuery}
+                    onChange={(e) => setIncomeProjectQuery(e.target.value)}
+                  />
+                  {selectedIncomeProject ? (
+                    <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                      <p className="font-medium">פרויקט נבחר: {selectedIncomeProject.name}</p>
+                      <p className="text-muted-foreground">
+                        {selectedIncomeProject.customerName || "ללא לקוח"}
+                        {normalizeDateOnly(selectedIncomeProject.startDate)
+                          ? ` | תאריך: ${normalizeDateOnly(selectedIncomeProject.startDate)}`
+                          : ""}
+                      </p>
+                    </div>
+                  ) : null}
+                  <div className="max-h-64 space-y-2 overflow-auto rounded-md border p-2">
+                    {filteredIncomeProjects.map((project) => (
+                      <button
+                        key={project.id}
+                        type="button"
+                        onClick={() => {
+                          setIncomeProjectId(project.id);
+                          setIncomeProjectQuery(project.name);
+                          setIncomeDate(getProjectStartDate(project.id));
+                        }}
+                        className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
+                          project.id === incomeProjectId
+                            ? "border-primary/20 bg-gradient-to-r from-primary to-destructive text-primary-foreground shadow-lg shadow-primary/20"
+                            : "border-primary/10 bg-gradient-to-r from-accent to-destructive/15 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+                        }`}
+                      >
+                        <div className="font-medium">{project.name}</div>
+                        <div
+                          className={`text-xs ${
+                            project.id === incomeProjectId ? "text-primary-foreground/80" : "text-accent-foreground/80"
+                          }`}
+                        >
+                          {project.customerName || "ללא לקוח"}
+                          {normalizeDateOnly(project.startDate) ? ` | ${normalizeDateOnly(project.startDate)}` : ""}
+                        </div>
+                      </button>
+                    ))}
+                    {filteredIncomeProjects.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground">לא נמצאו פרויקטים לחיפוש הזה.</div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {incomeBusinessDomain === "sales" ? (
+                <label className="space-y-2 text-sm">
+                  <span>הזמנה</span>
+                  <select
+                    className={fieldClass}
+                    value={incomeOrderId}
+                    onChange={(e) => setIncomeOrderId(e.target.value)}
+                  >
+                    <option value="">ללא הזמנה</option>
+                    {orders.map((order) => (
+                      <option key={order.id} value={order.id}>
+                        {order.name}
+                        {order.subtitle ? ` | ${order.subtitle}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              {incomeBusinessDomain === "property_management" ? (
+                <label className="space-y-2 text-sm">
+                  <span>נכס</span>
+                  <select
+                    className={fieldClass}
+                    value={incomePropertyId}
+                    onChange={(e) => setIncomePropertyId(e.target.value)}
+                  >
+                    <option value="">בחרו נכס</option>
+                    {properties.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {property.name}
+                        {property.subtitle ? ` | ${property.subtitle}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
 
               <AdaptiveGrid variant="formTwoLoose">
                 <label className="space-y-2 text-sm">
