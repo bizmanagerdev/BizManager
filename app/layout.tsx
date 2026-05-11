@@ -11,10 +11,12 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.ico?v=3", sizes: "any" },
+      { url: "/icon-192.png?v=1", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png?v=1", type: "image/png", sizes: "512x512" },
       { url: "/icon.svg?v=3", type: "image/svg+xml" },
     ],
     shortcut: "/favicon.ico?v=3",
-    apple: "/icon.svg?v=3",
+    apple: "/apple-touch-icon.png?v=1",
   },
   appleWebApp: {
     capable: true,

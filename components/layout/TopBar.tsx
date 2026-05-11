@@ -6,6 +6,7 @@ import { Bell, ChevronDown, LogOut, User } from "lucide-react";
 import { ClientOnly } from "@/components/ClientOnly";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import PwaInstallButton from "@/components/pwa/PwaInstallButton";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -95,6 +96,7 @@ export function TopBar({
       <div className="flex-1 lg:flex-none" />
 
       <div className="flex items-center gap-1">
+        <PwaInstallButton />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
