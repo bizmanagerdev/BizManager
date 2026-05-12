@@ -66,6 +66,25 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function DetailField({
+  label,
+  value,
+  className = "",
+  valueClassName = "",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className={`rounded-2xl border border-border/70 bg-background/70 px-4 py-3 ${className}`.trim()}>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className={`mt-2 text-sm font-medium leading-6 text-foreground ${valueClassName}`.trim()}>{value}</div>
+    </div>
+  );
+}
+
 export default async function CustomerDetailsPage({
   params,
   searchParams,
@@ -90,7 +109,7 @@ export default async function CustomerDetailsPage({
       supabase
         .from("customers")
         .select(
-          "id,name,name_for_invoice,registration_number,email,phone,whatsapp,address,notes,active,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error"
+          "id,name,name_for_invoice,registration_number,email,phone,whatsapp,address,notes,active,requires_prepayment,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error"
         )
         .eq("id", id)
         .maybeSingle(),
@@ -183,6 +202,7 @@ export default async function CustomerDetailsPage({
   const customerPhone = s(customer as Row, "phone") || s(overview as Row, "phone");
   const customerEmail = s(customer as Row, "email") || s(overview as Row, "email");
   const customerWhatsapp = s(customer as Row, "whatsapp");
+  const requiresPrepayment = customer?.requires_prepayment === true;
   const address = s(customer as Row, "address") || s(overview as Row, "address");
   const orderSales = n((overview as Row)?.total_sales);
   const orderPaid = n((overview as Row)?.total_paid);
@@ -234,6 +254,9 @@ export default async function CustomerDetailsPage({
               <div className="text-sm text-muted-foreground">{address || "-"}</div>
             </div>
             <div className="flex flex-wrap gap-2">
+              {requiresPrepayment ? (
+                <Badge className={customerFlagBadgeClass("danger")}>תשלום מראש</Badge>
+              ) : null}
               {openBalance > 0 ? <Badge className={customerFlagBadgeClass("danger")}>חוב פתוח</Badge> : null}
               {(customer?.active ?? overview?.active) === false ? (
                 <Badge className={customerFlagBadgeClass("danger")}>לא פעיל</Badge>
@@ -262,14 +285,14 @@ export default async function CustomerDetailsPage({
             <div className="rounded-2xl border border-border/70 bg-card/70 p-4">
               <div className="mb-3 text-sm font-semibold">פרטי לקוח</div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Stat label="טלפון" value={customerPhone || "-"} />
-                <Stat label="וואטסאפ" value={customerWhatsapp || "-"} />
-                <Stat label="אימייל" value={customerEmail || "-"} />
-                <Stat label="כתובת" value={address || "-"} />
-                <Stat label="שם לחשבונית" value={s(customer as Row, "name_for_invoice") || "-"} />
-                <Stat label="ח.פ / ת.ז" value={s(customer as Row, "registration_number") || "-"} />
-                <Stat label="הזמנה אחרונה" value={formatDate(lastOrderAt)} />
-                <Stat label="תשלום אחרון" value={formatDate(lastPaymentAt)} />
+                <DetailField label="טלפון" value={customerPhone || "-"} />
+                <DetailField label="וואטסאפ" value={customerWhatsapp || "-"} />
+                <DetailField label="אימייל" value={customerEmail || "-"} valueClassName="break-all" />
+                <DetailField label="שם לחשבונית" value={s(customer as Row, "name_for_invoice") || "-"} />
+                <DetailField label="ח.פ / ת.ז" value={s(customer as Row, "registration_number") || "-"} />
+                <DetailField label="הזמנה אחרונה" value={formatDate(lastOrderAt)} />
+                <DetailField label="תשלום אחרון" value={formatDate(lastPaymentAt)} />
+                <DetailField label="כתובת" value={address || "-"} className="sm:col-span-2" valueClassName="whitespace-pre-wrap" />
               </div>
             </div>
 

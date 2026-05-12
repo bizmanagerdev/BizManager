@@ -195,6 +195,22 @@ export async function POST(req: Request) {
 
     const totalPaidAfterSave =
       sumPayments(existingPayments ?? []) + sumPayments(payments) - sumPayments(refunds);
+    const { data: customer, error: customerError } = await supabase
+      .from("customers")
+      .select("requires_prepayment")
+      .eq("id", customerId)
+      .maybeSingle();
+
+    if (customerError) {
+      return NextResponse.json({ error: customerError.message }, { status: 400 });
+    }
+    if (customer?.requires_prepayment === true && totalPaidAfterSave + 0.009 < totalAmount) {
+      return NextResponse.json(
+        { error: "Customer requires prepayment. Collect full payment before saving the order." },
+        { status: 400 }
+      );
+    }
+
     const paymentStatus = derivePaymentStatus(totalAmount, totalPaidAfterSave);
 
     if (deliveryImages.length > 0) {

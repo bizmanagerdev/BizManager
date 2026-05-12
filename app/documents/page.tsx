@@ -1,7 +1,9 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import DocumentsArchiveClient, {
+  type ArchiveTargetOption,
   type DocumentArchiveFilters,
   type DocumentArchiveItem,
 } from "@/app/documents/DocumentsArchiveClient";
@@ -14,6 +16,8 @@ type DocumentsSearchParams = {
   customer_name?: string;
   customer_page?: string;
   project_id?: string;
+  property_id?: string;
+  business_domain?: string;
   entity_type?: string;
   type?: string;
   q?: string;
@@ -40,6 +44,7 @@ type DocumentLinkRow = {
 type ProjectLookupRow = {
   id: string;
   name: string | null;
+  project_type: string | null;
   customer_id: string | null;
   customer_name: string | null;
 };
@@ -47,6 +52,11 @@ type ProjectLookupRow = {
 type ProjectUploadRow = {
   id: string;
   name: string | null;
+};
+
+type PropertyLookupRow = {
+  id: string;
+  address: string | null;
 };
 
 type TaskLookupRow = {
@@ -80,11 +90,6 @@ type LinkedEntity = {
   id: string;
   label: string;
   href: string | null;
-};
-
-type UploadProjectOption = {
-  id: string;
-  label: string;
 };
 
 function normalizeString(value: unknown) {
@@ -121,6 +126,8 @@ function entityHref(entityType: string, entityId: string) {
   switch (entityType) {
     case "project":
       return `/projects/${entityId}?tab=documents`;
+    case "property":
+      return "/properties";
     case "task":
       return `/tasks/${entityId}`;
     case "customer":
@@ -198,12 +205,17 @@ export default async function DocumentsPage({
     if (entityType === "order") orderIds.add(entityId);
   }
 
-  const [allProjectsResult, uploadProjectsResult, tasksOverviewResult, tasksMetaResult, ordersResult] = await Promise.all([
-    supabase.from("project_overview_view").select("id,name,customer_id,customer_name"),
+  const [allProjectsResult, uploadProjectsResult, allPropertiesResult, tasksOverviewResult, tasksMetaResult, ordersResult] = await Promise.all([
+    supabase.from("project_overview_view").select("id,name,project_type,customer_id,customer_name"),
     supabase
       .from("project_dashboard_view")
       .select("id,name")
       .order("name", { ascending: true })
+      .range(0, 999),
+    supabase
+      .from("properties")
+      .select("id,address")
+      .order("address", { ascending: true })
       .range(0, 999),
     taskIds.size > 0
       ? supabase
@@ -251,10 +263,22 @@ export default async function DocumentsPage({
     projectsById.set(row.id, row);
   });
 
-  const uploadProjectOptions: UploadProjectOption[] = ((uploadProjectsResult.data ?? []) as ProjectUploadRow[])
+  const uploadProjectOptions: ArchiveTargetOption[] = ((uploadProjectsResult.data ?? []) as ProjectUploadRow[])
     .map((row) => ({
       id: row.id,
       label: normalizeString(row.name) || `פרויקט ${row.id.slice(0, 8)}`,
+    }))
+    .sort(compareByLabel);
+
+  const propertiesById = new Map<string, PropertyLookupRow>();
+  ((allPropertiesResult.data ?? []) as PropertyLookupRow[]).forEach((row) => {
+    propertiesById.set(row.id, row);
+  });
+
+  const uploadPropertyOptions: ArchiveTargetOption[] = ((allPropertiesResult.data ?? []) as PropertyLookupRow[])
+    .map((row) => ({
+      id: row.id,
+      label: normalizeString(row.address) || `Property ${row.id.slice(0, 8)}`,
     }))
     .sort(compareByLabel);
 
@@ -282,10 +306,12 @@ export default async function DocumentsPage({
     documents.map(async (doc): Promise<DocumentArchiveItem> => {
       const docLinks = linksByDocumentId.get(doc.id) ?? [];
       const relatedProjects = new Map<string, { id: string; label: string }>();
+      const relatedProperties = new Map<string, { id: string; label: string }>();
       const relatedCustomers = new Map<string, { id: string; label: string }>();
       const relatedOrders = new Map<string, { id: string; label: string }>();
       const relatedTasks = new Map<string, { id: string; label: string }>();
       const linkedEntities = new Map<string, LinkedEntity>();
+      const relatedBusinessDomains = new Set<ExpenseBusinessDomain>();
 
       for (const link of docLinks) {
         const entityType = normalizeString(link.entity_type);
@@ -296,6 +322,7 @@ export default async function DocumentsPage({
           const project = projectsById.get(entityId);
           const label = normalizeString(project?.name) || `פרויקט ${entityId.slice(0, 8)}`;
           relatedProjects.set(entityId, { id: entityId, label });
+          relatedBusinessDomains.add(mapProjectTypeToExpenseDomain(project?.project_type));
           linkedEntities.set(`${entityType}:${entityId}`, {
             type: entityType,
             id: entityId,
@@ -311,6 +338,19 @@ export default async function DocumentsPage({
               label: customerName || customersById.get(customerId)?.customer_name || "לקוח",
             });
           }
+        }
+
+        if (entityType === "property") {
+          const property = propertiesById.get(entityId);
+          const label = normalizeString(property?.address) || `Property ${entityId.slice(0, 8)}`;
+          relatedProperties.set(entityId, { id: entityId, label });
+          relatedBusinessDomains.add("property_management");
+          linkedEntities.set(`${entityType}:${entityId}`, {
+            type: entityType,
+            id: entityId,
+            label,
+            href: entityHref(entityType, entityId),
+          });
         }
 
         if (entityType === "task") {
@@ -329,6 +369,7 @@ export default async function DocumentsPage({
             normalizeString(task?.project_id) || normalizeString(taskMeta?.project_id);
           if (projectId) {
             const project = projectsById.get(projectId);
+            relatedBusinessDomains.add(mapProjectTypeToExpenseDomain(project?.project_type));
             relatedProjects.set(projectId, {
               id: projectId,
               label: normalizeString(task?.project_name) || normalizeString(project?.name) || "פרויקט",
@@ -341,6 +382,16 @@ export default async function DocumentsPage({
                 label: customerName || customersById.get(customerId)?.customer_name || "לקוח",
               });
             }
+          }
+
+          const propertyId = normalizeString(taskMeta?.property_id);
+          if (propertyId) {
+            const property = propertiesById.get(propertyId);
+            relatedProperties.set(propertyId, {
+              id: propertyId,
+              label: normalizeString(property?.address) || "Property",
+            });
+            relatedBusinessDomains.add("property_management");
           }
 
           const customerId = null;
@@ -366,6 +417,7 @@ export default async function DocumentsPage({
 
         if (entityType === "order") {
           const order = ordersById.get(entityId);
+          relatedBusinessDomains.add("sales");
           relatedOrders.set(entityId, { id: entityId, label: `הזמנה ${entityId.slice(0, 8)}` });
           linkedEntities.set(`${entityType}:${entityId}`, {
             type: entityType,
@@ -401,8 +453,13 @@ export default async function DocumentsPage({
       );
       const customerList = uniqueById(Array.from(relatedCustomers.values())).sort(compareByLabel);
       const projectList = uniqueById(Array.from(relatedProjects.values())).sort(compareByLabel);
+      const propertyList = uniqueById(Array.from(relatedProperties.values())).sort(compareByLabel);
       const taskList = uniqueById(Array.from(relatedTasks.values())).sort(compareByLabel);
       const orderList = uniqueById(Array.from(relatedOrders.values())).sort(compareByLabel);
+      const businessDomainList =
+        relatedBusinessDomains.size > 0
+          ? Array.from(relatedBusinessDomains.values())
+          : (["general_business"] as ExpenseBusinessDomain[]);
 
       return {
         id: doc.id,
@@ -422,17 +479,21 @@ export default async function DocumentsPage({
         linked_entities: linkedEntityList,
         customers: customerList,
         projects: projectList,
+        properties: propertyList,
         tasks: taskList,
         orders: orderList,
+        business_domains: businessDomainList,
         search_text: [
           title,
           normalizeString(doc.file_name),
           documentType,
           normalizeString(doc.notes),
           storageKey ?? "",
+          ...businessDomainList,
           ...linkedEntityList.map((item) => item.label),
           ...customerList.map((item) => item.label),
           ...projectList.map((item) => item.label),
+          ...propertyList.map((item) => item.label),
           ...taskList.map((item) => item.label),
           ...orderList.map((item) => item.label),
         ]
@@ -447,6 +508,14 @@ export default async function DocumentsPage({
     customer_name: normalizeString(params.customer_name) || "",
     customer_page: normalizeString(params.customer_page) || "",
     project_id: normalizeString(params.project_id) || "",
+    property_id: normalizeString(params.property_id) || "",
+    business_domain:
+      normalizeString(params.business_domain) ||
+      (normalizeString(params.project_id)
+        ? "logistics_projects"
+        : normalizeString(params.property_id)
+          ? "property_management"
+          : ""),
     entity_type: normalizeString(params.entity_type) || "",
     type: normalizeString(params.type) || "",
     q: normalizeString(params.q) || "",
@@ -457,6 +526,7 @@ export default async function DocumentsPage({
     linksError?.message ??
     allProjectsResult.error?.message ??
     uploadProjectsResult.error?.message ??
+    allPropertiesResult.error?.message ??
     tasksOverviewResult.error?.message ??
     tasksMetaResult.error?.message ??
     customersResult.error?.message ??
@@ -470,6 +540,7 @@ export default async function DocumentsPage({
         error={errorMessage}
         initialFilters={initialFilters}
         projectOptions={uploadProjectOptions}
+        propertyOptions={uploadPropertyOptions}
         totalDocuments={typeof count === "number" ? count : archiveItems.length}
         isTruncated={typeof count === "number" ? count > archiveItems.length : false}
       />

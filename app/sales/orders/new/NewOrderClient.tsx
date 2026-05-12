@@ -42,6 +42,7 @@ type CustomerOption = {
   email: string | null;
   city: string | null;
   address: string | null;
+  requiresPrepayment: boolean;
 };
 
 type ProductOption = {
@@ -161,7 +162,27 @@ function mapCustomerSearchResult(row: Record<string, unknown>): CustomerOption |
     email: typeof row.email === "string" ? row.email : null,
     address: typeof row.address === "string" ? row.address : null,
     city: typeof row.address === "string" ? extractCityFromAddress(row.address) : null,
+    requiresPrepayment: row.requires_prepayment === true,
   };
+}
+
+function ValueField({
+  label,
+  value,
+  className = "",
+  valueClassName = "",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className={`rounded-xl border border-border/70 bg-background/70 px-4 py-3 ${className}`.trim()}>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className={`mt-2 text-sm font-medium leading-6 text-foreground ${valueClassName}`.trim()}>{value}</div>
+    </div>
+  );
 }
 
 function extractCityFromAddress(address: string | null) {
@@ -261,6 +282,7 @@ export default function NewOrderClient({
   const [createCustomerCityOther, setCreateCustomerCityOther] = useState("");
   const [createCustomerAddress, setCreateCustomerAddress] = useState("");
   const [createCustomerNotes, setCreateCustomerNotes] = useState("");
+  const [createCustomerRequiresPrepayment, setCreateCustomerRequiresPrepayment] = useState(false);
   const [createCustomerContacts, setCreateCustomerContacts] = useState<ContactDraft[]>([]);
   const [createCustomerError, setCreateCustomerError] = useState<string | null>(null);
   const [createCustomerSubmitting, setCreateCustomerSubmitting] = useState(false);
@@ -282,6 +304,7 @@ export default function NewOrderClient({
           email: getString(row, ["email"]),
           address: getString(row, ["address"]),
           city: extractCityFromAddress(getString(row, ["address"])),
+          requiresPrepayment: row.requires_prepayment === true,
         }))
         .filter((row) => row.id),
     [customers]
@@ -657,6 +680,7 @@ export default function NewOrderClient({
     setCreateCustomerCityOther("");
     setCreateCustomerAddress("");
     setCreateCustomerNotes("");
+    setCreateCustomerRequiresPrepayment(false);
     setCreateCustomerContacts([]);
   }
 
@@ -772,6 +796,7 @@ export default function NewOrderClient({
           city,
           address,
           notes: createCustomerNotes.trim() || null,
+          requires_prepayment: createCustomerRequiresPrepayment,
         }),
       });
 
@@ -820,6 +845,7 @@ export default function NewOrderClient({
         email: getString(json.customer, ["email"]),
         address: getString(json.customer, ["address"]),
         city: extractCityFromAddress(getString(json.customer, ["address"])),
+        requiresPrepayment: json.customer.requires_prepayment === true,
       };
 
       if (newCustomer.id) {
@@ -880,6 +906,11 @@ export default function NewOrderClient({
 
     if (invalidPayment) {
       setSubmitError("יש להשלים לכל תשלום חדש סכום, תאריך ואמצעי תשלום.");
+      return;
+    }
+
+    if (selectedCustomer?.requiresPrepayment && remainingBalance > 0.009) {
+      setSubmitError("לקוח זה מוגדר לתשלום מראש. יש להשלים את מלוא התשלום לפני שמירת ההזמנה.");
       return;
     }
 
@@ -974,15 +1005,24 @@ export default function NewOrderClient({
 
             {selectedCustomer ? (
               <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                <p className="font-medium">לקוח נבחר: {selectedCustomer.name}</p>
-                <p className="text-muted-foreground">
-                  {selectedCustomer.phone ? `טלפון: ${selectedCustomer.phone}` : "טלפון: -"}
-                  {selectedCustomer.email ? ` | אימייל: ${selectedCustomer.email}` : ""}
-                </p>
-                <p className="text-muted-foreground">
-                  {selectedCustomer.city ? `עיר: ${selectedCustomer.city}` : "עיר: -"}
-                  {selectedCustomer.address ? ` | כתובת: ${selectedCustomer.address}` : ""}
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium">לקוח נבחר: {selectedCustomer.name}</p>
+                  {selectedCustomer.requiresPrepayment ? (
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">
+                      תשלום מראש
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <ValueField label="טלפון" value={selectedCustomer.phone || "-"} />
+                  <ValueField label="אימייל" value={selectedCustomer.email || "-"} valueClassName="break-all" />
+                  <ValueField label="עיר" value={selectedCustomer.city || "-"} />
+                  <ValueField
+                    label="כתובת"
+                    value={selectedCustomer.address || "-"}
+                    valueClassName="whitespace-pre-wrap"
+                  />
+                </div>
               </div>
             ) : null}
 
@@ -1011,6 +1051,11 @@ export default function NewOrderClient({
                     {customer.city ? `עיר: ${customer.city}` : "עיר: -"}
                     {customer.address ? ` | כתובת: ${customer.address}` : ""}
                   </div>
+                  {customer.requiresPrepayment ? (
+                    <div className={`mt-2 text-xs font-medium ${customer.id === customerId ? "text-primary-foreground" : "text-rose-700"}`}>
+                      לקוח ברשימת תשלום מראש
+                    </div>
+                  ) : null}
                 </button>
               ))}
 
@@ -1259,15 +1304,10 @@ export default function NewOrderClient({
             <CardTitle>סקירת הזמנה</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid gap-1.5 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">לקוח</span>
-                <span>{selectedCustomer?.name || "-"}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">עיר לקוח</span>
-                <span>{selectedCustomer?.city || "-"}</span>
-              </div>
+            <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
+              <ValueField label="לקוח" value={selectedCustomer?.name || "-"} />
+              <ValueField label="עיר לקוח" value={selectedCustomer?.city || "-"} />
+              <ValueField label="אופן תשלום" value={selectedCustomer?.requiresPrepayment ? "תשלום מראש" : "רגיל"} />
               <div className="space-y-0.5">
                 <label className="text-sm font-medium">תאריך הזמנה *</label>
                 <DateInput
@@ -1291,28 +1331,17 @@ export default function NewOrderClient({
                   ))}
                 </select>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">סטטוס תשלום</span>
-                <span>{paymentStatusLabel(paymentStatus)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">פריטים</span>
-                <span>{totalUnits}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">סכום ביניים</span>
-                <span>{formatCurrency(subtotal)}</span>
-              </div>
+              <ValueField label="סטטוס תשלום" value={paymentStatusLabel(paymentStatus)} />
+              <ValueField label="פריטים" value={String(totalUnits)} />
+              <ValueField label="סכום ביניים" value={formatCurrency(subtotal)} />
               {effectiveOrderDiscount > 0 ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">הנחת הזמנה</span>
-                  <span className="font-medium text-emerald-700">-{formatCurrency(effectiveOrderDiscount)}</span>
-                </div>
+                <ValueField
+                  label="הנחת הזמנה"
+                  value={`-${formatCurrency(effectiveOrderDiscount)}`}
+                  valueClassName="text-emerald-700"
+                />
               ) : null}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">סכום סופי</span>
-                <span className="font-semibold">{formatCurrency(totalAmount)}</span>
-              </div>
+              <ValueField label="סכום סופי" value={formatCurrency(totalAmount)} valueClassName="text-base font-semibold" />
             </div>
 
             <details className="rounded-md border border-dashed p-3" open={Boolean(effectiveOrderDiscount || notes)}>
@@ -1480,20 +1509,17 @@ export default function NewOrderClient({
                 </div>
               ))}
 
-              <div className="grid gap-2 rounded-md bg-muted/30 p-3 text-sm sm:grid-cols-3">
-                <div>
-                  <div className="text-muted-foreground">שולם עד עכשיו</div>
-                  <div className="font-medium">{formatCurrency(existingPaidTotal)}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">תשלומים חדשים</div>
-                  <div className="font-medium">{formatCurrency(newPaidTotal)}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">יתרה אחרי שמירה</div>
-                  <div className="font-medium">{formatCurrency(remainingBalance)}</div>
-                </div>
+              <div className="grid gap-3 rounded-md bg-muted/30 p-3 text-sm sm:grid-cols-3">
+                <ValueField label="שולם עד עכשיו" value={formatCurrency(existingPaidTotal)} />
+                <ValueField label="תשלומים חדשים" value={formatCurrency(newPaidTotal)} />
+                <ValueField label="יתרה אחרי שמירה" value={formatCurrency(remainingBalance)} />
               </div>
+
+              {selectedCustomer?.requiresPrepayment ? (
+                <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                  לקוח זה מסומן לתשלום מראש, ולכן אי אפשר לשמור את ההזמנה כל עוד נשארת יתרה פתוחה.
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-md border bg-muted/30 p-3 text-sm">
@@ -1605,6 +1631,15 @@ export default function NewOrderClient({
                 onChange={(e) => setCreateCustomerAddress(e.target.value)}
               />
             </div>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={createCustomerRequiresPrepayment}
+                onChange={(e) => setCreateCustomerRequiresPrepayment(e.target.checked)}
+              />
+              <span>לקוח ברשימת תשלום מראש</span>
+            </label>
 
             <details className="rounded-md border border-dashed p-3" open={Boolean(createCustomerNotes || createCustomerContacts.length > 0)}>
               <summary className="cursor-pointer text-sm font-medium">פרטים נוספים ללקוח</summary>

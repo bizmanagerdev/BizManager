@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
+import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,6 +24,7 @@ type CategoryOption = {
 };
 
 const NEW_CATEGORY_VALUE = "__new__";
+const PRICE_LIST_SHARE_CONTENT_ID = "price-list-share-pdf";
 
 type ProductRow = {
   id: string;
@@ -92,6 +96,9 @@ export default function PriceListClient({
   const [editActive, setEditActive] = useState(true);
   const [deleteLoadingId, setDeleteLoadingId] = useState("");
   const [tableError, setTableError] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const [shareMessage, setShareMessage] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ProductRow | null>(null);
   const isCreateNewCategory = createCategoryId === NEW_CATEGORY_VALUE;
@@ -117,6 +124,194 @@ export default function PriceListClient({
 
   function normalizeCategories(list: CategoryOption[]) {
     return [...list].sort((a, b) => a.name.localeCompare(b.name, "he"));
+  }
+
+  const activeCategoryName = useMemo(
+    () => categories.find((category) => category.id === categoryFilter)?.name ?? null,
+    [categories, categoryFilter]
+  );
+  const shareTitle = activeCategoryName ? `מחירון - ${activeCategoryName}` : "מחירון";
+  const shareDateLabel = useMemo(
+    () =>
+      new Intl.DateTimeFormat("he-IL", {
+        dateStyle: "full",
+        timeStyle: "short",
+      }).format(new Date()),
+    []
+  );
+  const activeProductsCount = filtered.filter((product) => product.active !== false).length;
+  const pricedProductsCount = filtered.filter((product) => product.unitPrice !== null).length;
+  const averagePrice =
+    pricedProductsCount > 0
+      ? filtered.reduce((sum, product) => sum + (product.unitPrice ?? 0), 0) / pricedProductsCount
+      : null;
+
+  function getPriceListShareElement() {
+    const exportElement = document.getElementById(PRICE_LIST_SHARE_CONTENT_ID);
+    if (!exportElement) {
+      throw new Error("לא נמצא תוכן המחירון ליצירת PDF.");
+    }
+
+    return exportElement;
+  }
+
+  function applyPdfCaptureColorOverrides(documentClone: Document) {
+    const exportElement = documentClone.getElementById(PRICE_LIST_SHARE_CONTENT_ID) as HTMLElement | null;
+    if (!exportElement) return;
+
+    const wrapperElement = exportElement.parentElement as HTMLElement | null;
+    if (wrapperElement) {
+      wrapperElement.style.backgroundColor = "#f8fafc";
+    }
+
+    exportElement.style.backgroundColor = "#ffffff";
+    exportElement.style.color = "#0f172a";
+    exportElement.style.boxShadow = "0 24px 80px rgba(15, 23, 42, 0.14)";
+
+    const allElements = [exportElement, ...Array.from(exportElement.querySelectorAll<HTMLElement>("*"))];
+
+    for (const element of allElements) {
+      const className = typeof element.className === "string" ? element.className : "";
+      const classTokens = className.split(/\s+/).filter(Boolean);
+      const hasClass = (token: string) => classTokens.includes(token);
+
+      if (hasClass("bg-slate-50")) element.style.backgroundColor = "#f8fafc";
+      if (hasClass("bg-slate-50/70")) element.style.backgroundColor = "#f8fafc";
+      if (hasClass("bg-slate-100")) element.style.backgroundColor = "#f1f5f9";
+      if (hasClass("bg-slate-900")) element.style.backgroundColor = "#0f172a";
+      if (hasClass("bg-slate-950")) element.style.backgroundColor = "#020617";
+      if (hasClass("bg-white")) element.style.backgroundColor = "#ffffff";
+      if (hasClass("bg-white/10")) element.style.backgroundColor = "rgba(255, 255, 255, 0.10)";
+      if (hasClass("bg-emerald-100")) element.style.backgroundColor = "#dcfce7";
+
+      if (hasClass("text-white")) element.style.color = "#ffffff";
+      if (hasClass("text-slate-900")) element.style.color = "#0f172a";
+      if (hasClass("text-slate-600")) element.style.color = "#475569";
+      if (hasClass("text-slate-500")) element.style.color = "#64748b";
+      if (hasClass("text-slate-300")) element.style.color = "#cbd5e1";
+      if (hasClass("text-slate-200")) element.style.color = "#e2e8f0";
+      if (hasClass("text-emerald-700")) element.style.color = "#166534";
+
+      if (hasClass("border-slate-200")) {
+        element.style.borderColor = "#e2e8f0";
+        element.style.borderStyle = "solid";
+      }
+      if (hasClass("border-white/15")) {
+        element.style.borderColor = "rgba(255, 255, 255, 0.15)";
+        element.style.borderStyle = "solid";
+      }
+
+      if (hasClass("shadow-[0_24px_80px_rgba(15,23,42,0.14)]")) {
+        element.style.boxShadow = "0 24px 80px rgba(15, 23, 42, 0.14)";
+      }
+
+      if (hasClass("backdrop-blur-sm")) {
+        element.style.backdropFilter = "none";
+      }
+    }
+  }
+
+  async function createPriceListPdfFile() {
+    const exportElement = getPriceListShareElement();
+
+    if ("fonts" in document) {
+      await document.fonts.ready;
+    }
+
+    const canvas = await html2canvas(exportElement, {
+      scale: Math.min(window.devicePixelRatio || 1, 2),
+      useCORS: true,
+      backgroundColor: "#f8fafc",
+      logging: false,
+      onclone: applyPdfCaptureColorOverrides,
+      windowWidth: Math.max(exportElement.scrollWidth, 1120),
+      windowHeight: exportElement.scrollHeight,
+    });
+
+    const imageData = canvas.toDataURL("image/jpeg", 0.95);
+    const pdf = new jsPDF({
+      orientation: "p",
+      unit: "mm",
+      format: "a4",
+      compress: true,
+    });
+
+    const margin = 8;
+    const pageWidth = pdf.internal.pageSize.getWidth() - margin * 2;
+    const pageHeight = pdf.internal.pageSize.getHeight() - margin * 2;
+    const imageWidth = pageWidth;
+    const imageHeight = (canvas.height * imageWidth) / canvas.width;
+
+    let heightLeft = imageHeight;
+    let position = margin;
+
+    pdf.addImage(imageData, "JPEG", margin, position, imageWidth, imageHeight);
+    heightLeft -= pageHeight;
+
+    while (heightLeft > 0) {
+      position -= pageHeight;
+      pdf.addPage();
+      pdf.addImage(imageData, "JPEG", margin, position, imageWidth, imageHeight);
+      heightLeft -= pageHeight;
+    }
+
+    const pdfBlob = pdf.output("blob");
+    const today = new Date().toISOString().slice(0, 10);
+    return new File([pdfBlob], `price-list-${today}.pdf`, { type: "application/pdf" });
+  }
+
+  function downloadPdfFile(pdfFile: File) {
+    const fileUrl = URL.createObjectURL(pdfFile);
+    const downloadLink = document.createElement("a");
+    downloadLink.href = fileUrl;
+    downloadLink.download = pdfFile.name;
+    downloadLink.click();
+    URL.revokeObjectURL(fileUrl);
+  }
+
+  async function sharePriceList() {
+    if (shareLoading) return;
+    if (filtered.length === 0) {
+      setShareMessage("");
+      setShareError("אין מוצרים לשליחה ברשימה הנוכחית.");
+      return;
+    }
+
+    setShareLoading(true);
+    setShareError("");
+    setShareMessage("");
+
+    try {
+      const pdfFile = await createPriceListPdfFile();
+      const shareData = {
+        title: shareTitle,
+        text: shareTitle,
+        files: [pdfFile],
+      };
+      const fileShareData = { files: [pdfFile] };
+
+      if (
+        typeof navigator !== "undefined" &&
+        "share" in navigator &&
+        "canShare" in navigator &&
+        navigator.canShare(fileShareData)
+      ) {
+        await navigator.share(shareData);
+        setShareMessage("המחירון מוכן ונפתח בחלון השיתוף של המכשיר ל-WhatsApp, מייל או כל אפליקציה אחרת.");
+        return;
+      }
+
+      downloadPdfFile(pdfFile);
+      setShareMessage(`קובץ ה-PDF הורד בשם ${pdfFile.name}. אפשר לצרף אותו ל-WhatsApp או למייל.`);
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return;
+      }
+
+      setShareError(error instanceof Error ? error.message : "יצירת ה-PDF נכשלה.");
+    } finally {
+      setShareLoading(false);
+    }
   }
 
   function resetCreateForm(nextCategoryId?: string) {
@@ -547,9 +742,115 @@ export default function PriceListClient({
           ))}
         </select>
         </div>
-        <Button type="button" onClick={openCreateDialog}>
-          הוספת מוצר
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" onClick={() => void sharePriceList()} disabled={shareLoading}>
+            {shareLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            <span>שליחת מחירון</span>
+          </Button>
+          <Button type="button" onClick={openCreateDialog}>
+            הוספת מוצר
+          </Button>
+        </div>
+      </div>
+      {shareError ? <p className="text-sm text-destructive">{shareError}</p> : null}
+      {shareMessage ? <p className="text-sm text-muted-foreground">{shareMessage}</p> : null}
+
+      <div aria-hidden="true" className="pointer-events-none fixed -left-[200vw] top-0 z-[-1] w-[1120px] bg-slate-50 p-8">
+        <div
+          id={PRICE_LIST_SHARE_CONTENT_ID}
+          dir="rtl"
+          className="overflow-hidden rounded-[28px] bg-white text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.14)]"
+        >
+          <div className="bg-slate-900 px-10 py-8 text-white">
+            <div className="flex items-start justify-between gap-8">
+              <div className="space-y-3">
+                <div className="text-xs font-medium tracking-[0.32em] text-slate-300">BIZMANAGER PRICE LIST</div>
+                <div>
+                  <h2 className="text-3xl font-semibold">{shareTitle}</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-200">
+                    מחירון מוכן לשיתוף עם רשימת המוצרים המסוננת, מסודרת וברורה לשליחה ללקוחות.
+                  </p>
+                </div>
+              </div>
+              <div className="min-w-[280px] rounded-3xl border border-white/15 bg-white/10 p-5 backdrop-blur-sm">
+                <div className="text-xs font-medium tracking-[0.18em] text-slate-200">נוצר בתאריך</div>
+                <div className="mt-2 text-lg font-semibold">{shareDateLabel}</div>
+                <div className="mt-4 grid grid-cols-2 gap-3 text-right">
+                  <div className="rounded-2xl bg-white/10 p-3">
+                    <div className="text-xs text-slate-300">מוצרים</div>
+                    <div className="mt-1 text-xl font-semibold">{filtered.length}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white/10 p-3">
+                    <div className="text-xs text-slate-300">פעילים</div>
+                    <div className="mt-1 text-xl font-semibold">{activeProductsCount}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6 px-10 py-8">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                <div className="text-xs font-medium tracking-[0.14em] text-slate-500">קטגוריה</div>
+                <div className="mt-2 text-lg font-semibold">{activeCategoryName ?? "כל הקטגוריות"}</div>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                <div className="text-xs font-medium tracking-[0.14em] text-slate-500">חיפוש פעיל</div>
+                <div className="mt-2 text-lg font-semibold">{query.trim() || "ללא"}</div>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                <div className="text-xs font-medium tracking-[0.14em] text-slate-500">מחיר ממוצע</div>
+                <div className="mt-2 text-lg font-semibold">{averagePrice === null ? "-" : formatCurrency(averagePrice)}</div>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-[24px] border border-slate-200">
+              <table className="w-full border-collapse text-right text-sm">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600">
+                    <th className="px-4 py-3 font-medium">מוצר</th>
+                    <th className="px-4 py-3 font-medium">קוד</th>
+                    <th className="px-4 py-3 font-medium">קטגוריה</th>
+                    <th className="px-4 py-3 font-medium">סטטוס</th>
+                    <th className="px-4 py-3 font-medium">מחיר</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((product, index) => (
+                    <tr key={product.id} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/70"}>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-900">{product.name}</div>
+                        {product.description ? (
+                          <div className="mt-1 text-xs leading-5 text-slate-500">{product.description}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{product.code ?? "-"}</td>
+                      <td className="px-4 py-3 text-slate-600">{product.category ?? "-"}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            product.active === false
+                              ? "inline-flex rounded-full bg-slate-200 px-3 py-1 text-xs font-medium text-slate-600"
+                              : "inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700"
+                          }
+                        >
+                          {product.active === false ? "לא פעיל" : "פעיל"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{formatCurrency(product.unitPrice)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-between rounded-3xl bg-slate-950 px-6 py-4 text-sm text-slate-200">
+              <span>המחירון הופק מתוך BizManager</span>
+              <span>{pricedProductsCount} מוצרים עם מחיר מוגדר</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {filtered.length === 0 ? (

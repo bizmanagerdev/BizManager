@@ -67,9 +67,9 @@ export default async function CustomersPage({
 
   const { data: customerRows, error: customerRowsError } = customerIds.length
     ? await supabase
-        .from("customers")
-        .select(
-          "id,whatsapp,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error"
+      .from("customers")
+      .select(
+          "id,whatsapp,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error,requires_prepayment"
         )
         .in("id", customerIds)
     : { data: [], error: null };
@@ -228,6 +228,7 @@ export default async function CustomersPage({
         typeof customer?.morning_match_status === "string" ? customer.morning_match_status : null,
       morning_last_sync_error:
         typeof customer?.morning_last_sync_error === "string" ? customer.morning_last_sync_error : null,
+      requires_prepayment: customer?.requires_prepayment === true,
       morning_documents: morningDocumentsByCustomerId.get(id) ?? [],
       contacts: contactsByCustomerId.get(id) ?? [],
     };

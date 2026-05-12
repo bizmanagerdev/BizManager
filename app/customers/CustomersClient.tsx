@@ -129,6 +129,7 @@ export default function CustomersClient({
   const [cityOther, setCityOther] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
+  const [requiresPrepayment, setRequiresPrepayment] = useState(false);
   const [createContacts, setCreateContacts] = useState<ContactDraft[]>([]);
 
   const [editOpen, setEditOpen] = useState(false);
@@ -144,6 +145,7 @@ export default function CustomersClient({
   const [editAddress, setEditAddress] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [editActive, setEditActive] = useState(true);
+  const [editRequiresPrepayment, setEditRequiresPrepayment] = useState(false);
 
   const [contactOpen, setContactOpen] = useState(false);
   const [contactErr, setContactErr] = useState("");
@@ -213,6 +215,7 @@ export default function CustomersClient({
     setCityOther("");
     setAddress("");
     setNotes("");
+    setRequiresPrepayment(false);
     setCreateContacts([]);
   }
 
@@ -305,6 +308,7 @@ export default function CustomersClient({
           city: finalCity,
           address: address.trim() || null,
           notes: notes.trim() || null,
+          requires_prepayment: requiresPrepayment,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: Row };
@@ -320,6 +324,7 @@ export default function CustomersClient({
         whatsapp: s(customer, "whatsapp") || whatsapp.trim(),
         address: s(customer, "address") || finalCity || address.trim(),
         active: customer.active !== false,
+        requires_prepayment: customer.requires_prepayment === true,
         orders_count: 0,
         projects_count: 0,
         total_sales: 0,
@@ -378,6 +383,7 @@ export default function CustomersClient({
     setEditAddress(s(row, "address"));
     setEditNotes(s(row, "notes"));
     setEditActive(row.active !== false);
+    setEditRequiresPrepayment(row.requires_prepayment === true);
     setEditOpen(true);
   }
 
@@ -402,6 +408,7 @@ export default function CustomersClient({
           address: editAddress.trim() || null,
           notes: editNotes.trim() || null,
           active: editActive,
+          requires_prepayment: editRequiresPrepayment,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: Row };
@@ -423,6 +430,7 @@ export default function CustomersClient({
                 address: s(u, "address"),
                 notes: s(u, "notes"),
                 active: u.active !== false,
+                requires_prepayment: u.requires_prepayment === true,
               }
         )
       );
@@ -501,6 +509,11 @@ export default function CustomersClient({
     if (!customerId) return;
     emitNavigationStart();
     window.location.href = customerDetailsHref(customerId);
+  }
+
+  function shouldIgnoreRowNavigation(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) return false;
+    return Boolean(target.closest("a, button, input, textarea, select, label"));
   }
 
   return (
@@ -585,6 +598,9 @@ export default function CustomersClient({
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-semibold">{customerName}</span>
+                    {row.requires_prepayment === true ? (
+                      <Badge className={customerFlagBadgeClass("danger")}>תשלום מראש</Badge>
+                    ) : null}
                     {openBalance > 0 ? (
                       <Badge className={customerFlagBadgeClass("danger")}>
                         חוב פתוח
@@ -644,6 +660,7 @@ export default function CustomersClient({
                 <th className="px-4 py-3 font-medium">טלפון ואימייל</th>
                 <th className="px-4 py-3 font-medium">כתובת</th>
                 <th className="px-4 py-3 font-medium">Morning</th>
+                <th className="px-4 py-3 font-medium">תשלום</th>
                 <th className="px-4 py-3 font-medium">הזמנות</th>
                 <th className="px-4 py-3 font-medium">פרויקטים</th>
                 <th className="px-4 py-3 font-medium">יתרה פתוחה</th>
@@ -659,15 +676,26 @@ export default function CustomersClient({
                 const openBalance = n(row, "open_balance");
 
                 return (
-                  <tr key={`${id || customerName}-desktop`} className="align-top hover:bg-muted/20">
+                  <tr
+                    key={`${id || customerName}-desktop`}
+                    className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
+                    tabIndex={0}
+                    role="link"
+                    onClick={(event) => {
+                      if (shouldIgnoreRowNavigation(event.target)) return;
+                      openCustomerDetails(id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (shouldIgnoreRowNavigation(event.target)) return;
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      openCustomerDetails(id);
+                    }}
+                  >
                     <td className="px-4 py-4">
-                      <button
-                        type="button"
-                        className="min-w-0 text-right"
-                        onClick={() => openCustomerDetails(id)}
-                      >
+                      <div className="min-w-0 text-right">
                         <div className="font-medium">{customerName}</div>
-                      </button>
+                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <div className="min-w-[220px]">
@@ -687,11 +715,21 @@ export default function CustomersClient({
                         <Badge className={customerFlagBadgeClass("neutral")}>ללא</Badge>
                       )}
                     </td>
+                    <td className="px-4 py-4">
+                      {row.requires_prepayment === true ? (
+                        <Badge className={customerFlagBadgeClass("danger")}>תשלום מראש</Badge>
+                      ) : (
+                        <Badge className={customerFlagBadgeClass("neutral")}>רגיל</Badge>
+                      )}
+                    </td>
                     <td className="px-4 py-4">{n(row, "orders_count")}</td>
                     <td className="px-4 py-4">{n(row, "projects_count")}</td>
                     <td className="px-4 py-4 font-medium">{ils(openBalance)}</td>
                     <td className="px-4 py-4">
                       <div className="flex flex-wrap gap-2">
+                        {row.requires_prepayment === true ? (
+                          <Badge className={customerFlagBadgeClass("danger")}>תשלום מראש</Badge>
+                        ) : null}
                         {openBalance > 0 ? (
                           <Badge className={customerFlagBadgeClass("danger")}>
                             חוב פתוח
@@ -719,14 +757,6 @@ export default function CustomersClient({
                           <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>
                             הוספת הזמנה
                           </Link>
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openCustomerDetails(id)}
-                        >
-                          פרטי לקוח
                         </Button>
                       </div>
                     </td>
@@ -791,6 +821,14 @@ export default function CustomersClient({
         <Field label="הערות">
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
         </Field>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={requiresPrepayment}
+            onChange={(e) => setRequiresPrepayment(e.target.checked)}
+          />
+          <span>לקוח ברשימת תשלום מראש</span>
+        </label>
         <div className="space-y-3 rounded-md border p-3">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -930,6 +968,14 @@ export default function CustomersClient({
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
+            checked={editRequiresPrepayment}
+            onChange={(e) => setEditRequiresPrepayment(e.target.checked)}
+          />
+          <span>לקוח ברשימת תשלום מראש</span>
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
             checked={editActive}
             onChange={(e) => setEditActive(e.target.checked)}
           />
@@ -1030,6 +1076,25 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ValueField({
+  label,
+  value,
+  className = "",
+  valueClassName = "",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className={`rounded-xl border bg-background px-3 py-3 ${className}`.trim()}>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className={`mt-2 text-sm font-medium leading-6 text-foreground ${valueClassName}`.trim()}>{value}</div>
+    </div>
+  );
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
@@ -1097,30 +1162,24 @@ function CustomerDetailsDialog({
             <AdaptiveGrid variant="customerPanels">
               <div className="space-y-2 rounded-md border bg-background p-3 text-sm">
                 <div className="font-semibold">פרטי לקוח</div>
-                <div>
-                  <span className="text-muted-foreground">שם לחשבונית:</span>{" "}
-                  {s(row, "name_for_invoice") || "-"}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">ח.פ/ת.ז:</span>{" "}
-                  {s(row, "registration_number") || "-"}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">כתובת:</span> {s(row, "address") || "-"}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">וואטסאפ:</span> {s(row, "whatsapp") || "-"}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">הזמנה אחרונה:</span>{" "}
-                  {dateText(s(row, "last_order_at"))}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">תשלום אחרון:</span>{" "}
-                  {dateText(s(row, "last_payment_at"))}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">הערות:</span> {s(row, "notes") || "-"}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ValueField label="שם לחשבונית" value={s(row, "name_for_invoice") || "-"} />
+                  <ValueField label="ח.פ/ת.ז" value={s(row, "registration_number") || "-"} />
+                  <ValueField label="וואטסאפ" value={s(row, "whatsapp") || "-"} />
+                  <ValueField label="הזמנה אחרונה" value={dateText(s(row, "last_order_at"))} />
+                  <ValueField label="תשלום אחרון" value={dateText(s(row, "last_payment_at"))} />
+                  <ValueField
+                    label="כתובת"
+                    value={s(row, "address") || "-"}
+                    className="sm:col-span-2"
+                    valueClassName="whitespace-pre-wrap"
+                  />
+                  <ValueField
+                    label="הערות"
+                    value={s(row, "notes") || "-"}
+                    className="sm:col-span-2"
+                    valueClassName="whitespace-pre-wrap"
+                  />
                 </div>
                 <div className="grid gap-2 pt-1 sm:grid-cols-2">
                   <Button type="button" size="sm" variant="outline" onClick={() => onEdit(row)}>

@@ -10,6 +10,7 @@ type CreateCustomerPayload = {
   address?: string | null;
   registration_number?: string | null;
   notes?: string | null;
+  requires_prepayment?: boolean;
 };
 
 export async function POST(req: Request) {
@@ -27,6 +28,7 @@ export async function POST(req: Request) {
         ? body.registration_number.trim()
         : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
+    const requiresPrepayment = body.requires_prepayment === true;
 
     if (!name) {
       return NextResponse.json({ error: "שם לקוח הוא שדה חובה." }, { status: 400 });
@@ -52,8 +54,9 @@ export async function POST(req: Request) {
         address: fullAddress || null,
         active: true,
         notes,
+        requires_prepayment: requiresPrepayment,
       })
-      .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes")
+      .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes,requires_prepayment")
       .maybeSingle();
 
     if (error) {

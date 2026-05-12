@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
@@ -1217,11 +1217,18 @@ export default function SalaryCenterClient({
     () => publicSessions.filter((session) => session.user_id === selectedWorkerId),
     [publicSessions, selectedWorkerId]
   );
+  const selectedWorkerSessionsSorted = useMemo(
+    () =>
+      [...selectedWorkerSessions].sort(
+        (a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime()
+      ),
+    [selectedWorkerSessions]
+  );
   const selectedWorkerStats = selectedWorker ? getWorkerMonthStats(selectedWorker.id, publicSessions) : null;
   const selectedWorkerTotalPay = useMemo(
     () =>
-      selectedWorkerSessions.reduce((sum, session) => sum + (sessionCostsById.get(session.id) ?? 0), 0),
-    [selectedWorkerSessions, sessionCostsById]
+      selectedWorkerSessionsSorted.reduce((sum, session) => sum + (sessionCostsById.get(session.id) ?? 0), 0),
+    [selectedWorkerSessionsSorted, sessionCostsById]
   );
   const selectedWorkerBalance = selectedWorker ? workerBalancesByUserId.get(selectedWorker.id) ?? null : null;
   const selectedWorkerDebtItems = useMemo(() => {
@@ -1247,6 +1254,250 @@ export default function SalaryCenterClient({
     () => (selectedWorker ? (protectedData?.hourlyOverrides ?? []).filter((override) => override.user_id === selectedWorker.id) : []),
     [protectedData, selectedWorker]
   );
+  function printSelectedWorkerSummary() {
+    if (!selectedWorker) return;
+
+    const workerName = selectedWorker.full_name ?? selectedWorker.email ?? "עובד";
+    const generatedAt = new Date();
+    const generatedLabel = `${formatDate(generatedAt.toISOString())} ${generatedAt.toLocaleTimeString("he-IL", {
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+    const workRows = selectedWorkerSessionsSorted
+      .map((session) => {
+        const hours = formatMinutes(sessionWorkedMinutes(session));
+        const workedAt = getSessionLinkLabel(session, projectLabelsById, propertyLabelsById);
+        const startDateValue = new Date(session.clock_in);
+        const endDateValue = session.clock_out ? new Date(session.clock_out) : null;
+        const startDate = Number.isNaN(startDateValue.getTime())
+          ? formatDate(session.clock_in)
+          : formatLocalDate(startDateValue);
+        const endDate =
+          endDateValue && !Number.isNaN(endDateValue.getTime())
+            ? formatLocalDate(endDateValue)
+            : "פתוח";
+        const startTime = Number.isNaN(startDateValue.getTime())
+          ? formatDateTime(session.clock_in)
+          : formatLocalTime(startDateValue);
+        const endTime =
+          endDateValue && !Number.isNaN(endDateValue.getTime())
+            ? formatLocalTime(endDateValue)
+            : "פתוח";
+        const amount = formatCurrency(sessionCostsById.get(session.id) ?? 0);
+        return `
+          <tr>
+            <td>${escapePrintHtml(startDate)}</td>
+            <td>${escapePrintHtml(endDate)}</td>
+            <td>${escapePrintHtml(startTime)}</td>
+            <td>${escapePrintHtml(endTime)}</td>
+            <td>${escapePrintHtml(hours)}</td>
+            <td>${escapePrintHtml(workedAt)}</td>
+            <td>${escapePrintHtml(amount)}</td>
+          </tr>
+        `;
+      })
+      .join("");
+    const paymentRows = selectedWorkerPayments
+      .map((payment) => {
+        const details = [formatWorkerPaymentMethodLabel(payment.payment_method), payment.reference_number]
+          .filter(Boolean)
+          .join(" • ");
+        return `
+          <tr>
+            <td>${escapePrintHtml(formatDate(payment.payment_date))}</td>
+            <td>${escapePrintHtml(formatCurrency(toNumber(payment.amount)))}</td>
+            <td>${escapePrintHtml(details || "ללא פירוט")}</td>
+            <td>${escapePrintHtml(payment.notes || "-")}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const printHtml = `<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapePrintHtml(`סיכום עובד - ${workerName}`)}</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 24px;
+        color: #111827;
+        direction: rtl;
+      }
+      h1, h2, h3, p { margin: 0; }
+      .hero-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+      }
+      .hero-table th,
+      .hero-table td {
+        border: 1px solid #d1d5db;
+        padding: 14px 16px;
+        text-align: right;
+      }
+      .hero-table th {
+        background: #eef2ff;
+        font-size: 24px;
+        font-weight: 800;
+      }
+      .hero-table td {
+        background: #ffffff;
+      }
+      .worker-name {
+        font-size: 26px;
+        font-weight: 800;
+      }
+      .worker-phone {
+        margin-top: 6px;
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .subtle {
+        color: #6b7280;
+        font-size: 12px;
+        margin-top: 6px;
+      }
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin: 18px 0 24px;
+      }
+      .card {
+        border: 1px solid #d1d5db;
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .label {
+        color: #6b7280;
+        font-size: 12px;
+        margin-bottom: 8px;
+      }
+      .value {
+        font-size: 18px;
+        font-weight: 700;
+      }
+      .section {
+        margin-top: 24px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+        font-size: 13px;
+      }
+      th, td {
+        border: 1px solid #d1d5db;
+        padding: 8px 10px;
+        text-align: right;
+        vertical-align: top;
+      }
+      th {
+        background: #f3f4f6;
+      }
+      .empty {
+        margin-top: 12px;
+        border: 1px dashed #d1d5db;
+        border-radius: 12px;
+        padding: 12px;
+        color: #6b7280;
+      }
+      @media print {
+        body { margin: 12px; }
+      }
+    </style>
+  </head>
+  <body>
+    <table class="hero-table">
+      <thead>
+        <tr>
+          <th>סיכום עבודה ותשלומים לעובד</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <div class="worker-name">${escapePrintHtml(workerName)}</div>
+            <div class="worker-phone">טלפון: ${escapePrintHtml(selectedWorker.phone ?? "-")}</div>
+            <p class="subtle">הופק בתאריך ${escapePrintHtml(generatedLabel)}</p>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="summary">
+      <div class="card">
+        <div class="label">סה"כ שנצבר</div>
+        <div class="value">${escapePrintHtml(formatCurrency(selectedWorkerBalance?.earned_amount ?? 0))}</div>
+      </div>
+      <div class="card">
+        <div class="label">סה"כ שולם</div>
+        <div class="value">${escapePrintHtml(formatCurrency(selectedWorkerBalance?.paid_amount ?? 0))}</div>
+      </div>
+      <div class="card">
+        <div class="label">יתרה לתשלום</div>
+        <div class="value">${escapePrintHtml(formatCurrency(selectedWorkerBalance?.owed_amount ?? 0))}</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>פירוט עבודה</h2>
+      ${
+        workRows
+          ? `<table>
+              <thead>
+                <tr>
+                  <th>תאריך התחלה</th>
+                  <th>תאריך סיום</th>
+                  <th>שעת התחלה</th>
+                  <th>שעת סיום</th>
+                  <th>סה"כ שעות</th>
+                  <th>איפה עבד</th>
+                  <th>עלות עבודה</th>
+                </tr>
+              </thead>
+              <tbody>${workRows}</tbody>
+            </table>`
+          : '<div class="empty">אין משמרות להצגה.</div>'
+      }
+    </div>
+
+    <div class="section">
+      <h2>פירוט תשלומים</h2>
+      ${
+        paymentRows
+          ? `<table>
+              <thead>
+                <tr>
+                  <th>תאריך תשלום</th>
+                  <th>סכום</th>
+                  <th>איך שולם</th>
+                  <th>הערות</th>
+                </tr>
+              </thead>
+              <tbody>${paymentRows}</tbody>
+            </table>`
+          : '<div class="empty">אין תשלומים שמורים לעובד זה.</div>'
+      }
+    </div>
+  </body>
+</html>`;
+
+    printWindow.document.open();
+    printWindow.document.write(printHtml);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.onload = () => {
+      printWindow.setTimeout(() => {
+        printWindow.print();
+      }, 150);
+    };
+  }
   const sessionDialogWorker = useMemo(
     () => (sessionForm.user_id ? usersById.get(sessionForm.user_id) ?? null : null),
     [sessionForm.user_id, usersById]
@@ -2268,9 +2519,14 @@ export default function SalaryCenterClient({
                     <CardContent className="space-y-4 py-5">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="text-lg font-semibold">כספים</div>
-                        <Button onClick={() => openWorkerPaymentDialog()} disabled={isPending || selectedWorkerOpenDebtItems.length === 0}>
-                          הוספת תשלום
-                        </Button>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button variant="outline" onClick={() => printSelectedWorkerSummary()}>
+                            הדפסת סיכום לעובד
+                          </Button>
+                          <Button onClick={() => openWorkerPaymentDialog()} disabled={isPending || selectedWorkerOpenDebtItems.length === 0}>
+                            הוספת תשלום
+                          </Button>
+                        </div>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-4">
                         <MiniStat label="סה״כ" value={formatCurrency(selectedWorkerBalance?.earned_amount ?? 0)} />
@@ -2326,7 +2582,7 @@ export default function SalaryCenterClient({
                       <MiniStat label="עלות משמרות" value={formatCurrency(selectedWorkerTotalPay)} />
                     </div>
                     <div className="space-y-2">
-                      {selectedWorkerSessions.slice(0, 12).map((session) => (
+                      {selectedWorkerSessionsSorted.slice(0, 12).map((session) => (
                         <div key={session.id} className="rounded-xl border px-3 py-2 text-sm">
                           {(() => {
                             const payrollPeriod = getSessionPayrollPeriod(session);
@@ -3466,6 +3722,30 @@ function paymentStatusLabel(status: string | null | undefined) {
 function sharedPaymentStatusLabel(status: string | null | undefined) {
   if (status === "overpaid") return paymentStatusLabel(status);
   return getSharedPaymentStatusLabel(status ?? "unpaid");
+}
+
+function formatWorkerPaymentMethodLabel(value: string | null | undefined) {
+  const normalized = value?.trim();
+  if (!normalized) return "";
+
+  const lowered = normalized.toLowerCase();
+  if (lowered === "cash") return "מזומן";
+  if (lowered === "transfer" || lowered === "bank transfer" || lowered === "wire") return "העברה";
+  if (lowered === "check" || lowered === "cheque") return "צ׳ק";
+  if (lowered === "credit" || lowered === "credit card") return "אשראי";
+  if (lowered === "bit") return "ביט";
+  if (lowered === "paybox") return "פייבוקס";
+
+  return normalized;
+}
+
+function escapePrintHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function RoleBadge({ role }: { role: string | null | undefined }) {

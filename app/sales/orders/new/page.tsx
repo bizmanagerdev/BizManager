@@ -10,9 +10,9 @@ export default async function NewSalesOrderPage() {
   const [{ data: customers, error: customersError }, { data: products, error: productsError }] =
     await Promise.all([
       supabase
-        .from("customer_overview_view")
-        .select("customer_id,customer_name,phone,email,address")
-        .order("customer_name", { ascending: true })
+        .from("customers")
+        .select("id,name,phone,email,address,requires_prepayment")
+        .order("name", { ascending: true })
         .range(0, 49),
       supabase
         .from("products")

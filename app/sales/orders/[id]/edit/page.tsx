@@ -54,9 +54,9 @@ export default async function EditSalesOrderPage({
       .eq("order_id", id)
       .order("payment_date", { ascending: false }),
     supabase
-      .from("customer_overview_view")
-      .select("customer_id,customer_name,phone,email,address")
-      .order("customer_name", { ascending: true })
+      .from("customers")
+      .select("id,name,phone,email,address,requires_prepayment")
+      .order("name", { ascending: true })
       .range(0, 49),
     supabase
       .from("products")
@@ -77,9 +77,9 @@ export default async function EditSalesOrderPage({
   const [{ data: selectedCustomer }, { data: selectedProducts }] = await Promise.all([
     selectedCustomerId
       ? supabase
-          .from("customer_overview_view")
-          .select("customer_id,customer_name,phone,email,address")
-          .eq("customer_id", selectedCustomerId)
+          .from("customers")
+          .select("id,name,phone,email,address,requires_prepayment")
+          .eq("id", selectedCustomerId)
           .maybeSingle()
       : Promise.resolve({ data: null }),
     selectedProductIds.length > 0

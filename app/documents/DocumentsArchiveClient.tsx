@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -36,12 +36,15 @@ import {
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Input } from "@/components/ui/input";
 import { formatShortDateTime } from "@/lib/date";
+import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
 
 export type DocumentArchiveFilters = {
   customer_id: string;
   customer_name: string;
   customer_page: string;
   project_id: string;
+  property_id: string;
+  business_domain: string;
   entity_type: string;
   type: string;
   q: string;
@@ -52,7 +55,7 @@ export type ArchiveRelation = {
   label: string;
 };
 
-export type UploadProjectOption = {
+export type ArchiveTargetOption = {
   id: string;
   label: string;
 };
@@ -79,8 +82,10 @@ export type DocumentArchiveItem = {
   linked_entities: ArchiveLinkedEntity[];
   customers: ArchiveRelation[];
   projects: ArchiveRelation[];
+  properties: ArchiveRelation[];
   tasks: ArchiveRelation[];
   orders: ArchiveRelation[];
+  business_domains: string[];
   search_text: string;
 };
 
@@ -103,6 +108,8 @@ function entityTypeLabel(value: string) {
   switch (value) {
     case "project":
       return "פרויקט";
+    case "property":
+      return "נכס";
     case "task":
       return "משימה";
     case "customer":
@@ -152,7 +159,7 @@ function groupLabel(groupBy: string, doc: DocumentArchiveItem) {
   if (groupBy === "entity") {
     if (doc.linked_entities.length === 0) return "ללא שיוך";
     if (doc.entity_types.length === 1) return entityTypeLabel(doc.entity_types[0] ?? "");
-    return "מסמכים משויכים למספר ישויות";
+    return "מסמכים המשויכים למספר ישויות";
   }
 
   if (groupBy === "type") return doc.document_type || "ללא קטגוריה";
@@ -190,34 +197,41 @@ export default function DocumentsArchiveClient({
   error,
   initialFilters,
   projectOptions,
+  propertyOptions,
   totalDocuments,
   isTruncated,
 }: {
   documents: DocumentArchiveItem[];
   error: string | null;
   initialFilters: DocumentArchiveFilters;
-  projectOptions: UploadProjectOption[];
+  projectOptions: ArchiveTargetOption[];
+  propertyOptions: ArchiveTargetOption[];
   totalDocuments: number;
   isTruncated: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [query, setQuery] = useState(initialFilters.q);
-  const [entityType, setEntityType] = useState(initialFilters.entity_type);
+  const [businessDomain, setBusinessDomain] = useState(initialFilters.business_domain);
   const [documentType, setDocumentType] = useState(initialFilters.type);
   const [customerId, setCustomerId] = useState(initialFilters.customer_id);
   const customerName = initialFilters.customer_name;
   const customerPage = initialFilters.customer_page;
   const [projectId, setProjectId] = useState(initialFilters.project_id);
+  const [propertyId, setPropertyId] = useState(initialFilters.property_id);
   const [fileKind, setFileKind] = useState("");
   const [groupBy, setGroupBy] = useState("entity");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadBusinessDomain, setUploadBusinessDomain] = useState(
+    initialFilters.business_domain === "property_management" ? "property_management" : "logistics_projects"
+  );
   const [uploadCategoryMode, setUploadCategoryMode] = useState<"existing" | "new">("existing");
   const [uploadCategory, setUploadCategory] = useState("");
   const [uploadNewCategory, setUploadNewCategory] = useState("");
   const [uploadProjectId, setUploadProjectId] = useState(initialFilters.project_id);
-  const [uploadProjectOptions, setUploadProjectOptions] = useState<UploadProjectOption[]>(projectOptions);
+  const [uploadPropertyId, setUploadPropertyId] = useState(initialFilters.property_id);
+  const [uploadProjectOptions, setUploadProjectOptions] = useState<ArchiveTargetOption[]>(projectOptions);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [editDialogDoc, setEditDialogDoc] = useState<DocumentArchiveItem | null>(null);
   const [editTagValue, setEditTagValue] = useState("");
@@ -247,6 +261,63 @@ export default function DocumentsArchiveClient({
   }, [documents]);
 
   const uploadCategoryOptions = useMemo(() => documentTypeOptions, [documentTypeOptions]);
+  const projectFilterOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const doc of documents) {
+      for (const project of doc.projects) {
+        if (!map.has(project.id)) map.set(project.id, project.label);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "he"));
+  }, [documents]);
+  const propertyFilterOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const property of propertyOptions) {
+      if (!map.has(property.id)) map.set(property.id, property.label);
+    }
+    for (const doc of documents) {
+      for (const property of doc.properties) {
+        if (!map.has(property.id)) map.set(property.id, property.label);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "he"));
+  }, [documents, propertyOptions]);
+  const showProjectFilter = businessDomain === "logistics_projects";
+  const showPropertyFilter = businessDomain === "property_management";
+  const showUploadProjectField = uploadBusinessDomain === "logistics_projects";
+  const showUploadPropertyField = uploadBusinessDomain === "property_management";
+
+  function resetUploadForm() {
+    setUploadCategory("");
+    setUploadNewCategory("");
+    setUploadCategoryMode("existing");
+    setUploadBusinessDomain(businessDomain === "property_management" ? "property_management" : "logistics_projects");
+    setUploadProjectId(initialFilters.project_id);
+    setUploadPropertyId(initialFilters.property_id);
+    setUploadFiles([]);
+  }
+
+  useEffect(() => {
+    if (!showProjectFilter && projectId) {
+      setProjectId("");
+    }
+    if (!showPropertyFilter && propertyId) {
+      setPropertyId("");
+    }
+  }, [projectId, propertyId, showProjectFilter, showPropertyFilter]);
+
+  useEffect(() => {
+    if (!showUploadProjectField && uploadProjectId) {
+      setUploadProjectId("");
+    }
+    if (!showUploadPropertyField && uploadPropertyId) {
+      setUploadPropertyId("");
+    }
+  }, [showUploadProjectField, showUploadPropertyField, uploadProjectId, uploadPropertyId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -287,15 +358,26 @@ export default function DocumentsArchiveClient({
   const filteredDocuments = useMemo(() => {
     return documents.filter((doc) => {
       if (normalizedQuery && !doc.search_text.includes(normalizedQuery)) return false;
-      if (entityType === "unlinked" && doc.linked_entities.length > 0) return false;
-      if (entityType && entityType !== "unlinked" && !doc.entity_types.includes(entityType)) return false;
+      if (businessDomain && !doc.business_domains.includes(businessDomain)) return false;
       if (documentType && (doc.document_type ?? "") !== documentType) return false;
       if (customerId && !doc.customers.some((customer) => customer.id === customerId)) return false;
-      if (projectId && !doc.projects.some((project) => project.id === projectId)) return false;
+      if (showProjectFilter && projectId && !doc.projects.some((project) => project.id === projectId)) return false;
+      if (showPropertyFilter && propertyId && !doc.properties.some((property) => property.id === propertyId)) return false;
       if (fileKind && doc.file_kind !== fileKind) return false;
       return true;
     });
-  }, [customerId, documentType, documents, entityType, fileKind, normalizedQuery, projectId]);
+  }, [
+    businessDomain,
+    customerId,
+    documentType,
+    documents,
+    fileKind,
+    normalizedQuery,
+    projectId,
+    propertyId,
+    showProjectFilter,
+    showPropertyFilter,
+  ]);
 
   const groupedDocuments = useMemo(() => {
     const map = new Map<string, DocumentArchiveItem[]>();
@@ -327,10 +409,11 @@ export default function DocumentsArchiveClient({
 
   function resetFilters() {
     setQuery("");
-    setEntityType("");
+    setBusinessDomain("");
     setDocumentType("");
     setCustomerId("");
     setProjectId("");
+    setPropertyId("");
     setFileKind("");
     setGroupBy("entity");
   }
@@ -341,13 +424,19 @@ export default function DocumentsArchiveClient({
     const category =
       uploadCategoryMode === "new" ? uploadNewCategory.trim() : uploadCategory.trim();
     const projectId = uploadProjectId.trim();
+    const propertyId = uploadPropertyId.trim();
 
     if (uploadCategoryMode === "new" && !category) {
       toast.error("יש להזין קטגוריה חדשה");
       return;
     }
-    if (!projectId) {
+    if (showUploadProjectField && !projectId) {
       toast.error("יש לבחור פרויקט");
+      return;
+    }
+
+    if (showUploadPropertyField && !propertyId) {
+      toast.error("יש לבחור נכס");
       return;
     }
 
@@ -360,7 +449,9 @@ export default function DocumentsArchiveClient({
         const file = files[i]!;
         const form = new FormData();
         form.set("file", file);
-        form.set("project_id", projectId);
+        form.set("business_domain", uploadBusinessDomain);
+        if (showUploadProjectField) form.set("project_id", projectId);
+        if (showUploadPropertyField) form.set("property_id", propertyId);
         if (category) form.set("category", category);
 
         toast.loading(`מעלה קבצים... (${i + 1}/${files.length})`, { id: toastId });
@@ -382,11 +473,7 @@ export default function DocumentsArchiveClient({
 
       toast.success("הקבצים הועלו", { id: toastId });
       setUploadDialogOpen(false);
-      setUploadCategory("");
-      setUploadNewCategory("");
-      setUploadCategoryMode("existing");
-      setUploadProjectId(initialFilters.project_id);
-      setUploadFiles([]);
+      resetUploadForm();
       router.refresh();
     } catch (errorValue: unknown) {
       const description = errorValue instanceof Error ? errorValue.message : "Unknown error";
@@ -468,7 +555,13 @@ export default function DocumentsArchiveClient({
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="default" onClick={() => setUploadDialogOpen(true)}>
+              <Button
+                variant="default"
+                onClick={() => {
+                  resetUploadForm();
+                  setUploadDialogOpen(true);
+                }}
+              >
                 <Upload className="h-4 w-4" />
                 העלאת קבצים
               </Button>
@@ -491,7 +584,7 @@ export default function DocumentsArchiveClient({
                 <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="pe-10"
-                  placeholder="חיפוש לפי שם קובץ, קטגוריה, לקוח, פרויקט..."
+                  placeholder="חיפוש לפי שם קובץ, קטגוריה, לקוח, פרויקט או נכס..."
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
@@ -512,14 +605,14 @@ export default function DocumentsArchiveClient({
 
           <AdaptiveGrid variant="customersFilters">
             <div className="space-y-1">
-              <div className="text-sm font-medium">ישות</div>
-              <SelectField value={entityType} onChange={setEntityType} ariaLabel="סינון לפי ישות">
-                <option value="">הכול</option>
-                <option value="project">פרויקטים</option>
-                <option value="task">משימות</option>
-                <option value="customer">לקוחות</option>
-                <option value="order">הזמנות</option>
-                <option value="unlinked">ללא שיוך</option>
+              <div className="text-sm font-medium">תחום</div>
+              <SelectField value={businessDomain} onChange={setBusinessDomain} ariaLabel="סינון לפי תחום">
+                <option value="">כל התחומים</option>
+                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                  <option key={domain} value={domain}>
+                    {getBusinessDomainLabel(domain)}
+                  </option>
+                ))}
               </SelectField>
             </div>
 
@@ -551,17 +644,33 @@ export default function DocumentsArchiveClient({
               </SelectField>
             </div>
 
-            <div className="space-y-1">
-              <div className="text-sm font-medium">פרויקט</div>
-              <SelectField value={projectId} onChange={setProjectId} ariaLabel="סינון לפי פרויקט">
-                <option value="">כל הפרויקטים</option>
-                {uploadProjectOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </SelectField>
-            </div>
+            {showProjectFilter ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">פרויקט</div>
+                <SelectField value={projectId} onChange={setProjectId} ariaLabel="סינון לפי פרויקט">
+                  <option value="">כל הפרויקטים</option>
+                  {projectFilterOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </SelectField>
+              </div>
+            ) : null}
+
+            {showPropertyFilter ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">נכס</div>
+                <SelectField value={propertyId} onChange={setPropertyId} ariaLabel="סינון לפי נכס">
+                  <option value="">כל הנכסים</option>
+                  {propertyFilterOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </SelectField>
+              </div>
+            ) : null}
           </AdaptiveGrid>
 
           <AdaptiveGrid variant="formTwoLoose">
@@ -643,6 +752,11 @@ export default function DocumentsArchiveClient({
                             <div className="flex flex-wrap items-center gap-2">
                               <div className="font-medium">{doc.title}</div>
                               <Badge variant="outline">{fileKindLabel(doc.file_kind)}</Badge>
+                              {doc.business_domains.map((domain) => (
+                                <Badge key={`${doc.id}-${domain}`} variant="outline">
+                                  {getBusinessDomainLabel(domain)}
+                                </Badge>
+                              ))}
                               {doc.document_type ? (
                                 <Badge variant="secondary">{doc.document_type}</Badge>
                               ) : (
@@ -687,7 +801,7 @@ export default function DocumentsArchiveClient({
                           )}
                         </div>
 
-                        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-5">
                           <div>
                             <span className="font-medium text-foreground">לקוחות:</span>{" "}
                             {doc.customers.length > 0
@@ -698,6 +812,12 @@ export default function DocumentsArchiveClient({
                             <span className="font-medium text-foreground">פרויקטים:</span>{" "}
                             {doc.projects.length > 0
                               ? doc.projects.map((item) => item.label).join(", ")
+                              : "—"}
+                          </div>
+                          <div>
+                            <span className="font-medium text-foreground">נכסים:</span>{" "}
+                            {doc.properties.length > 0
+                              ? doc.properties.map((item) => item.label).join(", ")
                               : "—"}
                           </div>
                           <div>
@@ -757,11 +877,7 @@ export default function DocumentsArchiveClient({
           if (!open && uploading) return;
           setUploadDialogOpen(open);
           if (!open) {
-            setUploadCategory("");
-            setUploadNewCategory("");
-            setUploadCategoryMode("existing");
-            setUploadProjectId(initialFilters.project_id);
-            setUploadFiles([]);
+            resetUploadForm();
           }
         }}
       >
@@ -772,23 +888,54 @@ export default function DocumentsArchiveClient({
           </DialogHeader>
           <div className="mt-4 space-y-4">
             <div className="space-y-1">
-              <div className="text-sm font-medium">פרויקט</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={uploadProjectId}
-                onChange={(event) => setUploadProjectId(event.target.value)}
-              >
-                <option value="">בחר פרויקט</option>
-                {uploadProjectOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              {!uploadProjectId.trim() ? (
-                <div className="text-xs text-destructive">יש לבחור פרויקט לקישור הקבצים</div>
-              ) : null}
+              <div className="text-sm font-medium">תחום</div>
+              <SelectField value={uploadBusinessDomain} onChange={setUploadBusinessDomain} ariaLabel="תחום למסמך חדש">
+                <option value="logistics_projects">{getBusinessDomainLabel("logistics_projects")}</option>
+                <option value="property_management">{getBusinessDomainLabel("property_management")}</option>
+              </SelectField>
             </div>
+
+            {showUploadProjectField ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">פרויקט</div>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={uploadProjectId}
+                  onChange={(event) => setUploadProjectId(event.target.value)}
+                >
+                  <option value="">בחר פרויקט</option>
+                  {uploadProjectOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {!uploadProjectId.trim() ? (
+                  <div className="text-xs text-destructive">יש לבחור פרויקט לקישור הקבצים</div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showUploadPropertyField ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">נכס</div>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={uploadPropertyId}
+                  onChange={(event) => setUploadPropertyId(event.target.value)}
+                >
+                  <option value="">בחר נכס</option>
+                  {propertyFilterOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {!uploadPropertyId.trim() ? (
+                  <div className="text-xs text-destructive">יש לבחור נכס לקישור הקבצים</div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="space-y-1">
               <div className="text-sm font-medium">קטגוריה (אופציונלי)</div>
@@ -861,7 +1008,8 @@ export default function DocumentsArchiveClient({
               disabled={
                 uploading ||
                 uploadFiles.length === 0 ||
-                !uploadProjectId.trim() ||
+                (showUploadProjectField && !uploadProjectId.trim()) ||
+                (showUploadPropertyField && !uploadPropertyId.trim()) ||
                 (uploadCategoryMode === "new" && !uploadNewCategory.trim())
               }
               onClick={() => void startUpload()}

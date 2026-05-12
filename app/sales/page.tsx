@@ -595,10 +595,12 @@ export default async function SalesPage({
       soldMovements,
       customerReturnMovements,
       movements,
+      thresholdRows,
       count,
       productsError,
       inventoryError,
       movementsError,
+      thresholdsError,
     } = await loadInventoryPageData(supabase, inventoryPage);
 
     const soldAmountByProductId = Object.fromEntries(
@@ -616,9 +618,20 @@ export default async function SalesPage({
         })
     );
 
+    const lowStockThresholdByProductId = Object.fromEntries(
+      thresholdRows
+        .map((row) => {
+          const id = getString(row, "id");
+          if (!id) return null;
+          return [id, getNumber(row, "low_stock_threshold") ?? 5] as const;
+        })
+        .filter((entry): entry is readonly [string, number] => entry !== null)
+    );
+
     const hasPreviousPage = inventoryPage > 1;
     const hasNextPage = inventoryPage * PAGE_SIZE < count;
-    const loadError = productsError?.message ?? inventoryError?.message ?? movementsError?.message ?? null;
+    const loadError =
+      productsError?.message ?? inventoryError?.message ?? movementsError?.message ?? thresholdsError?.message ?? null;
 
     content = (
       <>
@@ -630,6 +643,7 @@ export default async function SalesPage({
               products={products}
               inventoryRows={inventoryRows}
               soldAmountByProductId={soldAmountByProductId}
+              lowStockThresholdByProductId={lowStockThresholdByProductId}
               movements={movements}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">

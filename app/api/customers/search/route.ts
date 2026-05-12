@@ -17,15 +17,15 @@ export async function GET(req: Request) {
   const limit = parseLimit(searchParams.get("limit"));
 
   let query = supabase
-    .from("customer_overview_view")
-    .select("customer_id,customer_name,phone,email,address")
-    .order("customer_name", { ascending: true })
+    .from("customers")
+    .select("id,name,phone,email,address,requires_prepayment")
+    .order("name", { ascending: true })
     .range(0, limit - 1);
 
   if (q) {
     const escaped = q.replace(/,/g, " ");
     query = query.or(
-      `customer_name.ilike.%${escaped}%,email.ilike.%${escaped}%,phone.ilike.%${escaped}%,address.ilike.%${escaped}%`
+      `name.ilike.%${escaped}%,email.ilike.%${escaped}%,phone.ilike.%${escaped}%,address.ilike.%${escaped}%`
     );
   }
 
@@ -35,11 +35,12 @@ export async function GET(req: Request) {
   }
 
   const customers = (data ?? []).map((row) => ({
-    id: row.customer_id,
-    name: row.customer_name,
+    id: row.id,
+    name: row.name,
     phone: row.phone,
     email: row.email,
     address: row.address,
+    requires_prepayment: row.requires_prepayment === true,
   }));
 
   return NextResponse.json({ customers });

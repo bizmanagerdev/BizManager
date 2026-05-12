@@ -27,6 +27,17 @@ function getNumber(row: Row, key: string) {
   return null;
 }
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? error.code : null;
+  const message = "message" in error ? error.message : null;
+  return (
+    code === "42703" &&
+    typeof message === "string" &&
+    message.toLowerCase().includes(columnName.toLowerCase())
+  );
+}
+
 function parsePage(value: string | undefined) {
   const page = Number(value ?? "1");
   return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
@@ -69,6 +80,7 @@ export default async function InventoryPage({
     { data: movements, error: movementsError },
     { data: soldMovements, error: soldMovementsError },
     { data: customerReturnMovements, error: customerReturnMovementsError },
+    thresholdResult,
   ] =
     productIds.length > 0
       ? await Promise.all([
@@ -95,13 +107,32 @@ export default async function InventoryPage({
             .eq("source_type", "manual_adjustment")
             .in("product_id", productIds)
             .or("notes.ilike.%החזרת לקוח%,notes.ilike.%customer return%"),
+          supabase.from("products").select("id,low_stock_threshold").in("id", productIds),
         ])
       : [
           { data: [], error: null },
           { data: [], error: null },
           { data: [], error: null },
           { data: [], error: null },
+          { data: [], error: null },
         ];
+
+  const thresholdRows = isMissingColumnError(thresholdResult.error, "low_stock_threshold")
+    ? []
+    : ((thresholdResult.data ?? []) as Row[]);
+  const thresholdsError = isMissingColumnError(thresholdResult.error, "low_stock_threshold")
+    ? null
+    : thresholdResult.error;
+
+  const lowStockThresholdByProductId = Object.fromEntries(
+    thresholdRows
+      .map((row) => {
+        const id = getString(row, "id");
+        if (!id) return null;
+        return [id, getNumber(row, "low_stock_threshold") ?? 5] as const;
+      })
+      .filter((entry): entry is readonly [string, number] => entry !== null)
+  );
 
   const soldAmountByProductId = Object.fromEntries(
     productIds.map((productId) => {
@@ -140,12 +171,15 @@ export default async function InventoryPage({
           </p>
         ) : productsError ? (
           <p className="text-sm text-destructive">שגיאה בטעינת מוצרים: {productsError.message}</p>
+        ) : thresholdsError ? (
+          <p className="text-sm text-destructive">טעינת ספי מלאי נכשלה: {thresholdsError.message}</p>
         ) : (
           <>
             <SalesInventoryClient
               products={(products ?? []) as Row[]}
               inventoryRows={(inventoryRows ?? []) as Row[]}
               soldAmountByProductId={soldAmountByProductId}
+              lowStockThresholdByProductId={lowStockThresholdByProductId}
               movements={(movements ?? []) as Row[]}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">

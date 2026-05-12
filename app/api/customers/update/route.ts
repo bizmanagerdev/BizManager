@@ -12,6 +12,7 @@ type UpdateCustomerPayload = {
   address?: string | null;
   notes?: string | null;
   active?: boolean;
+  requires_prepayment?: boolean;
 };
 
 export async function POST(req: Request) {
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
     const address = typeof body.address === "string" ? body.address.trim() : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
     const active = typeof body.active === "boolean" ? body.active : true;
+    const requiresPrepayment = body.requires_prepayment === true;
 
     if (!id) {
       return NextResponse.json({ error: "Missing customer id" }, { status: 400 });
@@ -55,9 +57,10 @@ export async function POST(req: Request) {
         address,
         notes,
         active,
+        requires_prepayment: requiresPrepayment,
       })
       .eq("id", id)
-      .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes")
+      .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes,requires_prepayment")
       .maybeSingle();
 
     if (error) {

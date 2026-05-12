@@ -55,6 +55,25 @@ function statusClass(status: string | null | undefined, hasError: boolean) {
   }
 }
 
+function DetailField({
+  label,
+  value,
+  className = "",
+  valueClassName = "",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className={`rounded-2xl border border-border/70 bg-background/70 px-4 py-3 ${className}`.trim()}>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className={`mt-2 text-sm font-medium leading-6 text-foreground ${valueClassName}`.trim()}>{value}</div>
+    </div>
+  );
+}
+
 export default function MorningCustomerCard({
   customerId,
   morningClientId,
@@ -185,10 +204,17 @@ export default function MorningCustomerCard({
         </Badge>
       </div>
 
-      <div className="space-y-1 text-muted-foreground">
-        <div>מזהה לקוח Morning: {morningClientId || "-"}</div>
-        <div>סנכרון אחרון: {morningSyncedAt || "-"}</div>
-        {morningLastSyncError ? <div className="text-destructive">{morningLastSyncError}</div> : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <DetailField label="מזהה לקוח Morning" value={morningClientId || "-"} valueClassName="break-all" />
+        <DetailField label="סנכרון אחרון" value={morningSyncedAt || "-"} />
+        {morningLastSyncError ? (
+          <DetailField
+            label="שגיאת סנכרון"
+            value={morningLastSyncError}
+            className="sm:col-span-2"
+            valueClassName="whitespace-pre-wrap text-destructive"
+          />
+        ) : null}
       </div>
 
       <div className="flex flex-wrap gap-2">

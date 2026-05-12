@@ -20,6 +20,8 @@ type InventoryItem = {
   productId: string;
   productName: string;
   sku: string | null;
+  lowStockThreshold: number;
+  active: boolean;
   quantityOnHand: number;
   quantityReserved: number;
   available: number;
@@ -38,7 +40,8 @@ function buildInventoryItems(
   products: Row[],
   inventoryRows: Row[],
   soldAmountByProductId: Record<string, number>,
-  movements: Row[]
+  movements: Row[],
+  lowStockThresholdByProductId: Record<string, number>
 ) {
   const movementNetByProduct = new Map<string, number>();
   movements.forEach((row) => {
@@ -78,6 +81,8 @@ function buildInventoryItems(
       productId: id,
       productName: productName(p),
       sku: getString(p, "sku"),
+      lowStockThreshold: lowStockThresholdByProductId[id] ?? 5,
+      active: p.active !== false,
       quantityOnHand,
       quantityReserved: 0,
       available: quantityOnHand,
@@ -95,6 +100,8 @@ function buildInventoryItems(
       productId,
       productName: p ? productName(p) : productId,
       sku: p ? getString(p, "sku") : null,
+      lowStockThreshold: lowStockThresholdByProductId[productId] ?? 5,
+      active: p?.active !== false,
       quantityOnHand,
       quantityReserved,
       available: quantityOnHand - quantityReserved,
@@ -205,15 +212,17 @@ export default function SalesInventoryClient({
   products,
   inventoryRows,
   soldAmountByProductId = {},
+  lowStockThresholdByProductId = {},
   movements,
 }: {
   products: Row[];
   inventoryRows: Row[];
   soldAmountByProductId?: Record<string, number>;
+  lowStockThresholdByProductId?: Record<string, number>;
   movements: Row[];
 }) {
   const [items, setItems] = useState<InventoryItem[]>(() =>
-    buildInventoryItems(products, inventoryRows, soldAmountByProductId, movements)
+    buildInventoryItems(products, inventoryRows, soldAmountByProductId, movements, lowStockThresholdByProductId)
   );
 
   const [movementRows, setMovementRows] = useState<Row[]>(movements);
@@ -227,9 +236,8 @@ export default function SalesInventoryClient({
   const [success, setSuccess] = useState("");
   const quantityInputRef = useRef<HTMLInputElement | null>(null);
 
-  const lowStockThreshold = 10;
   const lowStockItems = useMemo(
-    () => items.filter((item) => item.available < lowStockThreshold),
+    () => items.filter((item) => item.active && item.available <= item.lowStockThreshold),
     [items]
   );
 
@@ -266,9 +274,11 @@ export default function SalesInventoryClient({
   }, [adjustmentOpen]);
 
   useEffect(() => {
-    setItems(buildInventoryItems(products, inventoryRows, soldAmountByProductId, movements));
+    setItems(
+      buildInventoryItems(products, inventoryRows, soldAmountByProductId, movements, lowStockThresholdByProductId)
+    );
     setMovementRows(movements);
-  }, [products, inventoryRows, soldAmountByProductId, movements]);
+  }, [products, inventoryRows, soldAmountByProductId, movements, lowStockThresholdByProductId]);
 
   function resetAdjustmentForm(nextProductId = "") {
     setProductId(nextProductId);
@@ -329,6 +339,8 @@ export default function SalesInventoryClient({
             productId,
             productName: option?.label ?? productId,
             sku: option?.sku ?? null,
+            lowStockThreshold: lowStockThresholdByProductId[productId] ?? 5,
+            active: true,
             quantityOnHand: nextOnHand,
             quantityReserved: nextReserved,
             available: nextOnHand - nextReserved,
@@ -365,7 +377,7 @@ export default function SalesInventoryClient({
       {lowStockItems.length > 0 ? (
         <Card className="border-red-500/40">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">התראת מלאי נמוך (פחות מ-10)</CardTitle>
+            <CardTitle className="text-base">התראת מלאי נמוך</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
             {lowStockItems.map((item) => (
@@ -373,7 +385,10 @@ export default function SalesInventoryClient({
                 key={item.productId}
                 className="flex items-center justify-between rounded border border-red-200 bg-red-50 p-2"
               >
-                <span>{item.productName}</span>
+                <div>
+                  <div>{item.productName}</div>
+                  <div className="text-xs text-red-700/80">{`סף: ${item.lowStockThreshold}`}</div>
+                </div>
                 <span className="font-medium text-red-700">{item.available}</span>
               </div>
             ))}
@@ -404,7 +419,7 @@ export default function SalesInventoryClient({
                 </thead>
                 <tbody className="divide-y">
                   {items.map((item) => {
-                    const isLow = item.available < lowStockThreshold;
+                    const isLow = item.active && item.available <= item.lowStockThreshold;
                     return (
                       <tr
                         key={item.productId}

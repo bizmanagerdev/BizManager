@@ -21,11 +21,19 @@ export async function POST(req: Request) {
 
     const form = await req.formData();
     const file = form.get("file");
+    const businessDomain = String(form.get("business_domain") ?? "").trim() || "logistics_projects";
     const projectId = String(form.get("project_id") ?? "").trim();
+    const propertyId = String(form.get("property_id") ?? "").trim();
     const category = String(form.get("category") ?? form.get("tag") ?? "").trim();
 
-    if (!projectId) {
+    if (businessDomain === "logistics_projects" && !projectId) {
       return NextResponse.json({ error: "Missing project_id" }, { status: 400 });
+    }
+    if (businessDomain === "property_management" && !propertyId) {
+      return NextResponse.json({ error: "Missing property_id" }, { status: 400 });
+    }
+    if (!["logistics_projects", "property_management"].includes(businessDomain)) {
+      return NextResponse.json({ error: "Unsupported business_domain" }, { status: 400 });
     }
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
@@ -40,7 +48,12 @@ export async function POST(req: Request) {
     const documentId = crypto.randomUUID();
     const displayName = (file.name.split(/[/\\]/).pop() ?? "file").trim() || "file";
     const ext = safeExtensionFromFilename(displayName);
-    const storagePath = ext ? `projects/${projectId}/${documentId}.${ext}` : `projects/${projectId}/${documentId}`;
+    const linkedEntityType = businessDomain === "property_management" ? "property" : "project";
+    const linkedEntityId = businessDomain === "property_management" ? propertyId : projectId;
+    const storageFolder = businessDomain === "property_management" ? "properties" : "projects";
+    const storagePath = ext
+      ? `${storageFolder}/${linkedEntityId}/${documentId}.${ext}`
+      : `${storageFolder}/${linkedEntityId}/${documentId}`;
     const uploadedAt = new Date().toISOString();
 
     const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, file, {
@@ -69,8 +82,8 @@ export async function POST(req: Request) {
 
     const { error: linkError } = await supabase.from("document_links").insert({
       document_id: documentId,
-      entity_type: "project",
-      entity_id: projectId,
+      entity_type: linkedEntityType,
+      entity_id: linkedEntityId,
     });
 
     if (linkError) {
@@ -95,7 +108,9 @@ export async function POST(req: Request) {
         file_name: displayName,
         document_type: category || "general_document",
         uploaded_at: uploadedAt,
-        project_id: projectId,
+        business_domain: businessDomain,
+        project_id: projectId || null,
+        property_id: propertyId || null,
       },
     });
   } catch (err: unknown) {
