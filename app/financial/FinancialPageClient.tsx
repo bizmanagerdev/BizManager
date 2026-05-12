@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, Landmark, Search, TimerReset } from "lucide-react";
 import RecurringExpensesManager, {
@@ -205,6 +205,22 @@ function PaginationControls({
   );
 }
 
+function FilterLoadingDots() {
+  return (
+    <div className="flex justify-center" aria-live="polite" aria-label="Loading filtered financial data">
+      <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/95 px-4 py-2 shadow-sm backdrop-blur">
+        {[0, 150, 300, 450].map((delayMs) => (
+          <span
+            key={delayMs}
+            className="h-3 w-3 animate-pulse rounded-full bg-sky-500 shadow-sm shadow-sky-200"
+            style={{ animationDelay: `${delayMs}ms`, animationDuration: "1s" }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function setOrDelete(params: URLSearchParams, key: string, value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") {
     params.delete(key);
@@ -240,6 +256,7 @@ export default function FinancialPageClient({
   const [sourceId, setSourceId] = useState(initialFilters.sourceId);
   const [type, setType] = useState(initialFilters.type);
   const [stage, setStage] = useState(initialFilters.stage);
+  const [isFilterPending, startFilterTransition] = useTransition();
   const sourceKind = data.sourceKind;
   const domainOptions = data.domainOptions;
   const sourceOptions = data.sourceOptions;
@@ -248,6 +265,10 @@ export default function FinancialPageClient({
     future: data.futureSummary,
     total: data.totalSummary,
   };
+  const currentWorthNow =
+    summaries.actual.net +
+    data.openReceivablesSummary.inflow -
+    data.openLiabilitiesSummary.outflow;
   const domainGroups = data.domainGroups;
   const upcomingEntries = data.upcomingEntries;
   const ledgerEntries = data.ledgerEntries;
@@ -259,11 +280,23 @@ export default function FinancialPageClient({
   const currentLedgerPage = data.ledgerPage;
   const ledgerTotalPages = data.ledgerTotalPages;
 
-  const replaceSearch = (mutate: (params: URLSearchParams) => void) => {
+  const replaceSearch = (
+    mutate: (params: URLSearchParams) => void,
+    options?: { pending?: boolean }
+  ) => {
     const params = new URLSearchParams(searchParams.toString());
     mutate(params);
     const nextQueryString = params.toString();
-    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname);
+    const nextHref = nextQueryString ? `${pathname}?${nextQueryString}` : pathname;
+
+    if (options?.pending) {
+      startFilterTransition(() => {
+        router.replace(nextHref);
+      });
+      return;
+    }
+
+    router.replace(nextHref);
   };
 
   const replaceFilters = (
@@ -294,7 +327,7 @@ export default function FinancialPageClient({
       setOrDelete(params, "stage", nextStage === "all" ? null : nextStage);
       setOrDelete(params, "ledgerPage", nextLedgerPage > 1 ? nextLedgerPage : null);
       setOrDelete(params, "upcomingPage", nextUpcomingPage > 1 ? nextUpcomingPage : null);
-    });
+    }, { pending: true });
   };
 
   const resetFilters = () => {
@@ -479,6 +512,12 @@ export default function FinancialPageClient({
         </CardContent>
       </Card>
 
+      {isFilterPending ? (
+        <div className="sticky top-3 z-20">
+          <FilterLoadingDots />
+        </div>
+      ) : null}
+
       <section dir="rtl" className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           title="כניסות בפועל"
@@ -493,15 +532,27 @@ export default function FinancialPageClient({
           accent="destructive"
         />
         <SummaryCard
-          title="כניסות צפויות"
-          value={formatCurrency(summaries.future.inflow)}
-          description="כולל צ'קים ותשלומים עתידיים"
+          title="חובות לקוחות פתוחים"
+          value={formatCurrency(data.openReceivablesSummary.inflow)}
+          description={`${data.openReceivablesSummary.count} יתרות מפרויקטים/הזמנות שהושלמו ועדיין לא שולמו`}
           accent="success"
         />
         <SummaryCard
-          title="יציאות צפויות"
-          value={formatCurrency(summaries.future.outflow)}
-          description="הוצאות עתידיות לפי תאריך תזרים"
+          title="הכנסות מתוכננות"
+          value={formatCurrency(data.plannedReceivablesSummary.inflow)}
+          description={`${data.plannedReceivablesSummary.count} תקבולים צפויים מצ'קים, פרויקטים והזמנות שעדיין בתהליך`}
+          accent="success"
+        />
+        <SummaryCard
+          title="התחייבויות פתוחות"
+          value={formatCurrency(data.openLiabilitiesSummary.outflow)}
+          description={`${data.openLiabilitiesSummary.count} חובות שכבר נוצרו ועדיין לא שולמו`}
+          accent="destructive"
+        />
+        <SummaryCard
+          title="תשלומים מתוזמנים"
+          value={formatCurrency(data.scheduledLiabilitiesSummary.outflow)}
+          description={`${data.scheduledLiabilitiesSummary.count} תשלומים עתידיים שעדיין לא הגיע מועד התזרים שלהם`}
           accent="destructive"
         />
         <SummaryCard
@@ -511,22 +562,16 @@ export default function FinancialPageClient({
           accent={summaries.actual.net >= 0 ? "success" : "destructive"}
         />
         <SummaryCard
+          title="שווי נוכחי"
+          value={formatCurrency(currentWorthNow)}
+          description="יתרה בפועל + חובות לקוחות פתוחים - התחייבויות פתוחות"
+          accent={currentWorthNow >= 0 ? "success" : "destructive"}
+        />
+        <SummaryCard
           title={initialFilters.to ? "תחזית עד תאריך" : "תחזית ל-30 יום"}
           value={formatCurrency(data.forecastSummary.net)}
           description={`כולל בפועל וצפי עד ${formatShortDate(data.forecastEndIso)}`}
           accent={data.forecastSummary.net >= 0 ? "success" : "destructive"}
-        />
-        <SummaryCard
-          title="חובות לקוחות פתוחים"
-          value={formatCurrency(data.openReceivablesSummary.inflow)}
-          description={`${data.openReceivablesSummary.count} תנועות עתידיות שעדיין לא נגבו`}
-          accent="success"
-        />
-        <SummaryCard
-          title="התחייבויות פתוחות"
-          value={formatCurrency(data.openLiabilitiesSummary.outflow)}
-          description={`${data.openLiabilitiesSummary.count} תשלומים עתידיים לספקים, עובדים והוצאות`}
-          accent="destructive"
         />
       </section>
 

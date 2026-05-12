@@ -43,6 +43,9 @@ type OrderRow = {
   id: string;
   customer_id: string | null;
   order_date?: string | null;
+  status?: string | null;
+  total_amount?: number | string | null;
+  payment_status?: string | null;
 };
 
 type ProjectRow = {
@@ -52,6 +55,9 @@ type ProjectRow = {
   agreed_base_price?: number | string | null;
   actual_price?: number | string | null;
   created_at?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  status?: string | null;
 };
 
 type PropertyRow = {
@@ -133,6 +139,13 @@ export type FinancialPageFilters = {
 export type FinancialEntryType = "inflow" | "outflow";
 export type FinancialEntryStage = "posted" | "scheduled" | "pending";
 export type FinancialSourceKind = "project" | "property" | "order" | "general";
+export type FinancialEntryOrigin =
+  | "payment"
+  | "expense"
+  | "worker_payment"
+  | "worker_owed"
+  | "project_receivable"
+  | "order_receivable";
 
 export type FinancialEntry = {
   id: string;
@@ -150,6 +163,7 @@ export type FinancialEntry = {
   sourceLabel: string;
   sourceHref: string | null;
   description: string;
+  origin: FinancialEntryOrigin;
   reference: string | null;
   paymentMethod: string | null;
   paymentMethodLabel: string | null;
@@ -182,7 +196,9 @@ export type FinancialPageData = {
   forecastSummary: FinancialSummary;
   forecastEndIso: string;
   openReceivablesSummary: FinancialSummary;
+  plannedReceivablesSummary: FinancialSummary;
   openLiabilitiesSummary: FinancialSummary;
+  scheduledLiabilitiesSummary: FinancialSummary;
   domainGroups: FinancialDomainGroup[];
   domainOptions: ExpenseBusinessDomain[];
   sourceKind: FinancialSourceKind | null;
@@ -201,7 +217,7 @@ export type FinancialPageData = {
 const SCAN_CHUNK_SIZE = 500;
 const ID_CHUNK_SIZE = 200;
 const LEDGER_PAGE_SIZE = 25;
-const UPCOMING_PAGE_SIZE = 12;
+const UPCOMING_PAGE_SIZE = 8;
 
 function toNumber(value: number | string | null | undefined) {
   if (typeof value === "number") {
@@ -405,7 +421,7 @@ async function fetchProjectsByIds(supabase: SupabaseClient, ids: string[]) {
   for (const chunk of chunkStrings(uniqueStrings(ids), ID_CHUNK_SIZE)) {
     const { data, error } = await supabase
       .from("projects")
-      .select("id,name,customer_id")
+      .select("id,name,customer_id,status,start_date,end_date")
       .in("id", chunk);
 
     if (error) throw error;
@@ -422,7 +438,7 @@ async function scanProjectRows(supabase: SupabaseClient) {
   return scanRows<ProjectRow>(
     supabase,
     "projects",
-    "id,name,customer_id,agreed_base_price,actual_price,created_at",
+    "id,name,customer_id,agreed_base_price,actual_price,created_at,start_date,end_date,status",
     "created_at"
   );
 }
@@ -433,7 +449,7 @@ async function fetchOrdersByIds(supabase: SupabaseClient, ids: string[]) {
   for (const chunk of chunkStrings(uniqueStrings(ids), ID_CHUNK_SIZE)) {
     const { data, error } = await supabase
       .from("orders")
-      .select("id,customer_id,order_date")
+      .select("id,customer_id,order_date,status,total_amount,payment_status")
       .in("id", chunk);
 
     if (error) throw error;
@@ -450,7 +466,7 @@ async function scanOrderRows(supabase: SupabaseClient) {
   return scanRows<OrderRow>(
     supabase,
     "orders",
-    "id,customer_id,order_date",
+    "id,customer_id,order_date,status,total_amount,payment_status",
     "order_date"
   );
 }
@@ -905,6 +921,48 @@ function buildReceivableFlowMeta(recordedDateValue: string | null | undefined, r
   };
 }
 
+function normalizeStatusValue(value: string | null | undefined) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function isClosedProjectStatus(status: string | null | undefined) {
+  const value = normalizeStatusValue(status);
+  return value === "completed";
+}
+
+function isExcludedProjectStatus(status: string | null | undefined) {
+  const value = normalizeStatusValue(status);
+  return value === "cancelled" || value === "canceled" || value === "quote";
+}
+
+function isClosedOrderStatus(status: string | null | undefined) {
+  const value = normalizeStatusValue(status);
+  return value === "delivered" || value === "completed" || value === "closed";
+}
+
+function isExcludedOrderStatus(status: string | null | undefined) {
+  const value = normalizeStatusValue(status);
+  return value === "cancelled" || value === "canceled";
+}
+
+function buildPlannedReceivableFlowMeta(
+  candidates: Array<string | null | undefined>,
+  referenceDate: string
+) {
+  const dates = candidates
+    .map(normalizeDate)
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => left.localeCompare(right));
+  const recordedDate = dates[0] ?? null;
+  const flowDate = recordedDate && recordedDate > referenceDate ? recordedDate : referenceDate;
+
+  return {
+    flowDate,
+    recordedDate,
+    stage: "scheduled" as const,
+  };
+}
+
 function createEmptySummary(): FinancialSummary {
   return {
     inflow: 0,
@@ -1175,6 +1233,7 @@ export async function getFinancialPageData(
         sourceLabel: source.label,
         sourceHref: source.href,
         description,
+        origin: "payment" as const,
         reference,
         paymentMethod: paymentMethodValue,
         paymentMethodLabel: paymentMethodValue ? paymentMethodLabel(paymentMethodValue) : null,
@@ -1253,6 +1312,7 @@ export async function getFinancialPageData(
         sourceLabel: source.label,
         sourceHref: source.href,
         description,
+        origin: "expense" as const,
         reference,
         paymentMethod: null,
         paymentMethodLabel: null,
@@ -1344,6 +1404,7 @@ export async function getFinancialPageData(
         sourceLabel: source.label,
         sourceHref: source.href,
         description,
+        origin: "worker_payment" as const,
         reference,
         paymentMethod: paymentMethodValue,
         paymentMethodLabel: paymentMethodValue ? paymentMethodLabel(paymentMethodValue) : null,
@@ -1451,6 +1512,7 @@ export async function getFinancialPageData(
         sourceLabel: source.label,
         sourceHref: source.href,
         description,
+        origin: "worker_owed" as const,
         reference: "\u05d9\u05ea\u05e8\u05d4 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd",
         paymentMethod: null,
         paymentMethodLabel: null,
@@ -1476,9 +1538,16 @@ export async function getFinancialPageData(
     map.set(links.projectId, (map.get(links.projectId) ?? 0) + Math.abs(toNumber(row.amount_total)));
     return map;
   }, new Map<string, number>());
+  const paidByOrderId = paymentRows.reduce((map, row) => {
+    const links = resolvePaymentLinks(row);
+    if (!links.orderId) return map;
+    map.set(links.orderId, (map.get(links.orderId) ?? 0) + Math.abs(toNumber(row.amount_total)));
+    return map;
+  }, new Map<string, number>());
 
   const projectReceivableEntries = projectRows.flatMap((project) => {
     if (!project.id) return [];
+    if (isExcludedProjectStatus(project.status)) return [];
 
     const linkedProject = projectsById.get(project.id) ?? project;
     if (
@@ -1506,7 +1575,13 @@ export async function getFinancialPageData(
 
     if (!(amount > 0)) return [];
 
-    const flowMeta = buildReceivableFlowMeta(linkedProject.created_at, referenceDate);
+    const isOpenDebt = isClosedProjectStatus(linkedProject.status);
+    const flowMeta = isOpenDebt
+      ? buildReceivableFlowMeta(linkedProject.end_date ?? linkedProject.created_at, referenceDate)
+      : buildPlannedReceivableFlowMeta(
+          [linkedProject.end_date, linkedProject.start_date, linkedProject.created_at],
+          referenceDate
+        );
     const source = buildSource({
       businessDomain: "logistics_projects",
       projectId: project.id,
@@ -1532,15 +1607,20 @@ export async function getFinancialPageData(
         sourceId: source.id,
         sourceLabel: source.label,
         sourceHref: source.href,
-        description: "\u05d9\u05ea\u05e8\u05ea \u05dc\u05e7\u05d5\u05d7 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd",
+        description: isOpenDebt
+          ? "\u05d9\u05ea\u05e8\u05ea \u05dc\u05e7\u05d5\u05d7 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd"
+          : "\u05d4\u05db\u05e0\u05e1\u05d4 \u05de\u05ea\u05d5\u05db\u05e0\u05e0\u05ea \u05de\u05dc\u05e7\u05d5\u05d7",
+        origin: "project_receivable" as const,
         reference: null,
         paymentMethod: null,
         paymentMethodLabel: null,
-        paymentStatus: "pending",
+        paymentStatus: isOpenDebt ? "pending" : "scheduled",
         recordedByName: null,
         customerId: linkedProject.customer_id ?? null,
         searchText: [
-          "\u05d9\u05ea\u05e8\u05ea \u05dc\u05e7\u05d5\u05d7 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd",
+          isOpenDebt
+            ? "\u05d9\u05ea\u05e8\u05ea \u05dc\u05e7\u05d5\u05d7 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd"
+            : "\u05d4\u05db\u05e0\u05e1\u05d4 \u05de\u05ea\u05d5\u05db\u05e0\u05e0\u05ea \u05de\u05dc\u05e7\u05d5\u05d7",
           source.label,
           getBusinessDomainLabel("logistics_projects"),
         ]
@@ -1552,6 +1632,7 @@ export async function getFinancialPageData(
 
   const orderReceivableEntries = orderRows.flatMap((order) => {
     if (!order.id) return [];
+    if (isExcludedOrderStatus(order.status)) return [];
 
     const linkedOrder = ordersById.get(order.id) ?? order;
     if (
@@ -1568,16 +1649,35 @@ export async function getFinancialPageData(
     }
 
     const financialRow = orderFinancialsById.get(order.id) ?? null;
-    const totalAmount = Math.max(0, toNumber(financialRow?.total_amount));
-    const totalPaid = Math.max(0, toNumber(financialRow?.total_paid));
-    const remainingBalance = Math.max(
-      toNumber(financialRow?.remaining_balance),
-      totalAmount > 0 ? totalAmount - totalPaid : 0
+    const totalAmount = Math.max(
+      0,
+      toNumber(financialRow?.total_amount) || toNumber(linkedOrder.total_amount)
     );
+    const totalPaid = Math.max(
+      0,
+      toNumber(financialRow?.total_paid),
+      paidByOrderId.get(order.id) ?? 0
+    );
+    const normalizedOrderPaymentStatus = normalizePaymentStatus(
+      financialRow?.payment_status ?? linkedOrder.payment_status
+    );
+    const hasExplicitRemaining =
+      financialRow?.remaining_balance !== null && financialRow?.remaining_balance !== undefined;
+    const explicitRemainingBalance = Math.max(0, toNumber(financialRow?.remaining_balance));
+    const derivedRemainingBalance = totalAmount > 0 ? Math.max(totalAmount - totalPaid, 0) : 0;
+    const remainingBalance =
+      normalizedOrderPaymentStatus === "paid" || normalizedOrderPaymentStatus === "cleared"
+        ? 0
+        : hasExplicitRemaining
+          ? explicitRemainingBalance
+          : derivedRemainingBalance;
 
     if (!(remainingBalance > 0)) return [];
 
-    const flowMeta = buildReceivableFlowMeta(linkedOrder.order_date, referenceDate);
+    const isOpenDebt = isClosedOrderStatus(linkedOrder.status);
+    const flowMeta = isOpenDebt
+      ? buildReceivableFlowMeta(linkedOrder.order_date, referenceDate)
+      : buildPlannedReceivableFlowMeta([linkedOrder.order_date], referenceDate);
     const source = buildSource({
       businessDomain: "sales",
       projectId: null,
@@ -1603,15 +1703,22 @@ export async function getFinancialPageData(
         sourceId: source.id,
         sourceLabel: source.label,
         sourceHref: source.href,
-        description: "\u05d9\u05ea\u05e8\u05ea \u05dc\u05e7\u05d5\u05d7 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd",
+        description: isOpenDebt
+          ? "\u05d9\u05ea\u05e8\u05ea \u05dc\u05e7\u05d5\u05d7 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd"
+          : "\u05d4\u05db\u05e0\u05e1\u05d4 \u05de\u05ea\u05d5\u05db\u05e0\u05e0\u05ea \u05de\u05dc\u05e7\u05d5\u05d7",
+        origin: "order_receivable" as const,
         reference: null,
         paymentMethod: null,
         paymentMethodLabel: null,
-        paymentStatus: normalizePaymentStatus(financialRow?.payment_status) ?? "pending",
+        paymentStatus: isOpenDebt
+          ? normalizedOrderPaymentStatus ?? "pending"
+          : "scheduled",
         recordedByName: null,
         customerId: linkedOrder.customer_id ?? null,
         searchText: [
-          "\u05d9\u05ea\u05e8\u05ea \u05dc\u05e7\u05d5\u05d7 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd",
+          isOpenDebt
+            ? "\u05d9\u05ea\u05e8\u05ea \u05dc\u05e7\u05d5\u05d7 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd"
+            : "\u05d4\u05db\u05e0\u05e1\u05d4 \u05de\u05ea\u05d5\u05db\u05e0\u05e0\u05ea \u05de\u05dc\u05e7\u05d5\u05d7",
           source.label,
           getBusinessDomainLabel("sales"),
         ]
@@ -1672,10 +1779,23 @@ export async function getFinancialPageData(
   const forecastEndIso = to || addDaysToIso(referenceDate, 30);
   const forecastEntries = filteredEntries.filter((entry) => entry.flowDate <= forecastEndIso);
   const openReceivableEntries = filteredEntries.filter(
-    (entry) => entry.type === "inflow" && entry.stage !== "posted"
+    (entry) =>
+      entry.type === "inflow" &&
+      entry.stage === "pending" &&
+      (entry.origin === "project_receivable" || entry.origin === "order_receivable")
+  );
+  const plannedReceivableEntries = filteredEntries.filter(
+    (entry) =>
+      entry.type === "inflow" &&
+      ((entry.origin === "payment" && entry.stage !== "posted") ||
+        ((entry.origin === "project_receivable" || entry.origin === "order_receivable") &&
+          entry.stage === "scheduled"))
   );
   const openLiabilityEntries = filteredEntries.filter(
-    (entry) => entry.type === "outflow" && entry.stage !== "posted"
+    (entry) => entry.type === "outflow" && entry.stage === "pending"
+  );
+  const scheduledLiabilityEntries = filteredEntries.filter(
+    (entry) => entry.type === "outflow" && entry.stage === "scheduled"
   );
   const sourceCount = new Set(
     filteredEntries.map((entry) => entry.sourceId).filter((value): value is string => Boolean(value))
@@ -1698,7 +1818,9 @@ export async function getFinancialPageData(
     forecastSummary: summarizeEntries(forecastEntries),
     forecastEndIso,
     openReceivablesSummary: summarizeEntries(openReceivableEntries),
+    plannedReceivablesSummary: summarizeEntries(plannedReceivableEntries),
     openLiabilitiesSummary: summarizeEntries(openLiabilityEntries),
+    scheduledLiabilitiesSummary: summarizeEntries(scheduledLiabilityEntries),
     domainGroups: buildDomainGroups(filteredEntries, referenceDate),
     domainOptions,
     sourceKind,
