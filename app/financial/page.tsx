@@ -16,7 +16,6 @@ export default async function FinancialPage({
       profile={profile}
       supabase={supabase}
       searchParams={resolvedSearchParams}
-      basePath="/financial"
     />
   );
 }

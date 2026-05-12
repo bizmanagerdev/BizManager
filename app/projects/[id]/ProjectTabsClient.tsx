@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientOnly } from "@/components/ClientOnly";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -173,6 +173,23 @@ function formatDate(value: string | null) {
 
 function formatDateTime(value: string | null) {
   return formatShortDateTime(value, "—");
+}
+
+function LtrInline({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      dir="ltr"
+      className={["inline-block text-left tabular-nums", className].filter(Boolean).join(" ")}
+    >
+      {children}
+    </span>
+  );
 }
 
 function paymentRecordedByLabel(payment: PaymentRow, {
@@ -1200,6 +1217,7 @@ export default function ProjectTabsClient({
       : getString(item.expense, "description") ??
         getString(item.expense, "vendor_name") ??
         getString(item.expense, "vendor") ??
+        getString(item.expense, "category") ??
         (expenseId ? `הוצאה ${expenseId.slice(0, 8)}` : "הוצאה");
     const attachments = session
       ? Array.isArray(session.attachments)
@@ -1226,14 +1244,22 @@ export default function ProjectTabsClient({
         <div className="min-w-0 flex-1">
           <div className="font-medium truncate">{title}</div>
           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
-            <span>{formatDate(createdAt)}</span>
+            <LtrInline>{formatDate(createdAt)}</LtrInline>
             {session ? (
               <>
-                <span>כניסה: {formatDateTime(session.clock_in)}</span>
-                <span>יציאה: {formatDateTime(session.clock_out)}</span>
-                <span>משך: {formatMinutes(sessionWorkedMinutes(session))}</span>
+                <span>
+                  כניסה: <LtrInline>{formatDateTime(session.clock_in)}</LtrInline>
+                </span>
+                <span>
+                  יציאה: <LtrInline>{formatDateTime(session.clock_out)}</LtrInline>
+                </span>
+                <span>
+                  משך: <LtrInline>{formatMinutes(sessionWorkedMinutes(session))}</LtrInline>
+                </span>
                 {options?.billedList ? (
-                  <span>עלות עבודה: {formatIls(amount)}</span>
+                  <span>
+                    עלות עבודה: <LtrInline>{formatIls(amount)}</LtrInline>
+                  </span>
                 ) : null}
               </>
             ) : null}
@@ -1294,10 +1320,10 @@ export default function ProjectTabsClient({
             {options?.billedList
               ? billedAmount === null
                 ? "—"
-                : formatIls(billedAmount)
+                : <LtrInline>{formatIls(billedAmount)}</LtrInline>
               : amount === null
                 ? "—"
-                : formatIls(amount)}
+                : <LtrInline>{formatIls(amount)}</LtrInline>}
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex">
             <Button
@@ -1375,7 +1401,9 @@ export default function ProjectTabsClient({
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">מחיר בסיס שסוכם</div>
                 <div className="mt-2 flex items-center justify-between gap-3">
-                  <div className="text-lg font-semibold">{formatIls(displayedBasePrice)}</div>
+                  <div className="text-lg font-semibold">
+                    <LtrInline>{formatIls(displayedBasePrice)}</LtrInline>
+                  </div>
                   <Button
                     type="button"
                     variant="default"
@@ -1388,23 +1416,30 @@ export default function ProjectTabsClient({
               </div>
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">מחיר בפועל</div>
-                <div className="mt-2 text-lg font-semibold">{formatIls(displayedCustomerPrice)}</div>
+                <div className="mt-2 text-lg font-semibold">
+                  <LtrInline>{formatIls(displayedCustomerPrice)}</LtrInline>
+                </div>
               </div>
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">הוצאות</div>
-                <div className="mt-2 text-lg font-semibold">{formatIls(totalExpenses)}</div>
+                <div className="mt-2 text-lg font-semibold">
+                  <LtrInline>{formatIls(totalExpenses)}</LtrInline>
+                </div>
               </div>
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">רווח גולמי</div>
                 <div className={("mt-2 text-lg font-semibold " + (grossProfit !== null && grossProfit < 0 ? "text-destructive" : "")).trim()}>
-                  {formatIls(grossProfit)}
+                  <LtrInline>{formatIls(grossProfit)}</LtrInline>
                 </div>
               </div>
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">יתרה לעובדי משמרות</div>
-                <div className="mt-2 text-lg font-semibold">{formatIls(totalWorkerOwed)}</div>
+                <div className="mt-2 text-lg font-semibold">
+                  <LtrInline>{formatIls(totalWorkerOwed)}</LtrInline>
+                </div>
                 <div className="mt-2 text-xs text-muted-foreground">
-                  שולם לעובדי משמרות {formatIls(totalWorkerPaid)}
+                  <span>שולם לעובדי משמרות </span>
+                  <LtrInline>{formatIls(totalWorkerPaid)}</LtrInline>
                 </div>
               </div>
               <div className="rounded-xl border bg-background/60 p-3">
@@ -1415,14 +1450,22 @@ export default function ProjectTabsClient({
                   </Badge>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
-                  שולם {formatIls(paymentsTotal)}
-                  {remainingCustomerBalance !== null ? ` • נותר ${formatIls(remainingCustomerBalance)}` : ""}
+                  <span>שולם </span>
+                  <LtrInline>{formatIls(paymentsTotal)}</LtrInline>
+                  {remainingCustomerBalance !== null ? (
+                    <>
+                      <span> • נותר </span>
+                      <LtrInline>{formatIls(remainingCustomerBalance)}</LtrInline>
+                    </>
+                  ) : null}
                 </div>
               </div>
             </div>
             {billedExpensesTotal > 0 ? (
               <div className="text-xs text-muted-foreground">
-                מחיר בפועל מחושב כמחיר הבסיס ועוד {formatIls(billedExpensesTotal)} עבור חיובים ללקוח.
+                <span>מחיר בפועל מחושב כמחיר הבסיס ועוד </span>
+                <LtrInline>{formatIls(billedExpensesTotal)}</LtrInline>
+                <span> עבור חיובים ללקוח.</span>
               </div>
             ) : displayedBasePrice !== null ? (
               <div className="text-xs text-muted-foreground">מחיר בפועל זהה למחיר הבסיס כרגע.</div>
@@ -1480,12 +1523,12 @@ export default function ProjectTabsClient({
                       <div key={p.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                         <div className="min-w-0 flex-1">
                           <div className="font-medium truncate">
-                            {reference ? `אסמכתא: ${reference}` : "הכנסה"}
+                            {reference ? <>אסמכתא: <LtrInline>{reference}</LtrInline></> : "הכנסה"}
                           </div>
                           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                            <span>{formatDate(date)}</span>
+                            <LtrInline>{formatDate(date)}</LtrInline>
                             <span>{method}</span>
-                            {dueDate ? <span>פירעון: {formatDate(dueDate)}</span> : null}
+                            {dueDate ? <span>פירעון: <LtrInline>{formatDate(dueDate)}</LtrInline></span> : null}
                           </div>
                           {paymentStatus ? (
                             <div className="mt-2">
@@ -1504,8 +1547,13 @@ export default function ProjectTabsClient({
                           ) : null}
                           {!insertedByLabel && paymentAudit ? (
                             <div className="text-xs text-muted-foreground mt-1">
-                              {paymentAudit.actionLabel} ע״י {paymentAudit.actorName}
-                              {paymentAudit.createdAt ? ` · ${formatDateTime(paymentAudit.createdAt)}` : ""}
+                              <span>{paymentAudit.actionLabel} ע״י {paymentAudit.actorName}</span>
+                              {paymentAudit.createdAt ? (
+                                <>
+                                  <span> · </span>
+                                  <LtrInline>{formatDateTime(paymentAudit.createdAt)}</LtrInline>
+                                </>
+                              ) : null}
                             </div>
                           ) : null}
                           {amount !== null && amount > 0 && overview.customer_id ? (
@@ -1555,7 +1603,7 @@ export default function ProjectTabsClient({
                         </div>
                         <div className="flex flex-col gap-2 sm:shrink-0 sm:items-end sm:text-left">
                           <div className="font-medium sm:text-left">
-                            {amount === null ? "—" : formatIls(amount)}
+                            {amount === null ? "—" : <LtrInline>{formatIls(amount)}</LtrInline>}
                           </div>
                           <div className="grid grid-cols-2 gap-2 sm:flex">
                             <Button
@@ -1596,7 +1644,9 @@ export default function ProjectTabsClient({
                     </span>
                   ) : null}
                 </div>
-                <span className="font-medium">{formatIls(paymentsTotal)}</span>
+                <span className="font-medium">
+                  <LtrInline>{formatIls(paymentsTotal)}</LtrInline>
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -1631,12 +1681,16 @@ export default function ProjectTabsClient({
 
               {billedExpensesTotal > 0 ? (
                 <div className="pt-2 text-xs text-muted-foreground">
-                  מתוכן {formatIls(billedExpensesTotal)} יתווספו לחיוב הלקוח.
+                  <span>מתוכן </span>
+                  <LtrInline>{formatIls(billedExpensesTotal)}</LtrInline>
+                  <span> יתווספו לחיוב הלקוח.</span>
                 </div>
               ) : null}
               <div className="mt-3 mt-auto flex items-center justify-between border-t pt-3">
                 <span className="text-muted-foreground">סה״כ הוצאות</span>
-                <span className="font-medium">{formatIls(totalExpenses)}</span>
+                <span className="font-medium">
+                  <LtrInline>{formatIls(totalExpenses)}</LtrInline>
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -1669,7 +1723,7 @@ export default function ProjectTabsClient({
                         <div className="min-w-0">
                           <div className="font-medium truncate">{ev.title}</div>
                           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                            <span>{formatDate(ev.date)}</span>
+                            <LtrInline>{formatDate(ev.date)}</LtrInline>
                             {ev.meta.map((m) => (
                               <span
                                 key={m}
@@ -1695,7 +1749,11 @@ export default function ProjectTabsClient({
                               : "text-destructive")
                           }
                         >
-                          {signedAmount === null ? "" : isIncome ? "+" : "-"} {amountText}
+                          {signedAmount === null ? "" : (
+                            <LtrInline>
+                              {isIncome ? "+" : "-"} {amountText}
+                            </LtrInline>
+                          )}
                         </div>
                       </div>
                     );
@@ -1726,7 +1784,9 @@ export default function ProjectTabsClient({
 
               <div className="mt-3 flex items-center justify-between border-t pt-3 xl:mt-auto">
                 <span className="text-muted-foreground">סה״כ לחיוב לקוח</span>
-                <span className="font-medium">{formatIls(billedExpensesTotal)}</span>
+                <span className="font-medium">
+                  <LtrInline>{formatIls(billedExpensesTotal)}</LtrInline>
+                </span>
               </div>
             </CardContent>
           </Card>
