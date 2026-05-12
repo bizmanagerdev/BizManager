@@ -199,7 +199,7 @@ export function TopBar({
               <DropdownMenuItem asChild>
                 <Link href="/profile" className="flex items-center" onClick={() => emitNavigationStart()}>
                   <User className="me-2 h-4 w-4" />
-                  פרופיל
+                  אזור אישי
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
