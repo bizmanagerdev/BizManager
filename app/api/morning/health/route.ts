@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { getMorningToken } from "@/lib/morning/client";
+import {
+  fetchMorningTokenResponse,
+  getMorningToken,
+  MORNING_TOKEN_REQUEST_FORMATS,
+} from "@/lib/morning/client";
+import {
+  normalizeMorningAuthBaseUrl,
+  normalizeMorningResourceBaseUrl,
+} from "@/lib/morning/config";
 
 function maskValue(value: string | undefined) {
   const trimmed = value?.trim() ?? "";
@@ -28,68 +36,12 @@ function summarizeSecret(value: string | undefined) {
   };
 }
 
-function normalizeMorningBaseUrl(value: string | undefined, sandbox: boolean) {
-  const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
-  if (!trimmed) {
-    return sandbox ? "https://api.sandbox.morning.dev" : "https://api.morning.co";
-  }
-
-  if (trimmed === "https://api.greeninvoice.co.il/api/v1") {
-    return "https://api.morning.co";
-  }
-
-  if (trimmed === "https://sandbox.d.greeninvoice.co.il/api/v1") {
-    return "https://api.sandbox.morning.dev";
-  }
-
-  return trimmed;
-}
-
-function normalizeMorningResourceBaseUrl(value: string | undefined, sandbox: boolean) {
-  const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
-  if (!trimmed) {
-    return sandbox
-      ? "https://sandbox.d.greeninvoice.co.il/api/v1"
-      : "https://api.greeninvoice.co.il/api/v1";
-  }
-
-  if (trimmed === "https://api.morning.co") {
-    return "https://api.greeninvoice.co.il/api/v1";
-  }
-
-  if (trimmed === "https://api.sandbox.morning.dev") {
-    return "https://sandbox.d.greeninvoice.co.il/api/v1";
-  }
-
-  return trimmed;
-}
-
-async function readResponseBody(response: Response) {
-  const contentType = response.headers.get("content-type") ?? null;
-  const text = await response.text();
-  if (!text) {
-    return { contentType, body: null as unknown };
-  }
-
-  try {
-    return {
-      contentType,
-      body: JSON.parse(text) as unknown,
-    };
-  } catch {
-    return {
-      contentType,
-      body: text,
-    };
-  }
-}
-
 export async function GET() {
   const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
   if (!access.ok) return access.response;
 
   const sandbox = process.env.MORNING_SANDBOX === "true";
-  const authBaseUrl = normalizeMorningBaseUrl(process.env.MORNING_AUTH_BASE_URL, sandbox);
+  const authBaseUrl = normalizeMorningAuthBaseUrl(process.env.MORNING_AUTH_BASE_URL, sandbox);
   const resourceBaseUrl = normalizeMorningResourceBaseUrl(process.env.MORNING_API_BASE_URL, sandbox);
   const authUrl = `${authBaseUrl}/idp/v1/oauth/token`;
 
@@ -104,10 +56,13 @@ export async function GET() {
   const trimmedKeyId = keyId?.trim();
   const trimmedSecret = secret?.trim();
   const requestPayload = {
+    primaryContentType: "application/x-www-form-urlencoded",
+    fallbackContentType: "application/json",
+    fieldNames: ["grant_type", "client_id", "client_secret"],
     grant_type: "client_credentials",
     client_id: maskValue(trimmedKeyId),
     client_secret: summarizeSecret(trimmedSecret),
-    fields: ["grant_type", "client_id", "client_secret"],
+    requestFormats: MORNING_TOKEN_REQUEST_FORMATS,
   };
 
   try {
@@ -128,27 +83,23 @@ export async function GET() {
     let upstreamStatusText: string | null = null;
     let upstreamContentType: string | null = null;
     let upstreamBody: unknown = null;
+    let upstreamRequestFormat: string | null = null;
 
     if (hasCredentials) {
       try {
-        const upstreamResponse = await fetch(authUrl, {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            grant_type: "client_credentials",
-            client_id: trimmedKeyId,
-            client_secret: trimmedSecret,
-          }),
-          cache: "no-store",
+        const upstreamAttempt = await fetchMorningTokenResponse({
+          sandbox,
+          authBaseUrl,
+          authUrl,
+          resourceBaseUrl,
+          keyId: trimmedKeyId ?? "",
+          keySecret: trimmedSecret ?? "",
         });
-        const upstream = await readResponseBody(upstreamResponse);
-        upstreamStatus = upstreamResponse.status;
-        upstreamStatusText = upstreamResponse.statusText;
-        upstreamContentType = upstream.contentType;
-        upstreamBody = upstream.body;
+        upstreamStatus = upstreamAttempt.response.status;
+        upstreamStatusText = upstreamAttempt.response.statusText;
+        upstreamContentType = upstreamAttempt.response.headers.get("content-type");
+        upstreamBody = upstreamAttempt.json;
+        upstreamRequestFormat = upstreamAttempt.format;
       } catch (upstreamError) {
         upstreamBody =
           upstreamError instanceof Error ? upstreamError.message : "Failed to reach Morning token endpoint.";
@@ -169,6 +120,7 @@ export async function GET() {
         upstreamStatus,
         upstreamStatusText,
         upstreamContentType,
+        upstreamRequestFormat,
         upstreamBody,
       },
       { status: 400 }

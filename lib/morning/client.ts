@@ -1,86 +1,12 @@
 import { findMorningClientCandidatesForCustomerRecord, type LocalCustomerForMatching } from "@/lib/morning/matching";
+import { resolveMorningConfig, type MorningConfig } from "@/lib/morning/config";
 import { MorningClient, MorningClientMatchCandidate, MorningCreateDocumentPayload, MorningDocumentResult } from "@/lib/morning/types";
-
-const DEFAULT_AUTH_BASE_URL = "https://api.morning.co";
-const DEFAULT_SANDBOX_AUTH_BASE_URL = "https://api.sandbox.morning.dev";
-const DEFAULT_RESOURCE_BASE_URL = "https://api.greeninvoice.co.il/api/v1";
-const DEFAULT_SANDBOX_RESOURCE_BASE_URL = "https://sandbox.d.greeninvoice.co.il/api/v1";
-
-type MorningConfig = {
-  resourceBaseUrl: string;
-  authUrl: string;
-  keyId: string;
-  keySecret: string;
-  sandbox: boolean;
-};
 
 type MorningCustomerRow = LocalCustomerForMatching & {
   address?: string | null;
 };
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
-
-function normalizeMorningAuthBaseUrl(value: string | undefined, sandbox: boolean) {
-  const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
-  if (!trimmed) {
-    return sandbox ? DEFAULT_SANDBOX_AUTH_BASE_URL : DEFAULT_AUTH_BASE_URL;
-  }
-
-  if (trimmed === "https://api.greeninvoice.co.il/api/v1") {
-    return DEFAULT_AUTH_BASE_URL;
-  }
-
-  if (trimmed === "https://sandbox.d.greeninvoice.co.il/api/v1") {
-    return DEFAULT_SANDBOX_AUTH_BASE_URL;
-  }
-
-  return trimmed;
-}
-
-function normalizeMorningResourceBaseUrl(value: string | undefined, sandbox: boolean) {
-  const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
-  if (!trimmed) {
-    return sandbox ? DEFAULT_SANDBOX_RESOURCE_BASE_URL : DEFAULT_RESOURCE_BASE_URL;
-  }
-
-  if (trimmed === "https://api.morning.co") {
-    return DEFAULT_RESOURCE_BASE_URL;
-  }
-
-  if (trimmed === "https://api.sandbox.morning.dev") {
-    return DEFAULT_SANDBOX_RESOURCE_BASE_URL;
-  }
-
-  return trimmed;
-}
-
-function requireConfig(): MorningConfig {
-  const sandbox = process.env.MORNING_SANDBOX === "true";
-  const keyId =
-    process.env.MORNING_CLIENT_ID?.trim() ??
-    process.env.MORNING_API_KEY_ID?.trim() ??
-    process.env.MORNING_API_KEY?.trim() ??
-    "";
-  const keySecret =
-    process.env.MORNING_CLIENT_SECRET?.trim() ??
-    process.env.MORNING_API_KEY_SECRET?.trim() ??
-    process.env.MORNING_API_SECRET?.trim() ??
-    "";
-  if (!keyId || !keySecret) {
-    throw new Error("הגדרת Morning חסרה בשרת.");
-  }
-
-  const authBaseUrl = normalizeMorningAuthBaseUrl(process.env.MORNING_AUTH_BASE_URL, sandbox);
-  const resourceBaseUrl = normalizeMorningResourceBaseUrl(process.env.MORNING_API_BASE_URL, sandbox);
-
-  return {
-    resourceBaseUrl,
-    authUrl: `${authBaseUrl}/idp/v1/oauth/token`,
-    keyId,
-    keySecret,
-    sandbox,
-  };
-}
 
 function ensureObject(value: unknown) {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -192,13 +118,28 @@ function extractMorningErrorMessage(json: Record<string, unknown>, fallback: str
   return raw || fallback;
 }
 
-export async function getMorningToken(forceRefresh = false) {
-  const config = requireConfig();
-  if (!forceRefresh && cachedToken && cachedToken.expiresAt > Date.now() + 30_000) {
-    return cachedToken.value;
+type MorningTokenRequestFormat = "form" | "json";
+
+export const MORNING_TOKEN_REQUEST_FORMATS: MorningTokenRequestFormat[] = ["form", "json"];
+
+function buildMorningTokenRequestInit(config: MorningConfig, format: MorningTokenRequestFormat): RequestInit {
+  if (format === "form") {
+    return {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: config.keyId,
+        client_secret: config.keySecret,
+      }).toString(),
+      cache: "no-store",
+    };
   }
 
-  const response = await fetch(config.authUrl, {
+  return {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -210,9 +151,39 @@ export async function getMorningToken(forceRefresh = false) {
       client_secret: config.keySecret,
     }),
     cache: "no-store",
-  });
+  };
+}
 
-  const json = await morningJson(response);
+export async function fetchMorningTokenResponse(
+  config: MorningConfig,
+  formats: MorningTokenRequestFormat[] = MORNING_TOKEN_REQUEST_FORMATS
+) {
+  let lastAttempt:
+    | {
+        format: MorningTokenRequestFormat;
+        response: Response;
+        json: Record<string, unknown>;
+      }
+    | null = null;
+
+  for (const format of formats) {
+    const response = await fetch(config.authUrl, buildMorningTokenRequestInit(config, format));
+    const json = await morningJson(response);
+    lastAttempt = { format, response, json };
+    if (response.ok) return lastAttempt;
+  }
+
+  if (lastAttempt) return lastAttempt;
+  throw new Error("Morning token request was not attempted.");
+}
+
+export async function getMorningToken(forceRefresh = false) {
+  const config = resolveMorningConfig();
+  if (!forceRefresh && cachedToken && cachedToken.expiresAt > Date.now() + 30_000) {
+    return cachedToken.value;
+  }
+
+  const { response, json } = await fetchMorningTokenResponse(config);
   if (!response.ok) {
     throw new Error(extractMorningErrorMessage(json, "קבלת טוקן מ-Morning נכשלה."));
   }
@@ -245,7 +216,7 @@ export async function morningFetch<T = Record<string, unknown>>(
   path: string,
   init?: RequestInit & { retryOnAuth?: boolean }
 ) {
-  const config = requireConfig();
+  const config = resolveMorningConfig();
   const token = await getMorningToken();
   const url = `${config.resourceBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 

@@ -3,11 +3,18 @@
 ## Environment variables
 
 - `MORNING_API_BASE_URL`
+- `MORNING_AUTH_BASE_URL`
 - `MORNING_API_KEY_ID`
 - `MORNING_API_KEY_SECRET`
 - `MORNING_SANDBOX`
 
 Keep all Morning secrets server-side only. Never expose them in client components.
+
+## 2026 API migration
+
+- The production resource base should resolve to `https://api.greeninvoice.co.il/api/v1`.
+- If an environment still contains legacy Green Invoice URLs such as `https://www.greeninvoice.co.il/api` or `https://api.greeninvoice.co.il/api`, BizManager now normalizes them automatically to the supported host.
+- Token requests are sent to `https://api.morning.co/idp/v1/oauth/token` in standard OAuth form-encoded format, with a JSON fallback for compatibility while Morning completes the transition.
 
 ## Source of truth
 
