@@ -29,6 +29,7 @@ type ExpenseRow = {
   id: string;
   expense_date: string | null;
   amount: number | string | null;
+  payment_method: string | null;
   category: string | null;
   description: string | null;
   business_domain: string | null;
@@ -186,6 +187,14 @@ export type FinancialEntry = {
   recordedByName: string | null;
   customerId: string | null;
   searchText: string;
+  expenseId?: string | null;
+  expenseCategory?: string | null;
+  expenseDescriptionRaw?: string | null;
+  expenseNotes?: string | null;
+  expensePaymentMethod?: string | null;
+  expenseProjectId?: string | null;
+  expenseOrderId?: string | null;
+  expensePropertyId?: string | null;
 };
 
 export type FinancialSummary = {
@@ -412,6 +421,33 @@ async function scanPaymentRows(supabase: SupabaseClient) {
         isMissingColumnError(error, "due_date") ||
         isMissingColumnError(error, "payment_status")
       ) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
+async function scanExpenseRows(supabase: SupabaseClient) {
+  const selectVariants = [
+    "id,expense_date,amount,payment_method,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by",
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by",
+  ] as const;
+
+  let lastError: unknown = null;
+
+  for (const selectColumns of selectVariants) {
+    try {
+      const rows = await scanRows<Record<string, unknown>>(supabase, "expenses", selectColumns, "expense_date");
+      return rows.map((row) => ({
+        ...row,
+        payment_method: typeof row.payment_method === "string" ? row.payment_method : null,
+      })) as ExpenseRow[];
+    } catch (error) {
+      lastError = error;
+      if (isMissingColumnError(error, "payment_method")) {
         continue;
       }
       throw error;
@@ -1223,12 +1259,7 @@ export async function getFinancialPageData(
 
   const [paymentRows, expenseRows, workerPaymentsResult, projectRows, orderRows] = await Promise.all([
     scanPaymentRows(supabase),
-    scanRows<ExpenseRow>(
-      supabase,
-      "expenses",
-      "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by",
-      "expense_date"
-    ),
+    scanExpenseRows(supabase),
     (async () => {
       try {
         const workerPaymentRows = await scanWorkerPaymentRows(supabase);
@@ -1435,6 +1466,7 @@ export async function getFinancialPageData(
     });
     const description = buildExpenseDescription(row);
     const reference = row.category?.trim() || null;
+    const paymentMethodValue = row.payment_method?.trim() || null;
 
     return [
       {
@@ -1455,8 +1487,8 @@ export async function getFinancialPageData(
         description,
         origin: "expense" as const,
         reference,
-        paymentMethod: null,
-        paymentMethodLabel: null,
+        paymentMethod: paymentMethodValue,
+        paymentMethodLabel: paymentMethodValue ? paymentMethodLabel(paymentMethodValue) : null,
         paymentStatus: null,
         recordedByName:
           typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? null : null,
@@ -1466,12 +1498,21 @@ export async function getFinancialPageData(
           source.label,
           reference ?? "",
           row.notes ?? "",
+          row.payment_method ?? "",
           row.category ?? "",
           getBusinessDomainLabel(businessDomain),
           typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? "" : "",
         ]
           .join(" ")
           .toLowerCase(),
+        expenseId: row.id,
+        expenseCategory: row.category?.trim() || null,
+        expenseDescriptionRaw: row.description?.trim() || null,
+        expenseNotes: row.notes?.trim() || null,
+        expensePaymentMethod: paymentMethodValue,
+        expenseProjectId: resolvedProjectId,
+        expenseOrderId: row.order_id,
+        expensePropertyId: row.property_id,
       },
     ];
   });

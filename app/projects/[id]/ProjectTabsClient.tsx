@@ -1233,6 +1233,7 @@ export default function ProjectTabsClient({
       : Array.isArray(item.expense?.attachments)
         ? (item.expense.attachments as FinancialAttachment[])
         : [];
+    const expensePaymentMethod = !session ? paymentMethodLabel(getString(item.expense, "payment_method")) : "";
     const insertedByLabel = expenseRecordedByLabel(item, {
       expenseRecordedByNameByValue,
       expenseAuditById,
@@ -1286,9 +1287,12 @@ export default function ProjectTabsClient({
               {session.notes}
             </div>
           ) : null}
+          {!session && expensePaymentMethod && !insertedByLabel ? (
+            <div className="text-xs text-muted-foreground mt-1">{expensePaymentMethod}</div>
+          ) : null}
           {!session && insertedByLabel ? (
             <div className="text-xs text-muted-foreground mt-1">
-              {insertedByLabel}
+              {[expensePaymentMethod || null, insertedByLabel].filter(Boolean).join(" • ")}
             </div>
           ) : null}
           {attachments.length > 0 ? (
@@ -3693,6 +3697,7 @@ function AddExpenseDialog({
   const [categoryOther, setCategoryOther] = useState("");
   const [description, setDescription] = useState("");
   const [expenseDate, setExpenseDate] = useState(projectDateOrToday(projectStartDate));
+  const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
   const [clockIn, setClockIn] = useState(
     projectLocalDateTimeWithTemplate(projectStartDate, defaultSessionClockIn, -60)
   );
@@ -3931,6 +3936,7 @@ function AddExpenseDialog({
     setCategoryOther(isEditingSession ? "" : categoryIsPreset ? "" : rawCategory);
     setDescription(getString(editingExpense, "description") ?? "");
     setExpenseDate(getString(editingExpense, "expense_date") ?? projectDateOrToday(projectStartDate));
+    setExpensePaymentMethod(getString(editingExpense, "payment_method") ?? "");
     setClockIn(
       isEditingSession
         ? toLocalDateTimeValue(editingSession?.clock_in)
@@ -4260,6 +4266,7 @@ function AddExpenseDialog({
           id: getString(editingExpense, "id") ?? undefined,
           project_id: projectId,
           amount: amountNumber,
+          payment_method: expensePaymentMethod.trim() ? expensePaymentMethod : undefined,
           category: finalCategory,
           description: description.trim() ? description : undefined,
           notes: notes.trim() ? notes : undefined,
@@ -4281,6 +4288,7 @@ function AddExpenseDialog({
       setCategoryOther("");
       setDescription("");
       setExpenseDate(projectDateOrToday(projectStartDate));
+      setExpensePaymentMethod("");
       setNotes("");
       setBilledToCustomer(false);
 
@@ -4661,7 +4669,21 @@ function AddExpenseDialog({
                     <div className="text-xs text-destructive">{expenseDateError}</div>
                   ) : null}
                 </div>
-                <div />
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">אמצעי תשלום</div>
+                  <select
+                    value={expensePaymentMethod}
+                    onChange={(e) => setExpensePaymentMethod(e.target.value)}
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">לא צוין</option>
+                    <option value="bank_transfer">העברה בנקאית</option>
+                    <option value="cash">מזומן</option>
+                    <option value="check">צ&apos;ק</option>
+                    <option value="credit_card">כרטיס אשראי</option>
+                    <option value="other">אחר</option>
+                  </select>
+                </div>
               </>
             )}
           </AdaptiveGrid>

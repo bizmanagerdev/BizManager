@@ -55,9 +55,9 @@ export async function POST(req: Request) {
     }
 
     const linkedIds = [projectId, orderId, propertyId].filter(Boolean);
-    if (linkedIds.length !== 1) {
+    if (linkedIds.length > 1) {
       return NextResponse.json(
-        { error: "Exactly one of project_id, order_id, or property_id is required" },
+        { error: "Only one of project_id, order_id, or property_id can be provided" },
         { status: 400 }
       );
     }
@@ -114,7 +114,7 @@ export async function POST(req: Request) {
     }
 
     if (!businessDomain) {
-      return NextResponse.json({ error: "Missing business_domain" }, { status: 400 });
+      return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
     }
 
     const { data, error } = await supabase

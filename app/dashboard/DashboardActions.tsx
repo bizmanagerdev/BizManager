@@ -350,9 +350,9 @@ const HEBREW = {
   expenseCreateFailed: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
   expenseSaved: "\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
   incomeNew: "\u05d4\u05db\u05e0\u05e1\u05d4 \u05d7\u05d3\u05e9\u05d4",
-  incomeQuickRegister: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05ea\u05e9\u05dc\u05d5\u05dd \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
+  incomeQuickRegister: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4",
   incomeDialogDescription:
-    "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4 \u05d7\u05d3\u05e9\u05d4 \u05db\u05ea\u05e9\u05dc\u05d5\u05dd \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8.",
+    "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4 \u05d7\u05d3\u05e9\u05d4 \u05dc\u05ea\u05d6\u05e8\u05d9\u05dd, \u05e2\u05dd \u05d0\u05e4\u05e9\u05e8\u05d5\u05ea \u05dc\u05e7\u05e9\u05e8 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05d4\u05d6\u05de\u05e0\u05d4 \u05d0\u05d5 \u05e0\u05db\u05e1.",
   paymentMethod: "\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd",
   paymentDueDate: "\u05ea\u05d0\u05e8\u05d9\u05da \u05e4\u05d9\u05e8\u05e2\u05d5\u05df",
   bankTransfer: "\u05d4\u05e2\u05d1\u05e8\u05d4 \u05d1\u05e0\u05e7\u05d0\u05d9\u05ea",
@@ -363,7 +363,7 @@ const HEBREW = {
   reference: "\u05d0\u05e1\u05de\u05db\u05ea\u05d0",
   saveIncome: "\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05db\u05e0\u05e1\u05d4",
   incomeRequired:
-    "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05ea\u05d0\u05e8\u05d9\u05da \u05d5\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd.",
+    "\u05d9\u05e9 \u05dc\u05de\u05dc\u05d0 \u05ea\u05d0\u05e8\u05d9\u05da \u05d5\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd.",
   incomeInvalidAmount: "\u05d9\u05e9 \u05dc\u05d4\u05d6\u05d9\u05df \u05e1\u05db\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4 \u05ea\u05e7\u05d9\u05df.",
   incomeCreateFailed: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
   incomeSaved: "\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
@@ -480,6 +480,7 @@ export default function DashboardActions({
   const [expenseCategory, setExpenseCategory] = useState("");
   const [expenseCategoryOther, setExpenseCategoryOther] = useState("");
   const [expenseDate, setExpenseDate] = useState(normalizeDateOnly(projects[0]?.startDate) || getTodayDate());
+  const [expenseMethod, setExpenseMethod] = useState("");
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseNotes, setExpenseNotes] = useState("");
   const [expenseIncludedInBase, setExpenseIncludedInBase] = useState(false);
@@ -764,6 +765,7 @@ export default function DashboardActions({
     setExpenseCategory("");
     setExpenseCategoryOther("");
     setExpenseDate(defaultProjectDate);
+    setExpenseMethod("");
     setExpenseDescription("");
     setExpenseNotes("");
     setExpenseIncludedInBase(false);
@@ -1216,6 +1218,7 @@ export default function DashboardActions({
           order_id: linkedOrderId || null,
           property_id: linkedPropertyId || null,
           amount,
+          payment_method: expenseMethod.trim() || null,
           category: finalExpenseCategory,
           expense_date: expenseDate,
           description: expenseDescription.trim() || null,
@@ -1314,16 +1317,6 @@ export default function DashboardActions({
 
     if (!incomeDate || !incomeMethod.trim()) {
       setIncomeError(HEBREW.incomeRequired);
-      return;
-    }
-    if (!linkedProjectId && !linkedOrderId && !linkedPropertyId) {
-      setIncomeError(
-        incomeBusinessDomain === "sales"
-          ? "יש לבחור הזמנה להכנסה."
-          : incomeBusinessDomain === "property_management"
-            ? "יש לבחור נכס להכנסה."
-            : "יש לבחור פרויקט להכנסה."
-      );
       return;
     }
     if (incomeMethod === "check" && !incomeDueDate) {
@@ -2957,6 +2950,22 @@ export default function DashboardActions({
                       />
                     </label>
                   </AdaptiveGrid>
+
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.paymentMethod}</span>
+                    <select
+                      className={fieldClass}
+                      value={expenseMethod}
+                      onChange={(e) => setExpenseMethod(e.target.value)}
+                    >
+                      <option value="">לא צוין</option>
+                      <option value="bank_transfer">{HEBREW.bankTransfer}</option>
+                      <option value="cash">{HEBREW.cash}</option>
+                      <option value="check">{HEBREW.check}</option>
+                      <option value="credit_card">{HEBREW.creditCard}</option>
+                      <option value="other">{HEBREW.other}</option>
+                    </select>
+                  </label>
 
                   <label className="space-y-2 text-sm">
                     <span>{HEBREW.description}</span>

@@ -38,6 +38,7 @@ type ExpenseRow = {
   id: string;
   expense_date: string | null;
   amount: number | string | null;
+  payment_method: string | null;
   category: string | null;
   description: string | null;
   business_domain: string | null;
@@ -157,6 +158,17 @@ function normalizeDateInput(value: string | null | undefined) {
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
 }
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? error.code : null;
+  const message = "message" in error ? error.message : null;
+  return (
+    code === "42703" &&
+    typeof message === "string" &&
+    message.toLowerCase().includes(columnName.toLowerCase())
+  );
+}
+
 function normalizeDomain(value: string | null | undefined): ExpenseBusinessDomain | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -261,6 +273,39 @@ async function scanRows<T extends Record<string, unknown>>(
   }
 
   return rows;
+}
+
+async function scanExpenseRows(supabase: SupabaseClient, filters: CashFlowFilters) {
+  const selectVariants = [
+    "id,expense_date,amount,payment_method,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by",
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by",
+  ] as const;
+
+  let lastError: unknown = null;
+
+  for (const selectColumns of selectVariants) {
+    try {
+      const rows = await scanRows<Record<string, unknown>>(
+        supabase,
+        "expenses",
+        selectColumns,
+        "expense_date",
+        filters
+      );
+      return rows.map((row) => ({
+        ...row,
+        payment_method: typeof row.payment_method === "string" ? row.payment_method : null,
+      })) as ExpenseRow[];
+    } catch (error) {
+      lastError = error;
+      if (isMissingColumnError(error, "payment_method")) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError;
 }
 
 async function fetchProjectsByIds(supabase: SupabaseClient, ids: string[]) {
@@ -485,13 +530,7 @@ async function loadCashFlowEntries(
         ),
     typeFilter === "inflow"
       ? Promise.resolve([] as ExpenseRow[])
-      : scanRows<ExpenseRow>(
-          supabase,
-          "expenses",
-          "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by",
-          "expense_date",
-          filters
-        ),
+      : scanExpenseRows(supabase, filters),
   ]);
 
   const filterDomain = normalizeDomain(filters.domain);

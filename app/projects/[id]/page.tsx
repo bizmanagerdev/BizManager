@@ -47,6 +47,7 @@ type ExpenseRow = {
   id: string;
   expense_date: string | null;
   amount: number | string | null;
+  payment_method: string | null;
   category: string | null;
   description: string | null;
   business_domain: string | null;
@@ -76,6 +77,17 @@ function getFirstString(obj: UnknownRow | null | undefined, keys: string[]) {
     if (typeof v === "string" && v) return v;
   }
   return null;
+}
+
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? (error as { code?: unknown }).code : undefined;
+  const message = "message" in error ? (error as { message?: unknown }).message : undefined;
+  return (
+    code === "42703" &&
+    typeof message === "string" &&
+    message.toLowerCase().includes(columnName.toLowerCase())
+  );
 }
 
 function projectStatusLabel(status: string) {
@@ -256,16 +268,35 @@ export default async function ProjectPage({
     )
   );
 
-  const { data: expenses, error: expensesError } =
-    expenseIds.length > 0
-      ? await supabase
-          .from("expenses")
-          .select(
-            "id,expense_date,amount,category,description,business_domain,notes,recorded_by,created_at,updated_at"
-          )
-          .order("expense_date", { ascending: false })
-          .in("id", expenseIds)
-      : { data: [] as ExpenseRow[], error: null };
+  let expenses: ExpenseRow[] = [];
+  let expensesError: { message: string } | null = null;
+
+  if (expenseIds.length > 0) {
+    const primaryResult = await supabase
+      .from("expenses")
+      .select(
+        "id,expense_date,amount,payment_method,category,description,business_domain,notes,recorded_by,created_at,updated_at"
+      )
+      .order("expense_date", { ascending: false })
+      .in("id", expenseIds);
+
+    if (primaryResult.error && isMissingColumnError(primaryResult.error, "payment_method")) {
+      const fallbackResult = await supabase
+        .from("expenses")
+        .select("id,expense_date,amount,category,description,business_domain,notes,recorded_by,created_at,updated_at")
+        .order("expense_date", { ascending: false })
+        .in("id", expenseIds);
+
+      expensesError = fallbackResult.error ? { message: fallbackResult.error.message } : null;
+      expenses = ((fallbackResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+        ...row,
+        payment_method: null,
+      })) as ExpenseRow[];
+    } else {
+      expensesError = primaryResult.error ? { message: primaryResult.error.message } : null;
+      expenses = (primaryResult.data ?? []) as ExpenseRow[];
+    }
+  }
 
   const expenseAuditResult = await getLatestAuditByRecordIds(supabase, {
     tableName: "expenses",

@@ -3,6 +3,17 @@ import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? (error as { code?: unknown }).code : undefined;
+  const message = "message" in error ? (error as { message?: unknown }).message : undefined;
+  return (
+    code === "42703" &&
+    typeof message === "string" &&
+    message.toLowerCase().includes(columnName.toLowerCase())
+  );
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
@@ -11,6 +22,7 @@ export async function POST(req: Request) {
       property_id?: string | null;
       business_domain?: string;
       amount?: number | string;
+      payment_method?: string;
       category?: string;
       description?: string;
       notes?: string;
@@ -25,6 +37,7 @@ export async function POST(req: Request) {
     const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
     const businessDomainInput =
       typeof body.business_domain === "string" ? body.business_domain.trim() : "";
+    const paymentMethod = typeof body.payment_method === "string" ? body.payment_method.trim() : null;
     const category = typeof body.category === "string" ? body.category.trim() : "";
     const description = typeof body.description === "string" ? body.description.trim() : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
@@ -114,27 +127,62 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
     }
 
-    const { data: expense, error: expenseError } = await supabase
+    const baseExpensePayload = {
+      expense_date: expenseDate,
+      amount: amountNumber,
+      category,
+      description,
+      business_domain: businessDomain,
+      project_id: projectId || null,
+      order_id: orderId || null,
+      property_id: propertyId || null,
+      notes,
+      recorded_by: user.id,
+    };
+    const selectWithPaymentMethod =
+      "id,expense_date,amount,payment_method,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,created_at,updated_at";
+    const selectWithoutPaymentMethod =
+      "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,created_at,updated_at";
+
+    let expense: Record<string, unknown> | null = null;
+    let expenseError: { message: string } | null = null;
+
+    const primaryResult = await supabase
       .from("expenses")
       .insert({
-        expense_date: expenseDate,
-        amount: amountNumber,
-        category,
-        description,
-        business_domain: businessDomain,
-        project_id: projectId || null,
-        order_id: orderId || null,
-        property_id: propertyId || null,
-        notes,
-        recorded_by: user.id,
+        ...baseExpensePayload,
+        payment_method: paymentMethod || null,
       })
-      .select(
-        "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,created_at,updated_at"
-      )
+      .select(selectWithPaymentMethod)
       .maybeSingle();
 
+    if (primaryResult.error && isMissingColumnError(primaryResult.error, "payment_method")) {
+      if (paymentMethod) {
+        return NextResponse.json(
+          { error: "Expense payment method requires running db/sql/add_payment_method_to_expenses.sql" },
+          { status: 400 }
+        );
+      }
+
+      const fallbackResult = await supabase
+        .from("expenses")
+        .insert(baseExpensePayload)
+        .select(selectWithoutPaymentMethod)
+        .maybeSingle();
+
+      expense = fallbackResult.data
+        ? ({ ...fallbackResult.data, payment_method: null } as Record<string, unknown>)
+        : null;
+      expenseError = fallbackResult.error ? { message: fallbackResult.error.message } : null;
+    } else {
+      expense = (primaryResult.data as Record<string, unknown> | null) ?? null;
+      expenseError = primaryResult.error ? { message: primaryResult.error.message } : null;
+    }
+
+    const createdExpenseId = typeof expense?.id === "string" ? expense.id : null;
+
     if (expenseError) return NextResponse.json({ error: expenseError.message }, { status: 400 });
-    if (!expense?.id) return NextResponse.json({ error: "Failed to create expense" }, { status: 500 });
+    if (!createdExpenseId) return NextResponse.json({ error: "Failed to create expense" }, { status: 500 });
 
     let projectExpense: Record<string, unknown> | null = null;
 
@@ -143,7 +191,7 @@ export async function POST(req: Request) {
         .from("project_expenses")
         .insert({
           project_id: projectId,
-          expense_id: expense.id,
+          expense_id: createdExpenseId,
           included_in_base_price: includedInBasePrice,
           billed_to_customer: billedToCustomer,
           notes: projectExpenseNotes,
@@ -152,7 +200,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (linkError) {
-        await supabase.from("expenses").delete().eq("id", expense.id);
+        await supabase.from("expenses").delete().eq("id", createdExpenseId);
         return NextResponse.json({ error: linkError.message }, { status: 400 });
       }
 
@@ -162,7 +210,7 @@ export async function POST(req: Request) {
     await logAuditEvent({
       supabase,
       tableName: "expenses",
-      recordId: expense.id,
+      recordId: createdExpenseId,
       action: "create",
       changedBy: profile.id,
       userRole: profile.role,

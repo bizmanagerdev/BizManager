@@ -97,6 +97,7 @@ export default async function CashFlowPageContent({
   });
 
   const canManageRecurring = profile.role === "admin" || profile.role === "office";
+  const canManageExpenses = profile.role === "admin" || profile.role === "office";
 
   let recurringTemplates: RecurringExpenseTemplateItem[] = [];
   let projectOptions: Array<{ id: string; label: string }> = [];
@@ -206,6 +207,7 @@ export default async function CashFlowPageContent({
         customerId={customerId}
         customerName={customerName}
         customerPage={customerPage}
+        canManageExpenses={canManageExpenses}
         canManageRecurring={canManageRecurring}
         recurringTemplates={recurringTemplates}
         recurringProjects={projectOptions}
