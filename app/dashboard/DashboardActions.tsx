@@ -2606,6 +2606,7 @@ export default function DashboardActions({
                     setExpenseBusinessDomain(nextDomain);
                     if (nextDomain !== "logistics_projects") {
                       setExpenseProjectId("");
+                      setExpenseDate(getTodayDate());
                       setExpenseIncludedInBase(false);
                       setExpenseBilledToCustomer(false);
                       setExpenseBillToCustomerAmount("");

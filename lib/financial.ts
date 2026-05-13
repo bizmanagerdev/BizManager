@@ -123,6 +123,21 @@ type AttendanceSessionFinanceRow = {
   payment_status: string | null;
 };
 
+type WorkerUserRow = {
+  id: string;
+  pay_tracking_mode: string | null;
+};
+
+type SalaryAgreementLiteRow = {
+  id: string;
+  user_id: string | null;
+  salary_type: string | null;
+  hourly_rate: number | string | null;
+  monthly_salary: number | string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+};
+
 export type FinancialPageFilters = {
   customerId?: string | null;
   from?: string | null;
@@ -217,7 +232,7 @@ export type FinancialPageData = {
 const SCAN_CHUNK_SIZE = 500;
 const ID_CHUNK_SIZE = 200;
 const LEDGER_PAGE_SIZE = 25;
-const UPCOMING_PAGE_SIZE = 8;
+const UPCOMING_PAGE_SIZE = 15;
 
 function toNumber(value: number | string | null | undefined) {
   if (typeof value === "number") {
@@ -626,6 +641,41 @@ async function fetchProjectExpenseLinksByExpenseIds(supabase: SupabaseClient, ex
   return map;
 }
 
+async function fetchWorkerUsersByIds(supabase: SupabaseClient, userIds: string[]) {
+  const map = new Map<string, WorkerUserRow>();
+
+  for (const chunk of chunkStrings(uniqueStrings(userIds), ID_CHUNK_SIZE)) {
+    const { data, error } = await supabase
+      .from("users")
+      .select("id,pay_tracking_mode")
+      .in("id", chunk);
+
+    if (error) throw error;
+
+    ((data ?? []) as WorkerUserRow[]).forEach((row) => {
+      if (row.id) map.set(row.id, row);
+    });
+  }
+
+  return map;
+}
+
+async function fetchSalaryAgreementsByUserIds(supabase: SupabaseClient, userIds: string[]) {
+  const rows: SalaryAgreementLiteRow[] = [];
+
+  for (const chunk of chunkStrings(uniqueStrings(userIds), ID_CHUNK_SIZE)) {
+    const { data, error } = await supabase
+      .from("salary_agreements")
+      .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to")
+      .in("user_id", chunk);
+
+    if (error) throw error;
+    rows.push(...((data ?? []) as SalaryAgreementLiteRow[]));
+  }
+
+  return rows;
+}
+
 async function fetchWorkerPaymentAllocationsByPaymentIds(
   supabase: SupabaseClient,
   workerPaymentIds: string[]
@@ -907,6 +957,7 @@ function buildWorkerOwedFlowMeta(clockInValue: string | null | undefined) {
   const recordedDate = normalizeDate(clockInValue);
   return {
     flowDate: recordedDate || todayIso(),
+    dueDate: recordedDate,
     recordedDate,
     stage: "pending" as const,
   };
@@ -915,7 +966,8 @@ function buildWorkerOwedFlowMeta(clockInValue: string | null | undefined) {
 function buildReceivableFlowMeta(recordedDateValue: string | null | undefined, referenceDate: string) {
   const recordedDate = normalizeDate(recordedDateValue);
   return {
-    flowDate: referenceDate,
+    flowDate: recordedDate || referenceDate,
+    dueDate: recordedDate,
     recordedDate,
     stage: "pending" as const,
   };
@@ -958,9 +1010,83 @@ function buildPlannedReceivableFlowMeta(
 
   return {
     flowDate,
+    dueDate: recordedDate,
     recordedDate,
     stage: "scheduled" as const,
   };
+}
+
+function monthKeyFromIso(isoDate: string | null | undefined) {
+  const normalized = normalizeDate(isoDate);
+  return normalized ? normalized.slice(0, 7) : "";
+}
+
+function nextMonthDueDate(isoDate: string | null | undefined, dayOfMonth: number) {
+  const normalized = normalizeDate(isoDate);
+  if (!normalized) return null;
+
+  const [yearText, monthText] = normalized.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+
+  const baseMonthIndex = month;
+  const nextYear = baseMonthIndex === 12 ? year + 1 : year;
+  const nextMonth = baseMonthIndex === 12 ? 1 : baseMonthIndex + 1;
+
+  return recurringExpenseClampedDate(nextYear, nextMonth, dayOfMonth);
+}
+
+function recurringExpenseClampedDate(year: number, month: number, day: number) {
+  const safeMonth = Math.min(Math.max(month, 1), 12);
+  const lastDay = new Date(Date.UTC(year, safeMonth, 0)).getUTCDate();
+  const safeDay = Math.min(Math.max(day, 1), lastDay);
+  return `${year}-${String(safeMonth).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+}
+
+function buildMonthlyWorkerOwedFlowMeta(clockInValue: string | null | undefined, referenceDate: string) {
+  const recordedDate = normalizeDate(clockInValue);
+  const dueDate = nextMonthDueDate(recordedDate, 10);
+  const flowDate = dueDate ?? recordedDate ?? todayIso();
+
+  return {
+    flowDate,
+    dueDate,
+    recordedDate,
+    stage: flowDate > referenceDate ? ("scheduled" as const) : ("pending" as const),
+  };
+}
+
+function isAgreementActiveOnDate(
+  agreement: SalaryAgreementLiteRow,
+  referenceDateValue: string | null | undefined
+) {
+  const userId = agreement.user_id?.trim();
+  const validFrom = normalizeDate(agreement.valid_from);
+  if (!userId || !validFrom) return false;
+
+  const point = normalizeDate(referenceDateValue) ?? todayIso();
+  if (validFrom > point) return false;
+
+  const validTo = normalizeDate(agreement.valid_to);
+  if (validTo && validTo < point) return false;
+
+  return true;
+}
+
+function shouldAggregateWorkerDebt(args: {
+  worker: WorkerUserRow | null;
+  agreements: SalaryAgreementLiteRow[];
+  sessionDate: string | null | undefined;
+}) {
+  const trackingMode = args.worker?.pay_tracking_mode?.trim().toLowerCase() ?? "";
+  if (trackingMode === "payslip") return true;
+
+  return args.agreements.some(
+    (agreement) =>
+      agreement.salary_type?.trim().toLowerCase() === "hourly" &&
+      isAgreementActiveOnDate(agreement, args.sessionDate)
+  );
 }
 
 function createEmptySummary(): FinancialSummary {
@@ -1157,6 +1283,10 @@ export async function getFinancialPageData(
     ...expenseRows.map((row) => row.property_id),
     ...workerPaymentsResult.attendanceSessionRows.map((row) => row.property_id),
   ]);
+  const workerUserIds = uniqueStrings([
+    ...workerPaymentsResult.workerPaymentRows.map((row) => row.user_id),
+    ...workerPaymentsResult.attendanceSessionRows.map((row) => row.user_id),
+  ]);
   const recordedByValues = uniqueStrings([
     ...paymentRows.map((row) => row.recorded_by),
     ...expenseRows.map((row) => row.recorded_by),
@@ -1165,7 +1295,7 @@ export async function getFinancialPageData(
     ...workerPaymentsResult.attendanceSessionRows.map((row) => row.user_id),
   ]);
 
-  const [projectsById, projectFinancialsById, ordersById, orderFinancialsById, propertiesById, propertyCustomersById, recordedByNames] =
+  const [projectsById, projectFinancialsById, ordersById, orderFinancialsById, propertiesById, propertyCustomersById, recordedByNames, workerUsersById, salaryAgreementRows] =
     await Promise.all([
       fetchProjectsByIds(supabase, projectIds),
       fetchProjectFinancialsByIds(supabase, projectIds),
@@ -1174,7 +1304,18 @@ export async function getFinancialPageData(
       fetchPropertiesByIds(supabase, propertyIds),
       fetchPropertyCustomerLinks(supabase, propertyIds),
       resolveUserDisplayNamesForValues(supabase, recordedByValues),
+      fetchWorkerUsersByIds(supabase, workerUserIds),
+      fetchSalaryAgreementsByUserIds(supabase, workerUserIds),
     ]);
+
+  const salaryAgreementsByUserId = salaryAgreementRows.reduce((map, agreement) => {
+    const userId = agreement.user_id?.trim();
+    if (!userId) return map;
+    const current = map.get(userId) ?? [];
+    current.push(agreement);
+    map.set(userId, current);
+    return map;
+  }, new Map<string, SalaryAgreementLiteRow[]>());
 
   const payments = paymentRows.flatMap((row) => {
     const flowMeta = buildPaymentFlowMeta(row, referenceDate);
@@ -1443,7 +1584,7 @@ export async function getFinancialPageData(
     return map;
   }, new Map<string, number>());
 
-  const workerOwedEntries = workerPaymentsResult.attendanceSessionRows.flatMap((session) => {
+  const rawWorkerOwedEntries = workerPaymentsResult.attendanceSessionRows.flatMap((session) => {
     if (!session.id) return [];
 
     const businessDomain =
@@ -1505,7 +1646,7 @@ export async function getFinancialPageData(
         domainName: getBusinessDomainLabel(businessDomain),
         flowDate: flowMeta.flowDate,
         recordedDate: flowMeta.recordedDate,
-        dueDate: null,
+        dueDate: flowMeta.dueDate,
         stage: flowMeta.stage,
         sourceKind: source.kind,
         sourceId: source.id,
@@ -1531,6 +1672,70 @@ export async function getFinancialPageData(
       },
     ];
   });
+
+  const aggregatedWorkerOwedMap: Map<string, FinancialEntry> = new Map();
+  const workerOwedEntries: FinancialEntry[] = rawWorkerOwedEntries.flatMap((entry) => {
+    const sessionId = entry.id.replace("worker-owed-session:", "");
+    const session = workerPaymentsResult.sessionsById.get(sessionId) ?? null;
+    const workerId = session?.user_id?.trim() ?? "";
+    const worker = workerId ? workerUsersById.get(workerId) ?? null : null;
+    const agreements = workerId ? salaryAgreementsByUserId.get(workerId) ?? [] : [];
+    const shouldAggregate = shouldAggregateWorkerDebt({
+      worker,
+      agreements,
+      sessionDate: session?.clock_in ?? null,
+    });
+
+    if (!shouldAggregate || !workerId) {
+      return [entry];
+    }
+
+    const workerName = recordedByNames[workerId] ?? null;
+    const monthKey = monthKeyFromIso(session?.clock_in ?? null);
+    const monthlyFlowMeta = buildMonthlyWorkerOwedFlowMeta(session?.clock_in ?? null, referenceDate);
+    const key = `worker-owed-user:${workerId}:${monthKey || "unknown"}`;
+    const existing = aggregatedWorkerOwedMap.get(key);
+
+    if (!existing) {
+      aggregatedWorkerOwedMap.set(key, {
+        ...entry,
+        id: key,
+        flowDate: monthlyFlowMeta.flowDate,
+        dueDate: monthlyFlowMeta.dueDate,
+        stage: monthlyFlowMeta.stage,
+        sourceKind: "general",
+        sourceId: null,
+        sourceLabel: "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3\u05d9\u05dd",
+        sourceHref: null,
+        description: monthKey
+          ? `${buildWorkerPaymentDescription(workerName)} • ${monthKey}`
+          : buildWorkerPaymentDescription(workerName),
+        searchText: [
+          monthKey
+            ? `${buildWorkerPaymentDescription(workerName)} ${monthKey}`
+            : buildWorkerPaymentDescription(workerName),
+          "\u05d9\u05ea\u05e8\u05d4 \u05dc\u05ea\u05e9\u05dc\u05d5\u05dd",
+          "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3\u05d9\u05dd",
+          workerName ?? "",
+          entry.domainName,
+        ]
+          .join(" ")
+          .toLowerCase(),
+      });
+      return [];
+    }
+
+    existing.amount += entry.amount;
+    existing.signedAmount -= entry.amount;
+    existing.recordedDate =
+      existing.recordedDate && entry.recordedDate
+        ? entry.recordedDate < existing.recordedDate
+          ? entry.recordedDate
+          : existing.recordedDate
+        : existing.recordedDate ?? entry.recordedDate;
+    return [];
+  });
+  workerOwedEntries.push(...aggregatedWorkerOwedMap.values());
 
   const paidByProjectId = paymentRows.reduce((map, row) => {
     const links = resolvePaymentLinks(row);
@@ -1601,7 +1806,7 @@ export async function getFinancialPageData(
         domainName: getBusinessDomainLabel("logistics_projects"),
         flowDate: flowMeta.flowDate,
         recordedDate: flowMeta.recordedDate,
-        dueDate: null,
+        dueDate: flowMeta.dueDate,
         stage: flowMeta.stage,
         sourceKind: source.kind,
         sourceId: source.id,
@@ -1697,7 +1902,7 @@ export async function getFinancialPageData(
         domainName: getBusinessDomainLabel("sales"),
         flowDate: flowMeta.flowDate,
         recordedDate: flowMeta.recordedDate,
-        dueDate: null,
+        dueDate: flowMeta.dueDate,
         stage: flowMeta.stage,
         sourceKind: source.kind,
         sourceId: source.id,
@@ -1802,7 +2007,10 @@ export async function getFinancialPageData(
   ).size;
   const ledgerPagination = paginateEntries(filteredEntries, ledgerPage, LEDGER_PAGE_SIZE);
   const upcomingSortedEntries = [...futureEntries].sort(
-    (left, right) => left.flowDate.localeCompare(right.flowDate) || left.id.localeCompare(right.id)
+    (left, right) =>
+      left.flowDate.localeCompare(right.flowDate) ||
+      (left.recordedDate ?? "").localeCompare(right.recordedDate ?? "") ||
+      left.id.localeCompare(right.id)
   );
   const upcomingPagination = paginateEntries(
     upcomingSortedEntries,

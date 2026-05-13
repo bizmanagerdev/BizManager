@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, Landmark, Search, TimerReset } from "lucide-react";
 import RecurringExpensesManager, {
@@ -208,11 +208,16 @@ function PaginationControls({
 function FilterLoadingDots() {
   return (
     <div className="flex justify-center" aria-live="polite" aria-label="Loading filtered financial data">
-      <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/95 px-4 py-2 shadow-sm backdrop-blur">
-        {[0, 150, 300, 450].map((delayMs) => (
+      <div className="flex items-center gap-4">
+        {[
+          { delayMs: 0, className: "bg-primary shadow-primary/35" },
+          { delayMs: 150, className: "bg-destructive shadow-destructive/35" },
+          { delayMs: 300, className: "bg-primary shadow-primary/35" },
+          { delayMs: 450, className: "bg-destructive shadow-destructive/35" },
+        ].map(({ delayMs, className }) => (
           <span
             key={delayMs}
-            className="h-3 w-3 animate-pulse rounded-full bg-sky-500 shadow-sm shadow-sky-200"
+            className={cn("h-7 w-7 animate-pulse rounded-full shadow-xl", className)}
             style={{ animationDelay: `${delayMs}ms`, animationDuration: "1s" }}
           />
         ))}
@@ -257,6 +262,11 @@ export default function FinancialPageClient({
   const [type, setType] = useState(initialFilters.type);
   const [stage, setStage] = useState(initialFilters.stage);
   const [isFilterPending, startFilterTransition] = useTransition();
+  const [loadingOverlayTop, setLoadingOverlayTop] = useState(0);
+  const [loadingOverlayLeft, setLoadingOverlayLeft] = useState(0);
+  const [loadingOverlayRight, setLoadingOverlayRight] = useState(0);
+  const filtersCardRef = useRef<HTMLDivElement | null>(null);
+  const contentAreaRef = useRef<HTMLDivElement | null>(null);
   const sourceKind = data.sourceKind;
   const domainOptions = data.domainOptions;
   const sourceOptions = data.sourceOptions;
@@ -356,6 +366,30 @@ export default function FinancialPageClient({
   const setUpcomingPage = (page: number) => replaceFilters({ upcomingPage: page });
   const setLedgerPage = (page: number) => replaceFilters({ ledgerPage: page });
 
+  useEffect(() => {
+    if (!isFilterPending) return undefined;
+
+    const updateOverlayBounds = () => {
+      const nextTop = filtersCardRef.current?.getBoundingClientRect().bottom ?? 0;
+      const contentRect = contentAreaRef.current?.getBoundingClientRect() ?? null;
+      setLoadingOverlayTop(Math.max(0, Math.round(nextTop + 12)));
+      setLoadingOverlayLeft(contentRect ? Math.max(0, Math.round(contentRect.left)) : 0);
+      setLoadingOverlayRight(
+        contentRect ? Math.max(0, Math.round(window.innerWidth - contentRect.right)) : 0
+      );
+    };
+
+    updateOverlayBounds();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("resize", updateOverlayBounds);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("resize", updateOverlayBounds);
+    };
+  }, [isFilterPending]);
+
   const navigateToEntry = (entry: FinancialEntry) => {
     if (!entry.sourceHref) return;
     emitNavigationStart();
@@ -403,6 +437,7 @@ export default function FinancialPageClient({
         </TabsList>
 
         <TabsContent value="overview" dir="rtl" className="space-y-4 text-right">
+      <div ref={filtersCardRef}>
       <Card>
         <CardHeader className="hidden">
           <CardTitle className="text-lg text-right">סינון וניווט</CardTitle>
@@ -511,12 +546,23 @@ export default function FinancialPageClient({
           </div>
         </CardContent>
       </Card>
+      </div>
 
-      {isFilterPending ? (
-        <div className="sticky top-3 z-20">
-          <FilterLoadingDots />
-        </div>
-      ) : null}
+      <div ref={contentAreaRef} className="relative">
+        {isFilterPending ? (
+          <div
+            className="fixed bottom-0 z-30 bg-background/60 backdrop-blur-[2px]"
+            style={{
+              top: loadingOverlayTop,
+              left: loadingOverlayLeft,
+              right: loadingOverlayRight,
+            }}
+          >
+            <div className="flex h-full min-h-[16rem] items-start justify-center px-4 pt-12">
+              <FilterLoadingDots />
+            </div>
+          </div>
+        ) : null}
 
       <section dir="rtl" className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
@@ -647,53 +693,106 @@ export default function FinancialPageClient({
                 אין כרגע תנועות עתידיות או ממתינות בהתאם לסינון.
               </div>
             ) : (
-              pagedUpcomingEntries.map((entry) => (
-                <article key={entry.id} className="rounded-2xl border border-border/70 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-row-reverse">
-                    <div className="space-y-2 text-right">
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        <Badge variant={typeVariant(entry.type)}>{typeLabel(entry.type)}</Badge>
-                        <Badge variant={stageVariant(entry.stage)}>{stageLabel(entry.stage)}</Badge>
-                        <Badge variant="outline">{entry.domainName}</Badge>
-                      </div>
-                      <div className="font-medium">{entry.description}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {entry.sourceHref ? (
-                          <Link href={entry.sourceHref} className="transition-colors hover:text-foreground">
-                            <span dir="auto">{sourceTypeTitle(entry.sourceKind)}: {entry.sourceLabel}</span>
-                          </Link>
-                        ) : (
-                          <span dir="auto">
-                            {sourceTypeTitle(entry.sourceKind)}: {entry.sourceLabel}
-                          </span>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-right text-sm">
+                  <thead className="text-right text-muted-foreground">
+                    <tr className="border-b">
+                      <th className="px-2 py-2 font-medium">תאריך תזרים</th>
+                      <th className="px-2 py-2 font-medium">פירעון</th>
+                      <th className="px-2 py-2 font-medium">סוג</th>
+                      <th className="px-2 py-2 font-medium">סטטוס</th>
+                      <th className="px-2 py-2 font-medium">תחום</th>
+                      <th className="px-2 py-2 font-medium">מקור</th>
+                      <th className="px-2 py-2 font-medium">פירוט</th>
+                      <th className="px-2 py-2 font-medium">סכום</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedUpcomingEntries.map((entry) => {
+                      const showDueDate = Boolean(entry.dueDate && entry.dueDate !== entry.flowDate);
+                      return (
+                      <tr
+                        key={entry.id}
+                        className={cn(
+                          "border-b last:border-b-0",
+                          entry.sourceHref ? "cursor-pointer transition-colors hover:bg-muted/30" : ""
                         )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1 text-right sm:text-left">
-                      <div dir="ltr" className={cn("text-lg font-semibold tabular-nums", typeAmountClass(entry.type))}>
-                        {entry.type === "inflow" ? "+" : "-"}
-                        {formatCurrency(entry.amount)}
-                      </div>
-                      <div className="flex items-center justify-end gap-1 text-sm text-muted-foreground">
-                        <CalendarDays className="h-4 w-4" />
-                        <span dir="ltr" className="tabular-nums">{formatShortDate(entry.flowDate)}</span>
-                        <span>•</span>
-                        <span>{formatRelativeDateLabel(entry.flowDate)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    {entry.paymentMethodLabel ? <span>אמצעי: {entry.paymentMethodLabel}</span> : null}
-                    {entry.dueDate ? <span>פירעון: {formatShortDate(entry.dueDate)}</span> : null}
-                    {entry.recordedDate && entry.recordedDate !== entry.flowDate ? (
-                      <span>נרשם בתאריך: {formatShortDate(entry.recordedDate)}</span>
-                    ) : null}
-                    {entry.reference ? <span>אסמכתא: {entry.reference}</span> : null}
-                  </div>
-                </article>
-              ))
+                        onClick={() => navigateToEntry(entry)}
+                      >
+                        <td className="px-2 py-2 align-top">
+                          <div dir="ltr" className="tabular-nums">
+                            {formatShortDate(entry.flowDate)}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {formatRelativeDateLabel(entry.flowDate)}
+                          </div>
+                        </td>
+                        <td className="px-2 py-2 align-top">
+                          {showDueDate ? (
+                            <span dir="ltr" className="tabular-nums text-xs">
+                              {formatShortDate(entry.dueDate)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 align-top">
+                          <Badge className="px-2 py-0.5 text-[11px]" variant={typeVariant(entry.type)}>
+                            {typeLabel(entry.type)}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-2 align-top">
+                          <Badge className="px-2 py-0.5 text-[11px]" variant={stageVariant(entry.stage)}>
+                            {stageLabel(entry.stage)}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-2 align-top text-xs">{entry.domainName}</td>
+                        <td className="px-2 py-2 align-top">
+                          <div className="text-xs">
+                            {entry.sourceHref ? (
+                              <Link
+                                href={entry.sourceHref}
+                                className="transition-colors hover:text-foreground"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  emitNavigationStart();
+                                }}
+                              >
+                                <span dir="auto">{entry.sourceLabel}</span>
+                              </Link>
+                            ) : (
+                              <span dir="auto">{entry.sourceLabel}</span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">{sourceTypeTitle(entry.sourceKind)}</div>
+                        </td>
+                        <td className="px-2 py-2 align-top">
+                          <div className="text-xs font-medium">{entry.description}</div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {[
+                              entry.paymentMethodLabel,
+                              entry.reference,
+                              entry.recordedDate && entry.recordedDate !== entry.flowDate
+                                ? `נרשם: ${formatShortDate(entry.recordedDate)}`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" • ")}
+                          </div>
+                        </td>
+                        <td
+                          dir="ltr"
+                          className={cn("px-2 py-2 align-top text-left font-semibold tabular-nums", typeAmountClass(entry.type))}
+                        >
+                          {entry.type === "inflow" ? "+" : "-"}
+                          {formatCurrency(entry.amount)}
+                        </td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
             <PaginationControls
               page={currentUpcomingPage}
@@ -872,6 +971,7 @@ export default function FinancialPageClient({
           </div>
         </CardContent>
       </Card>
+      </div>
         </TabsContent>
 
         {canManageRecurring ? (
