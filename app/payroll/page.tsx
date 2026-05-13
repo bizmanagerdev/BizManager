@@ -5,6 +5,7 @@ import SalaryCenterClient from "@/app/payroll/SalaryCenterClient";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import { collectLockedSessionIds, type SalaryCenterProjectOption, type SalaryCenterUserRow, type SessionPublicRow } from "@/lib/payroll-center";
 import type { PayrollPeriodRow } from "@/lib/payroll";
+import { isPayrollWorkerType } from "@/lib/payroll-worker-type";
 
 type Row = Record<string, unknown>;
 
@@ -17,6 +18,7 @@ function mapUsers(rows: Row[] | null | undefined): SalaryCenterUserRow[] {
     role: typeof row.role === "string" ? row.role : null,
     active: typeof row.active === "boolean" ? row.active : null,
     system_access: typeof row.system_access === "boolean" ? row.system_access : null,
+    payroll_worker_type: isPayrollWorkerType(row.payroll_worker_type) ? row.payroll_worker_type : null,
     pay_tracking_mode:
       row.pay_tracking_mode === "session" || row.pay_tracking_mode === "payslip"
         ? row.pay_tracking_mode
@@ -81,7 +83,7 @@ export default async function PayrollPage() {
   ] = await Promise.all([
     supabase
       .from("users")
-      .select("id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
+      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
       .or("role.eq.admin,role.eq.office,role.eq.worker,role.eq.worker_no_access")
       .order("full_name", { ascending: true })
       .range(0, 999),

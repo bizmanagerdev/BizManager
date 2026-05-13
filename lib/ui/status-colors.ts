@@ -3,6 +3,7 @@ export type StatusColor = "success" | "warning" | "danger" | "info" | "neutral";
 export type StatusBadgeType = "payment" | "project" | "task" | "priority" | "order";
 
 export type PaymentStatus =
+  | "not_due"
   | "pending"
   | "cleared"
   | "rejected"
@@ -55,6 +56,8 @@ export function getPaymentStatusColor(status: string): StatusColor {
       return "success";
     case "partial":
       return "info";
+    case "not_due":
+      return "neutral";
     case "unpaid":
     case "overpaid":
     case "rejected":
@@ -141,6 +144,8 @@ export function getPaymentStatusLabel(status: string) {
       return "שולם";
     case "partial":
       return "שולם חלקית";
+    case "not_due":
+      return "טרם הגיע מועד התשלום";
     case "unpaid":
       return "לא שולם";
     case "overpaid":

@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { collectLockedSessionIds, recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
 import {
+  normalizePayrollWorkerType,
+  payrollWorkerTypeGeneratesPayslips,
+} from "@/lib/payroll-worker-type";
+import {
   type PayrollPeriodRow,
   WORK_SESSIONS_TABLE,
 } from "@/lib/payroll";
@@ -38,8 +42,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "This session belongs to a locked payroll period." }, { status: 409 });
     }
 
+    const workerResult = await supabase
+      .from("users")
+      .select("id,payroll_worker_type,pay_tracking_mode")
+      .eq("id", sessionResult.data.user_id)
+      .maybeSingle();
+
+    if (workerResult.error) {
+      return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+    }
+
+    const workerType = normalizePayrollWorkerType(
+      workerResult.data?.payroll_worker_type ?? null,
+      workerResult.data?.pay_tracking_mode ?? "session"
+    );
+
     await recalculateUserSessionCostsFromRules(supabase, sessionResult.data.user_id, {
       fromDate: sessionResult.data.clock_in.slice(0, 10),
+      regeneratePayslips: payrollWorkerTypeGeneratesPayslips(workerType),
     });
     const refreshed = await supabase
       .from(WORK_SESSIONS_TABLE)

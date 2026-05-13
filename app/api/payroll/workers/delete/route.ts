@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     const { supabase } = access.value;
     const existingUserResult = await supabase
       .from("users")
-      .select("id,auth_user_id,full_name,email,phone,role,pay_tracking_mode")
+      .select("id,auth_user_id,full_name,email,phone,role,payroll_worker_type,pay_tracking_mode")
       .eq("id", userId)
       .maybeSingle();
 
@@ -48,6 +48,7 @@ export async function POST(req: Request) {
       p_role: existingRole,
       p_active: false,
       p_system_access: false,
+      p_payroll_worker_type: existingUserResult.data.payroll_worker_type ?? null,
       p_pay_tracking_mode: existingUserResult.data.pay_tracking_mode === "payslip" ? "payslip" : "session",
     });
 

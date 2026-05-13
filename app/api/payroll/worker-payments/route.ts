@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { logAuditEvent } from "@/lib/audit";
+import {
+  normalizePayrollWorkerType,
+  payrollWorkerTypePaymentAllocationSource,
+} from "@/lib/payroll-worker-type";
 
 type WorkerPaymentAllocationInput = {
   source_type?: "session" | "payslip";
@@ -76,7 +80,11 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     return NextResponse.json({ error: "At least one allocation is required." }, { status: 400 });
   }
 
-  const workerResult = await supabase.from("users").select("id,pay_tracking_mode").eq("id", userId).maybeSingle();
+  const workerResult = await supabase
+    .from("users")
+    .select("id,payroll_worker_type,pay_tracking_mode")
+    .eq("id", userId)
+    .maybeSingle();
   if (workerResult.error) {
     return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
   }
@@ -84,8 +92,11 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     return NextResponse.json({ error: "Worker not found." }, { status: 404 });
   }
 
-  const payTrackingMode = workerResult.data.pay_tracking_mode === "payslip" ? "payslip" : "session";
-  const expectedSourceType = payTrackingMode === "payslip" ? "payslip" : "session";
+  const workerType = normalizePayrollWorkerType(
+    workerResult.data.payroll_worker_type,
+    workerResult.data.pay_tracking_mode
+  );
+  const expectedSourceType = payrollWorkerTypePaymentAllocationSource(workerType);
 
   const normalizedAllocations = allocations
     .map((allocation) => {

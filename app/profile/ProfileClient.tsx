@@ -199,6 +199,7 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
   async function saveSessionEdits(sessionId: string) {
     const error = formError(Boolean(editorSession?.clock_out));
     if (error) return setActionError(error);
+    if (!profile.id) return setActionError("לא נמצא עובד לשמירת המשמרת.");
     setActionError("");
     startTransition(async () => {
       try {
@@ -218,7 +219,7 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
     setActionError("");
     startTransition(async () => {
       try {
-        const response = await fetch("/api/profile/session/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: toIso(sessionEditClockOut) }) });
+        const response = await fetch("/api/profile/session/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: toIso(sessionEditClockOut) }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) return setActionError(json.error ?? "יצירת המשמרת נכשלה.");
         closeEditor();

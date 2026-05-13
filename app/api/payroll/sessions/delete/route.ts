@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { logAuditEvent } from "@/lib/audit";
-import { collectLockedSessionIds, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
+import { collectLockedSessionIds, recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
+import {
+  normalizePayrollWorkerType,
+  payrollWorkerTypeGeneratesPayslips,
+} from "@/lib/payroll-worker-type";
 import type { PayrollPeriodRow } from "@/lib/payroll";
 import { WORK_SESSIONS_TABLE } from "@/lib/payroll";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(req: Request) {
   try {
@@ -17,8 +22,9 @@ export async function POST(req: Request) {
     }
 
     const { supabase, profile } = access.value;
+    const adminSupabase = createSupabaseAdminClient() ?? supabase;
     const [sessionResult, periodsResult] = await Promise.all([
-      supabase.from(WORK_SESSIONS_TABLE).select("id,user_id,clock_in").eq("id", sessionId).maybeSingle(),
+      adminSupabase.from(WORK_SESSIONS_TABLE).select("id,user_id,clock_in").eq("id", sessionId).maybeSingle(),
       supabase.from("payroll_periods").select("id,period_month,start_date,end_date,status").range(0, 119),
     ]);
 
@@ -31,12 +37,39 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "This session belongs to a locked payroll period." }, { status: 409 });
     }
 
-    const deleteResult = await supabase.from(WORK_SESSIONS_TABLE).delete().eq("id", sessionId);
+    const deleteAllocationsResult = await adminSupabase
+      .from("worker_payment_allocations")
+      .delete()
+      .eq("attendance_session_id", sessionId);
+    if (deleteAllocationsResult.error) {
+      return NextResponse.json({ error: deleteAllocationsResult.error.message }, { status: 400 });
+    }
+
+    const deleteResult = await adminSupabase.from(WORK_SESSIONS_TABLE).delete().eq("id", sessionId);
     if (deleteResult.error) {
       return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
     }
 
-    await regenerateEditablePayslipsForUsers(supabase, [sessionResult.data.user_id ?? ""]);
+    const workerResult = await supabase
+      .from("users")
+      .select("id,payroll_worker_type,pay_tracking_mode")
+      .eq("id", sessionResult.data.user_id)
+      .maybeSingle();
+
+    if (workerResult.error) {
+      return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+    }
+
+    const workerType = normalizePayrollWorkerType(
+      workerResult.data?.payroll_worker_type ?? null,
+      workerResult.data?.pay_tracking_mode ?? "session"
+    );
+
+    await recalculateUserSessionCostsFromRules(supabase, sessionResult.data.user_id ?? "", {
+      fromDate: sessionResult.data.clock_in.slice(0, 10),
+      regeneratePayslips: payrollWorkerTypeGeneratesPayslips(workerType),
+    });
+
     await logAuditEvent({
       supabase,
       tableName: WORK_SESSIONS_TABLE,

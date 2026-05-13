@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
-import { recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
+import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
+import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import {
   getActiveSalaryAgreementForDate,
   minutesBetween,
@@ -46,11 +47,15 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
 
+    const { profile } = access.value;
     const body = (await req.json().catch(() => ({}))) as CreateSessionPayload;
     const businessDomain = isExpenseBusinessDomain(body.business_domain)
       ? body.business_domain
       : null;
-    const selectedUserId = typeof body.user_id === "string" ? body.user_id.trim() : "";
+    const selectedUserId =
+      typeof body.user_id === "string" && body.user_id.trim()
+        ? body.user_id.trim()
+        : profile.id;
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
     const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
     const notes = typeof body.notes === "string" ? body.notes.trim() : "";
@@ -70,7 +75,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
     }
     if (!selectedUserId) {
-      return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
+      return NextResponse.json({ error: "יש לבחור עובד." }, { status: 400 });
+    }
+    if (selectedUserId !== profile.id) {
+      return NextResponse.json({ error: "Cannot create a session for another worker." }, { status: 403 });
     }
     if (!clockIn || !clockOut) {
       return NextResponse.json({ error: "יש להזין שעת התחלה ושעת סיום." }, { status: 400 });
@@ -102,7 +110,7 @@ export async function POST(req: Request) {
 
     const { data: selectedUser, error: selectedUserError } = await supabase
       .from("users")
-      .select("id")
+      .select("id,payroll_worker_type,pay_tracking_mode")
       .eq("id", selectedUserId)
       .maybeSingle();
 
@@ -111,6 +119,10 @@ export async function POST(req: Request) {
     }
     if (!selectedUser?.id) {
       return NextResponse.json({ error: "Selected user not found" }, { status: 404 });
+    }
+    const workerType = normalizePayrollWorkerType(selectedUser.payroll_worker_type, selectedUser.pay_tracking_mode);
+    if (!payrollWorkerTypeAllowsSessions(workerType)) {
+      return NextResponse.json({ error: "Worker type does not use sessions." }, { status: 409 });
     }
 
     if (businessDomain === "logistics_projects") {
@@ -197,6 +209,7 @@ export async function POST(req: Request) {
     if (laborCost === null && activeAgreement) {
       await recalculateUserSessionCostsFromRules(supabase, selectedUserId, {
         fromDate: clockIn.slice(0, 10),
+        regeneratePayslips: false,
       });
       const refreshed = await supabase
         .from(WORK_SESSIONS_TABLE)
@@ -208,8 +221,6 @@ export async function POST(req: Request) {
       }
       return NextResponse.json({ session: refreshed.data });
     }
-
-    await regenerateEditablePayslipsForUsers(supabase, [selectedUserId]);
 
     return NextResponse.json({ session: data });
   } catch (error: unknown) {

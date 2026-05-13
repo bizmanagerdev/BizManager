@@ -47,7 +47,7 @@ export default async function ProfilePage() {
   const { data: agreementRows, error: agreementsError } = await supabase
     .from("salary_agreements")
     .select(
-      "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+      "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
     )
     .eq("user_id", profile.id)
     .order("valid_from", { ascending: false });

@@ -354,6 +354,7 @@ type CashFlowEvent =
     };
 
 export default function ProjectTabsClient({
+  viewerRole,
   overview,
   financials,
   tasks,
@@ -377,6 +378,7 @@ export default function ProjectTabsClient({
   workerBalance,
   salaryAgreements,
 }: {
+  viewerRole: string | null;
   overview: ProjectOverview;
   financials: ProjectFinancials;
   tasks: ProjectTaskProgress;
@@ -1012,13 +1014,18 @@ export default function ProjectTabsClient({
 
     setDeletingSessionId(sessionId);
     try {
-      const res = await fetch("/api/profile/session/delete", {
+      const isAdminViewer = viewerRole === "admin";
+      const res = await fetch(isAdminViewer ? "/api/payroll/sessions/delete" : "/api/profile/session/delete", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          project_id: overview.id,
-        }),
+        body: JSON.stringify(
+          isAdminViewer
+            ? { session_id: sessionId }
+            : {
+                session_id: sessionId,
+                project_id: overview.id,
+              }
+        ),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {

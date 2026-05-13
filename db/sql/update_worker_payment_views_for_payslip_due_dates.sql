@@ -1,8 +1,9 @@
--- Unified worker debt and payment reporting views.
--- Run after creating:
--- - users.pay_tracking_mode
--- - worker_payments
--- - worker_payment_allocations
+-- Run this after the worker payment views already exist.
+--
+-- Goal:
+-- - Make payslip debt due on the 10th of the following month.
+-- - Mark open payslip debt as `not_due` until that due date arrives.
+-- - Keep worker balance statuses aligned with the item-level due-date rule.
 
 create or replace view public.worker_debt_items_view as
 with session_items as (

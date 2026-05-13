@@ -1,6 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import {
+  getPayTrackingModeForWorkerType,
+  normalizePayrollWorkerType,
+  type PayrollWorkerType,
+} from "@/lib/payroll-worker-type";
 
 type CreateUserPayload = {
   full_name?: string | null;
@@ -10,6 +15,7 @@ type CreateUserPayload = {
   role?: string | null;
   active?: boolean | null;
   system_access?: boolean | null;
+  payroll_worker_type?: PayrollWorkerType | null;
   pay_tracking_mode?: "session" | "payslip" | null;
 };
 
@@ -22,6 +28,7 @@ type UserRow = {
   role: string | null;
   active: boolean | null;
   system_access: boolean | null;
+  payroll_worker_type?: PayrollWorkerType | null;
   pay_tracking_mode?: "session" | "payslip" | null;
 };
 
@@ -42,7 +49,8 @@ export async function POST(req: Request) {
     const active = body.active === false ? false : true;
     const systemAccess =
       role === "worker_no_access" ? false : body.system_access === false ? false : true;
-    const payTrackingMode = body.pay_tracking_mode === "payslip" ? "payslip" : "session";
+    const payrollWorkerType = normalizePayrollWorkerType(body.payroll_worker_type, body.pay_tracking_mode);
+    const payTrackingMode = getPayTrackingModeForWorkerType(payrollWorkerType);
     const rawPassword = typeof body.password === "string" ? body.password.trim() : "";
     const password = rawPassword;
 
@@ -63,7 +71,7 @@ export async function POST(req: Request) {
     if (email) {
       const { data: existingUser, error: existingUserError } = await supabase
         .from("users")
-        .select("id,auth_user_id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
+        .select("id,auth_user_id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
         .eq("email", email)
         .maybeSingle();
 
@@ -87,6 +95,7 @@ export async function POST(req: Request) {
           p_role: role,
           p_active: active,
           p_system_access: false,
+          p_payroll_worker_type: payrollWorkerType,
           p_pay_tracking_mode: payTrackingMode,
         }
       );
@@ -97,7 +106,7 @@ export async function POST(req: Request) {
 
       const { data: insertedUser, error: insertedUserReadError } = await supabase
         .from("users")
-        .select("id,auth_user_id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
+        .select("id,auth_user_id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
         .eq("id", insertedUserId)
         .maybeSingle();
 
@@ -106,7 +115,7 @@ export async function POST(req: Request) {
       }
       const { data: refreshedUser, error: refreshedUserError } = await supabase
         .from("users")
-        .select("id,auth_user_id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
+        .select("id,auth_user_id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
         .eq("id", insertedUserId)
         .maybeSingle();
 
@@ -156,6 +165,7 @@ export async function POST(req: Request) {
         p_role: role,
         p_active: active,
         p_system_access: systemAccess,
+        p_payroll_worker_type: payrollWorkerType,
         p_pay_tracking_mode: payTrackingMode,
       });
 
@@ -166,7 +176,7 @@ export async function POST(req: Request) {
       if (upsertedUserId) {
         const { data, error: readError } = await supabase
           .from("users")
-          .select("id,auth_user_id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
+          .select("id,auth_user_id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
           .eq("id", upsertedUserId)
           .maybeSingle();
 
@@ -191,7 +201,7 @@ export async function POST(req: Request) {
     }
     const { data: refreshedUser, error: refreshedUserError } = await supabase
       .from("users")
-      .select("id,auth_user_id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
+      .select("id,auth_user_id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
       .eq("id", user.id)
       .maybeSingle();
 

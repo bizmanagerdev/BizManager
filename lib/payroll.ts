@@ -36,6 +36,7 @@ export type SalaryAgreementRow = {
   notes: string | null;
   overtime_rate: number | string | null;
   standard_daily_hours: number | string | null;
+  due_day_of_next_month: number | string | null;
 };
 
 export type PayrollPeriodRow = {

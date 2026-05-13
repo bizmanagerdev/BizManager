@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
+import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import { addMinutes, minutesBetween, WORK_SESSIONS_TABLE } from "@/lib/payroll";
 
 type SplitPartPayload = {
@@ -44,13 +46,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "יש להזין לפחות שני חלקים לפיצול." }, { status: 400 });
     }
 
-    const { supabase, user } = access.value;
+    const { supabase, profile } = access.value;
+    const workerResult = await supabase
+      .from("users")
+      .select("id,payroll_worker_type,pay_tracking_mode")
+      .eq("id", profile.id)
+      .maybeSingle();
+
+    if (workerResult.error) {
+      return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+    }
+    if (!workerResult.data?.id) {
+      return NextResponse.json({ error: "Worker not found." }, { status: 404 });
+    }
+
+    const workerType = normalizePayrollWorkerType(
+      workerResult.data.payroll_worker_type,
+      workerResult.data.pay_tracking_mode
+    );
+    if (!payrollWorkerTypeAllowsSessions(workerType)) {
+      return NextResponse.json({ error: "Worker type does not use sessions." }, { status: 409 });
+    }
 
     const { data: session, error: sessionError } = await supabase
       .from(WORK_SESSIONS_TABLE)
       .select("id,user_id,clock_in,clock_out,worked_minutes,notes,business_domain,project_id,property_id")
       .eq("id", sessionId)
-      .eq("user_id", user.id)
+      .eq("user_id", profile.id)
       .maybeSingle();
 
     if (sessionError) {
@@ -180,14 +202,14 @@ export async function POST(req: Request) {
         property_id: firstRange.propertyId,
       })
       .eq("id", sessionId)
-      .eq("user_id", user.id);
+      .eq("user_id", profile.id);
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
 
     const insertRows = computedRanges.slice(1).map((part) => ({
-      user_id: user.id,
+      user_id: profile.id,
       clock_in: part.clockIn,
       clock_out: part.clockOut,
       worked_minutes: part.minutes,
@@ -210,11 +232,16 @@ export async function POST(req: Request) {
             property_id: originalPropertyId,
           })
           .eq("id", sessionId)
-          .eq("user_id", user.id);
+          .eq("user_id", profile.id);
 
         return NextResponse.json({ error: insertError.message }, { status: 400 });
       }
     }
+
+    await recalculateUserSessionCostsFromRules(supabase, profile.id, {
+      fromDate: session.clock_in.slice(0, 10),
+      regeneratePayslips: false,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {

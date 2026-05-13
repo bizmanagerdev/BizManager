@@ -46,8 +46,8 @@ export async function POST(req: Request) {
           .maybeSingle(),
         supabase
           .from("users")
-          .select("id,full_name,email,phone,role,active,system_access")
-          .in("role", ["admin", "office", "worker"])
+          .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
+          .in("role", ["admin", "office", "worker", "worker_no_access"])
           .range(0, 999),
       ]);
 

@@ -960,6 +960,7 @@ export default async function ProjectPage({
           <div className="text-sm text-muted-foreground">הפרויקט לא נמצא.</div>
         ) : (
           <ProjectTabsClient
+            viewerRole={profile.role}
             overview={overview}
             financials={financials ?? null}
             tasks={tasks ?? null}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import { WORK_SESSIONS_TABLE } from "@/lib/payroll";
 
 type StartSessionPayload = {
@@ -13,12 +14,32 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => ({}))) as StartSessionPayload;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
-    const { supabase, user } = access.value;
+    const { supabase, profile } = access.value;
+    const workerResult = await supabase
+      .from("users")
+      .select("id,payroll_worker_type,pay_tracking_mode")
+      .eq("id", profile.id)
+      .maybeSingle();
+
+    if (workerResult.error) {
+      return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+    }
+    if (!workerResult.data?.id) {
+      return NextResponse.json({ error: "Worker not found." }, { status: 404 });
+    }
+
+    const workerType = normalizePayrollWorkerType(
+      workerResult.data.payroll_worker_type,
+      workerResult.data.pay_tracking_mode
+    );
+    if (!payrollWorkerTypeAllowsSessions(workerType)) {
+      return NextResponse.json({ error: "Worker type does not use sessions." }, { status: 409 });
+    }
 
     const { data: openSession, error: openSessionError } = await supabase
       .from(WORK_SESSIONS_TABLE)
       .select("id")
-      .eq("user_id", user.id)
+      .eq("user_id", profile.id)
       .is("clock_out", null)
       .limit(1)
       .maybeSingle();
@@ -34,7 +55,7 @@ export async function POST(req: Request) {
     const { data, error } = await supabase
       .from(WORK_SESSIONS_TABLE)
       .insert({
-        user_id: user.id,
+        user_id: profile.id,
         clock_in: new Date().toISOString(),
         notes,
         business_domain: "general_business",

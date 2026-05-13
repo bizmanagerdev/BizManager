@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
-import { recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
+import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
+import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import {
   getActiveSalaryAgreementForDate,
   minutesBetween,
@@ -50,6 +51,7 @@ export async function POST(req: Request) {
   try {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
+    const { supabase, profile } = access.value;
 
     const body = (await req.json().catch(() => ({}))) as UpdateSessionPayload;
     const sessionId = typeof body.session_id === "string" ? body.session_id.trim() : "";
@@ -83,6 +85,9 @@ export async function POST(req: Request) {
     if (!selectedUserId) {
       return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
     }
+    if (selectedUserId !== profile.id) {
+      return NextResponse.json({ error: "Cannot update a session for another worker." }, { status: 403 });
+    }
     if (!clockIn) {
       return NextResponse.json({ error: "יש להזין שעת התחלה." }, { status: 400 });
     }
@@ -110,12 +115,11 @@ export async function POST(req: Request) {
       }
     }
 
-    const { supabase } = access.value;
-
     const { data: session, error: sessionError } = await supabase
       .from(WORK_SESSIONS_TABLE)
       .select("id,user_id,project_id,clock_in,labor_cost")
       .eq("id", sessionId)
+      .eq("user_id", profile.id)
       .maybeSingle();
 
     if (sessionError) {
@@ -130,7 +134,7 @@ export async function POST(req: Request) {
 
     const { data: selectedUser, error: selectedUserError } = await supabase
       .from("users")
-      .select("id")
+      .select("id,payroll_worker_type,pay_tracking_mode")
       .eq("id", selectedUserId)
       .maybeSingle();
 
@@ -139,6 +143,10 @@ export async function POST(req: Request) {
     }
     if (!selectedUser?.id) {
       return NextResponse.json({ error: "Selected user not found" }, { status: 404 });
+    }
+    const workerType = normalizePayrollWorkerType(selectedUser.payroll_worker_type, selectedUser.pay_tracking_mode);
+    if (!payrollWorkerTypeAllowsSessions(workerType)) {
+      return NextResponse.json({ error: "Worker type does not use sessions." }, { status: 409 });
     }
 
     if (businessDomain === "logistics_projects") {
@@ -252,14 +260,17 @@ export async function POST(req: Request) {
     if (canRecalculateLaborCost && requestedLaborCost === null && clockOut) {
       await recalculateUserSessionCostsFromRules(supabase, selectedUserId, {
         fromDate: clockIn.slice(0, 10),
+        regeneratePayslips: false,
       });
       if (previousUserId && previousUserId !== selectedUserId) {
         await recalculateUserSessionCostsFromRules(supabase, previousUserId, {
           fromDate: previousClockIn.slice(0, 10),
+          regeneratePayslips: false,
         });
       } else if (previousClockIn.slice(0, 10) !== clockIn.slice(0, 10)) {
         await recalculateUserSessionCostsFromRules(supabase, previousUserId, {
           fromDate: previousClockIn.slice(0, 10),
+          regeneratePayslips: false,
         });
       }
       const refreshed = await supabase
@@ -272,8 +283,6 @@ export async function POST(req: Request) {
       }
       return NextResponse.json({ session: refreshed.data });
     }
-
-    await regenerateEditablePayslipsForUsers(supabase, [previousUserId, selectedUserId]);
 
     return NextResponse.json({ session: data });
   } catch (error: unknown) {

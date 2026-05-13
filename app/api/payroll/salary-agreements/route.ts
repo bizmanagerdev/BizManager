@@ -3,6 +3,12 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
+import {
+  normalizePayrollWorkerType,
+  payrollWorkerTypeGeneratesPayslips,
+  payrollWorkerTypeRequiredAgreementType,
+  type PayrollWorkerType,
+} from "@/lib/payroll-worker-type";
 
 type SalaryAgreementPayload = {
   agreement_id?: string;
@@ -15,12 +21,19 @@ type SalaryAgreementPayload = {
   notes?: string | null;
   overtime_rate?: number | string | null;
   standard_daily_hours?: number | string | null;
+  due_day_of_next_month?: number | string | null;
 };
 
 function toNullableNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = typeof value === "number" ? value : Number(String(value).trim());
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toNullableInteger(value: unknown) {
+  const parsed = toNullableNumber(value);
+  if (parsed === null) return null;
+  return Number.isInteger(parsed) ? parsed : null;
 }
 
 function dayBefore(value: string) {
@@ -90,6 +103,7 @@ export async function POST(req: Request) {
     const monthlySalary = toNullableNumber(body.monthly_salary);
     const overtimeRate = toNullableNumber(body.overtime_rate);
     const standardDailyHours = toNullableNumber(body.standard_daily_hours);
+    const dueDayOfNextMonth = toNullableInteger(body.due_day_of_next_month);
     const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;
 
     if (action === "delete") {
@@ -108,12 +122,56 @@ export async function POST(req: Request) {
     if (action !== "delete" && (standardDailyHours === null || standardDailyHours <= 0)) {
       return NextResponse.json({ error: "Standard daily hours are required." }, { status: 400 });
     }
+    if (action !== "delete" && (dueDayOfNextMonth === null || dueDayOfNextMonth < 1 || dueDayOfNextMonth > 31)) {
+      return NextResponse.json({ error: "Due day must be a whole number between 1 and 31." }, { status: 400 });
+    }
 
     const { supabase } = access.value;
+    let workerType: PayrollWorkerType = "session_only";
+    if (userId) {
+      const workerResult = await supabase
+        .from("users")
+        .select("id,payroll_worker_type,pay_tracking_mode")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (workerResult.error) {
+        return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+      }
+      if (!workerResult.data?.id) {
+        return NextResponse.json({ error: "Worker not found." }, { status: 404 });
+      }
+
+      if (action !== "delete") {
+        workerType = normalizePayrollWorkerType(
+          workerResult.data.payroll_worker_type,
+          workerResult.data.pay_tracking_mode
+        );
+        const requiredAgreementType = payrollWorkerTypeRequiredAgreementType(workerType);
+
+        if (requiredAgreementType && salaryType !== requiredAgreementType) {
+          return NextResponse.json(
+            {
+              error:
+                requiredAgreementType === "monthly"
+                  ? "Global monthly workers must use a monthly salary agreement."
+                  : "Hourly payslip workers must use an hourly salary agreement.",
+            },
+            { status: 409 }
+          );
+        }
+      } else {
+        workerType = normalizePayrollWorkerType(
+          workerResult.data.payroll_worker_type,
+          workerResult.data.pay_tracking_mode
+        );
+      }
+    }
+
     const agreementsResult = await supabase
       .from("salary_agreements")
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
       )
       .eq("user_id", userId)
       .order("valid_from", { ascending: false });
@@ -138,7 +196,10 @@ export async function POST(req: Request) {
       const remainingAgreements = agreements.filter((agreement) => agreement.id !== agreementId);
       await normalizeAgreementRanges(supabase, remainingAgreements);
 
-      await recalculateUserSessionCostsFromRules(supabase, userId, { fromDate: targetAgreement.valid_from });
+      await recalculateUserSessionCostsFromRules(supabase, userId, {
+        fromDate: targetAgreement.valid_from,
+        regeneratePayslips: payrollWorkerTypeGeneratesPayslips(workerType),
+      });
 
       return NextResponse.json({ success: true });
     }
@@ -168,10 +229,11 @@ export async function POST(req: Request) {
           notes,
           overtime_rate: overtimeRate,
           standard_daily_hours: standardDailyHours,
+          due_day_of_next_month: dueDayOfNextMonth,
         })
         .eq("id", agreementId)
         .select(
-          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
         )
         .maybeSingle();
 
@@ -182,7 +244,7 @@ export async function POST(req: Request) {
       const refreshedAgreementsResult = await supabase
         .from("salary_agreements")
         .select(
-          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
         )
         .eq("user_id", userId)
         .order("valid_from", { ascending: false });
@@ -197,7 +259,7 @@ export async function POST(req: Request) {
       const normalizedAgreementResult = await supabase
         .from("salary_agreements")
         .select(
-          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
         )
         .eq("id", agreementId)
         .maybeSingle();
@@ -206,7 +268,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: normalizedAgreementResult.error.message }, { status: 400 });
       }
 
-      await recalculateUserSessionCostsFromRules(supabase, userId, { fromDate: validFrom });
+      await recalculateUserSessionCostsFromRules(supabase, userId, {
+        fromDate: validFrom,
+        regeneratePayslips: payrollWorkerTypeGeneratesPayslips(workerType),
+      });
 
       return NextResponse.json({ agreement: normalizedAgreementResult.data });
     }
@@ -247,9 +312,10 @@ export async function POST(req: Request) {
         notes,
         overtime_rate: overtimeRate,
         standard_daily_hours: standardDailyHours,
+        due_day_of_next_month: dueDayOfNextMonth,
       })
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
       )
       .maybeSingle();
 
@@ -265,7 +331,7 @@ export async function POST(req: Request) {
       ? await supabase
           .from("salary_agreements")
           .select(
-            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
           )
           .eq("id", insertedAgreement.id)
           .maybeSingle()
@@ -275,7 +341,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: normalizedInsertResult.error.message }, { status: 400 });
     }
 
-    await recalculateUserSessionCostsFromRules(supabase, userId, { fromDate: validFrom });
+    await recalculateUserSessionCostsFromRules(supabase, userId, {
+      fromDate: validFrom,
+      regeneratePayslips: payrollWorkerTypeGeneratesPayslips(workerType),
+    });
 
     return NextResponse.json({ agreement: normalizedInsertResult.data });
   } catch (error: unknown) {

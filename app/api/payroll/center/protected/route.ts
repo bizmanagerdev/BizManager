@@ -10,7 +10,7 @@ export async function GET() {
     const { supabase } = access.value;
     const usersResult = await supabase
       .from("users")
-      .select("id,role,active,pay_tracking_mode")
+      .select("id,role,active,payroll_worker_type,pay_tracking_mode")
       .or("role.eq.admin,role.eq.office,role.eq.worker,role.eq.worker_no_access")
       .eq("active", true)
       .range(0, 999);
@@ -22,6 +22,7 @@ export async function GET() {
     const rows = (usersResult.data ?? []) as Array<{
       id: string;
       role: string | null;
+      payroll_worker_type: "session_only" | "monthly_payslip" | "hourly_payslip" | null;
       pay_tracking_mode: "session" | "payslip" | null;
     }>;
     const userIds = rows.map((row) => row.id).filter(Boolean);

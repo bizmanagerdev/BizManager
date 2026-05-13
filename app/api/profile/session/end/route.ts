@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
+import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import { WORK_SESSIONS_TABLE } from "@/lib/payroll";
 
 type EndSessionPayload = {
@@ -18,12 +20,32 @@ export async function POST(req: Request) {
     const businessDomain = isExpenseBusinessDomain(body.business_domain)
       ? body.business_domain
       : "general_business";
-    const { supabase, user } = access.value;
+    const { supabase, profile } = access.value;
+    const workerResult = await supabase
+      .from("users")
+      .select("id,payroll_worker_type,pay_tracking_mode")
+      .eq("id", profile.id)
+      .maybeSingle();
+
+    if (workerResult.error) {
+      return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+    }
+    if (!workerResult.data?.id) {
+      return NextResponse.json({ error: "Worker not found." }, { status: 404 });
+    }
+
+    const workerType = normalizePayrollWorkerType(
+      workerResult.data.payroll_worker_type,
+      workerResult.data.pay_tracking_mode
+    );
+    if (!payrollWorkerTypeAllowsSessions(workerType)) {
+      return NextResponse.json({ error: "Worker type does not use sessions." }, { status: 409 });
+    }
 
     const { data: openSession, error: openSessionError } = await supabase
       .from(WORK_SESSIONS_TABLE)
       .select("id,clock_in,notes")
-      .eq("user_id", user.id)
+      .eq("user_id", profile.id)
       .is("clock_out", null)
       .order("clock_in", { ascending: false })
       .limit(1)
@@ -62,6 +84,11 @@ export async function POST(req: Request) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
+
+    await recalculateUserSessionCostsFromRules(supabase, profile.id, {
+      fromDate: endedAtIso.slice(0, 10),
+      regeneratePayslips: false,
+    });
 
     return NextResponse.json({ session: data });
   } catch (error: unknown) {

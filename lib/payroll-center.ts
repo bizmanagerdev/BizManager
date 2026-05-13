@@ -1,4 +1,9 @@
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
+import {
+  getPayTrackingModeForWorkerType,
+  isPayrollWorkerType,
+  type PayrollWorkerType,
+} from "@/lib/payroll-worker-type";
 import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import {
   calculateSessionLaborCost,
@@ -21,6 +26,7 @@ export type SalaryCenterUserRow = {
   role: string | null;
   active: boolean | null;
   system_access: boolean | null;
+  payroll_worker_type: PayrollWorkerType | null;
   pay_tracking_mode: "session" | "payslip" | null;
 };
 
@@ -105,6 +111,7 @@ export type WorkerDebtItemRow = {
   payslip_id: string | null;
   payroll_period_id: string | null;
   source_date: string | null;
+  due_date: string | null;
   period_month: string | null;
   worked_minutes: number | string | null;
   earned_amount: number | string | null;
@@ -126,8 +133,11 @@ export type WorkerBalanceRow = {
 };
 
 export function isSalaryTrackedWorker(
-  user: Pick<SalaryCenterUserRow, "role" | "pay_tracking_mode">
+  user: Pick<SalaryCenterUserRow, "role" | "payroll_worker_type" | "pay_tracking_mode">
 ) {
+  if (isPayrollWorkerType(user.payroll_worker_type)) {
+    return getPayTrackingModeForWorkerType(user.payroll_worker_type) === "payslip";
+  }
   if (user.pay_tracking_mode === "payslip") return true;
   if (user.pay_tracking_mode === "session") return false;
   return user.role === "worker" || user.role === "office" || user.role === "admin";
@@ -157,6 +167,17 @@ type QueryLike = {
 
 function query(builder: unknown) {
   return builder as QueryLike;
+}
+
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? (error as { code?: unknown }).code : undefined;
+  const message = "message" in error ? (error as { message?: unknown }).message : undefined;
+  return (
+    code === "42703" &&
+    typeof message === "string" &&
+    message.toLowerCase().includes(`column worker_debt_items_view.${columnName}`.toLowerCase())
+  );
 }
 
 export function normalizePayrollStatus(value: string | null | undefined) {
@@ -437,12 +458,11 @@ export async function fetchSalaryCenterProtectedPayload(
     overridesResult,
     sessionCostsResult,
     workerBalancesResult,
-    workerDebtItemsResult,
     workerPaymentsResult,
   ] = await Promise.all([
     query(supabase.from("salary_agreements"))
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
       )
       .in("user_id", safeUserIds)
       .order("valid_from", { ascending: false }),
@@ -469,18 +489,28 @@ export async function fetchSalaryCenterProtectedPayload(
       .select("user_id,item_count,open_item_count,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date")
       .in("user_id", safeUserIds)
       .range(0, 1999),
-    query(supabase.from("worker_debt_items_view"))
-      .select(
-        "source_type,source_id,user_id,project_id,payslip_id,payroll_period_id,source_date,period_month,worked_minutes,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date"
-      )
-      .in("user_id", safeUserIds)
-      .range(0, 4999),
     query(supabase.from("worker_payments"))
       .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by,created_at")
       .in("user_id", safeUserIds)
       .order("payment_date", { ascending: false })
       .range(0, 1999),
   ]);
+
+  let workerDebtItemsResult = await query(supabase.from("worker_debt_items_view"))
+    .select(
+      "source_type,source_id,user_id,project_id,payslip_id,payroll_period_id,source_date,due_date,period_month,worked_minutes,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date"
+    )
+    .in("user_id", safeUserIds)
+    .range(0, 4999);
+
+  if (workerDebtItemsResult.error && isMissingColumnError(workerDebtItemsResult.error, "due_date")) {
+    workerDebtItemsResult = await query(supabase.from("worker_debt_items_view"))
+      .select(
+        "source_type,source_id,user_id,project_id,payslip_id,payroll_period_id,source_date,period_month,worked_minutes,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date"
+      )
+      .in("user_id", safeUserIds)
+      .range(0, 4999);
+  }
 
   if (agreementsResult.error) throw new Error(agreementsResult.error.message);
   if (periodsResult.error) throw new Error(periodsResult.error.message);
@@ -644,7 +674,7 @@ export async function generatePayslipsForPeriod(
       .range(0, 4999),
     query(supabase.from("salary_agreements"))
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
       )
       .in("user_id", userIds)
       .order("valid_from", { ascending: false }),
@@ -772,7 +802,7 @@ export async function regenerateEditablePayslipsForUsers(
       .order("period_month", { ascending: false })
       .range(0, 119),
     query(supabase.from("users"))
-      .select("id,full_name,email,phone,role,active,system_access")
+      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
       .in("id", safeUserIds)
       .range(0, 999),
   ]);
@@ -797,6 +827,7 @@ export async function recalculateUserSessionCostsFromRules(
   userId: string,
   options?: {
     fromDate?: string | null;
+    regeneratePayslips?: boolean;
   }
 ) {
   const safeUserId = userId.trim();
@@ -816,7 +847,7 @@ export async function recalculateUserSessionCostsFromRules(
       .range(0, 4999),
     query(supabase.from("salary_agreements"))
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
       )
       .eq("user_id", safeUserId)
       .order("valid_from", { ascending: false }),
@@ -866,5 +897,7 @@ export async function recalculateUserSessionCostsFromRules(
     if (updateResult.error) throw new Error(updateResult.error.message);
   }
 
-  await regenerateEditablePayslipsForUsers(supabase, [safeUserId]);
+  if (options?.regeneratePayslips !== false) {
+    await regenerateEditablePayslipsForUsers(supabase, [safeUserId]);
+  }
 }

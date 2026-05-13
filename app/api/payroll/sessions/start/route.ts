@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import { WORK_SESSIONS_TABLE } from "@/lib/payroll";
 
 type StartPayrollSessionPayload = {
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
 
     const { data: selectedUser, error: selectedUserError } = await supabase
       .from("users")
-      .select("id,role,active")
+      .select("id,role,active,payroll_worker_type,pay_tracking_mode")
       .eq("id", selectedUserId)
       .maybeSingle();
 
@@ -65,6 +66,11 @@ export async function POST(req: Request) {
     }
     if (selectedUser.role !== "worker" && selectedUser.role !== "worker_no_access") {
       return NextResponse.json({ error: "ניתן לבחור רק עובד או עובד ללא גישה." }, { status: 400 });
+    }
+
+    const workerType = normalizePayrollWorkerType(selectedUser.payroll_worker_type, selectedUser.pay_tracking_mode);
+    if (!payrollWorkerTypeAllowsSessions(workerType)) {
+      return NextResponse.json({ error: "This worker type does not use sessions." }, { status: 409 });
     }
 
     if (businessDomain === "logistics_projects") {

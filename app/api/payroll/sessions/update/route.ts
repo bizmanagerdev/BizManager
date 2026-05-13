@@ -4,6 +4,11 @@ import { logAuditEvent } from "@/lib/audit";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { collectLockedSessionIds, recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
 import {
+  normalizePayrollWorkerType,
+  payrollWorkerTypeAllowsSessions,
+  payrollWorkerTypeGeneratesPayslips,
+} from "@/lib/payroll-worker-type";
+import {
   getActiveSalaryAgreementForDate,
   minutesBetween,
   type SalaryAgreementRow,
@@ -88,7 +93,7 @@ export async function POST(req: Request) {
     }
 
     const { supabase, profile } = access.value;
-    const [sessionResult, periodsResult, siblingsResult, agreementsResult] = await Promise.all([
+    const [sessionResult, periodsResult, siblingsResult, agreementsResult, workerResult] = await Promise.all([
       supabase
         .from(WORK_SESSIONS_TABLE)
         .select(
@@ -108,13 +113,29 @@ export async function POST(req: Request) {
         .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours")
         .eq("user_id", userId)
         .order("valid_from", { ascending: false }),
+      supabase
+        .from("users")
+        .select("id,payroll_worker_type,pay_tracking_mode")
+        .eq("id", userId)
+        .maybeSingle(),
     ]);
 
     if (sessionResult.error) return NextResponse.json({ error: sessionResult.error.message }, { status: 400 });
     if (periodsResult.error) return NextResponse.json({ error: periodsResult.error.message }, { status: 400 });
     if (siblingsResult.error) return NextResponse.json({ error: siblingsResult.error.message }, { status: 400 });
     if (agreementsResult.error) return NextResponse.json({ error: agreementsResult.error.message }, { status: 400 });
+    if (workerResult.error) return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
     if (!sessionResult.data) return NextResponse.json({ error: "Session not found." }, { status: 404 });
+    if (!workerResult.data?.id) return NextResponse.json({ error: "Worker not found." }, { status: 404 });
+
+    const workerType = normalizePayrollWorkerType(
+      workerResult.data.payroll_worker_type,
+      workerResult.data.pay_tracking_mode
+    );
+    if (!payrollWorkerTypeAllowsSessions(workerType)) {
+      return NextResponse.json({ error: "This worker type does not use sessions." }, { status: 409 });
+    }
+    const shouldRegenerateCurrentWorkerPayslips = payrollWorkerTypeGeneratesPayslips(workerType);
 
     const lockedIds = collectLockedSessionIds(
       [{ id: sessionId, clock_in: clockIn }],
@@ -146,6 +167,25 @@ export async function POST(req: Request) {
 
     const previousUserId = sessionResult.data.user_id;
     const previousClockIn = sessionResult.data.clock_in;
+    let shouldRegeneratePreviousWorkerPayslips = shouldRegenerateCurrentWorkerPayslips;
+
+    if (previousUserId && previousUserId !== userId) {
+      const previousWorkerResult = await supabase
+        .from("users")
+        .select("id,payroll_worker_type,pay_tracking_mode")
+        .eq("id", previousUserId)
+        .maybeSingle();
+
+      if (previousWorkerResult.error) {
+        return NextResponse.json({ error: previousWorkerResult.error.message }, { status: 400 });
+      }
+
+      const previousWorkerType = normalizePayrollWorkerType(
+        previousWorkerResult.data?.payroll_worker_type ?? null,
+        previousWorkerResult.data?.pay_tracking_mode ?? "session"
+      );
+      shouldRegeneratePreviousWorkerPayslips = payrollWorkerTypeGeneratesPayslips(previousWorkerType);
+    }
 
     const updateResult = await supabase
       .from(WORK_SESSIONS_TABLE)
@@ -176,14 +216,17 @@ export async function POST(req: Request) {
     if (canRecalculateLaborCost && requestedLaborCost === null && clockOut) {
       await recalculateUserSessionCostsFromRules(supabase, userId, {
         fromDate: clockIn.slice(0, 10),
+        regeneratePayslips: shouldRegenerateCurrentWorkerPayslips,
       });
       if (previousUserId && previousUserId !== userId) {
         await recalculateUserSessionCostsFromRules(supabase, previousUserId, {
           fromDate: previousClockIn.slice(0, 10),
+          regeneratePayslips: shouldRegeneratePreviousWorkerPayslips,
         });
       } else if (previousClockIn.slice(0, 10) !== clockIn.slice(0, 10)) {
         await recalculateUserSessionCostsFromRules(supabase, previousUserId, {
           fromDate: previousClockIn.slice(0, 10),
+          regeneratePayslips: shouldRegenerateCurrentWorkerPayslips,
         });
       }
       const refreshed = await supabase
@@ -209,7 +252,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ session: refreshed.data });
     }
 
-    await regenerateEditablePayslipsForUsers(supabase, [previousUserId, userId]);
+    if (shouldRegenerateCurrentWorkerPayslips || shouldRegeneratePreviousWorkerPayslips) {
+      await regenerateEditablePayslipsForUsers(
+        supabase,
+        [shouldRegeneratePreviousWorkerPayslips ? previousUserId : "", shouldRegenerateCurrentWorkerPayslips ? userId : ""]
+      );
+    }
 
     if (updateResult.data?.id) {
       await logAuditEvent({

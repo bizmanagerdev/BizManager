@@ -71,6 +71,17 @@ function nextMonthDueDateIso(periodEndDateIso: string) {
   return `${nextYear}-${String(nextMonth).padStart(2, "0")}-10`;
 }
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? (error as { code?: unknown }).code : undefined;
+  const message = "message" in error ? (error as { message?: unknown }).message : undefined;
+  return (
+    code === "42703" &&
+    typeof message === "string" &&
+    message.toLowerCase().includes(`column worker_debt_items_view.${columnName}`.toLowerCase())
+  );
+}
+
 function currencyFormatterHeIl() {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 2 });
 }
@@ -92,7 +103,7 @@ export async function getAlertsData(
   const [
     { data: dashboardRow, error: dashboardError },
     { data: invoiceRows, error: invoiceError },
-    payrollDebtResult,
+    payrollDebtResultRaw,
     activeProjectsCountResult,
     inventoryProductsResult,
     inventoryRowsResult,
@@ -110,7 +121,7 @@ export async function getAlertsData(
     viewerRole === "admin"
       ? supabase
           .from("worker_debt_items_view")
-          .select("user_id,source_date,owed_amount,source_type")
+          .select("user_id,source_date,due_date,owed_amount,source_type")
           .eq("source_type", "payslip")
           .gt("owed_amount", 0.009)
           .range(0, 1999)
@@ -122,6 +133,17 @@ export async function getAlertsData(
     supabase.from("products").select("id,active,low_stock_threshold"),
     supabase.from("inventory").select("product_id,quantity_on_hand,quantity_reserved"),
   ]);
+
+  let payrollDebtResult = payrollDebtResultRaw;
+
+  if (payrollDebtResult.error && isMissingColumnError(payrollDebtResult.error, "due_date")) {
+    payrollDebtResult = await supabase
+      .from("worker_debt_items_view")
+      .select("user_id,source_date,owed_amount,source_type")
+      .eq("source_type", "payslip")
+      .gt("owed_amount", 0.009)
+      .range(0, 1999);
+  }
 
   const invoiceSourceMissing =
     invoiceError?.message?.includes("Could not find the table 'public.invoices'") ?? false;
@@ -170,15 +192,17 @@ export async function getAlertsData(
   const payrollDebtRows = (payrollDebtResult.data ?? []) as Array<{
     user_id?: string | null;
     source_date?: string | null;
+    due_date?: string | null;
     owed_amount?: number | string | null;
   }>;
   const todayIso = new Date().toISOString().slice(0, 10);
   const overduePayslipDebtRows = payrollDebtRows.filter((row) => {
     const userId = typeof row.user_id === "string" ? row.user_id : "";
     const sourceDate = typeof row.source_date === "string" ? row.source_date : "";
+    const dueDate = typeof row.due_date === "string" ? row.due_date : "";
     const owedAmount = typeof row.owed_amount === "number" || typeof row.owed_amount === "string" ? Number(row.owed_amount) : 0;
     if (!userId || !sourceDate || !Number.isFinite(owedAmount) || owedAmount <= 0.009) return false;
-    const dueIso = nextMonthDueDateIso(sourceDate);
+    const dueIso = dueDate || nextMonthDueDateIso(sourceDate);
     return Boolean(dueIso) && todayIso > dueIso;
   });
   const overdueUserIds = new Set(overduePayslipDebtRows.map((row) => (typeof row.user_id === "string" ? row.user_id : "")).filter(Boolean));

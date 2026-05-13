@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import {
+  getPayTrackingModeForWorkerType,
+  normalizePayrollWorkerType,
+  type PayrollWorkerType,
+} from "@/lib/payroll-worker-type";
 
 type UpdateWorkerPayload = {
   user_id?: string;
@@ -9,6 +14,7 @@ type UpdateWorkerPayload = {
   role?: string;
   active?: boolean;
   system_access?: boolean;
+  payroll_worker_type?: PayrollWorkerType;
   pay_tracking_mode?: "session" | "payslip";
 };
 
@@ -32,7 +38,8 @@ export async function POST(req: Request) {
     const active = body.active === false ? false : true;
     const systemAccess =
       role === "worker_no_access" ? false : body.system_access === false ? false : true;
-    const payTrackingMode = body.pay_tracking_mode === "payslip" ? "payslip" : "session";
+    const payrollWorkerType = normalizePayrollWorkerType(body.payroll_worker_type, body.pay_tracking_mode);
+    const payTrackingMode = getPayTrackingModeForWorkerType(payrollWorkerType);
 
     if (!userId) {
       return NextResponse.json({ error: "Missing user_id." }, { status: 400 });
@@ -67,6 +74,7 @@ export async function POST(req: Request) {
       p_role: role,
       p_active: active,
       p_system_access: systemAccess,
+      p_payroll_worker_type: payrollWorkerType,
       p_pay_tracking_mode: payTrackingMode,
     });
 
@@ -76,7 +84,7 @@ export async function POST(req: Request) {
 
     const result = await supabase
       .from("users")
-      .select("id,full_name,email,phone,role,active,system_access,pay_tracking_mode")
+      .select("id,full_name,email,phone,role,active,system_access,payroll_worker_type,pay_tracking_mode")
       .eq("id", userId)
       .maybeSingle();
 
