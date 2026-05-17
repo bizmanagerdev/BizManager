@@ -52,7 +52,6 @@ export function normalizeFinancialSearchParams(
   searchParams: Record<string, string | string[] | undefined>
 ): FinancialPageInitialFilters {
   return {
-    tab: firstValue(searchParams.tab)?.trim() === "recurring" ? "recurring" : "overview",
     from: firstValue(searchParams.from)?.trim() ?? "",
     to: firstValue(searchParams.to)?.trim() ?? "",
     domain: firstValue(searchParams.domain)?.trim() ?? "",
@@ -200,7 +199,13 @@ export default async function CashFlowPageContent({
           customerId,
           customerPage,
           customerName,
-          ...initialFilters,
+          from: initialFilters.from,
+          to: initialFilters.to,
+          domain: initialFilters.domain,
+          sourceId: initialFilters.sourceId,
+          type: initialFilters.type,
+          stage: initialFilters.stage,
+          q: initialFilters.q,
         })}
         data={data}
         initialFilters={initialFilters}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
@@ -171,21 +172,28 @@ export function TaskUpsertDialog(props: Props) {
   }
 
   function resetForCreate() {
-    setProjectId(effectiveTarget?.type === "project" ? effectiveTarget.id : "");
-    setPropertyId(effectiveTarget?.type === "property" ? effectiveTarget.id : "");
-    const nextDomain =
+    const draft = loadDraft<{
+      projectId: string; propertyId: string; businessDomain: ExpenseBusinessDomain;
+      subject: string; description: string; dueDate: string;
+      assignedUserId: string; priority: TaskPriority; status: TaskStatus;
+    }>("task-create");
+
+    setProjectId(draft?.projectId ?? (effectiveTarget?.type === "project" ? effectiveTarget.id : ""));
+    setPropertyId(draft?.propertyId ?? (effectiveTarget?.type === "property" ? effectiveTarget.id : ""));
+    const nextDomain = draft?.businessDomain ?? (
       effectiveTarget?.type === "property"
         ? "property_management"
         : allowedDomains.includes(defaultDomain)
           ? defaultDomain
-          : (allowedDomains[0] ?? defaultDomain);
-    setBusinessDomain(nextDomain);
-    setSubject("");
-    setDescription("");
-    setDueDate("");
-    setAssignedUserId("");
-    setPriority("medium");
-    setStatus("todo");
+          : (allowedDomains[0] ?? defaultDomain)
+    );
+    setBusinessDomain(allowedDomains.includes(nextDomain) ? nextDomain : (allowedDomains[0] ?? defaultDomain));
+    setSubject(draft?.subject ?? "");
+    setDescription(draft?.description ?? "");
+    setDueDate(draft?.dueDate ?? "");
+    setAssignedUserId(draft?.assignedUserId ?? "");
+    setPriority(draft?.priority ?? "medium");
+    setStatus(draft?.status ?? "todo");
   }
 
   useEffect(() => {
@@ -205,6 +213,12 @@ export function TaskUpsertDialog(props: Props) {
       setBusinessDomain(allowedDomains[0] ?? defaultDomain);
     }
   }, [allowedDomains, businessDomain, defaultDomain]);
+
+  // Auto-save draft while dialog is open in create mode
+  useEffect(() => {
+    if (!props.open || props.mode !== "create") return;
+    saveDraft("task-create", { projectId, propertyId, businessDomain, subject, description, dueDate, assignedUserId, priority, status });
+  }, [props.open, props.mode, projectId, propertyId, businessDomain, subject, description, dueDate, assignedUserId, priority, status]);
 
   function handleBusinessDomainChange(nextDomain: ExpenseBusinessDomain) {
     setBusinessDomain(nextDomain);
@@ -227,32 +241,36 @@ export function TaskUpsertDialog(props: Props) {
     emitProgressActivityStart();
     try {
       if (props.mode === "create") {
-        const res = await fetch("/api/tasks/create", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            business_domain: effectiveDomain,
-            project_id:
-              (effectiveTarget?.type ?? derivedTargetType) === "project"
-                ? effectiveTarget?.id ?? projectId
-                : null,
-            property_id:
-              (effectiveTarget?.type ?? derivedTargetType) === "property"
-                ? effectiveTarget?.id ?? propertyId
-                : null,
-            subject: subject.trim(),
-            description: description.trim() ? description.trim() : null,
-            due_date: dueDate,
-            assigned_user_id: assignedUserId,
-            priority,
-            status,
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          toast.error("שגיאה ביצירת משימה", { description: json?.error ?? "" });
+        const result = await offlineFetch("/api/tasks/create", {
+          business_domain: effectiveDomain,
+          project_id:
+            (effectiveTarget?.type ?? derivedTargetType) === "project"
+              ? effectiveTarget?.id ?? projectId
+              : null,
+          property_id:
+            (effectiveTarget?.type ?? derivedTargetType) === "property"
+              ? effectiveTarget?.id ?? propertyId
+              : null,
+          subject: subject.trim(),
+          description: description.trim() ? description.trim() : null,
+          due_date: dueDate,
+          assigned_user_id: assignedUserId,
+          priority,
+          status,
+        }, "משימה חדשה");
+
+        if (result.queued) {
+          toast.info("אין חיבור — המשימה תישמר ותישלח כשיחזור החיבור");
+          clearDraft("task-create");
+          props.onSaved?.();
+          props.onOpenChange(false);
           return;
         }
+        if (!result.ok) {
+          toast.error("שגיאה ביצירת משימה", { description: result.error });
+          return;
+        }
+        clearDraft("task-create");
         toast.success("המשימה נוצרה");
       } else {
         const res = await fetch("/api/tasks/update", {
@@ -303,6 +321,7 @@ export function TaskUpsertDialog(props: Props) {
       open={props.open}
       onOpenChange={(next) => {
         if (!next && (saving || loading)) return;
+        if (!next && props.mode === "create") clearDraft("task-create");
         props.onOpenChange(next);
       }}
     >

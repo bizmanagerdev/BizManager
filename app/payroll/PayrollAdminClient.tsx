@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDown, GripVertical, Trash2 } from "lucide-react";
@@ -153,11 +154,14 @@ export default function PayrollAdminClient({
   const [createUserForm, setCreateUserForm] = useState<CreateUserFormState>(DEFAULT_CREATE_USER_FORM);
   const [createUserError, setCreateUserError] = useState("");
   const [createSessionOpen, setCreateSessionOpen] = useState(false);
-  const [createSessionForm, setCreateSessionForm] = useState<CreateSessionFormState>(() => ({
-    ...DEFAULT_CREATE_SESSION_FORM,
-    clock_in: toDateTimeLocalValue(new Date(Date.now() - 60 * 60 * 1000)),
-    clock_out: toDateTimeLocalValue(new Date()),
-  }));
+  const [createSessionForm, setCreateSessionForm] = useState<CreateSessionFormState>(() => {
+    const draft = loadDraft<CreateSessionFormState>("session-create");
+    return draft ?? {
+      ...DEFAULT_CREATE_SESSION_FORM,
+      clock_in: toDateTimeLocalValue(new Date(Date.now() - 60 * 60 * 1000)),
+      clock_out: toDateTimeLocalValue(new Date()),
+    };
+  });
   const [createSessionError, setCreateSessionError] = useState("");
   const [sessionLaborCostDrafts, setSessionLaborCostDrafts] = useState<Record<string, string>>({});
   const [sessionDurationDrafts, setSessionDurationDrafts] = useState<Record<string, string>>({});
@@ -245,6 +249,11 @@ export default function PayrollAdminClient({
   }, [createSessionAgreement, createSessionForm.labor_cost, createSessionWorkedMinutes]);
 
   useEffect(() => {
+    if (!createSessionOpen) return;
+    saveDraft("session-create", createSessionForm);
+  }, [createSessionOpen, createSessionForm]);
+
+  useEffect(() => {
     setOrderedUserIds((current) => {
       const validIds = current.filter((id) => usersById.has(id));
       const missingIds = users.map((user) => user.id).filter((id) => !validIds.includes(id));
@@ -318,6 +327,7 @@ export default function PayrollAdminClient({
   }
 
   function resetCreateSessionForm() {
+    clearDraft("session-create");
     setCreateSessionForm({
       ...DEFAULT_CREATE_SESSION_FORM,
       user_id: sessionAssignableUsers[0]?.id ?? "",
@@ -421,10 +431,9 @@ export default function PayrollAdminClient({
 
     startTransition(async () => {
       try {
-        const response = await fetch("/api/payroll/sessions/create", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
+        const result = await offlineFetch(
+          "/api/payroll/sessions/create",
+          {
             user_id: userId,
             business_domain: businessDomain,
             project_id: projectId || null,
@@ -433,11 +442,17 @@ export default function PayrollAdminClient({
             clock_in: clockIn,
             clock_out: clockOut,
             labor_cost: canViewSalary && laborCost ? laborCost : null,
-          }),
-        });
-        const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) {
-          setCreateSessionError(json.error ?? "יצירת המשמרת נכשלה.");
+          },
+          "משמרת חדשה"
+        );
+        if (result.queued) {
+          setCreateSessionOpen(false);
+          resetCreateSessionForm();
+          setSaveMessage("אין חיבור לאינטרנט — המשמרת תישמר כשיחזור החיבור.");
+          return;
+        }
+        if (!result.ok) {
+          setCreateSessionError(result.error ?? "יצירת המשמרת נכשלה.");
           return;
         }
         setCreateSessionOpen(false);
@@ -1307,9 +1322,9 @@ export default function PayrollAdminClient({
 
       <Dialog
         open={createSessionOpen}
-        onOpenChange={(open) => {
-          setCreateSessionOpen(open);
-          if (!open) resetCreateSessionForm();
+        onOpenChange={(next) => {
+          if (!next) { clearDraft("session-create"); resetCreateSessionForm(); }
+          setCreateSessionOpen(next);
         }}
       >
         <DialogContent dir="rtl">
@@ -1465,7 +1480,7 @@ export default function PayrollAdminClient({
             {createSessionError ? <div className="md:col-span-2 text-sm text-destructive">{createSessionError}</div> : null}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateSessionOpen(false)} disabled={isPending}>
+            <Button variant="outline" onClick={() => { clearDraft("session-create"); setCreateSessionOpen(false); }} disabled={isPending}>
               {"ביטול"}
             </Button>
             <Button onClick={() => void createSession()} disabled={isPending}>

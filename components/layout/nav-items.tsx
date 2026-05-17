@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import {
+  Activity,
   Bell,
   Building2,
   FolderKanban,
@@ -33,6 +34,7 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "פיננסי", url: "/financial", icon: Landmark },
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
   { title: "מסמכים", url: "/documents", icon: FolderOpen },
+  { title: "פעילות", url: "/activity", icon: Activity },
 ];
 
 const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
@@ -50,10 +52,13 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "פיננסי", url: "/financial", icon: Landmark },
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
   { title: "מסמכים", url: "/documents", icon: FolderOpen },
+  { title: "פעילות", url: "/activity", icon: Activity },
 ];
 
-function withoutPayroll(items: SidebarNavItem[], shouldShowPayroll: boolean) {
-  return items.filter((item) => shouldShowPayroll || item.url !== "/payroll");
+const ADMIN_ONLY_URLS = new Set(["/payroll", "/activity"]);
+
+function filterByRole(items: SidebarNavItem[], isAdmin: boolean) {
+  return items.filter((item) => isAdmin || !ADMIN_ONLY_URLS.has(item.url));
 }
 
 export function useNavItems() {
@@ -81,15 +86,15 @@ export function useNavItems() {
     };
   }, []);
 
-  const shouldShowPayroll = viewerRole === "admin";
+  const isAdmin = viewerRole === "admin";
 
   const sidebarItems = useMemo(
-    () => withoutPayroll(SIDEBAR_ITEMS, shouldShowPayroll),
-    [shouldShowPayroll]
+    () => filterByRole(SIDEBAR_ITEMS, isAdmin),
+    [isAdmin]
   );
   const bottomNavMoreItems = useMemo(
-    () => withoutPayroll(BOTTOM_NAV_MORE_ITEMS, shouldShowPayroll),
-    [shouldShowPayroll]
+    () => filterByRole(BOTTOM_NAV_MORE_ITEMS, isAdmin),
+    [isAdmin]
   );
 
   return { sidebarItems, bottomNavItems: BOTTOM_NAV_ITEMS, bottomNavMoreItems };

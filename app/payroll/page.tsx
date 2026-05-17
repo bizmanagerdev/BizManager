@@ -74,6 +74,29 @@ export default async function PayrollPage() {
     redirect("/no-access");
   }
 
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - 18);
+  const cutoffIso = cutoff.toISOString().slice(0, 10);
+
+  async function scanSessions(): Promise<{ data: Row[] | null; error: { message: string } | null }> {
+    const CHUNK = 1000;
+    const rows: Row[] = [];
+    for (let start = 0; ; start += CHUNK) {
+      const { data, error } = await supabase
+        .from("attendance_sessions")
+        .select(
+          "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
+        )
+        .gte("clock_in", `${cutoffIso}T00:00:00`)
+        .order("clock_in", { ascending: false })
+        .range(start, start + CHUNK - 1);
+      if (error) return { data: null, error };
+      rows.push(...((data ?? []) as Row[]));
+      if ((data ?? []).length < CHUNK) break;
+    }
+    return { data: rows, error: null };
+  }
+
   const [
     usersResult,
     sessionsResult,
@@ -87,13 +110,7 @@ export default async function PayrollPage() {
       .or("role.eq.admin,role.eq.office,role.eq.worker,role.eq.worker_no_access")
       .order("full_name", { ascending: true })
       .range(0, 999),
-    supabase
-      .from("attendance_sessions")
-      .select(
-        "id,user_id,clock_in,clock_out,worked_minutes,labor_cost,is_billable_to_customer,bill_to_customer_amount,billing_status,notes,business_domain,project_id,property_id"
-      )
-      .order("clock_in", { ascending: false })
-      .range(0, 4999),
+    scanSessions(),
     supabase.from("project_dashboard_view").select("id,name").order("name", { ascending: true }).range(0, 999),
     supabase.from("properties").select("id,address").order("address", { ascending: true }).range(0, 999),
     supabase.from("payroll_periods").select("id,period_month,start_date,end_date,status").range(0, 119),

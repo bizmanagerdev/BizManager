@@ -1,0 +1,323 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
+import {
+  fetchOrderFinancialsByIds,
+  fetchOrdersByIds,
+  fetchProjectExpenseLinksByExpenseIds,
+  fetchProjectFinancialsByIds,
+  fetchProjectsByIds,
+  fetchPropertyCustomerLinks,
+  fetchPropertiesByIds,
+  fetchSalaryAgreementsByUserIds,
+  fetchWorkerPaymentAllocationsByPaymentIds,
+  fetchWorkerUsersByIds,
+  resolveCustomerProjectIds,
+  scanAttendanceSessionRows,
+  scanExpenseRows,
+  scanOrderRows,
+  scanPaymentRows,
+  scanProjectRows,
+  scanWorkerPaymentRows,
+} from "./db";
+import {
+  buildDomainGroups,
+  buildExpenseEntries,
+  buildOrderReceivableEntries,
+  buildPaymentEntries,
+  buildProjectReceivableEntries,
+  buildWorkerOwedEntries,
+  buildWorkerPaymentEntries,
+  matchesEntryFilters,
+  paginateEntries,
+  resolvePaymentLinks,
+  sortEntries,
+  summarizeEntries,
+} from "./entries";
+import {
+  LEDGER_PAGE_SIZE,
+  UPCOMING_PAGE_SIZE,
+  type FinancialPageData,
+  type FinancialPageFilters,
+} from "./types";
+import {
+  addDaysToIso,
+  domainToSourceKind,
+  isFutureEntry,
+  isPermissionDeniedError,
+  normalizeCustomerId,
+  normalizeDate,
+  normalizeDomain,
+  normalizePositiveInteger,
+  normalizeText,
+  todayIso,
+  toNumber,
+  uniqueStrings,
+} from "./utils";
+
+// Re-export all public types so existing imports like:
+//   import type { FinancialEntry, FinancialPageData } from "@/lib/financial"
+// continue to work unchanged.
+export type {
+  FinancialDomainGroup,
+  FinancialEntry,
+  FinancialEntryOrigin,
+  FinancialEntryStage,
+  FinancialEntryType,
+  FinancialPageData,
+  FinancialPageFilters,
+  FinancialSourceKind,
+  FinancialSummary,
+} from "./types";
+
+export async function getFinancialPageData(
+  supabase: SupabaseClient,
+  filters: FinancialPageFilters = {}
+): Promise<FinancialPageData> {
+  const customerId = normalizeCustomerId(filters.customerId);
+  const referenceDate = todayIso();
+  const from = normalizeDate(filters.from);
+  const to = normalizeDate(filters.to);
+  // Default scan window: when no explicit from-filter, only scan the last 13 months.
+  // This avoids reading all-time data on every page load.
+  const scanSince: string = from ?? (() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 13);
+    return d.toISOString().slice(0, 10);
+  })();
+  const domain = normalizeDomain(filters.domain);
+  const sourceId = normalizeCustomerId(filters.sourceId);
+  const type = filters.type === "inflow" || filters.type === "outflow" ? filters.type : null;
+  const stage =
+    filters.stage === "actual" || filters.stage === "future" || filters.stage === "pending"
+      ? filters.stage
+      : null;
+  const query = normalizeText(filters.q);
+  const ledgerPage = normalizePositiveInteger(filters.ledgerPage, 1);
+  const upcomingPage = normalizePositiveInteger(filters.upcomingPage, 1);
+  const customerProjectIds = await resolveCustomerProjectIds(supabase, customerId);
+  const customerProjectSet = new Set(customerProjectIds);
+
+  const [paymentRows, expenseRows, workerPaymentsResult, projectRows, orderRows] = await Promise.all([
+    scanPaymentRows(supabase, scanSince),
+    scanExpenseRows(supabase, scanSince),
+    (async () => {
+      try {
+        const [workerPaymentRows, attendanceSessionRows] = await Promise.all([
+          scanWorkerPaymentRows(supabase, scanSince),
+          scanAttendanceSessionRows(supabase, scanSince),
+        ]);
+        const workerPaymentIds = workerPaymentRows.map((row) => row.id);
+        const allocations = await fetchWorkerPaymentAllocationsByPaymentIds(supabase, workerPaymentIds);
+        const sessionsById = new Map(
+          attendanceSessionRows
+            .filter((row) => row.id)
+            .map((row) => [row.id, row] as const)
+        );
+        return { workerPaymentRows, allocations, attendanceSessionRows, sessionsById };
+      } catch (error) {
+        if (isPermissionDeniedError(error)) {
+          return {
+            workerPaymentRows: [],
+            allocations: [],
+            attendanceSessionRows: [],
+            sessionsById: new Map(),
+          };
+        }
+        throw error;
+      }
+    })(),
+    scanProjectRows(supabase, scanSince),
+    scanOrderRows(supabase, scanSince),
+  ]);
+
+  const paymentLinks = paymentRows.map(resolvePaymentLinks);
+  const projectExpenseLinksByExpenseId = await fetchProjectExpenseLinksByExpenseIds(
+    supabase,
+    expenseRows.map((row) => row.id)
+  );
+  const workerPaymentById = new Map(
+    workerPaymentsResult.workerPaymentRows
+      .filter((row) => row.id)
+      .map((row) => [row.id, row] as const)
+  );
+  const projectIds = uniqueStrings([
+    ...projectRows.map((row) => row.id),
+    ...paymentLinks.map((row) => row.projectId),
+    ...expenseRows.map((row) => row.project_id || projectExpenseLinksByExpenseId.get(row.id) || null),
+    ...workerPaymentsResult.attendanceSessionRows.map((row) => row.project_id),
+  ]);
+  const orderIds = uniqueStrings([
+    ...orderRows.map((row) => row.id),
+    ...paymentLinks.map((row) => row.orderId),
+    ...expenseRows.map((row) => row.order_id),
+  ]);
+  const propertyIds = uniqueStrings([
+    ...paymentLinks.map((row) => row.propertyId),
+    ...expenseRows.map((row) => row.property_id),
+    ...workerPaymentsResult.attendanceSessionRows.map((row) => row.property_id),
+  ]);
+  const workerUserIds = uniqueStrings([
+    ...workerPaymentsResult.workerPaymentRows.map((row) => row.user_id),
+    ...workerPaymentsResult.attendanceSessionRows.map((row) => row.user_id),
+  ]);
+  const recordedByValues = uniqueStrings([
+    ...paymentRows.map((row) => row.recorded_by),
+    ...expenseRows.map((row) => row.recorded_by),
+    ...workerPaymentsResult.workerPaymentRows.map((row) => row.recorded_by),
+    ...workerPaymentsResult.workerPaymentRows.map((row) => row.user_id),
+    ...workerPaymentsResult.attendanceSessionRows.map((row) => row.user_id),
+  ]);
+
+  const [
+    projectsById,
+    projectFinancialsById,
+    ordersById,
+    orderFinancialsById,
+    propertiesById,
+    propertyCustomersById,
+    recordedByNames,
+    workerUsersById,
+    salaryAgreementRows,
+  ] = await Promise.all([
+    fetchProjectsByIds(supabase, projectIds),
+    fetchProjectFinancialsByIds(supabase, projectIds),
+    fetchOrdersByIds(supabase, orderIds),
+    fetchOrderFinancialsByIds(supabase, orderIds),
+    fetchPropertiesByIds(supabase, propertyIds),
+    fetchPropertyCustomerLinks(supabase, propertyIds),
+    resolveUserDisplayNamesForValues(supabase, recordedByValues),
+    fetchWorkerUsersByIds(supabase, workerUserIds),
+    fetchSalaryAgreementsByUserIds(supabase, workerUserIds),
+  ]);
+
+  const salaryAgreementsByUserId = salaryAgreementRows.reduce((map, agreement) => {
+    const userId = agreement.user_id?.trim();
+    if (!userId) return map;
+    const current = map.get(userId) ?? [];
+    current.push(agreement);
+    map.set(userId, current);
+    return map;
+  }, new Map<string, typeof salaryAgreementRows>());
+
+  const paidByProjectId = paymentRows.reduce((map, row) => {
+    const links = resolvePaymentLinks(row);
+    if (!links.projectId) return map;
+    map.set(links.projectId, (map.get(links.projectId) ?? 0) + Math.abs(toNumber(row.amount_total)));
+    return map;
+  }, new Map<string, number>());
+
+  const paidByOrderId = paymentRows.reduce((map, row) => {
+    const links = resolvePaymentLinks(row);
+    if (!links.orderId) return map;
+    map.set(links.orderId, (map.get(links.orderId) ?? 0) + Math.abs(toNumber(row.amount_total)));
+    return map;
+  }, new Map<string, number>());
+
+  const sharedArgs = { customerId, customerProjectSet, referenceDate, projectsById, propertiesById, propertyCustomersById, recordedByNames };
+
+  const payments = buildPaymentEntries({ paymentRows, ordersById, ...sharedArgs });
+  const expenses = buildExpenseEntries({ expenseRows, ordersById, projectExpenseLinksByExpenseId, ...sharedArgs });
+  const workerPaymentEntries = buildWorkerPaymentEntries({
+    allocations: workerPaymentsResult.allocations,
+    workerPaymentById,
+    sessionsById: workerPaymentsResult.sessionsById,
+    ...sharedArgs,
+  });
+  const workerOwedEntries = buildWorkerOwedEntries({
+    attendanceSessionRows: workerPaymentsResult.attendanceSessionRows,
+    sessionsById: workerPaymentsResult.sessionsById,
+    allocations: workerPaymentsResult.allocations,
+    workerUsersById,
+    salaryAgreementsByUserId,
+    ...sharedArgs,
+  });
+  const projectReceivableEntries = buildProjectReceivableEntries({
+    projectRows, projectsById, projectFinancialsById, paidByProjectId, customerId, customerProjectSet, referenceDate,
+  });
+  const orderReceivableEntries = buildOrderReceivableEntries({
+    orderRows, ordersById, orderFinancialsById, paidByOrderId, customerId, customerProjectSet, referenceDate,
+  });
+
+  const entries = sortEntries([
+    ...payments,
+    ...expenses,
+    ...workerPaymentEntries,
+    ...workerOwedEntries,
+    ...projectReceivableEntries,
+    ...orderReceivableEntries,
+  ]);
+
+  const domainOptions = Array.from(
+    new Set(entries.map((entry) => entry.businessDomain).filter((value): value is ExpenseBusinessDomain => Boolean(value)))
+  ).sort((left, right) => getBusinessDomainLabel(left).localeCompare(getBusinessDomainLabel(right), "he"));
+
+  const sourceKind = domainToSourceKind(domain);
+  const sourceOptions = sourceKind
+    ? Array.from(
+        entries.reduce((map, entry) => {
+          if (entry.sourceKind !== sourceKind || !entry.sourceId) return map;
+          if (domain && entry.businessDomain !== domain) return map;
+          map.set(entry.sourceId, { id: entry.sourceId, label: entry.sourceLabel });
+          return map;
+        }, new Map<string, { id: string; label: string }>())
+      ).map(([, value]) => value)
+    : [];
+  sourceOptions.sort((left, right) => left.label.localeCompare(right.label, "he"));
+
+  const filteredEntries = entries.filter((entry) =>
+    matchesEntryFilters(entry, { from, to, domain, sourceId, type, stage, query, referenceDate })
+  );
+  const actualEntries = filteredEntries.filter((entry) => !isFutureEntry(entry, referenceDate));
+  const futureEntries = filteredEntries.filter((entry) => isFutureEntry(entry, referenceDate));
+  const forecastEndIso = to || addDaysToIso(referenceDate, 30);
+  const forecastEntries = filteredEntries.filter((entry) => entry.flowDate <= forecastEndIso);
+  const openReceivableEntries = filteredEntries.filter(
+    (entry) => entry.type === "inflow" && entry.stage === "pending" &&
+      (entry.origin === "project_receivable" || entry.origin === "order_receivable")
+  );
+  const plannedReceivableEntries = filteredEntries.filter(
+    (entry) =>
+      entry.type === "inflow" &&
+      ((entry.origin === "payment" && entry.stage !== "posted") ||
+        ((entry.origin === "project_receivable" || entry.origin === "order_receivable") && entry.stage === "scheduled"))
+  );
+  const openLiabilityEntries = filteredEntries.filter((entry) => entry.type === "outflow" && entry.stage === "pending");
+  const scheduledLiabilityEntries = filteredEntries.filter((entry) => entry.type === "outflow" && entry.stage === "scheduled");
+  const sourceCount = new Set(filteredEntries.map((entry) => entry.sourceId).filter((value): value is string => Boolean(value))).size;
+
+  const ledgerPagination = paginateEntries(filteredEntries, ledgerPage, LEDGER_PAGE_SIZE);
+  const upcomingSortedEntries = [...futureEntries].sort(
+    (left, right) =>
+      left.flowDate.localeCompare(right.flowDate) ||
+      (left.recordedDate ?? "").localeCompare(right.recordedDate ?? "") ||
+      left.id.localeCompare(right.id)
+  );
+  const upcomingPagination = paginateEntries(upcomingSortedEntries, upcomingPage, UPCOMING_PAGE_SIZE);
+
+  return {
+    todayIso: referenceDate,
+    actualSummary: summarizeEntries(actualEntries),
+    futureSummary: summarizeEntries(futureEntries),
+    totalSummary: summarizeEntries(filteredEntries),
+    forecastSummary: summarizeEntries(forecastEntries),
+    forecastEndIso,
+    openReceivablesSummary: summarizeEntries(openReceivableEntries),
+    plannedReceivablesSummary: summarizeEntries(plannedReceivableEntries),
+    openLiabilitiesSummary: summarizeEntries(openLiabilityEntries),
+    scheduledLiabilitiesSummary: summarizeEntries(scheduledLiabilityEntries),
+    domainGroups: buildDomainGroups(filteredEntries, referenceDate),
+    domainOptions,
+    sourceKind,
+    sourceOptions,
+    sourceCount,
+    ledgerEntries: ledgerPagination.entries,
+    ledgerTotalCount: ledgerPagination.totalCount,
+    ledgerPage: ledgerPagination.page,
+    ledgerTotalPages: ledgerPagination.totalPages,
+    upcomingEntries: upcomingPagination.entries,
+    upcomingTotalCount: upcomingPagination.totalCount,
+    upcomingPage: upcomingPagination.page,
+    upcomingTotalPages: upcomingPagination.totalPages,
+  };
+}

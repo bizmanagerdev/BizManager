@@ -11,6 +11,7 @@ type AuditLogRow = {
   changed_by: string | null;
   user_role: string | null;
   created_at: string | null;
+  new_data?: AuditLogValue;
 };
 
 type AuditActorRow = {
@@ -39,6 +40,7 @@ export type AuditFeedItem = {
   actionLabel: string;
   entityLabel: string;
   summary: string;
+  details: string;
   actorName: string;
   actorRole: string | null;
   createdAt: string | null;
@@ -49,35 +51,44 @@ export type AuditRecordInfo = {
   actionLabel: string;
   entityLabel: string;
   summary: string;
+  details: string;
   actorName: string;
   actorRole: string | null;
   createdAt: string | null;
 };
 
-function entityLabel(tableName: string) {
+export function entityLabel(tableName: string) {
   switch (tableName) {
-    case "projects":
-      return "פרויקט";
-    case "tasks":
-      return "משימה";
-    case "expenses":
-      return "הוצאה";
-    case "payments":
-      return "תשלום";
-    case "documents":
-      return "מסמך";
-    default:
-      return tableName;
+    case "projects": return "פרויקט";
+    case "tasks": return "משימה";
+    case "expenses": return "הוצאה";
+    case "payments": return "תשלום";
+    case "documents": return "מסמך";
+    case "customers": return "לקוח";
+    case "orders": return "הזמנה";
+    case "properties": return "נכס";
+    case "users": return "משתמש";
+    case "attendance_sessions": return "שעות עבודה";
+    case "worker_payments": return "תשלום לעובד";
+    case "salary_agreements": return "הסכם שכר";
+    case "payroll_periods": return "תקופת שכר";
+    case "payslips": return "תלוש שכר";
+    case "products": return "מוצר";
+    case "inquiries": return "פנייה";
+    default: return tableName;
   }
 }
 
 function actionLabel(action: string) {
   switch (action) {
     case "create":
+    case "INSERT":
       return "נוצר";
     case "update":
+    case "UPDATE":
       return "עודכן";
     case "delete":
+    case "DELETE":
       return "נמחק";
     case "status_changed":
       return "סטטוס עודכן";
@@ -88,6 +99,91 @@ function actionLabel(action: string) {
     default:
       return action;
   }
+}
+
+function buildDetails(tableName: string, newData: AuditLogValue): string {
+  if (!newData || typeof newData !== "object" || Array.isArray(newData)) return "";
+  const d = newData as Record<string, AuditLogValue>;
+
+  const money = (val: AuditLogValue): string | null => {
+    const n = Number(val);
+    return Number.isFinite(n) && n > 0 ? `₪${n.toLocaleString("he-IL")}` : null;
+  };
+  const str = (val: AuditLogValue): string | null => {
+    const s = typeof val === "string" ? val.trim() : "";
+    return s || null;
+  };
+
+  const parts: string[] = [];
+
+  switch (tableName) {
+    case "payments":
+    case "worker_payments": {
+      const amt = money(d.amount);
+      if (amt) parts.push(amt);
+      const note = str(d.notes);
+      if (note) parts.push(note);
+      break;
+    }
+    case "expenses": {
+      const amt = money(d.amount);
+      if (amt) parts.push(amt);
+      const desc = str(d.description);
+      if (desc) parts.push(desc);
+      break;
+    }
+    case "tasks": {
+      const subj = str(d.subject) ?? str(d.title);
+      if (subj) parts.push(subj);
+      break;
+    }
+    case "projects": {
+      const name = str(d.name);
+      if (name) parts.push(name);
+      break;
+    }
+    case "customers": {
+      const name = str(d.full_name) ?? str(d.name);
+      if (name) parts.push(name);
+      const phone = str(d.phone);
+      if (phone) parts.push(phone);
+      break;
+    }
+    case "orders": {
+      const amt = money(d.total_price) ?? money(d.total_amount);
+      if (amt) parts.push(amt);
+      break;
+    }
+    case "attendance_sessions": {
+      const clockIn = str(d.clock_in);
+      if (clockIn) {
+        const date = new Date(clockIn);
+        if (!Number.isNaN(date.getTime())) {
+          parts.push(
+            date.toLocaleString("he-IL", {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          );
+        }
+      }
+      break;
+    }
+    case "documents": {
+      const name = str(d.name) ?? str(d.file_name);
+      if (name) parts.push(name);
+      break;
+    }
+    case "properties": {
+      const name = str(d.name) ?? str(d.address);
+      if (name) parts.push(name);
+      break;
+    }
+  }
+
+  return parts.join(" · ");
 }
 
 function buildSummary(tableName: string, action: string) {
@@ -144,7 +240,7 @@ async function getActorNames(supabase: SupabaseClient, actorIds: string[]) {
   return new Map(Object.entries(resolved));
 }
 
-function normalizeAuditRows(rows: AuditLogRow[], actorNames: Map<string, string>) {
+function normalizeAuditRows(rows: AuditLogRow[], actorNames: Map<string, string>): AuditFeedItem[] {
   return rows.map((row) => ({
     id: row.id,
     tableName: row.table_name,
@@ -153,6 +249,7 @@ function normalizeAuditRows(rows: AuditLogRow[], actorNames: Map<string, string>
     actionLabel: actionLabel(row.action),
     entityLabel: entityLabel(row.table_name),
     summary: buildSummary(row.table_name, row.action),
+    details: buildDetails(row.table_name, row.new_data ?? null),
     actorName: row.changed_by ? actorNames.get(row.changed_by) ?? "משתמש" : "מערכת",
     actorRole: row.user_role,
     createdAt: row.created_at,
@@ -194,7 +291,7 @@ export async function logAuditEvent({
 export async function getRecentAuditEvents(supabase: SupabaseClient, limit = 8) {
   const { data, error } = await supabase
     .from("audit_logs")
-    .select("id,table_name,record_id,action,changed_by,user_role,created_at")
+    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data")
     .order("created_at", { ascending: false })
     .range(0, Math.max(limit - 1, 0));
 
@@ -237,7 +334,7 @@ export async function getLatestAuditByRecordIds(
   const rowLimit = Math.min(Math.max(recordIds.length * 3, 50), 5000);
   let query = supabase
     .from("audit_logs")
-    .select("id,table_name,record_id,action,changed_by,user_role,created_at")
+    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data")
     .eq("table_name", tableName)
     .in("record_id", recordIds)
     .order("created_at", { ascending: false });
@@ -270,6 +367,7 @@ export async function getLatestAuditByRecordIds(
       actionLabel: row.actionLabel,
       entityLabel: row.entityLabel,
       summary: row.summary,
+      details: row.details,
       actorName: row.actorName,
       actorRole: row.actorRole,
       createdAt: row.createdAt,
@@ -278,6 +376,79 @@ export async function getLatestAuditByRecordIds(
 
   return {
     byRecordId: latestByRecordId,
+    error: null as string | null,
+  };
+}
+
+export const AUDIT_PAGE_SIZE = 50;
+
+export const AUDIT_TABLE_OPTIONS = [
+  { value: "", label: "כל הסוגים" },
+  { value: "projects", label: "פרויקטים" },
+  { value: "tasks", label: "משימות" },
+  { value: "payments", label: "תשלומים" },
+  { value: "expenses", label: "הוצאות" },
+  { value: "customers", label: "לקוחות" },
+  { value: "orders", label: "הזמנות" },
+  { value: "properties", label: "נכסים" },
+  { value: "documents", label: "מסמכים" },
+  { value: "attendance_sessions", label: "שעות עבודה" },
+  { value: "worker_payments", label: "תשלומי עובדים" },
+  { value: "users", label: "משתמשים" },
+] as const;
+
+export const AUDIT_ACTION_OPTIONS = [
+  { value: "", label: "כל הפעולות" },
+  { value: "create", label: "יצירה" },
+  { value: "update", label: "עדכון" },
+  { value: "delete", label: "מחיקה" },
+  { value: "status_changed", label: "שינוי סטטוס" },
+  { value: "upload", label: "העלאה" },
+] as const;
+
+export async function getAuditFeedPaginated(
+  supabase: SupabaseClient,
+  {
+    page = 1,
+    tableName,
+    action,
+  }: {
+    page?: number;
+    tableName?: string | null;
+    action?: string | null;
+  } = {}
+) {
+  const safePage = Math.max(1, Math.floor(page));
+  const offset = (safePage - 1) * AUDIT_PAGE_SIZE;
+
+  let query = supabase
+    .from("audit_logs")
+    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + AUDIT_PAGE_SIZE - 1);
+
+  if (tableName) query = query.eq("table_name", tableName);
+  if (action) query = query.eq("action", action);
+
+  const { data, error, count } = await query;
+
+  if (error) {
+    return { items: [] as AuditFeedItem[], totalCount: 0, page: safePage, totalPages: 1, error: error.message };
+  }
+
+  const rows = (data ?? []) as AuditLogRow[];
+  const actorIds = Array.from(
+    new Set(rows.map((r) => r.changed_by).filter((v): v is string => typeof v === "string" && Boolean(v)))
+  );
+  const actorNames = await getActorNames(supabase, actorIds);
+  const totalCount = count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
+
+  return {
+    items: normalizeAuditRows(rows, actorNames),
+    totalCount,
+    page: safePage,
+    totalPages,
     error: null as string | null,
   };
 }

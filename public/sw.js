@@ -1,4 +1,4 @@
-const CACHE_NAME = "bizh-pwa-v4";
+const CACHE_NAME = "bizh-pwa-v5";
 const APP_ASSETS = [
   "/favicon.ico",
   "/icon.svg",
@@ -23,6 +23,21 @@ self.addEventListener("activate", (event) => {
       )
       .then(() => self.clients.claim())
   );
+});
+
+// When the browser brings us back online (Background Sync API), tell the active
+// client to process its localStorage queue. The SW cannot access localStorage
+// directly, so it posts a message to the page instead.
+self.addEventListener("sync", (event) => {
+  if (event.tag === "process-offline-queue") {
+    event.waitUntil(
+      self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+        for (const client of clients) {
+          client.postMessage({ type: "PROCESS_OFFLINE_QUEUE" });
+        }
+      })
+    );
+  }
 });
 
 self.addEventListener("fetch", (event) => {

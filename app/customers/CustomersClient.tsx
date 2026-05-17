@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import {
   AdaptiveCell,
   AdaptiveDialog,
@@ -186,6 +187,32 @@ export default function CustomersClient({
     });
   }, [rows, query, withProjects, withOrders, withDebt, activeOnly]);
 
+  // Restore create-form draft on mount (survives tab kills on mobile)
+  useEffect(() => {
+    const draft = loadDraft<{
+      name: string; email: string; phone: string; whatsapp: string;
+      city: string; cityOther: string; address: string; notes: string;
+      requiresPrepayment: boolean; createContacts: ContactDraft[];
+    }>("customer-create");
+    if (!draft) return;
+    if (draft.name) setName(draft.name);
+    if (draft.email) setEmail(draft.email);
+    if (draft.phone) setPhone(draft.phone);
+    if (draft.whatsapp) setWhatsapp(draft.whatsapp);
+    if (draft.city) setCity(draft.city);
+    if (draft.cityOther) setCityOther(draft.cityOther);
+    if (draft.address) setAddress(draft.address);
+    if (draft.notes) setNotes(draft.notes);
+    if (draft.requiresPrepayment) setRequiresPrepayment(draft.requiresPrepayment);
+    if (draft.createContacts?.length) setCreateContacts(draft.createContacts);
+  }, []);
+
+  // Auto-save create form draft while dialog is open
+  useEffect(() => {
+    if (!createOpen) return;
+    saveDraft("customer-create", { name, email, phone, whatsapp, city, cityOther, address, notes, requiresPrepayment, createContacts });
+  }, [createOpen, name, email, phone, whatsapp, city, cityOther, address, notes, requiresPrepayment, createContacts]);
+
   useEffect(() => {
     setRows(initialRows);
   }, [initialRows]);
@@ -207,6 +234,7 @@ export default function CustomersClient({
   }, [handledInitialAddContact, initialAddContactCustomerId, rows]);
 
   function resetCreateForm() {
+    clearDraft("customer-create");
     setName("");
     setEmail("");
     setPhone("");
@@ -297,22 +325,26 @@ export default function CustomersClient({
     }));
     setCreateLoading(true);
     try {
-      const res = await fetch("/api/customers/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          phone: phone.trim() || null,
-          whatsapp: whatsapp.trim() || null,
-          email: email.trim() || null,
-          city: finalCity,
-          address: address.trim() || null,
-          notes: notes.trim() || null,
-          requires_prepayment: requiresPrepayment,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: Row };
-      if (!res.ok || !json.customer) return setCreateErr(json.error ?? "יצירת הלקוח נכשלה.");
+      const result = await offlineFetch("/api/customers/create", {
+        name: name.trim(),
+        phone: phone.trim() || null,
+        whatsapp: whatsapp.trim() || null,
+        email: email.trim() || null,
+        city: finalCity,
+        address: address.trim() || null,
+        notes: notes.trim() || null,
+        requires_prepayment: requiresPrepayment,
+      }, "לקוח חדש");
+
+      if (result.queued) {
+        setCreateOpen(false);
+        resetCreateForm();
+        if (typeof window !== "undefined") window.alert("אין חיבור — הלקוח ייווצר כשיחזור החיבור.");
+        return;
+      }
+      if (!result.ok) return setCreateErr(result.error ?? "יצירת הלקוח נכשלה.");
+      const json = result.data as { error?: string; customer?: Row };
+      if (!json?.customer) return setCreateErr("יצירת הלקוח נכשלה.");
       const customer = json.customer;
       const newId = s(customer, "id");
       const customerRow: Row = {

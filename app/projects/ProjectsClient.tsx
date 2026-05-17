@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { FileText, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
@@ -590,6 +591,39 @@ export default function ProjectsClient({
     prefillHandled.current = true;
   }, [activeTab, customerOptionsState, openCreateDialog, searchParams]);
 
+  // Restore project create draft on mount (survives tab kills on mobile)
+  useEffect(() => {
+    const draft = loadDraft<{
+      createName: string; createProjectType: string; createStatus: string;
+      createAgreedBasePrice: string; createExpensesSeparately: boolean;
+      createStartDate: string; createEndDate: string; createNotes: string;
+      createItemsToMove: string; createProjectManagerId: string;
+    }>("project-create");
+    if (!draft) return;
+    if (draft.createName) setCreateName(draft.createName);
+    if (draft.createProjectType) setCreateProjectType(draft.createProjectType);
+    if (draft.createStatus) setCreateStatus(draft.createStatus);
+    if (draft.createAgreedBasePrice) setCreateAgreedBasePrice(draft.createAgreedBasePrice);
+    if (draft.createExpensesSeparately !== undefined) setCreateExpensesSeparately(draft.createExpensesSeparately);
+    if (draft.createStartDate) setCreateStartDate(draft.createStartDate);
+    if (draft.createEndDate) setCreateEndDate(draft.createEndDate);
+    if (draft.createNotes) setCreateNotes(draft.createNotes);
+    if (draft.createItemsToMove) setCreateItemsToMove(draft.createItemsToMove);
+    if (draft.createProjectManagerId) setCreateProjectManagerId(draft.createProjectManagerId);
+  }, []);
+
+  // Auto-save project create draft while dialog is open
+  useEffect(() => {
+    if (!createOpen) return;
+    saveDraft("project-create", {
+      createName, createProjectType, createStatus, createAgreedBasePrice,
+      createExpensesSeparately, createStartDate, createEndDate, createNotes,
+      createItemsToMove, createProjectManagerId,
+    });
+  }, [createOpen, createName, createProjectType, createStatus, createAgreedBasePrice,
+      createExpensesSeparately, createStartDate, createEndDate, createNotes,
+      createItemsToMove, createProjectManagerId]);
+
   function resetCreateCustomerForm() {
     setCreateCustomerName("");
     setCreateCustomerPhone("");
@@ -798,34 +832,32 @@ export default function ProjectsClient({
 
     setCreateSubmitting(true);
     try {
-      const res = await fetch("/api/projects/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          customer_id: createCustomerId,
-          name: trimmedName,
-          project_type: createProjectType,
-          status: createStatus,
-          agreed_base_price: agreed,
-          actual_price: actual,
-          expenses_billed_separately: createExpensesSeparately,
-          project_manager_id: createProjectManagerId || null,
-          start_date: createStartDate || null,
-          end_date: createEndDate || null,
-          notes: createNotes.trim() || null,
-          items_to_move: textToItemsToMove(createItemsToMove),
-        }),
-      });
+      const result = await offlineFetch("/api/projects/create", {
+        customer_id: createCustomerId,
+        name: trimmedName,
+        project_type: createProjectType,
+        status: createStatus,
+        agreed_base_price: agreed,
+        actual_price: actual,
+        expenses_billed_separately: createExpensesSeparately,
+        project_manager_id: createProjectManagerId || null,
+        start_date: createStartDate || null,
+        end_date: createEndDate || null,
+        notes: createNotes.trim() || null,
+        items_to_move: textToItemsToMove(createItemsToMove),
+      }, "פרויקט חדש");
 
-      const json = (await res.json().catch(() => ({}))) as Partial<{
-        error: string;
-        project: ProjectRow;
-      }>;
-
-      if (!res.ok) {
-        setCreateError(json.error ?? "יצירת הפרויקט נכשלה.");
+      if (result.queued) {
+        clearDraft("project-create");
+        setCreateOpen(false);
+        if (typeof window !== "undefined") window.alert("אין חיבור — הפרויקט ייווצר כשיחזור החיבור.");
         return;
       }
+      if (!result.ok) {
+        setCreateError(result.error ?? "יצירת הפרויקט נכשלה.");
+        return;
+      }
+      const json = result.data as Partial<{ error: string; project: ProjectRow }>;
 
       if (json.project) {
         const createdProject = json.project as ProjectRow;
@@ -838,6 +870,7 @@ export default function ProjectsClient({
         setProjects((prev) => [createdProject, ...prev]);
       }
 
+      clearDraft("project-create");
       setCreateOpen(false);
       setCreateName("");
       setCreateCustomerId("");
@@ -1824,7 +1857,7 @@ export default function ProjectsClient({
             {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
 
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
+              <Button type="button" variant="secondary" onClick={() => { clearDraft("project-create"); setCreateOpen(false); }} disabled={createSubmitting}>
                 ביטול
               </Button>
               <Button type="submit" disabled={createSubmitting}>

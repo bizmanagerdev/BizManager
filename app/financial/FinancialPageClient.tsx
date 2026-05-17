@@ -38,9 +38,9 @@ import type {
   FinancialSourceKind,
 } from "@/lib/financial";
 import { cn } from "@/lib/utils";
+import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 
 type InitialFilters = {
-  tab: "overview" | "recurring";
   from: string;
   to: string;
   domain: string;
@@ -386,9 +386,7 @@ export default function FinancialPageClient({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"overview" | "recurring">(
-    canManageRecurring ? initialFilters.tab : "overview"
-  );
+  const [tab, setTab] = useState<"overview" | "recurring">("overview");
   const [query, setQuery] = useState(initialFilters.q);
   const [from, setFrom] = useState(initialFilters.from);
   const [to, setTo] = useState(initialFilters.to);
@@ -402,6 +400,8 @@ export default function FinancialPageClient({
   const [loadingOverlayRight, setLoadingOverlayRight] = useState(0);
   const filtersCardRef = useRef<HTMLDivElement | null>(null);
   const contentAreaRef = useRef<HTMLDivElement | null>(null);
+  const queryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sourceKind = data.sourceKind;
   const domainOptions = data.domainOptions;
   const sourceOptions = data.sourceOptions;
@@ -506,10 +506,14 @@ export default function FinancialPageClient({
   const [deletingExpense, setDeletingExpense] = useState<EditableExpenseEntry | null>(null);
   const [isDeletingExpense, setIsDeletingExpense] = useState(false);
   const [expenseCreateOpen, setExpenseCreateOpen] = useState(false);
-  const [expenseCreateForm, setExpenseCreateForm] = useState<ExpenseCreateFormState>(createExpenseFormState);
+  const [expenseCreateForm, setExpenseCreateForm] = useState<ExpenseCreateFormState>(
+    () => loadDraft<ExpenseCreateFormState>("expense-create") ?? createExpenseFormState()
+  );
   const [isCreatingExpense, setIsCreatingExpense] = useState(false);
   const [incomeCreateOpen, setIncomeCreateOpen] = useState(false);
-  const [incomeCreateForm, setIncomeCreateForm] = useState<IncomeCreateFormState>(createIncomeFormState);
+  const [incomeCreateForm, setIncomeCreateForm] = useState<IncomeCreateFormState>(
+    () => loadDraft<IncomeCreateFormState>("income-create") ?? createIncomeFormState()
+  );
   const [isCreatingIncome, setIsCreatingIncome] = useState(false);
 
   useEffect(() => {
@@ -535,6 +539,17 @@ export default function FinancialPageClient({
       window.removeEventListener("resize", updateOverlayBounds);
     };
   }, [isFilterPending]);
+
+  // Auto-save create forms to localStorage while dialogs are open
+  useEffect(() => {
+    if (!expenseCreateOpen) return;
+    saveDraft("expense-create", expenseCreateForm);
+  }, [expenseCreateForm, expenseCreateOpen]);
+
+  useEffect(() => {
+    if (!incomeCreateOpen) return;
+    saveDraft("income-create", incomeCreateForm);
+  }, [incomeCreateForm, incomeCreateOpen]);
 
   const navigateToEntry = (entry: FinancialEntry) => {
     if (!entry.sourceHref) return;
@@ -661,47 +676,51 @@ export default function FinancialPageClient({
 
     setIsCreatingExpense(true);
     try {
-      const res = await fetch("/api/expenses/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          business_domain: expenseCreateForm.businessDomain,
-          project_id:
-            expenseCreateForm.businessDomain === "logistics_projects" && expenseCreateForm.projectId
-              ? expenseCreateForm.projectId
-              : null,
-          order_id:
-            expenseCreateForm.businessDomain === "sales" && expenseCreateForm.orderId
-              ? expenseCreateForm.orderId
-              : null,
-          property_id:
-            expenseCreateForm.businessDomain === "property_management" && expenseCreateForm.propertyId
-              ? expenseCreateForm.propertyId
-              : null,
-          amount: amountNumber,
-          payment_method: expenseCreateForm.paymentMethod.trim() || null,
-          category: expenseCreateForm.category.trim(),
-          expense_date: expenseCreateForm.expenseDate,
-          description: expenseCreateForm.description.trim() || null,
-          notes: expenseCreateForm.notes.trim() || null,
-          included_in_base_price:
-            expenseCreateForm.businessDomain === "logistics_projects" && Boolean(expenseCreateForm.projectId)
-              ? expenseCreateForm.includedInBasePrice
-              : false,
-          billed_to_customer:
-            expenseCreateForm.businessDomain === "logistics_projects" && Boolean(expenseCreateForm.projectId)
-              ? expenseCreateForm.billedToCustomer
-              : false,
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        toast.error("שגיאה ביצירת ההוצאה", { description: json?.error ?? "" });
+      const result = await offlineFetch("/api/expenses/create", {
+        business_domain: expenseCreateForm.businessDomain,
+        project_id:
+          expenseCreateForm.businessDomain === "logistics_projects" && expenseCreateForm.projectId
+            ? expenseCreateForm.projectId
+            : null,
+        order_id:
+          expenseCreateForm.businessDomain === "sales" && expenseCreateForm.orderId
+            ? expenseCreateForm.orderId
+            : null,
+        property_id:
+          expenseCreateForm.businessDomain === "property_management" && expenseCreateForm.propertyId
+            ? expenseCreateForm.propertyId
+            : null,
+        amount: amountNumber,
+        payment_method: expenseCreateForm.paymentMethod.trim() || null,
+        category: expenseCreateForm.category.trim(),
+        expense_date: expenseCreateForm.expenseDate,
+        description: expenseCreateForm.description.trim() || null,
+        notes: expenseCreateForm.notes.trim() || null,
+        included_in_base_price:
+          expenseCreateForm.businessDomain === "logistics_projects" && Boolean(expenseCreateForm.projectId)
+            ? expenseCreateForm.includedInBasePrice
+            : false,
+        billed_to_customer:
+          expenseCreateForm.businessDomain === "logistics_projects" && Boolean(expenseCreateForm.projectId)
+            ? expenseCreateForm.billedToCustomer
+            : false,
+      }, "הוצאה חדשה");
+
+      if (result.queued) {
+        toast.info("אין חיבור — ההוצאה תישמר ותישלח כשיחזור החיבור");
+        setExpenseCreateOpen(false);
+        clearDraft("expense-create");
+        setExpenseCreateForm(createExpenseFormState());
+        return;
+      }
+      if (!result.ok) {
+        toast.error("שגיאה ביצירת ההוצאה", { description: result.error });
         return;
       }
 
       toast.success("ההוצאה נוספה");
       setExpenseCreateOpen(false);
+      clearDraft("expense-create");
       setExpenseCreateForm(createExpenseFormState());
       router.refresh();
     } catch (error) {
@@ -730,32 +749,36 @@ export default function FinancialPageClient({
 
     setIsCreatingIncome(true);
     try {
-      const res = await fetch("/api/payments/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          business_domain: incomeCreateForm.businessDomain,
-          project_id: incomeCreateForm.businessDomain === "logistics_projects" ? incomeCreateForm.projectId : null,
-          order_id: incomeCreateForm.businessDomain === "sales" ? incomeCreateForm.orderId : null,
-          property_id:
-            incomeCreateForm.businessDomain === "property_management" ? incomeCreateForm.propertyId : null,
-          amount_total: amountNumber,
-          payment_date: incomeCreateForm.paymentDate,
-          due_date: incomeCreateForm.paymentMethod === "check" ? incomeCreateForm.dueDate : null,
-          requires_split: incomeCreateForm.requiresSplit,
-          payment_method: incomeCreateForm.paymentMethod,
-          reference_number: incomeCreateForm.referenceNumber.trim() || null,
-          notes: incomeCreateForm.notes.trim() || null,
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        toast.error("שגיאה ביצירת ההכנסה", { description: json?.error ?? "" });
+      const result = await offlineFetch("/api/payments/create", {
+        business_domain: incomeCreateForm.businessDomain,
+        project_id: incomeCreateForm.businessDomain === "logistics_projects" ? incomeCreateForm.projectId : null,
+        order_id: incomeCreateForm.businessDomain === "sales" ? incomeCreateForm.orderId : null,
+        property_id:
+          incomeCreateForm.businessDomain === "property_management" ? incomeCreateForm.propertyId : null,
+        amount_total: amountNumber,
+        payment_date: incomeCreateForm.paymentDate,
+        due_date: incomeCreateForm.paymentMethod === "check" ? incomeCreateForm.dueDate : null,
+        requires_split: incomeCreateForm.requiresSplit,
+        payment_method: incomeCreateForm.paymentMethod,
+        reference_number: incomeCreateForm.referenceNumber.trim() || null,
+        notes: incomeCreateForm.notes.trim() || null,
+      }, "הכנסה חדשה");
+
+      if (result.queued) {
+        toast.info("אין חיבור — ההכנסה תישמר ותישלח כשיחזור החיבור");
+        setIncomeCreateOpen(false);
+        clearDraft("income-create");
+        setIncomeCreateForm(createIncomeFormState());
+        return;
+      }
+      if (!result.ok) {
+        toast.error("שגיאה ביצירת ההכנסה", { description: result.error });
         return;
       }
 
       toast.success("ההכנסה נוספה");
       setIncomeCreateOpen(false);
+      clearDraft("income-create");
       setIncomeCreateForm(createIncomeFormState());
       router.refresh();
     } catch (error) {
@@ -799,11 +822,7 @@ export default function FinancialPageClient({
         dir="rtl"
         value={tab}
         onValueChange={(value) => {
-          const nextTab = value === "recurring" && canManageRecurring ? "recurring" : "overview";
-          setTab(nextTab);
-          replaceSearch((params) => {
-            setOrDelete(params, "tab", nextTab === "recurring" ? nextTab : null);
-          });
+          setTab(value === "recurring" && canManageRecurring ? "recurring" : "overview");
         }}
       >
         <TabsList
@@ -838,7 +857,10 @@ export default function FinancialPageClient({
                   onChange={(event) => {
                     const nextValue = event.target.value;
                     setQuery(nextValue);
-                    replaceFilters({ q: nextValue, ledgerPage: 1, upcomingPage: 1 });
+                    if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current);
+                    queryDebounceRef.current = setTimeout(() => {
+                      replaceFilters({ q: nextValue, ledgerPage: 1, upcomingPage: 1 });
+                    }, 300);
                   }}
                   placeholder="חפש לפי תיאור, מקור, תחום או אסמכתא..."
                   className="pr-9"
@@ -853,7 +875,10 @@ export default function FinancialPageClient({
                 onChange={(event) => {
                   const nextValue = event.target.value;
                   setFrom(nextValue);
-                  replaceFilters({ from: nextValue, ledgerPage: 1, upcomingPage: 1 });
+                  if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
+                  dateDebounceRef.current = setTimeout(() => {
+                    replaceFilters({ from: nextValue, ledgerPage: 1, upcomingPage: 1 });
+                  }, 400);
                 }}
               />
             </label>
@@ -865,7 +890,10 @@ export default function FinancialPageClient({
                 onChange={(event) => {
                   const nextValue = event.target.value;
                   setTo(nextValue);
-                  replaceFilters({ to: nextValue, ledgerPage: 1, upcomingPage: 1 });
+                  if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
+                  dateDebounceRef.current = setTimeout(() => {
+                    replaceFilters({ to: nextValue, ledgerPage: 1, upcomingPage: 1 });
+                  }, 400);
                 }}
               />
             </label>
@@ -1464,6 +1492,7 @@ export default function FinancialPageClient({
         onOpenChange={(open) => {
           if (!open && !isCreatingExpense) {
             setExpenseCreateOpen(false);
+            clearDraft("expense-create");
             setExpenseCreateForm(createExpenseFormState());
             return;
           }
@@ -1678,6 +1707,7 @@ export default function FinancialPageClient({
                 variant="secondary"
                 onClick={() => {
                   setExpenseCreateOpen(false);
+                  clearDraft("expense-create");
                   setExpenseCreateForm(createExpenseFormState());
                 }}
                 disabled={isCreatingExpense}
@@ -1704,6 +1734,7 @@ export default function FinancialPageClient({
         onOpenChange={(open) => {
           if (!open && !isCreatingIncome) {
             setIncomeCreateOpen(false);
+            clearDraft("income-create");
             setIncomeCreateForm(createIncomeFormState());
             return;
           }
@@ -1900,6 +1931,7 @@ export default function FinancialPageClient({
                 variant="secondary"
                 onClick={() => {
                   setIncomeCreateOpen(false);
+                  clearDraft("income-create");
                   setIncomeCreateForm(createIncomeFormState());
                 }}
                 disabled={isCreatingIncome}
