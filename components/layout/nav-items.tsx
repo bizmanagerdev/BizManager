@@ -1,6 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+
+const ROLE_CACHE_KEY = "biz_viewer_role";
+const ROLE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function readCachedRole(): string | null {
+  try {
+    const raw = localStorage.getItem(ROLE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { role: string; ts: number };
+    if (Date.now() - parsed.ts > ROLE_CACHE_TTL_MS) return null;
+    return parsed.role;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedRole(role: string) {
+  try {
+    localStorage.setItem(ROLE_CACHE_KEY, JSON.stringify({ role, ts: Date.now() }));
+  } catch {
+    // storage full or private mode
+  }
+}
 import {
   Activity,
   Bell,
@@ -63,8 +86,13 @@ function filterByRole(items: SidebarNavItem[], isAdmin: boolean) {
 
 export function useNavItems() {
   const [viewerRole, setViewerRole] = useState<string | null>(null);
+  const fetchedRef = useRef(false);
 
   useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+
+    const cached = readCachedRole();
     let active = true;
 
     void fetch("/api/profile/me", { cache: "no-store" })
@@ -74,11 +102,13 @@ export function useNavItems() {
       })
       .then((json) => {
         if (!active) return;
-        setViewerRole(typeof json?.role === "string" ? json.role : null);
+        const role = typeof json?.role === "string" ? json.role : cached;
+        if (role) writeCachedRole(role);
+        setViewerRole(role);
       })
       .catch(() => {
         if (!active) return;
-        setViewerRole(null);
+        setViewerRole(cached);
       });
 
     return () => {

@@ -1,5 +1,11 @@
-const CACHE_NAME = "bizh-pwa-v5";
-const APP_ASSETS = [
+const V = "v6";
+const STATIC_CACHE = `bizh-static-${V}`;   // immutable _next/static chunks
+const PAGES_CACHE  = `bizh-pages-${V}`;    // navigation responses
+const API_CACHE    = `bizh-api-${V}`;      // /api GET responses
+const ALL_CACHES   = [STATIC_CACHE, PAGES_CACHE, API_CACHE];
+
+const PRECACHE = [
+  "/",
   "/favicon.ico",
   "/icon.svg",
   "/icon-192.png",
@@ -8,38 +14,77 @@ const APP_ASSETS = [
   "/manifest.webmanifest",
 ];
 
+// ── Install ──────────────────────────────────────────────────────────────────
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS)).then(() => self.skipWaiting())
+    caches
+      .open(STATIC_CACHE)
+      .then((cache) => cache.addAll(PRECACHE))
+      .then(() => self.skipWaiting())
   );
 });
 
+// ── Activate ─────────────────────────────────────────────────────────────────
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+        Promise.all(
+          keys
+            .filter((k) => !ALL_CACHES.includes(k))
+            .map((k) => caches.delete(k))
+        )
       )
       .then(() => self.clients.claim())
   );
 });
 
-// When the browser brings us back online (Background Sync API), tell the active
-// client to process its localStorage queue. The SW cannot access localStorage
-// directly, so it posts a message to the page instead.
+// ── Background Sync (offline queue fallback) ──────────────────────────────────
 self.addEventListener("sync", (event) => {
   if (event.tag === "process-offline-queue") {
     event.waitUntil(
-      self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-        for (const client of clients) {
-          client.postMessage({ type: "PROCESS_OFFLINE_QUEUE" });
-        }
-      })
+      self.clients
+        .matchAll({ type: "window", includeUncontrolled: true })
+        .then((clients) => {
+          for (const client of clients) {
+            client.postMessage({ type: "PROCESS_OFFLINE_QUEUE" });
+          }
+        })
     );
   }
 });
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function putInCache(cacheName, request, response) {
+  if (response.ok) {
+    caches.open(cacheName).then((cache) => cache.put(request, response.clone()));
+  }
+}
+
+const OFFLINE_HTML = `<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>אין חיבור</title>
+  <style>
+    body{margin:0;min-height:100svh;display:grid;place-items:center;
+         background:#f8fafc;color:#0f172a;font:16px/1.6 system-ui,sans-serif}
+    main{max-width:26rem;padding:2rem;text-align:center}
+    h1{margin:0 0 .5rem;font-size:1.4rem}
+    p{margin:0;color:#64748b}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>אין חיבור לאינטרנט</h1>
+    <p>הנתונים נשמרים ויסונכרנו כשהחיבור יחזור.</p>
+  </main>
+</body>
+</html>`;
+
+// ── Fetch ─────────────────────────────────────────────────────────────────────
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -47,97 +92,90 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Let Next.js assets and API responses come from the network so deploys
-  // show up immediately and dynamic data does not get stuck in cache.
-  if (url.pathname.startsWith("/_next/") || url.pathname.startsWith("/api/")) {
+  // 1. Next.js immutable chunks — always content-hashed, safe to cache forever
+  if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith(
+      caches.match(request).then(
+        (cached) =>
+          cached ??
+          fetch(request).then((res) => {
+            putInCache(STATIC_CACHE, request, res);
+            return res;
+          })
+      )
+    );
     return;
   }
 
+  // 2. Other /_next/ assets (e.g. image optimization) — network-first, cache fallback
+  if (url.pathname.startsWith("/_next/")) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          putInCache(STATIC_CACHE, request, res);
+          return res;
+        })
+        .catch(() => caches.match(request))
+        .then((res) => res ?? new Response("Offline", { status: 503 }))
+    );
+    return;
+  }
+
+  // 3. API — network-first; serve cached response when offline so UI keeps data
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          putInCache(API_CACHE, request, res);
+          return res;
+        })
+        .catch(() => caches.match(request))
+        .then(
+          (res) =>
+            res ??
+            new Response(JSON.stringify({ error: "offline" }), {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            })
+        )
+    );
+    return;
+  }
+
+  // 4. Page navigations — network-first; cache each page so it reopens offline
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
-        .then((response) => response)
+        .then((res) => {
+          putInCache(PAGES_CACHE, request, res);
+          return res;
+        })
         .catch(async () => {
-          return new Response(
-            `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Offline</title>
-    <style>
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        background: #f8fafc;
-        color: #0f172a;
-        font: 16px/1.5 system-ui, sans-serif;
-      }
-      main {
-        max-width: 28rem;
-        padding: 2rem;
-        text-align: center;
-      }
-      h1 {
-        margin: 0 0 0.75rem;
-        color: #0f766e;
-        font-size: 1.5rem;
-      }
-      p {
-        margin: 0;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>You're offline</h1>
-      <p>Reconnect to continue using BizH projects.</p>
-    </main>
-  </body>
-</html>`,
-            {
-              headers: {
-                "Content-Type": "text/html; charset=utf-8",
-              },
-            }
-          );
+          // Try the exact page, then dashboard, then root
+          const cached =
+            (await caches.match(request)) ??
+            (await caches.match("/dashboard")) ??
+            (await caches.match("/"));
+          if (cached) return cached;
+          return new Response(OFFLINE_HTML, {
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          });
         })
     );
     return;
   }
 
-  if (APP_ASSETS.includes(url.pathname)) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-
-        return fetch(request).then((response) => {
-          if (!response.ok) return response;
-
-          const copy = response.clone();
-          void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          return response;
-        });
-      })
-    );
-    return;
-  }
-
+  // 5. Everything else (icons, fonts, etc.) — cache-first
   event.respondWith(
-    (async () => {
-      try {
-        return await fetch(request);
-      } catch {
-        return new Response("Offline", {
-          status: 503,
-          statusText: "Offline",
-          headers: {
-            "Content-Type": "text/plain; charset=utf-8",
-          },
-        });
-      }
-    })()
+    caches.match(request).then(
+      (cached) =>
+        cached ??
+        fetch(request).then((res) => {
+          putInCache(STATIC_CACHE, request, res);
+          return res;
+        }).catch(() => new Response("Offline", { status: 503 }))
+    )
   );
 });
+</content>
+</invoke>

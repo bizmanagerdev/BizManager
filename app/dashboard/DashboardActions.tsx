@@ -193,6 +193,22 @@ function formatWeekDay(date: Date) {
   }).format(date);
 }
 
+function formatDateShort(isoOrNull: string | null | undefined) {
+  if (!isoOrNull) return null;
+  const date = toDateOnly(isoOrNull);
+  if (!date) return null;
+  return new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+
+function formatEntryDateRange(entry: CalendarEntry) {
+  const start = formatDateShort(entry.startDate);
+  if (!start) return null;
+  if (!entry.endDate || entry.startDate === entry.endDate) return start;
+  const end = formatDateShort(entry.endDate);
+  if (!end || end === start) return start;
+  return `${start} — ${end}`;
+}
+
 function formatWeekRangeLabel(start: Date, end: Date) {
   return `${new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long" }).format(start)} - ${new Intl.DateTimeFormat(
     "he-IL",
@@ -203,6 +219,20 @@ function formatWeekRangeLabel(start: Date, end: Date) {
 function entryTypeLabel(kind: CalendarEntry["kind"]) {
   return kind === "task" ? "משימה" : "פרויקט";
 }
+
+function shortWeekDay(date: Date) {
+  return new Intl.DateTimeFormat("he-IL", { weekday: "short" }).format(date);
+}
+
+const WEEK_PALETTE = [
+  { bar: "bg-blue-400", chip: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200" },
+  { bar: "bg-emerald-400", chip: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" },
+  { bar: "bg-amber-400", chip: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" },
+  { bar: "bg-violet-400", chip: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200" },
+  { bar: "bg-rose-400", chip: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200" },
+  { bar: "bg-cyan-400", chip: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200" },
+  { bar: "bg-orange-400", chip: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" },
+] as const;
 
 function formatIls(value: number | null) {
   if (value === null) return "—";
@@ -518,7 +548,10 @@ export default function DashboardActions({
   const [incomeExistingAttachments, setIncomeExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [selfSessionSubmitting, setSelfSessionSubmitting] = useState(false);
   const [manualSessionSubmitting, setManualSessionSubmitting] = useState(false);
-  const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
+  const today = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }, []);
   const weekStart = useMemo(() => startOfWeek(today), [today]);
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
   const [manualSessionError, setManualSessionError] = useState<string | null>(null);
@@ -567,24 +600,44 @@ export default function DashboardActions({
     () => normalizeDateOnly(projects[0]?.startDate) || getTodayDate(),
     [projects]
   );
+  const weeklyGeneralEntries = useMemo(() => {
+    // Projects active this week that started before it AND span 15+ days total
+    return scheduleEntries.filter((entry) => {
+      if (entry.kind !== "project") return false;
+      const start = toDateOnly(entry.startDate);
+      const end = toDateOnly(entry.endDate) ?? start;
+      if (!start || !end) return false;
+      const durationDays = (end.getTime() - start.getTime()) / 86_400_000;
+      return start < weekStart && end >= weekStart && durationDays >= 15;
+    });
+  }, [scheduleEntries, weekStart]);
+
   const weeklyBuckets = useMemo(() => {
+    const generalIds = new Set(weeklyGeneralEntries.map((e) => e.id));
+
     return Array.from({ length: 7 }).map((_, index) => {
       const day = addDays(weekStart, index);
       const entries = scheduleEntries.filter((entry) => {
+        if (generalIds.has(entry.id)) return false;
         const start = toDateOnly(entry.startDate);
         const end = toDateOnly(entry.endDate) ?? start;
         if (!start || !end) return false;
-        return isWithinDayRange(day, start, end);
+        if (entry.kind === "task") {
+          // Tasks: only on their due date
+          return isSameDay(day, start);
+        }
+        // Projects: every day they are active within this week
+        const effectiveStart = start < weekStart ? weekStart : start;
+        return day >= effectiveStart && day <= end && day <= weekEnd;
       });
-      return {
-        day,
-        entries,
-      };
+      return { day, entries };
     });
-  }, [scheduleEntries, weekStart]);
+  }, [scheduleEntries, weekStart, weekEnd, weeklyGeneralEntries]);
   const weeklyEntryCount = useMemo(
-    () => weeklyBuckets.reduce((sum, bucket) => sum + bucket.entries.length, 0),
-    [weeklyBuckets]
+    () =>
+      weeklyGeneralEntries.length +
+      weeklyBuckets.reduce((sum, bucket) => sum + bucket.entries.length, 0),
+    [weeklyBuckets, weeklyGeneralEntries]
   );
   const workerUsers = useMemo(
     () => availableUsers.filter((user) => user.role === "worker" || user.role === "worker_no_access"),
@@ -1677,51 +1730,94 @@ export default function DashboardActions({
           </DialogHeader>
 
           <div className="space-y-4">
-            {weeklyBuckets.map((bucket) => (
-              <div key={bucket.day.toISOString()} className="rounded-2xl border p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="text-sm text-muted-foreground">
-                    {bucket.entries.length > 0 ? `${bucket.entries.length} פריטים` : "אין פריטים"}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {isSameDay(bucket.day, today) ? <Badge variant="default">היום</Badge> : null}
-                    <div className="font-semibold">{formatWeekDay(bucket.day)}</div>
-                  </div>
-                </div>
-
-                {bucket.entries.length > 0 ? (
-                  <div className="space-y-2">
-                    {bucket.entries.map((entry) => (
+            {/* Ongoing projects legend */}
+            {weeklyGeneralEntries.length > 0 && (
+              <div className="space-y-2 text-right">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">פרויקטים שוטפים השבוע</div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  {weeklyGeneralEntries.map((entry, i) => {
+                    const color = WEEK_PALETTE[i % WEEK_PALETTE.length];
+                    return (
                       <Link
-                        key={`${entry.kind}-${entry.id}-${bucket.day.toISOString()}`}
+                        key={entry.id}
                         href={entry.href}
                         onClick={() => setWeekOverviewOpen(false)}
-                        className="block rounded-xl border bg-background p-3 transition hover:border-primary/40 hover:bg-primary/5"
+                        className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition hover:opacity-80 ${color.chip}`}
                       >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="font-medium">{entry.title}</div>
-                            <Badge variant={entry.kind === "task" ? "warning" : "secondary"}>{entryTypeLabel(entry.kind)}</Badge>
-                            {entry.priority ? <StatusBadge value={entry.priority} type="priority" /> : null}
-                            {entry.status ? (
-                              <StatusBadge value={entry.status} type={entry.kind === "task" ? "task" : "project"} />
-                            ) : null}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {entry.startDate === entry.endDate || !entry.endDate
-                              ? entry.startDate ?? ""
-                              : `${entry.startDate ?? ""} - ${entry.endDate}`}
-                          </div>
-                        </div>
-                        <div className="mt-1 text-sm text-muted-foreground">{entry.subtitle}</div>
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${color.bar}`} />
+                        <span>{entry.title}</span>
+                        {entry.subtitle ? <span className="opacity-60">· {entry.subtitle}</span> : null}
                       </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground">אין פרויקטים או משימות ליום הזה.</div>
-                )}
+                    );
+                  })}
+                </div>
               </div>
-            ))}
+            )}
+
+            {/* 7-day calendar grid */}
+            <div className="overflow-x-auto rounded-xl border">
+              <div className="flex min-w-[500px]">
+                {weeklyBuckets.map(({ day, entries }) => {
+                  const isToday = isSameDay(day, today);
+                  return (
+                    <div
+                      key={day.toISOString()}
+                      className={`flex flex-1 flex-col border-r last:border-r-0 ${isToday ? "bg-primary/5" : "bg-background"}`}
+                    >
+                      {/* Day header */}
+                      <div className={`border-b px-1 py-2 text-center ${isToday ? "bg-primary/10" : ""}`}>
+                        <div className="text-xs text-muted-foreground">{shortWeekDay(day)}</div>
+                        <div
+                          className={`mx-auto mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold ${
+                            isToday ? "bg-primary text-primary-foreground" : ""
+                          }`}
+                        >
+                          {day.getDate()}
+                        </div>
+                      </div>
+
+                      {/* Ongoing project color bars */}
+                      {weeklyGeneralEntries.length > 0 && (
+                        <div className="flex flex-col gap-px px-1 pt-1.5">
+                          {weeklyGeneralEntries.map((entry, i) => (
+                            <div
+                              key={entry.id}
+                              title={entry.title}
+                              className={`h-1.5 rounded-sm opacity-75 ${WEEK_PALETTE[i % WEEK_PALETTE.length].bar}`}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Day-specific entries */}
+                      <div className="flex flex-1 flex-col gap-1 p-1 pt-1.5">
+                        {entries.length === 0 ? (
+                          <div className="flex flex-1 items-center justify-center py-2">
+                            <span className="text-[10px] text-muted-foreground/40">—</span>
+                          </div>
+                        ) : (
+                          entries.map((entry) => (
+                            <Link
+                              key={entry.id}
+                              href={entry.href}
+                              onClick={() => setWeekOverviewOpen(false)}
+                              className={`block rounded-md border px-1.5 py-1 text-[11px] leading-tight transition hover:border-primary/40 hover:bg-primary/5 ${
+                                entry.kind === "task" ? "border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/10" : "bg-background"
+                              }`}
+                            >
+                              <div className="truncate font-medium" title={entry.title}>{entry.title}</div>
+                              {entry.subtitle ? (
+                                <div className="truncate text-muted-foreground" title={entry.subtitle}>{entry.subtitle}</div>
+                              ) : null}
+                            </Link>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </AdaptiveDialog>
       </Dialog>
