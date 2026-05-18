@@ -1,9 +1,8 @@
 "use client";
-
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 
 const ROLE_CACHE_KEY = "biz_viewer_role";
-const ROLE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const ROLE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function readCachedRole(): string | null {
   try {
@@ -34,6 +33,7 @@ import {
   LayoutDashboard,
   ListTodo,
   MessageSquareMore,
+  Settings,
   ShoppingCart,
   Users,
   Wallet,
@@ -58,6 +58,7 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
   { title: "מסמכים", url: "/documents", icon: FolderOpen },
   { title: "פעילות", url: "/activity", icon: Activity },
+  { title: "הגדרות ניהול", url: "/settings", icon: Settings },
 ];
 
 const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
@@ -76,6 +77,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
   { title: "מסמכים", url: "/documents", icon: FolderOpen },
   { title: "פעילות", url: "/activity", icon: Activity },
+  { title: "הגדרות ניהול", url: "/settings", icon: Settings },
 ];
 
 const ADMIN_ONLY_URLS = new Set(["/payroll", "/activity"]);
@@ -92,7 +94,12 @@ export function useNavItems() {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
 
+    // Apply cached role immediately so admin items never flash away while fetch is in-flight.
+    // Reading from localStorage (external store), not reacting to React state — intentional.
     const cached = readCachedRole();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (cached) setViewerRole(cached);
+
     let active = true;
 
     void fetch("/api/profile/me", { cache: "no-store" })
@@ -102,13 +109,18 @@ export function useNavItems() {
       })
       .then((json) => {
         if (!active) return;
-        const role = typeof json?.role === "string" ? json.role : cached;
-        if (role) writeCachedRole(role);
-        setViewerRole(role);
+        const freshRole = typeof json?.role === "string" ? json.role : null;
+        if (freshRole) {
+          writeCachedRole(freshRole);
+          setViewerRole(freshRole);
+        } else if (!cached) {
+          // Fetch failed and no cache — keep null
+          setViewerRole(null);
+        }
+        // If fetch failed but cache exists, leave cached value in place
       })
       .catch(() => {
-        if (!active) return;
-        setViewerRole(cached);
+        // Network error — cached value already applied above, nothing to do
       });
 
     return () => {

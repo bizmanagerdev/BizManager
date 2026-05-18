@@ -77,7 +77,7 @@ export default function TasksPageClient(props: Props) {
   const [localTasks, setLocalTasks] = useState<TaskListItem[]>(props.tasks);
 
   const [q, setQ] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterStatus, setFilterStatus] = useState("todo");
   const [filterPriority, setFilterPriority] = useState("");
   const [filterDomain, setFilterDomain] = useState("");
   const [filterLinkedId, setFilterLinkedId] = useState("");
@@ -206,9 +206,6 @@ export default function TasksPageClient(props: Props) {
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button asChild type="button" variant="outline">
-          <Link href="/tasks/recurring" onClick={handleNavigationStart}>משימות קבועות</Link>
-        </Button>
         <Button type="button" onClick={() => setCreateOpen(true)}>
           הוספת משימה
         </Button>

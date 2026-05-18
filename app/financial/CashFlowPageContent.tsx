@@ -6,7 +6,6 @@ import FinancialPageClient, {
 } from "@/app/financial/FinancialPageClient";
 import { getFinancialPageData } from "@/lib/financial";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
-import type { RecurringExpenseTemplateItem } from "@/app/financial/RecurringExpensesManager";
 
 type Row = Record<string, unknown>;
 
@@ -95,23 +94,14 @@ export default async function CashFlowPageContent({
     upcomingPage: initialFilters.upcomingPage,
   });
 
-  const canManageRecurring = profile.role === "admin" || profile.role === "office";
   const canManageExpenses = profile.role === "admin" || profile.role === "office";
 
-  let recurringTemplates: RecurringExpenseTemplateItem[] = [];
   let projectOptions: Array<{ id: string; label: string }> = [];
   let propertyOptions: Array<{ id: string; label: string }> = [];
   let orderOptions: Array<{ id: string; label: string }> = [];
-  let recurringMissingSchema = false;
 
-  if (canManageRecurring) {
-    const [templatesResult, projectsResult, propertiesResult, ordersResult] = await Promise.all([
-      supabase
-        .from("recurring_expense_templates")
-        .select(
-          "id,template_name,category,amount,description_template,notes_template,business_domain,project_id,order_id,property_id,included_in_base_price,billed_to_customer,project_expense_notes_template,frequency,create_day_of_month,expense_day_of_month,create_month_of_year,expense_month_of_year,start_date,end_date,is_active"
-        )
-        .order("created_at", { ascending: true }),
+  if (canManageExpenses) {
+    const [projectsResult, propertiesResult, ordersResult] = await Promise.all([
       supabase
         .from("project_dashboard_view")
         .select("id,name,customer_name")
@@ -129,45 +119,12 @@ export default async function CashFlowPageContent({
         .range(0, 499),
     ]);
 
-    recurringMissingSchema = Boolean(
-      templatesResult.error?.message && looksLikeMissingSchema(templatesResult.error.message)
-    );
-
-    if (!recurringMissingSchema && !templatesResult.error?.message) {
-      recurringTemplates = ((templatesResult.data ?? []) as Row[]).map((row) => ({
-        id: getString(row, "id") ?? "",
-        template_name: getString(row, "template_name") ?? "",
-        category: getString(row, "category") ?? "",
-        amount: getNumber(row, "amount") ?? 0,
-        description_template: getString(row, "description_template"),
-        notes_template: getString(row, "notes_template"),
-        business_domain: getString(row, "business_domain") ?? "general_business",
-        project_id: getString(row, "project_id"),
-        order_id: getString(row, "order_id"),
-        property_id: getString(row, "property_id"),
-        included_in_base_price: row.included_in_base_price === true,
-        billed_to_customer: row.billed_to_customer === true,
-        project_expense_notes_template: getString(row, "project_expense_notes_template"),
-        frequency: getString(row, "frequency") === "yearly" ? "yearly" : "monthly",
-        create_day_of_month: getNumber(row, "create_day_of_month") ?? 1,
-        expense_day_of_month: getNumber(row, "expense_day_of_month") ?? 1,
-        create_month_of_year: getNumber(row, "create_month_of_year"),
-        expense_month_of_year: getNumber(row, "expense_month_of_year"),
-        start_date: getString(row, "start_date"),
-        end_date: getString(row, "end_date"),
-        is_active: row.is_active !== false,
-      }));
-    }
-
     projectOptions = ((projectsResult.data ?? []) as Row[])
       .map((row) => {
         const id = getString(row, "id") ?? "";
         const name = getString(row, "name") ?? "";
         const customerName = getString(row, "customer_name");
-        return {
-          id,
-          label: customerName ? `${name} (${customerName})` : name,
-        };
+        return { id, label: customerName ? `${name} (${customerName})` : name };
       })
       .filter((row) => row.id && row.label);
 
@@ -213,12 +170,9 @@ export default async function CashFlowPageContent({
         customerName={customerName}
         customerPage={customerPage}
         canManageExpenses={canManageExpenses}
-        canManageRecurring={canManageRecurring}
-        recurringTemplates={recurringTemplates}
         recurringProjects={projectOptions}
         recurringProperties={propertyOptions}
         recurringOrders={orderOptions}
-        recurringMissingSchema={recurringMissingSchema}
       />
     </AppShell>
   );

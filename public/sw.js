@@ -40,6 +40,61 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// ── Push notifications ────────────────────────────────────────────────────────
+self.addEventListener("push", (event) => {
+  let payload = { title: "BizManager", body: "", url: "/alerts", tag: "bizh-alert" };
+  if (event.data) {
+    try {
+      const data = event.data.json();
+      payload = {
+        title: data.title ?? payload.title,
+        body: data.body ?? payload.body,
+        url: data.url ?? payload.url,
+        tag: data.tag ?? payload.tag,
+      };
+    } catch {
+      payload.body = event.data.text();
+    }
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      tag: payload.tag,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      dir: "rtl",
+      lang: "he",
+      data: { url: payload.url },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data?.url ?? "/alerts");
+  const absolute = url.startsWith("http") ? url : self.location.origin + url;
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((windowClients) => {
+        // Focus existing tab at the same origin if possible
+        for (const client of windowClients) {
+          const clientUrl = new URL(client.url);
+          if (clientUrl.origin === self.location.origin && "focus" in client) {
+            client.navigate(absolute);
+            return client.focus();
+          }
+        }
+        // Otherwise open a new tab
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(absolute);
+        }
+      })
+  );
+});
+
 // ── Background Sync (offline queue fallback) ──────────────────────────────────
 self.addEventListener("sync", (event) => {
   if (event.tag === "process-offline-queue") {

@@ -108,6 +108,7 @@ export type CashFlowDomainBreakdownPoint = {
   inflow: number;
   outflow: number;
   net: number;
+  count: number;
 };
 
 export type ProjectOption = {
@@ -761,11 +762,13 @@ function buildDomainBreakdown(rows: CashFlowTransaction[]): CashFlowDomainBreakd
       inflow: 0,
       outflow: 0,
       net: 0,
+      count: 0,
     };
 
     if (row.type === "inflow") current.inflow += row.amount;
     if (row.type === "outflow") current.outflow += row.amount;
     current.net = current.inflow - current.outflow;
+    current.count++;
 
     grouped.set(key, current);
   });

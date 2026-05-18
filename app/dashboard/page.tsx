@@ -4,6 +4,7 @@ import { AdaptiveGrid, PageStack, ResponsiveMetricValue } from "@/components/lay
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import DashboardActions from "@/app/dashboard/DashboardActions";
 import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard";
+import DomainActivityChart from "@/components/charts/DomainActivityChart";
 import { getAlertsData } from "@/lib/alerts";
 import { getScheduleEntries } from "@/lib/projectSchedule";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
@@ -358,6 +359,29 @@ export default async function DashboardPage() {
 
           <CashFlowOverviewCard rows={cashFlowDomainBreakdown} />
         </AdaptiveGrid>
+
+        {cashFlowDomainBreakdown.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="space-y-1 text-right">
+                <CardTitle className="text-lg">פעילות לפי תחום</CardTitle>
+                <CardDescription>
+                  איזה תחום הכי פעיל — לפי מספר תנועות. צבע ירוק = עודף כניסות, אדום = עודף יציאות.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <DomainActivityChart
+                data={cashFlowDomainBreakdown.map((r) => ({
+                  name: r.domainName,
+                  count: r.count,
+                  net: r.net,
+                }))}
+                height={Math.max(180, cashFlowDomainBreakdown.length * 48)}
+              />
+            </CardContent>
+          </Card>
+        )}
       </PageStack>
     </AppShell>
   );

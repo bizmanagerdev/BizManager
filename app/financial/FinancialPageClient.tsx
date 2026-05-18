@@ -1,14 +1,12 @@
 "use client";
 
+import DomainBarChart from "@/components/charts/DomainBarChart";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { CalendarDays, Landmark, Loader2, Pencil, Search, TimerReset, Trash2 } from "lucide-react";
-import RecurringExpensesManager, {
-  type RecurringExpenseTemplateItem,
-} from "@/app/financial/RecurringExpensesManager";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +21,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import {
@@ -59,12 +56,9 @@ type Props = {
   customerName: string;
   customerPage: string;
   canManageExpenses: boolean;
-  canManageRecurring: boolean;
-  recurringTemplates: RecurringExpenseTemplateItem[];
   recurringProjects: Array<{ id: string; label: string }>;
   recurringOrders: Array<{ id: string; label: string }>;
   recurringProperties: Array<{ id: string; label: string }>;
-  recurringMissingSchema: boolean;
 };
 
 type EditableExpenseEntry = FinancialEntry & {
@@ -376,17 +370,13 @@ export default function FinancialPageClient({
   customerName,
   customerPage,
   canManageExpenses,
-  canManageRecurring,
-  recurringTemplates,
   recurringProjects,
   recurringOrders,
   recurringProperties,
-  recurringMissingSchema,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"overview" | "recurring">("overview");
   const [query, setQuery] = useState(initialFilters.q);
   const [from, setFrom] = useState(initialFilters.from);
   const [to, setTo] = useState(initialFilters.to);
@@ -818,26 +808,7 @@ export default function FinancialPageClient({
         </div>
       ) : null}
 
-      <Tabs
-        dir="rtl"
-        value={tab}
-        onValueChange={(value) => {
-          setTab(value === "recurring" && canManageRecurring ? "recurring" : "overview");
-        }}
-      >
-        <TabsList
-          dir="rtl"
-          className={
-            canManageRecurring
-              ? "grid h-auto w-full grid-cols-2"
-              : "grid h-auto w-full grid-cols-1"
-          }
-        >
-          <TabsTrigger value="overview">תזרים</TabsTrigger>
-          {canManageRecurring ? <TabsTrigger value="recurring">הוצאות קבועות</TabsTrigger> : null}
-        </TabsList>
-
-        <TabsContent value="overview" dir="rtl" className="space-y-4 text-right">
+      <div dir="rtl" className="space-y-4 text-right">
       <div ref={filtersCardRef}>
       <Card>
         <CardHeader className="hidden">
@@ -1039,7 +1010,17 @@ export default function FinancialPageClient({
               חלוקה לפי דומיין עסקי, עם הפרדה בין תזרים בפועל לצפי עתידי.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
+            {domainGroups.length > 0 && (
+              <DomainBarChart
+                data={domainGroups.map((g) => ({
+                  name: g.domainName,
+                  inflow: g.actual.inflow,
+                  outflow: g.actual.outflow,
+                }))}
+                height={220}
+              />
+            )}
             {domainGroups.length === 0 ? (
               <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
                 אין תנועות להצגה עבור הסינון שנבחר.
@@ -2176,20 +2157,7 @@ export default function FinancialPageClient({
         </AdaptiveDialog>
       </Dialog>
       </div>
-        </TabsContent>
-
-        {canManageRecurring ? (
-          <TabsContent value="recurring">
-            <RecurringExpensesManager
-              templates={recurringTemplates}
-              projects={recurringProjects}
-              orders={recurringOrders}
-              properties={recurringProperties}
-              missingSchema={recurringMissingSchema}
-            />
-          </TabsContent>
-        ) : null}
-      </Tabs>
+      </div>
     </div>
   );
 }

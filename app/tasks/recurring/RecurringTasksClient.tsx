@@ -49,6 +49,7 @@ type Props = {
   properties: TaskOption[];
   users: UserOption[];
   missingSchema?: boolean;
+  hideHeader?: boolean;
 };
 
 type FormState = {
@@ -216,22 +217,32 @@ export default function RecurringTasksClient(props: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">משימות קבועות</h1>
-          <div className="text-sm text-muted-foreground">
-            תבניות חודשיות שיוצרות משימות רגילות אוטומטית.
+      {!props.hideHeader && (
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold">משימות קבועות</h1>
+            <div className="text-sm text-muted-foreground">
+              תבניות חודשיות שיוצרות משימות רגילות אוטומטית.
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href="/tasks">חזרה למשימות</Link>
+            </Button>
+            <Button type="button" onClick={openCreate}>
+              משימה קבועה חדשה
+            </Button>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button asChild variant="outline">
-            <Link href="/tasks">חזרה למשימות</Link>
-          </Button>
+      )}
+      {props.hideHeader && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm text-muted-foreground">תבניות חודשיות שיוצרות משימות אוטומטית.</div>
           <Button type="button" onClick={openCreate}>
             משימה קבועה חדשה
           </Button>
         </div>
-      </div>
+      )}
 
       {props.missingSchema ? (
         <Card>
