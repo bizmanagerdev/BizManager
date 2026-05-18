@@ -470,7 +470,6 @@ export function buildExpenseEntries(args: {
     });
     const description = buildExpenseDescription(row);
     const reference = row.category?.trim() || null;
-    const paymentMethodValue = row.payment_method?.trim() || null;
 
     return [{
       id: `expense:${row.id}`,
@@ -490,12 +489,12 @@ export function buildExpenseEntries(args: {
       description,
       origin: "expense" as const,
       reference,
-      paymentMethod: paymentMethodValue,
-      paymentMethodLabel: paymentMethodValue ? paymentMethodLabel(paymentMethodValue) : null,
+      paymentMethod: null,
+      paymentMethodLabel: null,
       paymentStatus: null,
       recordedByName: typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? null : null,
       customerId: linkedOrder?.customer_id ?? linkedProject?.customer_id ?? null,
-      searchText: [description, source.label, reference ?? "", row.notes ?? "", row.payment_method ?? "",
+      searchText: [description, source.label, reference ?? "", row.notes ?? "",
         row.category ?? "", getBusinessDomainLabel(businessDomain),
         typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? "" : ""]
         .join(" ").toLowerCase(),
@@ -503,7 +502,6 @@ export function buildExpenseEntries(args: {
       expenseCategory: row.category?.trim() || null,
       expenseDescriptionRaw: row.description?.trim() || null,
       expenseNotes: row.notes?.trim() || null,
-      expensePaymentMethod: paymentMethodValue,
       expenseProjectId: resolvedProjectId,
       expenseOrderId: row.order_id,
       expensePropertyId: row.property_id,

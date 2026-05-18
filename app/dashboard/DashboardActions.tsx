@@ -510,7 +510,6 @@ export default function DashboardActions({
   const [expenseCategory, setExpenseCategory] = useState("");
   const [expenseCategoryOther, setExpenseCategoryOther] = useState("");
   const [expenseDate, setExpenseDate] = useState(normalizeDateOnly(projects[0]?.startDate) || getTodayDate());
-  const [expenseMethod, setExpenseMethod] = useState("");
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseNotes, setExpenseNotes] = useState("");
   const [expenseIncludedInBase, setExpenseIncludedInBase] = useState(false);
@@ -818,7 +817,6 @@ export default function DashboardActions({
     setExpenseCategory("");
     setExpenseCategoryOther("");
     setExpenseDate(defaultProjectDate);
-    setExpenseMethod("");
     setExpenseDescription("");
     setExpenseNotes("");
     setExpenseIncludedInBase(false);
@@ -1271,7 +1269,6 @@ export default function DashboardActions({
           order_id: linkedOrderId || null,
           property_id: linkedPropertyId || null,
           amount,
-          payment_method: expenseMethod.trim() || null,
           category: finalExpenseCategory,
           expense_date: expenseDate,
           description: expenseDescription.trim() || null,
@@ -3046,22 +3043,6 @@ export default function DashboardActions({
                       />
                     </label>
                   </AdaptiveGrid>
-
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.paymentMethod}</span>
-                    <select
-                      className={fieldClass}
-                      value={expenseMethod}
-                      onChange={(e) => setExpenseMethod(e.target.value)}
-                    >
-                      <option value="">לא צוין</option>
-                      <option value="bank_transfer">{HEBREW.bankTransfer}</option>
-                      <option value="cash">{HEBREW.cash}</option>
-                      <option value="check">{HEBREW.check}</option>
-                      <option value="credit_card">{HEBREW.creditCard}</option>
-                      <option value="other">{HEBREW.other}</option>
-                    </select>
-                  </label>
 
                   <label className="space-y-2 text-sm">
                     <span>{HEBREW.description}</span>

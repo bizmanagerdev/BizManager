@@ -67,7 +67,6 @@ type EditableExpenseEntry = FinancialEntry & {
   expenseCategory: string | null;
   expenseDescriptionRaw?: string | null;
   expenseNotes: string | null;
-  expensePaymentMethod?: string | null;
   expenseProjectId: string | null;
   expenseOrderId: string | null;
   expensePropertyId: string | null;
@@ -76,7 +75,6 @@ type EditableExpenseEntry = FinancialEntry & {
 type ExpenseEditFormState = {
   amount: string;
   expenseDate: string;
-  paymentMethod: string;
   category: string;
   description: string;
   notes: string;
@@ -90,7 +88,6 @@ type ExpenseCreateFormState = {
   propertyId: string;
   amount: string;
   expenseDate: string;
-  paymentMethod: string;
   category: string;
   description: string;
   notes: string;
@@ -190,7 +187,6 @@ function createExpenseEditFormState(entry: EditableExpenseEntry): ExpenseEditFor
   return {
     amount: entry.amount > 0 ? String(entry.amount) : "",
     expenseDate: entry.flowDate,
-    paymentMethod: entry.expensePaymentMethod ?? "",
     category: entry.expenseCategory ?? entry.reference ?? "",
     description: entry.expenseDescriptionRaw ?? "",
     notes: entry.expenseNotes ?? "",
@@ -210,7 +206,6 @@ function createExpenseFormState(): ExpenseCreateFormState {
     propertyId: "",
     amount: "",
     expenseDate: todayIsoDate(),
-    paymentMethod: "",
     category: "",
     description: "",
     notes: "",
@@ -588,7 +583,6 @@ export default function FinancialPageClient({
           property_id: editingExpense.expensePropertyId,
           business_domain: expenseEditForm.businessDomain,
           amount: amountNumber,
-          payment_method: expenseEditForm.paymentMethod.trim() || null,
           category: expenseEditForm.category.trim(),
           description: expenseEditForm.description.trim() || null,
           notes: expenseEditForm.notes.trim() || null,
@@ -681,7 +675,6 @@ export default function FinancialPageClient({
             ? expenseCreateForm.propertyId
             : null,
         amount: amountNumber,
-        payment_method: expenseCreateForm.paymentMethod.trim() || null,
         category: expenseCreateForm.category.trim(),
         expense_date: expenseCreateForm.expenseDate,
         description: expenseCreateForm.description.trim() || null,
@@ -1604,24 +1597,6 @@ export default function FinancialPageClient({
             </div>
 
             <div className="space-y-1">
-              <div className="text-sm font-medium">אמצעי תשלום</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={expenseCreateForm.paymentMethod}
-                onChange={(event) =>
-                  setExpenseCreateForm((current) => ({ ...current, paymentMethod: event.target.value }))
-                }
-              >
-                <option value="">לא צוין</option>
-                <option value="bank_transfer">העברה בנקאית</option>
-                <option value="cash">מזומן</option>
-                <option value="check">צ&apos;ק</option>
-                <option value="credit_card">כרטיס אשראי</option>
-                <option value="other">אחר</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
               <div className="text-sm font-medium">קטגוריה</div>
               <Input
                 value={expenseCreateForm.category}
@@ -2019,26 +1994,6 @@ export default function FinancialPageClient({
                     }
                   />
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-sm font-medium">אמצעי תשלום</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={expenseEditForm.paymentMethod}
-                  onChange={(event) =>
-                    setExpenseEditForm((current) =>
-                      current ? { ...current, paymentMethod: event.target.value } : current
-                    )
-                  }
-                >
-                  <option value="">לא צוין</option>
-                  <option value="bank_transfer">העברה בנקאית</option>
-                  <option value="cash">מזומן</option>
-                  <option value="check">צ&apos;ק</option>
-                  <option value="credit_card">כרטיס אשראי</option>
-                  <option value="other">אחר</option>
-                </select>
               </div>
 
               <div className="space-y-1">

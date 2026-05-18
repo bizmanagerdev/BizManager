@@ -3,16 +3,6 @@ import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 
-function isMissingColumnError(error: unknown, columnName: string) {
-  if (!error || typeof error !== "object") return false;
-  const code = "code" in error ? (error as { code?: unknown }).code : undefined;
-  const message = "message" in error ? (error as { message?: unknown }).message : undefined;
-  return (
-    code === "42703" &&
-    typeof message === "string" &&
-    message.toLowerCase().includes(columnName.toLowerCase())
-  );
-}
 
 export async function POST(req: Request) {
   try {
@@ -22,7 +12,6 @@ export async function POST(req: Request) {
       property_id?: string | null;
       business_domain?: string;
       amount?: number | string;
-      payment_method?: string;
       category?: string;
       description?: string;
       notes?: string;
@@ -37,7 +26,6 @@ export async function POST(req: Request) {
     const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
     const businessDomainInput =
       typeof body.business_domain === "string" ? body.business_domain.trim() : "";
-    const paymentMethod = typeof body.payment_method === "string" ? body.payment_method.trim() : null;
     const category = typeof body.category === "string" ? body.category.trim() : "";
     const description = typeof body.description === "string" ? body.description.trim() : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
@@ -139,45 +127,17 @@ export async function POST(req: Request) {
       notes,
       recorded_by: user.id,
     };
-    const selectWithPaymentMethod =
-      "id,expense_date,amount,payment_method,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,created_at,updated_at";
-    const selectWithoutPaymentMethod =
+    const selectExpense =
       "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,created_at,updated_at";
 
-    let expense: Record<string, unknown> | null = null;
-    let expenseError: { message: string } | null = null;
-
-    const primaryResult = await supabase
+    const { data: expenseData, error: expenseInsertError } = await supabase
       .from("expenses")
-      .insert({
-        ...baseExpensePayload,
-        payment_method: paymentMethod || null,
-      })
-      .select(selectWithPaymentMethod)
+      .insert(baseExpensePayload)
+      .select(selectExpense)
       .maybeSingle();
 
-    if (primaryResult.error && isMissingColumnError(primaryResult.error, "payment_method")) {
-      if (paymentMethod) {
-        return NextResponse.json(
-          { error: "Expense payment method requires running db/sql/add_payment_method_to_expenses.sql" },
-          { status: 400 }
-        );
-      }
-
-      const fallbackResult = await supabase
-        .from("expenses")
-        .insert(baseExpensePayload)
-        .select(selectWithoutPaymentMethod)
-        .maybeSingle();
-
-      expense = fallbackResult.data
-        ? ({ ...fallbackResult.data, payment_method: null } as Record<string, unknown>)
-        : null;
-      expenseError = fallbackResult.error ? { message: fallbackResult.error.message } : null;
-    } else {
-      expense = (primaryResult.data as Record<string, unknown> | null) ?? null;
-      expenseError = primaryResult.error ? { message: primaryResult.error.message } : null;
-    }
+    const expense: Record<string, unknown> | null = expenseData as Record<string, unknown> | null;
+    const expenseError = expenseInsertError ? { message: expenseInsertError.message } : null;
 
     const createdExpenseId = typeof expense?.id === "string" ? expense.id : null;
 

@@ -24,7 +24,6 @@ export type ExpenseRow = {
   id: string;
   expense_date: string | null;
   amount: number | string | null;
-  payment_method: string | null;
   category: string | null;
   description: string | null;
   business_domain: string | null;
@@ -188,7 +187,6 @@ export type FinancialEntry = {
   expenseCategory?: string | null;
   expenseDescriptionRaw?: string | null;
   expenseNotes?: string | null;
-  expensePaymentMethod?: string | null;
   expenseProjectId?: string | null;
   expenseOrderId?: string | null;
   expensePropertyId?: string | null;

@@ -85,7 +85,7 @@ export async function POST(req: Request) {
     if (!selectedUserId) {
       return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
     }
-    if (selectedUserId !== profile.id) {
+    if (selectedUserId !== profile.id && profile.role !== "admin" && profile.role !== "office") {
       return NextResponse.json({ error: "Cannot update a session for another worker." }, { status: 403 });
     }
     if (!clockIn) {
@@ -119,7 +119,7 @@ export async function POST(req: Request) {
       .from(WORK_SESSIONS_TABLE)
       .select("id,user_id,project_id,clock_in,labor_cost")
       .eq("id", sessionId)
-      .eq("user_id", profile.id)
+      .eq("user_id", selectedUserId)
       .maybeSingle();
 
     if (sessionError) {
