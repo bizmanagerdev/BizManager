@@ -19,6 +19,7 @@ type Row = Record<string, unknown>;
 export const revalidate = 60;
 
 const numberFormatter = new Intl.NumberFormat("he-IL");
+const ilsFormatter = new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 });
 
 function getString(row: Row | null | undefined, key: string) {
   const value = row?.[key];
@@ -58,9 +59,6 @@ function badgeVariantForAlert(kind: "danger" | "warning" | "info") {
   }
 }
 
-function countActiveAlerts(unpaidInvoicesCount: number, lowInventoryCount: number, overdueTasksCount: number) {
-  return [unpaidInvoicesCount, lowInventoryCount, overdueTasksCount].filter((count) => count > 0).length;
-}
 
 function isUserRole(value: string | null): value is UserRole {
   return value === "admin" || value === "office" || value === "worker" || value === "worker_no_access";
@@ -160,11 +158,34 @@ export default async function DashboardPage() {
       })),
   ]);
 
+  const isAdminOrOffice = profile.role === "admin" || profile.role === "office";
+
+  const [unpaidBalanceResult, workerOwedResult, openOrdersCountResult] = await Promise.all([
+    isAdminOrOffice
+      ? supabase.from("invoices").select("balance_due").in("payment_status", ["unpaid", "partial", "overdue"]).range(0, 499)
+      : Promise.resolve({ data: null, error: null }),
+    profile.role === "admin"
+      ? supabase.from("worker_debt_items_view").select("owed_amount").eq("source_type", "payslip").gt("owed_amount", 0.009).range(0, 999)
+      : Promise.resolve({ data: null, error: null }),
+    supabase
+      .from("order_overview_view")
+      .select("order_id", { count: "estimated", head: true })
+      .not("status", "in", '("completed","delivered","cancelled","canceled","closed","archived","done")'),
+  ]);
+
   const activeProjectsCount = typeof activeProjectsCountResult.count === "number" ? activeProjectsCountResult.count : 0;
   const openTasksCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "open_tasks_count") ?? 0;
   const overdueTasksCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "overdue_tasks_count") ?? 0;
+  const openOrdersCount = typeof openOrdersCountResult.count === "number" ? openOrdersCountResult.count : 0;
+
+  const invoicesTableMissing = (unpaidBalanceResult as { error?: { message?: string } | null }).error?.message?.includes("Could not find") ?? false;
+  const unpaidBalance = invoicesTableMissing
+    ? null
+    : ((unpaidBalanceResult.data ?? []) as Row[]).reduce((sum, r) => sum + (getNumber(r, "balance_due") ?? 0), 0);
+  const workerOwedTotal = ((workerOwedResult.data ?? []) as Row[])
+    .reduce((sum, r) => sum + (getNumber(r, "owed_amount") ?? 0), 0);
 
   const activeProjectOptions = ((projectRows ?? []) as Row[])
     .map((row) => ({
@@ -231,15 +252,7 @@ export default async function DashboardPage() {
     .filter((row) => row.id);
 
   const cashFlowDomainBreakdown = cashFlowOverviewResult.data?.domainBreakdown ?? [];
-  const recentTransactionCount = cashFlowOverviewResult.data?.transactions.totalCount ?? 0;
-  const activeDomainCount = cashFlowDomainBreakdown.length;
-  const topDomainName = cashFlowDomainBreakdown[0]?.domainName ?? "אין פעילות";
   const alertItems = alertsResult.alerts;
-  const attentionCount = countActiveAlerts(
-    alertItems.find((alert) => alert.id === "unpaid-invoices")?.count ?? 0,
-    alertItems.find((alert) => alert.id === "low-inventory")?.count ?? 0,
-    alertItems.find((alert) => alert.id === "overdue-tasks")?.count ?? 0
-  );
 
   const dashboardErrors = [
     dashboardError ? `דשבורד: ${dashboardError.message}` : null,
@@ -323,39 +336,45 @@ export default async function DashboardPage() {
         </Card>
 
         <AdaptiveGrid variant="dashboardMain">
-          <div className="space-y-3">
-            <div className="space-y-1 text-right">
-              <div className="text-lg font-semibold">סיכום</div>
-              <div className="text-sm text-muted-foreground">תמונת מצב מהירה בלי להוריד פוקוס מהפעולות.</div>
-            </div>
-            <AdaptiveGrid variant="dashboardMetrics">
+          <AdaptiveGrid variant="dashboardMetrics">
+            <MetricCard
+              title="פרויקטים פעילים"
+              value={formatCount(activeProjectsCount)}
+              subtitle={activeProjectsCount === 0 ? "אין פרויקטים פעילים" : `${formatCount(activeProjectsCount)} בביצוע`}
+              href="/projects"
+            />
+            <MetricCard
+              title="הזמנות פתוחות"
+              value={formatCount(openOrdersCount)}
+              subtitle={openOrdersCount === 0 ? "אין הזמנות פתוחות" : "ממתינות לטיפול"}
+              href="/sales"
+            />
+            <MetricCard
+              title="משימות באיחור"
+              value={formatCount(overdueTasksCount)}
+              subtitle={overdueTasksCount > 0 ? `${formatCount(openTasksCount)} פתוחות סה״כ` : "הכול בזמן"}
+              href="/tasks"
+              urgent={overdueTasksCount > 0}
+            />
+            {isAdminOrOffice ? (
               <MetricCard
-                title="תחומים פעילים"
-                value={formatCount(activeDomainCount)}
-                subtitle={topDomainName !== "אין פעילות" ? `מוביל כרגע: ${topDomainName}` : topDomainName}
+                title="גביה פתוחה"
+                value={unpaidBalance === null ? "—" : ilsFormatter.format(unpaidBalance)}
+                subtitle={unpaidBalance === null ? "טבלת חשבוניות חסרה" : unpaidBalance > 0 ? "חשבוניות שלא שולמו" : "הכול שולם"}
+                href="/financial"
+                urgent={(unpaidBalance ?? 0) > 0}
               />
+            ) : null}
+            {profile.role === "admin" ? (
               <MetricCard
-                title="תנועות אחרונות"
-                value={formatCount(recentTransactionCount)}
-                subtitle="לפי תחומים, בלי חשיפת סכומים"
+                title="שכר לתשלום"
+                value={ilsFormatter.format(workerOwedTotal)}
+                subtitle={workerOwedTotal > 0 ? "שכר שטרם שולם לעובדים" : "אין חוב לעובדים"}
+                href="/payroll"
+                urgent={workerOwedTotal > 0}
               />
-              <MetricCard
-                title="פרויקטים פתוחים"
-                value={formatCount(activeProjectsCount)}
-                subtitle="פעילים עכשיו"
-              />
-              <MetricCard
-                title="דורש תשומת לב"
-                value={formatCount(attentionCount)}
-                subtitle={attentionCount > 0 ? "יש פריטים לבדיקה" : "הכול יציב"}
-              />
-              <MetricCard
-                title="משימות פתוחות"
-                value={formatCount(openTasksCount)}
-                subtitle={overdueTasksCount > 0 ? `${formatCount(overdueTasksCount)} באיחור` : "ללא איחור"}
-              />
-            </AdaptiveGrid>
-          </div>
+            ) : null}
+          </AdaptiveGrid>
 
           <CashFlowOverviewCard rows={cashFlowDomainBreakdown} />
         </AdaptiveGrid>
@@ -391,18 +410,26 @@ function MetricCard({
   title,
   value,
   subtitle,
+  href,
+  urgent,
 }: {
   title: string;
   value: string;
   subtitle: string;
+  href: string;
+  urgent?: boolean;
 }) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-sm text-muted-foreground">{title}</div>
-        <ResponsiveMetricValue>{value}</ResponsiveMetricValue>
-        <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
-      </CardContent>
-    </Card>
+    <Link href={href} className="block">
+      <Card className="h-full transition-colors hover:bg-muted/40">
+        <CardContent className="p-4">
+          <div className="text-sm text-muted-foreground">{title}</div>
+          <ResponsiveMetricValue className={urgent ? "text-destructive" : undefined}>
+            {value}
+          </ResponsiveMetricValue>
+          <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
