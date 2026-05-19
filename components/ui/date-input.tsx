@@ -1,4 +1,7 @@
+"use client";
 import * as React from "react";
+import { CalendarDays } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
 type DateInputProps = Omit<React.ComponentProps<typeof Input>, "type" | "value" | "onChange"> & {
@@ -22,14 +25,14 @@ function isValidDateParts(year: number, month: number, day: number) {
   );
 }
 
+function padTwo(value: number) {
+  return String(value).padStart(2, "0");
+}
+
 function formatIsoForDisplay(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
   if (!match) return value;
   return `${match[3]}/${match[2]}/${match[1].slice(-2)}`;
-}
-
-function padTwo(value: number) {
-  return String(value).padStart(2, "0");
 }
 
 function formatIsoDateTimeForDisplay(value: string) {
@@ -105,9 +108,20 @@ function parseDisplayToIsoDateTime(value: string) {
   return `${String(year).padStart(4, "0")}-${padTwo(month)}-${padTwo(day)}T${padTwo(hours)}:${padTwo(minutes)}`;
 }
 
+function openNativePicker(ref: React.RefObject<HTMLInputElement | null>) {
+  const el = ref.current;
+  if (!el) return;
+  try {
+    (el as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
+  } catch {
+    el.click();
+  }
+}
+
 export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
-  ({ value, onChange, onBlur, placeholder = "dd/mm/yy", inputMode = "numeric", ...props }, ref) => {
+  ({ value, onChange, onBlur, placeholder = "dd/mm/yy", className, inputMode = "numeric", ...props }, ref) => {
     const [displayValue, setDisplayValue] = React.useState(() => formatIsoForDisplay(value));
+    const pickerRef = React.useRef<HTMLInputElement>(null);
 
     React.useEffect(() => {
       setDisplayValue(formatIsoForDisplay(value));
@@ -126,33 +140,61 @@ export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
     );
 
     return (
-      <Input
-        {...props}
-        ref={ref}
-        type="text"
-        dir="ltr"
-        inputMode={inputMode}
-        placeholder={placeholder}
-        value={displayValue}
-        onChange={(event) => {
-          const nextDisplayValue = event.target.value;
-          setDisplayValue(nextDisplayValue);
-          const parsed = parseDisplayToIso(nextDisplayValue);
-          if (parsed !== null) {
-            emitChange(parsed);
-          }
-        }}
-        onBlur={(event) => {
-          const parsed = parseDisplayToIso(displayValue);
-          if (parsed === null) {
-            setDisplayValue(formatIsoForDisplay(value));
-          } else {
-            setDisplayValue(formatIsoForDisplay(parsed));
-            emitChange(parsed);
-          }
-          onBlur?.(event);
-        }}
-      />
+      <div className="relative flex items-center" dir="ltr">
+        <Input
+          {...props}
+          ref={ref}
+          type="text"
+          dir="ltr"
+          inputMode={inputMode}
+          placeholder={placeholder}
+          value={displayValue}
+          className={cn("pr-9", className)}
+          onChange={(event) => {
+            const nextDisplayValue = event.target.value;
+            setDisplayValue(nextDisplayValue);
+            const parsed = parseDisplayToIso(nextDisplayValue);
+            if (parsed !== null) {
+              emitChange(parsed);
+            }
+          }}
+          onBlur={(event) => {
+            const parsed = parseDisplayToIso(displayValue);
+            if (parsed === null) {
+              setDisplayValue(formatIsoForDisplay(value));
+            } else {
+              setDisplayValue(formatIsoForDisplay(parsed));
+              emitChange(parsed);
+            }
+            onBlur?.(event);
+          }}
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="בחר תאריך"
+          onClick={() => openNativePicker(pickerRef)}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
+        >
+          <CalendarDays className="h-4 w-4" />
+        </button>
+        {/* Hidden native date picker — triggered by the calendar icon */}
+        <input
+          ref={pickerRef}
+          type="date"
+          value={value}
+          onChange={(event) => {
+            const iso = event.target.value;
+            if (iso) {
+              setDisplayValue(formatIsoForDisplay(iso));
+              emitChange(iso);
+            }
+          }}
+          tabIndex={-1}
+          aria-hidden="true"
+          className="absolute right-2.5 bottom-0 opacity-0 pointer-events-none w-0 h-0"
+        />
+      </div>
     );
   }
 );
@@ -160,8 +202,9 @@ export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
 DateInput.displayName = "DateInput";
 
 export const DateTimeInput = React.forwardRef<HTMLInputElement, DateTimeInputProps>(
-  ({ value, onChange, onBlur, placeholder = "dd/mm/yy hh:mm", inputMode = "text", ...props }, ref) => {
+  ({ value, onChange, onBlur, placeholder = "dd/mm/yy hh:mm", className, inputMode = "text", ...props }, ref) => {
     const [displayValue, setDisplayValue] = React.useState(() => formatIsoDateTimeForDisplay(value));
+    const pickerRef = React.useRef<HTMLInputElement>(null);
 
     React.useEffect(() => {
       setDisplayValue(formatIsoDateTimeForDisplay(value));
@@ -180,33 +223,58 @@ export const DateTimeInput = React.forwardRef<HTMLInputElement, DateTimeInputPro
     );
 
     return (
-      <Input
-        {...props}
-        ref={ref}
-        type="text"
-        dir="ltr"
-        inputMode={inputMode}
-        placeholder={placeholder}
-        value={displayValue}
-        onChange={(event) => {
-          const nextDisplayValue = event.target.value;
-          setDisplayValue(nextDisplayValue);
-          const parsed = parseDisplayToIsoDateTime(nextDisplayValue);
-          if (parsed !== null) {
-            emitChange(parsed);
-          }
-        }}
-        onBlur={(event) => {
-          const parsed = parseDisplayToIsoDateTime(displayValue);
-          if (parsed === null) {
-            setDisplayValue(formatIsoDateTimeForDisplay(value));
-          } else {
-            setDisplayValue(formatIsoDateTimeForDisplay(parsed));
-            emitChange(parsed);
-          }
-          onBlur?.(event);
-        }}
-      />
+      <div className="relative flex items-center" dir="ltr">
+        <Input
+          {...props}
+          ref={ref}
+          type="text"
+          dir="ltr"
+          inputMode={inputMode}
+          placeholder={placeholder}
+          value={displayValue}
+          className={cn("pr-9", className)}
+          onChange={(event) => {
+            const next = event.target.value;
+            setDisplayValue(next);
+            const parsed = parseDisplayToIsoDateTime(next);
+            if (parsed !== null) emitChange(parsed);
+          }}
+          onBlur={(event) => {
+            const parsed = parseDisplayToIsoDateTime(displayValue);
+            if (parsed === null) {
+              setDisplayValue(formatIsoDateTimeForDisplay(value));
+            } else {
+              setDisplayValue(formatIsoDateTimeForDisplay(parsed));
+              emitChange(parsed);
+            }
+            onBlur?.(event);
+          }}
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="בחר תאריך ושעה"
+          onClick={() => openNativePicker(pickerRef)}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
+        >
+          <CalendarDays className="h-4 w-4" />
+        </button>
+        <input
+          ref={pickerRef}
+          type="datetime-local"
+          value={value}
+          onChange={(event) => {
+            const iso = event.target.value;
+            if (iso) {
+              setDisplayValue(formatIsoDateTimeForDisplay(iso));
+              emitChange(iso);
+            }
+          }}
+          tabIndex={-1}
+          aria-hidden="true"
+          className="absolute right-2.5 bottom-0 opacity-0 pointer-events-none w-0 h-0"
+        />
+      </div>
     );
   }
 );
