@@ -277,6 +277,7 @@ export default function NewOrderClient({
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [createCustomerName, setCreateCustomerName] = useState("");
   const [createCustomerPhone, setCreateCustomerPhone] = useState("");
+  const [createCustomerWhatsapp, setCreateCustomerWhatsapp] = useState("");
   const [createCustomerEmail, setCreateCustomerEmail] = useState("");
   const [createCustomerCity, setCreateCustomerCity] = useState("");
   const [createCustomerCityOther, setCreateCustomerCityOther] = useState("");
@@ -675,6 +676,7 @@ export default function NewOrderClient({
   function resetCreateCustomerForm() {
     setCreateCustomerName("");
     setCreateCustomerPhone("");
+    setCreateCustomerWhatsapp("");
     setCreateCustomerEmail("");
     setCreateCustomerCity("");
     setCreateCustomerCityOther("");
@@ -727,6 +729,7 @@ export default function NewOrderClient({
 
     const name = createCustomerName.trim();
     const email = createCustomerEmail.trim();
+    const whatsapp = createCustomerWhatsapp.trim();
     const city =
       createCustomerCity === "אחר"
         ? createCustomerCityOther.trim()
@@ -740,16 +743,8 @@ export default function NewOrderClient({
       setCreateCustomerError("יש להזין מספר טלפון.");
       return;
     }
-    if (!email) {
-      setCreateCustomerError("יש להזין אימייל לקוח עבור קבלה.");
-      return;
-    }
     if (!city) {
       setCreateCustomerError("יש להזין עיר למשלוח.");
-      return;
-    }
-    if (!address) {
-      setCreateCustomerError("יש להזין כתובת למשלוח.");
       return;
     }
 
@@ -792,9 +787,10 @@ export default function NewOrderClient({
         body: JSON.stringify({
           name,
           phone: createCustomerPhone.trim() || null,
-          email,
+          whatsapp: whatsapp || null,
+          email: email || null,
           city,
-          address,
+          address: address || null,
           notes: createCustomerNotes.trim() || null,
           requires_prepayment: createCustomerRequiresPrepayment,
         }),
@@ -1563,7 +1559,7 @@ export default function NewOrderClient({
           <DialogHeader>
             <DialogTitle>הוספת לקוח חדש</DialogTitle>
             <DialogDescription>
-              הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון, אימייל, עיר וכתובת.
+              הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון ועיר.
             </DialogDescription>
           </DialogHeader>
 
@@ -1591,7 +1587,15 @@ export default function NewOrderClient({
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm font-medium">אימייל *</label>
+              <label className="text-sm font-medium">וואטסאפ</label>
+              <Input
+                value={createCustomerWhatsapp}
+                onChange={(e) => setCreateCustomerWhatsapp(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">אימייל</label>
               <Input
                 value={createCustomerEmail}
                 onChange={(e) => setCreateCustomerEmail(e.target.value)}
@@ -1625,7 +1629,7 @@ export default function NewOrderClient({
             ) : null}
 
             <div className="space-y-1">
-              <label className="text-sm font-medium">כתובת *</label>
+              <label className="text-sm font-medium">כתובת</label>
               <Input
                 value={createCustomerAddress}
                 onChange={(e) => setCreateCustomerAddress(e.target.value)}

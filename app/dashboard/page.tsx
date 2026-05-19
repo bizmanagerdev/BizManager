@@ -248,7 +248,7 @@ export default async function DashboardPage() {
     .filter((row) => row.id);
 
   const cashFlowDomainBreakdown = cashFlowOverviewResult.data?.domainBreakdown ?? [];
-  const alertItems = alertsResult.alerts;
+  const alertItems = alertsResult.alerts.filter((alert) => alert.severity === "danger");
 
   const dashboardErrors = [
     dashboardError ? `דשבורד: ${dashboardError.message}` : null,
@@ -315,19 +315,25 @@ export default async function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {alertItems.map((alert) => (
-              <Link
-                key={alert.id}
-                href="/alerts"
-                className="flex items-center justify-between rounded-2xl border p-4 transition-colors hover:bg-muted/40"
-              >
-                <div className="space-y-1">
-                  <div className="font-medium">{alert.title}</div>
-                  <div className="text-sm text-muted-foreground">{alert.description}</div>
-                </div>
-                <Badge variant={badgeVariantForAlert(alert.severity)}>{formatCount(alert.count)}</Badge>
-              </Link>
-            ))}
+            {alertItems.length > 0 ? (
+              alertItems.map((alert) => (
+                <Link
+                  key={alert.id}
+                  href="/alerts"
+                  className="flex items-center justify-between rounded-2xl border p-4 transition-colors hover:bg-muted/40"
+                >
+                  <div className="space-y-1">
+                    <div className="font-medium">{alert.title}</div>
+                    <div className="text-sm text-muted-foreground">{alert.description}</div>
+                  </div>
+                  <Badge variant={badgeVariantForAlert(alert.severity)}>{formatCount(alert.count)}</Badge>
+                </Link>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+                אין התראות אדומות כרגע.
+              </div>
+            )}
           </CardContent>
         </Card>
 

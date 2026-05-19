@@ -2,6 +2,7 @@ import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import {
   getPayTrackingModeForWorkerType,
   isPayrollWorkerType,
+  normalizePayrollWorkerType,
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
 import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
@@ -135,12 +136,8 @@ export type WorkerBalanceRow = {
 export function isSalaryTrackedWorker(
   user: Pick<SalaryCenterUserRow, "role" | "payroll_worker_type" | "pay_tracking_mode">
 ) {
-  if (isPayrollWorkerType(user.payroll_worker_type)) {
-    return getPayTrackingModeForWorkerType(user.payroll_worker_type) === "payslip";
-  }
-  if (user.pay_tracking_mode === "payslip") return true;
-  if (user.pay_tracking_mode === "session") return false;
-  return user.role === "worker" || user.role === "office" || user.role === "admin";
+  const workerType = normalizePayrollWorkerType(user.payroll_worker_type, user.pay_tracking_mode);
+  return getPayTrackingModeForWorkerType(workerType) === "payslip";
 }
 
 export type GeneratePayslipsResult = {

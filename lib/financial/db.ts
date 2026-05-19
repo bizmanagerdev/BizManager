@@ -13,6 +13,7 @@ import {
   type ProjectRow,
   type PropertyRow,
   type SalaryAgreementLiteRow,
+  type WorkerDebtItemRow,
   type WorkerPaymentAllocationRow,
   type WorkerPaymentRow,
   type WorkerUserRow,
@@ -97,6 +98,54 @@ export async function scanWorkerPaymentRows(supabase: SupabaseClient, since?: st
     "payment_date",
     since
   );
+}
+
+export async function scanWorkerDebtItemRows(supabase: SupabaseClient, since?: string | null) {
+  const selectVariants = [
+    "source_type,source_id,user_id,project_id,source_date,due_date,period_month,owed_amount,payment_status",
+    "source_type,source_id,user_id,project_id,source_date,period_month,owed_amount,payment_status",
+    "source_type,source_id,user_id,project_id,source_date,due_date,owed_amount,payment_status",
+    "source_type,source_id,user_id,project_id,source_date,owed_amount,payment_status",
+    "source_type,source_id,user_id,source_date,due_date,period_month,owed_amount,payment_status",
+    "source_type,source_id,user_id,source_date,period_month,owed_amount,payment_status",
+    "source_type,source_id,user_id,source_date,owed_amount,payment_status",
+  ] as const;
+
+  let lastError: unknown = null;
+  for (const selectColumns of selectVariants) {
+    try {
+      const rows: WorkerDebtItemRow[] = [];
+      for (let rangeStart = 0; ; rangeStart += SCAN_CHUNK_SIZE) {
+        const rangeEnd = rangeStart + SCAN_CHUNK_SIZE - 1;
+        let q = supabase
+          .from("worker_debt_items_view")
+          .select(selectColumns)
+          .not("source_date", "is", null)
+          .order("source_date", { ascending: false })
+          .order("source_id", { ascending: false });
+        if (since) q = q.gte("source_date", since);
+        const { data, error } = await q.range(rangeStart, rangeEnd);
+        if (error) throw error;
+        const chunk = (data ?? []) as unknown as WorkerDebtItemRow[];
+        if (chunk.length === 0) break;
+        rows.push(...chunk);
+        if (chunk.length < SCAN_CHUNK_SIZE) break;
+      }
+      return rows;
+    } catch (error) {
+      lastError = error;
+      if (
+        isMissingColumnError(error, "project_id") ||
+        isMissingColumnError(error, "due_date") ||
+        isMissingColumnError(error, "period_month") ||
+        isMissingColumnError(error, "payment_status")
+      ) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
 }
 
 export async function fetchProjectsByIds(supabase: SupabaseClient, ids: string[]) {

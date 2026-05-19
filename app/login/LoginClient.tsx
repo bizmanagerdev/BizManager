@@ -2,6 +2,7 @@
 
 import { useState, type ChangeEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ export default function LoginClient() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [navTarget, setNavTarget] = useState<"forgot" | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   function navigateWithProgress(href: string) {
     if (loading) return;
@@ -95,14 +97,25 @@ export default function LoginClient() {
 
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground">סיסמה</label>
-          <Input
-            placeholder="הקלד/י סיסמה"
-            type="password"
-            value={password}
-            onChange={onPasswordChange}
-            autoComplete="current-password"
-            disabled={loading}
-          />
+          <div className="relative">
+            <Input
+              placeholder="הקלד/י סיסמה"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={onPasswordChange}
+              autoComplete="current-password"
+              disabled={loading}
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
 
         {err ? (

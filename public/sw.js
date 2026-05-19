@@ -1,4 +1,4 @@
-const V = "v6";
+const V = "v7";
 const STATIC_CACHE = `bizh-static-${V}`;   // immutable _next/static chunks
 const PAGES_CACHE  = `bizh-pages-${V}`;    // navigation responses
 const API_CACHE    = `bizh-api-${V}`;      // /api GET responses
@@ -6,6 +6,8 @@ const ALL_CACHES   = [STATIC_CACHE, PAGES_CACHE, API_CACHE];
 
 const PRECACHE = [
   "/",
+  "/dashboard",
+  "/login",
   "/favicon.ico",
   "/icon.svg",
   "/icon-192.png",
@@ -206,10 +208,11 @@ self.addEventListener("fetch", (event) => {
           return res;
         })
         .catch(async () => {
-          // Try the exact page, then dashboard, then root
+          // Try the exact page, then dashboard, then login, then root
           const cached =
             (await caches.match(request)) ??
             (await caches.match("/dashboard")) ??
+            (await caches.match("/login")) ??
             (await caches.match("/"));
           if (cached) return cached;
           return new Response(OFFLINE_HTML, {
@@ -232,5 +235,3 @@ self.addEventListener("fetch", (event) => {
     )
   );
 });
-</content>
-</invoke>

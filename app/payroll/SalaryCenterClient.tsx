@@ -479,6 +479,48 @@ export default function SalaryCenterClient({
     });
     return next;
   }, [protectedData]);
+  const effectiveWorkerBalancesByUserId = useMemo(() => {
+    const next = new Map(workerBalancesByUserId);
+
+    publicUsers.forEach((user) => {
+      const workerType = normalizePayrollWorkerType(user.payroll_worker_type, user.pay_tracking_mode);
+      if (workerType !== "hourly_payslip") return;
+
+      const existingBalance = next.get(user.id) ?? null;
+      const existingDebtItems = workerDebtItemsByUserId.get(user.id) ?? [];
+      if (existingDebtItems.length > 0) return;
+
+      const userSessions = visibleSessions.filter((session) => session.user_id === user.id);
+      if (userSessions.length === 0) return;
+
+      const earnedAmount = userSessions.reduce((sum, session) => sum + (sessionCostsById.get(session.id) ?? 0), 0);
+      if (earnedAmount <= 0.009) return;
+
+      const existingEarned = toNumber(existingBalance?.earned_amount);
+      const existingPaid = toNumber(existingBalance?.paid_amount);
+      const existingOwed = toNumber(existingBalance?.owed_amount);
+      if (existingEarned > 0.009 || existingPaid > 0.009 || existingOwed > 0.009) return;
+
+      next.set(user.id, {
+        user_id: user.id,
+        item_count: userSessions.length,
+        open_item_count: userSessions.length,
+        earned_amount: earnedAmount,
+        paid_amount: 0,
+        owed_amount: earnedAmount,
+        payment_status: "unpaid",
+        last_payment_date: null,
+      });
+    });
+
+    return next;
+  }, [
+    publicUsers,
+    sessionCostsById,
+    visibleSessions,
+    workerBalancesByUserId,
+    workerDebtItemsByUserId,
+  ]);
   useEffect(() => {
     setLocallyDeletedSessionIds((current) =>
       current.filter((sessionId) => publicSessions.some((session) => session.id === sessionId))
@@ -762,9 +804,19 @@ export default function SalaryCenterClient({
       monthlyPayslipWorkers: breakdown.monthlyPayslipWorkers,
       monthlyPayslipAmount: breakdown.monthlyPayslipAmount,
       unpaidPayslips: protectedData?.summary.unpaidOrUnfinishedPayslips ?? 0,
-      totalWorkerOwed: protectedData?.summary.totalWorkerOwed ?? 0,
+      totalWorkerOwed: [...effectiveWorkerBalancesByUserId.values()].reduce(
+        (sum, balance) => sum + toNumber(balance.owed_amount),
+        0
+      ),
     };
-  }, [currentMonthPayrollStatsByUserId, protectedData, publicUsers, selectedPayrollMonthKey, visibleSessions]);
+  }, [
+    currentMonthPayrollStatsByUserId,
+    effectiveWorkerBalancesByUserId,
+    protectedData,
+    publicUsers,
+    selectedPayrollMonthKey,
+    visibleSessions,
+  ]);
 
   function openCreateSession(userId = "") {
     setSessionMode("create");
@@ -1612,7 +1664,7 @@ export default function SalaryCenterClient({
     () => selectedWorkerMonthPayrollStats?.totalAmount ?? 0,
     [selectedWorkerMonthPayrollStats]
   );
-  const selectedWorkerBalance = selectedWorker ? workerBalancesByUserId.get(selectedWorker.id) ?? null : null;
+  const selectedWorkerBalance = selectedWorker ? effectiveWorkerBalancesByUserId.get(selectedWorker.id) ?? null : null;
   const selectedWorkerDebtItems = useMemo(() => {
     if (!selectedWorker) return [];
     const items = workerDebtItemsByUserId.get(selectedWorker.id) ?? [];
@@ -2291,7 +2343,7 @@ export default function SalaryCenterClient({
                             periodsById.get(a.payroll_period_id)?.period_month ?? ""
                           )
                         )[0] ?? null;
-                        const balance = workerBalancesByUserId.get(worker.id) ?? null;
+                        const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
                         const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
                         const monthlyLaborCost = monthStats.totalAmount;
 
@@ -2334,7 +2386,7 @@ export default function SalaryCenterClient({
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
-                                <PaymentStatusBadge status={balance?.payment_status} />
+                                <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
                               </SalaryProtected>
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap">{latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}</td>
@@ -2429,7 +2481,7 @@ export default function SalaryCenterClient({
                           totalMinutes: 0,
                           totalAmount: 0,
                         };
-                        const balance = workerBalancesByUserId.get(worker.id) ?? null;
+                        const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
                         const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
 
                         return (
@@ -2471,7 +2523,7 @@ export default function SalaryCenterClient({
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
-                                <PaymentStatusBadge status={balance?.payment_status} />
+                                <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
                               </SalaryProtected>
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap">{formatMinutes(monthStats.totalMinutes)}</td>
@@ -3330,7 +3382,12 @@ export default function SalaryCenterClient({
                               <Tag>{getBusinessDomainLabel(session.business_domain)}</Tag>
                               <Tag>{session.locked ? "נעול" : "פתוח לעריכה"}</Tag>
                               {payrollPeriod ? <Tag>{getPayrollPeriodLabel(payrollPeriod.status)}</Tag> : null}
-                              {debtItem ? <PaymentStatusBadge status={debtItem.payment_status} /> : null}
+                              {debtItem ? (
+                                <PaymentStatusBadge
+                                  status={debtItem.payment_status}
+                                  owedAmount={debtItem.owed_amount}
+                                />
+                              ) : null}
                             </div>
                             <div className="text-right">{`${formatDateTime(session.clock_in)}${session.clock_out ? ` - ${formatDateTime(session.clock_out)}` : ""}`}</div>
                           </div>
@@ -4581,7 +4638,17 @@ function StatusPill({
   return <Badge className={className}>{children}</Badge>;
 }
 
-function PaymentStatusBadge({ status }: { status: string | null | undefined }) {
+function PaymentStatusBadge({
+  status,
+  owedAmount,
+}: {
+  status: string | null | undefined;
+  owedAmount?: number | string | null;
+}) {
+  if (toNumber(owedAmount) <= 0.009) {
+    return <StatusBadge value="paid" type="payment" />;
+  }
+
   const normalized =
     status === "paid" ||
     status === "partial" ||

@@ -105,6 +105,18 @@ export type WorkerPaymentAllocationRow = {
   amount: number | string | null;
 };
 
+export type WorkerDebtItemRow = {
+  source_type: string | null;
+  source_id: string | null;
+  user_id: string | null;
+  project_id: string | null;
+  source_date: string | null;
+  due_date: string | null;
+  period_month: string | null;
+  owed_amount: number | string | null;
+  payment_status: string | null;
+};
+
 export type AttendanceSessionFinanceRow = {
   id: string;
   user_id: string | null;

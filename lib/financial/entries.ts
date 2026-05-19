@@ -17,10 +17,9 @@ import type {
   ProjectFinancialRow,
   ProjectRow,
   PropertyRow,
-  SalaryAgreementLiteRow,
+  WorkerDebtItemRow,
   WorkerPaymentAllocationRow,
   WorkerPaymentRow,
-  WorkerUserRow,
 } from "./types";
 import {
   isFutureEntry,
@@ -112,6 +111,28 @@ export function buildMonthlyWorkerOwedFlowMeta(clockInValue: string | null | und
     dueDate,
     recordedDate,
     stage: flowDate > referenceDate ? ("scheduled" as const) : ("pending" as const),
+  };
+}
+
+export function buildWorkerDebtItemFlowMeta(args: {
+  sourceDate: string | null | undefined;
+  dueDate: string | null | undefined;
+  sourceType: string | null | undefined;
+  referenceDate: string;
+}) {
+  const sourceDate = normalizeDate(args.sourceDate);
+  const explicitDueDate = normalizeDate(args.dueDate);
+  const monthlyMeta =
+    args.sourceType?.trim().toLowerCase() === "payslip"
+      ? buildMonthlyWorkerOwedFlowMeta(sourceDate, args.referenceDate)
+      : null;
+  const dueDate = explicitDueDate ?? monthlyMeta?.dueDate ?? sourceDate;
+  const flowDate = explicitDueDate ?? monthlyMeta?.flowDate ?? sourceDate ?? todayIso();
+  return {
+    flowDate,
+    dueDate,
+    recordedDate: sourceDate,
+    stage: flowDate > args.referenceDate ? ("scheduled" as const) : ("pending" as const),
   };
 }
 
@@ -239,34 +260,6 @@ export function isExcludedOrderStatus(status: string | null | undefined) {
 }
 
 // ─── Salary agreement helpers ─────────────────────────────────────────────────
-
-function isAgreementActiveOnDate(
-  agreement: SalaryAgreementLiteRow,
-  referenceDateValue: string | null | undefined
-) {
-  const userId = agreement.user_id?.trim();
-  const validFrom = normalizeDate(agreement.valid_from);
-  if (!userId || !validFrom) return false;
-  const point = normalizeDate(referenceDateValue) ?? todayIso();
-  if (validFrom > point) return false;
-  const validTo = normalizeDate(agreement.valid_to);
-  if (validTo && validTo < point) return false;
-  return true;
-}
-
-export function shouldAggregateWorkerDebt(args: {
-  worker: WorkerUserRow | null;
-  agreements: SalaryAgreementLiteRow[];
-  sessionDate: string | null | undefined;
-}) {
-  const trackingMode = args.worker?.pay_tracking_mode?.trim().toLowerCase() ?? "";
-  if (trackingMode === "payslip") return true;
-  return args.agreements.some(
-    (agreement) =>
-      agreement.salary_type?.trim().toLowerCase() === "hourly" &&
-      isAgreementActiveOnDate(agreement, args.sessionDate)
-  );
-}
 
 // ─── Summary + grouping ────────────────────────────────────────────────────────
 
@@ -593,11 +586,8 @@ export function buildWorkerPaymentEntries(args: {
 }
 
 export function buildWorkerOwedEntries(args: {
-  attendanceSessionRows: AttendanceSessionFinanceRow[];
+  debtItems: WorkerDebtItemRow[];
   sessionsById: Map<string, AttendanceSessionFinanceRow>;
-  allocations: WorkerPaymentAllocationRow[];
-  workerUsersById: Map<string, WorkerUserRow>;
-  salaryAgreementsByUserId: Map<string, SalaryAgreementLiteRow[]>;
   projectsById: Map<string, ProjectRow>;
   propertiesById: Map<string, PropertyRow>;
   propertyCustomersById: Map<string, Set<string>>;
@@ -606,53 +596,57 @@ export function buildWorkerOwedEntries(args: {
   customerProjectSet: Set<string>;
   referenceDate: string;
 }): FinancialEntry[] {
-  const { attendanceSessionRows, sessionsById, allocations, workerUsersById, salaryAgreementsByUserId, projectsById, propertiesById, propertyCustomersById, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
+  const { debtItems, sessionsById, projectsById, propertiesById, propertyCustomersById, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
 
-  const paidWorkerAmountBySessionId = allocations.reduce((map, allocation) => {
-    if (allocation.source_type !== "session" || !allocation.attendance_session_id) return map;
-    const amount = Math.abs(toNumber(allocation.amount));
-    if (!(amount > 0)) return map;
-    map.set(allocation.attendance_session_id, (map.get(allocation.attendance_session_id) ?? 0) + amount);
-    return map;
-  }, new Map<string, number>());
-
-  const rawEntries = attendanceSessionRows.flatMap((session) => {
-    if (!session.id) return [];
-
-    const businessDomain = session.business_domain ? normalizeDomain(session.business_domain) : "general_business";
-    const linkedProject = session.project_id ? projectsById.get(session.project_id) ?? null : null;
-    const linkedProperty = session.property_id ? propertiesById.get(session.property_id) ?? null : null;
-    const propertyCustomers = session.property_id ? propertyCustomersById.get(session.property_id) ?? null : null;
-
-    if (!matchesCustomerFilter({
-      customerId, customerProjectIds: customerProjectSet,
-      projectId: session.project_id ?? null, orderCustomerId: null,
-      propertyCustomerIds: propertyCustomers, projectCustomerId: linkedProject?.customer_id ?? null,
-    })) return [];
-
-    const laborCost = Math.max(0, toNumber(session.labor_cost));
-    const explicitPaidAmount = Math.max(0, toNumber(session.paid_amount));
-    const allocatedPaidAmount = paidWorkerAmountBySessionId.get(session.id) ?? 0;
-    const effectivePaidAmount = Math.max(explicitPaidAmount, allocatedPaidAmount);
-    const explicitOwedAmount = Math.max(0, toNumber(session.owed_amount));
-    const computedOwedAmount = laborCost > 0 ? Math.max(laborCost - effectivePaidAmount, 0) : 0;
-    const amount =
-      laborCost > 0 && effectivePaidAmount + 0.009 >= laborCost ? 0
-        : explicitOwedAmount > 0 ? explicitOwedAmount
-        : computedOwedAmount;
-
+  return debtItems.flatMap((item, index) => {
+    const amount = Math.max(0, toNumber(item.owed_amount));
     if (!(amount > 0)) return [];
 
-    const flowMeta = buildWorkerOwedFlowMeta(session.clock_in);
-    const source = buildSource({
-      businessDomain, projectId: session.project_id ?? null, orderId: null, propertyId: session.property_id ?? null,
-      projectName: linkedProject?.name?.trim() || null, propertyAddress: linkedProperty?.address?.trim() || null,
+    const sourceType = item.source_type?.trim().toLowerCase() ?? "";
+    const session =
+      sourceType === "session" && item.source_id
+        ? sessionsById.get(item.source_id) ?? null
+        : null;
+    const projectId = item.project_id ?? session?.project_id ?? null;
+    const propertyId = session?.property_id ?? null;
+    const businessDomain = session?.business_domain ? normalizeDomain(session.business_domain) : "general_business";
+    const linkedProject = projectId ? projectsById.get(projectId) ?? null : null;
+    const linkedProperty = propertyId ? propertiesById.get(propertyId) ?? null : null;
+    const propertyCustomers = propertyId ? propertyCustomersById.get(propertyId) ?? null : null;
+
+    if (!matchesCustomerFilter({
+      customerId,
+      customerProjectIds: customerProjectSet,
+      projectId,
+      orderCustomerId: null,
+      propertyCustomerIds: propertyCustomers,
+      projectCustomerId: linkedProject?.customer_id ?? null,
+    })) return [];
+
+    const flowMeta = buildWorkerDebtItemFlowMeta({
+      sourceDate: item.source_date ?? session?.clock_in ?? null,
+      dueDate: item.due_date,
+      sourceType: item.source_type,
+      referenceDate,
     });
-    const workerName = session.user_id ? recordedByNames[session.user_id] ?? null : null;
-    const description = buildWorkerPaymentDescription(workerName);
+    const source = buildSource({
+      businessDomain,
+      projectId,
+      orderId: null,
+      propertyId,
+      projectName: linkedProject?.name?.trim() || null,
+      propertyAddress: linkedProperty?.address?.trim() || null,
+    });
+    const workerId = item.user_id?.trim() || session?.user_id?.trim() || "";
+    const workerName = workerId ? recordedByNames[workerId] ?? null : null;
+    const description =
+      sourceType === "payslip" && item.period_month
+        ? `${buildWorkerPaymentDescription(workerName)} • ${item.period_month}`
+        : buildWorkerPaymentDescription(workerName);
+    const reference = sourceType === "payslip" ? "יתרה לתשלום • תלוש שכר" : "יתרה לתשלום";
 
     return [{
-      id: `worker-owed-session:${session.id}`,
+      id: `worker-owed:${sourceType || "unknown"}:${item.source_id || String(index)}`,
       type: "outflow" as const,
       amount,
       signedAmount: -amount,
@@ -668,66 +662,16 @@ export function buildWorkerOwedEntries(args: {
       sourceHref: source.href,
       description,
       origin: "worker_owed" as const,
-      reference: "יתרה לתשלום",
+      reference,
       paymentMethod: null,
       paymentMethodLabel: null,
-      paymentStatus: normalizePaymentStatus(session.payment_status),
+      paymentStatus: normalizePaymentStatus(item.payment_status),
       recordedByName: null,
       customerId: linkedProject?.customer_id ?? null,
-      searchText: [description, source.label, "יתרה לתשלום", workerName ?? "", getBusinessDomainLabel(businessDomain)]
+      searchText: [description, source.label, reference, workerName ?? "", getBusinessDomainLabel(businessDomain)]
         .join(" ").toLowerCase(),
     } as FinancialEntry];
   });
-
-  const aggregatedMap = new Map<string, FinancialEntry>();
-  const directEntries: FinancialEntry[] = rawEntries.flatMap((entry) => {
-    const sessionId = entry.id.replace("worker-owed-session:", "");
-    const session = sessionsById.get(sessionId) ?? null;
-    const workerId = session?.user_id?.trim() ?? "";
-    const worker = workerId ? workerUsersById.get(workerId) ?? null : null;
-    const agreements = workerId ? salaryAgreementsByUserId.get(workerId) ?? [] : [];
-    const shouldAggregate = shouldAggregateWorkerDebt({ worker, agreements, sessionDate: session?.clock_in ?? null });
-
-    if (!shouldAggregate || !workerId) return [entry];
-
-    const workerName = recordedByNames[workerId] ?? null;
-    const monthKey = monthKeyFromIso(session?.clock_in ?? null);
-    const monthlyFlowMeta = buildMonthlyWorkerOwedFlowMeta(session?.clock_in ?? null, referenceDate);
-    const key = `worker-owed-user:${workerId}:${monthKey || "unknown"}`;
-    const existing = aggregatedMap.get(key);
-
-    if (!existing) {
-      aggregatedMap.set(key, {
-        ...entry,
-        id: key,
-        flowDate: monthlyFlowMeta.flowDate,
-        dueDate: monthlyFlowMeta.dueDate,
-        stage: monthlyFlowMeta.stage,
-        sourceKind: "general",
-        sourceId: null,
-        sourceLabel: "שכר עובדים",
-        sourceHref: null,
-        description: monthKey
-          ? `${buildWorkerPaymentDescription(workerName)} • ${monthKey}`
-          : buildWorkerPaymentDescription(workerName),
-        searchText: [
-          monthKey ? `${buildWorkerPaymentDescription(workerName)} ${monthKey}` : buildWorkerPaymentDescription(workerName),
-          "יתרה לתשלום", "שכר עובדים", workerName ?? "", entry.domainName,
-        ].join(" ").toLowerCase(),
-      });
-      return [];
-    }
-
-    existing.amount += entry.amount;
-    existing.signedAmount -= entry.amount;
-    existing.recordedDate =
-      existing.recordedDate && entry.recordedDate
-        ? entry.recordedDate < existing.recordedDate ? entry.recordedDate : existing.recordedDate
-        : existing.recordedDate ?? entry.recordedDate;
-    return [];
-  });
-
-  return [...directEntries, ...aggregatedMap.values()];
 }
 
 export function buildProjectReceivableEntries(args: {

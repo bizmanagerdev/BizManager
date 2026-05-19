@@ -9,11 +9,10 @@ import {
   fetchProjectsByIds,
   fetchPropertyCustomerLinks,
   fetchPropertiesByIds,
-  fetchSalaryAgreementsByUserIds,
   fetchWorkerPaymentAllocationsByPaymentIds,
-  fetchWorkerUsersByIds,
   resolveCustomerProjectIds,
   scanAttendanceSessionRows,
+  scanWorkerDebtItemRows,
   scanExpenseRows,
   scanOrderRows,
   scanPaymentRows,
@@ -103,9 +102,10 @@ export async function getFinancialPageData(
     scanExpenseRows(supabase, scanSince),
     (async () => {
       try {
-        const [workerPaymentRows, attendanceSessionRows] = await Promise.all([
+        const [workerPaymentRows, attendanceSessionRows, workerDebtItemRows] = await Promise.all([
           scanWorkerPaymentRows(supabase, scanSince),
           scanAttendanceSessionRows(supabase, scanSince),
+          scanWorkerDebtItemRows(supabase, scanSince),
         ]);
         const workerPaymentIds = workerPaymentRows.map((row) => row.id);
         const allocations = await fetchWorkerPaymentAllocationsByPaymentIds(supabase, workerPaymentIds);
@@ -114,13 +114,14 @@ export async function getFinancialPageData(
             .filter((row) => row.id)
             .map((row) => [row.id, row] as const)
         );
-        return { workerPaymentRows, allocations, attendanceSessionRows, sessionsById };
+        return { workerPaymentRows, allocations, attendanceSessionRows, workerDebtItemRows, sessionsById };
       } catch (error) {
         if (isPermissionDeniedError(error)) {
           return {
             workerPaymentRows: [],
             allocations: [],
             attendanceSessionRows: [],
+            workerDebtItemRows: [],
             sessionsById: new Map(),
           };
         }
@@ -146,6 +147,7 @@ export async function getFinancialPageData(
     ...paymentLinks.map((row) => row.projectId),
     ...expenseRows.map((row) => row.project_id || projectExpenseLinksByExpenseId.get(row.id) || null),
     ...workerPaymentsResult.attendanceSessionRows.map((row) => row.project_id),
+    ...workerPaymentsResult.workerDebtItemRows.map((row) => row.project_id),
   ]);
   const orderIds = uniqueStrings([
     ...orderRows.map((row) => row.id),
@@ -157,16 +159,13 @@ export async function getFinancialPageData(
     ...expenseRows.map((row) => row.property_id),
     ...workerPaymentsResult.attendanceSessionRows.map((row) => row.property_id),
   ]);
-  const workerUserIds = uniqueStrings([
-    ...workerPaymentsResult.workerPaymentRows.map((row) => row.user_id),
-    ...workerPaymentsResult.attendanceSessionRows.map((row) => row.user_id),
-  ]);
   const recordedByValues = uniqueStrings([
     ...paymentRows.map((row) => row.recorded_by),
     ...expenseRows.map((row) => row.recorded_by),
     ...workerPaymentsResult.workerPaymentRows.map((row) => row.recorded_by),
     ...workerPaymentsResult.workerPaymentRows.map((row) => row.user_id),
     ...workerPaymentsResult.attendanceSessionRows.map((row) => row.user_id),
+    ...workerPaymentsResult.workerDebtItemRows.map((row) => row.user_id),
   ]);
 
   const [
@@ -177,8 +176,6 @@ export async function getFinancialPageData(
     propertiesById,
     propertyCustomersById,
     recordedByNames,
-    workerUsersById,
-    salaryAgreementRows,
   ] = await Promise.all([
     fetchProjectsByIds(supabase, projectIds),
     fetchProjectFinancialsByIds(supabase, projectIds),
@@ -187,18 +184,7 @@ export async function getFinancialPageData(
     fetchPropertiesByIds(supabase, propertyIds),
     fetchPropertyCustomerLinks(supabase, propertyIds),
     resolveUserDisplayNamesForValues(supabase, recordedByValues),
-    fetchWorkerUsersByIds(supabase, workerUserIds),
-    fetchSalaryAgreementsByUserIds(supabase, workerUserIds),
   ]);
-
-  const salaryAgreementsByUserId = salaryAgreementRows.reduce((map, agreement) => {
-    const userId = agreement.user_id?.trim();
-    if (!userId) return map;
-    const current = map.get(userId) ?? [];
-    current.push(agreement);
-    map.set(userId, current);
-    return map;
-  }, new Map<string, typeof salaryAgreementRows>());
 
   const paidByProjectId = paymentRows.reduce((map, row) => {
     const links = resolvePaymentLinks(row);
@@ -225,11 +211,8 @@ export async function getFinancialPageData(
     ...sharedArgs,
   });
   const workerOwedEntries = buildWorkerOwedEntries({
-    attendanceSessionRows: workerPaymentsResult.attendanceSessionRows,
+    debtItems: workerPaymentsResult.workerDebtItemRows,
     sessionsById: workerPaymentsResult.sessionsById,
-    allocations: workerPaymentsResult.allocations,
-    workerUsersById,
-    salaryAgreementsByUserId,
     ...sharedArgs,
   });
   const projectReceivableEntries = buildProjectReceivableEntries({
