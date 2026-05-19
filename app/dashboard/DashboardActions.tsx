@@ -43,6 +43,8 @@ import {
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
+import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
 
 type Row = Record<string, unknown>;
 
@@ -72,17 +74,6 @@ type OpenSessionInfo = {
   clock_in: string;
 };
 
-type ContactDraft = {
-  full_name: string;
-  role: string;
-  phone: string;
-  email: string;
-  whatsapp: string;
-  notes: string;
-  is_primary: boolean;
-  active: boolean;
-};
-
 type PaymentChoice = "none" | "paid" | "partial";
 type ProjectDialogStep = "customer" | "details";
 
@@ -101,19 +92,6 @@ function getFirstString(row: Row, keys: string[]) {
 
 function normalizePhone(value: string) {
   return value.replace(/[^\d+]/g, "");
-}
-
-function makeEmptyContactDraft(): ContactDraft {
-  return {
-    full_name: "",
-    role: "",
-    phone: "",
-    email: "",
-    whatsapp: "",
-    notes: "",
-    is_primary: false,
-    active: true,
-  };
 }
 
 function getTodayDate() {
@@ -477,20 +455,7 @@ export default function DashboardActions({
   const [projectEndDate, setProjectEndDate] = useState(nextMonth(getTodayDate()));
   const [projectNotes, setProjectNotes] = useState("");
   const [projectCreateCustomerOpen, setProjectCreateCustomerOpen] = useState(false);
-  const [projectCreateCustomerSubmitting, setProjectCreateCustomerSubmitting] = useState(false);
-  const [projectCreateCustomerError, setProjectCreateCustomerError] = useState<string | null>(null);
   const [projectCreateCustomerReturnToProject, setProjectCreateCustomerReturnToProject] = useState(false);
-  const [projectCreateCustomerName, setProjectCreateCustomerName] = useState("");
-  const [projectCreateCustomerPhone, setProjectCreateCustomerPhone] = useState("");
-  const [projectCreateCustomerWhatsapp, setProjectCreateCustomerWhatsapp] = useState("");
-  const [projectCreateCustomerEmail, setProjectCreateCustomerEmail] = useState("");
-  const [projectCreateCustomerNameForInvoice, setProjectCreateCustomerNameForInvoice] = useState("");
-  const [projectCreateCustomerRegNumber, setProjectCreateCustomerRegNumber] = useState("");
-  const [projectCreateCustomerCity, setProjectCreateCustomerCity] = useState("");
-  const [projectCreateCustomerCityOther, setProjectCreateCustomerCityOther] = useState("");
-  const [projectCreateCustomerAddress, setProjectCreateCustomerAddress] = useState("");
-  const [projectCreateCustomerNotes, setProjectCreateCustomerNotes] = useState("");
-  const [projectCreateCustomerContacts, setProjectCreateCustomerContacts] = useState<ContactDraft[]>([]);
 
   const [taskSubmitting, setTaskSubmitting] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
@@ -770,34 +735,7 @@ export default function DashboardActions({
 
   function resetProjectCustomerCreateForm() {
     setProjectCreateCustomerOpen(false);
-    setProjectCreateCustomerSubmitting(false);
-    setProjectCreateCustomerError(null);
     setProjectCreateCustomerReturnToProject(false);
-    setProjectCreateCustomerName("");
-    setProjectCreateCustomerPhone("");
-    setProjectCreateCustomerWhatsapp("");
-    setProjectCreateCustomerEmail("");
-    setProjectCreateCustomerNameForInvoice("");
-    setProjectCreateCustomerRegNumber("");
-    setProjectCreateCustomerCity("");
-    setProjectCreateCustomerCityOther("");
-    setProjectCreateCustomerAddress("");
-    setProjectCreateCustomerNotes("");
-    setProjectCreateCustomerContacts([]);
-  }
-
-  function addProjectCreateCustomerContact() {
-    setProjectCreateCustomerContacts((prev) => [...prev, makeEmptyContactDraft()]);
-  }
-
-  function updateProjectCreateCustomerContact(index: number, patch: Partial<ContactDraft>) {
-    setProjectCreateCustomerContacts((prev) =>
-      prev.map((contact, currentIndex) => (currentIndex === index ? { ...contact, ...patch } : contact))
-    );
-  }
-
-  function removeProjectCreateCustomerContact(index: number) {
-    setProjectCreateCustomerContacts((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
   }
 
   function resetTaskForm() {
@@ -914,127 +852,6 @@ export default function DashboardActions({
       setProjectError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
     } finally {
       setProjectSubmitting(false);
-    }
-  }
-
-  async function createProjectCustomer() {
-    setProjectCreateCustomerError(null);
-
-    const name = projectCreateCustomerName.trim();
-    const email = projectCreateCustomerEmail.trim();
-    const city =
-      projectCreateCustomerCity === "אחר"
-        ? projectCreateCustomerCityOther.trim()
-        : projectCreateCustomerCity.trim();
-    const address = projectCreateCustomerAddress.trim();
-
-    if (!name || !projectCreateCustomerPhone.trim() || !city) {
-      setProjectCreateCustomerError("יש למלא את כל שדות החובה: שם, טלפון ועיר.");
-      return;
-    }
-
-    const preparedContacts = projectCreateCustomerContacts
-      .map((contact) => ({
-        full_name: contact.full_name.trim(),
-        role: contact.role.trim() || null,
-        phone: contact.phone.trim() || null,
-        email: contact.email.trim() || null,
-        whatsapp: contact.whatsapp.trim() || null,
-        notes: contact.notes.trim() || null,
-        is_primary: contact.active ? contact.is_primary : false,
-        active: contact.active,
-      }))
-      .filter(
-        (contact) =>
-          contact.full_name ||
-          contact.role ||
-          contact.phone ||
-          contact.email ||
-          contact.whatsapp ||
-          contact.notes
-      );
-    const invalidContactIndex = preparedContacts.findIndex((contact) => !contact.full_name);
-    if (invalidContactIndex >= 0) {
-      setProjectCreateCustomerError(`איש קשר ${invalidContactIndex + 1} חייב לכלול שם מלא.`);
-      return;
-    }
-    const hasPrimaryContact = preparedContacts.some((contact) => contact.is_primary);
-    const normalizedContacts = preparedContacts.map((contact, index) => ({
-      ...contact,
-      is_primary: hasPrimaryContact ? contact.is_primary : index === 0,
-    }));
-
-    setProjectCreateCustomerSubmitting(true);
-    try {
-      const res = await fetch("/api/customers/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name,
-          name_for_invoice: projectCreateCustomerNameForInvoice.trim() || null,
-          registration_number: projectCreateCustomerRegNumber.trim() || null,
-          phone: projectCreateCustomerPhone.trim() || null,
-          whatsapp: projectCreateCustomerWhatsapp.trim() || null,
-          email: email || null,
-          city,
-          address,
-          notes: projectCreateCustomerNotes.trim() || null,
-        }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: Row };
-      const createdCustomer = json.customer;
-      const customerId = createdCustomer ? getString(createdCustomer, "id") : "";
-      if (!res.ok || !createdCustomer || !customerId) {
-        setProjectCreateCustomerError(json.error ?? "יצירת לקוח נכשלה.");
-        return;
-      }
-
-      for (const [index, contact] of normalizedContacts.entries()) {
-        const contactRes = await fetch("/api/customer-contacts/create", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            customer_id: customerId,
-            ...contact,
-          }),
-        });
-
-        const contactJson = (await contactRes.json().catch(() => ({}))) as {
-          error?: string;
-          contact?: Row;
-        };
-
-        if (!contactRes.ok || !contactJson.contact) {
-          const detail = contact.full_name || `#${index + 1}`;
-          if (typeof window !== "undefined") {
-            window.alert(contactJson.error ?? `הלקוח נוצר, אבל איש הקשר ${detail} לא נוצר בהצלחה.`);
-          }
-          break;
-        }
-      }
-
-      setProjectCustomerOptions((prev) => {
-        const next = [createdCustomer, ...prev.filter((row) => getString(row, "id") !== customerId)];
-        return next;
-      });
-      if (projectCreateCustomerReturnToProject) {
-        setProjectCustomerId(customerId);
-        setProjectCustomerQuery(
-          getFirstString(createdCustomer, ["name", "name_for_invoice", "email", "phone"]) || HEBREW.customerFallback
-        );
-        setProjectStep("details");
-        resetProjectCustomerCreateForm();
-        toast.success("הלקוח נוצר ונבחר לפרויקט.");
-      } else {
-        resetProjectCustomerCreateForm();
-        router.refresh();
-        toast.success("הלקוח נשמר.");
-      }
-    } catch (error: unknown) {
-      setProjectCreateCustomerError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
-    } finally {
-      setProjectCreateCustomerSubmitting(false);
     }
   }
 
@@ -1675,7 +1492,6 @@ export default function DashboardActions({
           className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
           onClick={() => {
             setProjectCreateCustomerReturnToProject(false);
-            setProjectCreateCustomerError(null);
             setProjectCreateCustomerOpen(true);
           }}
         >
@@ -2181,7 +1997,6 @@ export default function DashboardActions({
                     onClick={() => {
                       setProjectCreateCustomerReturnToProject(true);
                       setProjectCreateCustomerOpen(true);
-                      setProjectCreateCustomerError(null);
                     }}
                         disabled={projectSubmitting}
                       >
@@ -2318,7 +2133,6 @@ export default function DashboardActions({
                   onClick={() => {
                     setProjectCreateCustomerReturnToProject(true);
                     setProjectCreateCustomerOpen(true);
-                    setProjectCreateCustomerError(null);
                   }}
                 disabled={projectSubmitting}
               >
@@ -2353,276 +2167,33 @@ export default function DashboardActions({
         </AdaptiveDialog>
       </Dialog>
 
-      <Dialog
+      <CreateCustomerDialog
         open={projectCreateCustomerOpen}
-        onOpenChange={(open) => {
-          if (!open && projectCreateCustomerSubmitting) return;
-          setProjectCreateCustomerOpen(open);
-          if (!open) {
-            setProjectCreateCustomerError(null);
+        onOpenChange={setProjectCreateCustomerOpen}
+        description={
+          projectCreateCustomerReturnToProject
+            ? "הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון ועיר."
+            : "יוצרים לקוח חדש ישירות מהדשבורד. שדות חובה: שם, טלפון ועיר."
+        }
+        onCreated={(customer: CreatedCustomer) => {
+          const customerAsRow: Row = { ...customer };
+          setProjectCustomerOptions((prev) => [
+            customerAsRow,
+            ...prev.filter((row) => getString(row, "id") !== customer.id),
+          ]);
+          if (projectCreateCustomerReturnToProject) {
+            setProjectCustomerId(customer.id);
+            setProjectCustomerQuery(customer.name);
+            setProjectStep("details");
+            setProjectCreateCustomerReturnToProject(false);
+            toast.success("הלקוח נוצר ונבחר לפרויקט.");
+          } else {
+            setProjectCreateCustomerReturnToProject(false);
+            router.refresh();
+            toast.success("הלקוח נשמר.");
           }
         }}
-      >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>הוספת לקוח חדש</DialogTitle>
-            <DialogDescription>
-              {projectCreateCustomerReturnToProject
-                ? "הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון ועיר."
-                : "יוצרים לקוח חדש ישירות מהדשבורד. שדות חובה: שם, טלפון ועיר."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void createProjectCustomer();
-            }}
-          >
-            <fieldset disabled={projectCreateCustomerSubmitting} className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">שם לקוח *</label>
-                <Input
-                  value={projectCreateCustomerName}
-                  onChange={(e) => setProjectCreateCustomerName(e.target.value)}
-                />
-              </div>
-
-              <AdaptiveGrid variant="formTwo">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">טלפון *</label>
-                  <Input
-                    value={projectCreateCustomerPhone}
-                    onChange={(e) => setProjectCreateCustomerPhone(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">וואטסאפ</label>
-                  <Input
-                    value={projectCreateCustomerWhatsapp}
-                    onChange={(e) => setProjectCreateCustomerWhatsapp(e.target.value)}
-                  />
-                </div>
-              </AdaptiveGrid>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">אימייל</label>
-                <Input
-                  type="email"
-                  value={projectCreateCustomerEmail}
-                  onChange={(e) => setProjectCreateCustomerEmail(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">שם לחשבונית</label>
-                <Input
-                  value={projectCreateCustomerNameForInvoice}
-                  onChange={(e) => setProjectCreateCustomerNameForInvoice(e.target.value)}
-                  placeholder="אם שונה משם הלקוח"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">ח.פ / ת.ז</label>
-                <Input
-                  value={projectCreateCustomerRegNumber}
-                  onChange={(e) => setProjectCreateCustomerRegNumber(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">עיר *</label>
-                <select
-                  value={projectCreateCustomerCity}
-                  onChange={(e) => setProjectCreateCustomerCity(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="">בחר עיר...</option>
-                  {CITY_OPTIONS.map((city) => (
-                    <option key={city} value={city}>
-                      {city}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {projectCreateCustomerCity === "אחר" ? (
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">עיר (הקלדה חופשית) *</label>
-                  <Input
-                    value={projectCreateCustomerCityOther}
-                    onChange={(e) => setProjectCreateCustomerCityOther(e.target.value)}
-                  />
-                </div>
-              ) : null}
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">כתובת</label>
-                <Input
-                  value={projectCreateCustomerAddress}
-                  onChange={(e) => setProjectCreateCustomerAddress(e.target.value)}
-                />
-              </div>
-
-              <details
-                className="rounded-md border border-dashed p-3"
-                open={Boolean(projectCreateCustomerNotes || projectCreateCustomerContacts.length > 0)}
-              >
-                <summary className="cursor-pointer text-sm font-medium">פרטים נוספים ללקוח</summary>
-                <div className="mt-3 space-y-3">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">הערות</label>
-                    <Textarea
-                      value={projectCreateCustomerNotes}
-                      onChange={(e) => setProjectCreateCustomerNotes(e.target.value)}
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="space-y-3 rounded-md border p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <div className="text-sm font-medium">אנשי קשר</div>
-                        <div className="text-xs text-muted-foreground">
-                          אפשר להוסיף אנשי קשר כבר ביצירת הלקוח.
-                        </div>
-                      </div>
-                      <Button type="button" variant="outline" size="sm" onClick={addProjectCreateCustomerContact}>
-                        הוספת איש קשר
-                      </Button>
-                    </div>
-                    {projectCreateCustomerContacts.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">עדיין לא נוספו אנשי קשר.</p>
-                    ) : null}
-                    {projectCreateCustomerContacts.map((contact, index) => (
-                      <div
-                        key={`dashboard-create-customer-contact-${index}`}
-                        className="space-y-3 rounded-md border bg-background p-3"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-medium">איש קשר {index + 1}</div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeProjectCreateCustomerContact(index)}
-                          >
-                            הסרה
-                          </Button>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium">שם מלא *</label>
-                          <Input
-                            value={contact.full_name}
-                            onChange={(e) =>
-                              updateProjectCreateCustomerContact(index, { full_name: e.target.value })
-                            }
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium">תפקיד</label>
-                          <Input
-                            value={contact.role}
-                            onChange={(e) =>
-                              updateProjectCreateCustomerContact(index, { role: e.target.value })
-                            }
-                          />
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium">טלפון</label>
-                            <Input
-                              value={contact.phone}
-                              onChange={(e) =>
-                                updateProjectCreateCustomerContact(index, { phone: e.target.value })
-                              }
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-sm font-medium">וואטסאפ</label>
-                            <Input
-                              value={contact.whatsapp}
-                              onChange={(e) =>
-                                updateProjectCreateCustomerContact(index, { whatsapp: e.target.value })
-                              }
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium">אימייל</label>
-                          <Input
-                            value={contact.email}
-                            onChange={(e) =>
-                              updateProjectCreateCustomerContact(index, { email: e.target.value })
-                            }
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium">הערות</label>
-                          <Textarea
-                            value={contact.notes}
-                            onChange={(e) =>
-                              updateProjectCreateCustomerContact(index, { notes: e.target.value })
-                            }
-                            rows={2}
-                          />
-                        </div>
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={contact.is_primary}
-                            onChange={(e) =>
-                              updateProjectCreateCustomerContact(index, {
-                                is_primary: e.target.checked,
-                                active: e.target.checked ? true : contact.active,
-                              })
-                            }
-                          />
-                          <span>איש קשר ראשי</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={contact.active}
-                            onChange={(e) =>
-                              updateProjectCreateCustomerContact(index, { active: e.target.checked })
-                            }
-                          />
-                          <span>פעיל</span>
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </details>
-            </fieldset>
-
-            {projectCreateCustomerError ? (
-              <p className="text-sm text-destructive">{projectCreateCustomerError}</p>
-            ) : null}
-
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={resetProjectCustomerCreateForm}
-                disabled={projectCreateCustomerSubmitting}
-              >
-                ביטול
-              </Button>
-              <Button type="submit" disabled={projectCreateCustomerSubmitting}>
-                {projectCreateCustomerSubmitting ? "שומר..." : "שמירת לקוח"}
-              </Button>
-            </div>
-            {projectCreateCustomerSubmitting ? (
-              <p className="text-xs text-muted-foreground">יוצר לקוח חדש, נא להמתין...</p>
-            ) : null}
-          </form>
-        </AdaptiveDialog>
-      </Dialog>
+      />
 
       <Dialog
         open={taskOpen}

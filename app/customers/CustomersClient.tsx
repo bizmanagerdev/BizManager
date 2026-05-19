@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
+import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
+import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
 import {
   AdaptiveCell,
   AdaptiveDialog,
@@ -29,35 +30,6 @@ import { Badge } from "@/components/ui/badge";
 
 type Row = Record<string, unknown>;
 type FilterMode = "all" | "yes" | "no";
-type ContactDraft = {
-  full_name: string;
-  role: string;
-  phone: string;
-  email: string;
-  whatsapp: string;
-  notes: string;
-  is_primary: boolean;
-  active: boolean;
-};
-
-const CITY_OPTIONS = [
-  "ירושלים",
-  "בני-ברק",
-  "אלעד",
-  "ביתר עילית",
-  "מודיעין עילית",
-  "בית שמש",
-  "אשדוד",
-  "דימונה",
-  "מירון",
-  "תל אביב",
-  "פתח תקווה",
-  "חיפה",
-  "נתניה",
-  "באר שבע",
-  "ראשון לציון",
-  "אחר",
-];
 
 const s = (row: Row, key: string) => (typeof row[key] === "string" ? (row[key] as string) : "");
 const n = (row: Row, key: string) => {
@@ -77,16 +49,6 @@ const dateText = (v: string) => {
 };
 const morningClientUrl = (morningClientId: string) =>
   `https://app.greeninvoice.co.il/incomes/clients/${encodeURIComponent(morningClientId)}/documents`;
-const makeEmptyContactDraft = (): ContactDraft => ({
-  full_name: "",
-  role: "",
-  phone: "",
-  email: "",
-  whatsapp: "",
-  notes: "",
-  is_primary: false,
-  active: true,
-});
 
 function customerFlagBadgeClass(tone: "success" | "danger" | "neutral") {
   switch (tone) {
@@ -121,20 +83,6 @@ export default function CustomersClient({
   const [activeOnly, setActiveOnly] = useState<FilterMode>("all");
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [createErr, setCreateErr] = useState("");
-  const [createLoading, setCreateLoading] = useState(false);
-  const [name, setName] = useState("");
-  const [nameForInvoice, setNameForInvoice] = useState("");
-  const [regNumber, setRegNumber] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
-  const [city, setCity] = useState("");
-  const [cityOther, setCityOther] = useState("");
-  const [address, setAddress] = useState("");
-  const [notes, setNotes] = useState("");
-  const [requiresPrepayment, setRequiresPrepayment] = useState(false);
-  const [createContacts, setCreateContacts] = useState<ContactDraft[]>([]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editErr, setEditErr] = useState("");
@@ -190,35 +138,6 @@ export default function CustomersClient({
     });
   }, [rows, query, withProjects, withOrders, withDebt, activeOnly]);
 
-  // Restore create-form draft on mount (survives tab kills on mobile)
-  useEffect(() => {
-    const draft = loadDraft<{
-      name: string; nameForInvoice: string; regNumber: string;
-      email: string; phone: string; whatsapp: string;
-      city: string; cityOther: string; address: string; notes: string;
-      requiresPrepayment: boolean; createContacts: ContactDraft[];
-    }>("customer-create");
-    if (!draft) return;
-    if (draft.name) setName(draft.name);
-    if (draft.nameForInvoice) setNameForInvoice(draft.nameForInvoice);
-    if (draft.regNumber) setRegNumber(draft.regNumber);
-    if (draft.email) setEmail(draft.email);
-    if (draft.phone) setPhone(draft.phone);
-    if (draft.whatsapp) setWhatsapp(draft.whatsapp);
-    if (draft.city) setCity(draft.city);
-    if (draft.cityOther) setCityOther(draft.cityOther);
-    if (draft.address) setAddress(draft.address);
-    if (draft.notes) setNotes(draft.notes);
-    if (draft.requiresPrepayment) setRequiresPrepayment(draft.requiresPrepayment);
-    if (draft.createContacts?.length) setCreateContacts(draft.createContacts);
-  }, []);
-
-  // Auto-save create form draft while dialog is open
-  useEffect(() => {
-    if (!createOpen) return;
-    saveDraft("customer-create", { name, nameForInvoice, regNumber, email, phone, whatsapp, city, cityOther, address, notes, requiresPrepayment, createContacts });
-  }, [createOpen, name, nameForInvoice, regNumber, email, phone, whatsapp, city, cityOther, address, notes, requiresPrepayment, createContacts]);
-
   useEffect(() => {
     setRows(initialRows);
   }, [initialRows]);
@@ -238,180 +157,6 @@ export default function CustomersClient({
     openAddContact(row);
     setHandledInitialAddContact(true);
   }, [handledInitialAddContact, initialAddContactCustomerId, rows]);
-
-  function resetCreateForm() {
-    clearDraft("customer-create");
-    setName("");
-    setNameForInvoice("");
-    setRegNumber("");
-    setEmail("");
-    setPhone("");
-    setWhatsapp("");
-    setCity("");
-    setCityOther("");
-    setAddress("");
-    setNotes("");
-    setRequiresPrepayment(false);
-    setCreateContacts([]);
-  }
-
-  function addCreateContact() {
-    setCreateContacts((prev) => {
-      const hasPrimary = prev.some((contact) => contact.is_primary);
-      return [
-        ...prev,
-        {
-          ...makeEmptyContactDraft(),
-          is_primary: prev.length === 0 || !hasPrimary,
-        },
-      ];
-    });
-  }
-
-  function updateCreateContact(index: number, patch: Partial<ContactDraft>) {
-    setCreateContacts((prev) =>
-      prev.map((contact, currentIndex) => {
-        if (currentIndex !== index) {
-          if (patch.is_primary) return { ...contact, is_primary: false };
-          return contact;
-        }
-        const next = { ...contact, ...patch };
-        if (patch.active === false) {
-          next.is_primary = false;
-        }
-        return next;
-      })
-    );
-  }
-
-  function removeCreateContact(index: number) {
-    setCreateContacts((prev) => {
-      const next = prev.filter((_, currentIndex) => currentIndex !== index);
-      if (next.length === 0) return next;
-      if (next.some((contact) => contact.is_primary)) return next;
-      return next.map((contact, currentIndex) =>
-        currentIndex === 0 ? { ...contact, is_primary: true } : contact
-      );
-    });
-  }
-
-  async function createCustomer() {
-    if (createLoading) return;
-    setCreateErr("");
-    const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
-    if (!name.trim()) return setCreateErr("יש למלא שם לקוח.");
-    if (!phone.trim()) return setCreateErr("יש למלא מספר טלפון.");
-    if (!finalCity) return setCreateErr("יש לבחור עיר.");
-    const preparedContacts = createContacts
-      .map((contact) => ({
-        full_name: contact.full_name.trim(),
-        role: contact.role.trim() || null,
-        phone: contact.phone.trim() || null,
-        email: contact.email.trim() || null,
-        whatsapp: contact.whatsapp.trim() || null,
-        notes: contact.notes.trim() || null,
-        is_primary: contact.active ? contact.is_primary : false,
-        active: contact.active,
-      }))
-      .filter(
-        (contact) =>
-          contact.full_name ||
-          contact.role ||
-          contact.phone ||
-          contact.email ||
-          contact.whatsapp ||
-          contact.notes
-      );
-    const invalidContactIndex = preparedContacts.findIndex((contact) => !contact.full_name);
-    if (invalidContactIndex >= 0) {
-      return setCreateErr(`Contact ${invalidContactIndex + 1} is missing a full name.`);
-    }
-    const hasPrimaryContact = preparedContacts.some((contact) => contact.is_primary);
-    const normalizedContacts = preparedContacts.map((contact, index) => ({
-      ...contact,
-      is_primary: hasPrimaryContact ? contact.is_primary : index === 0,
-    }));
-    setCreateLoading(true);
-    try {
-      const result = await offlineFetch("/api/customers/create", {
-        name: name.trim(),
-        name_for_invoice: nameForInvoice.trim() || null,
-        registration_number: regNumber.trim() || null,
-        phone: phone.trim() || null,
-        whatsapp: whatsapp.trim() || null,
-        email: email.trim() || null,
-        city: finalCity,
-        address: address.trim() || null,
-        notes: notes.trim() || null,
-        requires_prepayment: requiresPrepayment,
-      }, "לקוח חדש");
-
-      if (result.queued) {
-        setCreateOpen(false);
-        resetCreateForm();
-        if (typeof window !== "undefined") window.alert("אין חיבור — הלקוח ייווצר כשיחזור החיבור.");
-        return;
-      }
-      if (!result.ok) return setCreateErr(result.error ?? "יצירת הלקוח נכשלה.");
-      const json = result.data as { error?: string; customer?: Row };
-      if (!json?.customer) return setCreateErr("יצירת הלקוח נכשלה.");
-      const customer = json.customer;
-      const newId = s(customer, "id");
-      const customerRow: Row = {
-        customer_id: newId,
-        customer_name: s(customer, "name") || name.trim(),
-        name: s(customer, "name") || name.trim(),
-        email: s(customer, "email") || email.trim(),
-        phone: s(customer, "phone") || phone.trim(),
-        whatsapp: s(customer, "whatsapp") || whatsapp.trim(),
-        address: s(customer, "address") || finalCity || address.trim(),
-        active: customer.active !== false,
-        requires_prepayment: customer.requires_prepayment === true,
-        orders_count: 0,
-        projects_count: 0,
-        total_sales: 0,
-        total_paid: 0,
-        open_balance: 0,
-        contacts: [],
-      };
-      const createdContacts: Row[] = [];
-      for (const contact of normalizedContacts) {
-        const contactRes = await fetch("/api/customer-contacts/create", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            customer_id: newId,
-            ...contact,
-          }),
-        });
-        const contactJson = (await contactRes.json().catch(() => ({}))) as {
-          error?: string;
-          contact?: Row;
-        };
-        if (!contactRes.ok || !contactJson.contact) {
-          const detail = contact.full_name || `#${createdContacts.length + 1}`;
-          setRows((prev) => [{ ...customerRow, contacts: createdContacts }, ...prev]);
-          setCreateOpen(false);
-          resetCreateForm();
-          if (typeof window !== "undefined") {
-            window.alert(
-              contactJson.error ??
-                `The customer was created, but contact ${detail} could not be created.`
-            );
-          }
-          return;
-        }
-        createdContacts.push(contactJson.contact);
-      }
-      setRows((prev) => [{ ...customerRow, contacts: createdContacts }, ...prev]);
-      setCreateOpen(false);
-      resetCreateForm();
-    } catch (e: unknown) {
-      setCreateErr(e instanceof Error ? e.message : "שגיאה לא ידועה");
-    } finally {
-      setCreateLoading(false);
-    }
-  }
 
   function openEdit(row: Row) {
     setEditErr("");
@@ -810,172 +555,35 @@ export default function CustomersClient({
         </div>
       </Card>
 
-      <CustomerDialog
+      <CreateCustomerDialog
         open={createOpen}
-        onOpenChange={(next) => {
-          setCreateOpen(next);
-          if (!next && !createLoading) {
-            setCreateErr("");
-            resetCreateForm();
-          }
-        }}
-        title="הוספת לקוח"
+        onOpenChange={setCreateOpen}
         description="שדות חובה: שם, טלפון ועיר."
-        submitLabel={createLoading ? "יוצר..." : "יצירת לקוח"}
-        onSubmit={() => void createCustomer()}
-        error={createErr}
-        submitting={createLoading}
-      >
-        <Field label="שם לקוח *">
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <Field label="טלפון *">
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-        </Field>
-        <Field label="וואטסאפ">
-          <Input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
-        </Field>
-        <Field label="אימייל">
-          <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-        </Field>
-        <Field label="שם לחשבונית">
-          <Input value={nameForInvoice} onChange={(e) => setNameForInvoice(e.target.value)} placeholder="אם שונה משם הלקוח" />
-        </Field>
-        <Field label="ח.פ / ת.ז">
-          <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} />
-        </Field>
-        <Field label="עיר *">
-          <select
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">בחירת עיר...</option>
-            {CITY_OPTIONS.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {city === "אחר" ? (
-          <Field label="עיר (הקלדה ידנית) *">
-            <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
-          </Field>
-        ) : null}
-        <Field label="כתובת">
-          <Input value={address} onChange={(e) => setAddress(e.target.value)} />
-        </Field>
-        <Field label="הערות">
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
-        </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={requiresPrepayment}
-            onChange={(e) => setRequiresPrepayment(e.target.checked)}
-          />
-          <span>לקוח ברשימת תשלום מראש</span>
-        </label>
-        <div className="space-y-3 rounded-md border p-3">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <div className="text-sm font-medium">אנשי קשר</div>
-              <div className="text-xs text-muted-foreground">אפשר להוסיף כבר עכשיו את אנשי הקשר של הלקוח.</div>
-            </div>
-            <Button type="button" variant="outline" size="sm" onClick={addCreateContact}>
-              הוספת איש קשר
-            </Button>
-          </div>
-          {createContacts.length === 0 ? (
-            <p className="text-xs text-muted-foreground">עדיין לא נוספו אנשי קשר.</p>
-          ) : null}
-          {createContacts.map((contact, index) => (
-            <div
-              key={`create-contact-${index}`}
-              className="space-y-3 rounded-md border bg-background p-3"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-medium">איש קשר {index + 1}</div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeCreateContact(index)}
-                >
-                  הסרה
-                </Button>
-              </div>
-              <Field label="שם מלא *">
-                <Input
-                  value={contact.full_name}
-                  onChange={(e) =>
-                    updateCreateContact(index, { full_name: e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="תפקיד">
-                <Input
-                  value={contact.role}
-                  onChange={(e) => updateCreateContact(index, { role: e.target.value })}
-                />
-              </Field>
-              <AdaptiveGrid variant="formTwo">
-                <Field label="טלפון">
-                  <Input
-                    value={contact.phone}
-                    onChange={(e) => updateCreateContact(index, { phone: e.target.value })}
-                  />
-                </Field>
-                <Field label="וואטסאפ">
-                  <Input
-                    value={contact.whatsapp}
-                    onChange={(e) =>
-                      updateCreateContact(index, { whatsapp: e.target.value })
-                    }
-                  />
-                </Field>
-              </AdaptiveGrid>
-              <Field label="אימייל">
-                <Input
-                  value={contact.email}
-                  onChange={(e) => updateCreateContact(index, { email: e.target.value })}
-                />
-              </Field>
-              <Field label="הערות">
-                <Textarea
-                  value={contact.notes}
-                  onChange={(e) => updateCreateContact(index, { notes: e.target.value })}
-                  rows={2}
-                />
-              </Field>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={contact.is_primary}
-                  onChange={(e) =>
-                    updateCreateContact(index, {
-                      is_primary: e.target.checked,
-                      active: e.target.checked ? true : contact.active,
-                    })
-                  }
-                />
-                <span>איש קשר ראשי</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={contact.active}
-                  onChange={(e) =>
-                    updateCreateContact(index, { active: e.target.checked })
-                  }
-                />
-                <span>פעיל</span>
-              </label>
-            </div>
-          ))}
-        </div>
-      </CustomerDialog>
+        onCreated={(customer: CreatedCustomer, contacts) => {
+          setRows((prev) => [
+            {
+              customer_id: customer.id,
+              customer_name: customer.name,
+              name: customer.name,
+              name_for_invoice: customer.name_for_invoice,
+              registration_number: customer.registration_number,
+              email: customer.email,
+              phone: customer.phone,
+              whatsapp: customer.whatsapp,
+              address: customer.address,
+              active: customer.active,
+              requires_prepayment: customer.requires_prepayment,
+              orders_count: 0,
+              projects_count: 0,
+              total_sales: 0,
+              total_paid: 0,
+              open_balance: 0,
+              contacts,
+            },
+            ...prev,
+          ]);
+        }}
+      />
 
       <CustomerDialog
         open={editOpen}

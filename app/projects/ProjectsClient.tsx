@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/dialog";
 import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
+import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
+import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; email?: string | null };
@@ -57,37 +59,8 @@ type ProjectMonthlySummary = {
     charged: number;
   };
 };
-type ContactDraft = {
-  full_name: string;
-  role: string;
-  phone: string;
-  email: string;
-  whatsapp: string;
-  notes: string;
-  is_primary: boolean;
-  active: boolean;
-};
-
 const defaultStatusOptions = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
 const defaultProjectTypeOptions = ["logistics", "moving", "construction"];
-const cityOptions = [
-  "ירושלים",
-  "בני ברק",
-  "אלעד",
-  "ביתר עילית",
-  "מודיעין עילית",
-  "בית שמש",
-  "אשדוד",
-  "דימונה",
-  "מירון",
-  "פתח תקווה",
-  "תל אביב",
-  "חיפה",
-  "נתניה",
-  "באר שבע",
-  "ראשון לציון",
-  "אחר",
-];
 
 function getString(row: ProjectRow, key: string) {
   const value = row[key];
@@ -305,18 +278,6 @@ function defaultEndDateForProjectType(projectType: string, startDate: string) {
   return oneMonthFrom(startDate);
 }
 
-function makeEmptyContactDraft(): ContactDraft {
-  return {
-    full_name: "",
-    role: "",
-    phone: "",
-    email: "",
-    whatsapp: "",
-    notes: "",
-    is_primary: false,
-    active: true,
-  };
-}
 
 export default function ProjectsClient({
   initialProjects,
@@ -368,19 +329,6 @@ export default function ProjectsClient({
 
   const [customerOptionsState, setCustomerOptionsState] = useState<Option[]>(customerOptions);
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
-  const [createCustomerName, setCreateCustomerName] = useState("");
-  const [createCustomerPhone, setCreateCustomerPhone] = useState("");
-  const [createCustomerWhatsapp, setCreateCustomerWhatsapp] = useState("");
-  const [createCustomerEmail, setCreateCustomerEmail] = useState("");
-  const [createCustomerNameForInvoice, setCreateCustomerNameForInvoice] = useState("");
-  const [createCustomerRegNumber, setCreateCustomerRegNumber] = useState("");
-  const [createCustomerCity, setCreateCustomerCity] = useState("");
-  const [createCustomerCityOther, setCreateCustomerCityOther] = useState("");
-  const [createCustomerAddress, setCreateCustomerAddress] = useState("");
-  const [createCustomerNotes, setCreateCustomerNotes] = useState("");
-  const [createCustomerContacts, setCreateCustomerContacts] = useState<ContactDraft[]>([]);
-  const [createCustomerError, setCreateCustomerError] = useState<string | null>(null);
-  const [createCustomerSubmitting, setCreateCustomerSubmitting] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -626,195 +574,6 @@ export default function ProjectsClient({
   }, [createOpen, createName, createProjectType, createStatus, createAgreedBasePrice,
       createExpensesSeparately, createStartDate, createEndDate, createNotes,
       createItemsToMove, createProjectManagerId]);
-
-  function resetCreateCustomerForm() {
-    setCreateCustomerName("");
-    setCreateCustomerPhone("");
-    setCreateCustomerWhatsapp("");
-    setCreateCustomerEmail("");
-    setCreateCustomerNameForInvoice("");
-    setCreateCustomerRegNumber("");
-    setCreateCustomerCity("");
-    setCreateCustomerCityOther("");
-    setCreateCustomerAddress("");
-    setCreateCustomerNotes("");
-    setCreateCustomerContacts([]);
-  }
-
-  function addCreateCustomerContact() {
-    setCreateCustomerContacts((prev) => {
-      const hasPrimary = prev.some((contact) => contact.is_primary);
-      return [
-        ...prev,
-        {
-          ...makeEmptyContactDraft(),
-          is_primary: prev.length === 0 || !hasPrimary,
-        },
-      ];
-    });
-  }
-
-  function updateCreateCustomerContact(index: number, patch: Partial<ContactDraft>) {
-    setCreateCustomerContacts((prev) =>
-      prev.map((contact, currentIndex) => {
-        if (currentIndex !== index) {
-          if (patch.is_primary) return { ...contact, is_primary: false };
-          return contact;
-        }
-        const next = { ...contact, ...patch };
-        if (patch.active === false) next.is_primary = false;
-        return next;
-      })
-    );
-  }
-
-  function removeCreateCustomerContact(index: number) {
-    setCreateCustomerContacts((prev) => {
-      const next = prev.filter((_, currentIndex) => currentIndex !== index);
-      if (next.length === 0 || next.some((contact) => contact.is_primary)) return next;
-      return next.map((contact, currentIndex) =>
-        currentIndex === 0 ? { ...contact, is_primary: true } : contact
-      );
-    });
-  }
-
-  async function createCustomer() {
-    if (createCustomerSubmitting) return;
-    setCreateCustomerError(null);
-
-    const name = createCustomerName.trim();
-    const email = createCustomerEmail.trim();
-    const city =
-      createCustomerCity === "אחר"
-        ? createCustomerCityOther.trim()
-        : createCustomerCity.trim();
-    const address = createCustomerAddress.trim();
-
-    if (!name) {
-      setCreateCustomerError("יש להזין שם לקוח.");
-      return;
-    }
-    if (!createCustomerPhone.trim()) {
-      setCreateCustomerError("יש להזין מספר טלפון.");
-      return;
-    }
-    if (!city) {
-      setCreateCustomerError("יש לבחור עיר.");
-      return;
-    }
-
-    const preparedContacts = createCustomerContacts
-      .map((contact) => ({
-        full_name: contact.full_name.trim(),
-        role: contact.role.trim() || null,
-        phone: contact.phone.trim() || null,
-        email: contact.email.trim() || null,
-        whatsapp: contact.whatsapp.trim() || null,
-        notes: contact.notes.trim() || null,
-        is_primary: contact.active ? contact.is_primary : false,
-        active: contact.active,
-      }))
-      .filter(
-        (contact) =>
-          contact.full_name ||
-          contact.role ||
-          contact.phone ||
-          contact.email ||
-          contact.whatsapp ||
-          contact.notes
-      );
-    const invalidContactIndex = preparedContacts.findIndex((contact) => !contact.full_name);
-    if (invalidContactIndex >= 0) {
-      setCreateCustomerError(`איש קשר ${invalidContactIndex + 1} חייב לכלול שם מלא.`);
-      return;
-    }
-    const hasPrimaryContact = preparedContacts.some((contact) => contact.is_primary);
-    const normalizedContacts = preparedContacts.map((contact, index) => ({
-      ...contact,
-      is_primary: hasPrimaryContact ? contact.is_primary : index === 0,
-    }));
-
-    setCreateCustomerSubmitting(true);
-    try {
-      const res = await fetch("/api/customers/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name,
-          name_for_invoice: createCustomerNameForInvoice.trim() || null,
-          registration_number: createCustomerRegNumber.trim() || null,
-          phone: createCustomerPhone.trim() || null,
-          whatsapp: createCustomerWhatsapp.trim() || null,
-          email: email || null,
-          city,
-          address: address || null,
-          notes: createCustomerNotes.trim() || null,
-        }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        customer?: ProjectRow;
-      };
-
-      if (!res.ok || !json.customer) {
-        setCreateCustomerError(json.error ?? "יצירת לקוח נכשלה.");
-        return;
-      }
-
-      const customerId = getString(json.customer, "id") ?? "";
-
-      for (const [index, contact] of normalizedContacts.entries()) {
-        const contactRes = await fetch("/api/customer-contacts/create", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            customer_id: customerId,
-            ...contact,
-          }),
-        });
-
-        const contactJson = (await contactRes.json().catch(() => ({}))) as {
-          error?: string;
-          contact?: ProjectRow;
-        };
-
-        if (!contactRes.ok || !contactJson.contact) {
-          const detail = contact.full_name || `#${index + 1}`;
-          if (typeof window !== "undefined") {
-            window.alert(
-              contactJson.error ?? `הלקוח נוצר, אבל איש הקשר ${detail} לא נוצר בהצלחה.`
-            );
-          }
-          break;
-        }
-      }
-
-      const newCustomer: Option = {
-        id: customerId,
-        label:
-          getString(json.customer, "name") ??
-          getString(json.customer, "name_for_invoice") ??
-          name,
-        phone: getString(json.customer, "phone"),
-        email: getString(json.customer, "email"),
-      };
-
-      if (newCustomer.id) {
-        setCustomerOptionsState((prev) => [newCustomer, ...prev]);
-        setCreateCustomerId(newCustomer.id);
-        setCreateCustomerQuery(newCustomer.label);
-      }
-
-      setCreateCustomerOpen(false);
-      resetCreateCustomerForm();
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "שגיאה לא ידועה";
-      setCreateCustomerError(message);
-    } finally {
-      setCreateCustomerSubmitting(false);
-    }
-  }
 
   async function createProject() {
     if (createSubmitting) return;
@@ -2024,258 +1783,22 @@ export default function ProjectsClient({
         </AdaptiveDialog>
       </Dialog>
 
-      <Dialog
+      <CreateCustomerDialog
         open={createCustomerOpen}
-        onOpenChange={(next) => {
-          setCreateCustomerOpen(next);
-          if (!next && !createCustomerSubmitting) {
-            setCreateCustomerError(null);
-            resetCreateCustomerForm();
-          }
+        onOpenChange={setCreateCustomerOpen}
+        description="הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון ועיר."
+        onCreated={(customer: CreatedCustomer) => {
+          const newOption: Option = {
+            id: customer.id,
+            label: customer.name,
+            phone: customer.phone,
+            email: customer.email,
+          };
+          setCustomerOptionsState((prev) => [newOption, ...prev]);
+          setCreateCustomerId(newOption.id);
+          setCreateCustomerQuery(newOption.label);
         }}
-      >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>הוספת לקוח חדש</DialogTitle>
-            <DialogDescription>
-              הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון ועיר.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void createCustomer();
-            }}
-          >
-            <div className="space-y-1">
-              <label className="text-sm font-medium">שם לקוח *</label>
-              <Input
-                value={createCustomerName}
-                onChange={(e) => setCreateCustomerName(e.target.value)}
-              />
-            </div>
-
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">טלפון *</label>
-                <Input
-                  value={createCustomerPhone}
-                  onChange={(e) => setCreateCustomerPhone(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium">וואטסאפ</label>
-                <Input
-                  value={createCustomerWhatsapp}
-                  onChange={(e) => setCreateCustomerWhatsapp(e.target.value)}
-                />
-              </div>
-            </AdaptiveGrid>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">אימייל</label>
-              <Input
-                value={createCustomerEmail}
-                onChange={(e) => setCreateCustomerEmail(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">שם לחשבונית</label>
-              <Input
-                value={createCustomerNameForInvoice}
-                onChange={(e) => setCreateCustomerNameForInvoice(e.target.value)}
-                placeholder="אם שונה משם הלקוח"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">ח.פ / ת.ז</label>
-              <Input
-                value={createCustomerRegNumber}
-                onChange={(e) => setCreateCustomerRegNumber(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">עיר *</label>
-              <select
-                value={createCustomerCity}
-                onChange={(e) => setCreateCustomerCity(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">בחר עיר...</option>
-                {cityOptions.map((city) => (
-                  <option key={city} value={city}>
-                    {city}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {createCustomerCity === "אחר" ? (
-              <div className="space-y-1">
-                <label className="text-sm font-medium">עיר (הקלדה חופשית) *</label>
-                <Input
-                  value={createCustomerCityOther}
-                  onChange={(e) => setCreateCustomerCityOther(e.target.value)}
-                />
-              </div>
-            ) : null}
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">כתובת</label>
-              <Input
-                value={createCustomerAddress}
-                onChange={(e) => setCreateCustomerAddress(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">הערות</label>
-              <Textarea
-                value={createCustomerNotes}
-                onChange={(e) => setCreateCustomerNotes(e.target.value)}
-                rows={3}
-              />
-            </div>
-
-            <div className="space-y-3 rounded-md border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-medium">אנשי קשר</div>
-                  <div className="text-xs text-muted-foreground">
-                    אפשר להוסיף אנשי קשר כבר ביצירת הלקוח.
-                  </div>
-                </div>
-                <Button type="button" variant="outline" size="sm" onClick={addCreateCustomerContact}>
-                  הוספת איש קשר
-                </Button>
-              </div>
-              {createCustomerContacts.length === 0 ? (
-                <p className="text-xs text-muted-foreground">עדיין לא נוספו אנשי קשר.</p>
-              ) : null}
-              {createCustomerContacts.map((contact, index) => (
-                <div
-                  key={`project-create-customer-contact-${index}`}
-                  className="space-y-3 rounded-md border bg-background p-3"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-medium">איש קשר {index + 1}</div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeCreateCustomerContact(index)}
-                    >
-                      הסרה
-                    </Button>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">שם מלא *</label>
-                    <Input
-                      value={contact.full_name}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, { full_name: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">תפקיד</label>
-                    <Input
-                      value={contact.role}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, { role: e.target.value })
-                      }
-                    />
-                  </div>
-                  <AdaptiveGrid variant="formTwo">
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">טלפון</label>
-                      <Input
-                        value={contact.phone}
-                        onChange={(e) =>
-                          updateCreateCustomerContact(index, { phone: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">וואטסאפ</label>
-                      <Input
-                        value={contact.whatsapp}
-                        onChange={(e) =>
-                          updateCreateCustomerContact(index, { whatsapp: e.target.value })
-                        }
-                      />
-                    </div>
-                  </AdaptiveGrid>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">אימייל</label>
-                    <Input
-                      value={contact.email}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, { email: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">הערות</label>
-                    <Textarea
-                      value={contact.notes}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, { notes: e.target.value })
-                      }
-                      rows={2}
-                    />
-                  </div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={contact.is_primary}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, {
-                          is_primary: e.target.checked,
-                          active: e.target.checked ? true : contact.active,
-                        })
-                      }
-                    />
-                    <span>איש קשר ראשי</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={contact.active}
-                      onChange={(e) =>
-                        updateCreateCustomerContact(index, { active: e.target.checked })
-                      }
-                    />
-                    <span>פעיל</span>
-                  </label>
-                </div>
-              ))}
-            </div>
-
-            {createCustomerError ? (
-              <p className="text-sm text-destructive">{createCustomerError}</p>
-            ) : null}
-
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setCreateCustomerOpen(false)} disabled={createCustomerSubmitting}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={createCustomerSubmitting}>
-                {createCustomerSubmitting ? "שומר..." : "שמירת לקוח"}
-              </Button>
-            </DialogFooter>
-            {createCustomerSubmitting ? (
-              <p className="text-xs text-muted-foreground">הלקוח נוצר כעת, נא להמתין...</p>
-            ) : null}
-          </form>
-        </AdaptiveDialog>
-      </Dialog>
+      />
 
       <Dialog open={monthlySummaryOpen} onOpenChange={setMonthlySummaryOpen}>
         <AdaptiveDialog size="formLg">
