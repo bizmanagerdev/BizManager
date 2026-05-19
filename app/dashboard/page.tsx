@@ -78,7 +78,6 @@ export default async function DashboardPage() {
 
   const [
     { data: dashboardRow, error: dashboardError },
-    activeProjectsCountResult,
     { data: projectRows, error: projectError },
     { data: orderRows, error: orderError },
     { data: propertyRows, error: propertyError },
@@ -96,10 +95,6 @@ export default async function DashboardPage() {
       .select("active_projects_count,open_tasks_count,overdue_tasks_count,low_inventory_count")
       .limit(1)
       .maybeSingle(),
-    supabase
-      .from("project_dashboard_view")
-      .select("id", { count: "estimated", head: true })
-      .not("status", "in", '(\"quote\",\"done\",\"completed\",\"cancelled\",\"canceled\",\"archived\",\"closed\")'),
     supabase
       .from("project_dashboard_view")
       .select("id,name,project_type,status,customer_id,customer_name,open_tasks,start_date,updated_at")
@@ -173,7 +168,8 @@ export default async function DashboardPage() {
       .not("status", "in", '("completed","delivered","cancelled","canceled","closed","archived","done")'),
   ]);
 
-  const activeProjectsCount = typeof activeProjectsCountResult.count === "number" ? activeProjectsCountResult.count : 0;
+  const activeProjectsCount =
+    getNumber((dashboardRow as Row | null) ?? undefined, "active_projects_count") ?? 0;
   const openTasksCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "open_tasks_count") ?? 0;
   const overdueTasksCount =

@@ -3,11 +3,26 @@ import webpush from "web-push";
 // service-role (cron jobs) clients satisfy this interface.
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT ?? "mailto:admin@bizmanager.app",
-  process.env.VAPID_PUBLIC_KEY ?? "",
-  process.env.VAPID_PRIVATE_KEY ?? ""
-);
+let vapidConfigured = false;
+
+function ensureVapidConfigured() {
+  if (vapidConfigured) return true;
+
+  const publicKey = process.env.VAPID_PUBLIC_KEY;
+  const privateKey = process.env.VAPID_PRIVATE_KEY;
+
+  if (!publicKey || !privateKey) {
+    return false;
+  }
+
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT ?? "mailto:admin@bizmanager.app",
+    publicKey,
+    privateKey
+  );
+  vapidConfigured = true;
+  return true;
+}
 
 export type PushPayload = {
   title: string;
@@ -73,6 +88,10 @@ async function sendToRows(
   rows: SubscriptionRow[],
   payload: PushPayload
 ): Promise<{ sent: number; failed: number }> {
+  if (!ensureVapidConfigured()) {
+    return { sent: 0, failed: 0 };
+  }
+
   let sent = 0;
   let failed = 0;
   const expiredIds: string[] = [];

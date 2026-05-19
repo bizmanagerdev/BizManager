@@ -91,26 +91,16 @@ export async function getAlertsData(
   options?: { viewerRole?: string | null }
 ): Promise<AlertsResult> {
   const viewerRole = options?.viewerRole ?? null;
-  const inactiveProjectStatuses = [
-    "quote",
-    "done",
-    "completed",
-    "cancelled",
-    "canceled",
-    "archived",
-    "closed",
-  ];
   const [
     { data: dashboardRow, error: dashboardError },
     { data: invoiceRows, error: invoiceError },
     payrollDebtResultRaw,
-    activeProjectsCountResult,
     inventoryProductsResult,
     inventoryRowsResult,
   ] = await Promise.all([
     supabase
       .from("operations_dashboard_view")
-      .select("low_inventory_count,overdue_tasks_count")
+      .select("active_projects_count,low_inventory_count,overdue_tasks_count")
       .limit(1)
       .maybeSingle(),
     supabase
@@ -126,10 +116,6 @@ export async function getAlertsData(
           .gt("owed_amount", 0.009)
           .range(0, 1999)
       : Promise.resolve({ data: [], error: null } as { data: unknown[]; error: { message?: string } | null }),
-    supabase
-      .from("project_dashboard_view")
-      .select("id", { count: "estimated", head: true })
-      .not("status", "in", `(${inactiveProjectStatuses.map((value) => `"${value}"`).join(",")})`),
     supabase.from("products").select("id,active,low_stock_threshold"),
     supabase.from("inventory").select("product_id,quantity_on_hand,quantity_reserved"),
   ]);
@@ -185,9 +171,7 @@ export async function getAlertsData(
   }, 0);
 
   const activeProjectsCount =
-    typeof (activeProjectsCountResult as { count?: number | null }).count === "number"
-      ? ((activeProjectsCountResult as { count: number }).count ?? 0)
-      : 0;
+    getNumber((dashboardRow as Row | null | undefined) ?? undefined, "active_projects_count") ?? 0;
 
   const payrollDebtRows = (payrollDebtResult.data ?? []) as Array<{
     user_id?: string | null;
@@ -283,7 +267,7 @@ export async function getAlertsData(
         null,
       invoices: invoiceSourceMissing ? null : invoiceError?.message ?? null,
       payroll: viewerRole === "admin" ? payrollDebtResult.error?.message ?? null : null,
-      projects: (activeProjectsCountResult as { error?: { message?: string } | null }).error?.message ?? null,
+      projects: null,
     },
   };
 }
