@@ -872,7 +872,7 @@ export default async function ProjectPage({
     .map((row) => ({ id: row.id, label: row.label }));
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-5">
         <Card className="overflow-hidden">
           <CardContent className="p-5 sm:p-6">

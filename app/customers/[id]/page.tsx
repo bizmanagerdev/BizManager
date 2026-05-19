@@ -223,7 +223,7 @@ export default async function CustomerDetailsPage({
   const addContactHref = `${returnCustomersHref}${returnPage > 1 ? "&" : "?"}add_contact_customer_id=${encodeURIComponent(id)}`;
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>

@@ -13,6 +13,7 @@ type Props = {
   children: ReactNode;
   appName?: string;
   userName?: string;
+  viewerRole?: string;
   showSearch?: boolean;
   sidebarItems?: SidebarNavItem[];
   bottomNavItems?: SidebarNavItem[];
@@ -23,12 +24,13 @@ export default function AppShell({
   children,
   appName,
   userName,
+  viewerRole,
   showSearch,
   sidebarItems,
   bottomNavItems,
   bottomNavMoreItems,
 }: Props) {
-  const defaults = useNavItems();
+  const defaults = useNavItems(viewerRole);
 
   const sidebar = sidebarItems ?? defaults.sidebarItems;
   const bottom = bottomNavItems ?? defaults.bottomNavItems;

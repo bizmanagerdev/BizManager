@@ -534,7 +534,7 @@ export default async function DocumentsPage({
     null;
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <DocumentsArchiveClient
         documents={archiveItems}
         error={errorMessage}

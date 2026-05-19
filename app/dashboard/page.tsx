@@ -267,7 +267,7 @@ export default async function DashboardPage() {
   ].filter(Boolean) as string[];
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageStack>
         <section className="flex items-center justify-start">
           <Badge variant="outline" className="w-fit text-sm">

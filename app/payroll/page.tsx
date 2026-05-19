@@ -139,7 +139,7 @@ export default async function PayrollPage() {
   const propertyOptions = mapOptions((propertiesResult.data ?? []) as Row[], "address");
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4 text-right" dir="rtl">
         {loadError ? (
           <Card>

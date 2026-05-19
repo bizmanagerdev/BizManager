@@ -5,7 +5,7 @@ export default async function PropertiesPage() {
   const { profile } = await requireProfile();
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <h1>ניהול נכסים</h1>
       <p>בקרוב.</p>
     </AppShell>

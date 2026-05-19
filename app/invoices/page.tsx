@@ -5,7 +5,7 @@ export default async function InvoicesPage() {
   const { profile } = await requireProfile();
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <h1>חשבוניות</h1>
       <p>בקרוב.</p>
     </AppShell>

@@ -151,7 +151,7 @@ export default async function InventoryPage({
   const hasNextPage = typeof count === "number" ? to + 1 < count : ((products ?? []) as Row[]).length === PAGE_SIZE;
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>

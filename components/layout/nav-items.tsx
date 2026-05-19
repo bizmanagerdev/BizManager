@@ -9,7 +9,7 @@ const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 const ROLE_CACHE_KEY = "biz_viewer_role";
-const ROLE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const ROLE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function readCachedRole(): string | null {
   try {
@@ -93,15 +93,25 @@ function filterByRole(items: SidebarNavItem[], isAdmin: boolean) {
   return items.filter((item) => isAdmin || !ADMIN_ONLY_URLS.has(item.url));
 }
 
-export function useNavItems() {
-  const [viewerRole, setViewerRole] = useState<string | null>(null);
+export function useNavItems(initialRole?: string | null) {
+  const [viewerRole, setViewerRole] = useState<string | null>(() => {
+    // Server-provided role takes priority; fall back to localStorage cache.
+    if (initialRole) return initialRole;
+    if (typeof window !== "undefined") return readCachedRole();
+    return null;
+  });
   const fetchedRef = useRef(false);
 
-  // Restore cached role before first paint — client-only, no SSR mismatch.
+  // Sync server-provided role into cache so subsequent loads benefit.
   useIsomorphicLayoutEffect(() => {
+    if (initialRole) {
+      writeCachedRole(initialRole);
+      setViewerRole(initialRole);
+      return;
+    }
     const cached = readCachedRole();
     if (cached) setViewerRole(cached);
-  }, []);
+  }, [initialRole]);
 
   useEffect(() => {
     if (fetchedRef.current) return;

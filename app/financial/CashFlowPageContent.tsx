@@ -150,7 +150,7 @@ export default async function CashFlowPageContent({
   }
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <FinancialPageClient
         key={JSON.stringify({
           customerId,

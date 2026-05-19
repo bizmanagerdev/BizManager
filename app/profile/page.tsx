@@ -113,7 +113,7 @@ export default async function ProfilePage() {
     .filter((row) => row.id && row.label);
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
         <div>
           <h1 className="text-2xl font-semibold">פרופיל עובד</h1>

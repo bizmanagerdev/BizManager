@@ -162,7 +162,7 @@ export default async function TasksPage({
     .filter((u) => u.id && u.label);
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       {tasksError ? (
         <div className="text-destructive text-sm">שגיאה: {tasksError}</div>
       ) : (

@@ -150,7 +150,7 @@ export default async function RecurringTasksPage() {
     .filter((row) => row.id && row.label);
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       {loadError ? (
         <Card>
           <CardContent className="py-6 text-sm text-destructive">

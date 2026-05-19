@@ -248,7 +248,7 @@ export default async function CustomersPage({
   const hasNextPage = typeof count === "number" ? to + 1 < count : rowsWithContacts.length === PAGE_SIZE;
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
         <div>
           <h1 className="text-2xl font-semibold">לקוחות</h1>

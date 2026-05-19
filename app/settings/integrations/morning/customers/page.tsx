@@ -13,7 +13,7 @@ export default async function MorningCustomersSettingsPage() {
     .range(0, 199);
 
   return (
-    <AppShell userName={profile.full_name ?? profile.email ?? undefined}>
+    <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
