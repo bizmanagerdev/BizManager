@@ -1,5 +1,12 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
+
+// useLayoutEffect is client-only (fires before paint, never on the server).
+// Falling back to useEffect on the server means the initial SSR state stays null
+// on both sides — no hydration mismatch — while the client restores the cached
+// role synchronously before the first paint so admin tabs never flash away.
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 const ROLE_CACHE_KEY = "biz_viewer_role";
 const ROLE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -90,15 +97,17 @@ export function useNavItems() {
   const [viewerRole, setViewerRole] = useState<string | null>(null);
   const fetchedRef = useRef(false);
 
+  // Restore cached role before first paint — client-only, no SSR mismatch.
+  useIsomorphicLayoutEffect(() => {
+    const cached = readCachedRole();
+    if (cached) setViewerRole(cached);
+  }, []);
+
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
 
-    // Apply cached role immediately so admin items never flash away while fetch is in-flight.
-    // Reading from localStorage (external store), not reacting to React state — intentional.
     const cached = readCachedRole();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (cached) setViewerRole(cached);
 
     let active = true;
 

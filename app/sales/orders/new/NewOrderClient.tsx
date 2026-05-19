@@ -279,6 +279,8 @@ export default function NewOrderClient({
   const [createCustomerPhone, setCreateCustomerPhone] = useState("");
   const [createCustomerWhatsapp, setCreateCustomerWhatsapp] = useState("");
   const [createCustomerEmail, setCreateCustomerEmail] = useState("");
+  const [createCustomerNameForInvoice, setCreateCustomerNameForInvoice] = useState("");
+  const [createCustomerRegNumber, setCreateCustomerRegNumber] = useState("");
   const [createCustomerCity, setCreateCustomerCity] = useState("");
   const [createCustomerCityOther, setCreateCustomerCityOther] = useState("");
   const [createCustomerAddress, setCreateCustomerAddress] = useState("");
@@ -678,6 +680,8 @@ export default function NewOrderClient({
     setCreateCustomerPhone("");
     setCreateCustomerWhatsapp("");
     setCreateCustomerEmail("");
+    setCreateCustomerNameForInvoice("");
+    setCreateCustomerRegNumber("");
     setCreateCustomerCity("");
     setCreateCustomerCityOther("");
     setCreateCustomerAddress("");
@@ -786,6 +790,8 @@ export default function NewOrderClient({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name,
+          name_for_invoice: createCustomerNameForInvoice.trim() || null,
+          registration_number: createCustomerRegNumber.trim() || null,
           phone: createCustomerPhone.trim() || null,
           whatsapp: whatsapp || null,
           email: email || null,
@@ -1599,6 +1605,23 @@ export default function NewOrderClient({
               <Input
                 value={createCustomerEmail}
                 onChange={(e) => setCreateCustomerEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">שם לחשבונית</label>
+              <Input
+                value={createCustomerNameForInvoice}
+                onChange={(e) => setCreateCustomerNameForInvoice(e.target.value)}
+                placeholder="אם שונה משם הלקוח"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">ח.פ / ת.ז</label>
+              <Input
+                value={createCustomerRegNumber}
+                onChange={(e) => setCreateCustomerRegNumber(e.target.value)}
               />
             </div>
 

@@ -123,6 +123,8 @@ export default function CustomersClient({
   const [createErr, setCreateErr] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
   const [name, setName] = useState("");
+  const [nameForInvoice, setNameForInvoice] = useState("");
+  const [regNumber, setRegNumber] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -190,12 +192,15 @@ export default function CustomersClient({
   // Restore create-form draft on mount (survives tab kills on mobile)
   useEffect(() => {
     const draft = loadDraft<{
-      name: string; email: string; phone: string; whatsapp: string;
+      name: string; nameForInvoice: string; regNumber: string;
+      email: string; phone: string; whatsapp: string;
       city: string; cityOther: string; address: string; notes: string;
       requiresPrepayment: boolean; createContacts: ContactDraft[];
     }>("customer-create");
     if (!draft) return;
     if (draft.name) setName(draft.name);
+    if (draft.nameForInvoice) setNameForInvoice(draft.nameForInvoice);
+    if (draft.regNumber) setRegNumber(draft.regNumber);
     if (draft.email) setEmail(draft.email);
     if (draft.phone) setPhone(draft.phone);
     if (draft.whatsapp) setWhatsapp(draft.whatsapp);
@@ -210,8 +215,8 @@ export default function CustomersClient({
   // Auto-save create form draft while dialog is open
   useEffect(() => {
     if (!createOpen) return;
-    saveDraft("customer-create", { name, email, phone, whatsapp, city, cityOther, address, notes, requiresPrepayment, createContacts });
-  }, [createOpen, name, email, phone, whatsapp, city, cityOther, address, notes, requiresPrepayment, createContacts]);
+    saveDraft("customer-create", { name, nameForInvoice, regNumber, email, phone, whatsapp, city, cityOther, address, notes, requiresPrepayment, createContacts });
+  }, [createOpen, name, nameForInvoice, regNumber, email, phone, whatsapp, city, cityOther, address, notes, requiresPrepayment, createContacts]);
 
   useEffect(() => {
     setRows(initialRows);
@@ -236,6 +241,8 @@ export default function CustomersClient({
   function resetCreateForm() {
     clearDraft("customer-create");
     setName("");
+    setNameForInvoice("");
+    setRegNumber("");
     setEmail("");
     setPhone("");
     setWhatsapp("");
@@ -327,6 +334,8 @@ export default function CustomersClient({
     try {
       const result = await offlineFetch("/api/customers/create", {
         name: name.trim(),
+        name_for_invoice: nameForInvoice.trim() || null,
+        registration_number: regNumber.trim() || null,
         phone: phone.trim() || null,
         whatsapp: whatsapp.trim() || null,
         email: email.trim() || null,
@@ -828,6 +837,12 @@ export default function CustomersClient({
         <Field label="אימייל">
           <Input value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
+        <Field label="שם לחשבונית">
+          <Input value={nameForInvoice} onChange={(e) => setNameForInvoice(e.target.value)} placeholder="אם שונה משם הלקוח" />
+        </Field>
+        <Field label="ח.פ / ת.ז">
+          <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} />
+        </Field>
         <Field label="עיר *">
           <select
             value={city}
@@ -974,12 +989,6 @@ export default function CustomersClient({
         <Field label="שם לקוח *">
           <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
         </Field>
-        <Field label="שם לחשבונית">
-          <Input value={editInvoiceName} onChange={(e) => setEditInvoiceName(e.target.value)} />
-        </Field>
-        <Field label="ח.פ / ת.ז">
-          <Input value={editReg} onChange={(e) => setEditReg(e.target.value)} />
-        </Field>
         <AdaptiveGrid variant="formTwo">
           <Field label="טלפון">
             <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
@@ -991,6 +1000,12 @@ export default function CustomersClient({
             <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
           </Field>
         </AdaptiveGrid>
+        <Field label="שם לחשבונית">
+          <Input value={editInvoiceName} onChange={(e) => setEditInvoiceName(e.target.value)} placeholder="אם שונה משם הלקוח" />
+        </Field>
+        <Field label="ח.פ / ת.ז">
+          <Input value={editReg} onChange={(e) => setEditReg(e.target.value)} />
+        </Field>
         <Field label="כתובת">
           <Input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} />
         </Field>

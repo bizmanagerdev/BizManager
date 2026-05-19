@@ -3,12 +3,13 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
 type CreateCustomerPayload = {
   name?: string;
+  name_for_invoice?: string | null;
+  registration_number?: string | null;
   phone?: string | null;
   whatsapp?: string | null;
   email?: string | null;
   city?: string | null;
   address?: string | null;
-  registration_number?: string | null;
   notes?: string | null;
   requires_prepayment?: boolean;
 };
@@ -23,6 +24,10 @@ export async function POST(req: Request) {
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const city = typeof body.city === "string" ? body.city.trim() : "";
     const address = typeof body.address === "string" ? body.address.trim() : "";
+    const nameForInvoice =
+      typeof body.name_for_invoice === "string" && body.name_for_invoice.trim()
+        ? body.name_for_invoice.trim()
+        : null;
     const registrationNumber =
       typeof body.registration_number === "string"
         ? body.registration_number.trim()
@@ -46,7 +51,7 @@ export async function POST(req: Request) {
       .from("customers")
       .insert({
         name,
-        name_for_invoice: name,
+        name_for_invoice: nameForInvoice ?? name,
         registration_number: registrationNumber,
         phone,
         whatsapp,

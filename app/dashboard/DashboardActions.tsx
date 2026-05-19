@@ -483,6 +483,8 @@ export default function DashboardActions({
   const [projectCreateCustomerPhone, setProjectCreateCustomerPhone] = useState("");
   const [projectCreateCustomerWhatsapp, setProjectCreateCustomerWhatsapp] = useState("");
   const [projectCreateCustomerEmail, setProjectCreateCustomerEmail] = useState("");
+  const [projectCreateCustomerNameForInvoice, setProjectCreateCustomerNameForInvoice] = useState("");
+  const [projectCreateCustomerRegNumber, setProjectCreateCustomerRegNumber] = useState("");
   const [projectCreateCustomerCity, setProjectCreateCustomerCity] = useState("");
   const [projectCreateCustomerCityOther, setProjectCreateCustomerCityOther] = useState("");
   const [projectCreateCustomerAddress, setProjectCreateCustomerAddress] = useState("");
@@ -774,6 +776,8 @@ export default function DashboardActions({
     setProjectCreateCustomerPhone("");
     setProjectCreateCustomerWhatsapp("");
     setProjectCreateCustomerEmail("");
+    setProjectCreateCustomerNameForInvoice("");
+    setProjectCreateCustomerRegNumber("");
     setProjectCreateCustomerCity("");
     setProjectCreateCustomerCityOther("");
     setProjectCreateCustomerAddress("");
@@ -966,6 +970,8 @@ export default function DashboardActions({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name,
+          name_for_invoice: projectCreateCustomerNameForInvoice.trim() || null,
+          registration_number: projectCreateCustomerRegNumber.trim() || null,
           phone: projectCreateCustomerPhone.trim() || null,
           whatsapp: projectCreateCustomerWhatsapp.trim() || null,
           email: email || null,
@@ -2394,6 +2400,23 @@ export default function DashboardActions({
                   type="email"
                   value={projectCreateCustomerEmail}
                   onChange={(e) => setProjectCreateCustomerEmail(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium">שם לחשבונית</label>
+                <Input
+                  value={projectCreateCustomerNameForInvoice}
+                  onChange={(e) => setProjectCreateCustomerNameForInvoice(e.target.value)}
+                  placeholder="אם שונה משם הלקוח"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium">ח.פ / ת.ז</label>
+                <Input
+                  value={projectCreateCustomerRegNumber}
+                  onChange={(e) => setProjectCreateCustomerRegNumber(e.target.value)}
                 />
               </div>
 
