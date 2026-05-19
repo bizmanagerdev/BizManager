@@ -284,6 +284,7 @@ const CITY_OPTIONS = [
   "בני ברק",
   "אלעד",
   "ביתר עילית",
+  "מודיעין עילית",
   "בית שמש",
   "אשדוד",
   "דימונה",
@@ -861,7 +862,7 @@ export default function DashboardActions({
 
   function resetManualSessionForm() {
     setManualSessionError(null);
-    setManualSessionUserId(canManageWorkerSessions ? workerUsers[0]?.id ?? "" : currentUserId ?? "");
+    setManualSessionUserId(canManageWorkerSessions ? "" : currentUserId ?? "");
     setManualSessionDomain("general_business");
     setManualSessionProjectId("");
     setManualSessionPropertyId("");
@@ -1885,7 +1886,19 @@ export default function DashboardActions({
                   <select
                     className={`${fieldClass} text-right`}
                     value={manualSessionProjectId}
-                    onChange={(e) => setManualSessionProjectId(e.target.value)}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setManualSessionProjectId(newId);
+                      if (newId) {
+                        const startDate = normalizeDateOnly(projectById.get(newId)?.startDate);
+                        if (startDate) {
+                          const inTime = manualSessionClockIn.includes("T") ? manualSessionClockIn.split("T")[1] : "08:00";
+                          const outTime = manualSessionClockOut.includes("T") ? manualSessionClockOut.split("T")[1] : "09:00";
+                          setManualSessionClockIn(`${startDate}T${inTime}`);
+                          setManualSessionClockOut(`${startDate}T${outTime}`);
+                        }
+                      }
+                    }}
                   >
                     <option value="">{HEBREW.selectProject}</option>
                     {projects.map((project) => (
