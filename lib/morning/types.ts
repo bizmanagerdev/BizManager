@@ -28,6 +28,23 @@ export type MorningDocumentLine = {
   sku?: string | null;
 };
 
+// Morning payment type codes:
+//   0 = other/unpaid, 1 = cash, 2 = check, 3 = credit card, 4 = bank transfer
+export type MorningPaymentMethodCode = 0 | 1 | 2 | 3 | 4;
+
+export type MorningPaymentLine = {
+  type: MorningPaymentMethodCode;
+  date: string; // YYYY-MM-DD
+  price: number;
+  currency?: string;
+  // Optional check/transfer reference number
+  accountId?: string | null;
+  bankName?: string | null;
+  branchNumber?: string | null;
+  accountNumber?: string | null;
+  chequeNumber?: string | null;
+};
+
 export type MorningCreateDocumentPayload = {
   clientId: string;
   type: MorningDocumentType;
@@ -36,7 +53,21 @@ export type MorningCreateDocumentPayload = {
   currency?: string;
   externalId?: string | null;
   lines: MorningDocumentLine[];
+  payments?: MorningPaymentLine[];
+  // Optional ISO date (YYYY-MM-DD). Defaults to today on the server.
+  date?: string | null;
+  // Optional links to related Morning documents (e.g. receipt → original invoice).
+  linkedDocumentIds?: string[];
 };
+
+export function mapBizPaymentMethodToMorning(method: string | null | undefined): MorningPaymentMethodCode {
+  const normalized = (method ?? "").trim().toLowerCase();
+  if (normalized === "cash") return 1;
+  if (normalized === "check" || normalized === "cheque") return 2;
+  if (normalized === "credit_card" || normalized === "credit-card" || normalized === "card") return 3;
+  if (normalized === "bank_transfer" || normalized === "bank-transfer" || normalized === "transfer") return 4;
+  return 0;
+}
 
 export type MorningDocumentResult = {
   id: string;

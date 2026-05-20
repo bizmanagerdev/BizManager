@@ -8,6 +8,10 @@ import {
   normalizePaymentEntries,
   sumPayments,
 } from "@/lib/orders/paymentStatus";
+import {
+  tryAutoIssueInvoiceForOrder,
+  tryAutoIssueReceiptForPayment,
+} from "@/lib/morning/service";
 
 const BUCKET = "business-documents";
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -175,7 +179,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, user, profile } = access.value;
     const uploadedDocuments: UploadedDocument[] = [];
 
     const subtotal = normalizedItems.reduce(
@@ -349,10 +353,48 @@ export async function POST(req: Request) {
     }
 
     const updatedOrderId = typeof data === "string" ? data : orderId;
+
+    // Best-effort Morning auto-issue: invoice when order is completed, receipt for each
+    // new payment row. Failures are logged via audit and never abort the order save.
+    const actor = { profileId: profile.id, authUserId: user.id, role: profile.role };
+    const invoiceOutcome = await tryAutoIssueInvoiceForOrder(supabase, {
+      orderId: updatedOrderId,
+      newStatus: status,
+      trigger: "status-change",
+      actor,
+    });
+
+    const receiptOutcomes: Array<{ skipped: boolean; reason: string | null; morningDocumentId: string | null }> = [];
+    if (payments.length > 0) {
+      const { data: newPaymentRows } = await supabase
+        .from("payments")
+        .select("id,created_at")
+        .eq("order_id", updatedOrderId)
+        .order("created_at", { ascending: false })
+        .limit(payments.length);
+      const newPaymentIds = ((newPaymentRows ?? []) as Array<{ id?: string }>)
+        .map((row) => (typeof row?.id === "string" ? row.id : null))
+        .filter((value): value is string => Boolean(value));
+      for (const newPaymentId of newPaymentIds) {
+        const outcome = await tryAutoIssueReceiptForPayment(supabase, { paymentId: newPaymentId, actor });
+        receiptOutcomes.push({
+          skipped: outcome.skipped,
+          reason: outcome.ok ? outcome.reason : outcome.reason,
+          morningDocumentId: outcome.morningDocumentId,
+        });
+      }
+    }
+
     return NextResponse.json({
       order_id: updatedOrderId,
       payment_status: derivedPaymentStatus,
       total_paid: totalPaidAfterSave,
+      morning_auto_invoice: {
+        skipped: invoiceOutcome.skipped,
+        reason: invoiceOutcome.ok ? invoiceOutcome.reason : invoiceOutcome.reason,
+        morning_document_id: invoiceOutcome.morningDocumentId,
+      },
+      morning_auto_receipts: receiptOutcomes,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

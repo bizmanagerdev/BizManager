@@ -325,31 +325,74 @@ export async function findMorningClientCandidatesForCustomer(customer: MorningCu
   return findMorningClientCandidatesForCustomerRecord(customer, clients);
 }
 
-function mapLines(lines: MorningCreateDocumentPayload["lines"]) {
-  return lines.map((line) => ({
-    description: line.description,
-    quantity: line.quantity,
-    price: line.unitPrice,
-    currency: "ILS",
-    vatType: line.vatType ?? "include",
-    sku: line.sku ?? undefined,
+// Morning expects vatType as a numeric enum:
+//   0 = use the document/business default
+//   1 = price already includes VAT
+//   2 = no VAT (exempt)
+// Lines without an explicit vatType inherit the document-level value (0).
+function mapIncomeLineVatType(value: MorningCreateDocumentPayload["lines"][number]["vatType"]) {
+  if (value === "include") return 1;
+  if (value === "none") return 2;
+  if (value === "exclude") return 0;
+  return undefined;
+}
+
+function mapIncomeLines(lines: MorningCreateDocumentPayload["lines"], currency: string) {
+  return lines.map((line) => {
+    const vatType = mapIncomeLineVatType(line.vatType);
+    return {
+      description: line.description,
+      quantity: line.quantity,
+      price: line.unitPrice,
+      currency,
+      ...(vatType !== undefined ? { vatType } : {}),
+      ...(line.sku ? { catalogNum: line.sku } : {}),
+    };
+  });
+}
+
+function mapPaymentLines(payments: MorningCreateDocumentPayload["payments"], currency: string) {
+  if (!payments?.length) return undefined;
+  return payments.map((entry) => ({
+    type: entry.type,
+    date: entry.date,
+    price: entry.price,
+    currency: entry.currency ?? currency,
+    ...(entry.accountId ? { accountId: entry.accountId } : {}),
+    ...(entry.bankName ? { bankName: entry.bankName } : {}),
+    ...(entry.branchNumber ? { branchNumber: entry.branchNumber } : {}),
+    ...(entry.accountNumber ? { accountNumber: entry.accountNumber } : {}),
+    ...(entry.chequeNumber ? { chequeNum: entry.chequeNumber } : {}),
   }));
 }
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export async function createMorningDocument(payload: MorningCreateDocumentPayload) {
+  const currency = payload.currency ?? "ILS";
+  const body: Record<string, unknown> = {
+    type: payload.type,
+    date: payload.date ?? todayIsoDate(),
+    lang: "he",
+    currency,
+    // 0 = let the business default decide VAT handling. Line-level vatType overrides this per row.
+    vatType: 0,
+    client: { id: payload.clientId },
+    income: mapIncomeLines(payload.lines, currency),
+  };
+
+  const paymentLines = mapPaymentLines(payload.payments, currency);
+  if (paymentLines) body.payment = paymentLines;
+  if (payload.remarks) body.remarks = payload.remarks;
+  if (payload.description) body.description = payload.description;
+  if (payload.externalId) body.externalId = payload.externalId;
+  if (payload.linkedDocumentIds?.length) body.linkedDocumentIds = payload.linkedDocumentIds;
+
   const json = await morningFetch<Record<string, unknown>>("/documents", {
     method: "POST",
-    body: JSON.stringify({
-      type: payload.type,
-      client: {
-        id: payload.clientId,
-      },
-      currency: payload.currency ?? "ILS",
-      remarks: payload.remarks ?? undefined,
-      description: payload.description ?? undefined,
-      externalId: payload.externalId ?? undefined,
-      income: mapLines(payload.lines),
-    }),
+    body: JSON.stringify(body),
   });
   return normalizeMorningDocument(ensureObject(json.data ?? json));
 }

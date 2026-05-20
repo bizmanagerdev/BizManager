@@ -1,6 +1,7 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import SettingsTabs from "@/app/settings/SettingsTabs";
+import { loadMorningSettings, type MorningSettings } from "@/lib/morning/settings";
 import type { TaskPriority, TaskStatus } from "@/components/tasks/TaskUpsertDialog";
 import type { RecurringExpenseTemplateItem } from "@/app/financial/RecurringExpensesManager";
 
@@ -155,6 +156,12 @@ export default async function SettingsPage() {
     }).filter((o) => o.id);
   }
 
+  // ── Morning integration (admin only) ────────────────────────────────────
+  let morningSettings: MorningSettings | null = null;
+  if (isAdmin) {
+    morningSettings = await loadMorningSettings(supabase);
+  }
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <SettingsTabs
@@ -169,6 +176,7 @@ export default async function SettingsPage() {
         expenseProperties={propertyOptions}
         expenseOrders={orderOptions}
         expenseMissingSchema={expenseMissingSchema}
+        morningSettings={morningSettings}
       />
     </AppShell>
   );

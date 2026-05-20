@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import {
   isExpenseBusinessDomain,
@@ -140,6 +141,11 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    let morningAutoReceipt: {
+      skipped: boolean;
+      reason: string | null;
+      morning_document_id: string | null;
+    } | null = null;
     if (data?.id) {
       await logAuditEvent({
         supabase,
@@ -149,9 +155,19 @@ export async function POST(req: Request) {
         changedBy: profile.id,
         userRole: profile.role,
       });
+
+      const outcome = await tryAutoIssueReceiptForPayment(supabase, {
+        paymentId: data.id,
+        actor: { profileId: profile.id, authUserId: user.id, role: profile.role },
+      });
+      morningAutoReceipt = {
+        skipped: outcome.skipped,
+        reason: outcome.ok ? outcome.reason : outcome.reason,
+        morning_document_id: outcome.morningDocumentId,
+      };
     }
 
-    return NextResponse.json({ payment: data });
+    return NextResponse.json({ payment: data, morning_auto_receipt: morningAutoReceipt });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

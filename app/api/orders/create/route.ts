@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import {
+  tryAutoIssueInvoiceForOrder,
+  tryAutoIssueReceiptForPayment,
+} from "@/lib/morning/service";
 import { buildPaymentInsert } from "@/lib/payments";
 import {
   derivePaymentStatus,
@@ -100,7 +104,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, user, profile } = access.value;
 
     const subtotal = normalizedItems.reduce(
       (sum, item) => sum + item.quantity_ordered * item.unit_price - item.discount_amount,
@@ -181,10 +185,47 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
 
+    // Best-effort Morning auto-issue on new order: invoice for the order, plus a
+    // receipt for each upfront payment line. Failures never abort the create.
+    const actor = { profileId: profile.id, authUserId: user.id, role: profile.role };
+    const invoiceOutcome = await tryAutoIssueInvoiceForOrder(supabase, {
+      orderId,
+      newStatus: status,
+      trigger: "create",
+      actor,
+    });
+
+    const receiptOutcomes: Array<{ skipped: boolean; reason: string | null; morningDocumentId: string | null }> = [];
+    if (payments.length > 0) {
+      const { data: newPaymentRows } = await supabase
+        .from("payments")
+        .select("id,created_at")
+        .eq("order_id", orderId)
+        .order("created_at", { ascending: false })
+        .limit(payments.length);
+      const newPaymentIds = ((newPaymentRows ?? []) as Array<{ id?: string }>)
+        .map((row) => (typeof row?.id === "string" ? row.id : null))
+        .filter((value): value is string => Boolean(value));
+      for (const newPaymentId of newPaymentIds) {
+        const outcome = await tryAutoIssueReceiptForPayment(supabase, { paymentId: newPaymentId, actor });
+        receiptOutcomes.push({
+          skipped: outcome.skipped,
+          reason: outcome.ok ? outcome.reason : outcome.reason,
+          morningDocumentId: outcome.morningDocumentId,
+        });
+      }
+    }
+
     return NextResponse.json({
       order_id: orderId,
       payment_status: derivedPaymentStatus,
       total_paid: totalPaid,
+      morning_auto_invoice: {
+        skipped: invoiceOutcome.skipped,
+        reason: invoiceOutcome.ok ? invoiceOutcome.reason : invoiceOutcome.reason,
+        morning_document_id: invoiceOutcome.morningDocumentId,
+      },
+      morning_auto_receipts: receiptOutcomes,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

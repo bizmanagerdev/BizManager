@@ -12,10 +12,13 @@ import {
   type MorningCustomerRow,
 } from "@/lib/morning/client";
 import { findMorningClientCandidatesForCustomerRecord } from "@/lib/morning/matching";
+import { isOrderCompletionStatus, loadMorningSettings } from "@/lib/morning/settings";
 import {
   MorningDocumentType,
+  mapBizPaymentMethodToMorning,
   type MorningCreateDocumentPayload,
   type MorningDocumentLine,
+  type MorningPaymentLine,
 } from "@/lib/morning/types";
 
 type DbRow = Record<string, unknown>;
@@ -391,7 +394,7 @@ async function buildProjectLines(supabase: SupabaseClient, projectId: string) {
 async function loadPaymentForDocument(supabase: SupabaseClient, paymentId: string) {
   const { data, error } = await supabase
     .from("payments")
-    .select("id,amount_total,payment_date,payment_method,notes,order_id,project_id")
+    .select("id,amount_total,payment_date,payment_method,reference_number,notes,order_id,project_id")
     .eq("id", paymentId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -628,6 +631,7 @@ export async function issueMorningDocumentForSource(
     paymentId,
     notes,
     customLines,
+    paymentLines,
     allowDuplicate,
     actor,
   }: {
@@ -638,6 +642,7 @@ export async function issueMorningDocumentForSource(
     paymentId?: string;
     notes?: string;
     customLines?: MorningDocumentLine[];
+    paymentLines?: MorningPaymentLine[];
     allowDuplicate?: boolean;
     actor: { profileId: string; authUserId: string; role: string };
   }
@@ -661,6 +666,7 @@ export async function issueMorningDocumentForSource(
     description: getString(customerRow, ["name_for_invoice", "name"]) ?? undefined,
     externalId: [orderId, projectId, paymentId].filter(Boolean).join(":") || null,
     lines,
+    ...(paymentLines?.length ? { payments: paymentLines } : {}),
   };
 
   const result = await createMorningDocument(payload);
@@ -704,6 +710,10 @@ export async function issueMorningReceiptForPayment(
   const amount = Math.max(0, getNumber(payment, ["amount_total"]) ?? 0);
   const orderId = getString(payment, ["order_id"]) ?? undefined;
   const projectId = getString(payment, ["project_id"]) ?? undefined;
+  const paymentDate =
+    getString(payment, ["payment_date"]) ?? new Date().toISOString().slice(0, 10);
+  const paymentMethodCode = mapBizPaymentMethodToMorning(getString(payment, ["payment_method"]));
+  const referenceNumber = getString(payment, ["reference_number"]);
 
   return issueMorningDocumentForSource(supabase, {
     type,
@@ -722,6 +732,15 @@ export async function issueMorningReceiptForPayment(
         quantity: 1,
         unitPrice: amount,
         vatType: "include",
+      },
+    ],
+    paymentLines: [
+      {
+        type: paymentMethodCode,
+        date: paymentDate.slice(0, 10),
+        price: amount,
+        currency: "ILS",
+        ...(paymentMethodCode === 2 && referenceNumber ? { chequeNumber: referenceNumber } : {}),
       },
     ],
     notes: getString(payment, ["notes"]) ?? undefined,
@@ -787,6 +806,184 @@ export async function syncMorningDocumentByLocalId(
   });
 
   return updated;
+}
+
+type AutoIssueOutcome =
+  | { ok: true; skipped: false; reason: null; morningDocumentId: string | null }
+  | { ok: true; skipped: true; reason: string; morningDocumentId: null }
+  | { ok: false; skipped: false; reason: string; morningDocumentId: null };
+
+async function logAutoIssueFailure(
+  supabase: SupabaseClient,
+  {
+    tableName,
+    recordId,
+    action,
+    actor,
+    error,
+  }: {
+    tableName: string;
+    recordId: string;
+    action: string;
+    actor: { profileId: string; role: string };
+    error: string;
+  }
+) {
+  try {
+    await logAuditEvent({
+      supabase,
+      tableName,
+      recordId,
+      action,
+      changedBy: actor.profileId,
+      userRole: actor.role,
+      newData: { error },
+    });
+  } catch {
+    // never let audit logging break the parent operation
+  }
+}
+
+export async function tryAutoIssueInvoiceForOrder(
+  supabase: SupabaseClient,
+  {
+    orderId,
+    newStatus,
+    trigger,
+    actor,
+  }: {
+    orderId: string;
+    newStatus: string | null | undefined;
+    // "create" → fires regardless of status (new orders should issue immediately if enabled).
+    // "status-change" → fires only when status transitions into a completion state.
+    trigger: "create" | "status-change";
+    actor: { profileId: string; authUserId: string; role: string };
+  }
+): Promise<AutoIssueOutcome> {
+  try {
+    if (trigger === "status-change" && !isOrderCompletionStatus(newStatus ?? null)) {
+      return { ok: true, skipped: true, reason: "status_not_completion", morningDocumentId: null };
+    }
+
+    const settings = await loadMorningSettings(supabase);
+    if (!settings.autoInvoiceOnOrderCompletion) {
+      return { ok: true, skipped: true, reason: "auto_disabled", morningDocumentId: null };
+    }
+
+    const { data: existing, error: existingError } = await supabase
+      .from("morning_documents")
+      .select("id")
+      .eq("order_id", orderId)
+      .in("document_type", [MorningDocumentType.TaxInvoice, MorningDocumentType.TaxInvoiceReceipt])
+      .limit(1)
+      .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+    if (existing) {
+      return { ok: true, skipped: true, reason: "already_issued", morningDocumentId: null };
+    }
+
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("id,customer_id,status")
+      .eq("id", orderId)
+      .maybeSingle();
+    if (orderError) throw new Error(orderError.message);
+    const customerId = getString(order as DbRow | null, ["customer_id"]);
+    if (!order || !customerId) {
+      return { ok: true, skipped: true, reason: "no_customer", morningDocumentId: null };
+    }
+
+    const result = await issueMorningDocumentForSource(supabase, {
+      type: settings.invoiceTypeOnCompletion,
+      customerId,
+      orderId,
+      actor,
+    });
+
+    const morningDocumentId = getString(result.morningDocument as DbRow | null, ["id"]);
+    return { ok: true, skipped: false, reason: null, morningDocumentId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "auto-issue invoice failed";
+    await logAutoIssueFailure(supabase, {
+      tableName: "orders",
+      recordId: orderId,
+      action: "morning_auto_invoice_failed",
+      actor,
+      error: message,
+    });
+    return { ok: false, skipped: false, reason: message, morningDocumentId: null };
+  }
+}
+
+export async function tryAutoIssueReceiptForPayment(
+  supabase: SupabaseClient,
+  {
+    paymentId,
+    actor,
+  }: {
+    paymentId: string;
+    actor: { profileId: string; authUserId: string; role: string };
+  }
+): Promise<AutoIssueOutcome> {
+  try {
+    const settings = await loadMorningSettings(supabase);
+    if (!settings.autoReceiptOnPayment) {
+      return { ok: true, skipped: true, reason: "auto_disabled", morningDocumentId: null };
+    }
+
+    const { data: payment, error: paymentError } = await supabase
+      .from("payments")
+      .select("id,amount_total,order_id,project_id,property_id")
+      .eq("id", paymentId)
+      .maybeSingle();
+    if (paymentError) throw new Error(paymentError.message);
+    if (!payment) {
+      return { ok: true, skipped: true, reason: "payment_not_found", morningDocumentId: null };
+    }
+
+    const amount = getNumber(payment as DbRow, ["amount_total"]) ?? 0;
+    if (amount <= 0) {
+      return { ok: true, skipped: true, reason: "non_positive_amount", morningDocumentId: null };
+    }
+
+    const orderId = getString(payment as DbRow, ["order_id"]);
+    const projectId = getString(payment as DbRow, ["project_id"]);
+    if (!orderId && !projectId) {
+      // Property-only payments don't have a customer in BizH today.
+      return { ok: true, skipped: true, reason: "no_linked_customer", morningDocumentId: null };
+    }
+
+    const { data: existing, error: existingError } = await supabase
+      .from("morning_documents")
+      .select("id")
+      .eq("payment_id", paymentId)
+      .in("document_type", [MorningDocumentType.Receipt, MorningDocumentType.TaxInvoiceReceipt])
+      .limit(1)
+      .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+    if (existing) {
+      return { ok: true, skipped: true, reason: "already_issued", morningDocumentId: null };
+    }
+
+    const result = await issueMorningReceiptForPayment(supabase, {
+      paymentId,
+      type: settings.receiptTypeOnPayment,
+      actor,
+    });
+
+    const morningDocumentId = getString(result.morningDocument as DbRow | null, ["id"]);
+    return { ok: true, skipped: false, reason: null, morningDocumentId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "auto-issue receipt failed";
+    await logAutoIssueFailure(supabase, {
+      tableName: "payments",
+      recordId: paymentId,
+      action: "morning_auto_receipt_failed",
+      actor,
+      error: message,
+    });
+    return { ok: false, skipped: false, reason: message, morningDocumentId: null };
+  }
 }
 
 export async function closeMorningDocumentByLocalId(

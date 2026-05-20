@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import NotificationSettings from "@/components/notifications/NotificationSettings";
@@ -8,6 +10,8 @@ import RecurringTasksClient from "@/app/tasks/recurring/RecurringTasksClient";
 import RecurringExpensesManager from "@/app/financial/RecurringExpensesManager";
 import type { RecurringExpenseTemplateItem } from "@/app/financial/RecurringExpensesManager";
 import type { TaskPriority, TaskStatus } from "@/components/tasks/TaskUpsertDialog";
+import MorningAutoIssueForm from "@/app/settings/integrations/morning/MorningAutoIssueForm";
+import type { MorningSettings } from "@/lib/morning/settings";
 
 type UserOption = { id: string; label: string };
 type Option = { id: string; label: string };
@@ -43,17 +47,21 @@ type Props = {
   expenseProperties: Option[];
   expenseOrders: Option[];
   expenseMissingSchema: boolean;
+  // Morning integration (admin only)
+  morningSettings: MorningSettings | null;
 };
 
-const TABS = [
-  { key: "notifications", label: "התראות" },
-  { key: "recurring-tasks", label: "משימות קבועות" },
-  { key: "recurring-expenses", label: "הוצאות קבועות" },
+const ALL_TABS = [
+  { key: "notifications", label: "התראות", adminOnly: false },
+  { key: "recurring-tasks", label: "משימות קבועות", adminOnly: false },
+  { key: "recurring-expenses", label: "הוצאות קבועות", adminOnly: false },
+  { key: "morning", label: "Morning", adminOnly: true },
 ] as const;
 
-type TabKey = (typeof TABS)[number]["key"];
+type TabKey = (typeof ALL_TABS)[number]["key"];
 
 export default function SettingsTabs(props: Props) {
+  const tabs = ALL_TABS.filter((tab) => !tab.adminOnly || props.isAdmin);
   const [activeTab, setActiveTab] = useState<TabKey>("notifications");
 
   return (
@@ -65,7 +73,7 @@ export default function SettingsTabs(props: Props) {
 
       {/* Tab bar */}
       <div className="flex gap-1 rounded-xl border bg-muted/40 p-1">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
@@ -129,6 +137,29 @@ export default function SettingsTabs(props: Props) {
           orders={props.expenseOrders}
           missingSchema={props.expenseMissingSchema}
         />
+      )}
+
+      {/* Morning integration tab (admin only) */}
+      {activeTab === "morning" && props.isAdmin && props.morningSettings && (
+        <div className="space-y-4">
+          <MorningAutoIssueForm initial={props.morningSettings} />
+          <Card>
+            <CardHeader>
+              <CardTitle>פעולות נוספות</CardTitle>
+              <CardDescription>התאמת לקוחות Morning ובדיקת חיבור.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              <Button asChild variant="outline">
+                <Link href="/settings/integrations/morning/customers">התאמת לקוחות</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/api/morning/health" target="_blank">
+                  בדיקת חיבור (health)
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );
