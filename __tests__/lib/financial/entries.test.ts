@@ -91,7 +91,7 @@ describe("buildPaymentFlowMeta — check payments (key business rule)", () => {
 describe("buildExpenseFlowMeta", () => {
   it("stage=posted for past expense_date", () => {
     const result = buildExpenseFlowMeta(
-      { id: "1", expense_date: "2024-04-01", amount: 200, category: null, description: null, business_domain: null, notes: null, project_id: null, order_id: null, property_id: null, recorded_by: null },
+      { id: "1", expense_date: "2024-04-01", amount: 200, category: null, description: null, business_domain: null, notes: null, project_id: null, order_id: null, property_id: null, recorded_by: null, payment_status: null, paid_amount: null, payment_method: null },
       "2024-06-15"
     );
     expect(result?.stage).toBe("posted");
@@ -100,7 +100,7 @@ describe("buildExpenseFlowMeta", () => {
 
   it("stage=scheduled for future expense_date", () => {
     const result = buildExpenseFlowMeta(
-      { id: "1", expense_date: "2024-09-01", amount: 200, category: null, description: null, business_domain: null, notes: null, project_id: null, order_id: null, property_id: null, recorded_by: null },
+      { id: "1", expense_date: "2024-09-01", amount: 200, category: null, description: null, business_domain: null, notes: null, project_id: null, order_id: null, property_id: null, recorded_by: null, payment_status: null, paid_amount: null, payment_method: null },
       "2024-06-15"
     );
     expect(result?.stage).toBe("scheduled");
@@ -108,7 +108,7 @@ describe("buildExpenseFlowMeta", () => {
 
   it("returns null when expense_date is missing", () => {
     const result = buildExpenseFlowMeta(
-      { id: "1", expense_date: null, amount: 200, category: null, description: null, business_domain: null, notes: null, project_id: null, order_id: null, property_id: null, recorded_by: null },
+      { id: "1", expense_date: null, amount: 200, category: null, description: null, business_domain: null, notes: null, project_id: null, order_id: null, property_id: null, recorded_by: null, payment_status: null, paid_amount: null, payment_method: null },
       "2024-06-15"
     );
     expect(result).toBeNull();

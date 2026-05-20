@@ -417,6 +417,21 @@ export default function ProjectTabsClient({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
+  const [isExpenseRefreshPending, startExpenseRefreshTransition] = useTransition();
+  const expenseRefreshResolveRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!isExpenseRefreshPending && expenseRefreshResolveRef.current) {
+      const resolve = expenseRefreshResolveRef.current;
+      expenseRefreshResolveRef.current = null;
+      resolve();
+    }
+  }, [isExpenseRefreshPending]);
+  function expenseRefreshAndWait() {
+    return new Promise<void>((resolve) => {
+      expenseRefreshResolveRef.current = resolve;
+      startExpenseRefreshTransition(() => { router.refresh(); });
+    });
+  }
   const [docsUploading, setDocsUploading] = useState(false);
   const [docsFilterCategory, setDocsFilterCategory] = useState<string>("");
   const [expensesUi, setExpensesUi] = useState<ExpenseListItem[]>(expenses);
@@ -1276,11 +1291,29 @@ export default function ProjectTabsClient({
               </span>
             ) : null}
           </div>
-          {session ? (
-            <div className="mt-2">
-              <StatusBadge value={currentSessionPaymentStatus} type="payment" />
-            </div>
-          ) : null}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <StatusBadge
+              value={session ? currentSessionPaymentStatus : String(item.expense?.payment_status ?? "not_paid")}
+              type="payment"
+            />
+            {!session && (() => {
+              const expStatus = item.expense?.payment_status;
+              const expPaid = toNumber(item.expense?.paid_amount as string | number | null);
+              const expMethod = getString(item.expense, "payment_method");
+              if (expStatus !== "paid" && expStatus !== "partial") return null;
+              const methodLabel = expMethod === "bank_transfer" ? "העברה בנקאית"
+                : expMethod === "cash" ? "מזומן"
+                : expMethod === "check" ? "צ'ק"
+                : expMethod === "credit_card" ? "כרטיס אשראי"
+                : expMethod === "other" ? "אחר"
+                : null;
+              const parts: string[] = [];
+              if (expStatus === "partial" && expPaid != null && expPaid > 0) parts.push(`שולם ${formatIls(expPaid)}`);
+              if (methodLabel) parts.push(methodLabel);
+              if (!parts.length) return null;
+              return <span className="text-xs text-muted-foreground">{parts.join(" • ")}</span>;
+            })()}
+          </div>
           {session?.notes ? (
             <div className="text-xs text-muted-foreground mt-1 truncate">
               {session.notes}
@@ -2413,7 +2446,7 @@ export default function ProjectTabsClient({
         users={assignableUsers.filter((user) => user.active !== false)}
         salaryAgreements={salaryAgreements}
         editingItem={editingExpense}
-        onSaved={(saved) => {
+        onSaved={async (saved) => {
           if (saved.source_type === "session" && saved.session?.id) {
             setExpensesUi((prev) => {
               const exists = prev.some(
@@ -2425,8 +2458,8 @@ export default function ProjectTabsClient({
               );
             });
             setEditingExpense(null);
+            await expenseRefreshAndWait();
             setAddExpenseOpen(false);
-            startTransition(() => router.refresh());
             return;
           }
           const savedExpenseId =
@@ -2446,8 +2479,8 @@ export default function ProjectTabsClient({
             });
           });
           setEditingExpense(null);
+          await expenseRefreshAndWait();
           setAddExpenseOpen(false);
-          startTransition(() => router.refresh());
         }}
       />
       <AddIncomeDialog
@@ -3666,7 +3699,7 @@ function AddExpenseDialog({
   users: AssignableUser[];
   salaryAgreements: ProjectSalaryAgreement[];
   editingItem: ExpenseListItem | null;
-  onSaved: (saved: ExpenseListItem) => void;
+  onSaved: (saved: ExpenseListItem) => void | Promise<void>;
 }) {
   const editingExpense = editingItem?.expense ?? null;
   const editingSession = editingItem?.session ?? null;
@@ -3700,6 +3733,9 @@ function AddExpenseDialog({
   const [sessionUserId, setSessionUserId] = useState("");
   const [notes, setNotes] = useState("");
   const [billedToCustomer, setBilledToCustomer] = useState(false);
+  const [expensePaymentStatus, setExpensePaymentStatus] = useState<"paid" | "partial" | "not_paid">("not_paid");
+  const [expensePaidAmount, setExpensePaidAmount] = useState("");
+  const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [laborCost, setLaborCost] = useState("");
@@ -3948,6 +3984,15 @@ function AddExpenseDialog({
     setNewWorkerRole("worker_no_access");
     setNotes(isEditingSession ? editingSession?.notes ?? "" : getString(editingExpense, "notes") ?? "");
     setBilledToCustomer(Boolean(editingItem?.project_expense?.["billed_to_customer"]));
+    const rawStatus = getString(editingExpense, "payment_status");
+    setExpensePaymentStatus(
+      rawStatus === "paid" || rawStatus === "partial" || rawStatus === "not_paid"
+        ? rawStatus
+        : "not_paid"
+    );
+    const rawExpPaid = editingExpense ? toNumber(editingExpense["paid_amount"] as string | number | null) : null;
+    setExpensePaidAmount(rawExpPaid != null && rawExpPaid > 0 ? String(rawExpPaid) : "");
+    setExpensePaymentMethod(getString(editingExpense, "payment_method") ?? "");
     setAttachmentFiles([]);
     setExistingAttachments(
       isEditingSession
@@ -4224,7 +4269,7 @@ function AddExpenseDialog({
         setWorkerPaymentAmount("");
         setWorkerPaymentAmountTouched(false);
         lastAutoWorkerPaymentAmountRef.current = "";
-        onSaved({
+        const sessionSavedResult = onSaved({
           source_type: "session",
           project_expense: null,
           expense: null,
@@ -4233,6 +4278,7 @@ function AddExpenseDialog({
             attachments: [...existingAttachments, ...uploadedAttachments],
           },
         });
+        if (sessionSavedResult instanceof Promise) await sessionSavedResult;
       } catch (e: unknown) {
         toast.error(isEditingSession ? "שגיאה בעדכון משמרת" : "שגיאה בהוספת משמרת", {
           description: getErrorMessage(e),
@@ -4264,6 +4310,9 @@ function AddExpenseDialog({
           expense_date: expenseDate ? expenseDate : null,
           included_in_base_price: includedInBase,
           billed_to_customer: billedToCustomer,
+          payment_status: expensePaymentStatus,
+          paid_amount: expensePaymentStatus === "partial" ? (Number(expensePaidAmount) || null) : null,
+          payment_method: (expensePaymentStatus === "paid" || expensePaymentStatus === "partial") ? (expensePaymentMethod || null) : null,
         }),
       });
       const json = await res.json();
@@ -4281,6 +4330,9 @@ function AddExpenseDialog({
       setExpenseDate(projectDateOrToday(projectStartDate));
       setNotes("");
       setBilledToCustomer(false);
+      setExpensePaymentStatus("not_paid");
+      setExpensePaidAmount("");
+      setExpensePaymentMethod("");
 
       const savedExpense = json?.expense as Record<string, unknown> | undefined;
       const savedExpenseId =
@@ -4309,7 +4361,7 @@ function AddExpenseDialog({
       setAttachmentFiles([]);
       setExistingAttachments([]);
 
-      onSaved({
+      const expenseSavedResult = onSaved({
         source_type: "expense",
         project_expense:
           (json?.projectExpense as Record<string, unknown> | undefined) ??
@@ -4321,6 +4373,7 @@ function AddExpenseDialog({
         expense: expenseWithAttachment,
         session: null,
       });
+      if (expenseSavedResult instanceof Promise) await expenseSavedResult;
     } catch (e: unknown) {
       toast.error(isEditing ? "שגיאה בעדכון ההוצאה" : "שגיאה בהוספת הוצאה", {
         description: getErrorMessage(e),
@@ -4657,6 +4710,55 @@ function AddExpenseDialog({
                 <div className="text-xs text-destructive">{expenseDateError}</div>
               ) : null}
             </div>
+          ) : null}
+
+          {!isSessionMode ? (
+            <>
+              <div className="space-y-1">
+                <div className="text-sm font-medium">סטטוס תשלום</div>
+                <select
+                  className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                  value={expensePaymentStatus}
+                  onChange={(e) => setExpensePaymentStatus(e.target.value as "paid" | "partial" | "not_paid")}
+                >
+                  <option value="not_paid">לא שולם</option>
+                  <option value="partial">חלקי</option>
+                  <option value="paid">שולם</option>
+                </select>
+              </div>
+              {(expensePaymentStatus === "paid" || expensePaymentStatus === "partial") && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">אמצעי תשלום</div>
+                    <select
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={expensePaymentMethod}
+                      onChange={(e) => setExpensePaymentMethod(e.target.value)}
+                    >
+                      <option value="">בחר אמצעי</option>
+                      <option value="bank_transfer">העברה בנקאית</option>
+                      <option value="cash">מזומן</option>
+                      <option value="check">צ&apos;ק</option>
+                      <option value="credit_card">כרטיס אשראי</option>
+                      <option value="other">אחר</option>
+                    </select>
+                  </div>
+                  {expensePaymentStatus === "partial" && (
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">סכום ששולם</div>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={expensePaidAmount}
+                        onChange={(e) => setExpensePaidAmount(e.target.value)}
+                        placeholder="0.00"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           ) : null}
 
             {isSessionMode ? (

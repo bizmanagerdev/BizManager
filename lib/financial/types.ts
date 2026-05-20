@@ -32,6 +32,9 @@ export type ExpenseRow = {
   order_id: string | null;
   property_id: string | null;
   recorded_by: string | null;
+  payment_status: string | null;
+  paid_amount: number | string | null;
+  payment_method: string | null;
 };
 
 export type OrderRow = {
@@ -202,6 +205,8 @@ export type FinancialEntry = {
   expenseProjectId?: string | null;
   expenseOrderId?: string | null;
   expensePropertyId?: string | null;
+  expensePaidAmount?: number | null;
+  expensePaymentMethod?: string | null;
 };
 
 export type FinancialSummary = {

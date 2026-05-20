@@ -80,14 +80,30 @@ export async function scanPaymentRows(supabase: SupabaseClient, since?: string |
 }
 
 export async function scanExpenseRows(supabase: SupabaseClient, since?: string | null) {
-  const rows = await scanRows<Record<string, unknown>>(
-    supabase,
-    "expenses",
+  const selectVariants = [
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status,paid_amount,payment_method",
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status",
     "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by",
-    "expense_date",
-    since,
-  );
-  return rows as ExpenseRow[];
+  ] as const;
+
+  let lastError: unknown = null;
+  for (const selectColumns of selectVariants) {
+    try {
+      const rows = await scanRows<Record<string, unknown>>(supabase, "expenses", selectColumns, "expense_date", since);
+      return rows as ExpenseRow[];
+    } catch (error) {
+      lastError = error;
+      if (
+        isMissingColumnError(error, "payment_status") ||
+        isMissingColumnError(error, "paid_amount") ||
+        isMissingColumnError(error, "payment_method")
+      ) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
 }
 
 export async function scanWorkerPaymentRows(supabase: SupabaseClient, since?: string | null) {

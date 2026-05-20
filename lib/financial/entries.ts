@@ -75,11 +75,14 @@ export function buildPaymentFlowMeta(row: PaymentRow, referenceDate: string) {
 export function buildExpenseFlowMeta(row: ExpenseRow, referenceDate: string) {
   const expenseDate = normalizeDate(row.expense_date);
   if (!expenseDate) return null;
-  return {
-    flowDate: expenseDate,
-    recordedDate: expenseDate,
-    stage: expenseDate > referenceDate ? ("scheduled" as const) : ("posted" as const),
-  };
+  const paymentStatus = normalizePaymentStatus(row.payment_status);
+  const isPast = expenseDate <= referenceDate;
+  const stage: FinancialEntryStage = !isPast
+    ? "scheduled"
+    : paymentStatus === "not_paid" || paymentStatus === "partial"
+      ? "pending"
+      : "posted";
+  return { flowDate: expenseDate, recordedDate: expenseDate, stage };
 }
 
 export function buildWorkerPaymentFlowMeta(paymentDateValue: string | null | undefined, referenceDate: string) {
@@ -484,7 +487,7 @@ export function buildExpenseEntries(args: {
       reference,
       paymentMethod: null,
       paymentMethodLabel: null,
-      paymentStatus: null,
+      paymentStatus: normalizePaymentStatus(row.payment_status),
       recordedByName: typeof row.recorded_by === "string" ? recordedByNames[row.recorded_by] ?? null : null,
       customerId: linkedOrder?.customer_id ?? linkedProject?.customer_id ?? null,
       searchText: [description, source.label, reference ?? "", row.notes ?? "",
@@ -498,6 +501,8 @@ export function buildExpenseEntries(args: {
       expenseProjectId: resolvedProjectId,
       expenseOrderId: row.order_id,
       expensePropertyId: row.property_id,
+      expensePaidAmount: row.paid_amount != null ? Math.abs(toNumber(row.paid_amount)) : null,
+      expensePaymentMethod: typeof row.payment_method === "string" ? row.payment_method.trim() || null : null,
     }];
   });
 }

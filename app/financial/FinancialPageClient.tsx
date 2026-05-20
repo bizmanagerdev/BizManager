@@ -28,6 +28,7 @@ import {
   getBusinessDomainLabel,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
+import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import type {
   FinancialEntry,
   FinancialEntryStage,
@@ -36,6 +37,8 @@ import type {
 } from "@/lib/financial";
 import { cn } from "@/lib/utils";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
+import { ObligationsTab } from "@/app/financial/ObligationsTab";
+import type { ObligationsData } from "@/lib/financial/obligations";
 
 type InitialFilters = {
   from: string;
@@ -51,6 +54,7 @@ type InitialFilters = {
 
 type Props = {
   data: FinancialPageData;
+  obligationsData: ObligationsData;
   initialFilters: InitialFilters;
   customerId: string;
   customerName: string;
@@ -70,29 +74,6 @@ type EditableExpenseEntry = FinancialEntry & {
   expenseProjectId: string | null;
   expenseOrderId: string | null;
   expensePropertyId: string | null;
-};
-
-type ExpenseEditFormState = {
-  amount: string;
-  expenseDate: string;
-  category: string;
-  description: string;
-  notes: string;
-  businessDomain: ExpenseBusinessDomain;
-};
-
-type ExpenseCreateFormState = {
-  businessDomain: ExpenseBusinessDomain;
-  projectId: string;
-  orderId: string;
-  propertyId: string;
-  amount: string;
-  expenseDate: string;
-  category: string;
-  description: string;
-  notes: string;
-  includedInBasePrice: boolean;
-  billedToCustomer: boolean;
 };
 
 type IncomeCreateFormState = {
@@ -168,50 +149,8 @@ function isEditableExpenseEntry(entry: FinancialEntry): entry is EditableExpense
   return entry.origin === "expense" && typeof entry.expenseId === "string" && entry.expenseId.length > 0;
 }
 
-function lockedBusinessDomainForExpense(entry: EditableExpenseEntry): ExpenseBusinessDomain | null {
-  if (entry.expenseProjectId) return "logistics_projects";
-  if (entry.expenseOrderId) return "sales";
-  if (entry.expensePropertyId) return "property_management";
-  return null;
-}
-
-function resolveEditableExpenseBusinessDomain(entry: EditableExpenseEntry): ExpenseBusinessDomain {
-  const lockedDomain = lockedBusinessDomainForExpense(entry);
-  if (lockedDomain) return lockedDomain;
-  return EXPENSE_BUSINESS_DOMAINS.includes(entry.businessDomain as ExpenseBusinessDomain)
-    ? (entry.businessDomain as ExpenseBusinessDomain)
-    : "general_business";
-}
-
-function createExpenseEditFormState(entry: EditableExpenseEntry): ExpenseEditFormState {
-  return {
-    amount: entry.amount > 0 ? String(entry.amount) : "",
-    expenseDate: entry.flowDate,
-    category: entry.expenseCategory ?? entry.reference ?? "",
-    description: entry.expenseDescriptionRaw ?? "",
-    notes: entry.expenseNotes ?? "",
-    businessDomain: resolveEditableExpenseBusinessDomain(entry),
-  };
-}
-
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function createExpenseFormState(): ExpenseCreateFormState {
-  return {
-    businessDomain: "general_business",
-    projectId: "",
-    orderId: "",
-    propertyId: "",
-    amount: "",
-    expenseDate: todayIsoDate(),
-    category: "",
-    description: "",
-    notes: "",
-    includedInBasePrice: false,
-    billedToCustomer: false,
-  };
 }
 
 function createIncomeFormState(): IncomeCreateFormState {
@@ -360,6 +299,7 @@ function setOrDelete(params: URLSearchParams, key: string, value: string | numbe
 
 export default function FinancialPageClient({
   data,
+  obligationsData,
   initialFilters,
   customerId,
   customerName,
@@ -379,7 +319,9 @@ export default function FinancialPageClient({
   const [sourceId, setSourceId] = useState(initialFilters.sourceId);
   const [type, setType] = useState(initialFilters.type);
   const [stage, setStage] = useState(initialFilters.stage);
+  const [activeView, setActiveView] = useState<"cashflow" | "obligations">("cashflow");
   const [isFilterPending, startFilterTransition] = useTransition();
+  const [isRefreshPending, startRefreshTransition] = useTransition();
   const [loadingOverlayTop, setLoadingOverlayTop] = useState(0);
   const [loadingOverlayLeft, setLoadingOverlayLeft] = useState(0);
   const [loadingOverlayRight, setLoadingOverlayRight] = useState(0);
@@ -387,6 +329,7 @@ export default function FinancialPageClient({
   const contentAreaRef = useRef<HTMLDivElement | null>(null);
   const queryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshResolveRef = useRef<(() => void) | null>(null);
   const sourceKind = data.sourceKind;
   const domainOptions = data.domainOptions;
   const sourceOptions = data.sourceOptions;
@@ -486,15 +429,9 @@ export default function FinancialPageClient({
   const setUpcomingPage = (page: number) => replaceFilters({ upcomingPage: page });
   const setLedgerPage = (page: number) => replaceFilters({ ledgerPage: page });
   const [editingExpense, setEditingExpense] = useState<EditableExpenseEntry | null>(null);
-  const [expenseEditForm, setExpenseEditForm] = useState<ExpenseEditFormState | null>(null);
-  const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [deletingExpense, setDeletingExpense] = useState<EditableExpenseEntry | null>(null);
   const [isDeletingExpense, setIsDeletingExpense] = useState(false);
   const [expenseCreateOpen, setExpenseCreateOpen] = useState(false);
-  const [expenseCreateForm, setExpenseCreateForm] = useState<ExpenseCreateFormState>(
-    () => loadDraft<ExpenseCreateFormState>("expense-create") ?? createExpenseFormState()
-  );
-  const [isCreatingExpense, setIsCreatingExpense] = useState(false);
   const [incomeCreateOpen, setIncomeCreateOpen] = useState(false);
   const [incomeCreateForm, setIncomeCreateForm] = useState<IncomeCreateFormState>(
     () => loadDraft<IncomeCreateFormState>("income-create") ?? createIncomeFormState()
@@ -525,11 +462,22 @@ export default function FinancialPageClient({
     };
   }, [isFilterPending]);
 
-  // Auto-save create forms to localStorage while dialogs are open
   useEffect(() => {
-    if (!expenseCreateOpen) return;
-    saveDraft("expense-create", expenseCreateForm);
-  }, [expenseCreateForm, expenseCreateOpen]);
+    if (!isRefreshPending && refreshResolveRef.current) {
+      const resolve = refreshResolveRef.current;
+      refreshResolveRef.current = null;
+      resolve();
+    }
+  }, [isRefreshPending]);
+
+  function refreshAndWait() {
+    return new Promise<void>((resolve) => {
+      refreshResolveRef.current = resolve;
+      startRefreshTransition(() => {
+        router.refresh();
+      });
+    });
+  }
 
   useEffect(() => {
     if (!incomeCreateOpen) return;
@@ -545,68 +493,6 @@ export default function FinancialPageClient({
   const openExpenseEditor = (entry: FinancialEntry) => {
     if (!isEditableExpenseEntry(entry)) return;
     setEditingExpense(entry);
-    setExpenseEditForm(createExpenseEditFormState(entry));
-  };
-
-  const closeExpenseEditor = () => {
-    if (isSavingExpense) return;
-    setEditingExpense(null);
-    setExpenseEditForm(null);
-  };
-
-  const submitExpenseEdit = async () => {
-    if (!editingExpense || !expenseEditForm) return;
-
-    const amountNumber = Number(expenseEditForm.amount);
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      toast.error("יש להזין סכום תקין");
-      return;
-    }
-    if (!expenseEditForm.expenseDate) {
-      toast.error("יש לבחור תאריך");
-      return;
-    }
-    if (!expenseEditForm.category.trim()) {
-      toast.error("יש להזין קטגוריה");
-      return;
-    }
-
-    setIsSavingExpense(true);
-    try {
-      const res = await fetch("/api/expenses/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editingExpense.expenseId,
-          project_id: editingExpense.expenseProjectId,
-          order_id: editingExpense.expenseOrderId,
-          property_id: editingExpense.expensePropertyId,
-          business_domain: expenseEditForm.businessDomain,
-          amount: amountNumber,
-          category: expenseEditForm.category.trim(),
-          description: expenseEditForm.description.trim() || null,
-          notes: expenseEditForm.notes.trim() || null,
-          expense_date: expenseEditForm.expenseDate,
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-
-      if (!res.ok) {
-        toast.error("שגיאה בעדכון החיוב", { description: json?.error ?? "" });
-        return;
-      }
-
-      toast.success("החיוב עודכן");
-      setEditingExpense(null);
-      setExpenseEditForm(null);
-      router.refresh();
-    } catch (error) {
-      toast.error("שגיאה בעדכון החיוב", {
-        description: error instanceof Error ? error.message : "",
-      });
-    } finally {
-      setIsSavingExpense(false);
-    }
   };
 
   const confirmExpenseDelete = async () => {
@@ -640,78 +526,6 @@ export default function FinancialPageClient({
       });
     } finally {
       setIsDeletingExpense(false);
-    }
-  };
-
-  const createExpense = async () => {
-    const amountNumber = Number(expenseCreateForm.amount);
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      toast.error("יש להזין סכום תקין");
-      return;
-    }
-    if (!expenseCreateForm.expenseDate.trim()) {
-      toast.error("יש לבחור תאריך");
-      return;
-    }
-    if (!expenseCreateForm.category.trim()) {
-      toast.error("יש להזין קטגוריה");
-      return;
-    }
-
-    setIsCreatingExpense(true);
-    try {
-      const result = await offlineFetch("/api/expenses/create", {
-        business_domain: expenseCreateForm.businessDomain,
-        project_id:
-          expenseCreateForm.businessDomain === "logistics_projects" && expenseCreateForm.projectId
-            ? expenseCreateForm.projectId
-            : null,
-        order_id:
-          expenseCreateForm.businessDomain === "sales" && expenseCreateForm.orderId
-            ? expenseCreateForm.orderId
-            : null,
-        property_id:
-          expenseCreateForm.businessDomain === "property_management" && expenseCreateForm.propertyId
-            ? expenseCreateForm.propertyId
-            : null,
-        amount: amountNumber,
-        category: expenseCreateForm.category.trim(),
-        expense_date: expenseCreateForm.expenseDate,
-        description: expenseCreateForm.description.trim() || null,
-        notes: expenseCreateForm.notes.trim() || null,
-        included_in_base_price:
-          expenseCreateForm.businessDomain === "logistics_projects" && Boolean(expenseCreateForm.projectId)
-            ? expenseCreateForm.includedInBasePrice
-            : false,
-        billed_to_customer:
-          expenseCreateForm.businessDomain === "logistics_projects" && Boolean(expenseCreateForm.projectId)
-            ? expenseCreateForm.billedToCustomer
-            : false,
-      }, "הוצאה חדשה");
-
-      if (result.queued) {
-        toast.info("אין חיבור — ההוצאה תישמר ותישלח כשיחזור החיבור");
-        setExpenseCreateOpen(false);
-        clearDraft("expense-create");
-        setExpenseCreateForm(createExpenseFormState());
-        return;
-      }
-      if (!result.ok) {
-        toast.error("שגיאה ביצירת ההוצאה", { description: result.error });
-        return;
-      }
-
-      toast.success("ההוצאה נוספה");
-      setExpenseCreateOpen(false);
-      clearDraft("expense-create");
-      setExpenseCreateForm(createExpenseFormState());
-      router.refresh();
-    } catch (error) {
-      toast.error("שגיאה ביצירת ההוצאה", {
-        description: error instanceof Error ? error.message : "",
-      });
-    } finally {
-      setIsCreatingExpense(false);
     }
   };
 
@@ -790,6 +604,31 @@ export default function FinancialPageClient({
         ) : null}
       </section>
 
+      {/* View toggle */}
+      <div className="flex gap-1 rounded-xl border bg-muted/30 p-1 w-fit">
+        {(["cashflow", "obligations"] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => setActiveView(view)}
+            className={cn(
+              "rounded-lg px-4 py-1.5 text-sm font-medium transition-colors",
+              activeView === view
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {view === "cashflow" ? "תזרים" : "יתרות"}
+          </button>
+        ))}
+      </div>
+
+      {activeView === "obligations" ? (
+        <ObligationsTab data={obligationsData} canManageExpenses={canManageExpenses} />
+      ) : null}
+
+      {activeView === "cashflow" ? (
+        <>
       {canManageExpenses ? (
         <div className="flex flex-wrap justify-start gap-2">
           <Button type="button" onClick={() => setExpenseCreateOpen(true)}>
@@ -1165,6 +1004,32 @@ export default function FinancialPageClient({
                               .filter(Boolean)
                               .join(" • ")}
                           </div>
+                          {entry.origin === "expense" ? (
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className={cn(
+                                "inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                                (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
+                                (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/10 text-warning" :
+                                "border-destructive/40 bg-destructive/10 text-destructive"
+                              )}>
+                                {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקי" : "לא שולם"}
+                              </span>
+                              {(() => {
+                                const st = entry.paymentStatus ?? "not_paid";
+                                if (st !== "paid" && st !== "partial") return null;
+                                const methodLabel = entry.expensePaymentMethod === "bank_transfer" ? "העברה בנקאית"
+                                  : entry.expensePaymentMethod === "cash" ? "מזומן"
+                                  : entry.expensePaymentMethod === "check" ? "צ'ק"
+                                  : entry.expensePaymentMethod === "credit_card" ? "כרטיס אשראי"
+                                  : entry.expensePaymentMethod === "other" ? "אחר" : null;
+                                const parts: string[] = [];
+                                if (st === "partial" && entry.expensePaidAmount != null && entry.expensePaidAmount > 0) parts.push(`שולם ${formatCurrency(entry.expensePaidAmount)}`);
+                                if (methodLabel) parts.push(methodLabel);
+                                if (!parts.length) return null;
+                                return <span className="text-[10px] text-muted-foreground">{parts.join(" • ")}</span>;
+                              })()}
+                            </div>
+                          ) : null}
                         </td>
                         <td
                           dir="ltr"
@@ -1284,6 +1149,32 @@ export default function FinancialPageClient({
                         {entry.paymentMethodLabel ? <span>{entry.paymentMethodLabel}</span> : null}
                         {entry.reference ? <span>{entry.reference}</span> : null}
                         {entry.recordedByName ? <span>הוזן ע&quot;י {entry.recordedByName}</span> : null}
+                        {entry.origin === "expense" ? (
+                          <>
+                            <span className={cn(
+                              "rounded-full border px-2 py-0.5 font-medium",
+                              (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
+                              (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/10 text-warning" :
+                              "border-destructive/40 bg-destructive/10 text-destructive"
+                            )}>
+                              {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקי" : "לא שולם"}
+                            </span>
+                            {(() => {
+                              const st = entry.paymentStatus ?? "not_paid";
+                              if (st !== "paid" && st !== "partial") return null;
+                              const methodLabel = entry.expensePaymentMethod === "bank_transfer" ? "העברה בנקאית"
+                                : entry.expensePaymentMethod === "cash" ? "מזומן"
+                                : entry.expensePaymentMethod === "check" ? "צ'ק"
+                                : entry.expensePaymentMethod === "credit_card" ? "כרטיס אשראי"
+                                : entry.expensePaymentMethod === "other" ? "אחר" : null;
+                              const parts: string[] = [];
+                              if (st === "partial" && entry.expensePaidAmount != null && entry.expensePaidAmount > 0) parts.push(`שולם ${formatCurrency(entry.expensePaidAmount)}`);
+                              if (methodLabel) parts.push(methodLabel);
+                              if (!parts.length) return null;
+                              return <span>{parts.join(" • ")}</span>;
+                            })()}
+                          </>
+                        ) : null}
                       </div>
                       <div dir="ltr" className={cn("font-semibold tabular-nums", typeAmountClass(entry.type))}>
                         {entry.type === "inflow" ? "+" : "-"}
@@ -1393,6 +1284,32 @@ export default function FinancialPageClient({
                               .filter(Boolean)
                               .join(" • ")}
                           </div>
+                          {entry.origin === "expense" ? (
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className={cn(
+                                "inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                                (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
+                                (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/10 text-warning" :
+                                "border-destructive/40 bg-destructive/10 text-destructive"
+                              )}>
+                                {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקי" : "לא שולם"}
+                              </span>
+                              {(() => {
+                                const st = entry.paymentStatus ?? "not_paid";
+                                if (st !== "paid" && st !== "partial") return null;
+                                const methodLabel = entry.expensePaymentMethod === "bank_transfer" ? "העברה בנקאית"
+                                  : entry.expensePaymentMethod === "cash" ? "מזומן"
+                                  : entry.expensePaymentMethod === "check" ? "צ'ק"
+                                  : entry.expensePaymentMethod === "credit_card" ? "כרטיס אשראי"
+                                  : entry.expensePaymentMethod === "other" ? "אחר" : null;
+                                const parts: string[] = [];
+                                if (st === "partial" && entry.expensePaidAmount != null && entry.expensePaidAmount > 0) parts.push(`שולם ${formatCurrency(entry.expensePaidAmount)}`);
+                                if (methodLabel) parts.push(methodLabel);
+                                if (!parts.length) return null;
+                                return <span className="text-[10px] text-muted-foreground">{parts.join(" • ")}</span>;
+                              })()}
+                            </div>
+                          ) : null}
                         </td>
                         <td dir="ltr" className={cn("px-3 py-3 text-left font-semibold tabular-nums", typeAmountClass(entry.type))}>
                           {entry.type === "inflow" ? "+" : "-"}
@@ -1461,229 +1378,21 @@ export default function FinancialPageClient({
           </div>
         </CardContent>
       </Card>
-      <Dialog
+
+      <ExpenseDialog
         open={expenseCreateOpen}
         onOpenChange={(open) => {
-          if (!open && !isCreatingExpense) {
-            setExpenseCreateOpen(false);
-            clearDraft("expense-create");
-            setExpenseCreateForm(createExpenseFormState());
-            return;
-          }
-          if (open) setExpenseCreateOpen(true);
+          if (!open) clearDraft("expense-create");
+          setExpenseCreateOpen(open);
         }}
-      >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>הוספת הוצאה</DialogTitle>
-            <DialogDescription>יצירת הוצאה חדשה ישירות מעמוד הפיננסי.</DialogDescription>
-          </DialogHeader>
-          <form
-            className="mt-4 space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createExpense();
-            }}
-          >
-            <div className="space-y-1">
-              <div className="text-sm font-medium">תחום עסקי</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={expenseCreateForm.businessDomain}
-                onChange={(event) =>
-                  setExpenseCreateForm((current) => ({
-                    ...current,
-                    businessDomain: event.target.value as ExpenseBusinessDomain,
-                    projectId: event.target.value === "logistics_projects" ? current.projectId : "",
-                    orderId: event.target.value === "sales" ? current.orderId : "",
-                    propertyId: event.target.value === "property_management" ? current.propertyId : "",
-                    includedInBasePrice:
-                      event.target.value === "logistics_projects" ? current.includedInBasePrice : false,
-                    billedToCustomer:
-                      event.target.value === "logistics_projects" ? current.billedToCustomer : false,
-                  }))
-                }
-              >
-                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                  <option key={domain} value={domain}>
-                    {getBusinessDomainLabel(domain)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {expenseCreateForm.businessDomain === "logistics_projects" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">פרויקט</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={expenseCreateForm.projectId}
-                  onChange={(event) =>
-                    setExpenseCreateForm((current) => ({ ...current, projectId: event.target.value }))
-                  }
-                >
-                  <option value="">ללא פרויקט</option>
-                  {recurringProjects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
-            {expenseCreateForm.businessDomain === "sales" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">הזמנה</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={expenseCreateForm.orderId}
-                  onChange={(event) =>
-                    setExpenseCreateForm((current) => ({ ...current, orderId: event.target.value }))
-                  }
-                >
-                  <option value="">ללא הזמנה</option>
-                  {recurringOrders.map((order) => (
-                    <option key={order.id} value={order.id}>
-                      {order.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
-            {expenseCreateForm.businessDomain === "property_management" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">נכס</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={expenseCreateForm.propertyId}
-                  onChange={(event) =>
-                    setExpenseCreateForm((current) => ({ ...current, propertyId: event.target.value }))
-                  }
-                >
-                  <option value="">ללא נכס</option>
-                  {recurringProperties.map((property) => (
-                    <option key={property.id} value={property.id}>
-                      {property.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">סכום</div>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={expenseCreateForm.amount}
-                  onChange={(event) =>
-                    setExpenseCreateForm((current) => ({ ...current, amount: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">תאריך</div>
-                <DateInput
-                  value={expenseCreateForm.expenseDate}
-                  onChange={(event) =>
-                    setExpenseCreateForm((current) => ({ ...current, expenseDate: event.target.value }))
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">קטגוריה</div>
-              <Input
-                value={expenseCreateForm.category}
-                onChange={(event) =>
-                  setExpenseCreateForm((current) => ({ ...current, category: event.target.value }))
-                }
-              />
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">תיאור</div>
-              <Input
-                value={expenseCreateForm.description}
-                onChange={(event) =>
-                  setExpenseCreateForm((current) => ({ ...current, description: event.target.value }))
-                }
-              />
-            </div>
-
-            {expenseCreateForm.businessDomain === "logistics_projects" && expenseCreateForm.projectId ? (
-              <div className="flex flex-col gap-2 rounded-xl border px-3 py-3 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={expenseCreateForm.includedInBasePrice}
-                    onChange={(event) =>
-                      setExpenseCreateForm((current) => ({
-                        ...current,
-                        includedInBasePrice: event.target.checked,
-                      }))
-                    }
-                  />
-                  <span>כלול במחיר הבסיס</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={expenseCreateForm.billedToCustomer}
-                    onChange={(event) =>
-                      setExpenseCreateForm((current) => ({
-                        ...current,
-                        billedToCustomer: event.target.checked,
-                      }))
-                    }
-                  />
-                  <span>לחיוב לקוח</span>
-                </label>
-              </div>
-            ) : null}
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">הערות</div>
-              <Textarea
-                value={expenseCreateForm.notes}
-                onChange={(event) =>
-                  setExpenseCreateForm((current) => ({ ...current, notes: event.target.value }))
-                }
-              />
-            </div>
-
-            <DialogFooter className="mt-6">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setExpenseCreateOpen(false);
-                  clearDraft("expense-create");
-                  setExpenseCreateForm(createExpenseFormState());
-                }}
-                disabled={isCreatingExpense}
-              >
-                ביטול
-              </Button>
-              <Button type="submit" disabled={isCreatingExpense}>
-                {isCreatingExpense ? (
-                  <>
-                    <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                    שומר...
-                  </>
-                ) : (
-                  "שמירה"
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </AdaptiveDialog>
-      </Dialog>
+        recurringProjects={recurringProjects}
+        recurringOrders={recurringOrders}
+        recurringProperties={recurringProperties}
+        onSaved={() => {
+          clearDraft("expense-create");
+          return refreshAndWait();
+        }}
+      />
 
       <Dialog
         open={incomeCreateOpen}
@@ -1909,156 +1618,34 @@ export default function FinancialPageClient({
         </AdaptiveDialog>
       </Dialog>
 
-      <Dialog
-        open={Boolean(editingExpense && expenseEditForm)}
+      <ExpenseDialog
+        open={Boolean(editingExpense)}
         onOpenChange={(open) => {
-          if (!open) closeExpenseEditor();
+          if (!open) setEditingExpense(null);
         }}
-      >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>עריכת חיוב</DialogTitle>
-            <DialogDescription>עדכון פרטי הוצאה קיימת מתוך יומן התזרים.</DialogDescription>
-          </DialogHeader>
-
-          {editingExpense && expenseEditForm ? (
-            <form
-              className="mt-4 space-y-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submitExpenseEdit();
-              }}
-            >
-              <div className="rounded-xl border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                <div className="font-medium text-foreground">{editingExpense.sourceLabel}</div>
-                <div>
-                  {editingExpense.expenseProjectId || editingExpense.expenseOrderId || editingExpense.expensePropertyId
-                    ? "השיוך למקור נשמר כמו שהוא, וניתן לעדכן כאן רק את פרטי החיוב."
-                    : "אפשר לעדכן כאן את פרטי החיוב, כולל התחום העסקי."}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-sm font-medium">תחום עסקי</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={expenseEditForm.businessDomain}
-                  disabled={Boolean(lockedBusinessDomainForExpense(editingExpense))}
-                  onChange={(event) =>
-                    setExpenseEditForm((current) =>
-                      current
-                        ? {
-                            ...current,
-                            businessDomain: event.target.value as ExpenseBusinessDomain,
-                          }
-                        : current
-                    )
-                  }
-                >
-                  {(lockedBusinessDomainForExpense(editingExpense)
-                    ? [lockedBusinessDomainForExpense(editingExpense)]
-                    : EXPENSE_BUSINESS_DOMAINS
-                  ).map((domain) =>
-                    domain ? (
-                      <option key={domain} value={domain}>
-                        {getBusinessDomainLabel(domain)}
-                      </option>
-                    ) : null
-                  )}
-                </select>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">סכום</div>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={expenseEditForm.amount}
-                    onChange={(event) =>
-                      setExpenseEditForm((current) =>
-                        current ? { ...current, amount: event.target.value } : current
-                      )
-                    }
-                  />
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">תאריך</div>
-                  <DateInput
-                    value={expenseEditForm.expenseDate}
-                    onChange={(event) =>
-                      setExpenseEditForm((current) =>
-                        current ? { ...current, expenseDate: event.target.value } : current
-                      )
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-sm font-medium">קטגוריה</div>
-                <Input
-                  value={expenseEditForm.category}
-                  onChange={(event) =>
-                    setExpenseEditForm((current) =>
-                      current ? { ...current, category: event.target.value } : current
-                    )
-                  }
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-sm font-medium">תיאור</div>
-                <Input
-                  value={expenseEditForm.description}
-                  onChange={(event) =>
-                    setExpenseEditForm((current) =>
-                      current ? { ...current, description: event.target.value } : current
-                    )
-                  }
-                />
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-sm font-medium">הערות</div>
-                <Textarea
-                  value={expenseEditForm.notes}
-                  onChange={(event) =>
-                    setExpenseEditForm((current) =>
-                      current ? { ...current, notes: event.target.value } : current
-                    )
-                  }
-                />
-              </div>
-
-              <DialogFooter className="mt-6">
-                <Button type="button" variant="secondary" onClick={closeExpenseEditor} disabled={isSavingExpense}>
-                  ביטול
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={
-                    isSavingExpense ||
-                    !expenseEditForm.amount.trim() ||
-                    !expenseEditForm.expenseDate.trim() ||
-                    !expenseEditForm.category.trim()
-                  }
-                >
-                  {isSavingExpense ? (
-                    <>
-                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
-                      שומר...
-                    </>
-                  ) : (
-                    "שמירה"
-                  )}
-                </Button>
-              </DialogFooter>
-            </form>
-          ) : null}
-        </AdaptiveDialog>
-      </Dialog>
+        editingExpense={editingExpense ? {
+          id: editingExpense.expenseId,
+          amount: editingExpense.amount,
+          category: editingExpense.expenseCategory,
+          description: editingExpense.expenseDescriptionRaw,
+          notes: editingExpense.expenseNotes,
+          expense_date: editingExpense.flowDate,
+          business_domain: editingExpense.businessDomain,
+          payment_status: editingExpense.paymentStatus,
+          paid_amount: editingExpense.expensePaidAmount ?? null,
+          payment_method: editingExpense.expensePaymentMethod ?? null,
+          project_id: editingExpense.expenseProjectId,
+          order_id: editingExpense.expenseOrderId,
+          property_id: editingExpense.expensePropertyId,
+        } : null}
+        editingSourceLabel={editingExpense?.sourceLabel ?? null}
+        lockedProjectId={editingExpense?.expenseProjectId}
+        lockedOrderId={editingExpense?.expenseOrderId}
+        lockedPropertyId={editingExpense?.expensePropertyId}
+        onSaved={() => {
+          return refreshAndWait();
+        }}
+      />
 
       <Dialog
         open={Boolean(deletingExpense)}
@@ -2113,6 +1700,8 @@ export default function FinancialPageClient({
       </Dialog>
       </div>
       </div>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -55,9 +55,10 @@ export function getPaymentStatusColor(status: string): StatusColor {
     case "cleared":
       return "success";
     case "partial":
-      return "info";
+      return "warning";
     case "not_due":
       return "neutral";
+    case "not_paid":
     case "unpaid":
     case "overpaid":
     case "rejected":
@@ -146,6 +147,7 @@ export function getPaymentStatusLabel(status: string) {
       return "שולם חלקית";
     case "not_due":
       return "טרם הגיע מועד התשלום";
+    case "not_paid":
     case "unpaid":
       return "לא שולם";
     case "overpaid":

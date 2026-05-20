@@ -48,6 +48,8 @@ type ExpenseRow = {
   expense_date: string | null;
   amount: number | string | null;
   payment_method: string | null;
+  payment_status: string | null;
+  paid_amount: number | string | null;
   category: string | null;
   description: string | null;
   business_domain: string | null;
@@ -275,7 +277,7 @@ export default async function ProjectPage({
     const primaryResult = await supabase
       .from("expenses")
       .select(
-        "id,expense_date,amount,payment_method,category,description,business_domain,notes,recorded_by,created_at,updated_at"
+        "id,expense_date,amount,payment_method,payment_status,paid_amount,category,description,business_domain,notes,recorded_by,created_at,updated_at"
       )
       .order("expense_date", { ascending: false })
       .in("id", expenseIds);
@@ -283,7 +285,7 @@ export default async function ProjectPage({
     if (primaryResult.error && isMissingColumnError(primaryResult.error, "payment_method")) {
       const fallbackResult = await supabase
         .from("expenses")
-        .select("id,expense_date,amount,category,description,business_domain,notes,recorded_by,created_at,updated_at")
+        .select("id,expense_date,amount,payment_status,paid_amount,category,description,business_domain,notes,recorded_by,created_at,updated_at")
         .order("expense_date", { ascending: false })
         .in("id", expenseIds);
 

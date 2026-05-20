@@ -20,6 +20,9 @@ export async function POST(req: Request) {
       included_in_base_price?: boolean;
       billed_to_customer?: boolean;
       project_expense_notes?: string;
+      payment_status?: string | null;
+      paid_amount?: number | string | null;
+      payment_method?: string | null;
     };
 
     const expenseId = typeof body.id === "string" ? body.id.trim() : "";
@@ -120,6 +123,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
     }
 
+    const rawPaymentStatus = typeof body.payment_status === "string" ? body.payment_status.trim() : null;
+    const paymentStatus = rawPaymentStatus === "paid" || rawPaymentStatus === "partial" || rawPaymentStatus === "not_paid"
+      ? rawPaymentStatus
+      : null;
+    const rawPaidAmount = body.paid_amount != null ? Number(body.paid_amount) : null;
+    const paidAmount = paymentStatus === "partial" && rawPaidAmount != null && Number.isFinite(rawPaidAmount) && rawPaidAmount > 0
+      ? rawPaidAmount
+      : null;
+    const paymentMethod = typeof body.payment_method === "string" && body.payment_method.trim()
+      ? body.payment_method.trim()
+      : null;
+
     const baseExpensePayload = {
       amount: amountNumber,
       category,
@@ -127,9 +142,12 @@ export async function POST(req: Request) {
       notes,
       expense_date: expenseDate,
       business_domain: nextBusinessDomain,
+      payment_status: paymentStatus,
+      paid_amount: paidAmount,
+      payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? paymentMethod : null,
     };
     const selectExpense =
-      "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,created_at,updated_at";
+      "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,created_at,updated_at";
 
     const { data: expenseData, error: expenseUpdateError } = await supabase
       .from("expenses")

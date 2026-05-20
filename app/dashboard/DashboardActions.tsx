@@ -489,6 +489,7 @@ export default function DashboardActions({
   const [expenseWorkerPaymentChoice, setExpenseWorkerPaymentChoice] = useState<PaymentChoice>("none");
   const [expenseWorkerPaidAmount, setExpenseWorkerPaidAmount] = useState("");
   const [expenseBillToCustomerAmount, setExpenseBillToCustomerAmount] = useState("");
+  const [expensePaymentStatus, setExpensePaymentStatus] = useState<"paid" | "partial" | "not_paid">("not_paid");
   const [expenseAttachmentFiles, setExpenseAttachmentFiles] = useState<File[]>([]);
   const [expenseExistingAttachments, setExpenseExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [expenseNewWorkerOpen, setExpenseNewWorkerOpen] = useState(false);
@@ -764,6 +765,7 @@ export default function DashboardActions({
     setExpenseNotes("");
     setExpenseIncludedInBase(false);
     setExpenseBilledToCustomer(false);
+    setExpensePaymentStatus("not_paid");
     setExpenseWorkerUserId(canManageWorkerSessions ? workerUsers[0]?.id ?? "" : currentUserId ?? "");
     setExpenseClockIn(nowLocal(-60));
     setExpenseClockOut(nowLocal());
@@ -1099,6 +1101,7 @@ export default function DashboardActions({
           notes: expenseNotes.trim() || null,
           included_in_base_price: expenseBusinessDomain === "logistics_projects" ? expenseIncludedInBase : false,
           billed_to_customer: expenseBusinessDomain === "logistics_projects" ? expenseBilledToCustomer : false,
+          payment_status: expensePaymentStatus,
         }),
       });
 
@@ -2686,6 +2689,19 @@ export default function DashboardActions({
                 <span>{HEBREW.notes}</span>
                 <Textarea value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} />
               </label>
+
+              <div className="space-y-2 text-sm">
+                <div className="font-medium">סטטוס תשלום</div>
+                <select
+                  className={fieldClass}
+                  value={expensePaymentStatus}
+                  onChange={(e) => setExpensePaymentStatus(e.target.value as "paid" | "partial" | "not_paid")}
+                >
+                  <option value="not_paid">לא שולם</option>
+                  <option value="partial">חלקי</option>
+                  <option value="paid">שולם</option>
+                </select>
+              </div>
 
               <div className="space-y-2">
                 <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
