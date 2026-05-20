@@ -4,7 +4,10 @@ import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
 
 type HourlyOverridePayload = {
   user_id?: string;
+  start_time?: string | null;
+  end_time?: string | null;
   override_hourly_rate?: number | string | null;
+  reason?: string | null;
   notes?: string | null;
 };
 
@@ -22,7 +25,10 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as HourlyOverridePayload;
     const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
     const overrideHourlyRate = toNullableNumber(body.override_hourly_rate);
-    const notes = typeof body.notes === "string" ? body.notes.trim() : null;
+    const startTime = typeof body.start_time === "string" && body.start_time.trim() ? body.start_time.trim() : new Date().toISOString();
+    const endTime = typeof body.end_time === "string" && body.end_time.trim() ? body.end_time.trim() : null;
+    const reason = typeof body.reason === "string" ? body.reason.trim() || null : null;
+    const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;
 
     if (!userId || overrideHourlyRate === null || overrideHourlyRate <= 0) {
       return NextResponse.json({ error: "User and override hourly rate are required." }, { status: 400 });
@@ -33,10 +39,13 @@ export async function POST(req: Request) {
       .from("hourly_salary_overrides")
       .insert({
         user_id: userId,
+        start_time: startTime,
+        end_time: endTime,
         override_hourly_rate: overrideHourlyRate,
+        reason,
         notes,
       })
-      .select("id,user_id,override_hourly_rate,notes,created_at,updated_at")
+      .select("id,user_id,start_time,end_time,override_hourly_rate,reason,notes,created_at,updated_at")
       .maybeSingle();
 
     if (result.error) {

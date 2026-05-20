@@ -48,7 +48,10 @@ export type SessionCostRow = {
 export type HourlySalaryOverrideRow = {
   id: string;
   user_id: string;
+  start_time: string | null;
+  end_time: string | null;
   override_hourly_rate: number | string | null;
+  reason: string | null;
   notes: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -474,7 +477,7 @@ export async function fetchSalaryCenterProtectedPayload(
       .in("user_id", safeSalaryTrackedUserIds)
       .range(0, 1999),
     query(supabase.from("hourly_salary_overrides"))
-      .select("id,user_id,override_hourly_rate,notes,created_at,updated_at")
+      .select("id,user_id,start_time,end_time,override_hourly_rate,reason,notes,created_at,updated_at")
       .in("user_id", safeUserIds)
       .order("created_at", { ascending: false })
       .range(0, 999),
@@ -682,7 +685,7 @@ export async function generatePayslipsForPeriod(
       .eq("payroll_period_id", period.id)
       .in("user_id", userIds),
     query(supabase.from("hourly_salary_overrides"))
-      .select("id,user_id,override_hourly_rate,notes,created_at,updated_at")
+      .select("id,user_id,start_time,end_time,override_hourly_rate,reason,notes,created_at,updated_at")
       .in("user_id", userIds)
       .order("created_at", { ascending: false }),
   ]);
@@ -849,7 +852,7 @@ export async function recalculateUserSessionCostsFromRules(
       .eq("user_id", safeUserId)
       .order("valid_from", { ascending: false }),
     query(supabase.from("hourly_salary_overrides"))
-      .select("id,user_id,override_hourly_rate,notes,created_at,updated_at")
+      .select("id,user_id,start_time,end_time,override_hourly_rate,reason,notes,created_at,updated_at")
       .eq("user_id", safeUserId)
       .order("created_at", { ascending: false })
       .range(0, 50),

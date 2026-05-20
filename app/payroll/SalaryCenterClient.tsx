@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { LockKeyhole, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, LockKeyhole, Pencil, Plus, Trash2 } from "lucide-react";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -135,6 +135,9 @@ type AgreementFormState = {
 
 type OverrideFormState = {
   override_hourly_rate: string;
+  start_time: string;
+  end_time: string;
+  reason: string;
   notes: string;
 };
 
@@ -221,15 +224,38 @@ const DEFAULT_AGREEMENT_FORM: AgreementFormState = {
 
 const DEFAULT_OVERRIDE_FORM: OverrideFormState = {
   override_hourly_rate: "",
+  start_time: new Date().toISOString().slice(0, 10),
+  end_time: "",
+  reason: "",
   notes: "",
 };
 
 const DEFAULT_PAYSLIP_ITEM_FORM: PayslipItemFormState = {
   payslip_id: "",
-  item_type: "manual_adjustment",
+  item_type: "bonus",
   amount: "",
   notes: "",
 };
+
+const PAYSLIP_ITEM_TYPES = [
+  { value: "bonus", label: "בונוס" },
+  { value: "overtime_extra", label: "תוספת שעות נוספות" },
+  { value: "travel_allowance", label: "דמי נסיעה" },
+  { value: "meal_allowance", label: "דמי אוכל" },
+  { value: "advance", label: "מקדמה" },
+  { value: "deduction", label: "ניכוי" },
+  { value: "exception_absence", label: "היעדרות" },
+  { value: "exception_partial_month", label: "חודש חלקי" },
+  { value: "manual_adjustment", label: "התאמה ידנית" },
+] as const;
+
+function getPayslipItemTypeLabel(value: string | null | undefined) {
+  return PAYSLIP_ITEM_TYPES.find((t) => t.value === value)?.label ?? value ?? "פריט";
+}
+
+function isExceptionItemType(value: string | null | undefined) {
+  return value === "exception_absence" || value === "exception_partial_month";
+}
 
 const DEFAULT_CREATE_USER_FORM: CreateUserFormState = {
   full_name: "",
@@ -334,6 +360,7 @@ export default function SalaryCenterClient({
   const [overrideForm, setOverrideForm] = useState<OverrideFormState>(DEFAULT_OVERRIDE_FORM);
   const [periodMonth, setPeriodMonth] = useState(getCurrentMonthKey());
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
+  const [periodManagementDialogOpen, setPeriodManagementDialogOpen] = useState(false);
   const [selectedSummaryMonth, setSelectedSummaryMonth] = useState(getCurrentMonthKey());
   const [payslipItemForm, setPayslipItemForm] = useState<PayslipItemFormState>(DEFAULT_PAYSLIP_ITEM_FORM);
   const [payslipAdjustmentDrafts, setPayslipAdjustmentDrafts] = useState<Record<string, string>>({});
@@ -1269,7 +1296,10 @@ export default function SalaryCenterClient({
       await postJson("/api/payroll/hourly-overrides", {
         user_id: selectedWorker.id,
         override_hourly_rate: overrideForm.override_hourly_rate,
-        notes: overrideForm.notes,
+        start_time: overrideForm.start_time || null,
+        end_time: overrideForm.end_time || null,
+        reason: overrideForm.reason || null,
+        notes: overrideForm.notes || null,
       });
       setOverrideForm(DEFAULT_OVERRIDE_FORM);
       setMessage("החרגת השכר נוספה.");
@@ -1335,6 +1365,20 @@ export default function SalaryCenterClient({
       await postJson("/api/payroll/payslip-items", payslipItemForm);
       setPayslipItemForm(DEFAULT_PAYSLIP_ITEM_FORM);
       setMessage("פריט התלוש נוסף.");
+      await refreshAll();
+    });
+  }
+
+  function deletePayslipItem(itemId: string, payslipId: string) {
+    runAction(async () => {
+      const response = await fetch("/api/payroll/payslip-items", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ item_id: itemId, payslip_id: payslipId }),
+      });
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(json.error ?? "Request failed.");
+      setMessage("פריט התלוש נמחק.");
       await refreshAll();
     });
   }
@@ -2878,115 +2922,48 @@ export default function SalaryCenterClient({
             onUnlockSuccess={loadProtectedData}
           >
             <div className="space-y-3">
+              {/* Compact period header */}
               <Card>
-                <CardContent className="space-y-5 py-5">
-                  <div className="text-right">
-                    <div className="text-base font-semibold">{"ניהול תקופות"}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {"כאן יוצרים תקופות שכר, בוחרים תקופה לעבודה ומרעננים את תלושי השכר שלה."}
-                    </div>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
-                      <div className="flex items-end justify-end sm:order-1">
-                        <Button onClick={() => createOrOpenPeriod()} disabled={isPending}>
-                          {"יצירה / פתיחה מחדש"}
-                        </Button>
-                      </div>
-                      <Field label="חודש תקופה">
-                        <Input type="month" value={periodMonth} onChange={(event) => setPeriodMonth(event.target.value)} />
-                      </Field>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
-                      <div className="flex flex-wrap items-end justify-end gap-2 sm:order-1">
-                        <Button onClick={() => runPeriodAction("generate")} disabled={!selectedPeriodId || isPending}>
-                          {"יצירת / רענון תלושים"}
-                        </Button>
-                        {selectedPeriodId ? (
-                          <Button asChild variant="outline">
-                            <Link href={selectedSalariedExportHref}>{"יצוא גלובלי לאקסל"}</Link>
+                <CardContent className="py-4">
+                  <div className="flex flex-wrap-reverse items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setPeriodManagementDialogOpen(true)}>
+                        {"ניהול תקופות"}
+                      </Button>
+                      {selectedPeriodId && (
+                        <>
+                          <Button size="sm" onClick={() => runPeriodAction("generate")} disabled={isPending}>
+                            {"יצירת / רענון תלושים"}
                           </Button>
-                        ) : (
-                          <Button variant="outline" disabled>
-                            {"יצוא גלובלי לאקסל"}
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={selectedSalariedExportHref}>{"יצוא לאקסל"}</Link>
                           </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          onClick={() => runPeriodAction("lock")}
-                          disabled={!selectedPeriodId || !selectedPayslipPeriod || !isPayrollPeriodEditable(selectedPayslipPeriod.status) || isPending}
-                        >
-                          {"נעילה"}
-                        </Button>
-                      </div>
-                      <Field label="תקופה נבחרת">
-                        <select
-                          value={selectedPeriodId}
-                          onChange={(event) => setSelectedPeriodId(event.target.value)}
-                          className={selectClassName}
-                        >
-                          <option value="">{"בחירה"}</option>
-                          {protectedPeriods.map((period) => (
-                            <option key={period.id} value={period.id}>
-                              {monthLabelFromKey(period.period_month)}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
+                          {selectedPayslipPeriod && isPayrollPeriodEditable(selectedPayslipPeriod.status) && (
+                            <Button size="sm" variant="outline" onClick={() => runPeriodAction("lock")} disabled={isPending}>
+                              {"נעילה"}
+                            </Button>
+                          )}
+                        </>
+                      )}
                     </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="text-sm font-medium text-muted-foreground">{"תקופות קיימות"}</div>
-                    <div className="space-y-2">
-                      {protectedPeriods.map((period) => {
-                        const isSelected = period.id === selectedPeriodId;
-                        return (
-                          <div
-                            key={period.id}
-                            className={`flex flex-wrap-reverse items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${
-                              isSelected ? "border-primary bg-primary/5" : "bg-background"
-                            }`}
-                          >
-                            <div className="flex flex-wrap items-center justify-end gap-2">
-                              <Tag>{getPayrollPeriodLabel(period.status)}</Tag>
-                              <Button
-                                variant={isSelected ? "default" : "outline"}
-                                onClick={() => setSelectedPeriodId(period.id)}
-                              >
-                                {isSelected ? "נבחרה" : "בחירת תקופה"}
-                              </Button>
-                            </div>
-                            <div className="text-right">
-                              <div className="font-semibold">{monthLabelFromKey(period.period_month)}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {`${formatDate(period.start_date)} - ${formatDate(period.end_date)}`}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div className="text-right">
+                      {selectedPayslipPeriod ? (
+                        <div className="flex items-center gap-2 justify-end">
+                          <Tag>{getPayrollPeriodLabel(selectedPayslipPeriod.status)}</Tag>
+                          <div className="text-lg font-semibold">{monthLabelFromKey(selectedPayslipPeriod.period_month)}</div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">{"לא נבחרה תקופה — לחץ ניהול תקופות"}</div>
+                      )}
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="space-y-3 py-5">
-                  <div className="text-right">
-                    <div className="text-base font-semibold">{"בעיות בתקופה שנבחרה"}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {selectedPayslipPeriod
-                        ? `בדיקות והתרעות עבור ${monthLabelFromKey(selectedPayslipPeriod.period_month)}.`
-                        : "יש לבחור תקופה כדי לראות התרעות רלוונטיות."}
-                    </div>
-                  </div>
-                  {!selectedPayslipPeriod ? (
-                    <div className="rounded-2xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
-                      {"יש לבחור תקופת שכר כדי לראות בעיות ולהפיק תלושים."}
-                    </div>
-                  ) : monthlyPayslipWorkersMissingAgreement.length > 0 ? (
+              {/* Issues — only shown when there are actual problems */}
+              {selectedPayslipPeriod && monthlyPayslipWorkersMissingAgreement.length > 0 && (
+                <Card>
+                  <CardContent className="py-4">
                     <div className="space-y-3 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-4">
                       <div className="font-medium text-destructive">
                         {`עובדים חודשי גלובלי ללא הסכם שכר פעיל עבור ${monthLabelFromKey(selectedPayslipPeriod.period_month)}`}
@@ -3007,39 +2984,24 @@ export default function SalaryCenterClient({
                         {"העובדים האלה מוגדרים כחודשי גלובלי, אבל אין להם הסכם חודשי פעיל לתקופה שנבחרה."}
                       </div>
                     </div>
-                  ) : (
-                    <div className="rounded-2xl border px-4 py-4 text-sm text-muted-foreground">
-                      {"לא נמצאו בעיות הגדרה בולטות לתקופה שנבחרה."}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
 
-              <Card>
-                <CardContent className="space-y-4 py-5">
-                  <div className="text-right">
-                    <div className="text-base font-semibold">
-                      {selectedPayslipPeriod
-                        ? `תלושי שכר עבור ${monthLabelFromKey(selectedPayslipPeriod.period_month)}`
-                        : "תלושי שכר"}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {selectedPayslipPeriod
-                        ? "כאן עורכים התאמות ידניות ופריטי תלוש עבור התקופה שנבחרה."
-                        : "יש לבחור תקופה כדי לראות את תלושי השכר שלה."}
-                    </div>
-                  </div>
-                  {!selectedPayslipPeriod ? (
-                    <div className="rounded-2xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
-                      {"אין תקופה נבחרת."}
-                    </div>
-                  ) : selectedPeriodPayslips.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
-                      {"עדיין לא נוצרו תלושים לתקופה הזאת."}
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
+              {/* Empty states */}
+              {!selectedPayslipPeriod ? (
+                <Card>
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    {"לחץ ניהול תקופות כדי לבחור תקופת שכר."}
+                  </CardContent>
+                </Card>
+              ) : selectedPeriodPayslips.length === 0 ? (
+                <Card>
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    {"עדיין לא נוצרו תלושים לתקופה הזאת. לחץ יצירת / רענון תלושים."}
+                  </CardContent>
+                </Card>
+              ) : null}
 
               {selectedPeriodPayslips.map((payslip) => {
                 const worker = usersById.get(payslip.user_id);
@@ -3048,7 +3010,6 @@ export default function SalaryCenterClient({
                   : null;
                 const period = periodsById.get(payslip.payroll_period_id) ?? null;
                 const isEditable = period ? isPayrollPeriodEditable(period.status) : false;
-                const itemTotal = getPayslipItemsTotal(payslipItems, payslip.id);
                 const payslipDebtItem = workerDebtItemsBySourceKey.get(`payslip:${payslip.id}`) ?? null;
                 const payslipOwedAmount = toNumber(payslipDebtItem?.owed_amount);
                 const canRecordPayslipPayment = Boolean(payslipDebtItem) && payslipOwedAmount > 0;
@@ -3061,21 +3022,61 @@ export default function SalaryCenterClient({
                           <Tag>{getSalaryTypeLabel(payslip.calculated_salary_type)}</Tag>
                           <Tag>{period ? getPayrollPeriodLabel(period.status) : "-"}</Tag>
                         </div>
-                        <div className="text-right">
-                          <div className="font-semibold">{worker?.full_name ?? worker?.email ?? "עובד"}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {period ? monthLabelFromKey(period.period_month) : "תקופת שכר"}
-                          </div>
-                        </div>
+                        <div className="font-semibold">{worker?.full_name ?? worker?.email ?? "עובד"}</div>
                       </div>
-  
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <MiniStat label="דקות עבודה" value={formatMinutes(payslip.total_work_minutes)} />
-                        <MiniStat label="שכר בסיס" value={formatCurrency(payslip.calculated_base_salary)} />
-                        <MiniStat label="סך פריטי תלוש" value={formatCurrency(itemTotal)} />
                         <MiniStat label="ברוטו" value={formatCurrency(payslip.gross_salary)} />
                       </div>
-  
+
+                      <div className="rounded-2xl border p-3 space-y-1 text-sm">
+                        <div className="flex justify-between text-muted-foreground">
+                          <span className="font-medium text-foreground">{formatCurrency(payslip.calculated_base_salary)}</span>
+                          <span>שכר בסיס</span>
+                        </div>
+                        {payslipItems
+                          .filter((item) => item.payslip_id === payslip.id)
+                          .map((item) => {
+                            const isException = isExceptionItemType(item.item_type);
+                            const isNegative = toNumber(item.amount) < 0;
+                            return (
+                              <div key={item.id} className="flex items-center justify-between gap-2 py-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  {isEditable && (
+                                    <button
+                                      type="button"
+                                      onClick={() => deletePayslipItem(item.id, payslip.id)}
+                                      disabled={isPending}
+                                      className="text-muted-foreground hover:text-destructive transition-colors"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                  <span className={isNegative || isException ? "text-destructive font-medium" : "font-medium"}>
+                                    {formatCurrency(item.amount)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-right">
+                                  {isException && <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                                  <span className="text-muted-foreground">{item.notes || getPayslipItemTypeLabel(item.item_type)}</span>
+                                  <Badge variant="outline" className="text-xs px-1.5 py-0">{getPayslipItemTypeLabel(item.item_type)}</Badge>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        {toNumber(payslip.manual_adjustments) !== 0 && (
+                          <div className="flex justify-between text-muted-foreground">
+                            <span className={toNumber(payslip.manual_adjustments) < 0 ? "text-destructive" : ""}>{formatCurrency(payslip.manual_adjustments)}</span>
+                            <span>התאמה ידנית</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between font-semibold border-t pt-2 mt-1">
+                          <span>{formatCurrency(payslip.gross_salary)}</span>
+                          <span>ברוטו</span>
+                        </div>
+                      </div>
+
                       <div className="grid gap-3 md:grid-cols-[auto_1fr]">
                         <div className="flex items-end justify-end gap-2 md:order-1">
                           <Button
@@ -3099,7 +3100,7 @@ export default function SalaryCenterClient({
                             }
                             disabled={!isEditable}
                           >
-                            {"הוספת פריט תלוש"}
+                            {"+ רכיב שכר"}
                           </Button>
                         </div>
                         <Field label="התאמה ידנית">
@@ -3116,67 +3117,141 @@ export default function SalaryCenterClient({
                           />
                         </Field>
                       </div>
-  
-                      {payslipItems.filter((item) => item.payslip_id === payslip.id).length ? (
-                        <div className="rounded-2xl border p-3 text-sm">
-                          {payslipItems
-                            .filter((item) => item.payslip_id === payslip.id)
-                            .map((item) => (
-                              <div key={item.id} className="flex items-center justify-between gap-3 py-1">
-                                <div className="font-medium">{formatCurrency(item.amount)}</div>
-                                <div>{item.notes || item.item_type || "פריט"}</div>
-                              </div>
-                            ))}
-                        </div>
-                      ) : null}
                     </CardContent>
                   </Card>
                 );
               })}
 
-              {payslipItemForm.payslip_id ? (
-                <Card>
-                  <CardContent className="grid gap-3 py-5 md:grid-cols-2">
-                    <Field label="סוג פריט">
+            </div>
+
+            {/* Period Management Dialog */}
+            <Dialog open={periodManagementDialogOpen} onOpenChange={setPeriodManagementDialogOpen}>
+              <DialogContent className="max-h-[85vh] w-full overflow-y-auto text-right sm:max-w-lg" dir="rtl">
+                <DialogHeader>
+                  <DialogTitle>{"ניהול תקופות שכר"}</DialogTitle>
+                  <DialogDescription>{"יצירת תקופה חדשה ובחירת תקופה לעבודה"}</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                    <Field label="חודש לתקופה חדשה">
                       <Input
+                        type="month"
+                        value={periodMonth}
+                        onChange={(event) => setPeriodMonth(event.target.value)}
+                      />
+                    </Field>
+                    <div className="flex items-end">
+                      <Button
+                        onClick={() => {
+                          createOrOpenPeriod();
+                          setPeriodManagementDialogOpen(false);
+                        }}
+                        disabled={isPending}
+                      >
+                        {"יצירה / פתיחה מחדש"}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {protectedPeriods.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+                        {"עדיין לא נוצרו תקופות שכר."}
+                      </div>
+                    ) : (
+                      protectedPeriods.map((period) => {
+                        const isSelected = period.id === selectedPeriodId;
+                        return (
+                          <div
+                            key={period.id}
+                            className={`flex flex-wrap-reverse items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${
+                              isSelected ? "border-primary bg-primary/5" : "bg-background"
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              <Tag>{getPayrollPeriodLabel(period.status)}</Tag>
+                              <Button
+                                size="sm"
+                                variant={isSelected ? "default" : "outline"}
+                                onClick={() => {
+                                  setSelectedPeriodId(period.id);
+                                  setPeriodManagementDialogOpen(false);
+                                }}
+                              >
+                                {isSelected ? "נבחרה" : "בחירה"}
+                              </Button>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-semibold">{monthLabelFromKey(period.period_month)}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {`${formatDate(period.start_date)} - ${formatDate(period.end_date)}`}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Add Payslip Item Dialog */}
+            <Dialog
+              open={!!payslipItemForm.payslip_id}
+              onOpenChange={(open) => {
+                if (!open) setPayslipItemForm(DEFAULT_PAYSLIP_ITEM_FORM);
+              }}
+            >
+              <DialogContent className="w-full text-right sm:max-w-lg" dir="rtl">
+                <DialogHeader>
+                  <DialogTitle>{"הוספת רכיב שכר"}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <Field label="סוג רכיב">
+                      <select
                         value={payslipItemForm.item_type}
                         onChange={(event) =>
                           setPayslipItemForm((current) => ({ ...current, item_type: event.target.value }))
                         }
-                      />
+                        className={selectClassName}
+                      >
+                        {PAYSLIP_ITEM_TYPES.map((type) => (
+                          <option key={type.value} value={type.value}>{type.label}</option>
+                        ))}
+                      </select>
                     </Field>
-                    <Field label="סכום">
+                    <Field label="סכום (שלילי = ניכוי)">
                       <Input
                         inputMode="decimal"
+                        placeholder="לדוגמה: 500 או -200"
                         value={payslipItemForm.amount}
                         onChange={(event) =>
                           setPayslipItemForm((current) => ({ ...current, amount: event.target.value }))
                         }
                       />
                     </Field>
-                    <div className="md:col-span-2">
-                      <Field label="הערות">
-                        <Textarea
-                          value={payslipItemForm.notes}
-                          onChange={(event) =>
-                            setPayslipItemForm((current) => ({ ...current, notes: event.target.value }))
-                          }
-                          rows={3}
-                        />
-                      </Field>
-                    </div>
-                    <div className="md:col-span-2 flex flex-wrap justify-end gap-2">
-                      <Button onClick={() => addPayslipItem()} disabled={isPending}>
-                        {"שמירת פריט"}
-                      </Button>
-                      <Button variant="outline" onClick={() => setPayslipItemForm(DEFAULT_PAYSLIP_ITEM_FORM)}>
-                        {"ביטול"}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-            </div>
+                    <Field label="תיאור">
+                      <Input
+                        placeholder="תיאור אופציונלי"
+                        value={payslipItemForm.notes}
+                        onChange={(event) =>
+                          setPayslipItemForm((current) => ({ ...current, notes: event.target.value }))
+                        }
+                      />
+                    </Field>
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button onClick={() => addPayslipItem()} disabled={isPending}>
+                      {"הוספת רכיב"}
+                    </Button>
+                    <Button variant="outline" onClick={() => setPayslipItemForm(DEFAULT_PAYSLIP_ITEM_FORM)}>
+                      {"ביטול"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </SalaryProtected>
         </TabsContent>
       </Tabs>
@@ -3501,7 +3576,7 @@ export default function SalaryCenterClient({
 
                           <div className="font-medium">{"החרגות שכר שעתי"}</div>
                           {selectedWorkerOverrides.length === 0 ? (
-                            <div className="text-sm text-muted-foreground">{"אין החרגות שכר."}</div>
+                            <div className="text-sm text-muted-foreground">{"אין חריגות שכר."}</div>
                           ) : (
                             selectedWorkerOverrides.map((override, index) => (
                               <div
@@ -3509,14 +3584,18 @@ export default function SalaryCenterClient({
                                 className="grid gap-1 rounded-lg border px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                               >
                                 <div className="min-w-0 text-right">
-                                  <div className="text-muted-foreground">
-                                    {override.created_at ? formatDateTime(override.created_at) : "ללא תאריך"}
+                                  <div className="text-muted-foreground text-xs">
+                                    {override.start_time ? formatDate(override.start_time.slice(0, 10)) : ""}
+                                    {override.end_time ? ` — ${formatDate(override.end_time.slice(0, 10))}` : " (פתוח)"}
                                   </div>
+                                  {override.reason ? (
+                                    <div className="font-medium">{override.reason}</div>
+                                  ) : null}
                                   {override.notes ? (
-                                    <div className="mt-1 text-xs text-muted-foreground">{override.notes}</div>
+                                    <div className="text-xs text-muted-foreground">{override.notes}</div>
                                   ) : null}
                                 </div>
-                                <div className="text-right font-semibold">{formatCurrency(override.override_hourly_rate)}</div>
+                                <div className="text-right font-semibold">{`${formatCurrency(override.override_hourly_rate)} / שעה`}</div>
                               </div>
                             ))
                           )}
@@ -3829,13 +3908,14 @@ export default function SalaryCenterClient({
       >
         <DialogContent dir="rtl" className="max-w-xl">
           <DialogHeader className="text-right">
-            <DialogTitle>{"הוספת החרגת שכר"}</DialogTitle>
-            <DialogDescription>{"שמירת תעריף החרגה לעובד הנבחר."}</DialogDescription>
+            <DialogTitle>{"הוספת חריגת שכר שעתי"}</DialogTitle>
+            <DialogDescription>{"תעריף שונה שיחול על העובד בטווח זמן מוגדר."}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="תעריף החרגה">
+            <Field label="תעריף שעתי חריג (₪)">
               <Input
                 inputMode="decimal"
+                placeholder="לדוגמה: 60"
                 value={overrideForm.override_hourly_rate}
                 onChange={(event) =>
                   setOverrideForm((current) => ({
@@ -3845,26 +3925,49 @@ export default function SalaryCenterClient({
                 }
               />
             </Field>
-            <Field label="הערות">
+            <Field label="סיבה">
               <Input
-                value={overrideForm.notes}
+                placeholder="לדוגמה: פרויקט מיוחד"
+                value={overrideForm.reason}
                 onChange={(event) =>
-                  setOverrideForm((current) => ({ ...current, notes: event.target.value }))
+                  setOverrideForm((current) => ({ ...current, reason: event.target.value }))
                 }
               />
             </Field>
+            <Field label="תאריך התחלה">
+              <DateInput
+                value={overrideForm.start_time}
+                onChange={(event) =>
+                  setOverrideForm((current) => ({ ...current, start_time: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="תאריך סיום (אופציונלי)">
+              <DateInput
+                value={overrideForm.end_time}
+                onChange={(event) =>
+                  setOverrideForm((current) => ({ ...current, end_time: event.target.value }))
+                }
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label="הערות">
+                <Input
+                  placeholder="הערות נוספות"
+                  value={overrideForm.notes}
+                  onChange={(event) =>
+                    setOverrideForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                />
+              </Field>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOverrideDialogOpen(false)} disabled={isPending}>
               {"ביטול"}
             </Button>
-            <Button
-              onClick={() => {
-                saveOverride();
-              }}
-              disabled={isPending}
-            >
-              {"שמירת החרגה"}
+            <Button onClick={() => saveOverride()} disabled={isPending}>
+              {"שמירת חריגה"}
             </Button>
           </DialogFooter>
         </DialogContent>

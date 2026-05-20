@@ -9,6 +9,11 @@ type PayslipItemPayload = {
   notes?: string | null;
 };
 
+type DeletePayslipItemPayload = {
+  item_id?: string;
+  payslip_id?: string;
+};
+
 function toNullableNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = typeof value === "number" ? value : Number(String(value).trim());
@@ -112,6 +117,65 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ item: insertResult.data });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const access = await requireRouteAccess({ allowedRoles: ["admin"] });
+    if (!access.ok) return access.response;
+
+    const body = (await req.json().catch(() => ({}))) as DeletePayslipItemPayload;
+    const itemId = typeof body.item_id === "string" ? body.item_id.trim() : "";
+    const payslipId = typeof body.payslip_id === "string" ? body.payslip_id.trim() : "";
+
+    if (!itemId || !payslipId) {
+      return NextResponse.json({ error: "item_id and payslip_id are required." }, { status: 400 });
+    }
+
+    const { supabase } = access.value;
+
+    const payslipResult = await supabase
+      .from("payslips")
+      .select("id,payroll_period_id,calculated_base_salary,manual_adjustments")
+      .eq("id", payslipId)
+      .maybeSingle();
+
+    if (payslipResult.error || !payslipResult.data) {
+      return NextResponse.json({ error: "Payslip not found." }, { status: 404 });
+    }
+
+    const periodResult = await supabase
+      .from("payroll_periods")
+      .select("id,status")
+      .eq("id", payslipResult.data.payroll_period_id)
+      .maybeSingle();
+
+    if (!periodResult.data || !isPayrollPeriodEditable(periodResult.data.status)) {
+      return NextResponse.json({ error: "Only open payroll periods can be edited." }, { status: 409 });
+    }
+
+    const deleteResult = await supabase.from("payslip_items").delete().eq("id", itemId).eq("payslip_id", payslipId);
+    if (deleteResult.error) {
+      return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
+    }
+
+    const itemsResult = await supabase.from("payslip_items").select("amount").eq("payslip_id", payslipId).range(0, 999);
+    const totalItems = ((itemsResult.data ?? []) as Array<{ amount: number | string | null }>).reduce(
+      (sum, item) => sum + (toNullableNumber(item.amount) ?? 0),
+      0
+    );
+    const grossSalary =
+      (toNullableNumber(payslipResult.data.calculated_base_salary) ?? 0) +
+      (toNullableNumber(payslipResult.data.manual_adjustments) ?? 0) +
+      totalItems;
+
+    await supabase.from("payslips").update({ gross_salary: grossSalary }).eq("id", payslipId);
+
+    return NextResponse.json({ ok: true });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
