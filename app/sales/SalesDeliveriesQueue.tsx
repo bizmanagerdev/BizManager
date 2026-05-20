@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarDays, MapPin, Phone, Truck } from "lucide-react";
+import { MapPin, Phone, Truck } from "lucide-react";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
@@ -76,91 +76,60 @@ export default function SalesDeliveriesQueue({
               </span>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               {customerGroups.map(([customerKey, group]) => {
                 const customerPhoneHref = phoneHref(group.customerPhone);
 
                 return (
                   <div
                     key={customerKey}
-                    className="rounded-2xl border border-border/70 bg-background/80 p-3 sm:p-4"
+                    className="rounded-lg border border-border/70 bg-background/80 px-2 py-1.5"
                   >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0 space-y-2">
-                        <div>
-                          <div className="text-base font-semibold">{group.customerName}</div>
-                          {group.customerPhone ? (
-                            customerPhoneHref ? (
-                              <a
-                                href={customerPhoneHref}
-                                className="mt-1 inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/20 px-2.5 py-1 text-xs text-foreground hover:bg-muted/40"
-                              >
-                                <Phone className="h-3.5 w-3.5" />
-                                <span dir="ltr">{group.customerPhone}</span>
-                              </a>
-                            ) : (
-                              <div className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                <Phone className="h-3.5 w-3.5" />
-                                <span dir="ltr">{group.customerPhone}</span>
-                              </div>
-                            )
-                          ) : (
-                            <div className="mt-1 text-xs text-muted-foreground">טלפון: -</div>
-                          )}
-                        </div>
-
-                        <div className="flex items-start gap-2 text-xs text-muted-foreground">
-                          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span>{group.address}</span>
-                        </div>
-                      </div>
-
-                      <div className="w-fit rounded-full border border-border/70 bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground">
-                        {group.orders.length} משלוחים
-                      </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                      <span className="text-sm font-semibold">{group.customerName}</span>
+                      {group.customerPhone ? (
+                        customerPhoneHref ? (
+                          <a
+                            href={customerPhoneHref}
+                            className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground"
+                          >
+                            <Phone className="h-3 w-3" />
+                            <span dir="ltr">{group.customerPhone}</span>
+                          </a>
+                        ) : (
+                          <span className="inline-flex items-center gap-0.5 text-muted-foreground">
+                            <Phone className="h-3 w-3" />
+                            <span dir="ltr">{group.customerPhone}</span>
+                          </span>
+                        )
+                      ) : null}
+                      <span className="inline-flex items-center gap-0.5 text-muted-foreground">
+                        <MapPin className="h-3 w-3" />
+                        {group.address}
+                      </span>
+                      <span className="mr-auto text-muted-foreground">{group.orders.length} משלוחים</span>
                     </div>
 
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-1 divide-y divide-border/50">
                       {group.orders.map((delivery) => (
                         <div
                           key={delivery.id}
-                          className="rounded-2xl border border-border/60 bg-muted/20 p-3"
+                          title={delivery.notes ?? undefined}
+                          className="flex items-center gap-2 py-1 text-xs hover:bg-muted/20"
                         >
-                          <div className="flex flex-col gap-3">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                              <div>
-                                <div className="font-medium">הזמנה #{delivery.id.slice(0, 8)}</div>
-                                <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                                  <CalendarDays className="h-3.5 w-3.5" />
-                                  <span>{formatShortDate(delivery.orderDate, "-")}</span>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-col sm:items-end">
-                                <div className="rounded-xl border border-border/60 bg-background/70 px-2.5 py-1.5 text-xs">
-                                  <div className="text-[11px] text-muted-foreground">סכום</div>
-                                  <div className="font-medium">{formatCurrency(delivery.totalAmount)}</div>
-                                </div>
-                                <div className="rounded-xl border border-border/60 bg-background/70 px-2.5 py-1.5 text-xs">
-                                  <div className="text-[11px] text-muted-foreground">סטטוס</div>
-                                  <div className="font-medium">{getOrderStatusLabel(delivery.status)}</div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {delivery.notes ? (
-                              <div className="rounded-xl border border-border/50 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
-                                {delivery.notes}
-                              </div>
-                            ) : null}
-
-                            <div className="grid gap-2 sm:flex sm:flex-wrap">
-                              <div className="w-full sm:w-auto">
-                                <OrderConfirmDialog orderId={delivery.id} buttonLabel="אישור אספקה" />
-                              </div>
-                              <Button asChild type="button" variant="secondary" size="sm" className="w-full sm:w-auto" onClick={() => emitNavigationStart()}>
-                                <Link href={`/sales/orders/${delivery.id}`}>צפייה בפרטים</Link>
-                              </Button>
-                            </div>
+                          <span className="font-medium">#{delivery.id.slice(0, 6)}</span>
+                          <span className="text-muted-foreground">{formatShortDate(delivery.orderDate, "-")}</span>
+                          <span className="font-medium">{formatCurrency(delivery.totalAmount)}</span>
+                          <span className="truncate text-muted-foreground">{getOrderStatusLabel(delivery.status)}</span>
+                          <div className="mr-auto flex shrink-0 gap-1">
+                            <OrderConfirmDialog
+                              orderId={delivery.id}
+                              buttonLabel="אספקה"
+                              buttonClassName="h-6 px-2 text-xs"
+                            />
+                            <Button asChild type="button" variant="secondary" size="sm" className="h-6 px-2 text-xs" onClick={() => emitNavigationStart()}>
+                              <Link href={`/sales/orders/${delivery.id}`}>פרטים</Link>
+                            </Button>
                           </div>
                         </div>
                       ))}
