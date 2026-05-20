@@ -12,6 +12,7 @@ type CreateOrderPaymentPayload = {
   payment_date?: string | null;
   amount_total?: number | string;
   payment_method?: string;
+  due_date?: string | null;
   reference_number?: string;
   notes?: string;
   entry_type?: string;
@@ -23,6 +24,7 @@ export async function POST(req: Request) {
     const orderId = typeof body.order_id === "string" ? body.order_id : "";
     const [payment] = normalizePaymentEntries([body]);
     const entryType = body.entry_type === "refund" ? "refund" : "payment";
+    const dueDate = typeof body.due_date === "string" && body.due_date.trim() ? body.due_date.trim() : null;
 
     if (!orderId) {
       return NextResponse.json({ error: "Missing order_id" }, { status: 400 });
@@ -38,6 +40,9 @@ export async function POST(req: Request) {
         { error: "Missing payment amount, date, or method" },
         { status: 400 }
       );
+    }
+    if (payment.payment_method === "check" && !dueDate) {
+      return NextResponse.json({ error: "יש להזין תאריך פירעון לצ'ק" }, { status: 400 });
     }
 
     const access = await requireRouteAccess();
@@ -65,6 +70,7 @@ export async function POST(req: Request) {
           orderId,
           paymentDate: payment.payment_date!,
           paymentMethod: payment.payment_method!,
+          dueDate: payment.payment_method === "check" ? dueDate : null,
           referenceNumber: payment.reference_number,
           notes: payment.notes ? (notePrefix ? `${notePrefix}: ${payment.notes}` : payment.notes) : notePrefix || null,
           recordedBy: user.id,

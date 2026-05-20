@@ -9,7 +9,9 @@ import DeleteOrderButton from "@/app/sales/orders/[id]/DeleteOrderButton";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
-import { derivePaymentStatus, paymentMethodLabel, paymentStatusClasses } from "@/lib/orders/paymentStatus";
+import { OrderPaymentActionsClient } from "@/app/sales/orders/OrderPaymentActionsClient";
+import type { PaymentItem } from "@/app/sales/orders/OrderPaymentActionsClient";
+import { derivePaymentStatus, paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
@@ -159,7 +161,7 @@ export default async function SalesOrderPage({
       .eq("order_id", id),
     supabase
       .from("payments")
-      .select("id,payment_date,amount_total,payment_method,reference_number,notes,created_at,recorded_by")
+      .select("id,payment_date,amount_total,payment_method,due_date,reference_number,notes,created_at,recorded_by")
       .eq("order_id", id)
       .order("payment_date", { ascending: false }),
     supabase
@@ -358,6 +360,26 @@ export default async function SalesOrderPage({
   const paymentStatus = useDerivedFinancials
     ? derivePaymentStatus(derivedTotalAmount, derivedTotalPaid)
     : getString((financials as Row) ?? {}, "payment_status") ?? derivePaymentStatus(totalAmount, totalPaid);
+  const canManagePayments = profile.role === "admin" || profile.role === "office";
+
+  const paymentsWithMeta: PaymentItem[] = ((payments ?? []) as Row[]).map((payment) => {
+    const paymentId = getString(payment, "id") ?? "";
+    return {
+      id: paymentId,
+      payment_date: getString(payment, "payment_date"),
+      amount_total: getNumber(payment, "amount_total") ?? 0,
+      payment_method: getString(payment, "payment_method"),
+      due_date: getString(payment, "due_date"),
+      reference_number: getString(payment, "reference_number"),
+      notes: getString(payment, "notes"),
+      insertedByLabel: paymentInsertedByLabel(payment, {
+        paymentRecordedByNameByValue,
+        paymentAuditById: paymentAuditResult.byRecordId,
+      }),
+      morningDocuments: morningDocuments.filter((d) => d.payment_id === paymentId),
+    };
+  });
+
   const itemsSubtitleParts = [
     `${(orderItems ?? []).length} פריטים`,
     `סכום ביניים ${formatCurrency(subtotal)}`,
@@ -532,64 +554,13 @@ export default async function SalesOrderPage({
         </DetailSection>
 
         <DetailSection title="תשלומים, החזרים ופעילות" subtitle={`${(payments ?? []).length} רשומות`}>
-          {(payments ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">עדיין לא הוזנו תשלומים להזמנה זו.</p>
-          ) : (
-            <div className="space-y-2">
-              {(payments ?? []).map((payment, index) => {
-                const amount = getNumber(payment as Row, "amount_total") ?? 0;
-                const isRefund = amount < 0;
-                const paymentId = getString(payment as Row, "id") ?? "";
-                const insertedByLabel = paymentInsertedByLabel(payment as Row, {
-                  paymentRecordedByNameByValue,
-                  paymentAuditById: paymentAuditResult.byRecordId,
-                });
-                const paymentMorningDocs = morningDocuments.filter((document) => document.payment_id === paymentId);
-
-                return (
-                  <div
-                    key={paymentId || `payment-${index}`}
-                    className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={`font-medium ${isRefund ? "text-amber-700" : ""}`}>
-                        {isRefund ? `החזר ${formatCurrency(Math.abs(amount))}` : formatCurrency(amount)}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {formatDate(getString(payment as Row, "payment_date") ?? getString(payment as Row, "created_at"))}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-muted-foreground">
-                      {isRefund ? "אמצעי החזר" : "אמצעי"}:{" "}
-                      {paymentMethodLabel(getString(payment as Row, "payment_method"))}
-                      {getString(payment as Row, "reference_number")
-                        ? ` • אסמכתא: ${getString(payment as Row, "reference_number")}`
-                        : ""}
-                    </div>
-                    {getString(payment as Row, "notes") ? (
-                      <div className="mt-1 text-muted-foreground">
-                        הערות: {getString(payment as Row, "notes")}
-                      </div>
-                    ) : null}
-                    {insertedByLabel ? <div className="mt-1 text-muted-foreground">{insertedByLabel}</div> : null}
-                    {!isRefund && paymentId && customerId ? (
-                      <div className="mt-3 border-t border-border/60 pt-3">
-                        <MorningDocumentsPanel
-                          customerId={customerId}
-                          orderId={id}
-                          paymentId={paymentId}
-                          documents={paymentMorningDocs}
-                          allowReceipt
-                          allowInvoiceReceipt
-                          compact
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <OrderPaymentActionsClient
+            orderId={id}
+            customerId={customerId}
+            totalAmount={totalAmount}
+            payments={paymentsWithMeta}
+            canManage={canManagePayments}
+          />
         </DetailSection>
 
         <DetailSection title="הוכחת אספקה" subtitle={`${deliveryImagesResolved.length} תמונות`}>

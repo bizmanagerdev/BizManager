@@ -67,6 +67,7 @@ export default function OrderPaymentDialog({
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -103,6 +104,10 @@ export default function OrderPaymentDialog({
       setError(entryType === "refund" ? "יש לבחור אמצעי החזר." : "יש לבחור אמצעי תשלום.");
       return;
     }
+    if (paymentMethod === "check" && !dueDate) {
+      setError("יש להזין תאריך פירעון לצ'ק.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -115,6 +120,7 @@ export default function OrderPaymentDialog({
           amount_total: amountNumber,
           payment_date: paymentDate,
           payment_method: paymentMethod,
+          due_date: paymentMethod === "check" ? dueDate : undefined,
           reference_number: referenceNumber.trim() || undefined,
           notes: notes.trim() || undefined,
         }),
@@ -142,6 +148,7 @@ export default function OrderPaymentDialog({
       setEntryType(preview.nextRefund > 0 ? "refund" : "payment");
       setPaymentDate(getTodayDate());
       setPaymentMethod("");
+      setDueDate("");
       setReferenceNumber("");
       setNotes("");
       setOpen(false);
@@ -236,7 +243,7 @@ export default function OrderPaymentDialog({
               <label className="text-sm font-medium">{entryType === "refund" ? "אמצעי החזר *" : "אמצעי תשלום *"}</label>
               <select
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
+                onChange={(e) => { setPaymentMethod(e.target.value); if (e.target.value !== "check") setDueDate(""); }}
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">{entryType === "refund" ? "בחר אמצעי החזר..." : "בחר אמצעי תשלום..."}</option>
@@ -247,6 +254,13 @@ export default function OrderPaymentDialog({
                 ))}
               </select>
             </div>
+
+            {paymentMethod === "check" ? (
+              <div className="space-y-1">
+                <label className="text-sm font-medium">תאריך פירעון *</label>
+                <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              </div>
+            ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
