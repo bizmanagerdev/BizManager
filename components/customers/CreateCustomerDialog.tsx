@@ -56,6 +56,7 @@ export const CREATE_CUSTOMER_CITY_OPTIONS = [
   "חיפה",
   "נתניה",
   "באר שבע",
+  "קרית גת",
   "ראשון לציון",
   "אחר",
 ];
