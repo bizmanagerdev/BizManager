@@ -248,6 +248,22 @@ export default async function CustomerDetailsPage({
             <div className="space-y-2">
               <div className="text-xs font-medium text-muted-foreground">לקוח #{id.slice(0, 8)}</div>
               <div className="text-2xl font-semibold">{customerName}</div>
+              {(() => {
+                const invoiceName = s(customer as Row, "name_for_invoice");
+                const registrationNumber = s(customer as Row, "registration_number");
+                const showInvoiceName = invoiceName && invoiceName !== customerName;
+                if (!showInvoiceName && !registrationNumber) return null;
+                return (
+                  <div className="text-sm text-muted-foreground">
+                    {[
+                      showInvoiceName ? `שם לחשבונית: ${invoiceName}` : null,
+                      registrationNumber ? `ח.פ / ת.ז: ${registrationNumber}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  </div>
+                );
+              })()}
               <div className="text-sm text-muted-foreground">
                 {[customerPhone, customerEmail].filter(Boolean).join(" • ") || "-"}
               </div>
