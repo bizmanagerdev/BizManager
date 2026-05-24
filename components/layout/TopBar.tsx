@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Bell, ChevronDown, LogOut, User } from "lucide-react";
 import { ClientOnly } from "@/components/ClientOnly";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAlerts } from "@/lib/ui/alerts-store";
 
 type Props = {
   appName?: string;
@@ -24,61 +25,30 @@ type Props = {
   showSearch?: boolean;
 };
 
-type AlertItem = {
-  id: string;
-  title: string;
-  description: string;
-  href: string;
-  count: number;
-  severity: "info" | "warning" | "danger";
-};
-
 export function TopBar({
   appName = "BizH",
   logo,
   userName,
   showSearch = true,
 }: Props) {
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [alertsLoading, setAlertsLoading] = useState(true);
-  const [alertsError, setAlertsError] = useState<string | null>(null);
+  const { alerts, loading: alertsLoading, error: alertsError } = useAlerts();
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadAlerts() {
-      setAlertsLoading(true);
-      setAlertsError(null);
-      try {
-        const res = await fetch("/api/alerts", { cache: "no-store" });
-        const json = (await res.json().catch(() => ({}))) as {
-          alerts?: AlertItem[];
-          error?: string;
-        };
-
-        if (!res.ok) {
-          throw new Error(json.error ?? "טעינת ההתראות נכשלה.");
-        }
-
-        if (!cancelled) {
-          setAlerts(Array.isArray(json.alerts) ? json.alerts : []);
-        }
-      } catch (error: unknown) {
-        if (!cancelled) {
-          setAlertsError(error instanceof Error ? error.message : "טעינת ההתראות נכשלה.");
-        }
-      } finally {
-        if (!cancelled) setAlertsLoading(false);
-      }
-    }
-
-    void loadAlerts();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const alertCount = alerts.reduce((sum, alert) => sum + alert.count, 0);
+  // "Real alerts" = actionable items that need attention. Excludes baseline info
+  // rows (e.g. "X active projects") and any explicitly opted-out entries.
+  const activeAlerts = useMemo(
+    () =>
+      (alerts ?? []).filter(
+        (alert) =>
+          alert.count > 0 &&
+          alert.severity !== "info" &&
+          alert.countsAsActiveAlert !== false,
+      ),
+    [alerts],
+  );
+  const activeAlertCount = activeAlerts.reduce((sum, alert) => sum + alert.count, 0);
+  // First-load flash only — once we have any data, never show "loading…" again
+  // on subsequent route changes (data is cached in the module-level store).
+  const showLoadingState = alertsLoading && alerts === null;
 
   return (
     <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-gradient-to-r from-primary/[0.04] via-background/95 to-secondary/[0.05] px-4 backdrop-blur-xl">
@@ -96,32 +66,35 @@ export function TopBar({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="relative rounded-xl bg-secondary text-secondary-foreground shadow-md shadow-secondary/20 hover:bg-secondary/90 hover:text-secondary-foreground"
+              className={
+                activeAlertCount > 0
+                  ? "rounded-xl border border-destructive/25 bg-destructive/10 text-destructive shadow-sm hover:bg-destructive/15 hover:text-destructive"
+                  : "rounded-xl border border-primary/15 bg-primary/8 text-primary shadow-sm hover:bg-primary/12 hover:text-primary"
+              }
               type="button"
               id="topbar-alerts-trigger"
             >
-              <Bell className="h-4 w-4" />
-              {alertCount > 0 ? (
-                <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-                  {alertCount > 99 ? "99+" : alertCount}
-                </span>
-              ) : null}
+              <Bell
+                className="h-4 w-4"
+                fill={activeAlertCount > 0 ? "currentColor" : "none"}
+                strokeWidth={activeAlertCount > 0 ? 2.2 : 1.8}
+              />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80 rounded-2xl p-2">
+          <DropdownMenuContent dir="rtl" align="end" className="w-80 rounded-2xl p-2">
             <div className="px-2 py-2">
               <div className="text-sm font-semibold">התראות</div>
-              <div className="text-xs text-muted-foreground">כל מה שדורש תשומת לב</div>
+              <div className="text-xs text-muted-foreground">פעולות שדורשות תשומת לב</div>
             </div>
             <DropdownMenuSeparator />
-            {alertsLoading ? (
+            {showLoadingState ? (
               <div className="px-3 py-4 text-sm text-muted-foreground">טוען התראות...</div>
-            ) : alertsError ? (
+            ) : alertsError && activeAlerts.length === 0 ? (
               <div className="px-3 py-4 text-sm text-destructive">{alertsError}</div>
-            ) : alerts.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground">אין התראות כרגע.</div>
+            ) : activeAlerts.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-muted-foreground">אין התראות פעילות.</div>
             ) : (
-              alerts.map((alert) => (
+              activeAlerts.map((alert) => (
                 <DropdownMenuItem key={alert.id} asChild className="cursor-pointer rounded-xl p-0">
                   <Link
                     href={alert.href}
@@ -135,10 +108,8 @@ export function TopBar({
                     <span
                       className={
                         alert.severity === "danger"
-                          ? "rounded-full bg-destructive-soft px-2 py-1 text-xs font-medium text-destructive"
-                          : alert.severity === "warning"
-                            ? "rounded-full bg-warning-soft px-2 py-1 text-xs font-medium text-warning-soft-foreground"
-                            : "rounded-full bg-info-soft px-2 py-1 text-xs font-medium text-info-soft-foreground"
+                          ? "inline-flex items-center rounded-full border border-destructive bg-destructive-soft px-2 py-1 text-xs font-semibold text-destructive-soft-foreground"
+                          : "inline-flex items-center rounded-full border border-warning bg-warning-soft px-2 py-1 text-xs font-semibold text-warning-soft-foreground"
                       }
                     >
                       {alert.count}
