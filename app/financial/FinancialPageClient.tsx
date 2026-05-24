@@ -273,9 +273,9 @@ function FilterLoadingDots() {
       <div className="flex items-center gap-4">
         {[
           { delayMs: 0, className: "bg-primary shadow-primary/35" },
-          { delayMs: 150, className: "bg-destructive shadow-destructive/35" },
+          { delayMs: 150, className: "bg-secondary shadow-secondary/35" },
           { delayMs: 300, className: "bg-primary shadow-primary/35" },
-          { delayMs: 450, className: "bg-destructive shadow-destructive/35" },
+          { delayMs: 450, className: "bg-secondary shadow-secondary/35" },
         ].map(({ delayMs, className }) => (
           <span
             key={delayMs}
@@ -1363,19 +1363,6 @@ export default function FinancialPageClient({
               />
             </>
           )}
-        </CardContent>
-      </Card>
-
-      <Card className="border-dashed">
-        <CardContent className="flex flex-col gap-3 p-5 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 sm:flex-row-reverse">
-            <Landmark className="h-4 w-4" />
-            <span>התצוגה מסדרת תשלומים לפי תאריך כניסה/יציאה אמיתי לתזרים, לא רק לפי תאריך הרישום.</span>
-          </div>
-          <div className="flex items-center gap-2 sm:flex-row-reverse">
-            <CalendarDays className="h-4 w-4" />
-            <span>צ&apos;קים עם `due_date` עתידי והוצאות עתידיות נחשבים לצפי עד שהמועד שלהם מגיע.</span>
-          </div>
         </CardContent>
       </Card>
 

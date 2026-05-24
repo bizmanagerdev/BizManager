@@ -1,13 +1,11 @@
 "use client";
 
-function Dot({ delayMs }: { delayMs: number }) {
-  return (
-    <span
-      className="h-4 w-4 animate-pulse rounded-full bg-secondary shadow-sm shadow-secondary/40"
-      style={{ animationDelay: `${delayMs}ms`, animationDuration: "1s" }}
-    />
-  );
-}
+const DOTS = [
+  { delayMs: 0, className: "bg-primary shadow-primary/35" },
+  { delayMs: 150, className: "bg-secondary shadow-secondary/35" },
+  { delayMs: 300, className: "bg-primary shadow-primary/35" },
+  { delayMs: 450, className: "bg-secondary shadow-secondary/35" },
+] as const;
 
 export default function LoadingDots({
   label,
@@ -23,10 +21,13 @@ export default function LoadingDots({
         {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
       </div>
       <div className="flex items-center gap-2.5" aria-hidden="true">
-        <Dot delayMs={0} />
-        <Dot delayMs={150} />
-        <Dot delayMs={300} />
-        <Dot delayMs={450} />
+        {DOTS.map(({ delayMs, className }) => (
+          <span
+            key={delayMs}
+            className={`h-4 w-4 animate-pulse rounded-full shadow-sm ${className}`}
+            style={{ animationDelay: `${delayMs}ms`, animationDuration: "1s" }}
+          />
+        ))}
       </div>
     </div>
   );

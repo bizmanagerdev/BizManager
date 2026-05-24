@@ -47,32 +47,20 @@ function getTabLabel(tab: { id: SalesTab; label: string }, counts: Record<SalesT
   return `${tab.label} (${counts[tab.id] ?? 0})`;
 }
 
+// Mirrors the Radix TabsTrigger styling from components/ui/tabs.tsx so sales
+// tabs look identical to project / payroll / financial tabs across the app.
 function triggerClassName(isActive: boolean) {
-  return [
-    "inline-flex",
-    "min-h-[52px]",
-    "min-w-0",
-    "items-center",
-    "justify-center",
-    "whitespace-normal",
-    "rounded-xl",
-    "px-3",
-    "py-2",
-    "text-center",
-    "text-sm",
-    "font-medium",
-    "leading-tight",
-    "ring-offset-background",
-    "transition-all",
-    "focus-visible:outline-none",
-    "focus-visible:ring-2",
-    "focus-visible:ring-ring",
-    "focus-visible:ring-offset-2",
-    isActive
-      ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
-      : "text-muted-foreground hover:text-foreground",
-  ].join(" ");
+  const base =
+    "inline-flex items-center justify-center whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+
+  return isActive
+    ? `${base} bg-primary text-primary-foreground shadow-md shadow-primary/25 hover:ring-2 hover:ring-secondary hover:ring-offset-2 hover:ring-offset-background`
+    : `${base} text-muted-foreground hover:bg-secondary hover:text-secondary-foreground`;
 }
+
+// Mirrors TabsList wrapper from components/ui/tabs.tsx
+const LIST_CLASSES =
+  "inline-flex h-12 w-full items-center justify-start overflow-x-auto rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm";
 
 export default function SalesTabsNav({
   activeTab,
@@ -84,44 +72,21 @@ export default function SalesTabsNav({
   searchParams: SalesTabsSearchParams;
 }) {
   return (
-    <>
-      <div className="hidden items-center justify-center md:flex">
-        <div className="inline-flex h-14 w-fit max-w-full items-center justify-center overflow-hidden rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm">
-          {tabs.map((tab) => {
-            const isActive = tab.id === activeTab;
-
-            return (
-              <Link
-                key={tab.id}
-                href={buildTabHref(tab.id, searchParams)}
-                aria-current={isActive ? "page" : undefined}
-                className={triggerClassName(isActive)}
-                onClick={() => emitNavigationStart()}
-              >
-                {getTabLabel(tab, counts)}
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mx-auto grid h-14 w-full grid-cols-5 justify-center overflow-hidden rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm md:hidden">
-        {tabs.map((tab) => {
-          const isActive = tab.id === activeTab;
-
-          return (
-            <Link
-              key={tab.id}
-              href={buildTabHref(tab.id, searchParams)}
-              aria-current={isActive ? "page" : undefined}
-              className={triggerClassName(isActive)}
-              onClick={() => emitNavigationStart()}
-            >
-              {getTabLabel(tab, counts)}
-            </Link>
-          );
-        })}
-      </div>
-    </>
+    <div dir="rtl" className={LIST_CLASSES}>
+      {tabs.map((tab) => {
+        const isActive = tab.id === activeTab;
+        return (
+          <Link
+            key={tab.id}
+            href={buildTabHref(tab.id, searchParams)}
+            aria-current={isActive ? "page" : undefined}
+            className={`flex-1 ${triggerClassName(isActive)}`}
+            onClick={() => emitNavigationStart()}
+          >
+            {getTabLabel(tab, counts)}
+          </Link>
+        );
+      })}
+    </div>
   );
 }

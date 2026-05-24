@@ -27,16 +27,8 @@ import { formatShortDate } from "@/lib/date";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 
 const ProjectTabsClient = dynamic(() => import("@/app/projects/[id]/ProjectTabsClient"), {
-  loading: () => (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {Array.from({ length: 6 }, (_, index) => (
-        <div
-          key={index}
-          className="h-40 animate-pulse rounded-2xl border bg-muted/30"
-        />
-      ))}
-    </div>
-  ),
+  // No skeleton — the top navigation progress bar covers loading feedback.
+  loading: () => null,
 });
 
 const DOCUMENTS_BUCKET = "business-documents";

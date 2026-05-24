@@ -161,13 +161,57 @@ export function TopNavigationProgress() {
       finalizeIfIdle();
     }
 
+    // Global link-click capture — fires startNavigation() for any same-origin
+    // anchor click in the app. Previously the bar only showed on explicit
+    // emitNavigationStart() calls (sidebar NavLink etc.), so pages like
+    // Activity / Settings that navigate via plain <Link> never triggered it.
+    function handleDocumentClick(event: MouseEvent) {
+      // Skip modified clicks (cmd+click opens new tab, etc.)
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const target = event.target as Element | null;
+      const anchor = target?.closest("a");
+      if (!anchor || !(anchor instanceof HTMLAnchorElement)) return;
+      if (!anchor.href) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      if (anchor.hasAttribute("download")) return;
+
+      try {
+        const url = new URL(anchor.href);
+        if (url.origin !== window.location.origin) return;
+        // Same path + search = hash-only or no-op — don't start a bar
+        if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      } catch {
+        return;
+      }
+
+      startNavigation();
+    }
+
+    function handlePopState() {
+      startNavigation();
+    }
+
     window.addEventListener(NAV_START_EVENT, startNavigation);
     window.addEventListener(ACTIVITY_START_EVENT, startActivity);
     window.addEventListener(ACTIVITY_END_EVENT, endActivity);
+    window.addEventListener("click", handleDocumentClick, true);
+    window.addEventListener("popstate", handlePopState);
     return () => {
       window.removeEventListener(NAV_START_EVENT, startNavigation);
       window.removeEventListener(ACTIVITY_START_EVENT, startActivity);
       window.removeEventListener(ACTIVITY_END_EVENT, endActivity);
+      window.removeEventListener("click", handleDocumentClick, true);
+      window.removeEventListener("popstate", handlePopState);
       clearAllTimers();
       disconnectObserver();
     };
