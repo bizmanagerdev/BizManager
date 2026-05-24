@@ -3,7 +3,7 @@
 function Dot({ delayMs }: { delayMs: number }) {
   return (
     <span
-      className="h-4 w-4 animate-pulse rounded-full bg-sky-500 shadow-sm shadow-sky-200"
+      className="h-4 w-4 animate-pulse rounded-full bg-secondary shadow-sm shadow-secondary/40"
       style={{ animationDelay: `${delayMs}ms`, animationDuration: "1s" }}
     />
   );

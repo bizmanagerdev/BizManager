@@ -203,7 +203,7 @@ export default function OrderPaymentDialog({
               </div>
               <div>
                 <div className="text-muted-foreground">{refundBefore > 0 ? "החזר פתוח" : "נותר לגבייה"}</div>
-                <div className={`font-medium ${refundBefore > 0 ? "text-amber-700" : ""}`}>
+                <div className={`font-medium ${refundBefore > 0 ? "text-warning-soft-foreground" : ""}`}>
                   {formatCurrency(refundBefore > 0 ? refundBefore : remainingBefore)}
                 </div>
               </div>
@@ -290,7 +290,7 @@ export default function OrderPaymentDialog({
               </div>
               <div className="mt-1 flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">{preview.nextRefund > 0 ? "החזר" : "יתרה"}</span>
-                <span className={preview.nextRefund > 0 ? "text-amber-700" : ""}>
+                <span className={preview.nextRefund > 0 ? "text-warning-soft-foreground" : ""}>
                   {formatCurrency(preview.nextRefund > 0 ? preview.nextRefund : preview.nextRemaining)}
                 </span>
               </div>

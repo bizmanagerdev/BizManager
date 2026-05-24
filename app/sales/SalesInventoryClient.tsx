@@ -375,7 +375,7 @@ export default function SalesInventoryClient({
   return (
     <div className="space-y-4">
       {lowStockItems.length > 0 ? (
-        <Card className="border-red-500/40">
+        <Card className="border-destructive/40">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">התראת מלאי נמוך</CardTitle>
           </CardHeader>
@@ -383,13 +383,13 @@ export default function SalesInventoryClient({
             {lowStockItems.map((item) => (
               <div
                 key={item.productId}
-                className="flex items-center justify-between rounded border border-red-200 bg-red-50 p-2"
+                className="flex items-center justify-between rounded border border-destructive/30 bg-destructive-soft p-2"
               >
                 <div>
                   <div>{item.productName}</div>
-                  <div className="text-xs text-red-700/80">{`סף: ${item.lowStockThreshold}`}</div>
+                  <div className="text-xs text-destructive/80">{`סף: ${item.lowStockThreshold}`}</div>
                 </div>
-                <span className="font-medium text-red-700">{item.available}</span>
+                <span className="font-medium text-destructive">{item.available}</span>
               </div>
             ))}
           </CardContent>
@@ -423,13 +423,13 @@ export default function SalesInventoryClient({
                     return (
                       <tr
                         key={item.productId}
-                        className={isLow ? "bg-red-50/70 hover:bg-red-50" : "hover:bg-muted/30"}
+                        className={isLow ? "bg-destructive-soft/70 hover:bg-destructive-soft" : "hover:bg-muted/30"}
                       >
                         <td className="px-3 py-2">{item.productName}</td>
                         <td className="px-3 py-2">{item.sku ?? "-"}</td>
                         <td className="px-3 py-2">{item.quantityOnHand}</td>
                         <td className="px-3 py-2">{item.quantityReserved}</td>
-                        <td className={`px-3 py-2 font-medium ${isLow ? "text-red-700" : ""}`}>
+                        <td className={`px-3 py-2 font-medium ${isLow ? "text-destructive" : ""}`}>
                           {item.available}
                         </td>
                         <td className="px-3 py-2">{item.soldAmount}</td>
@@ -453,7 +453,7 @@ export default function SalesInventoryClient({
         </CardContent>
       </Card>
 
-      {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
+      {success ? <p className="text-sm text-success-soft-foreground">{success}</p> : null}
 
       <Dialog
         open={adjustmentOpen}

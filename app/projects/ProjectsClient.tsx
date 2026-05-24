@@ -247,7 +247,7 @@ function paymentStatusBadgeClasses(status: "paid" | "partial" | "unpaid" | "unpr
     case "unpaid":
       return paymentStatusClasses("unpaid");
     case "unpriced":
-      return "border-slate-200 bg-slate-100 text-slate-700";
+      return "border-border bg-muted text-muted-foreground";
   }
 }
 
@@ -1360,7 +1360,7 @@ export default function ProjectsClient({
             <Button
               type="button"
               variant="outline"
-              className="border-slate-300 bg-slate-100 text-slate-700 hover:border-slate-400 hover:bg-slate-200 hover:text-slate-800"
+              className="border-border bg-muted text-muted-foreground hover:border-border hover:bg-muted/80 hover:text-foreground"
               onClick={() => setApproveQuoteOpen(false)}
               disabled={approveQuoteSubmitting}
             >
@@ -1444,8 +1444,8 @@ export default function ProjectsClient({
                           }}
                           className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
                             customer.id === createCustomerId
-                              ? "border-primary/20 bg-gradient-to-r from-primary to-destructive text-primary-foreground shadow-lg shadow-primary/20"
-                              : "border-primary/10 bg-gradient-to-r from-accent to-destructive/15 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+                              ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                              : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
                           }`}
                         >
                           <div className="font-medium">{customer.label}</div>

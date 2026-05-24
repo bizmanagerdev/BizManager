@@ -51,9 +51,9 @@ export default function CalendarSection({
         {view === "timeline" ? (
           <>
             <div className="mb-3 flex gap-3 text-xs text-muted-foreground">
-              <LegendDot color="bg-amber-400" label="משימה" />
-              <LegendDot color="bg-teal-500" label="פרויקט מתחיל" />
-              <LegendDot color="bg-rose-400" label="פרויקט מסתיים" />
+              <LegendDot color="bg-warning" label="משימה" />
+              <LegendDot color="bg-success" label="פרויקט מתחיל" />
+              <LegendDot color="bg-destructive" label="פרויקט מסתיים" />
             </div>
             <AlertsTimeline entries={entries} todayIso={todayIso} days={21} />
           </>

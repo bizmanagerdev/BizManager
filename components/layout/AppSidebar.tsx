@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/ui/brand-mark";
 import { cn } from "@/lib/utils";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 
@@ -15,7 +16,6 @@ interface Props {
 
 export function AppSidebar({ items, appName = "BizH", logo }: Props) {
   const [collapsed, setCollapsed] = useState(true);
-  const appMark = appName === "BizH" ? "H" : appName.charAt(0);
 
   return (
     <aside
@@ -26,13 +26,7 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
     >
       <div className="flex h-16 items-center border-b border-sidebar-border/80 px-4">
         <div className="flex items-center gap-2 overflow-hidden">
-          {logo ?? (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-destructive via-destructive to-primary shadow-lg shadow-destructive/20">
-              <span className="text-sm font-black text-primary-foreground">
-                {appMark}
-              </span>
-            </div>
-          )}
+          {logo ?? <BrandMark size="lg" />}
           <span
             className={cn(
               "block whitespace-nowrap text-sm font-semibold text-white",
@@ -54,7 +48,7 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
               "flex h-11 items-center gap-3 rounded-xl px-3 text-base text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-sm",
               collapsed && "justify-center px-0 lg:justify-start lg:px-3"
             )}
-            activeClassName="bg-gradient-to-r from-destructive/95 to-destructive/80 text-white font-medium shadow-lg shadow-destructive/20"
+            activeClassName="bg-secondary text-secondary-foreground font-medium shadow-md shadow-secondary/30"
             pendingClassName="bg-white/10 opacity-70"
           >
             <item.icon className="h-4 w-4 shrink-0" />

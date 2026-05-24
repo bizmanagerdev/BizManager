@@ -59,7 +59,7 @@ export default function CashFlowBalanceChart({ rows }: { rows: CashFlowCumulativ
               <polyline
                 fill="none"
                 points={chartPolyline(linePoints)}
-                stroke="hsl(var(--chart-5))"
+                stroke="rgb(var(--chart-5))"
                 strokeWidth="2.5"
                 strokeLinejoin="round"
                 strokeLinecap="round"
@@ -74,7 +74,7 @@ export default function CashFlowBalanceChart({ rows }: { rows: CashFlowCumulativ
                     cx={x}
                     cy={y}
                     r="1.8"
-                    fill={row.balance >= 0 ? "hsl(var(--chart-5))" : "hsl(var(--chart-2))"}
+                    fill={row.balance >= 0 ? "rgb(var(--chart-5))" : "rgb(var(--chart-2))"}
                   />
                 );
               })}
@@ -83,7 +83,7 @@ export default function CashFlowBalanceChart({ rows }: { rows: CashFlowCumulativ
               {visibleRows.map((row) => (
                 <div key={`${row.period}-balance`} className="rounded-xl bg-muted/40 p-3">
                   <div className="text-xs text-muted-foreground">{formatPeriodLabel(row.period)}</div>
-                  <div className={row.balance >= 0 ? "mt-1 font-medium text-emerald-700" : "mt-1 font-medium text-rose-700"}>
+                  <div className={row.balance >= 0 ? "mt-1 font-medium text-success-soft-foreground" : "mt-1 font-medium text-destructive"}>
                     {formatCurrency(row.balance)}
                   </div>
                 </div>

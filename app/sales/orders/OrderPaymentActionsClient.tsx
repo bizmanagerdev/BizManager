@@ -350,7 +350,7 @@ export function OrderPaymentActionsClient({
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={`font-medium ${isRefund ? "text-amber-700" : ""}`}>
+                    <span className={`font-medium ${isRefund ? "text-warning-soft-foreground" : ""}`}>
                       {isRefund
                         ? `החזר ${formatCurrency(Math.abs(payment.amount_total))}`
                         : formatCurrency(payment.amount_total)}

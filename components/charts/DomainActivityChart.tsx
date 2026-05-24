@@ -24,9 +24,9 @@ const ILS = new Intl.NumberFormat("he-IL", {
 });
 
 function barColor(net: number) {
-  if (net > 0) return "#0d9488";  // teal — net inflow
-  if (net < 0) return "#f43f5e";  // rose — net outflow
-  return "#8b5cf6";               // violet — neutral
+  if (net > 0) return "rgb(var(--success))";
+  if (net < 0) return "rgb(var(--destructive))";
+  return "rgb(var(--secondary))";
 }
 
 function CustomTooltip({
@@ -72,10 +72,10 @@ export default function DomainActivityChart({
           margin={{ top: 4, right: 48, left: 4, bottom: 4 }}
           barCategoryGap="25%"
         >
-          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
+          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgb(var(--border))" />
           <XAxis
             type="number"
-            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+            tick={{ fontSize: 11, fill: "rgb(var(--muted-foreground))" }}
             axisLine={false}
             tickLine={false}
             allowDecimals={false}
@@ -84,12 +84,12 @@ export default function DomainActivityChart({
             type="category"
             dataKey="name"
             width={80}
-            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+            tick={{ fontSize: 11, fill: "rgb(var(--muted-foreground))" }}
             axisLine={false}
             tickLine={false}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }} />
-          <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={32} label={{ position: "right", fontSize: 11, fill: "hsl(var(--muted-foreground))" }}>
+          <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgb(var(--muted))", opacity: 0.4 }} />
+          <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={32} label={{ position: "right", fontSize: 11, fill: "rgb(var(--muted-foreground))" }}>
             {sorted.map((entry, i) => (
               <Cell key={i} fill={barColor(entry.net)} />
             ))}

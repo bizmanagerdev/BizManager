@@ -7,6 +7,7 @@ import { ClientOnly } from "@/components/ClientOnly";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import PwaInstallButton from "@/components/pwa/PwaInstallButton";
+import { BrandMark } from "@/components/ui/brand-mark";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -38,7 +39,6 @@ export function TopBar({
   userName,
   showSearch = true,
 }: Props) {
-  const appMark = appName === "BizH" ? "H" : appName.charAt(0);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(true);
   const [alertsError, setAlertsError] = useState<string | null>(null);
@@ -81,15 +81,9 @@ export function TopBar({
   const alertCount = alerts.reduce((sum, alert) => sum + alert.count, 0);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-background/78 px-4 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-gradient-to-r from-primary/[0.04] via-background/95 to-secondary/[0.05] px-4 backdrop-blur-xl">
       <div className="flex items-center gap-2 lg:hidden">
-        {logo ?? (
-          <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-destructive to-primary shadow-md shadow-destructive/20">
-            <span className="text-xs font-black text-primary-foreground">
-              {appMark}
-            </span>
-          </div>
-        )}
+        {logo ?? <BrandMark size="md" />}
         <span className="text-base font-bold tracking-[0.2em] text-primary">{appName}</span>
       </div>
 
@@ -102,7 +96,7 @@ export function TopBar({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="relative rounded-xl bg-destructive text-destructive-foreground shadow-md hover:bg-destructive/90 hover:text-destructive-foreground"
+              className="relative rounded-xl bg-secondary text-secondary-foreground shadow-md shadow-secondary/20 hover:bg-secondary/90 hover:text-secondary-foreground"
               type="button"
               id="topbar-alerts-trigger"
             >
@@ -141,10 +135,10 @@ export function TopBar({
                     <span
                       className={
                         alert.severity === "danger"
-                          ? "rounded-full bg-destructive/12 px-2 py-1 text-xs font-medium text-destructive"
+                          ? "rounded-full bg-destructive-soft px-2 py-1 text-xs font-medium text-destructive"
                           : alert.severity === "warning"
-                            ? "rounded-full bg-warning/15 px-2 py-1 text-xs font-medium text-foreground"
-                            : "rounded-full bg-muted px-2 py-1 text-xs font-medium text-muted-foreground"
+                            ? "rounded-full bg-warning-soft px-2 py-1 text-xs font-medium text-warning-soft-foreground"
+                            : "rounded-full bg-info-soft px-2 py-1 text-xs font-medium text-info-soft-foreground"
                       }
                     >
                       {alert.count}
@@ -171,7 +165,7 @@ export function TopBar({
               type="button"
               id="topbar-user-trigger-fallback"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-secondary-foreground shadow-sm shadow-secondary/30">
                 <User className="h-3.5 w-3.5" />
               </div>
               {userName && <span className="hidden text-sm lg:inline">{userName}</span>}
@@ -188,7 +182,7 @@ export function TopBar({
                 type="button"
                 id="topbar-user-trigger"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-destructive text-primary-foreground">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-secondary-foreground shadow-sm shadow-secondary/30">
                   <User className="h-3.5 w-3.5" />
                 </div>
                 {userName && <span className="hidden text-sm lg:inline">{userName}</span>}

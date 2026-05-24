@@ -215,9 +215,9 @@ export default function AlertsTimeline({
 
 function EventDot({ kind }: { kind: TimelineEvent["kind"] }) {
   const colors = {
-    task: "bg-amber-400",
-    "project-start": "bg-teal-500",
-    "project-end": "bg-rose-400",
+    task: "bg-warning",
+    "project-start": "bg-success",
+    "project-end": "bg-destructive",
   };
   return (
     <div className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${colors[kind]}`} />

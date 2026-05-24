@@ -69,7 +69,7 @@ function triggerClassName(isActive: boolean) {
     "focus-visible:ring-ring",
     "focus-visible:ring-offset-2",
     isActive
-      ? "bg-gradient-to-r from-primary to-destructive text-primary-foreground shadow-lg shadow-primary/20"
+      ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
       : "text-muted-foreground hover:text-foreground",
   ].join(" ");
 }
@@ -86,7 +86,7 @@ export default function SalesTabsNav({
   return (
     <>
       <div className="hidden items-center justify-center md:flex">
-        <div className="inline-flex h-14 w-fit max-w-full items-center justify-center overflow-hidden rounded-2xl border border-white/60 bg-white/70 p-1 text-muted-foreground shadow-sm">
+        <div className="inline-flex h-14 w-fit max-w-full items-center justify-center overflow-hidden rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm">
           {tabs.map((tab) => {
             const isActive = tab.id === activeTab;
 
@@ -105,7 +105,7 @@ export default function SalesTabsNav({
         </div>
       </div>
 
-      <div className="mx-auto grid h-14 w-full grid-cols-5 justify-center overflow-hidden rounded-2xl border border-white/60 bg-white/70 p-1 text-muted-foreground shadow-sm md:hidden">
+      <div className="mx-auto grid h-14 w-full grid-cols-5 justify-center overflow-hidden rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm md:hidden">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTab;
 

@@ -117,17 +117,17 @@ export function orderStatusClasses(status: string) {
     case "delivered":
     case "completed":
     case "closed":
-      return "border-transparent bg-emerald-100 text-black";
+      return "border-success/30 bg-success-soft text-success-soft-foreground";
     case "draft":
-      return "border-transparent bg-red-100 text-red-800";
+      return "border-destructive/30 bg-destructive-soft text-destructive";
     case "confirmed":
     case "processing":
     case "out_for_delivery":
-      return "border-transparent bg-orange-100 text-black";
+      return "border-warning/40 bg-warning-soft text-warning-soft-foreground";
     case "cancelled":
-      return "border-transparent bg-rose-100 text-black";
+      return "border-border bg-muted text-muted-foreground";
     default:
-      return "border-transparent bg-orange-100 text-black";
+      return "border-warning/40 bg-warning-soft text-warning-soft-foreground";
   }
 }
 
@@ -153,10 +153,10 @@ function SummaryInfo({
 }) {
   const toneClass =
     tone === "red"
-      ? "border-red-200 bg-red-50 text-red-700"
+      ? "border-destructive/30 bg-destructive-soft text-destructive"
       : tone === "emerald"
-        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-        : "border-sky-200 bg-sky-50 text-sky-700";
+        ? "border-success/30 bg-success-soft text-success-soft-foreground"
+        : "border-info/30 bg-info-soft text-info-soft-foreground";
 
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-border/60 bg-background/80 p-3">
@@ -189,7 +189,7 @@ function ExpandableSection({
       <summary className="cursor-pointer list-none">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-info/30 bg-info-soft text-info-soft-foreground">
               <Icon className="h-4 w-4" />
             </div>
             <div>
@@ -339,8 +339,8 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                     tone={isOpenOrder ? "red" : "sky"}
                     value={
                       <div className="space-y-1">
-                        <div className={isOpenOrder ? "text-red-700" : ""}>{formatOrderDate(orderDate)}</div>
-                        <div className={`text-xs ${isOpenOrder ? "font-medium text-red-600" : "text-muted-foreground"}`}>
+                        <div className={isOpenOrder ? "text-destructive" : ""}>{formatOrderDate(orderDate)}</div>
+                        <div className={`text-xs ${isOpenOrder ? "font-medium text-destructive" : "text-muted-foreground"}`}>
                           {formatRelativeDateLabel(orderDate)}
                         </div>
                       </div>
@@ -352,10 +352,10 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <SummaryMetric label="סכום ביניים" value={formatCurrency(summary.subtotal)} />
-                  <SummaryMetric label="הנחה" value={summary.discount > 0 ? `-${formatCurrency(summary.discount)}` : "-"} valueClassName={summary.discount > 0 ? "text-emerald-700" : ""} />
+                  <SummaryMetric label="הנחה" value={summary.discount > 0 ? `-${formatCurrency(summary.discount)}` : "-"} valueClassName={summary.discount > 0 ? "text-success-soft-foreground" : ""} />
                   <SummaryMetric label="סה״כ" value={formatCurrency(summary.total)} />
                   <SummaryMetric label="שולם" value={formatCurrency(summary.paid)} />
-                  <SummaryMetric label="יתרה" value={formatCurrency(summary.remaining)} valueClassName={summary.remaining > 0 ? "text-amber-700" : ""} />
+                  <SummaryMetric label="יתרה" value={formatCurrency(summary.remaining)} valueClassName={summary.remaining > 0 ? "text-warning-soft-foreground" : ""} />
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -401,7 +401,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                           כמות: {quantity} · מחיר יחידה: {formatCurrency(unitPrice)}
                         </div>
                         {(getNumber(item, "discount_amount") ?? 0) > 0 ? (
-                          <div className="mt-1 text-emerald-700">הנחת שורה: -{formatCurrency(getNumber(item, "discount_amount") ?? 0)}</div>
+                          <div className="mt-1 text-success-soft-foreground">הנחת שורה: -{formatCurrency(getNumber(item, "discount_amount") ?? 0)}</div>
                         ) : null}
                         {getString(item, "notes") ? (
                           <div className="mt-1 text-muted-foreground">הערות: {getString(item, "notes")}</div>
@@ -432,7 +432,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                         className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className={`font-medium ${isRefund ? "text-amber-700" : ""}`}>
+                          <span className={`font-medium ${isRefund ? "text-warning-soft-foreground" : ""}`}>
                             {isRefund ? `החזר ${formatCurrency(Math.abs(amount))}` : formatCurrency(amount)}
                           </span>
                           <span className="text-muted-foreground">

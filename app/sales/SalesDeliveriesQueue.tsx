@@ -62,7 +62,7 @@ export default function SalesDeliveriesQueue({
           <CardContent className="space-y-3 p-3 sm:p-4">
             <div className="flex flex-col gap-2 border-b border-border/60 pb-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-info/30 bg-info-soft text-info-soft-foreground">
                   <Truck className="h-4 w-4" />
                 </div>
                 <div>

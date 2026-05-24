@@ -249,7 +249,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
                 </div>
                 <div className="mt-0.5 flex items-center gap-1.5">
                   {isBuiltin && (
-                    <span className="rounded bg-blue-50 px-1.5 py-px text-[10px] text-blue-600 dark:bg-blue-950 dark:text-blue-400">
+                    <span className="rounded bg-info-soft px-1.5 py-px text-[10px] text-info-soft-foreground">
                       {BUILTIN_LABELS[alert.alert_type!] ?? alert.alert_type}
                     </span>
                   )}
@@ -278,7 +278,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
                 type="button"
                 onClick={() => setConfirmDelete(alert)}
                 disabled={deleting === alert.id}
-                className="shrink-0 rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-500 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:hover:bg-red-950/30"
+                className="shrink-0 rounded-lg border border-destructive/30 px-2.5 py-1 text-xs text-destructive transition-colors hover:bg-destructive-soft disabled:opacity-50"
                 title="מחיקה"
               >
                 {deleting === alert.id ? "..." : "✕"}

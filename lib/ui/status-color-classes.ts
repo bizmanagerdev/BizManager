@@ -1,31 +1,36 @@
 import type { StatusColor } from "@/lib/ui/status-colors";
 
+/**
+ * Status pill classes — soft style: light tinted background, colored border,
+ * dark colored text. Same family per status, so the meaning reads at a glance
+ * while the badge stays readable on white surfaces.
+ */
 export function getStatusColorClasses(color: StatusColor) {
   return {
-    success: "bg-green-100 text-green-800 border-green-200",
-    warning: "bg-blue-100 text-blue-800 border-blue-200",
-    danger: "bg-red-100 text-red-800 border-red-200",
-    info: "bg-blue-100 text-blue-800 border-blue-200",
-    neutral: "bg-gray-100 text-gray-700 border-gray-200",
+    success: "bg-success-soft text-success-soft-foreground border-success",
+    warning: "bg-warning-soft text-warning-soft-foreground border-warning",
+    danger: "bg-destructive-soft text-destructive-soft-foreground border-destructive",
+    info: "bg-info-soft text-info-soft-foreground border-info",
+    neutral: "bg-muted text-muted-foreground border-border",
   }[color];
 }
 
 export function getStatusDotClasses(color: StatusColor) {
   return {
-    success: "bg-green-500",
-    warning: "bg-blue-500",
-    danger: "bg-red-500",
-    info: "bg-blue-500",
-    neutral: "bg-gray-400",
+    success: "bg-success",
+    warning: "bg-warning",
+    danger: "bg-destructive",
+    info: "bg-info",
+    neutral: "bg-primary-4",
   }[color];
 }
 
 export function getStatusBorderClasses(color: StatusColor) {
   return {
-    success: "border-green-300",
-    warning: "border-blue-300",
-    danger: "border-red-300",
-    info: "border-blue-300",
-    neutral: "border-gray-300",
+    success: "border-success",
+    warning: "border-warning",
+    danger: "border-destructive",
+    info: "border-info",
+    neutral: "border-border",
   }[color];
 }

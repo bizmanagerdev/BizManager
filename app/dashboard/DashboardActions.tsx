@@ -203,13 +203,13 @@ function shortWeekDay(date: Date) {
 }
 
 const WEEK_PALETTE = [
-  { bar: "bg-blue-400", chip: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200" },
-  { bar: "bg-emerald-400", chip: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" },
-  { bar: "bg-amber-400", chip: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" },
-  { bar: "bg-violet-400", chip: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200" },
-  { bar: "bg-rose-400", chip: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200" },
-  { bar: "bg-cyan-400", chip: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200" },
-  { bar: "bg-orange-400", chip: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" },
+  { bar: "bg-info", chip: "bg-info-soft text-info-soft-foreground" },
+  { bar: "bg-success", chip: "bg-success-soft text-success-soft-foreground" },
+  { bar: "bg-warning", chip: "bg-warning-soft text-warning-soft-foreground" },
+  { bar: "bg-secondary", chip: "bg-accent text-accent-foreground" },
+  { bar: "bg-destructive", chip: "bg-destructive-soft text-destructive-soft-foreground" },
+  { bar: "bg-info/70", chip: "bg-info-soft/70 text-info-soft-foreground" },
+  { bar: "bg-palette-orange-4", chip: "bg-palette-orange-10 text-primary-1" },
 ] as const;
 
 function formatIls(value: number | null) {
@@ -1418,7 +1418,7 @@ export default function DashboardActions({
           className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
           onClick={() => setWeekOverviewOpen(true)}
         >
-          <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
+          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
             <FolderKanban className="h-5 w-5" />
           </span>
           <span className="font-semibold">{HEBREW.thisWeek}</span>
@@ -1433,7 +1433,7 @@ export default function DashboardActions({
             router.push("/sales?tab=deliveries");
           }}
         >
-          <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
+          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
             <ShoppingCart className="h-5 w-5" />
           </span>
           <span className="font-semibold">{HEBREW.ordersByCity}</span>
@@ -1445,7 +1445,7 @@ export default function DashboardActions({
           className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
           onClick={() => setProjectOpen(true)}
         >
-          <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
+          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
             <FolderKanban className="h-5 w-5" />
           </span>
           <span className="font-semibold">{HEBREW.projectNew}</span>
@@ -1460,7 +1460,7 @@ export default function DashboardActions({
             setOrderOpen(true);
           }}
         >
-          <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
+          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
             <ShoppingCart className="h-5 w-5" />
           </span>
           <span className="font-semibold">{HEBREW.orderNew}</span>
@@ -1472,7 +1472,7 @@ export default function DashboardActions({
           className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
           onClick={() => setExpenseOpen(true)}
         >
-          <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
+          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
             <ArrowDownCircle className="h-5 w-5" />
           </span>
           <span className="font-semibold">{HEBREW.expenseNew}</span>
@@ -1484,7 +1484,7 @@ export default function DashboardActions({
           className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
           onClick={() => setIncomeOpen(true)}
         >
-          <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
+          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
             <ArrowUpCircle className="h-5 w-5" />
           </span>
           <span className="font-semibold">{HEBREW.incomeNew}</span>
@@ -1499,7 +1499,7 @@ export default function DashboardActions({
             setProjectCreateCustomerOpen(true);
           }}
         >
-          <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
+          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
             <UserPlus className="h-5 w-5" />
           </span>
           <span className="font-semibold">לקוח חדש</span>
@@ -1511,7 +1511,7 @@ export default function DashboardActions({
           className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
           onClick={() => setTaskOpen(true)}
         >
-          <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
+          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
             <ListTodo className="h-5 w-5" />
           </span>
           <span className="font-semibold">{HEBREW.taskNew}</span>
@@ -1524,7 +1524,7 @@ export default function DashboardActions({
           onClick={() => void startOwnSession()}
           disabled={Boolean(currentOpenSession) || selfSessionSubmitting}
         >
-          <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
+          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
             <PlayCircle className="h-5 w-5" />
           </span>
           <span className="font-semibold">{HEBREW.selfSessionStart}</span>
@@ -1539,7 +1539,7 @@ export default function DashboardActions({
             setManualSessionOpen(true);
           }}
         >
-          <span className="rounded-xl bg-white/90 p-2 text-destructive shadow-sm">
+          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
             <Clock3 className="h-5 w-5" />
           </span>
           <span className="font-semibold">{HEBREW.manualSessionNew}</span>
@@ -1626,7 +1626,7 @@ export default function DashboardActions({
                               href={entry.href}
                               onClick={() => setWeekOverviewOpen(false)}
                               className={`block rounded-md border px-1.5 py-1 text-[11px] leading-tight transition hover:border-primary/40 hover:bg-primary/5 ${
-                                entry.kind === "task" ? "border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-900/10" : "bg-background"
+                                entry.kind === "task" ? "border-warning/40 bg-warning-soft" : "bg-background"
                               }`}
                             >
                               <div className="truncate font-medium" title={entry.title}>{entry.title}</div>
@@ -1975,8 +1975,8 @@ export default function DashboardActions({
                         }}
                         className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
                           id === projectCustomerId
-                            ? "border-primary/20 bg-gradient-to-r from-primary to-destructive text-primary-foreground shadow-lg shadow-primary/20"
-                            : "border-primary/10 bg-gradient-to-r from-accent to-destructive/15 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+                            ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                            : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
                         }`}
                       >
                         <div className="font-medium">{name}</div>
@@ -2353,8 +2353,8 @@ export default function DashboardActions({
                         }}
                         className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
                           project.id === expenseProjectId
-                            ? "border-primary/20 bg-gradient-to-r from-primary to-destructive text-primary-foreground shadow-lg shadow-primary/20"
-                            : "border-primary/10 bg-gradient-to-r from-accent to-destructive/15 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+                            ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                            : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
                         }`}
                       >
                         <div className="font-medium">{project.name}</div>
@@ -2848,8 +2848,8 @@ export default function DashboardActions({
                         }}
                         className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
                           project.id === incomeProjectId
-                            ? "border-primary/20 bg-gradient-to-r from-primary to-destructive text-primary-foreground shadow-lg shadow-primary/20"
-                            : "border-primary/10 bg-gradient-to-r from-accent to-destructive/15 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+                            ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                            : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
                         }`}
                       >
                         <div className="font-medium">{project.name}</div>

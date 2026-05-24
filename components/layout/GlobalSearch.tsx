@@ -227,11 +227,11 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
                 }
               }}
               placeholder="חיפוש בכל המערכת..."
-              className="h-10 rounded-xl border-white/50 bg-white/70 ps-9 shadow-sm shadow-primary/5 focus-visible:ring-2"
+              className="h-10 rounded-xl border-border/60 bg-background/80 ps-9 shadow-sm shadow-primary/5 focus-visible:ring-2"
             />
           </div>
           {open ? (
-            <div className="absolute inset-x-0 top-[calc(100%+0.6rem)] z-50 overflow-hidden rounded-[1.4rem] border border-white/60 bg-background/95 shadow-elevated backdrop-blur-xl">
+            <div className="absolute inset-x-0 top-[calc(100%+0.6rem)] z-50 overflow-hidden rounded-[1.4rem] border border-border/60 bg-background/95 shadow-elevated backdrop-blur-xl">
               <SearchResults results={results} query={query} onNavigate={() => setOpen(false)} />
               {query.trim().length >= 2 ? (
                 <div className="border-t border-border/70 p-2">
@@ -259,7 +259,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
 
       {!desktopOnly ? (
         <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-          <DialogContent className="w-[calc(100vw-1rem)] max-w-2xl rounded-[1.5rem] border-white/60 p-0">
+          <DialogContent className="w-[calc(100vw-1rem)] max-w-2xl rounded-[1.5rem] border-border/60 p-0">
             <div className="border-b border-border/70 p-4">
               <DialogTitle className="text-right">חיפוש גלובלי</DialogTitle>
               <DialogDescription className="mt-1 text-right">

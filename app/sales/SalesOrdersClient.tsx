@@ -100,19 +100,19 @@ function normalizeOrderStatus(value: string | null) {
 export function orderStatusBadgeClasses(status: string) {
   switch (normalizeOrderStatus(status)) {
     case "draft":
-      return "border-transparent bg-red-100 text-red-800";
+      return "border-destructive/30 bg-destructive-soft text-destructive";
     case "delivered":
     case "completed":
     case "closed":
-      return "border-transparent bg-emerald-100 text-black";
+      return "border-success/30 bg-success-soft text-success-soft-foreground";
     case "confirmed":
     case "processing":
     case "out_for_delivery":
-      return "border-transparent bg-orange-100 text-black";
+      return "border-warning/40 bg-warning-soft text-warning-soft-foreground";
     case "cancelled":
-      return "border-transparent bg-rose-100 text-black";
+      return "border-border bg-muted text-muted-foreground";
     default:
-      return "border-transparent bg-orange-100 text-black";
+      return "border-warning/40 bg-warning-soft text-warning-soft-foreground";
   }
 }
 

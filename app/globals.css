@@ -10,123 +10,184 @@
 
 @layer base {
   :root {
-    --background: 219 52% 97%;
-    --foreground: 224 56% 15%;
+    /* === PRIMITIVE TOKENS (raw palette as "R G B" triplets) === */
 
-    --card: 0 0% 100%;
-    --card-foreground: 224 56% 15%;
+    /* Primary — navy */
+    --primary-1: 10 16 32;       /* #0A1020 */
+    --primary-2: 18 24 51;       /* #121833 */
+    --primary-3: 29 40 72;       /* #1D2848 */
+    --primary-4: 40 53 97;       /* #283561  ← base (one tone lighter) */
+    --primary-5: 51 66 122;      /* #33427A */
+    --primary-6: 70 85 153;      /* #465599 */
+    --primary-7: 94 111 184;     /* #5E6FB8 */
+    --primary-8: 119 137 214;    /* #7789D6 */
+    --primary-9: 151 166 234;    /* #97A6EA */
+    --primary-10: 184 194 245;   /* #B8C2F5 */
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 224 56% 15%;
+    /* Secondary — purple */
+    --secondary-1: 42 19 102;    /* #2A1366 */
+    --secondary-2: 58 26 138;    /* #3A1A8A */
+    --secondary-3: 74 32 174;    /* #4A20AE */
+    --secondary-4: 91 42 204;    /* #5B2ACC */
+    --secondary-5: 112 63 224;   /* #703FE0  ← base (one tone lighter) */
+    --secondary-6: 133 85 234;   /* #8555EA */
+    --secondary-7: 155 108 242;  /* #9B6CF2 */
+    --secondary-8: 176 138 246;  /* #B08AF6 */
+    --secondary-9: 198 168 250;  /* #C6A8FA */
+    --secondary-10: 222 200 253; /* #DEC8FD */
 
-    --primary: 225 62% 22%;
-    --primary-foreground: 0 0% 100%;
+    /* Blue — info */
+    --blue-4: 1 205 255;         /* #01CDFF  ← base */
+    --blue-5: 51 214 255;        /* #33D6FF */
+    --blue-6: 102 223 255;       /* #66DFFF */
+    --blue-7: 153 232 255;       /* #99E8FF */
+    --blue-8: 179 238 255;       /* #B3EEFF */
+    --blue-9: 204 245 255;       /* #CCF5FF */
+    --blue-10: 230 251 255;      /* #E6FBFF */
 
-    --secondary: 220 43% 92%;
-    --secondary-foreground: 224 56% 18%;
+    /* Green — lively grass green (vibrant, not neon) */
+    --green-4: 34 197 94;        /* #22C55E  ← base */
+    --green-5: 74 222 128;       /* #4ADE80 */
+    --green-6: 134 239 172;      /* #86EFAC */
+    --green-7: 187 247 208;      /* #BBF7D0 */
+    --green-8: 220 252 231;      /* #DCFCE7 */
+    --green-9: 240 253 244;      /* #F0FDF4 */
+    --green-10: 247 253 248;     /* #F7FDF8 */
 
-    --muted: 220 38% 94%;
-    --muted-foreground: 221 22% 39%;
+    /* Yellow — warning */
+    --yellow-4: 238 219 80;      /* #EEDB50  ← base */
+    --yellow-5: 242 225 109;     /* #F2E16D */
+    --yellow-6: 246 233 138;     /* #F6E98A */
+    --yellow-7: 249 241 168;     /* #F9F1A8 */
+    --yellow-8: 252 246 197;     /* #FCF6C5 */
+    --yellow-9: 254 250 207;     /* #FEFACF */
+    --yellow-10: 255 253 230;    /* #FFFDE6 */
 
-    --accent: 357 83% 96%;
-    --accent-foreground: 353 70% 38%;
+    /* Orange — accent / pending */
+    --orange-4: 240 116 46;      /* #F0742E  ← base */
+    --orange-5: 244 143 84;      /* #F48F54 */
+    --orange-6: 247 170 120;     /* #F7AA78 */
+    --orange-7: 249 195 156;     /* #F9C39C */
+    --orange-8: 251 221 191;     /* #FBDDBF */
+    --orange-9: 253 234 216;     /* #FDEAD8 */
+    --orange-10: 255 242 232;    /* #FFF2E8 */
 
-    --destructive: 356 74% 52%;
-    --destructive-foreground: 0 0% 100%;
+    /* Red — pure red (vibrant, no orange, no pink) */
+    --red-4: 220 38 38;          /* #DC2626  ← base */
+    --red-5: 239 68 68;          /* #EF4444 */
+    --red-6: 248 113 113;        /* #F87171 */
+    --red-7: 252 165 165;        /* #FCA5A5 */
+    --red-8: 254 202 202;        /* #FECACA */
+    --red-9: 254 226 226;        /* #FEE2E2 */
+    --red-10: 254 242 242;       /* #FEF2F2 */
 
-    --success: 154 58% 38%;
-    --success-foreground: 0 0% 100%;
+    /* Neutrals */
+    --white: 255 255 255;
 
-    --warning: 214 88% 56%;
-    --warning-foreground: 0 0% 100%;
+    /* === SEMANTIC TOKENS (what components reference) === */
 
-    --border: 221 27% 86%;
-    --input: 221 27% 86%;
-    --ring: 356 74% 52%;
+    --background: var(--white);
+    --foreground: var(--primary-3);
+
+    --card: var(--white);
+    --card-foreground: var(--primary-3);
+
+    --popover: var(--white);
+    --popover-foreground: var(--primary-3);
+
+    /* Brand — primary base shifted to primary-4 (one tone lighter than -3) */
+    --primary: var(--primary-4);
+    --primary-foreground: var(--white);
+
+    /* Brand — secondary base shifted to secondary-5 (one tone lighter than -4) */
+    --secondary: var(--secondary-5);
+    --secondary-foreground: var(--white);
+
+    --muted: var(--primary-10);
+    --muted-foreground: var(--primary-5);
+
+    --accent: var(--secondary-10);
+    --accent-foreground: var(--secondary-3);
+
+    /* ===========================================================
+       Status semantics — TWO badge styles per color:
+
+       1) Soft pill (default for status badges): light tinted background,
+          colored border, dark colored text — readable and on-brand.
+            bg = --X-soft        (light tint)
+            text = --X-soft-foreground   (dark colored)
+            border = --X         (full color)
+
+       2) Solid pill (use when extra emphasis is needed): dark colored
+          background, white text.
+            bg = --X             (dark color)
+            text = --X-foreground (white)
+
+       The vibrant chart-friendly primitives (--green-4, --yellow-4,
+       --blue-4) stay in the palette for chart series and indicator use.
+       =========================================================== */
+
+    /* Destructive — red */
+    --destructive: var(--red-4);                  /* #DC2626 — solid bg + border */
+    --destructive-foreground: var(--white);       /* text on solid */
+    --destructive-soft: 254 226 226;              /* #FEE2E2 — light pink soft bg */
+    --destructive-soft-foreground: 153 27 27;     /* #991B1B — dark red text on soft */
+    --destructive-strong: 153 27 27;              /* #991B1B — dark red for inline text */
+
+    /* Success — green */
+    --success: 21 128 61;                         /* #15803D — dark green bg + border */
+    --success-foreground: var(--white);
+    --success-soft: 220 252 231;                  /* #DCFCE7 — light green soft bg */
+    --success-soft-foreground: 21 128 61;         /* #15803D — dark green text on soft */
+    --success-strong: 21 128 61;                  /* #15803D — dark green for inline text */
+
+    /* Warning — amber */
+    --warning: 180 83 9;                          /* #B45309 — dark amber bg + border */
+    --warning-foreground: var(--white);
+    --warning-soft: 254 243 199;                  /* #FEF3C7 — light amber soft bg */
+    --warning-soft-foreground: 146 64 14;         /* #92400E — dark amber text on soft */
+    --warning-strong: 146 64 14;                  /* #92400E — dark amber for inline text */
+
+    /* Info — cyan */
+    --info: 14 116 144;                           /* #0E7490 — dark cyan bg + border */
+    --info-foreground: var(--white);
+    --info-soft: 207 250 254;                     /* #CFFAFE — light cyan soft bg */
+    --info-soft-foreground: 21 94 117;            /* #155E75 — dark cyan text on soft */
+    --info-strong: 21 94 117;                     /* #155E75 — dark cyan for inline text */
+
+    --border: var(--primary-10);
+    --input: var(--primary-10);
+    --ring: var(--secondary-5);
 
     --radius: 0.9rem;
 
-    --sidebar-background: 225 55% 16%;
-    --sidebar-foreground: 216 32% 86%;
-    --sidebar-primary: 356 74% 52%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 225 42% 23%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 225 36% 26%;
-    --sidebar-ring: 356 74% 52%;
+    --sidebar-background: var(--primary-1);
+    --sidebar-foreground: var(--primary-10);
+    --sidebar-primary: var(--secondary-5);
+    --sidebar-primary-foreground: var(--white);
+    --sidebar-accent: var(--primary-2);
+    --sidebar-accent-foreground: var(--white);
+    --sidebar-border: var(--primary-2);
+    --sidebar-ring: var(--secondary-5);
 
-    --chart-1: 225 62% 22%;
-    --chart-2: 356 74% 52%;
-    --chart-3: 214 88% 56%;
-    --chart-4: 205 76% 46%;
-    --chart-5: 154 58% 38%;
+    /* Chart palette — numbered for semantic continuity with existing chart code:
+       1=navy (neutral), 2=red (negative), 3=blue (info), 4=green (positive/inflow),
+       5=green (positive — balance/breakdown), 6=orange (accent), 7=purple (accent 2) */
+    --chart-1: var(--primary-4);
+    --chart-2: var(--red-4);
+    --chart-3: var(--blue-4);
+    --chart-4: var(--green-4);
+    --chart-5: var(--green-4);
+    --chart-6: var(--orange-4);
+    --chart-7: var(--secondary-5);
 
-    --shadow-sm: 0 8px 18px -14px hsl(225 62% 22% / 0.22);
-    --shadow-md: 0 18px 40px -26px hsl(225 62% 22% / 0.22),
-      0 10px 24px -18px hsl(356 74% 52% / 0.14);
-    --shadow-lg: 0 26px 60px -30px hsl(225 62% 22% / 0.28),
-      0 14px 32px -24px hsl(356 74% 52% / 0.16);
-    --shadow-xl: 0 34px 80px -34px hsl(225 62% 22% / 0.32),
-      0 18px 42px -28px hsl(356 74% 52% / 0.2);
-  }
-
-  .dark {
-    --background: 226 54% 8%;
-    --foreground: 210 20% 98%;
-
-    --card: 225 46% 11%;
-    --card-foreground: 210 20% 98%;
-
-    --popover: 225 46% 11%;
-    --popover-foreground: 210 20% 98%;
-
-    --primary: 355 76% 58%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 224 28% 19%;
-    --secondary-foreground: 210 20% 98%;
-
-    --muted: 224 24% 15%;
-    --muted-foreground: 218 18% 72%;
-
-    --accent: 355 45% 18%;
-    --accent-foreground: 355 100% 88%;
-
-    --destructive: 356 72% 44%;
-    --destructive-foreground: 210 20% 98%;
-
-    --success: 154 58% 42%;
-    --success-foreground: 210 20% 98%;
-
-    --warning: 214 88% 60%;
-    --warning-foreground: 0 0% 100%;
-
-    --border: 224 24% 24%;
-    --input: 224 24% 24%;
-    --ring: 355 76% 58%;
-
-    --sidebar-background: 226 54% 7%;
-    --sidebar-foreground: 218 24% 84%;
-    --sidebar-primary: 355 76% 58%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 226 32% 16%;
-    --sidebar-accent-foreground: 210 20% 98%;
-    --sidebar-border: 224 24% 18%;
-    --sidebar-ring: 355 76% 58%;
-
-    --chart-1: 355 76% 58%;
-    --chart-2: 214 84% 66%;
-    --chart-3: 214 88% 60%;
-    --chart-4: 154 58% 42%;
-    --chart-5: 271 70% 66%;
-
-    --shadow-sm: 0 12px 28px -20px hsl(225 60% 3% / 0.6);
-    --shadow-md: 0 20px 48px -24px hsl(225 60% 3% / 0.65),
-      0 12px 28px -22px hsl(355 76% 58% / 0.25);
-    --shadow-lg: 0 28px 68px -28px hsl(225 60% 3% / 0.72),
-      0 14px 34px -24px hsl(355 76% 58% / 0.28);
-    --shadow-xl: 0 36px 92px -32px hsl(225 60% 3% / 0.78),
-      0 18px 40px -26px hsl(355 76% 58% / 0.32);
+    --shadow-sm: 0 8px 18px -14px rgb(var(--primary-4) / 0.22);
+    --shadow-md: 0 18px 40px -26px rgb(var(--primary-4) / 0.22),
+      0 10px 24px -18px rgb(var(--secondary-5) / 0.14);
+    --shadow-lg: 0 26px 60px -30px rgb(var(--primary-4) / 0.28),
+      0 14px 32px -24px rgb(var(--secondary-5) / 0.16);
+    --shadow-xl: 0 34px 80px -34px rgb(var(--primary-4) / 0.32),
+      0 18px 42px -28px rgb(var(--secondary-5) / 0.2);
   }
 
   * {
@@ -138,9 +199,9 @@
     direction: rtl;
     min-height: 100vh;
     background-image:
-      radial-gradient(circle at top right, hsl(356 74% 52% / 0.12), transparent 28%),
-      radial-gradient(circle at left 20%, hsl(225 62% 22% / 0.12), transparent 30%),
-      linear-gradient(180deg, hsl(var(--background)), hsl(220 33% 95%));
+      radial-gradient(circle at top right, rgb(var(--secondary-5) / 0.10), transparent 28%),
+      radial-gradient(circle at left 20%, rgb(var(--primary-4) / 0.10), transparent 30%),
+      linear-gradient(180deg, rgb(var(--white)), rgb(var(--primary-10) / 0.35));
     background-attachment: fixed;
   }
 
@@ -150,8 +211,8 @@
     inset: 0;
     pointer-events: none;
     background-image:
-      linear-gradient(hsl(225 62% 22% / 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(225 62% 22% / 0.03) 1px, transparent 1px);
+      linear-gradient(rgb(var(--primary-4) / 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--primary-4) / 0.03) 1px, transparent 1px);
     background-size: 32px 32px;
     mask-image: linear-gradient(180deg, white, transparent 80%);
     z-index: -1;
@@ -167,7 +228,7 @@
   }
 
   ::selection {
-    background: hsl(var(--primary) / 0.18);
+    background: rgb(var(--secondary-5) / 0.22);
   }
 
   a[href],
@@ -194,7 +255,7 @@
 
   .surface-panel {
     background:
-      linear-gradient(135deg, hsl(var(--card) / 0.96), hsl(0 0% 100% / 0.84));
+      linear-gradient(135deg, rgb(var(--card) / 0.96), rgb(var(--white) / 0.84));
     backdrop-filter: blur(16px);
   }
 
@@ -212,9 +273,9 @@
     padding: 1px;
     background: linear-gradient(
       135deg,
-      hsl(var(--primary) / 0.2),
-      hsl(var(--destructive) / 0.28),
-      hsl(var(--primary) / 0.12)
+      rgb(var(--primary-4) / 0.22),
+      rgb(var(--secondary-5) / 0.28),
+      rgb(var(--primary-4) / 0.12)
     );
     -webkit-mask:
       linear-gradient(#fff 0 0) content-box,

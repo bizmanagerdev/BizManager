@@ -72,28 +72,28 @@ export default function DomainBarChart({
           barCategoryGap="30%"
           barGap={3}
         >
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--border))" />
           <XAxis
             dataKey="name"
-            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+            tick={{ fontSize: 11, fill: "rgb(var(--muted-foreground))" }}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
             tickFormatter={shortILS}
-            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+            tick={{ fontSize: 11, fill: "rgb(var(--muted-foreground))" }}
             axisLine={false}
             tickLine={false}
             width={60}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }} />
+          <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgb(var(--muted))", opacity: 0.4 }} />
           <Legend
             formatter={(value) => (
-              <span style={{ fontSize: 12, color: "hsl(var(--foreground))" }}>{value}</span>
+              <span style={{ fontSize: 12, color: "rgb(var(--foreground))" }}>{value}</span>
             )}
           />
-          <Bar dataKey="inflow" name="כניסות" fill="#0d9488" radius={[4, 4, 0, 0]} maxBarSize={48} />
-          <Bar dataKey="outflow" name="יציאות" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={48} />
+          <Bar dataKey="inflow" name="כניסות" fill="rgb(var(--success))" radius={[4, 4, 0, 0]} maxBarSize={48} />
+          <Bar dataKey="outflow" name="יציאות" fill="rgb(var(--destructive))" radius={[4, 4, 0, 0]} maxBarSize={48} />
         </BarChart>
       </ResponsiveContainer>
     </div>

@@ -159,14 +159,35 @@ export default function PriceListClient({
     const exportElement = documentClone.getElementById(PRICE_LIST_SHARE_CONTENT_ID) as HTMLElement | null;
     if (!exportElement) return;
 
+    // Brand palette used for PDF rendering — must mirror the semantic tokens
+    // in globals.css. html2canvas needs explicit hex/rgb values because it can
+    // struggle with CSS variables, so we materialise them here.
+    const BRAND = {
+      page: "#F4F6FD",           // light navy-tinted page bg
+      surface: "#FFFFFF",        // card surface
+      surfaceMuted: "#EEF1FB",   // alternating row / muted panel
+      headerNavy: "#283561",     // primary (header strip)
+      footerNavy: "#0A1020",     // primary-1 (footer strip)
+      textPrimary: "#1D2848",    // foreground (body text)
+      textMuted: "#5E6FB8",      // primary-7 muted
+      textSubtle: "#7789D6",     // primary-8 subtle
+      textOnNavyStrong: "#FFFFFF",
+      textOnNavyMuted: "#B8C2F5", // primary-10 on dark
+      successBg: "#DCFCE7",      // success-soft
+      successText: "#15803D",    // success-strong
+      mutedBg: "#EEF1FB",
+      mutedText: "#5E6FB8",
+      border: "#DDE3FA",         // primary-10-ish border
+    };
+
     const wrapperElement = exportElement.parentElement as HTMLElement | null;
     if (wrapperElement) {
-      wrapperElement.style.backgroundColor = "#f8fafc";
+      wrapperElement.style.backgroundColor = BRAND.page;
     }
 
-    exportElement.style.backgroundColor = "#ffffff";
-    exportElement.style.color = "#0f172a";
-    exportElement.style.boxShadow = "0 24px 80px rgba(15, 23, 42, 0.14)";
+    exportElement.style.backgroundColor = BRAND.surface;
+    exportElement.style.color = BRAND.textPrimary;
+    exportElement.style.boxShadow = "0 24px 80px rgba(29, 40, 72, 0.14)";
 
     const allElements = [exportElement, ...Array.from(exportElement.querySelectorAll<HTMLElement>("*"))];
 
@@ -175,34 +196,33 @@ export default function PriceListClient({
       const classTokens = className.split(/\s+/).filter(Boolean);
       const hasClass = (token: string) => classTokens.includes(token);
 
-      if (hasClass("bg-slate-50")) element.style.backgroundColor = "#f8fafc";
-      if (hasClass("bg-slate-50/70")) element.style.backgroundColor = "#f8fafc";
-      if (hasClass("bg-slate-100")) element.style.backgroundColor = "#f1f5f9";
-      if (hasClass("bg-slate-900")) element.style.backgroundColor = "#0f172a";
-      if (hasClass("bg-slate-950")) element.style.backgroundColor = "#020617";
-      if (hasClass("bg-white")) element.style.backgroundColor = "#ffffff";
-      if (hasClass("bg-white/10")) element.style.backgroundColor = "rgba(255, 255, 255, 0.10)";
-      if (hasClass("bg-emerald-100")) element.style.backgroundColor = "#dcfce7";
+      if (hasClass("bg-page")) element.style.backgroundColor = BRAND.page;
+      if (hasClass("bg-surface")) element.style.backgroundColor = BRAND.surface;
+      if (hasClass("bg-surface-muted")) element.style.backgroundColor = BRAND.surfaceMuted;
+      if (hasClass("bg-header-navy")) element.style.backgroundColor = BRAND.headerNavy;
+      if (hasClass("bg-footer-navy")) element.style.backgroundColor = BRAND.footerNavy;
+      if (hasClass("bg-success-soft-pdf")) element.style.backgroundColor = BRAND.successBg;
+      if (hasClass("bg-muted-pdf")) element.style.backgroundColor = BRAND.mutedBg;
+      if (hasClass("bg-white-overlay")) element.style.backgroundColor = "rgba(255, 255, 255, 0.10)";
 
-      if (hasClass("text-white")) element.style.color = "#ffffff";
-      if (hasClass("text-slate-900")) element.style.color = "#0f172a";
-      if (hasClass("text-slate-600")) element.style.color = "#475569";
-      if (hasClass("text-slate-500")) element.style.color = "#64748b";
-      if (hasClass("text-slate-300")) element.style.color = "#cbd5e1";
-      if (hasClass("text-slate-200")) element.style.color = "#e2e8f0";
-      if (hasClass("text-emerald-700")) element.style.color = "#166534";
+      if (hasClass("text-on-navy")) element.style.color = BRAND.textOnNavyStrong;
+      if (hasClass("text-on-navy-muted")) element.style.color = BRAND.textOnNavyMuted;
+      if (hasClass("text-primary-pdf")) element.style.color = BRAND.textPrimary;
+      if (hasClass("text-muted-pdf")) element.style.color = BRAND.textMuted;
+      if (hasClass("text-subtle-pdf")) element.style.color = BRAND.textSubtle;
+      if (hasClass("text-success-pdf")) element.style.color = BRAND.successText;
 
-      if (hasClass("border-slate-200")) {
-        element.style.borderColor = "#e2e8f0";
+      if (hasClass("border-brand")) {
+        element.style.borderColor = BRAND.border;
         element.style.borderStyle = "solid";
       }
-      if (hasClass("border-white/15")) {
+      if (hasClass("border-white-overlay")) {
         element.style.borderColor = "rgba(255, 255, 255, 0.15)";
         element.style.borderStyle = "solid";
       }
 
-      if (hasClass("shadow-[0_24px_80px_rgba(15,23,42,0.14)]")) {
-        element.style.boxShadow = "0 24px 80px rgba(15, 23, 42, 0.14)";
+      if (hasClass("shadow-brand-pdf")) {
+        element.style.boxShadow = "0 24px 80px rgba(29, 40, 72, 0.14)";
       }
 
       if (hasClass("backdrop-blur-sm")) {
@@ -221,7 +241,7 @@ export default function PriceListClient({
     const canvas = await html2canvas(exportElement, {
       scale: Math.min(window.devicePixelRatio || 1, 2),
       useCORS: true,
-      backgroundColor: "#f8fafc",
+      backgroundColor: "#F4F6FD",
       logging: false,
       onclone: applyPdfCaptureColorOverrides,
       windowWidth: Math.max(exportElement.scrollWidth, 1120),
@@ -755,33 +775,36 @@ export default function PriceListClient({
       {shareError ? <p className="text-sm text-destructive">{shareError}</p> : null}
       {shareMessage ? <p className="text-sm text-muted-foreground">{shareMessage}</p> : null}
 
-      <div aria-hidden="true" className="pointer-events-none fixed -left-[200vw] top-0 z-[-1] w-[1120px] bg-slate-50 p-8">
+      {/* Off-screen template captured by html2canvas for the price-list PDF.
+          Sentinel class names like `bg-header-navy` / `text-on-navy` are remapped
+          to brand hex values by applyPdfCaptureColorOverrides() at capture time. */}
+      <div aria-hidden="true" className="pointer-events-none fixed -left-[200vw] top-0 z-[-1] w-[1120px] bg-page p-8">
         <div
           id={PRICE_LIST_SHARE_CONTENT_ID}
           dir="rtl"
-          className="overflow-hidden rounded-[28px] bg-white text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.14)]"
+          className="overflow-hidden rounded-[28px] bg-surface text-primary-pdf shadow-brand-pdf"
         >
-          <div className="bg-slate-900 px-10 py-8 text-white">
+          <div className="bg-header-navy px-10 py-8 text-on-navy">
             <div className="flex items-start justify-between gap-8">
               <div className="space-y-3">
-                <div className="text-xs font-medium tracking-[0.32em] text-slate-300">BIZMANAGER PRICE LIST</div>
+                <div className="text-xs font-medium tracking-[0.32em] text-on-navy-muted">BIZMANAGER PRICE LIST</div>
                 <div>
                   <h2 className="text-3xl font-semibold">{shareTitle}</h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-200">
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-on-navy-muted">
                     מחירון מוכן לשיתוף עם רשימת המוצרים המסוננת, מסודרת וברורה לשליחה ללקוחות.
                   </p>
                 </div>
               </div>
-              <div className="min-w-[280px] rounded-3xl border border-white/15 bg-white/10 p-5 backdrop-blur-sm">
-                <div className="text-xs font-medium tracking-[0.18em] text-slate-200">נוצר בתאריך</div>
+              <div className="min-w-[280px] rounded-3xl border border-white-overlay bg-white-overlay p-5">
+                <div className="text-xs font-medium tracking-[0.18em] text-on-navy-muted">נוצר בתאריך</div>
                 <div className="mt-2 text-lg font-semibold">{shareDateLabel}</div>
                 <div className="mt-4 grid grid-cols-2 gap-3 text-right">
-                  <div className="rounded-2xl bg-white/10 p-3">
-                    <div className="text-xs text-slate-300">מוצרים</div>
+                  <div className="rounded-2xl bg-white-overlay p-3">
+                    <div className="text-xs text-on-navy-muted">מוצרים</div>
                     <div className="mt-1 text-xl font-semibold">{filtered.length}</div>
                   </div>
-                  <div className="rounded-2xl bg-white/10 p-3">
-                    <div className="text-xs text-slate-300">פעילים</div>
+                  <div className="rounded-2xl bg-white-overlay p-3">
+                    <div className="text-xs text-on-navy-muted">פעילים</div>
                     <div className="mt-1 text-xl font-semibold">{activeProductsCount}</div>
                   </div>
                 </div>
@@ -791,24 +814,24 @@ export default function PriceListClient({
 
           <div className="space-y-6 px-10 py-8">
             <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                <div className="text-xs font-medium tracking-[0.14em] text-slate-500">קטגוריה</div>
+              <div className="rounded-3xl border border-brand bg-surface-muted p-5">
+                <div className="text-xs font-medium tracking-[0.14em] text-muted-pdf">קטגוריה</div>
                 <div className="mt-2 text-lg font-semibold">{activeCategoryName ?? "כל הקטגוריות"}</div>
               </div>
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                <div className="text-xs font-medium tracking-[0.14em] text-slate-500">חיפוש פעיל</div>
+              <div className="rounded-3xl border border-brand bg-surface-muted p-5">
+                <div className="text-xs font-medium tracking-[0.14em] text-muted-pdf">חיפוש פעיל</div>
                 <div className="mt-2 text-lg font-semibold">{query.trim() || "ללא"}</div>
               </div>
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                <div className="text-xs font-medium tracking-[0.14em] text-slate-500">מחיר ממוצע</div>
+              <div className="rounded-3xl border border-brand bg-surface-muted p-5">
+                <div className="text-xs font-medium tracking-[0.14em] text-muted-pdf">מחיר ממוצע</div>
                 <div className="mt-2 text-lg font-semibold">{averagePrice === null ? "-" : formatCurrency(averagePrice)}</div>
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[24px] border border-slate-200">
+            <div className="overflow-hidden rounded-[24px] border border-brand">
               <table className="w-full border-collapse text-right text-sm">
                 <thead>
-                  <tr className="bg-slate-100 text-slate-600">
+                  <tr className="bg-muted-pdf text-muted-pdf">
                     <th className="px-4 py-3 font-medium">מוצר</th>
                     <th className="px-4 py-3 font-medium">קוד</th>
                     <th className="px-4 py-3 font-medium">קטגוריה</th>
@@ -818,34 +841,34 @@ export default function PriceListClient({
                 </thead>
                 <tbody>
                   {filtered.map((product, index) => (
-                    <tr key={product.id} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/70"}>
+                    <tr key={product.id} className={index % 2 === 0 ? "bg-surface" : "bg-surface-muted"}>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900">{product.name}</div>
+                        <div className="font-medium text-primary-pdf">{product.name}</div>
                         {product.description ? (
-                          <div className="mt-1 text-xs leading-5 text-slate-500">{product.description}</div>
+                          <div className="mt-1 text-xs leading-5 text-muted-pdf">{product.description}</div>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{product.code ?? "-"}</td>
-                      <td className="px-4 py-3 text-slate-600">{product.category ?? "-"}</td>
+                      <td className="px-4 py-3 text-muted-pdf">{product.code ?? "-"}</td>
+                      <td className="px-4 py-3 text-muted-pdf">{product.category ?? "-"}</td>
                       <td className="px-4 py-3">
                         <span
                           className={
                             product.active === false
-                              ? "inline-flex rounded-full bg-slate-200 px-3 py-1 text-xs font-medium text-slate-600"
-                              : "inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700"
+                              ? "inline-flex rounded-full bg-muted-pdf px-3 py-1 text-xs font-medium text-muted-pdf"
+                              : "inline-flex rounded-full bg-success-soft-pdf px-3 py-1 text-xs font-medium text-success-pdf"
                           }
                         >
                           {product.active === false ? "לא פעיל" : "פעיל"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{formatCurrency(product.unitPrice)}</td>
+                      <td className="px-4 py-3 font-semibold text-primary-pdf">{formatCurrency(product.unitPrice)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="flex items-center justify-between rounded-3xl bg-slate-950 px-6 py-4 text-sm text-slate-200">
+            <div className="flex items-center justify-between rounded-3xl bg-footer-navy px-6 py-4 text-sm text-on-navy-muted">
               <span>המחירון הופק מתוך BizManager</span>
               <span>{pricedProductsCount} מוצרים עם מחיר מוגדר</span>
             </div>

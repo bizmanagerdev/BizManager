@@ -87,10 +87,10 @@ export default async function AlertsPage() {
 
         {/* All clear */}
         {allClear && (
-          <div className="flex items-center gap-3 rounded-2xl border border-teal-500/30 bg-teal-500/5 px-5 py-4">
+          <div className="flex items-center gap-3 rounded-2xl border border-success/40 bg-success-soft px-5 py-4">
             <div className="text-2xl">✓</div>
             <div>
-              <div className="font-semibold text-teal-700 dark:text-teal-400">הכול יציב</div>
+              <div className="font-semibold text-success-soft-foreground">הכול יציב</div>
               <div className="text-sm text-muted-foreground">אין פריטים שדורשים טיפול כרגע.</div>
             </div>
           </div>

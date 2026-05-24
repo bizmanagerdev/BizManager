@@ -3058,7 +3058,7 @@ export default function SalaryCenterClient({
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-1.5 text-right">
-                                  {isException && <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                                  {isException && <AlertTriangle className="h-3.5 w-3.5 text-warning-soft-foreground shrink-0" />}
                                   <span className="text-muted-foreground">{item.notes || getPayslipItemTypeLabel(item.item_type)}</span>
                                   <Badge variant="outline" className="text-xs px-1.5 py-0">{getPayslipItemTypeLabel(item.item_type)}</Badge>
                                 </div>
@@ -4731,12 +4731,12 @@ function StatusPill({
 }) {
   const className =
     tone === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      ? "border-success/30 bg-success-soft text-success-soft-foreground"
       : tone === "warning"
-        ? "border-amber-200 bg-amber-50 text-amber-700"
+        ? "border-warning/40 bg-warning-soft text-warning-soft-foreground"
         : tone === "danger"
-          ? "border-rose-200 bg-rose-50 text-rose-700"
-          : "border-slate-200 bg-slate-50 text-slate-700";
+          ? "border-destructive/30 bg-destructive-soft text-destructive"
+          : "border-border bg-muted text-muted-foreground";
 
   return <Badge className={className}>{children}</Badge>;
 }

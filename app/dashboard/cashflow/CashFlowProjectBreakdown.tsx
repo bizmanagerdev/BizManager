@@ -49,13 +49,13 @@ export default function CashFlowProjectBreakdown({
                           הכנסות {formatCurrency(row.inflow)} | הוצאות {formatCurrency(row.outflow)}
                         </div>
                       </div>
-                      <div className={isPositive ? "font-semibold text-emerald-700" : "font-semibold text-rose-700"}>
+                      <div className={isPositive ? "font-semibold text-success-soft-foreground" : "font-semibold text-destructive"}>
                         {formatCurrency(row.net)}
                       </div>
                     </div>
                     <div className="mt-3 h-2.5 rounded-full bg-muted">
                       <div
-                        className={isPositive ? "h-2.5 rounded-full bg-[hsl(var(--chart-5))]" : "h-2.5 rounded-full bg-[hsl(var(--chart-2))]"}
+                        className={isPositive ? "h-2.5 rounded-full bg-[rgb(var(--chart-5))]" : "h-2.5 rounded-full bg-[rgb(var(--chart-2))]"}
                         style={{ width }}
                       />
                     </div>

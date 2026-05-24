@@ -25,7 +25,7 @@ export function AuthScreen({ title, description, children, footer }: Props) {
           </div>
         </div>
 
-        <Card className="brand-frame surface-panel border-white/60 shadow-elevated">
+        <Card className="brand-frame surface-panel border-border/60 shadow-elevated">
           <CardHeader className="space-y-2">
             <CardTitle className="text-3xl">{title}</CardTitle>
             <CardDescription className="text-sm leading-6">{description}</CardDescription>

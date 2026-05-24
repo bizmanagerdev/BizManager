@@ -764,7 +764,7 @@ export default function NewOrderClient({
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-medium">לקוח נבחר: {selectedCustomer.name}</p>
                   {selectedCustomer.requiresPrepayment ? (
-                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">
+                    <span className="rounded-full bg-destructive-soft px-2 py-0.5 text-xs font-medium text-destructive">
                       תשלום מראש
                     </span>
                   ) : null}
@@ -794,8 +794,8 @@ export default function NewOrderClient({
                   }}
                   className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
                     customer.id === customerId
-                      ? "border-primary/20 bg-gradient-to-r from-primary to-destructive text-primary-foreground shadow-lg shadow-primary/20"
-                      : "border-primary/10 bg-gradient-to-r from-accent to-destructive/15 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+                      ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                      : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
                   }`}
                 >
                   <div className="font-medium">{customer.name}</div>
@@ -808,7 +808,7 @@ export default function NewOrderClient({
                     {customer.address ? ` | כתובת: ${customer.address}` : ""}
                   </div>
                   {customer.requiresPrepayment ? (
-                    <div className={`mt-2 text-xs font-medium ${customer.id === customerId ? "text-primary-foreground" : "text-rose-700"}`}>
+                    <div className={`mt-2 text-xs font-medium ${customer.id === customerId ? "text-primary-foreground" : "text-destructive"}`}>
                       לקוח ברשימת תשלום מראש
                     </div>
                   ) : null}
@@ -1094,7 +1094,7 @@ export default function NewOrderClient({
                 <ValueField
                   label="הנחת הזמנה"
                   value={`-${formatCurrency(effectiveOrderDiscount)}`}
-                  valueClassName="text-emerald-700"
+                  valueClassName="text-success-soft-foreground"
                 />
               ) : null}
               <ValueField label="סכום סופי" value={formatCurrency(totalAmount)} valueClassName="text-base font-semibold" />
@@ -1272,7 +1272,7 @@ export default function NewOrderClient({
               </div>
 
               {selectedCustomer?.requiresPrepayment ? (
-                <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                <div className="rounded-md border border-destructive/30 bg-destructive-soft p-3 text-sm text-destructive">
                   לקוח זה מסומן לתשלום מראש, ולכן אי אפשר לשמור את ההזמנה כל עוד נשארת יתרה פתוחה.
                 </div>
               ) : null}

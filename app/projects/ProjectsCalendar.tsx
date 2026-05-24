@@ -158,10 +158,10 @@ export default function ProjectsCalendar({
               {(taskCount > 0 || projectCount > 0) && (
                 <div className="flex gap-0.5">
                   {taskCount > 0 && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-warning" />
                   )}
                   {projectCount > 0 && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-success" />
                   )}
                 </div>
               )}
@@ -179,8 +179,8 @@ export default function ProjectsCalendar({
 
       {/* Legend */}
       <div className="flex gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" />משימה</span>
-        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-teal-500" />פרויקט</span>
+        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />משימה</span>
+        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />פרויקט</span>
       </div>
 
       {/* Selected day panel */}

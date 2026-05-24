@@ -251,7 +251,7 @@ function customerPaymentStatusLabel(status: CustomerPaymentStatus) {
 }
 
 function customerPaymentStatusBadgeClasses(status: CustomerPaymentStatus) {
-  if (status === "unpriced") return "border-slate-200 bg-slate-100 text-slate-700";
+  if (status === "unpriced") return "border-border bg-muted text-muted-foreground";
   return paymentStatusClasses(status);
 }
 
@@ -1286,7 +1286,7 @@ export default function ProjectTabsClient({
               </>
             ) : null}
             {billed && options?.showBillableBadge !== false ? (
-              <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 font-medium text-amber-800">
+              <span className="inline-flex items-center rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 font-medium text-warning-soft-foreground">
                 חויב ללקוח
               </span>
             ) : null}
@@ -1767,7 +1767,7 @@ export default function ProjectTabsClient({
                                 key={m}
                                 className={
                                   m === "חויב ללקוח"
-                                    ? "inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 font-medium text-amber-800"
+                                    ? "inline-flex items-center rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 font-medium text-warning-soft-foreground"
                                     : undefined
                                 }
                               >

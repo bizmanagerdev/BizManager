@@ -102,7 +102,7 @@ export default function AuthGuard({ children, allowedRoles }: Props) {
     return (
       <div style={{ padding: 24 }}>
         <h1>Something went wrong</h1>
-        <p style={{ color: "red" }}>{err}</p>
+        <p className="text-destructive">{err}</p>
       </div>
     );
   }

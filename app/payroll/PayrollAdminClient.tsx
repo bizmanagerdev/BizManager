@@ -789,7 +789,7 @@ export default function PayrollAdminClient({
       ) : null}
 
       {saveError ? <div className="text-sm text-destructive">{saveError}</div> : null}
-      {saveMessage ? <div className="text-sm text-emerald-700">{saveMessage}</div> : null}
+      {saveMessage ? <div className="text-sm text-success-strong">{saveMessage}</div> : null}
 
       <div className="grid gap-4">
         {filteredUsers.map((user) => {

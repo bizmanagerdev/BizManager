@@ -153,7 +153,7 @@ function customerPaymentStatusLabel(status: CustomerPaymentStatus) {
 }
 
 function customerPaymentStatusClasses(status: CustomerPaymentStatus) {
-  if (status === "unpriced") return "border-slate-200 bg-slate-100 text-slate-700";
+  if (status === "unpriced") return "border-border bg-muted text-muted-foreground";
   return paymentStatusClasses(status);
 }
 

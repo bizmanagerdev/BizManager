@@ -31,7 +31,7 @@ export function BottomNav({ items, moreItems = [] }: Props) {
               to={item.url}
               end={item.url === "/"}
               className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl py-2 text-muted-foreground transition-all duration-200"
-              activeClassName="bg-gradient-to-t from-primary to-primary/90 text-primary-foreground shadow-lg shadow-primary/20"
+              activeClassName="bg-primary text-primary-foreground shadow-md shadow-primary/25"
               pendingClassName="bg-primary/10 opacity-70"
             >
               <item.icon className="h-6 w-6" />
@@ -44,7 +44,7 @@ export function BottomNav({ items, moreItems = [] }: Props) {
               fallback={
                 <button
                   type="button"
-                  className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl border border-primary/15 bg-gradient-to-t from-accent to-destructive/15 px-3 py-2 text-accent-foreground shadow-md transition-all duration-200"
+                  className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-secondary shadow-sm transition-all duration-200"
                 >
                   <MoreHorizontal className="h-6 w-6" />
                   <span className="text-xs font-medium">עוד</span>
@@ -55,7 +55,7 @@ export function BottomNav({ items, moreItems = [] }: Props) {
               <SheetTrigger asChild>
                 <button
                   type="button"
-                  className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl border border-primary/15 bg-gradient-to-t from-accent to-destructive/15 px-3 py-2 text-accent-foreground shadow-md transition-all duration-200 hover:-translate-y-0.5"
+                  className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-secondary/15"
                 >
                   <MoreHorizontal className="h-6 w-6" />
                   <span className="text-xs font-medium">עוד</span>

@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import PwaRegistration from "@/components/pwa/PwaRegistration";
 
@@ -26,7 +25,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f766e",
+  themeColor: "#1D2848",
 };
 
 export default function RootLayout({
@@ -35,13 +34,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="he" dir="rtl" suppressHydrationWarning>
-      <body className="antialiased" suppressHydrationWarning>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <PwaRegistration />
-          {children}
-          <Toaster />
-        </ThemeProvider>
+    <html lang="he" dir="rtl">
+      <body className="antialiased">
+        <PwaRegistration />
+        {children}
+        <Toaster />
       </body>
     </html>
   );

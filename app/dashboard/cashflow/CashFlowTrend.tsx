@@ -45,9 +45,9 @@ export default function CashFlowTrend({ rows }: Props) {
           </div>
           <ChartLegend
             items={[
-              { label: "הכנסות", colorClassName: "bg-[hsl(var(--chart-4))]" },
-              { label: "הוצאות", colorClassName: "bg-[hsl(var(--chart-2))]" },
-              { label: "נטו", colorClassName: "bg-[hsl(var(--chart-1))]" },
+              { label: "הכנסות", colorClassName: "bg-[rgb(var(--chart-4))]" },
+              { label: "הוצאות", colorClassName: "bg-[rgb(var(--chart-2))]" },
+              { label: "נטו", colorClassName: "bg-[rgb(var(--chart-1))]" },
             ]}
           />
         </div>
@@ -89,7 +89,7 @@ export default function CashFlowTrend({ rows }: Props) {
                         width={barWidth}
                         height={inflowHeight}
                         rx="1.6"
-                        fill="hsl(var(--chart-4))"
+                        fill="rgb(var(--chart-4))"
                         opacity="0.9"
                       />
                       <rect
@@ -98,7 +98,7 @@ export default function CashFlowTrend({ rows }: Props) {
                         width={barWidth}
                         height={outflowHeight}
                         rx="1.6"
-                        fill="hsl(var(--chart-2))"
+                        fill="rgb(var(--chart-2))"
                         opacity="0.9"
                       />
                     </g>
@@ -107,7 +107,7 @@ export default function CashFlowTrend({ rows }: Props) {
                 <polyline
                   fill="none"
                   points={chartPolyline(netPoints)}
-                  stroke="hsl(var(--chart-1))"
+                  stroke="rgb(var(--chart-1))"
                   strokeWidth="2"
                   strokeLinejoin="round"
                   strokeLinecap="round"
@@ -116,14 +116,14 @@ export default function CashFlowTrend({ rows }: Props) {
                 {visibleRows.map((row, index) => {
                   const x = bandWidth * index + bandWidth / 2;
                   const y = scaleY(row.net, yMin, yMax, chartHeight);
-                  return <circle key={`${row.period}-net`} cx={x} cy={y} r="1.6" fill="hsl(var(--chart-1))" />;
+                  return <circle key={`${row.period}-net`} cx={x} cy={y} r="1.6" fill="rgb(var(--chart-1))" />;
                 })}
               </svg>
               <div className="mt-4 grid grid-cols-4 gap-2 text-right text-xs text-muted-foreground md:grid-cols-8">
                 {visibleRows.map((row) => (
                   <div key={`${row.period}-label`} className="space-y-1">
                     <div className="font-medium text-foreground">{formatPeriodLabel(row.period)}</div>
-                    <div className={row.net >= 0 ? "text-emerald-700" : "text-rose-700"}>
+                    <div className={row.net >= 0 ? "text-success-soft-foreground" : "text-destructive"}>
                       {formatCurrency(row.net)}
                     </div>
                   </div>

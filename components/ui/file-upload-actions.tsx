@@ -202,7 +202,7 @@ export function FileUploadActions({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="overflow-hidden rounded-xl border bg-black">
+            <div className="overflow-hidden rounded-xl border bg-primary-1">
               <video
                 ref={videoRef}
                 muted

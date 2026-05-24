@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /** @type {import('tailwindcss').Config} */
+const withAlpha = (v) => `rgb(var(--${v}) / <alpha-value>)`;
+
+const primitiveScale = (name, stops) =>
+  Object.fromEntries(stops.map((n) => [String(n), withAlpha(`${name}-${n}`)]));
+
 module.exports = {
-  darkMode: ["class"],
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
@@ -10,56 +14,91 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        /* Semantic tokens (preferred — components reference these) */
+        border: withAlpha("border"),
+        input: withAlpha("input"),
+        ring: withAlpha("ring"),
+        background: withAlpha("background"),
+        foreground: withAlpha("foreground"),
         primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
+          DEFAULT: withAlpha("primary"),
+          foreground: withAlpha("primary-foreground"),
+          ...primitiveScale("primary", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
         },
         secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
+          DEFAULT: withAlpha("secondary"),
+          foreground: withAlpha("secondary-foreground"),
+          ...primitiveScale("secondary", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
         },
         destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
+          DEFAULT: withAlpha("destructive"),
+          foreground: withAlpha("destructive-foreground"),
+          soft: withAlpha("destructive-soft"),
+          "soft-foreground": withAlpha("destructive-soft-foreground"),
+          strong: withAlpha("destructive-strong"),
         },
         muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
+          DEFAULT: withAlpha("muted"),
+          foreground: withAlpha("muted-foreground"),
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+          DEFAULT: withAlpha("accent"),
+          foreground: withAlpha("accent-foreground"),
         },
         popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+          DEFAULT: withAlpha("popover"),
+          foreground: withAlpha("popover-foreground"),
         },
         card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+          DEFAULT: withAlpha("card"),
+          foreground: withAlpha("card-foreground"),
         },
         success: {
-          DEFAULT: "hsl(var(--success))",
-          foreground: "hsl(var(--success-foreground))",
+          DEFAULT: withAlpha("success"),
+          foreground: withAlpha("success-foreground"),
+          soft: withAlpha("success-soft"),
+          "soft-foreground": withAlpha("success-soft-foreground"),
+          strong: withAlpha("success-strong"),
         },
         warning: {
-          DEFAULT: "hsl(var(--warning))",
-          foreground: "hsl(var(--warning-foreground))",
+          DEFAULT: withAlpha("warning"),
+          foreground: withAlpha("warning-foreground"),
+          soft: withAlpha("warning-soft"),
+          "soft-foreground": withAlpha("warning-soft-foreground"),
+          strong: withAlpha("warning-strong"),
+        },
+        info: {
+          DEFAULT: withAlpha("info"),
+          foreground: withAlpha("info-foreground"),
+          soft: withAlpha("info-soft"),
+          "soft-foreground": withAlpha("info-soft-foreground"),
+          strong: withAlpha("info-strong"),
         },
         sidebar: {
-          DEFAULT: "hsl(var(--sidebar-background))",
-          foreground: "hsl(var(--sidebar-foreground))",
-          primary: "hsl(var(--sidebar-primary))",
-          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
-          accent: "hsl(var(--sidebar-accent))",
-          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
-          border: "hsl(var(--sidebar-border))",
-          ring: "hsl(var(--sidebar-ring))",
+          DEFAULT: withAlpha("sidebar-background"),
+          foreground: withAlpha("sidebar-foreground"),
+          primary: withAlpha("sidebar-primary"),
+          "primary-foreground": withAlpha("sidebar-primary-foreground"),
+          accent: withAlpha("sidebar-accent"),
+          "accent-foreground": withAlpha("sidebar-accent-foreground"),
+          border: withAlpha("sidebar-border"),
+          ring: withAlpha("sidebar-ring"),
+        },
+
+        /* Primitive palette scales (for fine-grained usage in feature files;
+           prefer semantic tokens above whenever possible) */
+        brand: {
+          ...primitiveScale("primary", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+        },
+        accentPurple: {
+          ...primitiveScale("secondary", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+        },
+        palette: {
+          blue: primitiveScale("blue", [4, 5, 6, 7, 8, 9, 10]),
+          green: primitiveScale("green", [4, 5, 6, 7, 8, 9, 10]),
+          yellow: primitiveScale("yellow", [4, 5, 6, 7, 8, 9, 10]),
+          orange: primitiveScale("orange", [4, 5, 6, 7, 8, 9, 10]),
+          red: primitiveScale("red", [4, 5, 6, 7, 8, 9, 10]),
         },
       },
       borderRadius: {
@@ -96,4 +135,3 @@ module.exports = {
   },
   plugins: [require("tailwindcss-animate")],
 };
-

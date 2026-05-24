@@ -53,11 +53,11 @@ const morningClientUrl = (morningClientId: string) =>
 function customerFlagBadgeClass(tone: "success" | "danger" | "neutral") {
   switch (tone) {
     case "success":
-      return "border-emerald-200 bg-emerald-100 text-emerald-800";
+      return "border-success/30 bg-success-soft text-success-soft-foreground";
     case "danger":
-      return "border-rose-200 bg-rose-100 text-rose-800";
+      return "border-destructive/30 bg-destructive-soft text-destructive";
     default:
-      return "border-slate-200 bg-slate-100 text-slate-700";
+      return "border-border bg-muted text-muted-foreground";
   }
 }
 
@@ -953,14 +953,14 @@ function CustomerDetailsDialog({
                   </div>
                 ))}
                 {inactiveContacts.length > 0 ? (
-                  <div className="rounded-md border border-red-200 bg-red-50 p-2">
-                    <div className="mb-1 text-xs font-medium text-red-700">
+                  <div className="rounded-md border border-destructive/30 bg-destructive-soft p-2">
+                    <div className="mb-1 text-xs font-medium text-destructive">
                       אנשי קשר לא פעילים
                     </div>
                     {inactiveContacts.map((c, i) => (
                       <div
                         key={s(c, "id") || `${id}-inactive-${i}`}
-                        className="text-xs text-red-700"
+                        className="text-xs text-destructive"
                       >
                         {s(c, "full_name") || `איש קשר ${i + 1}`} | {s(c, "phone") || "-"}
                       </div>

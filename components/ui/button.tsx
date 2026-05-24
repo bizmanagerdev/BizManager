@@ -10,17 +10,18 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-gradient-to-r from-primary via-primary to-destructive text-primary-foreground shadow-lg shadow-primary/20 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-destructive/20",
+          "bg-primary text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/90 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/25",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-lg shadow-destructive/20 hover:bg-destructive/90 hover:-translate-y-0.5",
+          "bg-destructive text-destructive-foreground shadow-md shadow-destructive/20 hover:bg-destructive/90 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-destructive/25",
         outline:
-          "border-primary/25 bg-gradient-to-r from-primary/92 to-primary text-primary-foreground shadow-lg shadow-primary/15 hover:-translate-y-0.5 hover:from-primary hover:to-destructive hover:shadow-xl hover:shadow-destructive/20",
+          "border-primary/30 bg-background text-primary shadow-sm hover:bg-primary/5 hover:border-primary/50 hover:-translate-y-0.5",
         secondary:
-          "border-primary/18 bg-primary/10 text-primary shadow-md shadow-primary/10 hover:-translate-y-0.5 hover:bg-primary/15 hover:shadow-lg hover:shadow-primary/15",
+          "bg-secondary text-secondary-foreground shadow-md shadow-secondary/20 hover:bg-secondary/90 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-secondary/25",
         ghost:
-          "border-destructive/15 bg-gradient-to-r from-accent via-accent to-destructive/20 text-accent-foreground shadow-md shadow-destructive/10 hover:-translate-y-0.5 hover:from-destructive hover:to-primary hover:text-primary-foreground hover:shadow-lg hover:shadow-destructive/20",
+          "text-primary hover:bg-primary/10",
         link: "text-primary underline-offset-4 hover:underline",
-        success: "bg-success text-success-foreground shadow-lg shadow-success/20 hover:bg-success/90",
+        success:
+          "bg-success text-success-foreground shadow-md shadow-success/20 hover:bg-success/90 hover:-translate-y-0.5",
       },
       size: {
         default: "h-11 px-4 py-2",

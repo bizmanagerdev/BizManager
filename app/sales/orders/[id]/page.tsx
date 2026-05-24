@@ -443,37 +443,37 @@ export default async function SalesOrderPage({
 
             <div
               className={`rounded-2xl border p-4 ${
-                isOpenOrder ? "border-red-200 bg-red-50/80" : "border-sky-200 bg-sky-50/70"
+                isOpenOrder ? "border-destructive/30 bg-destructive-soft/80" : "border-info/30 bg-info-soft/70"
               }`}
             >
               <div className="grid gap-4 lg:grid-cols-[1.2fr_2fr]">
                 <div className="space-y-1">
-                  <div className={`text-xs font-medium ${isOpenOrder ? "text-red-700" : "text-sky-700"}`}>
+                  <div className={`text-xs font-medium ${isOpenOrder ? "text-destructive" : "text-info-soft-foreground"}`}>
                     תאריך הזמנה
                   </div>
-                  <div className={`text-2xl font-semibold ${isOpenOrder ? "text-red-800" : "text-foreground"}`}>
+                  <div className={`text-2xl font-semibold ${isOpenOrder ? "text-destructive" : "text-foreground"}`}>
                     {formatDate(orderDate)}
                   </div>
-                  <div className={`text-sm ${isOpenOrder ? "font-medium text-red-700" : "text-muted-foreground"}`}>
+                  <div className={`text-sm ${isOpenOrder ? "font-medium text-destructive" : "text-muted-foreground"}`}>
                     {formatRelativeDateLabel(orderDate)}
                   </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-2xl border border-white/70 bg-background/80 px-3 py-2">
+                  <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
                     <div className="text-xs text-muted-foreground">סה&quot;כ</div>
                     <div className="mt-1 text-sm font-medium">{formatCurrency(totalAmount)}</div>
                   </div>
-                  <div className="rounded-2xl border border-white/70 bg-background/80 px-3 py-2">
+                  <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
                     <div className="text-xs text-muted-foreground">שולם</div>
                     <div className="mt-1 text-sm font-medium">{formatCurrency(totalPaid)}</div>
                   </div>
-                  <div className="rounded-2xl border border-white/70 bg-background/80 px-3 py-2">
+                  <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
                     <div className="text-xs text-muted-foreground">יתרה</div>
-                    <div className={`mt-1 text-sm font-medium ${remainingBalance > 0 ? "text-amber-700" : ""}`}>
+                    <div className={`mt-1 text-sm font-medium ${remainingBalance > 0 ? "text-warning-soft-foreground" : ""}`}>
                       {formatCurrency(remainingBalance)}
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-white/70 bg-background/80 px-3 py-2">
+                  <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
                     <div className="text-xs text-muted-foreground">תשלומים</div>
                     <div className="mt-1 text-sm font-medium">{paymentCount}</div>
                   </div>
@@ -496,7 +496,7 @@ export default async function SalesOrderPage({
               </div>
               <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
                 <div className="text-xs text-muted-foreground">הנחה</div>
-                <div className={`mt-1 text-sm font-medium ${totalDiscount > 0 ? "text-emerald-700" : ""}`}>
+                <div className={`mt-1 text-sm font-medium ${totalDiscount > 0 ? "text-success-soft-foreground" : ""}`}>
                   {totalDiscount > 0 ? `-${formatCurrency(totalDiscount)}` : "-"}
                 </div>
               </div>
@@ -543,7 +543,7 @@ export default async function SalesOrderPage({
                       כמות: {quantity} • מחיר יחידה: {formatCurrency(unitPrice)}
                     </div>
                     {lineDiscountAmount > 0 ? (
-                      <div className="mt-1 text-emerald-700">הנחת שורה: -{formatCurrency(lineDiscountAmount)}</div>
+                      <div className="mt-1 text-success-soft-foreground">הנחת שורה: -{formatCurrency(lineDiscountAmount)}</div>
                     ) : null}
                     {lineNotes ? <div className="mt-1 text-muted-foreground">הערות: {lineNotes}</div> : null}
                   </div>

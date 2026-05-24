@@ -22,19 +22,19 @@ export default function CashFlowSummaryCards({ summary }: Props) {
       title: "סך הכנסות",
       value: formatCurrency(summary.totalInflow),
       icon: ArrowUpCircle,
-      accent: "text-emerald-600",
+      accent: "text-success-soft-foreground",
     },
     {
       title: "סך הוצאות",
       value: formatCurrency(summary.totalOutflow),
       icon: ArrowDownCircle,
-      accent: "text-rose-600",
+      accent: "text-destructive",
     },
     {
       title: "נטו תזרים",
       value: formatCurrency(summary.netCashFlow),
       icon: Wallet,
-      accent: summary.netCashFlow >= 0 ? "text-primary" : "text-amber-700",
+      accent: summary.netCashFlow >= 0 ? "text-primary" : "text-warning-soft-foreground",
     },
   ];
 

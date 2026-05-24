@@ -44,11 +44,11 @@ function rowDateValue(value: string | null) {
 function customerFlagBadgeClass(tone: "success" | "danger" | "neutral") {
   switch (tone) {
     case "success":
-      return "border-emerald-200 bg-emerald-100 text-emerald-800";
+      return "border-success/30 bg-success-soft text-success-soft-foreground";
     case "danger":
-      return "border-rose-200 bg-rose-100 text-rose-800";
+      return "border-destructive/30 bg-destructive-soft text-destructive";
     default:
-      return "border-slate-200 bg-slate-100 text-slate-700";
+      return "border-border bg-muted text-muted-foreground";
   }
 }
 
@@ -391,9 +391,9 @@ export default async function CustomerDetailsPage({
                     </div>
                   ))}
                   {inactiveContacts.length > 0 ? (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm">
-                      <div className="mb-2 font-medium text-rose-700">אנשי קשר לא פעילים</div>
-                      <div className="space-y-1 text-rose-700">
+                    <div className="rounded-xl border border-destructive/30 bg-destructive-soft p-3 text-sm">
+                      <div className="mb-2 font-medium text-destructive">אנשי קשר לא פעילים</div>
+                      <div className="space-y-1 text-destructive">
                         {inactiveContacts.map((contact, index) => (
                           <div key={s(contact, "id") || `${id}-inactive-${index}`}>
                             {s(contact, "full_name") || `איש קשר ${index + 1}`} • {s(contact, "phone") || "-"}
