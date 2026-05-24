@@ -4,6 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
 type IssueKind = "quote" | "invoice" | "receipt" | "invoice-receipt";
@@ -90,6 +99,8 @@ export default function MorningDocumentsPanel({
 }) {
   const [docs, setDocs] = useState<MorningLocalDocument[]>(documents);
   const [busyKey, setBusyKey] = useState<string>("");
+  const [editing, setEditing] = useState<MorningLocalDocument | null>(null);
+  const [editNotes, setEditNotes] = useState<string>("");
 
   useEffect(() => {
     setDocs(documents);
@@ -164,6 +175,61 @@ export default function MorningDocumentsPanel({
       onChanged?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "סנכרון מסמך Morning נכשל.");
+    } finally {
+      setBusyKey("");
+    }
+  }
+
+  async function deleteDocument(localId: string) {
+    const confirmed = typeof window !== "undefined"
+      ? window.confirm(
+          "המסמך יוסר מ-BizH בלבד. הוא ימשיך להתקיים ב-Morning ולא יבוטל שם. להמשיך?"
+        )
+      : true;
+    if (!confirmed) return;
+    setBusyKey(`delete:${localId}`);
+    try {
+      const response = await fetch(`/api/morning/documents/${localId}`, { method: "DELETE" });
+      const json = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(json.error ?? "מחיקת מסמך Morning נכשלה.");
+      setDocs((current) => current.filter((item) => item.id !== localId));
+      toast.success("המסמך הוסר מ-BizH");
+      onChanged?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "מחיקת מסמך Morning נכשלה.");
+    } finally {
+      setBusyKey("");
+    }
+  }
+
+  function startEdit(document: MorningLocalDocument) {
+    setEditing(document);
+    setEditNotes(document.notes ?? "");
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    setBusyKey(`edit:${editing.id}`);
+    try {
+      const response = await fetch(`/api/morning/documents/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: editNotes.trim() ? editNotes.trim() : null }),
+      });
+      const json = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        document?: MorningLocalDocument;
+      };
+      if (!response.ok) throw new Error(json.error ?? "עדכון מסמך Morning נכשל.");
+      if (json.document) {
+        setDocs((current) => current.map((item) => (item.id === editing.id ? json.document! : item)));
+      }
+      toast.success("המסמך עודכן");
+      setEditing(null);
+      setEditNotes("");
+      onChanged?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "עדכון מסמך Morning נכשל.");
     } finally {
       setBusyKey("");
     }
@@ -279,6 +345,27 @@ export default function MorningDocumentsPanel({
                 >
                   {busyKey === `sync:${document.id}` ? "מסנכרן..." : "סנכרון"}
                 </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => startEdit(document)}
+                  disabled={busyKey === `edit:${document.id}`}
+                  title="הוספת/עריכת הערה פנימית. מסמך החשבונית עצמו ב-Morning אינו ניתן לעריכה (חוק מע״מ)."
+                >
+                  הערה
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs text-destructive"
+                  onClick={() => void deleteDocument(document.id)}
+                  disabled={busyKey === `delete:${document.id}`}
+                >
+                  {busyKey === `delete:${document.id}` ? "מוחק..." : "מחיקה"}
+                </Button>
                 {document.status !== "closed" && document.status !== "cancelled" ? (
                   <Button
                     type="button"
@@ -292,10 +379,59 @@ export default function MorningDocumentsPanel({
                   </Button>
                 ) : null}
               </div>
+              {document.notes ? (
+                <div className="mt-2 rounded-md border border-dashed bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
+                  {document.notes}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
       )}
+
+      <Dialog
+        open={editing !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditing(null);
+            setEditNotes("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>עריכת הערה למסמך</DialogTitle>
+            <DialogDescription>
+              ההערה נשמרת ב-BizH בלבד ולא מתעדכנת ב-Morning. שימושי לסימון פנימי.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={editNotes}
+            onChange={(event) => setEditNotes(event.target.value)}
+            placeholder="הערה למסמך..."
+            rows={4}
+          />
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setEditing(null);
+                setEditNotes("");
+              }}
+            >
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void saveEdit()}
+              disabled={editing !== null && busyKey === `edit:${editing.id}`}
+            >
+              {editing !== null && busyKey === `edit:${editing.id}` ? "שומר..." : "שמירה"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import {
   derivePaymentStatus,
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, user, profile } = access.value;
 
     const { data: order, error: orderError } = await supabase
       .from("orders")
@@ -112,11 +113,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
 
+    // Best-effort Morning auto-receipt. Refunds (negative amounts) skip themselves
+    // inside tryAutoIssueReceiptForPayment via the non_positive_amount short-circuit.
+    let morningAutoReceipt: {
+      skipped: boolean;
+      reason: string | null;
+      morning_document_id: string | null;
+    } | null = null;
+    if (createdPayment?.id) {
+      const outcome = await tryAutoIssueReceiptForPayment(supabase, {
+        paymentId: createdPayment.id,
+        actor: { profileId: profile.id, authUserId: user.id, role: profile.role },
+      });
+      morningAutoReceipt = {
+        skipped: outcome.skipped,
+        reason: outcome.ok ? outcome.reason : outcome.reason,
+        morning_document_id: outcome.morningDocumentId,
+      };
+    }
+
     return NextResponse.json({
       payment: createdPayment,
       payment_status: paymentStatus,
       total_paid: totalPaid,
       remaining_balance: Math.max(totalAmount - totalPaid, 0),
+      morning_auto_receipt: morningAutoReceipt,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

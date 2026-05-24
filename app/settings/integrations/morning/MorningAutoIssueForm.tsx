@@ -54,7 +54,7 @@ export default function MorningAutoIssueForm({ initial }: Props) {
           <CardTitle>חשבונית אוטומטית להזמנה</CardTitle>
           <CardDescription>
             כאשר נוצרת הזמנה חדשה — או כאשר סטטוס הזמנה משתנה ל-״סופקה״ / ״הושלמה״ / ״סגורה״ — תיווצר ב-Morning חשבונית עבור הלקוח.
-            כפילויות נחסמות אוטומטית: רק חשבונית אחת תונפק לכל הזמנה (גם אם שני האירועים מתרחשים).
+            אם ההזמנה עודכנה לאחר הוצאת חשבונית והסכום גדל, תונפק חשבונית נוספת על ההפרש בלבד (חשבוניות מס לא ניתנות לעריכה לפי חוק מע״מ).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">

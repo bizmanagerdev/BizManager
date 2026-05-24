@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
+import MorningQuoteDialog from "@/components/morning/MorningQuoteDialog";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
 type MatchCandidate = {
@@ -220,6 +221,13 @@ export default function MorningCustomerCard({
       <div className="flex flex-wrap gap-2">
         {isLinked ? (
           <>
+            <MorningQuoteDialog
+              customerId={customerId}
+              onCreated={(document) => {
+                setDocuments((current) => [document, ...current]);
+                onChanged?.();
+              }}
+            />
             <Button type="button" size="sm" variant="outline" onClick={() => void syncRemoteClient()} disabled={busyKey === "sync"}>
               {busyKey === "sync" ? "מסנכרן..." : "סנכרון פרטי חיוב"}
             </Button>

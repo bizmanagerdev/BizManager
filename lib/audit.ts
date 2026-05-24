@@ -75,6 +75,8 @@ export function entityLabel(tableName: string) {
     case "payslips": return "תלוש שכר";
     case "products": return "מוצר";
     case "inquiries": return "פנייה";
+    case "morning_documents": return "מסמך Morning";
+    case "morning_settings": return "הגדרות Morning";
     default: return tableName;
   }
 }
@@ -96,6 +98,20 @@ function actionLabel(action: string) {
       return "עדיפות עודכנה";
     case "upload":
       return "הועלה";
+    case "morning_customer_linked":
+      return "קושר ל-Morning";
+    case "morning_customer_synced":
+      return "סונכרן עם Morning";
+    case "morning_document_created":
+      return "מסמך Morning נוצר";
+    case "morning_document_synced":
+      return "מסמך Morning סונכרן";
+    case "morning_document_closed":
+      return "מסמך Morning נסגר";
+    case "morning_auto_invoice_failed":
+      return "הנפקת חשבונית אוטומטית ב-Morning נכשלה";
+    case "morning_auto_receipt_failed":
+      return "הנפקת קבלה אוטומטית ב-Morning נכשלה";
     default:
       return action;
   }
@@ -179,6 +195,15 @@ function buildDetails(tableName: string, newData: AuditLogValue): string {
     case "properties": {
       const name = str(d.name) ?? str(d.address);
       if (name) parts.push(name);
+      break;
+    }
+    case "morning_documents": {
+      const typeLabel = str(d.document_type_label);
+      if (typeLabel) parts.push(typeLabel);
+      const number = str(d.morning_document_number);
+      if (number) parts.push(`#${number}`);
+      const amt = money(d.amount);
+      if (amt) parts.push(amt);
       break;
     }
   }

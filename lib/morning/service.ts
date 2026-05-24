@@ -870,21 +870,25 @@ export async function tryAutoIssueInvoiceForOrder(
       return { ok: true, skipped: true, reason: "auto_disabled", morningDocumentId: null };
     }
 
-    const { data: existing, error: existingError } = await supabase
+    // Israeli tax law: issued tax invoices cannot be edited. If items are added
+    // to an existing order, the right answer is an additional invoice for the
+    // delta only. So instead of skipping on "already issued", compare the order
+    // total against the sum of prior Morning invoices and issue an invoice for
+    // the positive difference (if any).
+    const { data: existingInvoices, error: existingError } = await supabase
       .from("morning_documents")
-      .select("id")
+      .select("amount")
       .eq("order_id", orderId)
-      .in("document_type", [MorningDocumentType.TaxInvoice, MorningDocumentType.TaxInvoiceReceipt])
-      .limit(1)
-      .maybeSingle();
+      .in("document_type", [MorningDocumentType.TaxInvoice, MorningDocumentType.TaxInvoiceReceipt]);
     if (existingError) throw new Error(existingError.message);
-    if (existing) {
-      return { ok: true, skipped: true, reason: "already_issued", morningDocumentId: null };
-    }
+    const alreadyInvoiced = ((existingInvoices ?? []) as DbRow[]).reduce(
+      (sum, row) => sum + (getNumber(row, ["amount"]) ?? 0),
+      0
+    );
 
     const { data: order, error: orderError } = await supabase
       .from("orders")
-      .select("id,customer_id,status")
+      .select("id,customer_id,status,total_amount")
       .eq("id", orderId)
       .maybeSingle();
     if (orderError) throw new Error(orderError.message);
@@ -893,11 +897,41 @@ export async function tryAutoIssueInvoiceForOrder(
       return { ok: true, skipped: true, reason: "no_customer", morningDocumentId: null };
     }
 
+    const orderTotal = Math.max(0, getNumber(order as DbRow, ["total_amount"]) ?? 0);
+    const delta = orderTotal - alreadyInvoiced;
+
+    // Use a 1-agora epsilon so tiny floating point drift doesn't trigger ₪0.01 invoices.
+    if (delta < 0.01) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: alreadyInvoiced > 0 ? "already_invoiced_in_full" : "zero_total",
+        morningDocumentId: null,
+      };
+    }
+
+    const isDeltaInvoice = alreadyInvoiced > 0;
     const result = await issueMorningDocumentForSource(supabase, {
       type: settings.invoiceTypeOnCompletion,
       customerId,
       orderId,
       actor,
+      // The duplicate-detector would block an additional invoice for the same
+      // order; we explicitly want to bypass that when we're issuing a delta.
+      allowDuplicate: isDeltaInvoice,
+      customLines: isDeltaInvoice
+        ? [
+            {
+              description: `תוספת להזמנה #${orderId.slice(0, 8)}`,
+              quantity: 1,
+              unitPrice: Math.round(delta * 100) / 100,
+              vatType: "include",
+            },
+          ]
+        : undefined,
+      notes: isDeltaInvoice
+        ? `חשבונית להפרש לאחר עדכון ההזמנה. סה"כ הזמנה: ₪${orderTotal.toFixed(2)}, חויב קודם: ₪${alreadyInvoiced.toFixed(2)}.`
+        : undefined,
     });
 
     const morningDocumentId = getString(result.morningDocument as DbRow | null, ["id"]);
@@ -984,6 +1018,101 @@ export async function tryAutoIssueReceiptForPayment(
     });
     return { ok: false, skipped: false, reason: message, morningDocumentId: null };
   }
+}
+
+export async function deleteLocalMorningDocument(
+  supabase: SupabaseClient,
+  {
+    localDocumentId,
+    actor,
+  }: {
+    localDocumentId: string;
+    actor: { profileId: string; role: string };
+  }
+) {
+  const { data: existing, error: existingError } = await supabase
+    .from("morning_documents")
+    .select("id,morning_document_id,document_type,document_type_label,document_id,morning_document_number")
+    .eq("id", localDocumentId)
+    .maybeSingle();
+  if (existingError) throw new Error(existingError.message);
+  if (!existing) throw new Error("מסמך Morning לא נמצא.");
+
+  const linkedDocumentId = getString(existing as DbRow, ["document_id"]);
+
+  // Delete order matters because of FKs:
+  //   1. morning_documents.document_id → documents.id (NO ACTION on delete),
+  //      so the morning_documents row must go first to free the reference.
+  //   2. document_links.document_id → documents.id (cascade not guaranteed).
+  //   3. documents row itself.
+  const { error: deleteError } = await supabase
+    .from("morning_documents")
+    .delete()
+    .eq("id", localDocumentId);
+  if (deleteError) throw new Error(deleteError.message);
+
+  if (linkedDocumentId) {
+    const { error: linksError } = await supabase
+      .from("document_links")
+      .delete()
+      .eq("document_id", linkedDocumentId);
+    if (linksError) throw new Error(linksError.message);
+    const { error: docError } = await supabase
+      .from("documents")
+      .delete()
+      .eq("id", linkedDocumentId);
+    if (docError) throw new Error(docError.message);
+  }
+
+  await logAuditEvent({
+    supabase,
+    tableName: "morning_documents",
+    recordId: localDocumentId,
+    action: "morning_document_unlinked",
+    changedBy: actor.profileId,
+    userRole: actor.role,
+    newData: {
+      morning_document_id: getString(existing as DbRow, ["morning_document_id"]),
+      morning_document_number: getString(existing as DbRow, ["morning_document_number"]),
+      document_type_label: getString(existing as DbRow, ["document_type_label"]),
+    },
+  });
+
+  return { id: localDocumentId };
+}
+
+export async function updateLocalMorningDocumentNotes(
+  supabase: SupabaseClient,
+  {
+    localDocumentId,
+    notes,
+    actor,
+  }: {
+    localDocumentId: string;
+    notes: string | null;
+    actor: { profileId: string; role: string };
+  }
+) {
+  const { data, error } = await supabase
+    .from("morning_documents")
+    .update({ notes, updated_at: new Date().toISOString() })
+    .eq("id", localDocumentId)
+    .select("*")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("מסמך Morning לא נמצא.");
+
+  await logAuditEvent({
+    supabase,
+    tableName: "morning_documents",
+    recordId: localDocumentId,
+    action: "update",
+    changedBy: actor.profileId,
+    userRole: actor.role,
+    newData: { notes },
+  });
+
+  return data;
 }
 
 export async function closeMorningDocumentByLocalId(

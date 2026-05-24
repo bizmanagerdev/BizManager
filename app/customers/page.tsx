@@ -78,7 +78,7 @@ export default async function CustomersPage({
     ? await supabase
         .from("morning_documents")
         .select(
-          "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at"
+          "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes"
         )
         .in("customer_id", customerIds)
         .order("issued_at", { ascending: false })

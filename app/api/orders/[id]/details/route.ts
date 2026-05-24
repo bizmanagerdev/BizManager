@@ -187,7 +187,7 @@ export async function GET(
     supabase
       .from("morning_documents")
       .select(
-        "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at"
+        "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes"
       )
       .eq("order_id", id)
       .order("issued_at", { ascending: false }),
@@ -195,7 +195,7 @@ export async function GET(
       ? supabase
           .from("morning_documents")
           .select(
-            "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at"
+            "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes"
           )
           .in("payment_id", paymentIds)
           .order("issued_at", { ascending: false })

@@ -112,4 +112,5 @@ export type MorningLocalDocument = {
   pdf_url: string | null;
   issued_at: string | null;
   closed_at: string | null;
+  notes?: string | null;
 };
