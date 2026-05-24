@@ -100,19 +100,19 @@ function normalizeOrderStatus(value: string | null) {
 export function orderStatusBadgeClasses(status: string) {
   switch (normalizeOrderStatus(status)) {
     case "draft":
-      return "border-destructive/30 bg-destructive-soft text-destructive";
+      return "bg-destructive text-destructive-foreground border-transparent";
     case "delivered":
     case "completed":
     case "closed":
-      return "border-success/30 bg-success-soft text-success-soft-foreground";
+      return "bg-success text-success-foreground border-transparent";
     case "confirmed":
     case "processing":
     case "out_for_delivery":
-      return "border-warning/40 bg-warning-soft text-warning-soft-foreground";
+      return "bg-warning text-warning-foreground border-transparent";
     case "cancelled":
-      return "border-border bg-muted text-muted-foreground";
+      return "border-border bg-background text-muted-foreground";
     default:
-      return "border-warning/40 bg-warning-soft text-warning-soft-foreground";
+      return "bg-warning text-warning-foreground border-transparent";
   }
 }
 

@@ -1917,7 +1917,7 @@ export default function SalaryCenterClient({
       body {
         font-family: Arial, sans-serif;
         margin: 24px;
-        color: #111827;
+        color: #1D2848;
         direction: rtl;
       }
       h1, h2, h3, p { margin: 0; }
@@ -1928,12 +1928,12 @@ export default function SalaryCenterClient({
       }
       .hero-table th,
       .hero-table td {
-        border: 1px solid #d1d5db;
+        border: 1px solid #DDE3FA;
         padding: 14px 16px;
         text-align: right;
       }
       .hero-table th {
-        background: #eef2ff;
+        background: #EEF1FB;
         font-size: 24px;
         font-weight: 800;
       }
@@ -1950,7 +1950,7 @@ export default function SalaryCenterClient({
         font-weight: 700;
       }
       .subtle {
-        color: #6b7280;
+        color: #5E6FB8;
         font-size: 12px;
         margin-top: 6px;
       }
@@ -1961,12 +1961,12 @@ export default function SalaryCenterClient({
         margin: 18px 0 24px;
       }
       .card {
-        border: 1px solid #d1d5db;
+        border: 1px solid #DDE3FA;
         border-radius: 12px;
         padding: 12px;
       }
       .label {
-        color: #6b7280;
+        color: #5E6FB8;
         font-size: 12px;
         margin-bottom: 8px;
       }
@@ -1984,20 +1984,20 @@ export default function SalaryCenterClient({
         font-size: 13px;
       }
       th, td {
-        border: 1px solid #d1d5db;
+        border: 1px solid #DDE3FA;
         padding: 8px 10px;
         text-align: right;
         vertical-align: top;
       }
       th {
-        background: #f3f4f6;
+        background: #EEF1FB;
       }
       .empty {
         margin-top: 12px;
-        border: 1px dashed #d1d5db;
+        border: 1px dashed #DDE3FA;
         border-radius: 12px;
         padding: 12px;
-        color: #6b7280;
+        color: #5E6FB8;
       }
       @media print {
         body { margin: 12px; }
@@ -4731,12 +4731,12 @@ function StatusPill({
 }) {
   const className =
     tone === "success"
-      ? "border-success/30 bg-success-soft text-success-soft-foreground"
+      ? "bg-success text-success-foreground border-transparent"
       : tone === "warning"
-        ? "border-warning/40 bg-warning-soft text-warning-soft-foreground"
+        ? "bg-warning text-warning-foreground border-transparent"
         : tone === "danger"
-          ? "border-destructive/30 bg-destructive-soft text-destructive"
-          : "border-border bg-muted text-muted-foreground";
+          ? "bg-destructive text-destructive-foreground border-transparent"
+          : "border-border bg-background text-muted-foreground";
 
   return <Badge className={className}>{children}</Badge>;
 }

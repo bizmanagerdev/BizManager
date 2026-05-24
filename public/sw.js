@@ -1,4 +1,4 @@
-const V = "v7";
+const V = "v8";
 const STATIC_CACHE = `bizh-static-${V}`;   // immutable _next/static chunks
 const PAGES_CACHE  = `bizh-pages-${V}`;    // navigation responses
 const API_CACHE    = `bizh-api-${V}`;      // /api GET responses
@@ -114,9 +114,13 @@ self.addEventListener("sync", (event) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function putInCache(cacheName, request, response) {
-  if (response.ok) {
-    caches.open(cacheName).then((cache) => cache.put(request, response.clone()));
-  }
+  if (!response.ok) return;
+  // Clone synchronously — must happen before the response body starts being
+  // consumed by the caller. Awaiting caches.open() first and cloning inside
+  // the .then() runs after the page reads the body, throwing
+  // "Response body is already used".
+  const clone = response.clone();
+  caches.open(cacheName).then((cache) => cache.put(request, clone)).catch(() => {});
 }
 
 const OFFLINE_HTML = `<!doctype html>
@@ -127,10 +131,10 @@ const OFFLINE_HTML = `<!doctype html>
   <title>אין חיבור</title>
   <style>
     body{margin:0;min-height:100svh;display:grid;place-items:center;
-         background:#f8fafc;color:#0f172a;font:16px/1.6 system-ui,sans-serif}
+         background:#F4F6FD;color:#1D2848;font:16px/1.6 system-ui,sans-serif}
     main{max-width:26rem;padding:2rem;text-align:center}
     h1{margin:0 0 .5rem;font-size:1.4rem}
-    p{margin:0;color:#64748b}
+    p{margin:0;color:#5E6FB8}
   </style>
 </head>
 <body>

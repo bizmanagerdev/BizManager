@@ -45,10 +45,10 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
             to={item.url}
             end={item.url === "/"}
             className={cn(
-              "flex h-11 items-center gap-3 rounded-xl px-3 text-base text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-sm",
+              "flex h-11 items-center gap-3 rounded-xl px-3 text-base text-sidebar-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground hover:shadow-sm",
               collapsed && "justify-center px-0 lg:justify-start lg:px-3"
             )}
-            activeClassName="bg-secondary text-secondary-foreground font-medium shadow-md shadow-secondary/30"
+            activeClassName="bg-secondary text-secondary-foreground font-medium shadow-md shadow-secondary/30 hover:ring-2 hover:ring-white/50 hover:ring-offset-2 hover:ring-offset-sidebar"
             pendingClassName="bg-white/10 opacity-70"
           >
             <item.icon className="h-4 w-4 shrink-0" />

@@ -1,17 +1,17 @@
 import type { StatusColor } from "@/lib/ui/status-colors";
 
 /**
- * Status pill classes — soft style: light tinted background, colored border,
- * dark colored text. Same family per status, so the meaning reads at a glance
- * while the badge stays readable on white surfaces.
+ * Bold solid status pill classes — solid colored bg + high-contrast text,
+ * no border. White text on green/red/blue (passes contrast); dark navy text
+ * on yellow (only readable option for warning).
  */
 export function getStatusColorClasses(color: StatusColor) {
   return {
-    success: "bg-success-soft text-success-soft-foreground border-success",
-    warning: "bg-warning-soft text-warning-soft-foreground border-warning",
-    danger: "bg-destructive-soft text-destructive-soft-foreground border-destructive",
-    info: "bg-info-soft text-info-soft-foreground border-info",
-    neutral: "bg-muted text-muted-foreground border-border",
+    success: "bg-success text-success-foreground border-transparent",
+    warning: "bg-warning text-warning-foreground border-transparent",
+    danger: "bg-destructive text-destructive-foreground border-transparent",
+    info: "bg-info text-info-foreground border-transparent",
+    neutral: "bg-background text-muted-foreground border border-border",
   }[color];
 }
 
@@ -21,7 +21,7 @@ export function getStatusDotClasses(color: StatusColor) {
     warning: "bg-warning",
     danger: "bg-destructive",
     info: "bg-info",
-    neutral: "bg-primary-4",
+    neutral: "bg-muted-foreground/60",
   }[color];
 }
 

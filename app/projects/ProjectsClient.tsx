@@ -247,7 +247,7 @@ function paymentStatusBadgeClasses(status: "paid" | "partial" | "unpaid" | "unpr
     case "unpaid":
       return paymentStatusClasses("unpaid");
     case "unpriced":
-      return "border-border bg-muted text-muted-foreground";
+      return "border-border bg-background text-muted-foreground";
   }
 }
 
@@ -1360,7 +1360,7 @@ export default function ProjectsClient({
             <Button
               type="button"
               variant="outline"
-              className="border-border bg-muted text-muted-foreground hover:border-border hover:bg-muted/80 hover:text-foreground"
+              className="border-border bg-background text-muted-foreground hover:border-border hover:bg-muted/80 hover:text-foreground"
               onClick={() => setApproveQuoteOpen(false)}
               disabled={approveQuoteSubmitting}
             >

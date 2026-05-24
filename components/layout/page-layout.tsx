@@ -9,7 +9,7 @@ type DivProps = ComponentPropsWithoutRef<"div">;
 const gridVariants = {
   dashboardMetrics: "grid grid-cols-2 gap-3 xl:grid-cols-4",
   dashboardMain: "grid gap-4 xl:grid-cols-[1.15fr_0.85fr]",
-  quickActions: "grid grid-cols-2 gap-3 lg:grid-cols-3",
+  quickActions: "grid gap-2 grid-cols-2 sm:grid-cols-5 sm:gap-1.5 lg:grid-cols-10",
   customersToolbar: "grid gap-3 lg:grid-cols-8",
   customersFilters: "grid gap-3 lg:grid-cols-4",
   customerCard: "grid gap-2 p-2.5 md:grid-cols-[1fr_auto] md:items-center",

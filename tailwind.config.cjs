@@ -90,15 +90,18 @@ module.exports = {
         brand: {
           ...primitiveScale("primary", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
         },
-        accentPurple: {
+        accentSky: {
           ...primitiveScale("secondary", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
         },
+        /* Functional palettes — single anchor (-4) plus light tints (-8/-9/-10)
+           for backgrounds. Use the semantic tokens (success, warning, etc.)
+           instead of these wherever possible. */
         palette: {
-          blue: primitiveScale("blue", [4, 5, 6, 7, 8, 9, 10]),
-          green: primitiveScale("green", [4, 5, 6, 7, 8, 9, 10]),
-          yellow: primitiveScale("yellow", [4, 5, 6, 7, 8, 9, 10]),
-          orange: primitiveScale("orange", [4, 5, 6, 7, 8, 9, 10]),
-          red: primitiveScale("red", [4, 5, 6, 7, 8, 9, 10]),
+          blue: primitiveScale("blue", [4, 8, 9, 10]),
+          green: primitiveScale("green", [4, 8, 9, 10]),
+          yellow: primitiveScale("yellow", [4, 8, 9, 10]),
+          orange: primitiveScale("orange", [4, 8, 9, 10]),
+          red: primitiveScale("red", [4, 8, 9, 10]),
         },
       },
       borderRadius: {
@@ -125,11 +128,21 @@ module.exports = {
           "0%,70%,100%": { opacity: "1" },
           "20%,50%": { opacity: "0" },
         },
+        "bell-ring": {
+          "0%, 50%, 100%": { transform: "rotate(0deg)" },
+          "5%": { transform: "rotate(14deg)" },
+          "10%": { transform: "rotate(-12deg)" },
+          "15%": { transform: "rotate(10deg)" },
+          "20%": { transform: "rotate(-8deg)" },
+          "25%": { transform: "rotate(5deg)" },
+          "30%": { transform: "rotate(0deg)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "caret-blink": "caret-blink 1.25s ease-out infinite",
+        "bell-ring": "bell-ring 2.5s ease-in-out infinite",
       },
     },
   },

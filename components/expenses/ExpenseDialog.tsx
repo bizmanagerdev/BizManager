@@ -431,7 +431,7 @@ export function ExpenseDialog({
                       ? s === "paid"
                         ? "border-success bg-success/10 text-success"
                         : s === "partial"
-                          ? "border-warning bg-warning/10 text-warning"
+                          ? "border-warning bg-warning/15 text-warning-strong"
                           : "border-destructive bg-destructive/10 text-destructive"
                       : "border-input bg-background text-muted-foreground hover:bg-muted/40"
                   )}

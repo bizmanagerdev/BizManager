@@ -217,7 +217,7 @@ function workbookStylesXml() {
   </Style>
   <Style ss:ID="header">
     <Font ss:Bold="1"/>
-    <Interior ss:Color="#E2E8F0" ss:Pattern="Solid"/>
+    <Interior ss:Color="#DDE3FA" ss:Pattern="Solid"/>
     <Borders>
       <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
       <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
@@ -235,11 +235,11 @@ function workbookStylesXml() {
   </Style>
   <Style ss:ID="summaryLabel">
     <Font ss:Bold="1"/>
-    <Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/>
+    <Interior ss:Color="#EEF1FB" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="total">
     <Font ss:Bold="1"/>
-    <Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/>
+    <Interior ss:Color="#FFE2C7" ss:Pattern="Solid"/>
     <Borders>
       <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
       <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>

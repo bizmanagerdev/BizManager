@@ -15,7 +15,7 @@ export default function OfflineBanner() {
       className={cn(
         "flex items-center justify-between gap-3 px-4 py-2 text-sm font-medium",
         !isOnline
-          ? "bg-destructive-soft text-destructive"
+          ? "bg-destructive text-destructive-foreground"
           : "bg-warning-soft text-warning-soft-foreground"
       )}
     >

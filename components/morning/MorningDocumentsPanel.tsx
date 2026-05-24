@@ -64,11 +64,11 @@ function statusClass(value: string | null | undefined) {
     case "2":
     case "paid":
     case "closed":
-      return "border-success/30 bg-success-soft text-success-soft-foreground";
+      return "bg-success text-success-foreground border-transparent";
     case "cancelled":
-      return "border-destructive/30 bg-destructive-soft text-destructive";
+      return "bg-destructive text-destructive-foreground border-transparent";
     default:
-      return "border-border bg-muted text-muted-foreground";
+      return "border-border bg-background text-muted-foreground";
   }
 }
 

@@ -1415,133 +1415,113 @@ export default function DashboardActions({
         <Button
           type="button"
           variant="outline"
-          className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setWeekOverviewOpen(true)}
         >
-          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
-            <FolderKanban className="h-5 w-5" />
-          </span>
+          <FolderKanban className="h-7 w-7" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.thisWeek}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => {
             emitNavigationStart();
             router.push("/sales?tab=deliveries");
           }}
         >
-          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
-            <ShoppingCart className="h-5 w-5" />
-          </span>
+          <ShoppingCart className="h-7 w-7" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.ordersByCity}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setProjectOpen(true)}
         >
-          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
-            <FolderKanban className="h-5 w-5" />
-          </span>
+          <FolderKanban className="h-7 w-7" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.projectNew}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => {
             setOrderActionLocked(false);
             setOrderOpen(true);
           }}
         >
-          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
-            <ShoppingCart className="h-5 w-5" />
-          </span>
+          <ShoppingCart className="h-7 w-7" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.orderNew}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setExpenseOpen(true)}
         >
-          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
-            <ArrowDownCircle className="h-5 w-5" />
-          </span>
+          <ArrowDownCircle className="h-7 w-7 text-destructive" strokeWidth={2.4} />
           <span className="font-semibold">{HEBREW.expenseNew}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setIncomeOpen(true)}
         >
-          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
-            <ArrowUpCircle className="h-5 w-5" />
-          </span>
+          <ArrowUpCircle className="h-7 w-7 text-success" strokeWidth={2.4} />
           <span className="font-semibold">{HEBREW.incomeNew}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => {
             setProjectCreateCustomerReturnToProject(false);
             setProjectCreateCustomerOpen(true);
           }}
         >
-          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
-            <UserPlus className="h-5 w-5" />
-          </span>
+          <UserPlus className="h-7 w-7" strokeWidth={2.2} />
           <span className="font-semibold">לקוח חדש</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setTaskOpen(true)}
         >
-          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
-            <ListTodo className="h-5 w-5" />
-          </span>
+          <ListTodo className="h-7 w-7" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.taskNew}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => void startOwnSession()}
           disabled={Boolean(currentOpenSession) || selfSessionSubmitting}
         >
-          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
-            <PlayCircle className="h-5 w-5" />
-          </span>
+          <PlayCircle className="h-7 w-7" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.selfSessionStart}</span>
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-20 flex-col items-center justify-between rounded-2xl p-3 text-center sm:h-24 sm:items-start sm:text-right"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => {
             resetManualSessionForm();
             setManualSessionOpen(true);
           }}
         >
-          <span className="rounded-xl bg-primary/8 p-2 text-primary shadow-sm">
-            <Clock3 className="h-5 w-5" />
-          </span>
+          <Clock3 className="h-7 w-7" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.manualSessionNew}</span>
         </Button>
       </AdaptiveGrid>

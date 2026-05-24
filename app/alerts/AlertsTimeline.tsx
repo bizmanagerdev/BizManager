@@ -160,7 +160,7 @@ export default function AlertsTimeline({
                   ? "bg-primary text-primary-foreground"
                   : bucket.isTomorrow
                     ? "bg-primary/15 text-primary"
-                    : "bg-muted text-muted-foreground"
+                    : "bg-background text-muted-foreground"
               }`}
             >
               {bucket.isToday ? "היום" : bucket.isTomorrow ? "מחר" : null}

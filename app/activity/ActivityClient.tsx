@@ -36,10 +36,10 @@ function formatFullDate(isoString: string | null) {
 function actionColor(action: string) {
   switch (action) {
     case "create": return "bg-success-soft text-success-soft-foreground";
-    case "delete": return "bg-destructive-soft text-destructive";
+    case "delete": return "bg-destructive text-destructive-foreground";
     case "status_changed": return "bg-info-soft text-info-soft-foreground";
     case "upload": return "bg-accent text-accent-foreground";
-    default: return "bg-muted text-muted-foreground";
+    default: return "bg-background text-muted-foreground";
   }
 }
 

@@ -1009,7 +1009,7 @@ export default function FinancialPageClient({
                               <span className={cn(
                                 "inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium",
                                 (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
-                                (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/10 text-warning" :
+                                (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
                                 "border-destructive/40 bg-destructive/10 text-destructive"
                               )}>
                                 {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקי" : "לא שולם"}
@@ -1154,7 +1154,7 @@ export default function FinancialPageClient({
                             <span className={cn(
                               "rounded-full border px-2 py-0.5 font-medium",
                               (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
-                              (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/10 text-warning" :
+                              (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
                               "border-destructive/40 bg-destructive/10 text-destructive"
                             )}>
                               {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקי" : "לא שולם"}
@@ -1289,7 +1289,7 @@ export default function FinancialPageClient({
                               <span className={cn(
                                 "inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium",
                                 (entry.paymentStatus ?? "not_paid") === "paid" ? "border-success/40 bg-success/10 text-success" :
-                                (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/10 text-warning" :
+                                (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
                                 "border-destructive/40 bg-destructive/10 text-destructive"
                               )}>
                                 {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקי" : "לא שולם"}

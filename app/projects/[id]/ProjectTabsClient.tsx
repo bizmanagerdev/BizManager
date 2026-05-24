@@ -251,7 +251,7 @@ function customerPaymentStatusLabel(status: CustomerPaymentStatus) {
 }
 
 function customerPaymentStatusBadgeClasses(status: CustomerPaymentStatus) {
-  if (status === "unpriced") return "border-border bg-muted text-muted-foreground";
+  if (status === "unpriced") return "border-border bg-background text-muted-foreground";
   return paymentStatusClasses(status);
 }
 

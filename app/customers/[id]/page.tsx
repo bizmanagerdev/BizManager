@@ -44,11 +44,11 @@ function rowDateValue(value: string | null) {
 function customerFlagBadgeClass(tone: "success" | "danger" | "neutral") {
   switch (tone) {
     case "success":
-      return "border-success/30 bg-success-soft text-success-soft-foreground";
+      return "bg-success text-success-foreground border-transparent";
     case "danger":
-      return "border-destructive/30 bg-destructive-soft text-destructive";
+      return "bg-destructive text-destructive-foreground border-transparent";
     default:
-      return "border-border bg-muted text-muted-foreground";
+      return "border-border bg-background text-muted-foreground";
   }
 }
 

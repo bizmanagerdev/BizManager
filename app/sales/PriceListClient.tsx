@@ -173,8 +173,8 @@ export default function PriceListClient({
       textSubtle: "#7789D6",     // primary-8 subtle
       textOnNavyStrong: "#FFFFFF",
       textOnNavyMuted: "#B8C2F5", // primary-10 on dark
-      successBg: "#DCFCE7",      // success-soft
-      successText: "#15803D",    // success-strong
+      successBg: "#DCF4E3",      // success-soft (current green-9)
+      successText: "#1CB452",    // success anchor (current green-4)
       mutedBg: "#EEF1FB",
       mutedText: "#5E6FB8",
       border: "#DDE3FA",         // primary-10-ish border

@@ -117,17 +117,17 @@ export function orderStatusClasses(status: string) {
     case "delivered":
     case "completed":
     case "closed":
-      return "border-success/30 bg-success-soft text-success-soft-foreground";
+      return "bg-success text-success-foreground border-transparent";
     case "draft":
-      return "border-destructive/30 bg-destructive-soft text-destructive";
+      return "bg-destructive text-destructive-foreground border-transparent";
     case "confirmed":
     case "processing":
     case "out_for_delivery":
-      return "border-warning/40 bg-warning-soft text-warning-soft-foreground";
+      return "bg-warning text-warning-foreground border-transparent";
     case "cancelled":
-      return "border-border bg-muted text-muted-foreground";
+      return "border-border bg-background text-muted-foreground";
     default:
-      return "border-warning/40 bg-warning-soft text-warning-soft-foreground";
+      return "bg-warning text-warning-foreground border-transparent";
   }
 }
 
@@ -153,10 +153,10 @@ function SummaryInfo({
 }) {
   const toneClass =
     tone === "red"
-      ? "border-destructive/30 bg-destructive-soft text-destructive"
+      ? "bg-destructive text-destructive-foreground border-transparent"
       : tone === "emerald"
-        ? "border-success/30 bg-success-soft text-success-soft-foreground"
-        : "border-info/30 bg-info-soft text-info-soft-foreground";
+        ? "bg-success text-success-foreground border-transparent"
+        : "bg-info text-info-foreground border-transparent";
 
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-border/60 bg-background/80 p-3">
@@ -189,7 +189,7 @@ function ExpandableSection({
       <summary className="cursor-pointer list-none">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-info/30 bg-info-soft text-info-soft-foreground">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border bg-info text-info-foreground border-transparent">
               <Icon className="h-4 w-4" />
             </div>
             <div>

@@ -17,14 +17,14 @@ const badgeVariants = cva(
         warning: "border-transparent bg-warning text-warning-foreground",
         info: "border-transparent bg-info text-info-foreground",
         destructive: "border-transparent bg-destructive text-destructive-foreground",
-        neutral: "border-transparent bg-primary-4 text-white",
+        neutral: "border-border bg-background text-muted-foreground",
 
         /* Soft pill variants — light tinted bg + dark colored text + colored border (default for status badges) */
         "success-soft": "border-success bg-success-soft text-success-soft-foreground",
         "warning-soft": "border-warning bg-warning-soft text-warning-soft-foreground",
         "info-soft": "border-info bg-info-soft text-info-soft-foreground",
         "destructive-soft": "border-destructive bg-destructive-soft text-destructive-soft-foreground",
-        "neutral-soft": "border-border bg-muted text-muted-foreground",
+        "neutral-soft": "border-border bg-background text-muted-foreground",
       },
     },
     defaultVariants: {

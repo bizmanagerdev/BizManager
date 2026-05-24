@@ -116,7 +116,7 @@ export function ObligationsTab({ data, canManageExpenses }: Props) {
                         {expense.source_label ? <span>{expense.source_label}</span> : null}
                         <span className={cn(
                           "rounded-full border px-1.5 py-0.5 font-medium",
-                          status === "partial" ? "border-warning/40 bg-warning/10 text-warning" : "border-destructive/40 bg-destructive/10 text-destructive"
+                          status === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" : "border-destructive/40 bg-destructive/10 text-destructive"
                         )}>
                           {paymentStatusLabel(status)}
                         </span>
@@ -229,7 +229,7 @@ export function ObligationsTab({ data, canManageExpenses }: Props) {
                       {order.order_date ? <span dir="ltr">{formatDate(order.order_date)}</span> : null}
                       <span className={cn(
                         "rounded-full border px-1.5 py-0.5 font-medium",
-                        order.payment_status === "partial" ? "border-warning/40 bg-warning/10 text-warning" : "border-destructive/40 bg-destructive/10 text-destructive"
+                        order.payment_status === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" : "border-destructive/40 bg-destructive/10 text-destructive"
                       )}>
                         {paymentStatusLabel(order.payment_status)}
                       </span>

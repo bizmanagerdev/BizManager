@@ -45,14 +45,14 @@ function statusLabel(status: string | null | undefined) {
 }
 
 function statusClass(status: string | null | undefined, hasError: boolean) {
-  if (hasError) return "border-destructive/30 bg-destructive-soft text-destructive";
+  if (hasError) return "bg-destructive text-destructive-foreground border-transparent";
   switch (status) {
     case "matched":
-      return "border-success/30 bg-success-soft text-success-soft-foreground";
+      return "bg-success text-success-foreground border-transparent";
     case "manual_review":
-      return "border-warning/40 bg-warning-soft text-warning-soft-foreground";
+      return "bg-warning text-warning-foreground border-transparent";
     default:
-      return "border-border bg-muted text-muted-foreground";
+      return "border-border bg-background text-muted-foreground";
   }
 }
 

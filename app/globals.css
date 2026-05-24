@@ -24,62 +24,54 @@
     --primary-9: 151 166 234;    /* #97A6EA */
     --primary-10: 184 194 245;   /* #B8C2F5 */
 
-    /* Secondary — purple */
-    --secondary-1: 42 19 102;    /* #2A1366 */
-    --secondary-2: 58 26 138;    /* #3A1A8A */
-    --secondary-3: 74 32 174;    /* #4A20AE */
-    --secondary-4: 91 42 204;    /* #5B2ACC */
-    --secondary-5: 112 63 224;   /* #703FE0  ← base (one tone lighter) */
-    --secondary-6: 133 85 234;   /* #8555EA */
-    --secondary-7: 155 108 242;  /* #9B6CF2 */
-    --secondary-8: 176 138 246;  /* #B08AF6 */
-    --secondary-9: 198 168 250;  /* #C6A8FA */
-    --secondary-10: 222 200 253; /* #DEC8FD */
+    /* Secondary — darker sky blue (was purple) */
+    --secondary-1: 8 47 73;      /* #082F49 (sky-950) */
+    --secondary-2: 12 74 110;    /* #0C4A6E (sky-900) */
+    --secondary-3: 7 89 133;     /* #075985 (sky-800) */
+    --secondary-4: 3 105 161;    /* #0369A1 (sky-700) */
+    --secondary-5: 3 105 161;    /* #0369A1  ← anchor (sky-700, distinct from info sky-500) */
+    --secondary-6: 2 132 199;    /* #0284C7 (sky-600) */
+    --secondary-7: 56 189 248;   /* #38BDF8 (sky-400) */
+    --secondary-8: 125 211 252;  /* #7DD3FC (sky-300) */
+    --secondary-9: 186 230 253;  /* #BAE6FD (sky-200) */
+    --secondary-10: 224 242 254; /* #E0F2FE (sky-100) */
 
-    /* Blue — info */
-    --blue-4: 1 205 255;         /* #01CDFF  ← base */
-    --blue-5: 51 214 255;        /* #33D6FF */
-    --blue-6: 102 223 255;       /* #66DFFF */
-    --blue-7: 153 232 255;       /* #99E8FF */
-    --blue-8: 179 238 255;       /* #B3EEFF */
-    --blue-9: 204 245 255;       /* #CCF5FF */
-    --blue-10: 230 251 255;      /* #E6FBFF */
+    /* === FUNCTIONAL COLOR ANCHORS (one shade per family) ===
+       Each color has exactly ONE "anchor" (-4) — the color you see as the
+       border + text in soft pills, the bg of solid pills, the chart series.
+       The lighter shades (-8/-9/-10) are derived for tinted backgrounds.
+       This is what guarantees visual consistency across the whole system. */
 
-    /* Green — lively grass green (vibrant, not neon) */
-    --green-4: 34 197 94;        /* #22C55E  ← base */
-    --green-5: 74 222 128;       /* #4ADE80 */
-    --green-6: 134 239 172;      /* #86EFAC */
-    --green-7: 187 247 208;      /* #BBF7D0 */
-    --green-8: 220 252 231;      /* #DCFCE7 */
-    --green-9: 240 253 244;      /* #F0FDF4 */
-    --green-10: 247 253 248;     /* #F7FDF8 */
+    /* Blue — info anchor */
+    --blue-4: 6 126 233;         /* #067EE9  ← anchor */
+    --blue-8: 184 217 251;       /* #B8D9FB */
+    --blue-9: 219 234 254;       /* #DBEAFE */
+    --blue-10: 239 245 254;      /* #EFF5FE */
 
-    /* Yellow — warning */
-    --yellow-4: 238 219 80;      /* #EEDB50  ← base */
-    --yellow-5: 242 225 109;     /* #F2E16D */
-    --yellow-6: 246 233 138;     /* #F6E98A */
-    --yellow-7: 249 241 168;     /* #F9F1A8 */
-    --yellow-8: 252 246 197;     /* #FCF6C5 */
-    --yellow-9: 254 250 207;     /* #FEFACF */
-    --yellow-10: 255 253 230;    /* #FFFDE6 */
+    /* Green — success anchor (Spotify green, slightly tempered) */
+    --green-4: 28 180 82;        /* #1CB452  ← anchor */
+    --green-8: 184 229 197;      /* #B8E5C5 */
+    --green-9: 220 244 227;      /* #DCF4E3 */
+    --green-10: 243 250 246;     /* #F3FAF6 */
 
-    /* Orange — accent / pending */
-    --orange-4: 240 116 46;      /* #F0742E  ← base */
-    --orange-5: 244 143 84;      /* #F48F54 */
-    --orange-6: 247 170 120;     /* #F7AA78 */
-    --orange-7: 249 195 156;     /* #F9C39C */
-    --orange-8: 251 221 191;     /* #FBDDBF */
-    --orange-9: 253 234 216;     /* #FDEAD8 */
-    --orange-10: 255 242 232;    /* #FFF2E8 */
+    /* Warning anchor — #FF9232 replaces both the prior yellow AND orange.
+       Yellow and orange in the palette now both point to this single hue
+       for a unified warm-warning color. */
+    --yellow-4: 255 146 50;      /* #FF9232  ← anchor */
+    --yellow-8: 255 207 168;     /* #FFCFA8 */
+    --yellow-9: 255 226 199;     /* #FFE2C7 */
+    --yellow-10: 255 240 224;    /* #FFF0E0 */
 
-    /* Red — pure red (vibrant, no orange, no pink) */
-    --red-4: 220 38 38;          /* #DC2626  ← base */
-    --red-5: 239 68 68;          /* #EF4444 */
-    --red-6: 248 113 113;        /* #F87171 */
-    --red-7: 252 165 165;        /* #FCA5A5 */
-    --red-8: 254 202 202;        /* #FECACA */
-    --red-9: 254 226 226;        /* #FEE2E2 */
-    --red-10: 254 242 242;       /* #FEF2F2 */
+    --orange-4: 255 146 50;      /* #FF9232  same as yellow — unified warm */
+    --orange-8: 255 207 168;     /* #FFCFA8 */
+    --orange-9: 255 226 199;     /* #FFE2C7 */
+    --orange-10: 255 240 224;    /* #FFF0E0 */
+
+    /* Red — destructive anchor */
+    --red-4: 228 19 18;          /* #E41312  ← anchor */
+    --red-8: 245 162 161;        /* #F5A2A1 */
+    --red-9: 250 200 199;        /* #FAC8C7 */
+    --red-10: 252 227 227;       /* #FCE3E3 */
 
     /* Neutrals */
     --white: 255 255 255;
@@ -127,33 +119,42 @@
        --blue-4) stay in the palette for chart series and indicator use.
        =========================================================== */
 
-    /* Destructive — red */
-    --destructive: var(--red-4);                  /* #DC2626 — solid bg + border */
-    --destructive-foreground: var(--white);       /* text on solid */
-    --destructive-soft: 254 226 226;              /* #FEE2E2 — light pink soft bg */
-    --destructive-soft-foreground: 153 27 27;     /* #991B1B — dark red text on soft */
-    --destructive-strong: 153 27 27;              /* #991B1B — dark red for inline text */
+    /* === SEMANTIC STATUS TOKENS ===
+       BOLD style: solid colored bg + white text everywhere (yellow uses
+       dark navy text — only readable option). Soft tokens are aliased to
+       the solid versions so legacy soft-pill usages also render bold. */
 
-    /* Success — green */
-    --success: 21 128 61;                         /* #15803D — dark green bg + border */
+    /* Destructive — solid red (matches the rest of the bold badge family) */
+    --destructive: var(--red-4);
+    --destructive-foreground: var(--white);
+    --destructive-soft: var(--red-4);
+    --destructive-soft-foreground: var(--white);
+    --destructive-strong: var(--red-4);
+
+    /* Success — solid green */
+    --success: var(--green-4);
     --success-foreground: var(--white);
-    --success-soft: 220 252 231;                  /* #DCFCE7 — light green soft bg */
-    --success-soft-foreground: 21 128 61;         /* #15803D — dark green text on soft */
-    --success-strong: 21 128 61;                  /* #15803D — dark green for inline text */
+    --success-soft: var(--green-4);
+    --success-soft-foreground: var(--white);
+    --success-strong: var(--green-4);
 
-    /* Warning — amber */
-    --warning: 180 83 9;                          /* #B45309 — dark amber bg + border */
+    /* Warning — solid yellow (#FFE62D) with WHITE text everywhere on the bg
+       for consistency with the other bold status badges. White on yellow is
+       very low contrast — accepted by user preference. */
+    --warning: var(--yellow-4);
     --warning-foreground: var(--white);
-    --warning-soft: 254 243 199;                  /* #FEF3C7 — light amber soft bg */
-    --warning-soft-foreground: 146 64 14;         /* #92400E — dark amber text on soft */
-    --warning-strong: 146 64 14;                  /* #92400E — dark amber for inline text */
+    --warning-soft: var(--yellow-4);
+    --warning-soft-foreground: var(--white);
+    /* -strong is text-on-WHITE (e.g. currency labels). Pure yellow text on
+       white is unreadable, so this uses dark navy instead. */
+    --warning-strong: var(--primary-3);
 
-    /* Info — cyan */
-    --info: 14 116 144;                           /* #0E7490 — dark cyan bg + border */
+    /* Info — solid blue */
+    --info: var(--blue-4);
     --info-foreground: var(--white);
-    --info-soft: 207 250 254;                     /* #CFFAFE — light cyan soft bg */
-    --info-soft-foreground: 21 94 117;            /* #155E75 — dark cyan text on soft */
-    --info-strong: 21 94 117;                     /* #155E75 — dark cyan for inline text */
+    --info-soft: var(--blue-4);
+    --info-soft-foreground: var(--white);
+    --info-strong: var(--blue-4);
 
     --border: var(--primary-10);
     --input: var(--primary-10);
@@ -172,7 +173,7 @@
 
     /* Chart palette — numbered for semantic continuity with existing chart code:
        1=navy (neutral), 2=red (negative), 3=blue (info), 4=green (positive/inflow),
-       5=green (positive — balance/breakdown), 6=orange (accent), 7=purple (accent 2) */
+       5=green (positive — balance/breakdown), 6=orange (accent), 7=sky (accent 2) */
     --chart-1: var(--primary-4);
     --chart-2: var(--red-4);
     --chart-3: var(--blue-4);

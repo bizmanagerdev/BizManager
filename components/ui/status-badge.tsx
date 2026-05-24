@@ -3,12 +3,12 @@ import { cn } from "@/lib/utils";
 import { getStatusColor, getStatusLabel, type StatusBadgeType } from "@/lib/ui/status-colors";
 import type { StatusColor } from "@/lib/ui/status-colors";
 
-const VARIANT_BY_COLOR: Record<StatusColor, "success-soft" | "warning-soft" | "destructive-soft" | "info-soft" | "neutral-soft"> = {
-  success: "success-soft",
-  warning: "warning-soft",
-  danger: "destructive-soft",
-  info: "info-soft",
-  neutral: "neutral-soft",
+const VARIANT_BY_COLOR: Record<StatusColor, "success" | "warning" | "destructive" | "info" | "neutral"> = {
+  success: "success",
+  warning: "warning",
+  danger: "destructive",
+  info: "info",
+  neutral: "neutral",
 };
 
 export function StatusBadge({

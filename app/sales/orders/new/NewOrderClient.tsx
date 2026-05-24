@@ -764,7 +764,7 @@ export default function NewOrderClient({
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-medium">לקוח נבחר: {selectedCustomer.name}</p>
                   {selectedCustomer.requiresPrepayment ? (
-                    <span className="rounded-full bg-destructive-soft px-2 py-0.5 text-xs font-medium text-destructive">
+                    <span className="rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-destructive-foreground">
                       תשלום מראש
                     </span>
                   ) : null}
@@ -1272,7 +1272,7 @@ export default function NewOrderClient({
               </div>
 
               {selectedCustomer?.requiresPrepayment ? (
-                <div className="rounded-md border border-destructive/30 bg-destructive-soft p-3 text-sm text-destructive">
+                <div className="rounded-md border border-destructive bg-destructive p-3 text-sm text-destructive-foreground">
                   לקוח זה מסומן לתשלום מראש, ולכן אי אפשר לשמור את ההזמנה כל עוד נשארת יתרה פתוחה.
                 </div>
               ) : null}
