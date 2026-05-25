@@ -68,7 +68,15 @@ export default function ProjectsCalendar({
           start: toDateOnly(e.startDate),
           end: toDateOnly(e.endDate) ?? toDateOnly(e.startDate),
         }))
-        .filter((e) => e.start),
+        .filter((e) => {
+          if (!e.start) return false;
+          if (e.kind === "project") {
+            const end = e.end ?? e.start;
+            const days = (end.getTime() - e.start.getTime()) / 86_400_000;
+            return days < 7;
+          }
+          return true;
+        }),
     [entries]
   );
 
@@ -92,7 +100,7 @@ export default function ProjectsCalendar({
         <button
           type="button"
           onClick={prevMonth}
-          className="rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-muted/40"
+          className="rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-secondary/10"
         >
           ›
         </button>
@@ -101,7 +109,7 @@ export default function ProjectsCalendar({
           <button
             type="button"
             onClick={goToday}
-            className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted/40"
+            className="rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-secondary/10"
           >
             היום
           </button>
@@ -109,7 +117,7 @@ export default function ProjectsCalendar({
         <button
           type="button"
           onClick={nextMonth}
-          className="rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-muted/40"
+          className="rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-secondary/10"
         >
           ‹
         </button>
@@ -123,7 +131,7 @@ export default function ProjectsCalendar({
       </div>
 
       {/* Day cells */}
-      <div className="grid grid-cols-7 gap-px rounded-xl border bg-border overflow-hidden">
+      <div className="grid grid-cols-7 gap-px rounded-xl border bg-secondary/30 overflow-hidden">
         {calendarDays.map((day) => {
           const inMonth = day.getMonth() === monthDate.getMonth();
           const isToday = isSameDay(day, today);
@@ -138,7 +146,7 @@ export default function ProjectsCalendar({
               type="button"
               onClick={() => setSelectedDate(day)}
               className={`flex flex-col items-center gap-1 bg-background px-1 py-2 transition-colors ${
-                isSelected ? "bg-primary/8" : "hover:bg-muted/40"
+                isSelected ? "bg-primary/8" : "hover:bg-secondary/10"
               } ${!inMonth ? "opacity-35" : ""}`}
             >
               {/* Day number */}
@@ -184,7 +192,7 @@ export default function ProjectsCalendar({
       </div>
 
       {/* Selected day panel */}
-      <div className="rounded-2xl border bg-muted/20 p-4">
+      <div className="rounded-2xl border bg-secondary/10 p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
             <div className="font-semibold">{fmtFullDay(selectedDate)}</div>

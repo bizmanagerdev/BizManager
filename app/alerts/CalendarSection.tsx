@@ -20,7 +20,7 @@ export default function CalendarSection({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-base">לוח אירועים</CardTitle>
-          <div className="flex rounded-xl border p-0.5 text-sm">
+          <div className="flex rounded-xl border bg-secondary/40 p-0.5 text-sm">
             <button
               type="button"
               onClick={() => setView("timeline")}

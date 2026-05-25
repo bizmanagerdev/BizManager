@@ -187,9 +187,7 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
           />
         </div>
 
-        <div className="text-xs text-muted-foreground">
-          טיפ: אפשר לחפש גם לפי מספר הזמנה חלקי, לדוגמה `a1b2c3d4`.
-        </div>
+
       </div>
 
       <div className="text-sm text-muted-foreground">נמצאו {filteredRows.length} הזמנות</div>

@@ -26,7 +26,7 @@ const SEVERITY_CONFIG = {
   },
   info: {
     border: "border-border",
-    bg: "bg-muted/20",
+    bg: "bg-secondary/10",
     dot: "bg-muted-foreground/40",
     badge: "secondary" as const,
   },
@@ -147,7 +147,7 @@ function InfoAlertChip({ alert }: { alert: AlertItem }) {
   return (
     <Link
       href={alert.href}
-      className="flex items-center gap-2 rounded-xl border bg-muted/30 px-3 py-2 text-sm transition-colors hover:bg-muted/60"
+      className="flex items-center gap-2 rounded-xl border bg-secondary/10 px-3 py-2 text-sm transition-colors hover:bg-secondary/20"
     >
       <span className="text-muted-foreground">{alert.title}</span>
       <Badge variant="secondary">{alert.count}</Badge>
