@@ -41,25 +41,9 @@ type ContactDraft = {
   active: boolean;
 };
 
-export const CREATE_CUSTOMER_CITY_OPTIONS = [
-  "ירושלים",
-  "בני-ברק",
-  "אלעד",
-  "ביתר עילית",
-  "מודיעין עילית",
-  "בית שמש",
-  "אשדוד",
-  "דימונה",
-  "מירון",
-  "תל אביב",
-  "פתח תקווה",
-  "חיפה",
-  "נתניה",
-  "באר שבע",
-  "קרית גת",
-  "ראשון לציון",
-  "אחר",
-];
+import { CITY_OPTIONS } from "@/lib/ui/cities";
+
+export const CREATE_CUSTOMER_CITY_OPTIONS = CITY_OPTIONS;
 
 function makeEmptyContact(): ContactDraft {
   return {

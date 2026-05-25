@@ -1,8 +1,42 @@
-const V = "v8";
+const V = "v9";
 const STATIC_CACHE = `bizh-static-${V}`;   // immutable _next/static chunks
 const PAGES_CACHE  = `bizh-pages-${V}`;    // navigation responses
 const API_CACHE    = `bizh-api-${V}`;      // /api GET responses
 const ALL_CACHES   = [STATIC_CACHE, PAGES_CACHE, API_CACHE];
+
+// Detect development environments. The SW must NEVER run on localhost / Vercel
+// preview deployments — it caches stale Next.js dev chunks and HTML which
+// causes chronic hydration mismatches. If we detect a dev host, self-destruct.
+const IS_DEV_HOST =
+  self.location.hostname === "localhost" ||
+  self.location.hostname === "127.0.0.1" ||
+  self.location.hostname.endsWith(".local") ||
+  self.location.hostname.includes("vercel.app");
+
+if (IS_DEV_HOST) {
+  self.addEventListener("install", () => self.skipWaiting());
+  self.addEventListener("activate", (event) => {
+    event.waitUntil(
+      (async () => {
+        // Drop every cache this SW (or any prior version) ever created.
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+        // Unregister self.
+        await self.registration.unregister();
+        // Force every controlled tab to reload from the network.
+        const clients = await self.clients.matchAll();
+        for (const client of clients) {
+          if ("navigate" in client) {
+            try { await client.navigate(client.url); } catch {}
+          }
+        }
+      })()
+    );
+  });
+  // Pass-through every fetch — never cache, never serve from cache.
+  self.addEventListener("fetch", () => {});
+  // Stop here — don't register any of the production handlers below.
+} else {
 
 const PRECACHE = [
   "/",
@@ -239,3 +273,5 @@ self.addEventListener("fetch", (event) => {
     )
   );
 });
+
+} // end of IS_DEV_HOST else (production branch)

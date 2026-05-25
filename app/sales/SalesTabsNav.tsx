@@ -58,9 +58,10 @@ function triggerClassName(isActive: boolean) {
     : `${base} text-muted-foreground hover:bg-secondary hover:text-secondary-foreground`;
 }
 
-// Mirrors TabsList wrapper from components/ui/tabs.tsx
+// Same trigger styling as Radix TabsList, but sized to content and centered so
+// the bar doesn't stretch across the whole page width.
 const LIST_CLASSES =
-  "inline-flex h-12 w-full items-center justify-start overflow-x-auto rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm";
+  "mx-auto inline-flex h-12 w-fit max-w-full items-center justify-center overflow-x-auto rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm";
 
 export default function SalesTabsNav({
   activeTab,
@@ -80,7 +81,7 @@ export default function SalesTabsNav({
             key={tab.id}
             href={buildTabHref(tab.id, searchParams)}
             aria-current={isActive ? "page" : undefined}
-            className={`flex-1 ${triggerClassName(isActive)}`}
+            className={triggerClassName(isActive)}
             onClick={() => emitNavigationStart()}
           >
             {getTabLabel(tab, counts)}

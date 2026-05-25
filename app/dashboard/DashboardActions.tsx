@@ -31,6 +31,7 @@ import {
 } from "@/lib/payroll";
 import type { FinancialAttachment } from "@/lib/payments";
 import type { CalendarEntry } from "@/lib/projectSchedule";
+import { CITY_OPTIONS } from "@/lib/ui/cities";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -256,25 +257,6 @@ const DASHBOARD_EXPENSE_CATEGORY_OPTIONS = [
   "\u05ea\u05d7\u05d1\u05d5\u05e8\u05d4",
   "\u05d0\u05d5\u05db\u05dc",
   "\u05d0\u05d7\u05e8",
-] as const;
-const CITY_OPTIONS = [
-  "ירושלים",
-  "בני ברק",
-  "אלעד",
-  "ביתר עילית",
-  "מודיעין עילית",
-  "בית שמש",
-  "אשדוד",
-  "דימונה",
-  "מירון",
-  "פתח תקווה",
-  "תל אביב",
-  "חיפה",
-  "נתניה",
-  "באר שבע",
-  "קרית גת",
-  "ראשון לציון",
-  "אחר",
 ] as const;
 const OTHER_EXPENSE_CATEGORY = "\u05d0\u05d7\u05e8";
 const EMPLOYEE_WAGE_CATEGORY = "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3";
