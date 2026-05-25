@@ -448,6 +448,7 @@ export default function DashboardActions({
   const [projectCustomerId, setProjectCustomerId] = useState("");
   const [projectCustomerQuery, setProjectCustomerQuery] = useState("");
   const [projectCustomerOptions, setProjectCustomerOptions] = useState<Row[]>(customers);
+  const [projectCustomerSearchResults, setProjectCustomerSearchResults] = useState<Row[] | null>(null);
   const [projectType, setProjectType] = useState("logistics");
   const [projectStatus, setProjectStatus] = useState("planned");
   const [projectPrice, setProjectPrice] = useState("");
@@ -726,6 +727,7 @@ export default function DashboardActions({
     setProjectName("");
     setProjectCustomerId("");
     setProjectCustomerQuery("");
+    setProjectCustomerSearchResults(null);
     setProjectCustomerOptions(customers);
     setProjectType("logistics");
     setProjectStatus("planned");
@@ -863,9 +865,28 @@ export default function DashboardActions({
   }
 
   const selectedProjectCustomer =
-    projectCustomerOptions.find((customer) => getString(customer, "id") === projectCustomerId) ?? null;
+    projectCustomerOptions.find((customer) => getString(customer, "id") === projectCustomerId) ??
+    (projectCustomerSearchResults ?? []).find((customer) => getString(customer, "id") === projectCustomerId) ??
+    null;
+
+  useEffect(() => {
+    const q = projectCustomerQuery.trim();
+    if (!q) { setProjectCustomerSearchResults(null); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
+        if (!res.ok) return;
+        const json = await res.json() as { customers?: Array<{ id: string; name: string; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
+        setProjectCustomerSearchResults(
+          (json.customers ?? []).map((c) => ({ id: c.id, name: c.name, phone: c.phone ?? null, email: c.email ?? null, contacts: c.contacts ?? [] } as Row))
+        );
+      } catch { /* ignore */ }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [projectCustomerQuery]);
 
   const filteredProjectCustomers = useMemo(() => {
+    if (projectCustomerSearchResults !== null) return projectCustomerSearchResults.slice(0, 50);
     const q = projectCustomerQuery.trim().toLowerCase();
     const qPhone = normalizePhone(projectCustomerQuery);
 
@@ -881,7 +902,7 @@ export default function DashboardActions({
         return name.includes(q) || email.includes(q) || city.includes(q) || address.includes(q) || (qPhone ? phone.includes(qPhone) : false);
       })
       .slice(0, 50);
-  }, [projectCustomerOptions, projectCustomerQuery]);
+  }, [projectCustomerOptions, projectCustomerQuery, projectCustomerSearchResults]);
 
   async function createTask() {
     setTaskError(null);
@@ -1944,14 +1965,13 @@ export default function DashboardActions({
                   </div>
                 ) : null}
 
-                <div className="max-h-64 space-y-2 overflow-auto rounded-md border p-2">
+                <div className="max-h-64 space-y-1.5 overflow-auto rounded-md border p-2">
                   {filteredProjectCustomers.map((customer) => {
                     const id = getString(customer, "id");
                     const name = getFirstString(customer, ["name", "name_for_invoice"]) || HEBREW.customerFallback;
                     const phone = getFirstString(customer, ["phone", "mobile", "tel"]);
-                    const email = getFirstString(customer, ["email"]);
                     const city = getFirstString(customer, ["city"]);
-                    const address = getFirstString(customer, ["address"]);
+                    const matchedContacts = Array.isArray(customer.contacts) ? (customer.contacts as Array<{ full_name: string; phone?: string | null }>) : [];
 
                     return (
                       <button
@@ -1963,21 +1983,25 @@ export default function DashboardActions({
                           setProjectCustomerQuery(name);
                           setProjectError(null);
                         }}
-                        className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
+                        className={`w-full rounded-xl border px-3 py-2 text-right text-sm transition-all duration-200 ${
                           id === projectCustomerId
                             ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
                             : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
                         }`}
                       >
-                        <div className="font-medium">{name}</div>
-                        <div className={`text-xs ${id === projectCustomerId ? "text-primary-foreground/80" : "text-accent-foreground/80"}`}>
-                          {phone ? `טלפון: ${phone}` : "טלפון: -"}
-                          {email ? ` | אימייל: ${email}` : ""}
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                          <span className="font-medium">{name}</span>
+                          {(phone || city) ? (
+                            <span className={`text-xs ${id === projectCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                              · {[phone, city].filter(Boolean).join(" · ")}
+                            </span>
+                          ) : null}
                         </div>
-                        <div className={`text-xs ${id === projectCustomerId ? "text-primary-foreground/80" : "text-accent-foreground/80"}`}>
-                          {city ? `עיר: ${city}` : "עיר: -"}
-                          {address ? ` | כתובת: ${address}` : ""}
-                        </div>
+                        {matchedContacts.length > 0 ? (
+                          <div className={`mt-0.5 text-xs ${id === projectCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                            ← {matchedContacts[0].full_name}{matchedContacts[0].phone ? ` · ${matchedContacts[0].phone}` : ""}
+                          </div>
+                        ) : null}
                       </button>
                     );
                   })}

@@ -73,6 +73,7 @@ export default function CustomersClient({
   currentPage?: number;
 }) {
   const [rows, setRows] = useState(initialRows);
+  const [apiSearchRows, setApiSearchRows] = useState<Row[] | null>(null);
   const [handledInitialEdit, setHandledInitialEdit] = useState(false);
   const [handledInitialAddContact, setHandledInitialAddContact] = useState(false);
   const [query, setQuery] = useState("");
@@ -113,30 +114,51 @@ export default function CustomersClient({
   const [contactPrimary, setContactPrimary] = useState(false);
   const [contactActive, setContactActive] = useState(true);
 
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) { setApiSearchRows(null); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
+        if (!res.ok) return;
+        const json = await res.json() as { customers?: Array<{ id: string; name: string; phone?: string | null; email?: string | null; address?: string | null; requires_prepayment?: boolean; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
+        setApiSearchRows(
+          (json.customers ?? []).map((c) => ({
+            customer_id: c.id, customer_name: c.name, name: c.name,
+            phone: c.phone ?? null, email: c.email ?? null, address: c.address ?? null,
+            requires_prepayment: c.requires_prepayment ?? false,
+            contacts: c.contacts ?? [],
+            orders_count: 0, projects_count: 0, total_sales: 0, total_paid: 0, open_balance: 0,
+          }))
+        );
+      } catch { /* ignore */ }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter((row) => {
-      const hay = [
-        s(row, "customer_name"),
-        s(row, "phone"),
-        s(row, "whatsapp"),
-        s(row, "email"),
-        s(row, "address"),
-      ]
-        .join(" ")
-        .toLowerCase();
-      if (q && !hay.includes(q)) return false;
-      if (withProjects === "yes" && n(row, "projects_count") <= 0) return false;
-      if (withProjects === "no" && n(row, "projects_count") > 0) return false;
-      if (withOrders === "yes" && n(row, "orders_count") <= 0) return false;
-      if (withOrders === "no" && n(row, "orders_count") > 0) return false;
-      if (withDebt === "yes" && n(row, "open_balance") <= 0) return false;
-      if (withDebt === "no" && n(row, "open_balance") > 0) return false;
+    const usingApi = apiSearchRows !== null;
+    const baseRows = usingApi ? apiSearchRows : rows;
+    return baseRows.filter((row) => {
+      if (!usingApi) {
+        const q = query.trim().toLowerCase();
+        const hay = [
+          s(row, "customer_name"), s(row, "phone"), s(row, "whatsapp"), s(row, "email"), s(row, "address"),
+          ...contactsOf(row).flatMap((c) => [s(c, "full_name"), s(c, "phone"), s(c, "email"), s(c, "whatsapp")]),
+        ].join(" ").toLowerCase();
+        if (q && !hay.includes(q)) return false;
+        if (withProjects === "yes" && n(row, "projects_count") <= 0) return false;
+        if (withProjects === "no" && n(row, "projects_count") > 0) return false;
+        if (withOrders === "yes" && n(row, "orders_count") <= 0) return false;
+        if (withOrders === "no" && n(row, "orders_count") > 0) return false;
+        if (withDebt === "yes" && n(row, "open_balance") <= 0) return false;
+        if (withDebt === "no" && n(row, "open_balance") > 0) return false;
+      }
       if (activeOnly === "yes" && row.active === false) return false;
       if (activeOnly === "no" && row.active !== false) return false;
       return true;
     });
-  }, [rows, query, withProjects, withOrders, withDebt, activeOnly]);
+  }, [rows, apiSearchRows, query, withProjects, withOrders, withDebt, activeOnly]);
 
   useEffect(() => {
     setRows(initialRows);

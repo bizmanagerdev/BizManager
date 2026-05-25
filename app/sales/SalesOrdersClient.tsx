@@ -124,9 +124,21 @@ function shouldShowPaymentAction(row: OrderView) {
   return row.remainingBalance > 0.009 || row.totalPaid > row.totalAmount + 0.009;
 }
 
-export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
+export default function SalesOrdersClient({ orders, contacts = [] }: { orders: Row[]; contacts?: Row[] }) {
   const [query, setQuery] = useState("");
   const [paymentSnapshot] = useState(() => new Map<string, number>());
+
+  const contactsByCustomerId = useMemo(() => {
+    const map = new Map<string, Row[]>();
+    for (const c of contacts) {
+      const cid = typeof c.customer_id === "string" ? c.customer_id : "";
+      if (!cid) continue;
+      const list = map.get(cid) ?? [];
+      list.push(c);
+      map.set(cid, list);
+    }
+    return map;
+  }, [contacts]);
 
   const orderRows = useMemo(() => {
     const mappedOrders = orders.map<OrderView | null>((row) => {
@@ -164,15 +176,19 @@ export default function SalesOrdersClient({ orders }: { orders: Row[] }) {
     if (!q) return orderRows;
 
     return orderRows.filter((row) => {
-      return (
+      if (
         row.id.toLowerCase().includes(q) ||
         row.customerName.toLowerCase().includes(q) ||
         (row.customerEmail ?? "").toLowerCase().includes(q) ||
         (row.customerPhone ?? "").toLowerCase().includes(q) ||
         (row.customerCity ?? "").toLowerCase().includes(q)
+      ) return true;
+      return (contactsByCustomerId.get(row.customerId) ?? []).some((c) =>
+        [c.full_name, c.phone, c.email, c.whatsapp]
+          .some((v) => typeof v === "string" && v.toLowerCase().includes(q))
       );
     });
-  }, [orderRows, query]);
+  }, [orderRows, query, contactsByCustomerId]);
 
   return (
     <div className="space-y-4">

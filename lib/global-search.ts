@@ -4,6 +4,7 @@ import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 
 export type GlobalSearchGroupKey =
   | "customers"
+  | "contacts"
   | "projects"
   | "tasks"
   | "orders"
@@ -45,6 +46,7 @@ type Row = Record<string, unknown>;
 
 const GROUP_LABELS: Record<GlobalSearchGroupKey, string> = {
   customers: "לקוחות",
+  contacts: "אנשי קשר",
   projects: "פרויקטים",
   tasks: "משימות",
   orders: "הזמנות",
@@ -324,6 +326,23 @@ function expenseResult(row: Row): GlobalSearchResult | null {
   };
 }
 
+function contactResult(row: Row, customerNameById: Map<string, string>): GlobalSearchResult | null {
+  const id = text(row.id);
+  const customerId = text(row.customer_id);
+  const name = text(row.full_name);
+  if (!id || !customerId || !name) return null;
+  const customerName = customerNameById.get(customerId) ?? null;
+  return {
+    id,
+    group: "contacts",
+    groupLabel: GROUP_LABELS.contacts,
+    title: name,
+    subtitle: customerName,
+    meta: [text(row.role), text(row.phone), text(row.email)].filter(Boolean),
+    href: `/customers/${encodeURIComponent(customerId)}`,
+  };
+}
+
 function userResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   const name = text(row.full_name) || text(row.email);
@@ -409,6 +428,12 @@ export async function performGlobalSearch(
           .order("full_name", { ascending: true })
           .range(0, fetchSize - 1)
       : Promise.resolve({ data: [], error: null }),
+    supabase
+      .from("contacts")
+      .select("id,customer_id,full_name,role,phone,email,whatsapp")
+      .eq("active", true)
+      .order("full_name", { ascending: true })
+      .range(0, fetchSize - 1),
   ] as const;
 
   const [
@@ -422,6 +447,7 @@ export async function performGlobalSearch(
     paymentsResult,
     expensesResult,
     usersResult,
+    contactsResult,
   ] = await Promise.all(requests);
 
   const errors = [
@@ -435,6 +461,7 @@ export async function performGlobalSearch(
     paymentsResult.error,
     expensesResult.error,
     usersResult.error,
+    contactsResult.error,
   ].filter(Boolean);
 
   if (errors.length > 0) {
@@ -544,8 +571,24 @@ export async function performGlobalSearch(
     (row) => [text(row.full_name), text(row.email), text(row.phone), text(row.role)]
   ).slice(0, limitPerGroup);
 
+  const customerNameById = new Map<string, string>(
+    ((customersResult.data ?? []) as Row[]).map((row) => [
+      text(row.customer_id) || text(row.id),
+      text(row.customer_name),
+    ])
+  );
+
+  const contacts = sortByMatch(
+    ((contactsResult.data ?? []) as Row[]).filter((row) =>
+      includesNormalized([text(row.full_name), text(row.phone), text(row.email), text(row.whatsapp), text(row.role)], query)
+    ),
+    query,
+    (row) => [text(row.full_name), text(row.phone), text(row.email), text(row.role)]
+  ).slice(0, limitPerGroup);
+
   const results = [
     ...(customers.map(customerResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(contacts.map((row) => contactResult(row, customerNameById)).filter(Boolean) as GlobalSearchResult[]),
     ...(projects.map(projectResult).filter(Boolean) as GlobalSearchResult[]),
     ...(tasks.map(taskResult).filter(Boolean) as GlobalSearchResult[]),
     ...(orders.map(orderResult).filter(Boolean) as GlobalSearchResult[]),

@@ -44,6 +44,7 @@ type CustomerOption = {
   city: string | null;
   address: string | null;
   requiresPrepayment: boolean;
+  contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
 };
 
 type ProductOption = {
@@ -132,6 +133,14 @@ function mapCustomerSearchResult(row: Record<string, unknown>): CustomerOption |
   const id = typeof row.id === "string" ? row.id : "";
   if (!id) return null;
 
+  const contacts = Array.isArray(row.contacts)
+    ? (row.contacts as Array<Record<string, unknown>>).map((c) => ({
+        full_name: typeof c.full_name === "string" ? c.full_name : "",
+        phone: typeof c.phone === "string" ? c.phone : null,
+        email: typeof c.email === "string" ? c.email : null,
+      }))
+    : undefined;
+
   return {
     id,
     name: (typeof row.name === "string" && row.name.trim() ? row.name.trim() : null) ?? "לקוח",
@@ -140,6 +149,7 @@ function mapCustomerSearchResult(row: Record<string, unknown>): CustomerOption |
     address: typeof row.address === "string" ? row.address : null,
     city: typeof row.address === "string" ? extractCityFromAddress(row.address) : null,
     requiresPrepayment: row.requires_prepayment === true,
+    contacts,
   };
 }
 
@@ -484,21 +494,9 @@ export default function NewOrderClient({
     [lines]
   );
 
-  const filteredCustomers = useMemo(() => {
-    const q = customerQuery.trim().toLowerCase();
-    const qPhone = normalizePhone(customerQuery);
-    if (!q && !qPhone) return customerOptions.slice(0, 50);
-
-    return customerOptions
-      .filter((customer) => {
-        const byName = customer.name.toLowerCase().includes(q);
-        const byEmail = (customer.email ?? "").toLowerCase().includes(q);
-        const byPhone = (customer.phone ? normalizePhone(customer.phone) : "").includes(qPhone);
-        const byCity = (customer.city ?? "").toLowerCase().includes(q);
-        return byName || byEmail || byCity || (qPhone ? byPhone : false);
-      })
-      .slice(0, 50);
-  }, [customerOptions, customerQuery]);
+  // The API already filters by name/email/phone/address/contacts — return results directly.
+  // Local re-filtering would incorrectly exclude contact-matched customers (whose customer fields don't contain the query).
+  const filteredCustomers = useMemo(() => customerOptions.slice(0, 50), [customerOptions]);
 
   const subtotal = useMemo(
     () =>
@@ -792,24 +790,28 @@ export default function NewOrderClient({
                     setCustomerId(customer.id);
                     setCustomerQuery(customer.name);
                   }}
-                  className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
+                  className={`w-full rounded-xl border px-3 py-2 text-right text-sm transition-all duration-200 ${
                     customer.id === customerId
                       ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
                       : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
                   }`}
                 >
-                  <div className="font-medium">{customer.name}</div>
-                  <div className={`text-xs ${customer.id === customerId ? "text-primary-foreground/80" : "text-accent-foreground/80"}`}>
-                    {customer.phone ? `טלפון: ${customer.phone}` : "טלפון: -"}
-                    {customer.email ? ` | אימייל: ${customer.email}` : ""}
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-medium">{customer.name}</span>
+                    {(customer.phone || customer.city) ? (
+                      <span className={`text-xs ${customer.id === customerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                        · {[customer.phone, customer.city].filter(Boolean).join(" · ")}
+                      </span>
+                    ) : null}
+                    {customer.requiresPrepayment ? (
+                      <span className={`text-xs ${customer.id === customerId ? "text-primary-foreground/80" : "text-destructive"}`}>
+                        · תשלום מראש
+                      </span>
+                    ) : null}
                   </div>
-                  <div className={`text-xs ${customer.id === customerId ? "text-primary-foreground/80" : "text-accent-foreground/80"}`}>
-                    {customer.city ? `עיר: ${customer.city}` : "עיר: -"}
-                    {customer.address ? ` | כתובת: ${customer.address}` : ""}
-                  </div>
-                  {customer.requiresPrepayment ? (
-                    <div className={`mt-2 text-xs font-medium ${customer.id === customerId ? "text-primary-foreground" : "text-destructive"}`}>
-                      לקוח ברשימת תשלום מראש
+                  {(customer.contacts ?? []).length > 0 ? (
+                    <div className={`mt-0.5 text-xs ${customer.id === customerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                      ← {customer.contacts![0].full_name}{customer.contacts![0].phone ? ` · ${customer.contacts![0].phone}` : ""}
                     </div>
                   ) : null}
                 </button>

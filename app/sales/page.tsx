@@ -366,13 +366,18 @@ export default async function SalesPage({
     const hasPreviousPage = ordersPage > 1;
     const hasNextPage = typeof count === "number" ? to + 1 < count : rows.length === PAGE_SIZE;
 
+    const orderCustomerIds = [...new Set(rows.map((r) => (typeof r.customer_id === "string" ? r.customer_id : "")).filter(Boolean))];
+    const { data: orderContacts } = orderCustomerIds.length > 0
+      ? await supabase.from("contacts").select("customer_id,full_name,phone,email,whatsapp").in("customer_id", orderCustomerIds).eq("active", true)
+      : { data: [] as Row[] };
+
     content = (
       <>
         {error ? (
           <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error.message}</p>
         ) : (
           <>
-            <SalesOrdersClient orders={rows} />
+            <SalesOrdersClient orders={rows} contacts={(orderContacts ?? []) as Row[]} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {ordersPage} • מציגים {rows.length} מתוך {totalCount}

@@ -35,7 +35,7 @@ import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialo
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
 
 type ProjectRow = Record<string, unknown>;
-type Option = { id: string; label: string; phone?: string | null; email?: string | null };
+type Option = { id: string; label: string; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
 type SortMode = "recent" | "start_date" | "start_date_desc" | "profit_desc";
 type ProjectsView = "projects" | "quotes" | "closed";
 type ProjectMonthlySummary = {
@@ -284,16 +284,30 @@ export default function ProjectsClient({
   customerOptions,
   managerOptions,
   currentUserId,
+  contacts = [],
 }: {
   initialProjects: ProjectRow[];
   customerOptions: Option[];
   managerOptions: Option[];
   currentUserId?: string;
+  contacts?: ProjectRow[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
   const [projects, setProjects] = useState<ProjectRow[]>(initialProjects);
+
+  const contactsByCustomerId = useMemo(() => {
+    const map = new Map<string, ProjectRow[]>();
+    for (const c of contacts) {
+      const cid = typeof c.customer_id === "string" ? c.customer_id : "";
+      if (!cid) continue;
+      const list = map.get(cid) ?? [];
+      list.push(c);
+      map.set(cid, list);
+    }
+    return map;
+  }, [contacts]);
   const [activeTab, setActiveTab] = useState<ProjectsView>(() =>
     normalizeProjectsView(searchParams.get("view"))
   );
@@ -328,6 +342,7 @@ export default function ProjectsClient({
   const [createAttachmentFiles, setCreateAttachmentFiles] = useState<File[]>([]);
 
   const [customerOptionsState, setCustomerOptionsState] = useState<Option[]>(customerOptions);
+  const [customerSearchResults, setCustomerSearchResults] = useState<Option[] | null>(null);
   const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
@@ -374,7 +389,12 @@ export default function ProjectsClient({
       list = list.filter((row) => {
         const name = projectDisplayName(row).toLowerCase();
         const client = clientDisplayName(row).toLowerCase();
-        return name.includes(q) || client.includes(q);
+        if (name.includes(q) || client.includes(q)) return true;
+        const customerId = typeof row.customer_id === "string" ? row.customer_id : "";
+        return (contactsByCustomerId.get(customerId) ?? []).some((c) =>
+          [c.full_name, c.phone, c.email, c.whatsapp]
+            .some((v) => typeof v === "string" && (v as string).toLowerCase().includes(q))
+        );
       });
     }
 
@@ -393,7 +413,7 @@ export default function ProjectsClient({
     }
 
     return list;
-  }, [activeTab, projects, query, sort, status]);
+  }, [activeTab, projects, query, sort, status, contactsByCustomerId]);
 
   const projectCount = useMemo(
     () => projects.filter((row) => !["quote", "completed"].includes(statusValue(row))).length,
@@ -455,11 +475,27 @@ export default function ProjectsClient({
     return defaultProjectTypeOptions;
   }, []);
 
+  useEffect(() => {
+    const q = createCustomerQuery.trim();
+    if (!q) { setCustomerSearchResults(null); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
+        if (!res.ok) return;
+        const json = await res.json() as { customers?: Array<{ id: string; name: string; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
+        setCustomerSearchResults(
+          (json.customers ?? []).map((c) => ({ id: c.id, label: c.name, phone: c.phone ?? null, email: c.email ?? null, contacts: c.contacts ?? [] }))
+        );
+      } catch { /* ignore */ }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [createCustomerQuery]);
+
   const filteredCustomerOptions = useMemo(() => {
+    if (customerSearchResults !== null) return customerSearchResults.slice(0, 50);
     const q = createCustomerQuery.trim().toLowerCase();
     const qPhone = normalizePhone(createCustomerQuery);
     if (!q && !qPhone) return customerOptionsState.slice(0, 50);
-
     return customerOptionsState
       .filter((customer) => {
         const byName = customer.label.toLowerCase().includes(q);
@@ -468,9 +504,12 @@ export default function ProjectsClient({
         return byName || byEmail || (qPhone ? byPhone : false);
       })
       .slice(0, 50);
-  }, [createCustomerQuery, customerOptionsState]);
+  }, [createCustomerQuery, customerOptionsState, customerSearchResults]);
 
-  const selectedCustomer = customerOptionsState.find((row) => row.id === createCustomerId) ?? null;
+  const selectedCustomer =
+    customerOptionsState.find((row) => row.id === createCustomerId) ??
+    (customerSearchResults ?? []).find((row) => row.id === createCustomerId) ??
+    null;
 
   useEffect(() => {
     const nextView = normalizeProjectsView(searchParams.get("view"));
@@ -641,6 +680,7 @@ export default function ProjectsClient({
       setCreateName("");
       setCreateCustomerId("");
       setCreateCustomerQuery("");
+      setCustomerSearchResults(null);
       setCustomerPickerOpen(false);
       setCreateProjectType(projectTypeOptions[0] ?? defaultProjectTypeOptions[0]);
       setCreateStatus(defaultCreateStatusForTab(activeTab));
@@ -1432,7 +1472,7 @@ export default function ProjectsClient({
                       onChange={(e) => setCreateCustomerQuery(e.target.value)}
                       placeholder="חיפוש לפי שם / טלפון / אימייל"
                     />
-                    <div className="max-h-56 space-y-2 overflow-y-auto">
+                    <div className="max-h-56 space-y-1.5 overflow-y-auto">
                       {filteredCustomerOptions.map((customer) => (
                         <button
                           key={customer.id}
@@ -1442,17 +1482,25 @@ export default function ProjectsClient({
                             setCreateCustomerQuery(customer.label);
                             setCustomerPickerOpen(false);
                           }}
-                          className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
+                          className={`w-full rounded-xl border px-3 py-2 text-right text-sm transition-all duration-200 ${
                             customer.id === createCustomerId
                               ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
                               : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
                           }`}
                         >
-                          <div className="font-medium">{customer.label}</div>
-                          <div className={`text-xs ${customer.id === createCustomerId ? "text-primary-foreground/80" : "text-accent-foreground/80"}`}>
-                            {customer.phone ? `טלפון: ${customer.phone}` : "טלפון: -"}
-                            {customer.email ? ` | אימייל: ${customer.email}` : ""}
+                          <div className="flex flex-wrap items-baseline gap-x-2">
+                            <span className="font-medium">{customer.label}</span>
+                            {customer.phone ? (
+                              <span className={`text-xs ${customer.id === createCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                                · {customer.phone}
+                              </span>
+                            ) : null}
                           </div>
+                          {(customer.contacts ?? []).length > 0 ? (
+                            <div className={`mt-0.5 text-xs ${customer.id === createCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                              ← {customer.contacts![0].full_name}{customer.contacts![0].phone ? ` · ${customer.contacts![0].phone}` : ""}
+                            </div>
+                          ) : null}
                         </button>
                       ))}
                       {filteredCustomerOptions.length === 0 ? (

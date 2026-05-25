@@ -112,6 +112,8 @@ export default async function ProjectsPage({
     .map((row) => (typeof row?.id === "string" ? row.id : ""))
     .filter(Boolean);
 
+  const projectCustomerIds = [...new Set(rows.map((row) => (typeof row?.customer_id === "string" ? row.customer_id : "")).filter(Boolean))];
+
   const [{ data: paymentRows }, { data: projectSettingsRows }] = await Promise.all([
     projectIds.length > 0
       ? supabase.from("payments").select("project_id,amount_total").in("project_id", projectIds)
@@ -121,13 +123,17 @@ export default async function ProjectsPage({
       : Promise.resolve({ data: [] as Row[] }),
   ]);
 
-  const { data: financialRows } =
+  const [{ data: financialRows }, { data: projectContacts }] = await Promise.all([
     projectIds.length > 0
-      ? await supabase
+      ? supabase
           .from("project_financials_view")
           .select("id,total_expenses,gross_profit,customer_total_price,expenses_billed")
           .in("id", projectIds)
-      : { data: [] as Row[] };
+      : Promise.resolve({ data: [] as Row[] }),
+    projectCustomerIds.length > 0
+      ? supabase.from("contacts").select("customer_id,full_name,phone,email,whatsapp").in("customer_id", projectCustomerIds).eq("active", true)
+      : Promise.resolve({ data: [] as Row[] }),
+  ]);
 
   const paidTotalByProjectId = new Map<string, number>();
   ((paymentRows ?? []) as Row[]).forEach((row) => {
@@ -261,6 +267,7 @@ export default async function ProjectsPage({
               customerOptions={customerOptionsFinal}
               managerOptions={managerOptions}
               currentUserId={profile.id}
+              contacts={(projectContacts ?? []) as Row[]}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
