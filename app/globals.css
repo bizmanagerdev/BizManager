@@ -9,6 +9,10 @@
 }
 
 @layer base {
+  html {
+    font-size: 17px;
+  }
+
   :root {
     /* === PRIMITIVE TOKENS (raw palette as "R G B" triplets) === */
 

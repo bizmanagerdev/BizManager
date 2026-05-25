@@ -67,7 +67,13 @@ function mapOptions(rows: Row[] | null | undefined, labelKey: "name" | "address"
     .filter((row) => row.id && row.label);
 }
 
-export default async function PayrollPage() {
+export default async function PayrollPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const resolvedParams = (await searchParams) ?? {};
+  const defaultWorkerId = typeof resolvedParams.worker_id === "string" ? resolvedParams.worker_id : undefined;
   const { profile, supabase } = await requireProfile();
 
   if (profile.role !== "admin") {
@@ -157,6 +163,7 @@ export default async function PayrollPage() {
             publicPeriods={periods}
             initiallyUnlocked
             hasPasswordConfigured
+            defaultWorkerId={defaultWorkerId}
           />
         )}
       </div>

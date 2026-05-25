@@ -76,6 +76,7 @@ type Props = {
   publicPeriods: PayrollPeriodRow[];
   initiallyUnlocked: boolean;
   hasPasswordConfigured: boolean;
+  defaultWorkerId?: string;
 };
 
 type SessionFormState = {
@@ -310,6 +311,7 @@ export default function SalaryCenterClient({
   publicPeriods,
   initiallyUnlocked,
   hasPasswordConfigured,
+  defaultWorkerId,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -323,7 +325,7 @@ export default function SalaryCenterClient({
     dateFrom: "",
     dateTo: "",
   });
-  const [selectedWorkerId, setSelectedWorkerId] = useState("");
+  const [selectedWorkerId, setSelectedWorkerId] = useState(defaultWorkerId ?? "");
   const [workerAccessDialogOpen, setWorkerAccessDialogOpen] = useState(false);
   const [agreementDialogOpen, setAgreementDialogOpen] = useState(false);
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);

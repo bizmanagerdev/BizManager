@@ -176,7 +176,7 @@ function customerResult(row: Row): GlobalSearchResult | null {
     title: name,
     subtitle: text(row.address) || null,
     meta: [text(row.phone), text(row.email)].filter(Boolean),
-    href: `/customers?customer_id=${encodeURIComponent(id)}`,
+    href: `/customers/${encodeURIComponent(id)}`,
   };
 }
 
@@ -335,7 +335,7 @@ function userResult(row: Row): GlobalSearchResult | null {
     title: name,
     subtitle: text(row.email) || null,
     meta: [text(row.role), row.active === false ? "לא פעיל" : "פעיל"].filter(Boolean),
-    href: "/payroll",
+    href: `/payroll?worker_id=${encodeURIComponent(id)}`,
   };
 }
 
