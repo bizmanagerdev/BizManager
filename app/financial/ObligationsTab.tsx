@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useState, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink, Pencil } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { cn } from "@/lib/utils";
 import type { ObligationsData, UnpaidExpenseItem } from "@/lib/financial/obligations";
@@ -23,6 +24,10 @@ function paymentStatusLabel(s: string | null) {
   if (s === "paid") return "שולם";
   if (s === "partial") return "חלקי";
   return "לא שולם";
+}
+
+function paymentStatusVariant(s: string | null): "warning" | "destructive" {
+  return s === "partial" ? "warning" : "destructive";
 }
 
 function paymentMethodLabel(m: string | null) {
@@ -67,35 +72,50 @@ export function ObligationsTab({ data, canManageExpenses }: Props) {
     + data.projectBalances.reduce((s, p) => s + p.outstanding, 0);
 
   return (
-    <div dir="rtl" className="space-y-6">
-      {/* Summary row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl border bg-destructive/5 p-3 text-center">
-          <div className="text-xs text-muted-foreground">הוצאות לא שולמו</div>
-          <div className="mt-1 text-base font-semibold text-destructive" dir="ltr">{fmt(totalOwed)}</div>
-        </div>
-        <div className="rounded-xl border bg-success/5 p-3 text-center">
-          <div className="text-xs text-muted-foreground">חייבים לי</div>
-          <div className="mt-1 text-base font-semibold text-success" dir="ltr">{fmt(totalReceivable)}</div>
-        </div>
-        <div className="rounded-xl border bg-muted/30 p-3 text-center">
-          <div className="text-xs text-muted-foreground">הוצאות פתוחות</div>
-          <div className="mt-1 text-base font-semibold">{data.unpaidExpenses.length}</div>
-        </div>
-        <div className="rounded-xl border bg-muted/30 p-3 text-center">
-          <div className="text-xs text-muted-foreground">עסקות פתוחות</div>
-          <div className="mt-1 text-base font-semibold">{data.unpaidOrders.length + data.projectBalances.length}</div>
-        </div>
-      </div>
+    <div dir="rtl" className="space-y-4">
+      {/* Summary cards */}
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="overflow-hidden">
+          <CardContent className="p-5 text-right">
+            <div className="text-sm text-muted-foreground">הוצאות לא שולמו</div>
+            <div dir="ltr" className="mt-2 text-2xl font-semibold tabular-nums text-destructive">{fmt(totalOwed)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">סה״כ חוב פתוח לספקים ועובדים</div>
+          </CardContent>
+        </Card>
+        <Card className="overflow-hidden">
+          <CardContent className="p-5 text-right">
+            <div className="text-sm text-muted-foreground">חייבים לי</div>
+            <div dir="ltr" className="mt-2 text-2xl font-semibold tabular-nums text-success">{fmt(totalReceivable)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">יתרות פתוחות מלקוחות ופרויקטים</div>
+          </CardContent>
+        </Card>
+        <Card className="overflow-hidden">
+          <CardContent className="p-5 text-right">
+            <div className="text-sm text-muted-foreground">הוצאות פתוחות</div>
+            <div dir="ltr" className="mt-2 text-2xl font-semibold tabular-nums">{data.unpaidExpenses.length}</div>
+            <div className="mt-1 text-xs text-muted-foreground">פריטים שטרם שולמו במלואם</div>
+          </CardContent>
+        </Card>
+        <Card className="overflow-hidden">
+          <CardContent className="p-5 text-right">
+            <div className="text-sm text-muted-foreground">עסקות פתוחות</div>
+            <div dir="ltr" className="mt-2 text-2xl font-semibold tabular-nums">{data.unpaidOrders.length + data.projectBalances.length}</div>
+            <div className="mt-1 text-xs text-muted-foreground">הזמנות ופרויקטים עם יתרה לגבייה</div>
+          </CardContent>
+        </Card>
+      </section>
 
       {/* What I owe */}
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base text-right">מה אני חייב</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg text-right">מה אני חייב</CardTitle>
+          <CardDescription className="text-right">הוצאות שטרם שולמו ויתרות שכר לעובדים</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {data.unpaidExpenses.length === 0 && data.workerDebts.length === 0 ? (
-            <div className="px-4 py-6 text-center text-sm text-muted-foreground">אין חובות פתוחים</div>
+            <div className="rounded-xl border border-dashed mx-4 mb-4 px-4 py-8 text-center text-sm text-muted-foreground">
+              אין חובות פתוחים
+            </div>
           ) : (
             <div className="divide-y">
               {data.unpaidExpenses.map((expense) => {
@@ -111,24 +131,21 @@ export function ObligationsTab({ data, canManageExpenses }: Props) {
                           <span className="text-xs text-muted-foreground">{expense.category}</span>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                         {expense.expense_date ? <span dir="ltr">{formatDate(expense.expense_date)}</span> : null}
                         {expense.source_label ? <span>{expense.source_label}</span> : null}
-                        <span className={cn(
-                          "rounded-full border px-1.5 py-0.5 font-medium",
-                          status === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" : "border-destructive/40 bg-destructive/10 text-destructive"
-                        )}>
+                        <Badge className="px-2 py-0.5 text-[11px]" variant={paymentStatusVariant(status)}>
                           {paymentStatusLabel(status)}
-                        </span>
+                        </Badge>
                         {expense.paid_amount != null && expense.paid_amount > 0 ? <span>שולם {fmt(expense.paid_amount)}</span> : null}
                         {method ? <span>{method}</span> : null}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <div className="text-left" dir="ltr">
-                        <div className="font-semibold text-destructive">{fmt(remaining)}</div>
+                        <div className="font-semibold tabular-nums text-destructive">{fmt(remaining)}</div>
                         {status === "partial" ? (
-                          <div className="text-xs text-muted-foreground">{fmt(expense.amount)} סה&quot;כ</div>
+                          <div className="text-xs text-muted-foreground">{fmt(expense.amount)} סה״כ</div>
                         ) : null}
                       </div>
                       {canManageExpenses ? (
@@ -140,6 +157,7 @@ export function ObligationsTab({ data, canManageExpenses }: Props) {
                           onClick={() => setEditingExpense(expense)}
                         >
                           <Pencil className="h-4 w-4" />
+                          <span className="sr-only">עריכת הוצאה</span>
                         </Button>
                       ) : null}
                     </div>
@@ -151,17 +169,18 @@ export function ObligationsTab({ data, canManageExpenses }: Props) {
                 <div key={worker.user_id} className="flex items-start justify-between gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <div className="font-medium">{worker.worker_name ?? "עובד"}</div>
-                    <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                    <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
                       <span>שכר עבודה</span>
                       <span>הרוויח {fmt(worker.earned_amount)}</span>
                       <span>קיבל {fmt(worker.paid_amount)}</span>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <div className="font-semibold text-destructive" dir="ltr">{fmt(worker.owed_amount)}</div>
+                    <div className="font-semibold tabular-nums text-destructive" dir="ltr">{fmt(worker.owed_amount)}</div>
                     <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0">
                       <Link href="/payroll">
                         <ExternalLink className="h-4 w-4" />
+                        <span className="sr-only">מעבר לשכר</span>
                       </Link>
                     </Button>
                   </div>
@@ -174,19 +193,22 @@ export function ObligationsTab({ data, canManageExpenses }: Props) {
 
       {/* What's owed to me */}
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base text-right">מה חייבים לי</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg text-right">מה חייבים לי</CardTitle>
+          <CardDescription className="text-right">יתרות פתוחות מפרויקטים והזמנות שלא שולמו במלואן</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {data.unpaidOrders.length === 0 && data.projectBalances.length === 0 ? (
-            <div className="px-4 py-6 text-center text-sm text-muted-foreground">אין יתרות פתוחות</div>
+            <div className="rounded-xl border border-dashed mx-4 mb-4 px-4 py-8 text-center text-sm text-muted-foreground">
+              אין יתרות פתוחות
+            </div>
           ) : (
             <div className="divide-y">
               {data.projectBalances.map((project) => (
                 <div key={project.id} className="flex items-start justify-between gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <div className="font-medium">{project.name ?? `פרויקט ${project.id.slice(0, 8)}`}</div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                       {project.customer_name ? <span>{project.customer_name}</span> : null}
                       {project.customer_phone ? (
                         <a
@@ -202,10 +224,11 @@ export function ObligationsTab({ data, canManageExpenses }: Props) {
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <div className="font-semibold text-success" dir="ltr">{fmt(project.outstanding)}</div>
+                    <div className="font-semibold tabular-nums text-success" dir="ltr">{fmt(project.outstanding)}</div>
                     <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0">
                       <Link href={`/projects/${project.id}`}>
                         <ExternalLink className="h-4 w-4" />
+                        <span className="sr-only">מעבר לפרויקט</span>
                       </Link>
                     </Button>
                   </div>
@@ -216,7 +239,7 @@ export function ObligationsTab({ data, canManageExpenses }: Props) {
                 <div key={order.order_id} className="flex items-start justify-between gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <div className="font-medium">{order.customer_name ?? `הזמנה ${order.order_id.slice(0, 8)}`}</div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                       {order.customer_phone ? (
                         <a
                           href={`tel:${order.customer_phone}`}
@@ -227,20 +250,18 @@ export function ObligationsTab({ data, canManageExpenses }: Props) {
                         </a>
                       ) : null}
                       {order.order_date ? <span dir="ltr">{formatDate(order.order_date)}</span> : null}
-                      <span className={cn(
-                        "rounded-full border px-1.5 py-0.5 font-medium",
-                        order.payment_status === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" : "border-destructive/40 bg-destructive/10 text-destructive"
-                      )}>
+                      <Badge className="px-2 py-0.5 text-[11px]" variant={paymentStatusVariant(order.payment_status)}>
                         {paymentStatusLabel(order.payment_status)}
-                      </span>
-                      <span>סה&quot;כ {fmt(order.total_amount)}</span>
+                      </Badge>
+                      <span>סה״כ {fmt(order.total_amount)}</span>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <div className="font-semibold text-success" dir="ltr">{fmt(order.remaining_balance)}</div>
+                    <div className="font-semibold tabular-nums text-success" dir="ltr">{fmt(order.remaining_balance)}</div>
                     <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0">
                       <Link href={`/sales?order=${order.order_id}`}>
                         <ExternalLink className="h-4 w-4" />
+                        <span className="sr-only">מעבר להזמנה</span>
                       </Link>
                     </Button>
                   </div>

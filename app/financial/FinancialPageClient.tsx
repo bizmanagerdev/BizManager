@@ -60,6 +60,7 @@ type Props = {
   customerName: string;
   customerPage: string;
   canManageExpenses: boolean;
+  canViewCashflow: boolean;
   recurringProjects: Array<{ id: string; label: string }>;
   recurringOrders: Array<{ id: string; label: string }>;
   recurringProperties: Array<{ id: string; label: string }>;
@@ -305,6 +306,7 @@ export default function FinancialPageClient({
   customerName,
   customerPage,
   canManageExpenses,
+  canViewCashflow,
   recurringProjects,
   recurringOrders,
   recurringProperties,
@@ -319,7 +321,7 @@ export default function FinancialPageClient({
   const [sourceId, setSourceId] = useState(initialFilters.sourceId);
   const [type, setType] = useState(initialFilters.type);
   const [stage, setStage] = useState(initialFilters.stage);
-  const [activeView, setActiveView] = useState<"cashflow" | "obligations">("cashflow");
+  const [activeView, setActiveView] = useState<"cashflow" | "obligations">(canViewCashflow ? "cashflow" : "obligations");
   const [isFilterPending, startFilterTransition] = useTransition();
   const [isRefreshPending, startRefreshTransition] = useTransition();
   const [loadingOverlayTop, setLoadingOverlayTop] = useState(0);
@@ -604,30 +606,32 @@ export default function FinancialPageClient({
         ) : null}
       </section>
 
-      {/* View toggle */}
-      <div className="flex gap-1 rounded-xl border bg-muted/30 p-1 w-fit">
-        {(["cashflow", "obligations"] as const).map((view) => (
-          <button
-            key={view}
-            type="button"
-            onClick={() => setActiveView(view)}
-            className={cn(
-              "rounded-lg px-4 py-1.5 text-sm font-medium transition-colors",
-              activeView === view
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {view === "cashflow" ? "תזרים" : "יתרות"}
-          </button>
-        ))}
-      </div>
+      {/* View toggle — admin only */}
+      {canViewCashflow ? (
+        <div className="flex gap-1 rounded-xl border bg-muted/30 p-1 w-fit">
+          {(["cashflow", "obligations"] as const).map((view) => (
+            <button
+              key={view}
+              type="button"
+              onClick={() => setActiveView(view)}
+              className={cn(
+                "rounded-lg px-4 py-1.5 text-sm font-medium transition-colors",
+                activeView === view
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {view === "cashflow" ? "תזרים" : "יתרות"}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {activeView === "obligations" ? (
         <ObligationsTab data={obligationsData} canManageExpenses={canManageExpenses} />
       ) : null}
 
-      {activeView === "cashflow" ? (
+      {canViewCashflow && activeView === "cashflow" ? (
         <>
       {canManageExpenses ? (
         <div className="flex flex-wrap justify-start gap-2">
