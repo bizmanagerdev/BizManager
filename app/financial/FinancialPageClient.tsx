@@ -3,7 +3,7 @@
 import DomainBarChart from "@/components/charts/DomainBarChart";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { CalendarDays, Landmark, Loader2, Pencil, Search, TimerReset, Trash2 } from "lucide-react";
@@ -39,6 +39,21 @@ import { cn } from "@/lib/utils";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { ObligationsTab } from "@/app/financial/ObligationsTab";
 import type { ObligationsData } from "@/lib/financial/obligations";
+
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+function readCachedIsAdmin(): boolean | null {
+  try {
+    const raw = localStorage.getItem("biz_viewer_role");
+    if (!raw) return null;
+    const { role, ts } = JSON.parse(raw) as { role: string; ts: number };
+    if (Date.now() - ts > 24 * 60 * 60 * 1000) return null;
+    return role === "admin";
+  } catch {
+    return null;
+  }
+}
 
 type InitialFilters = {
   from: string;
@@ -321,7 +336,21 @@ export default function FinancialPageClient({
   const [sourceId, setSourceId] = useState(initialFilters.sourceId);
   const [type, setType] = useState(initialFilters.type);
   const [stage, setStage] = useState(initialFilters.stage);
+  const [resolvedCanView, setResolvedCanView] = useState(canViewCashflow);
   const [activeView, setActiveView] = useState<"cashflow" | "obligations">(canViewCashflow ? "cashflow" : "obligations");
+  const viewCorrectedRef = useRef(false);
+
+  useIsomorphicLayoutEffect(() => {
+    const cached = readCachedIsAdmin();
+    const effective = cached !== null ? cached : canViewCashflow;
+    setResolvedCanView(effective);
+    if (!viewCorrectedRef.current) {
+      viewCorrectedRef.current = true;
+      if (effective && !canViewCashflow) {
+        setActiveView("cashflow");
+      }
+    }
+  }, [canViewCashflow]);
   const [isFilterPending, startFilterTransition] = useTransition();
   const [isRefreshPending, startRefreshTransition] = useTransition();
   const [loadingOverlayTop, setLoadingOverlayTop] = useState(0);
@@ -607,7 +636,7 @@ export default function FinancialPageClient({
       </section>
 
       {/* View toggle — admin only */}
-      {canViewCashflow ? (
+      {resolvedCanView ? (
         <div className="flex gap-1 rounded-xl border bg-muted/30 p-1 w-fit">
           {(["cashflow", "obligations"] as const).map((view) => (
             <button
@@ -631,7 +660,7 @@ export default function FinancialPageClient({
         <ObligationsTab data={obligationsData} canManageExpenses={canManageExpenses} />
       ) : null}
 
-      {canViewCashflow && activeView === "cashflow" ? (
+      {resolvedCanView && activeView === "cashflow" ? (
         <>
       {canManageExpenses ? (
         <div className="flex flex-wrap justify-start gap-2">
