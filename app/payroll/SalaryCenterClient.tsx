@@ -1928,12 +1928,12 @@ export default function SalaryCenterClient({
       }
       .hero-table th,
       .hero-table td {
-        border: 1px solid #DDE3FA;
+        border: 1px solid #BAE6FD;
         padding: 14px 16px;
         text-align: right;
       }
       .hero-table th {
-        background: #EEF1FB;
+        background: #E0F2FE;
         font-size: 24px;
         font-weight: 800;
       }
@@ -1950,7 +1950,7 @@ export default function SalaryCenterClient({
         font-weight: 700;
       }
       .subtle {
-        color: #5E6FB8;
+        color: #0369A1;
         font-size: 12px;
         margin-top: 6px;
       }
@@ -1961,12 +1961,12 @@ export default function SalaryCenterClient({
         margin: 18px 0 24px;
       }
       .card {
-        border: 1px solid #DDE3FA;
+        border: 1px solid #BAE6FD;
         border-radius: 12px;
         padding: 12px;
       }
       .label {
-        color: #5E6FB8;
+        color: #0369A1;
         font-size: 12px;
         margin-bottom: 8px;
       }
@@ -1984,20 +1984,20 @@ export default function SalaryCenterClient({
         font-size: 13px;
       }
       th, td {
-        border: 1px solid #DDE3FA;
+        border: 1px solid #BAE6FD;
         padding: 8px 10px;
         text-align: right;
         vertical-align: top;
       }
       th {
-        background: #EEF1FB;
+        background: #E0F2FE;
       }
       .empty {
         margin-top: 12px;
-        border: 1px dashed #DDE3FA;
+        border: 1px dashed #BAE6FD;
         border-radius: 12px;
         padding: 12px;
-        color: #5E6FB8;
+        color: #0369A1;
       }
       @media print {
         body { margin: 12px; }

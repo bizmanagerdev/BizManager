@@ -5,7 +5,7 @@ import { getAlertsData, type AlertItem } from "@/lib/alerts";
 import { getScheduleEntries } from "@/lib/projectSchedule";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import CalendarSection from "@/app/alerts/CalendarSection";
 
@@ -55,7 +55,6 @@ export default async function AlertsPage() {
     scheduleResult.error,
   ].filter(Boolean) as string[];
 
-  // Split alerts: actionable (danger/warning with count > 0) vs info
   const actionAlerts = alerts.filter(
     (a) => (a.countsAsActiveAlert ?? true) && a.count > 0 && a.severity !== "info"
   );
@@ -69,25 +68,18 @@ export default async function AlertsPage() {
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-5">
 
-        {/* Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">התראות</h1>
-            <p className="text-sm text-muted-foreground">כל מה שדורש תשומת לב במקום אחד.</p>
-          </div>
+        <div className="flex justify-end">
           <PushSubscribeButton />
         </div>
 
-        {/* Errors */}
         {pageErrors.length > 0 && (
           <Card className="border-destructive/40">
             <CardContent className="p-4 text-sm text-destructive">{pageErrors.join(" | ")}</CardContent>
           </Card>
         )}
 
-        {/* All clear */}
         {allClear && (
-          <div className="flex items-center gap-3 rounded-2xl border border-success/40 bg-success-soft px-5 py-4">
+          <div className="flex items-center gap-3 rounded-xl border border-success/40 bg-success-soft px-5 py-4">
             <div className="text-2xl">✓</div>
             <div>
               <div className="font-semibold text-success-soft-foreground">הכול יציב</div>
@@ -96,23 +88,32 @@ export default async function AlertsPage() {
           </div>
         )}
 
-        {/* Action alerts */}
         {actionAlerts.length > 0 && (
-          <div className="space-y-3">
-            <div className="text-sm font-semibold text-muted-foreground">דורש טיפול</div>
-            {actionAlerts.map((alert) => (
-              <ActionAlertCard key={alert.id} alert={alert} />
-            ))}
-          </div>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">דורש טיפול</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {actionAlerts.map((alert) => (
+                <ActionAlertCard key={alert.id} alert={alert} />
+              ))}
+            </CardContent>
+          </Card>
         )}
 
-        {/* Info alerts */}
         {infoAlerts.length > 0 && (
-          <div className="flex flex-wrap gap-3">
-            {infoAlerts.map((alert) => (
-              <InfoAlertChip key={alert.id} alert={alert} />
-            ))}
-          </div>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">סיכום</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                {infoAlerts.map((alert) => (
+                  <InfoAlertChip key={alert.id} alert={alert} />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         <CalendarSection entries={scheduleResult.entries} todayIso={todayIso} />
@@ -125,7 +126,7 @@ export default async function AlertsPage() {
 function ActionAlertCard({ alert }: { alert: AlertItem }) {
   const cfg = SEVERITY_CONFIG[alert.severity] ?? SEVERITY_CONFIG.info;
   return (
-    <div className={`flex items-center justify-between gap-4 rounded-2xl border p-4 ${cfg.border} ${cfg.bg}`}>
+    <div className={`flex items-center justify-between gap-4 rounded-xl border p-4 ${cfg.border} ${cfg.bg}`}>
       <div className="flex items-start gap-3">
         <div className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${cfg.dot}`} />
         <div className="space-y-0.5">
@@ -152,14 +153,5 @@ function InfoAlertChip({ alert }: { alert: AlertItem }) {
       <span className="text-muted-foreground">{alert.title}</span>
       <Badge variant="secondary">{alert.count}</Badge>
     </Link>
-  );
-}
-
-function _LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <span className="flex items-center gap-1">
-      <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
-      {label}
-    </span>
   );
 }

@@ -95,7 +95,7 @@
     --secondary: var(--secondary-5);
     --secondary-foreground: var(--white);
 
-    --muted: var(--primary-10);
+    --muted: var(--secondary-10);
     --muted-foreground: var(--primary-5);
 
     --accent: var(--secondary-10);
@@ -156,14 +156,14 @@
     --info-soft-foreground: var(--white);
     --info-strong: var(--blue-4);
 
-    --border: var(--primary-10);
-    --input: var(--primary-10);
+    --border: var(--secondary-9);
+    --input: var(--secondary-9);
     --ring: var(--secondary-5);
 
     --radius: 0.9rem;
 
     --sidebar-background: var(--primary-1);
-    --sidebar-foreground: var(--primary-10);
+    --sidebar-foreground: var(--secondary-9);
     --sidebar-primary: var(--secondary-5);
     --sidebar-primary-foreground: var(--white);
     --sidebar-accent: var(--primary-2);
@@ -202,7 +202,7 @@
     background-image:
       radial-gradient(circle at top right, rgb(var(--secondary-5) / 0.10), transparent 28%),
       radial-gradient(circle at left 20%, rgb(var(--primary-4) / 0.10), transparent 30%),
-      linear-gradient(180deg, rgb(var(--white)), rgb(var(--primary-10) / 0.35));
+      linear-gradient(180deg, rgb(var(--white)), rgb(var(--secondary-10) / 0.35));
     background-attachment: fixed;
   }
 

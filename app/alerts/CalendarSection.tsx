@@ -27,7 +27,7 @@ export default function CalendarSection({
               className={`rounded-lg px-3 py-1 transition-colors ${
                 view === "timeline"
                   ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted/40"
+                  : "text-muted-foreground hover:bg-secondary/10"
               }`}
             >
               ציר זמן
@@ -38,7 +38,7 @@ export default function CalendarSection({
               className={`rounded-lg px-3 py-1 transition-colors ${
                 view === "calendar"
                   ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted/40"
+                  : "text-muted-foreground hover:bg-secondary/10"
               }`}
             >
               לוח חודשי

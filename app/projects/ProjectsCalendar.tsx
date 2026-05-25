@@ -146,7 +146,7 @@ export default function ProjectsCalendar({
               type="button"
               onClick={() => setSelectedDate(day)}
               className={`flex flex-col items-center gap-1 bg-background px-1 py-2 transition-colors ${
-                isSelected ? "bg-primary/8" : "hover:bg-secondary/10"
+                isSelected ? "bg-secondary/10" : "hover:bg-secondary/10"
               } ${!inMonth ? "opacity-35" : ""}`}
             >
               {/* Day number */}
@@ -155,7 +155,7 @@ export default function ProjectsCalendar({
                   isToday
                     ? "bg-primary text-primary-foreground"
                     : isSelected
-                      ? "bg-primary/15 text-primary font-semibold"
+                      ? "bg-secondary/20 text-secondary font-semibold"
                       : ""
                 }`}
               >

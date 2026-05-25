@@ -163,21 +163,21 @@ export default function PriceListClient({
     // in globals.css. html2canvas needs explicit hex/rgb values because it can
     // struggle with CSS variables, so we materialise them here.
     const BRAND = {
-      page: "#F4F6FD",           // light navy-tinted page bg
+      page: "#F0F9FF",           // sky-50 page bg
       surface: "#FFFFFF",        // card surface
-      surfaceMuted: "#EEF1FB",   // alternating row / muted panel
+      surfaceMuted: "#E0F2FE",   // sky-100 alternating row / muted panel
       headerNavy: "#283561",     // primary (header strip)
       footerNavy: "#0A1020",     // primary-1 (footer strip)
       textPrimary: "#1D2848",    // foreground (body text)
-      textMuted: "#5E6FB8",      // primary-7 muted
-      textSubtle: "#7789D6",     // primary-8 subtle
+      textMuted: "#0369A1",      // secondary (sky-700) muted
+      textSubtle: "#0284C7",     // secondary-6 (sky-600) subtle
       textOnNavyStrong: "#FFFFFF",
-      textOnNavyMuted: "#B8C2F5", // primary-10 on dark
+      textOnNavyMuted: "#BAE6FD", // secondary-9 (sky-200) on dark
       successBg: "#DCF4E3",      // success-soft (current green-9)
       successText: "#1CB452",    // success anchor (current green-4)
-      mutedBg: "#EEF1FB",
-      mutedText: "#5E6FB8",
-      border: "#DDE3FA",         // primary-10-ish border
+      mutedBg: "#E0F2FE",
+      mutedText: "#0369A1",
+      border: "#BAE6FD",         // secondary-9 (sky-200) border
     };
 
     const wrapperElement = exportElement.parentElement as HTMLElement | null;
@@ -241,7 +241,7 @@ export default function PriceListClient({
     const canvas = await html2canvas(exportElement, {
       scale: Math.min(window.devicePixelRatio || 1, 2),
       useCORS: true,
-      backgroundColor: "#F4F6FD",
+      backgroundColor: "#F0F9FF",
       logging: false,
       onclone: applyPdfCaptureColorOverrides,
       windowWidth: Math.max(exportElement.scrollWidth, 1120),

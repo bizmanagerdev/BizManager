@@ -40,7 +40,7 @@ function buildTabHref(nextTab: SalesTab, searchParams: SalesTabsSearchParams) {
 }
 
 function getTabLabel(tab: { id: SalesTab; label: string }, counts: Record<SalesTab, number>) {
-  if (tab.id === "inventory" || tab.id === "price-list") {
+  if (tab.id === "inventory" || tab.id === "price-list" || tab.id === "closed") {
     return tab.label;
   }
 

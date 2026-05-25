@@ -159,7 +159,7 @@ export default function AlertsTimeline({
                 bucket.isToday
                   ? "bg-primary text-primary-foreground"
                   : bucket.isTomorrow
-                    ? "bg-primary/15 text-primary"
+                    ? "bg-secondary/20 text-secondary"
                     : "bg-background text-muted-foreground"
               }`}
             >
@@ -180,7 +180,7 @@ export default function AlertsTimeline({
                 <Link
                   key={event.id}
                   href={event.href}
-                  className="flex items-start gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-muted/40"
+                  className="flex items-start gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-secondary/10"
                 >
                   <EventDot kind={event.kind} />
                   <div className="min-w-0 flex-1">
