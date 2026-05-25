@@ -234,7 +234,6 @@ export default async function TaskPage({
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold">משימות</h1>
           <Link
             className="text-sm text-primary"
             href={safeReturnTo ?? "/tasks"}

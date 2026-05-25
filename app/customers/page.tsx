@@ -250,13 +250,6 @@ export default async function CustomersPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold">לקוחות</h1>
-          <p className="text-sm text-muted-foreground">
-            כרטיסי לקוחות עם סיכומים, יתרות, אנשי קשר ופעולות מהירות.
-          </p>
-        </div>
-
         {loadError ? (
           <p className="text-sm text-destructive">שגיאה בטעינת לקוחות: {loadError}</p>
         ) : (

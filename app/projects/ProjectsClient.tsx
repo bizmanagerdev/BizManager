@@ -1039,7 +1039,7 @@ export default function ProjectsClient({
       <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1280px] text-sm">
-            <thead className="bg-muted/40 text-muted-foreground">
+            <thead className="bg-secondary/40 text-muted-foreground">
               <tr className="border-b border-border/70 text-right">
                 <th className="px-4 py-3 font-medium">פרויקט</th>
                 <th className="px-4 py-3 font-medium">סטטוס</th>

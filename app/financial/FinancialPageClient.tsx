@@ -637,7 +637,7 @@ export default function FinancialPageClient({
 
       {/* View toggle — admin only */}
       {resolvedCanView ? (
-        <div className="flex gap-1 rounded-xl border bg-muted/30 p-1 w-fit">
+        <div className="flex gap-1 rounded-xl border bg-secondary/40 p-1 w-fit">
           {(["cashflow", "obligations"] as const).map((view) => (
             <button
               key={view}

@@ -441,7 +441,7 @@ export default function CustomersClient({
       <Card className="hidden overflow-hidden border-border/70 shadow-sm md:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1120px] text-sm">
-            <thead className="bg-muted/40 text-muted-foreground">
+            <thead className="bg-secondary/40 text-muted-foreground">
               <tr className="border-b border-border/70 text-right">
                 <th className="px-4 py-3 font-medium">לקוח</th>
                 <th className="px-4 py-3 font-medium">טלפון ואימייל</th>

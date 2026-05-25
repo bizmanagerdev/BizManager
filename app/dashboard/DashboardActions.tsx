@@ -460,7 +460,9 @@ export default function DashboardActions({
 
   const [taskSubmitting, setTaskSubmitting] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [taskBusinessDomain, setTaskBusinessDomain] = useState<ExpenseBusinessDomain>("logistics_projects");
   const [taskProjectId, setTaskProjectId] = useState(projects[0]?.id ?? "");
+  const [taskPropertyId, setTaskPropertyId] = useState("");
   const [taskSubject, setTaskSubject] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [taskDueDate, setTaskDueDate] = useState(getTodayDate());
@@ -742,7 +744,9 @@ export default function DashboardActions({
 
   function resetTaskForm() {
     setTaskError(null);
+    setTaskBusinessDomain("logistics_projects");
     setTaskProjectId(projects[0]?.id ?? "");
+    setTaskPropertyId("");
     setTaskSubject("");
     setTaskDescription("");
     setTaskDueDate(getTodayDate());
@@ -881,8 +885,13 @@ export default function DashboardActions({
 
   async function createTask() {
     setTaskError(null);
-    const selectedProject = projectById.get(taskProjectId);
-    if (!selectedProject || !taskSubject.trim() || !taskAssignedUserId || !taskDueDate) {
+    const needsProject = taskBusinessDomain === "logistics_projects";
+    const needsProperty = taskBusinessDomain === "property_management";
+    if (
+      !taskSubject.trim() || !taskAssignedUserId || !taskDueDate ||
+      (needsProject && !taskProjectId) ||
+      (needsProperty && !taskPropertyId)
+    ) {
       setTaskError(HEBREW.taskRequired);
       return;
     }
@@ -893,8 +902,9 @@ export default function DashboardActions({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          business_domain: mapProjectTypeToExpenseDomain(selectedProject.type),
-          project_id: selectedProject.id,
+          business_domain: taskBusinessDomain,
+          project_id: needsProject ? taskProjectId : null,
+          property_id: needsProperty ? taskPropertyId : null,
           subject: taskSubject.trim(),
           description: taskDescription.trim() || null,
           due_date: taskDueDate,
@@ -2196,20 +2206,60 @@ export default function DashboardActions({
           <fieldset disabled={taskSubmitting} className="contents">
             <div className="grid gap-4">
               <label className="space-y-2 text-sm">
-                <span>{HEBREW.project}</span>
+                <span>{HEBREW.domain}</span>
                 <select
                   className={fieldClass}
-                  value={taskProjectId}
-                  onChange={(e) => setTaskProjectId(e.target.value)}
+                  value={taskBusinessDomain}
+                  onChange={(e) => {
+                    const next = e.target.value as ExpenseBusinessDomain;
+                    setTaskBusinessDomain(next);
+                    if (next !== "logistics_projects") setTaskProjectId("");
+                    if (next !== "property_management") setTaskPropertyId("");
+                  }}
                 >
-                  <option value="">{HEBREW.selectProject}</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name} | {project.customerName}
+                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                    <option key={domain} value={domain}>
+                      {getBusinessDomainLabel(domain)}
                     </option>
                   ))}
                 </select>
               </label>
+
+              {taskBusinessDomain === "logistics_projects" ? (
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.project}</span>
+                  <select
+                    className={fieldClass}
+                    value={taskProjectId}
+                    onChange={(e) => setTaskProjectId(e.target.value)}
+                  >
+                    <option value="">{HEBREW.selectProject}</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name} | {project.customerName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              {taskBusinessDomain === "property_management" ? (
+                <label className="space-y-2 text-sm">
+                  <span>נכס</span>
+                  <select
+                    className={fieldClass}
+                    value={taskPropertyId}
+                    onChange={(e) => setTaskPropertyId(e.target.value)}
+                  >
+                    <option value="">בחרו נכס</option>
+                    {properties.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {property.name}{property.subtitle ? ` | ${property.subtitle}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
 
               <label className="space-y-2 text-sm">
                 <span>{HEBREW.subject}</span>

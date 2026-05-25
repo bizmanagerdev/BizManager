@@ -548,11 +548,7 @@ export default function DocumentsArchiveClient({
         <CardHeader className="space-y-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
-              <CardTitle className="text-2xl">מסמכים</CardTitle>
               {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
-              <CardDescription>
-                ארכיון דיגיטלי מרכזי למסמכים עסקיים עם שיוך ללקוחות, פרויקטים, משימות והזמנות.
-              </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button

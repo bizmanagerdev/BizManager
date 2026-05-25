@@ -66,13 +66,8 @@ export default function SettingsTabs(props: Props) {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">הגדרות ניהול</h1>
-        <p className="text-sm text-muted-foreground">התראות, משימות קבועות והוצאות קבועות.</p>
-      </div>
-
       {/* Tab bar */}
-      <div className="flex gap-1 rounded-xl border bg-muted/40 p-1">
+      <div className="flex gap-1 rounded-xl border bg-secondary/40 p-1">
         {tabs.map((tab) => (
           <button
             key={tab.key}

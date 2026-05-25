@@ -345,7 +345,7 @@ export function TaskUpsertDialog(props: Props) {
           }}
         >
           <div className="space-y-1">
-            <div className="text-sm font-medium">דומיין *</div>
+            <div className="text-sm font-medium">תחום עסקי *</div>
             <select
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={effectiveDomain}

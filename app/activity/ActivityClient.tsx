@@ -90,12 +90,6 @@ export default function ActivityClient({
   return (
     <div className="space-y-4 text-right" dir="rtl">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold">פעילות</h1>
-          <p className="text-sm text-muted-foreground">
-            {totalCount.toLocaleString("he-IL")} רשומות
-          </p>
-        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <select
             value={currentTable}
