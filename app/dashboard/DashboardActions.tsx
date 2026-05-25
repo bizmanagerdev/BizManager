@@ -1940,31 +1940,6 @@ export default function DashboardActions({
                   />
                 </div>
 
-                {selectedProjectCustomer ? (
-                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                    <p className="font-medium">
-                      לקוח נבחר:{" "}
-                      {getFirstString(selectedProjectCustomer, ["name", "name_for_invoice"]) || HEBREW.customerFallback}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {getFirstString(selectedProjectCustomer, ["phone", "mobile", "tel"])
-                        ? `טלפון: ${getFirstString(selectedProjectCustomer, ["phone", "mobile", "tel"])}`
-                        : "טלפון: -"}
-                      {getFirstString(selectedProjectCustomer, ["email"])
-                        ? ` | אימייל: ${getFirstString(selectedProjectCustomer, ["email"])}`
-                        : ""}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {getFirstString(selectedProjectCustomer, ["city"])
-                        ? `עיר: ${getFirstString(selectedProjectCustomer, ["city"])}`
-                        : "עיר: -"}
-                      {getFirstString(selectedProjectCustomer, ["address"])
-                        ? ` | כתובת: ${getFirstString(selectedProjectCustomer, ["address"])}`
-                        : ""}
-                    </p>
-                  </div>
-                ) : null}
-
                 <div className="max-h-64 space-y-1.5 overflow-auto rounded-md border p-2">
                   {filteredProjectCustomers.map((customer) => {
                     const id = getString(customer, "id");
