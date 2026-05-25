@@ -201,7 +201,7 @@
     min-height: 100vh;
     background-image:
       radial-gradient(circle at top right, rgb(var(--secondary-5) / 0.10), transparent 28%),
-      radial-gradient(circle at left 20%, rgb(var(--primary-4) / 0.10), transparent 30%),
+      radial-gradient(circle at left 20%, rgb(var(--secondary-5) / 0.08), transparent 30%),
       linear-gradient(180deg, rgb(var(--white)), rgb(var(--secondary-10) / 0.35));
     background-attachment: fixed;
   }
@@ -212,8 +212,8 @@
     inset: 0;
     pointer-events: none;
     background-image:
-      linear-gradient(rgb(var(--primary-4) / 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgb(var(--primary-4) / 0.03) 1px, transparent 1px);
+      linear-gradient(rgb(var(--secondary-5) / 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--secondary-5) / 0.03) 1px, transparent 1px);
     background-size: 32px 32px;
     mask-image: linear-gradient(180deg, white, transparent 80%);
     z-index: -1;
