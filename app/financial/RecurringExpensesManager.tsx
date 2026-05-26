@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import {
   EXPENSE_BUSINESS_DOMAINS,
   getBusinessDomainLabel,
@@ -529,18 +530,13 @@ export default function RecurringExpensesManager(props: Props) {
             {requirement === "project" ? (
               <div className="space-y-1">
                 <div className="text-sm font-medium">פרויקט *</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <ProjectPicker
+                  projects={props.projects}
                   value={form.project_id}
-                  onChange={(event) => updateForm("project_id", event.target.value)}
-                >
-                  <option value="">בחר פרויקט...</option>
-                  {props.projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(id) => updateForm("project_id", id)}
+                  emptyLabel="בחר פרויקט..."
+                  allowClear={false}
+                />
               </div>
             ) : null}
 

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import {
   EXPENSE_BUSINESS_DOMAINS,
   getBusinessDomainLabel,
@@ -362,18 +363,13 @@ export function TaskUpsertDialog(props: Props) {
           {showTargetPicker && derivedTargetType === "project" ? (
             <div className="space-y-1">
               <div className="text-sm font-medium">פרויקט *</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <ProjectPicker
+                projects={projects}
                 value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-              >
-                <option value="">בחר פרויקט...</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setProjectId}
+                emptyLabel="בחר פרויקט..."
+                allowClear={false}
+              />
             </div>
           ) : null}
 

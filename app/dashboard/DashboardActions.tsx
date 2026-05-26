@@ -48,6 +48,7 @@ import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialo
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
 import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEditor";
 import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
+import { ProjectPicker, type ProjectPickerOption } from "@/components/projects/ProjectPicker";
 
 type Row = Record<string, unknown>;
 
@@ -459,7 +460,6 @@ export default function DashboardActions({
   const [expenseError, setExpenseError] = useState<string | null>(null);
   const [expenseBusinessDomain, setExpenseBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
   const [expenseProjectId, setExpenseProjectId] = useState("");
-  const [expenseProjectQuery, setExpenseProjectQuery] = useState("");
   const [expenseOrderId, setExpenseOrderId] = useState("");
   const [expensePropertyId, setExpensePropertyId] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
@@ -526,15 +526,16 @@ export default function DashboardActions({
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
   );
-  const filteredExpenseProjects = useMemo(() => {
-    const q = expenseProjectQuery.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter((project) => {
-      const name = project.name.toLowerCase();
-      const customer = project.customerName.toLowerCase();
-      return name.includes(q) || customer.includes(q);
-    });
-  }, [expenseProjectQuery, projects]);
+  const projectPickerOptions: ProjectPickerOption[] = useMemo(
+    () =>
+      projects.map((project) => ({
+        id: project.id,
+        label: project.name,
+        customerName: project.customerName,
+        startDate: project.startDate,
+      })),
+    [projects]
+  );
   const filteredIncomeProjects = useMemo(() => {
     const q = incomeProjectQuery.trim().toLowerCase();
     if (!q) return projects;
@@ -729,7 +730,6 @@ export default function DashboardActions({
     setExpenseError(null);
     setExpenseBusinessDomain("");
     setExpenseProjectId("");
-    setExpenseProjectQuery("");
     setExpenseOrderId("");
     setExpensePropertyId("");
     setExpenseAmount("");
@@ -1698,11 +1698,10 @@ export default function DashboardActions({
               {manualSessionDomain === "logistics_projects" ? (
                 <label className="space-y-2 text-right text-sm">
                   <span className="font-medium">{HEBREW.project}</span>
-                  <select
-                    className={`${fieldClass} text-right`}
+                  <ProjectPicker
+                    projects={projectPickerOptions}
                     value={manualSessionProjectId}
-                    onChange={(e) => {
-                      const newId = e.target.value;
+                    onChange={(newId) => {
                       setManualSessionProjectId(newId);
                       if (newId) {
                         const startDate = normalizeDateOnly(projectById.get(newId)?.startDate);
@@ -1714,14 +1713,8 @@ export default function DashboardActions({
                         }
                       }
                     }}
-                  >
-                    <option value="">{HEBREW.selectProject}</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
+                    emptyLabel={HEBREW.selectProject}
+                  />
                 </label>
               ) : null}
 
@@ -2253,21 +2246,15 @@ export default function DashboardActions({
               </label>
 
               {taskBusinessDomain === "logistics_projects" ? (
-                <label className="space-y-2 text-sm">
+                <div className="space-y-2 text-sm">
                   <span>{HEBREW.project}</span>
-                  <select
-                    className={fieldClass}
+                  <ProjectPicker
+                    projects={projectPickerOptions}
                     value={taskProjectId}
-                    onChange={(e) => setTaskProjectId(e.target.value)}
-                  >
-                    <option value="">{HEBREW.selectProject}</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name} | {project.customerName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    onChange={setTaskProjectId}
+                    emptyLabel={HEBREW.selectProject}
+                  />
+                </div>
               ) : null}
 
               {taskBusinessDomain === "property_management" ? (
@@ -2360,7 +2347,6 @@ export default function DashboardActions({
                     setExpenseBusinessDomain(nextDomain);
                     if (nextDomain !== "logistics_projects") {
                       setExpenseProjectId("");
-                      setExpenseProjectQuery("");
                       setExpenseIncludedInBase(false);
                       setExpenseBilledToCustomer(false);
                       setExpenseBillToCustomerAmount("");
@@ -2381,57 +2367,12 @@ export default function DashboardActions({
               {expenseBusinessDomain === "logistics_projects" ? (
                 <div className="space-y-2 text-sm">
                   <span>{HEBREW.project} *</span>
-                  <Input
-                    value={expenseProjectQuery}
-                    onChange={(e) => setExpenseProjectQuery(e.target.value)}
-                    placeholder="חיפוש פרויקט לפי שם או לקוח"
+                  <ProjectPicker
+                    projects={projectPickerOptions}
+                    value={expenseProjectId}
+                    onChange={setExpenseProjectId}
+                    allowClear={false}
                   />
-                  <div className="max-h-56 space-y-1 overflow-auto rounded-md border p-1">
-                    {filteredExpenseProjects.map((project) => (
-                      <button
-                        key={project.id}
-                        type="button"
-                        onClick={() => {
-                          setExpenseProjectId(project.id);
-                          setExpenseProjectQuery(project.name);
-                        }}
-                        className={`w-full rounded-lg border px-3 py-2 text-right text-sm transition-all duration-200 ${
-                          project.id === expenseProjectId
-                            ? "border-primary/20 bg-primary text-primary-foreground shadow-sm shadow-primary/25"
-                            : "border-border bg-accent/40 text-accent-foreground hover:bg-accent"
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-baseline gap-x-2">
-                          <span className="font-medium">{project.name}</span>
-                          {project.customerName ? (
-                            <span
-                              className={`text-xs ${
-                                project.id === expenseProjectId
-                                  ? "text-primary-foreground/70"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
-                              · {project.customerName}
-                            </span>
-                          ) : null}
-                          {normalizeDateOnly(project.startDate) ? (
-                            <span
-                              className={`text-xs ${
-                                project.id === expenseProjectId
-                                  ? "text-primary-foreground/70"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
-                              · {normalizeDateOnly(project.startDate)}
-                            </span>
-                          ) : null}
-                        </div>
-                      </button>
-                    ))}
-                    {filteredExpenseProjects.length === 0 ? (
-                      <div className="p-2 text-sm text-muted-foreground">לא נמצאו פרויקטים לחיפוש הזה.</div>
-                    ) : null}
-                  </div>
                 </div>
               ) : null}
 

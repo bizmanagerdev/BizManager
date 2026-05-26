@@ -9,6 +9,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import {
   Dialog,
   DialogDescription,
@@ -348,16 +349,12 @@ export function ExpenseDialog({
               {!isEditing && effectiveDomain === "logistics_projects" && recurringProjects.length > 0 && (
                 <div className="space-y-1">
                   <div className="text-sm font-medium">פרויקט</div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  <ProjectPicker
+                    projects={recurringProjects}
                     value={projectId}
-                    onChange={(e) => setProjectId(e.target.value)}
-                  >
-                    <option value="">ללא פרויקט</option>
-                    {recurringProjects.map((p) => (
-                      <option key={p.id} value={p.id}>{p.label}</option>
-                    ))}
-                  </select>
+                    onChange={setProjectId}
+                    emptyLabel="ללא פרויקט"
+                  />
                 </div>
               )}
 

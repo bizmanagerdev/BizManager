@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import {
   EXPENSE_BUSINESS_DOMAINS,
@@ -1464,20 +1465,14 @@ export default function FinancialPageClient({
             {incomeCreateForm.businessDomain === "logistics_projects" ? (
               <div className="space-y-1">
                 <div className="text-sm font-medium">פרויקט</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <ProjectPicker
+                  projects={recurringProjects}
                   value={incomeCreateForm.projectId}
-                  onChange={(event) =>
-                    setIncomeCreateForm((current) => ({ ...current, projectId: event.target.value }))
+                  onChange={(id) =>
+                    setIncomeCreateForm((current) => ({ ...current, projectId: id }))
                   }
-                >
-                  <option value="">בחר פרויקט</option>
-                  {recurringProjects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.label}
-                    </option>
-                  ))}
-                </select>
+                  emptyLabel="ללא פרויקט"
+                />
               </div>
             ) : null}
 
