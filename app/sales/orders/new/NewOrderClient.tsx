@@ -1341,6 +1341,7 @@ export default function NewOrderClient({
           const newCustomer: CustomerOption = {
             id: customer.id,
             name: customer.name,
+            nameForInvoice: customer.name_for_invoice ?? null,
             phone: customer.phone,
             email: customer.email,
             address: customer.address,

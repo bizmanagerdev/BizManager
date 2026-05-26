@@ -4864,62 +4864,60 @@ function AddExpenseDialog({
           ) : null}
 
             {isSessionMode ? (
-              <div className="space-y-3 rounded-lg border p-3">
-                <AdaptiveGrid variant="formTwo">
-                <div className="space-y-2 text-sm">
-                  <label className="flex items-center gap-2 pt-7">
-                    <input
-                      type="checkbox"
-                      checked={sessionBillableToCustomer}
-                      onChange={(e) => {
-                        setSessionBillableToCustomer(e.target.checked);
-                        if (!e.target.checked) {
-                          setBillToCustomerAmount("");
-                          setBillToCustomerAmountTouched(false);
-                        }
-                      }}
-                    />
-                    <span>לחיוב לקוח</span>
-                  </label>
-                  <div className="text-xs text-muted-foreground">
-                    {sessionBillableToCustomer
-                      ? "המשמרת תופיע ברשימת חיובי הלקוח ולא בתזרים."
-                      : "אם לא מסומן, עלות העבודה תישאר כהוצאה פנימית בלבד."}
-                  </div>
-                </div>
-              </AdaptiveGrid>
-
-              {sessionBillableToCustomer ? (
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">סכום לחיוב לקוח *</div>
-                  <Input
-                    inputMode="numeric"
-                    value={billToCustomerAmount}
+              <section className="space-y-3 rounded-xl border bg-muted/30 p-4">
+                <h4 className="text-sm font-semibold">חיוב הלקוח</h4>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={sessionBillableToCustomer}
                     onChange={(e) => {
-                      setBillToCustomerAmount(e.target.value);
-                      setBillToCustomerAmountTouched(true);
+                      setSessionBillableToCustomer(e.target.checked);
+                      if (!e.target.checked) {
+                        setBillToCustomerAmount("");
+                        setBillToCustomerAmountTouched(false);
+                      }
                     }}
-                    onBlur={() => setBillToCustomerAmountTouched(true)}
-                    placeholder="למשל 650"
-                    aria-invalid={showBillToCustomerAmountError}
-                    className={
-                      showBillToCustomerAmountError
-                        ? "border-destructive focus-visible:ring-destructive"
-                        : ""
-                    }
                   />
-                  {showBillToCustomerAmountError ? (
-                    <div className="text-xs text-destructive">{billToCustomerAmountError}</div>
-                  ) : null}
+                  <span>לחיוב לקוח</span>
+                </label>
+                <div className="text-xs text-muted-foreground">
+                  {sessionBillableToCustomer
+                    ? "המשמרת תופיע ברשימת חיובי הלקוח ולא בתזרים."
+                    : "אם לא מסומן, עלות העבודה תישאר כהוצאה פנימית בלבד."}
                 </div>
+
+                {sessionBillableToCustomer ? (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">סכום לחיוב לקוח *</div>
+                    <Input
+                      inputMode="numeric"
+                      value={billToCustomerAmount}
+                      onChange={(e) => {
+                        setBillToCustomerAmount(e.target.value);
+                        setBillToCustomerAmountTouched(true);
+                      }}
+                      onBlur={() => setBillToCustomerAmountTouched(true)}
+                      placeholder="למשל 650"
+                      aria-invalid={showBillToCustomerAmountError}
+                      className={
+                        showBillToCustomerAmountError
+                          ? "border-destructive focus-visible:ring-destructive"
+                          : ""
+                      }
+                    />
+                    {showBillToCustomerAmountError ? (
+                      <div className="text-xs text-destructive">{billToCustomerAmountError}</div>
+                    ) : null}
+                  </div>
                 ) : null}
-              </div>
+              </section>
             ) : null}
 
             {isSessionMode ? (
-              <div className="space-y-3 rounded-lg border p-3">
+              <section className="space-y-3 rounded-xl border bg-muted/30 p-4">
+                <h4 className="text-sm font-semibold">תשלום לעובד</h4>
                 <div className="space-y-1">
-                  <div className="text-sm font-medium">תשלום לעובד</div>
+                  <div className="text-sm font-medium">סטטוס תשלום לעובד</div>
                   <select
                     value={workerPaymentMode}
                     onChange={(e) => {
@@ -4981,7 +4979,7 @@ function AddExpenseDialog({
                     ) : null}
                   </div>
                 ) : null}
-              </div>
+              </section>
             ) : null}
 
             {!isSessionMode ? (

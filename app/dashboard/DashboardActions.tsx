@@ -2424,115 +2424,115 @@ export default function DashboardActions({
           </DialogHeader>
 
           <fieldset disabled={expenseSubmitting} className="contents">
-            <div className="grid gap-4">
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.domain} *</span>
-                <select
-                  className={fieldClass}
-                  value={expenseBusinessDomain}
-                  onChange={(e) => {
-                    const nextDomain = e.target.value as ExpenseBusinessDomain | "";
-                    setExpenseBusinessDomain(nextDomain);
-                    if (nextDomain !== "logistics_projects") {
-                      setExpenseProjectId("");
-                      setExpenseIncludedInBase(false);
-                      setExpenseBilledToCustomer(false);
-                      setExpenseBillToCustomerAmount("");
-                    }
-                    if (nextDomain !== "sales") setExpenseOrderId("");
-                    if (nextDomain !== "property_management") setExpensePropertyId("");
-                  }}
-                >
-                  <option value="">בחרו תחום</option>
-                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                    <option key={domain} value={domain}>
-                      {getBusinessDomainLabel(domain)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {expenseBusinessDomain === "logistics_projects" ? (
-                <div className="space-y-2 text-sm">
-                  <span>{HEBREW.project} *</span>
-                  <ProjectPicker
-                    projects={projectPickerOptions}
-                    value={expenseProjectId}
-                    onChange={setExpenseProjectId}
-                    allowClear={false}
-                  />
-                </div>
-              ) : null}
-
-              {expenseBusinessDomain === "sales" && !expenseIsWorkerPayment ? (
-                <label className="space-y-2 text-sm">
-                  <span>הזמנה</span>
+            <div className="space-y-4">
+              <div
+                className={
+                  expenseBusinessDomain === "logistics_projects" ||
+                  (expenseBusinessDomain === "sales" && !expenseIsWorkerPayment) ||
+                  expenseBusinessDomain === "property_management"
+                    ? "grid gap-3 sm:grid-cols-2"
+                    : ""
+                }
+              >
+                <label className="space-y-2 text-sm block">
+                  <span>{HEBREW.domain} *</span>
                   <select
                     className={fieldClass}
-                    value={expenseOrderId}
-                    onChange={(e) => setExpenseOrderId(e.target.value)}
+                    value={expenseBusinessDomain}
+                    onChange={(e) => {
+                      const nextDomain = e.target.value as ExpenseBusinessDomain | "";
+                      setExpenseBusinessDomain(nextDomain);
+                      if (nextDomain !== "logistics_projects") {
+                        setExpenseProjectId("");
+                        setExpenseIncludedInBase(false);
+                        setExpenseBilledToCustomer(false);
+                        setExpenseBillToCustomerAmount("");
+                      }
+                      if (nextDomain !== "sales") setExpenseOrderId("");
+                      if (nextDomain !== "property_management") setExpensePropertyId("");
+                    }}
                   >
-                    <option value="">ללא הזמנה</option>
-                    {orders.map((order) => (
-                      <option key={order.id} value={order.id}>
-                        {order.name}
-                        {order.subtitle ? ` | ${order.subtitle}` : ""}
+                    <option value="">בחרו תחום</option>
+                    {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                      <option key={domain} value={domain}>
+                        {getBusinessDomainLabel(domain)}
                       </option>
                     ))}
                   </select>
                 </label>
-              ) : null}
 
-              {expenseBusinessDomain === "property_management" ? (
-                <label className="space-y-2 text-sm">
-                  <span>נכס *</span>
-                  <select
-                    className={fieldClass}
-                    value={expensePropertyId}
-                    onChange={(e) => setExpensePropertyId(e.target.value)}
-                  >
-                    <option value="">בחרו נכס</option>
-                    {properties.map((property) => (
-                      <option key={property.id} value={property.id}>
-                        {property.name}
-                        {property.subtitle ? ` | ${property.subtitle}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
+                {expenseBusinessDomain === "logistics_projects" ? (
+                  <div className="space-y-2 text-sm">
+                    <span>{HEBREW.project} *</span>
+                    <ProjectPicker
+                      projects={projectPickerOptions}
+                      value={expenseProjectId}
+                      onChange={setExpenseProjectId}
+                      allowClear={false}
+                    />
+                  </div>
+                ) : null}
 
-              {expenseBusinessDomain ? (
-                <label className="space-y-2 text-sm">
-                  <span>{HEBREW.category} *</span>
-                  <select
-                    className={fieldClass}
-                    value={expenseCategory}
-                    onChange={(e) => setExpenseCategory(e.target.value)}
-                  >
-                    <option value="">{HEBREW.selectCategory}</option>
-                    {DASHBOARD_EXPENSE_CATEGORY_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
+                {expenseBusinessDomain === "sales" && !expenseIsWorkerPayment ? (
+                  <label className="space-y-2 text-sm block">
+                    <span>הזמנה</span>
+                    <select
+                      className={fieldClass}
+                      value={expenseOrderId}
+                      onChange={(e) => setExpenseOrderId(e.target.value)}
+                    >
+                      <option value="">ללא הזמנה</option>
+                      {orders.map((order) => (
+                        <option key={order.id} value={order.id}>
+                          {order.name}
+                          {order.subtitle ? ` | ${order.subtitle}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
 
-              {expenseCategory === OTHER_EXPENSE_CATEGORY ? (
-                <label className="space-y-2 text-sm">
-                  <span>{HEBREW.otherCategoryPrompt} *</span>
-                  <Input
-                    value={expenseCategoryOther}
-                    onChange={(e) => setExpenseCategoryOther(e.target.value)}
-                  />
-                </label>
-              ) : null}
+                {expenseBusinessDomain === "property_management" ? (
+                  <label className="space-y-2 text-sm block">
+                    <span>נכס *</span>
+                    <select
+                      className={fieldClass}
+                      value={expensePropertyId}
+                      onChange={(e) => setExpensePropertyId(e.target.value)}
+                    >
+                      <option value="">בחרו נכס</option>
+                      {properties.map((property) => (
+                        <option key={property.id} value={property.id}>
+                          {property.name}
+                          {property.subtitle ? ` | ${property.subtitle}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
 
-              {expenseIsWorkerPayment && canManageWorkerSessions ? (
-                <div className="space-y-3">
-                  <label className="space-y-2 text-sm">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {expenseBusinessDomain ? (
+                  <label className="space-y-2 text-sm block">
+                    <span>{HEBREW.category} *</span>
+                    <select
+                      className={fieldClass}
+                      value={expenseCategory}
+                      onChange={(e) => setExpenseCategory(e.target.value)}
+                    >
+                      <option value="">{HEBREW.selectCategory}</option>
+                      {DASHBOARD_EXPENSE_CATEGORY_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+
+                {expenseIsWorkerPayment && canManageWorkerSessions ? (
+                  <label className="space-y-2 text-sm block">
                     <span>{HEBREW.worker} *</span>
                     <select
                       className={fieldClass}
@@ -2547,7 +2547,21 @@ export default function DashboardActions({
                       ))}
                     </select>
                   </label>
+                ) : null}
+              </div>
 
+              {expenseCategory === OTHER_EXPENSE_CATEGORY ? (
+                <label className="space-y-2 text-sm block">
+                  <span>{HEBREW.otherCategoryPrompt} *</span>
+                  <Input
+                    value={expenseCategoryOther}
+                    onChange={(e) => setExpenseCategoryOther(e.target.value)}
+                  />
+                </label>
+              ) : null}
+
+              {expenseIsWorkerPayment && canManageWorkerSessions ? (
+                <div className="space-y-3">
                   {!expenseNewWorkerOpen ? (
                     <Button type="button" variant="outline" size="sm" onClick={() => setExpenseNewWorkerOpen(true)}>
                       עובד חדש
@@ -2607,7 +2621,7 @@ export default function DashboardActions({
               {expenseIsWorkerPayment ? (
                 <>
                   {showExpenseSessionTimingFields ? (
-                    <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
+                    <div className="grid gap-3 sm:grid-cols-3">
                       <label className="space-y-2 text-sm">
                         <span>כניסה *</span>
                         <DateTimeInput
@@ -2650,7 +2664,7 @@ export default function DashboardActions({
                       </label>
                     </div>
                   ) : (
-                    <label className="space-y-2 text-sm md:col-span-2">
+                    <label className="space-y-2 text-sm block">
                       <span>תאריך *</span>
                       <DateInput
                         value={expenseSessionDateOnly}
@@ -2665,7 +2679,7 @@ export default function DashboardActions({
                   )}
 
                   {showExpenseSessionPriceField ? (
-                    <label className="space-y-2 text-sm">
+                    <label className="space-y-2 text-sm block">
                       <span>עלות עבודה</span>
                       <Input
                         inputMode="decimal"
@@ -2680,71 +2694,69 @@ export default function DashboardActions({
                       </span>
                     </label>
                   ) : (
-                    <div className="text-xs text-muted-foreground md:col-span-2">
+                    <div className="text-xs text-muted-foreground">
                       {suggestedExpenseWorkerAmount !== null
                         ? `סה״כ לתשלום עבור המשמרת (חישוב אוטומטי): ${formatIls(suggestedExpenseWorkerAmount)}`
                         : "העלות תחושב אוטומטית לפי הסכם השכר לאחר שמירה."}
                     </div>
                   )}
 
-                  <div className="space-y-3 rounded-xl border p-3">
-                    {expenseBusinessDomain === "logistics_projects" ? (
-                      <>
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={expenseBilledToCustomer}
-                            onChange={(e) => {
-                              setExpenseBilledToCustomer(e.target.checked);
-                              if (!e.target.checked) setExpenseBillToCustomerAmount("");
-                            }}
+                  {expenseBusinessDomain === "logistics_projects" ? (
+                    <section className="space-y-3 rounded-xl border bg-muted/30 p-4">
+                      <h4 className="text-sm font-semibold">חיוב הלקוח</h4>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={expenseBilledToCustomer}
+                          onChange={(e) => {
+                            setExpenseBilledToCustomer(e.target.checked);
+                            if (!e.target.checked) setExpenseBillToCustomerAmount("");
+                          }}
+                        />
+                        <span>{HEBREW.billedToCustomer}</span>
+                      </label>
+                      {expenseBilledToCustomer ? (
+                        <label className="space-y-2 text-sm block">
+                          <span>סכום לחיוב לקוח</span>
+                          <Input
+                            inputMode="decimal"
+                            value={expenseBillToCustomerAmount}
+                            onChange={(e) => setExpenseBillToCustomerAmount(e.target.value)}
+                            placeholder="למשל 650"
                           />
-                          <span>{HEBREW.billedToCustomer}</span>
                         </label>
+                      ) : null}
+                    </section>
+                  ) : null}
 
-                        {expenseBilledToCustomer ? (
-                          <label className="space-y-2 text-sm">
-                            <span>סכום לחיוב לקוח</span>
-                            <Input
-                              inputMode="decimal"
-                              value={expenseBillToCustomerAmount}
-                              onChange={(e) => setExpenseBillToCustomerAmount(e.target.value)}
-                              placeholder="למשל 650"
-                            />
-                          </label>
-                        ) : null}
-                      </>
-                    ) : null}
-
-                    {canManageWorkerSessions ? (
-                      <>
-                        <label className="space-y-2 text-sm">
-                          <span>תשלום לעובד</span>
-                          <select
-                            className={fieldClass}
-                            value={expenseWorkerPaymentChoice}
-                            onChange={(e) => setExpenseWorkerPaymentChoice(e.target.value as PaymentChoice)}
-                          >
-                            <option value="none">לא שולם</option>
-                            <option value="paid">שולם במלואו</option>
-                            <option value="partial">שולם חלקית</option>
-                          </select>
+                  {canManageWorkerSessions ? (
+                    <section className="space-y-3 rounded-xl border bg-muted/30 p-4">
+                      <h4 className="text-sm font-semibold">תשלום לעובד</h4>
+                      <label className="space-y-2 text-sm block">
+                        <span>סטטוס תשלום לעובד</span>
+                        <select
+                          className={fieldClass}
+                          value={expenseWorkerPaymentChoice}
+                          onChange={(e) => setExpenseWorkerPaymentChoice(e.target.value as PaymentChoice)}
+                        >
+                          <option value="none">לא שולם</option>
+                          <option value="paid">שולם במלואו</option>
+                          <option value="partial">שולם חלקית</option>
+                        </select>
+                      </label>
+                      {expenseWorkerPaymentChoice !== "none" ? (
+                        <label className="space-y-2 text-sm block">
+                          <span>כמה שולם</span>
+                          <Input
+                            inputMode="decimal"
+                            value={expenseWorkerPaidAmount}
+                            onChange={(e) => setExpenseWorkerPaidAmount(e.target.value)}
+                            placeholder="אם ריק, יירשם מלוא סכום המשמרת"
+                          />
                         </label>
-
-                        {expenseWorkerPaymentChoice !== "none" ? (
-                          <label className="space-y-2 text-sm">
-                            <span>כמה שולם</span>
-                            <Input
-                              inputMode="decimal"
-                              value={expenseWorkerPaidAmount}
-                              onChange={(e) => setExpenseWorkerPaidAmount(e.target.value)}
-                              placeholder="אם ריק, יירשם מלוא סכום המשמרת"
-                            />
-                          </label>
-                        ) : null}
-                      </>
-                    ) : null}
-                  </div>
+                      ) : null}
+                    </section>
+                  ) : null}
                 </>
               ) : expenseBusinessDomain ? (
                 <>
