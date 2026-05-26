@@ -94,7 +94,7 @@ type EditableExpenseEntry = FinancialEntry & {
 };
 
 type IncomeCreateFormState = {
-  businessDomain: ExpenseBusinessDomain;
+  businessDomain: ExpenseBusinessDomain | "";
   projectId: string;
   orderId: string;
   propertyId: string;
@@ -172,7 +172,7 @@ function todayIsoDate() {
 
 function createIncomeFormState(): IncomeCreateFormState {
   return {
-    businessDomain: "general_business",
+    businessDomain: "",
     projectId: "",
     orderId: "",
     propertyId: "",
@@ -562,6 +562,10 @@ export default function FinancialPageClient({
   };
 
   const createIncome = async () => {
+    if (!incomeCreateForm.businessDomain) {
+      toast.error("יש לבחור תחום");
+      return;
+    }
     const amountNumber = Number(incomeCreateForm.amount);
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
       toast.error("יש להזין סכום תקין");
@@ -1440,20 +1444,21 @@ export default function FinancialPageClient({
             }}
           >
             <div className="space-y-1">
-              <div className="text-sm font-medium">תחום עסקי</div>
+              <div className="text-sm font-medium">תחום עסקי *</div>
               <select
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={incomeCreateForm.businessDomain}
                 onChange={(event) =>
                   setIncomeCreateForm((current) => ({
                     ...current,
-                    businessDomain: event.target.value as ExpenseBusinessDomain,
+                    businessDomain: event.target.value as ExpenseBusinessDomain | "",
                     projectId: event.target.value === "logistics_projects" ? current.projectId : "",
                     orderId: event.target.value === "sales" ? current.orderId : "",
                     propertyId: event.target.value === "property_management" ? current.propertyId : "",
                   }))
                 }
               >
+                <option value="">בחרו תחום</option>
                 {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
                   <option key={domain} value={domain}>
                     {getBusinessDomainLabel(domain)}
@@ -1498,7 +1503,7 @@ export default function FinancialPageClient({
 
             {incomeCreateForm.businessDomain === "property_management" ? (
               <div className="space-y-1">
-                <div className="text-sm font-medium">נכס</div>
+                <div className="text-sm font-medium">נכס *</div>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={incomeCreateForm.propertyId}
@@ -1516,9 +1521,11 @@ export default function FinancialPageClient({
               </div>
             ) : null}
 
+            {incomeCreateForm.businessDomain ? (
+              <>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <div className="text-sm font-medium">סכום</div>
+                <div className="text-sm font-medium">סכום *</div>
                 <Input
                   type="number"
                   min="0"
@@ -1604,6 +1611,8 @@ export default function FinancialPageClient({
                 }
               />
             </div>
+              </>
+            ) : null}
 
             <DialogFooter className="mt-6">
               <Button

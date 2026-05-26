@@ -185,7 +185,7 @@ export default async function SalesOrderPage({
     customerId
       ? await supabase
           .from("customers")
-          .select("id,name,name_for_invoice,email,phone,address")
+          .select("id,name,name_for_invoice,registration_number,email,phone,address")
           .eq("id", customerId)
           .maybeSingle()
       : { data: null as Row | null };
@@ -320,6 +320,12 @@ export default async function SalesOrderPage({
     getString((customer as Row) ?? {}, "name_for_invoice") ??
     customerId ??
     "-";
+  const customerNameForInvoiceRaw = getString((customer as Row) ?? {}, "name_for_invoice");
+  const customerNameForInvoice =
+    customerNameForInvoiceRaw && customerNameForInvoiceRaw !== customerName
+      ? customerNameForInvoiceRaw
+      : null;
+  const customerRegistrationNumber = getString((customer as Row) ?? {}, "registration_number");
   const customerPhone = getString((customer as Row) ?? {}, "phone");
   const customerEmail = getString((customer as Row) ?? {}, "email");
   const fullAddress = getString((customer as Row) ?? {}, "address");
@@ -426,6 +432,16 @@ export default async function SalesOrderPage({
               <div className="space-y-2">
                 <div className="text-xs font-medium text-muted-foreground">הזמנה #{id.slice(0, 8)}</div>
                 <div className="text-2xl font-semibold">{customerName}</div>
+                {customerNameForInvoice || customerRegistrationNumber ? (
+                  <div className="text-sm text-muted-foreground">
+                    {[
+                      customerNameForInvoice ? `שם לחשבונית: ${customerNameForInvoice}` : null,
+                      customerRegistrationNumber ? `ח.פ / ת.ז: ${customerRegistrationNumber}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  </div>
+                ) : null}
                 <div className="text-sm text-muted-foreground">
                   {[customerPhone, customerEmail].filter(Boolean).join(" • ") || "-"}
                 </div>

@@ -87,7 +87,12 @@ export function TaskUpsertDialog(props: Props) {
 
   const [projectId, setProjectId] = useState("");
   const [propertyId, setPropertyId] = useState("");
-  const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain>(defaultDomain);
+  // Start blank when truly creating from scratch (no context); otherwise use defaultDomain.
+  const initialDomain: ExpenseBusinessDomain | "" =
+    props.mode === "create" && !props.fixedTarget && !props.defaultProjectType
+      ? ""
+      : defaultDomain;
+  const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain | "">(initialDomain);
 
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -104,8 +109,13 @@ export function TaskUpsertDialog(props: Props) {
     () => allowedDomainsForFixedTarget(props.fixedTarget, defaultDomain),
     [defaultDomain, props.fixedTarget]
   );
-  const effectiveDomain = allowedDomains.includes(businessDomain) ? businessDomain : allowedDomains[0] ?? defaultDomain;
-  const derivedTargetType = targetTypeForDomain(effectiveDomain);
+  const effectiveDomain: ExpenseBusinessDomain | "" =
+    businessDomain === ""
+      ? ""
+      : allowedDomains.includes(businessDomain)
+        ? businessDomain
+        : allowedDomains[0] ?? defaultDomain;
+  const derivedTargetType = effectiveDomain ? targetTypeForDomain(effectiveDomain) : null;
   const showTargetPicker = !effectiveTarget;
 
   const targetOk = effectiveTarget
@@ -210,6 +220,7 @@ export function TaskUpsertDialog(props: Props) {
   }, [props.open, props.mode, props.taskId]);
 
   useEffect(() => {
+    if (businessDomain === "") return;
     if (!allowedDomains.includes(businessDomain)) {
       setBusinessDomain(allowedDomains[0] ?? defaultDomain);
     }
@@ -221,9 +232,14 @@ export function TaskUpsertDialog(props: Props) {
     saveDraft("task-create", { projectId, propertyId, businessDomain, subject, description, dueDate, assignedUserId, priority, status });
   }, [props.open, props.mode, projectId, propertyId, businessDomain, subject, description, dueDate, assignedUserId, priority, status]);
 
-  function handleBusinessDomainChange(nextDomain: ExpenseBusinessDomain) {
+  function handleBusinessDomainChange(nextDomain: ExpenseBusinessDomain | "") {
     setBusinessDomain(nextDomain);
     if (effectiveTarget) return;
+    if (!nextDomain) {
+      setProjectId("");
+      setPropertyId("");
+      return;
+    }
 
     const nextTargetType = targetTypeForDomain(nextDomain);
     if (nextTargetType === "property") {
@@ -350,8 +366,9 @@ export function TaskUpsertDialog(props: Props) {
             <select
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={effectiveDomain}
-              onChange={(e) => handleBusinessDomainChange(e.target.value as ExpenseBusinessDomain)}
+              onChange={(e) => handleBusinessDomainChange(e.target.value as ExpenseBusinessDomain | "")}
             >
+              {allowedDomains.length > 1 ? <option value="">בחרו תחום</option> : null}
               {allowedDomains.map((domain) => (
                 <option key={domain} value={domain}>
                   {getBusinessDomainLabel(domain)}
@@ -391,6 +408,8 @@ export function TaskUpsertDialog(props: Props) {
             </div>
           ) : null}
 
+          {effectiveDomain ? (
+            <>
           <div className="space-y-1">
             <div className="text-sm font-medium">כותרת *</div>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
@@ -453,6 +472,8 @@ export function TaskUpsertDialog(props: Props) {
               </select>
             </div>
           </AdaptiveGrid>
+            </>
+          ) : null}
 
           <DialogFooter className="mt-6">
             <Button type="button" variant="secondary" onClick={() => props.onOpenChange(false)}>

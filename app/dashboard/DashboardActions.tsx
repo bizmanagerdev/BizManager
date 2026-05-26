@@ -446,8 +446,8 @@ export default function DashboardActions({
 
   const [taskSubmitting, setTaskSubmitting] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
-  const [taskBusinessDomain, setTaskBusinessDomain] = useState<ExpenseBusinessDomain>("logistics_projects");
-  const [taskProjectId, setTaskProjectId] = useState(projects[0]?.id ?? "");
+  const [taskBusinessDomain, setTaskBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
+  const [taskProjectId, setTaskProjectId] = useState("");
   const [taskPropertyId, setTaskPropertyId] = useState("");
   const [taskSubject, setTaskSubject] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
@@ -512,7 +512,7 @@ export default function DashboardActions({
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
   const [manualSessionError, setManualSessionError] = useState<string | null>(null);
   const [manualSessionUserId, setManualSessionUserId] = useState("");
-  const [manualSessionDomain, setManualSessionDomain] = useState<ExpenseBusinessDomain>("general_business");
+  const [manualSessionDomain, setManualSessionDomain] = useState<ExpenseBusinessDomain | "">("");
   const [manualSessionProjectId, setManualSessionProjectId] = useState("");
   const [manualSessionPropertyId, setManualSessionPropertyId] = useState("");
   const [manualSessionNotes, setManualSessionNotes] = useState("");
@@ -715,8 +715,8 @@ export default function DashboardActions({
 
   function resetTaskForm() {
     setTaskError(null);
-    setTaskBusinessDomain("logistics_projects");
-    setTaskProjectId(projects[0]?.id ?? "");
+    setTaskBusinessDomain("");
+    setTaskProjectId("");
     setTaskPropertyId("");
     setTaskSubject("");
     setTaskDescription("");
@@ -778,7 +778,7 @@ export default function DashboardActions({
   function resetManualSessionForm() {
     setManualSessionError(null);
     setManualSessionUserId(canManageWorkerSessions ? "" : currentUserId ?? "");
-    setManualSessionDomain("general_business");
+    setManualSessionDomain("");
     setManualSessionProjectId("");
     setManualSessionPropertyId("");
     setManualSessionNotes("");
@@ -877,6 +877,7 @@ export default function DashboardActions({
     const needsProject = taskBusinessDomain === "logistics_projects";
     const needsProperty = taskBusinessDomain === "property_management";
     if (
+      !taskBusinessDomain ||
       !taskSubject.trim() || !taskAssignedUserId || !taskDueDate ||
       (needsProject && !taskProjectId) ||
       (needsProperty && !taskPropertyId)
@@ -1310,6 +1311,10 @@ export default function DashboardActions({
       setManualSessionError(HEBREW.sessionInvalidWorker);
       return;
     }
+    if (!manualSessionDomain) {
+      setManualSessionError("יש לבחור תחום.");
+      return;
+    }
     const domainError = validateSessionDomain(
       manualSessionDomain,
       manualSessionProjectId,
@@ -1676,17 +1681,18 @@ export default function DashboardActions({
               ) : null}
 
               <label className="space-y-2 text-right text-sm">
-                <span className="font-medium">{HEBREW.domain}</span>
+                <span className="font-medium">{HEBREW.domain} *</span>
                 <select
                   className={`${fieldClass} text-right`}
                   value={manualSessionDomain}
                   onChange={(e) => {
-                    const nextDomain = e.target.value as ExpenseBusinessDomain;
+                    const nextDomain = e.target.value as ExpenseBusinessDomain | "";
                     setManualSessionDomain(nextDomain);
                     if (nextDomain !== "logistics_projects") setManualSessionProjectId("");
                     if (nextDomain !== "property_management") setManualSessionPropertyId("");
                   }}
                 >
+                  <option value="">בחרו תחום</option>
                   {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
                     <option key={domain} value={domain}>
                       {getBusinessDomainLabel(domain)}
@@ -1720,7 +1726,7 @@ export default function DashboardActions({
 
               {manualSessionDomain === "property_management" ? (
                 <label className="space-y-2 text-right text-sm">
-                  <span className="font-medium">נכס</span>
+                  <span className="font-medium">נכס *</span>
                   <select
                     className={`${fieldClass} text-right`}
                     value={manualSessionPropertyId}
@@ -1736,6 +1742,8 @@ export default function DashboardActions({
                 </label>
               ) : null}
 
+              {manualSessionDomain ? (
+                <>
               <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
                 <label className="space-y-2 text-right text-sm">
                   <span className="font-medium">כניסה</span>
@@ -1837,6 +1845,8 @@ export default function DashboardActions({
                   placeholder="הערות פנימיות..."
                 />
               </label>
+                </>
+              ) : null}
             </div>
           </fieldset>
 
@@ -2226,17 +2236,18 @@ export default function DashboardActions({
           <fieldset disabled={taskSubmitting} className="contents">
             <div className="grid gap-4">
               <label className="space-y-2 text-sm">
-                <span>{HEBREW.domain}</span>
+                <span>{HEBREW.domain} *</span>
                 <select
                   className={fieldClass}
                   value={taskBusinessDomain}
                   onChange={(e) => {
-                    const next = e.target.value as ExpenseBusinessDomain;
+                    const next = e.target.value as ExpenseBusinessDomain | "";
                     setTaskBusinessDomain(next);
                     if (next !== "logistics_projects") setTaskProjectId("");
                     if (next !== "property_management") setTaskPropertyId("");
                   }}
                 >
+                  <option value="">בחרו תחום</option>
                   {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
                     <option key={domain} value={domain}>
                       {getBusinessDomainLabel(domain)}
@@ -2247,19 +2258,19 @@ export default function DashboardActions({
 
               {taskBusinessDomain === "logistics_projects" ? (
                 <div className="space-y-2 text-sm">
-                  <span>{HEBREW.project}</span>
+                  <span>{HEBREW.project} *</span>
                   <ProjectPicker
                     projects={projectPickerOptions}
                     value={taskProjectId}
                     onChange={setTaskProjectId}
-                    emptyLabel={HEBREW.selectProject}
+                    allowClear={false}
                   />
                 </div>
               ) : null}
 
               {taskBusinessDomain === "property_management" ? (
                 <label className="space-y-2 text-sm">
-                  <span>נכס</span>
+                  <span>נכס *</span>
                   <select
                     className={fieldClass}
                     value={taskPropertyId}
@@ -2275,36 +2286,40 @@ export default function DashboardActions({
                 </label>
               ) : null}
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.subject}</span>
-                <Input value={taskSubject} onChange={(e) => setTaskSubject(e.target.value)} />
-              </label>
+              {taskBusinessDomain ? (
+                <>
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.subject} *</span>
+                    <Input value={taskSubject} onChange={(e) => setTaskSubject(e.target.value)} />
+                  </label>
 
-              <AdaptiveGrid variant="formTwoLoose">
-                <label className="space-y-2 text-sm">
-                  <span>{HEBREW.dueDate}</span>
-                  <DateInput
-                    value={taskDueDate}
-                    onChange={(e) => setTaskDueDate(e.target.value)}
-                  />
-                </label>
+                  <AdaptiveGrid variant="formTwoLoose">
+                    <label className="space-y-2 text-sm">
+                      <span>{HEBREW.dueDate} *</span>
+                      <DateInput
+                        value={taskDueDate}
+                        onChange={(e) => setTaskDueDate(e.target.value)}
+                      />
+                    </label>
 
-                <label className="space-y-2 text-sm">
-                  <span>{HEBREW.assignee}</span>
-                  <select
-                    className={fieldClass}
-                    value={taskAssignedUserId}
-                    onChange={(e) => setTaskAssignedUserId(e.target.value)}
-                  >
-                    <option value="">{HEBREW.selectAssignee}</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </AdaptiveGrid>
+                    <label className="space-y-2 text-sm">
+                      <span>{HEBREW.assignee} *</span>
+                      <select
+                        className={fieldClass}
+                        value={taskAssignedUserId}
+                        onChange={(e) => setTaskAssignedUserId(e.target.value)}
+                      >
+                        <option value="">{HEBREW.selectAssignee}</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </AdaptiveGrid>
+                </>
+              ) : null}
             </div>
           </fieldset>
 

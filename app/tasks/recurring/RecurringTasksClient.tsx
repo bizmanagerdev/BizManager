@@ -57,7 +57,7 @@ type FormState = {
   id: string | null;
   subject_template: string;
   description_template: string;
-  business_domain: ExpenseBusinessDomain;
+  business_domain: ExpenseBusinessDomain | "";
   project_id: string;
   property_id: string;
   default_priority: TaskPriority;
@@ -73,7 +73,7 @@ type FormState = {
 const PRIORITY_OPTIONS: TaskPriority[] = ["low", "medium", "high", "urgent"];
 const STATUS_OPTIONS: TaskStatus[] = ["todo", "in_progress", "blocked", "done", "cancelled"];
 
-function linkRequirement(domain: ExpenseBusinessDomain) {
+function linkRequirement(domain: ExpenseBusinessDomain | "") {
   if (domain === "logistics_projects") return "project";
   if (domain === "property_management") return "property";
   return null;
@@ -84,7 +84,7 @@ function createEmptyForm(): FormState {
     id: null,
     subject_template: "",
     description_template: "",
-    business_domain: "general_business",
+    business_domain: "",
     project_id: "",
     property_id: "",
     default_priority: "medium",
@@ -143,7 +143,7 @@ export default function RecurringTasksClient(props: Props) {
     setOpen(true);
   }
 
-  function handleDomainChange(next: ExpenseBusinessDomain) {
+  function handleDomainChange(next: ExpenseBusinessDomain | "") {
     setForm((current) => ({
       ...current,
       business_domain: next,
@@ -420,8 +420,9 @@ export default function RecurringTasksClient(props: Props) {
               <select
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={form.business_domain}
-                onChange={(e) => handleDomainChange(e.target.value as ExpenseBusinessDomain)}
+                onChange={(e) => handleDomainChange(e.target.value as ExpenseBusinessDomain | "")}
               >
+                <option value="">בחרו תחום</option>
                 {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
                   <option key={domain} value={domain}>
                     {getBusinessDomainLabel(domain)}

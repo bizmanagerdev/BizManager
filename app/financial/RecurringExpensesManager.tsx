@@ -71,7 +71,7 @@ type FormState = {
   amount: string;
   description_template: string;
   notes_template: string;
-  business_domain: ExpenseBusinessDomain;
+  business_domain: ExpenseBusinessDomain | "";
   project_id: string;
   order_id: string;
   property_id: string;
@@ -111,7 +111,7 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function linkRequirement(domain: ExpenseBusinessDomain) {
+function linkRequirement(domain: ExpenseBusinessDomain | "") {
   if (domain === "logistics_projects") return "project";
   if (domain === "property_management") return "property";
   if (domain === "sales") return "order-optional";
@@ -126,7 +126,7 @@ function createEmptyForm(): FormState {
     amount: "",
     description_template: "",
     notes_template: "",
-    business_domain: "general_business",
+    business_domain: "",
     project_id: "",
     order_id: "",
     property_id: "",
@@ -166,6 +166,7 @@ export default function RecurringExpensesManager(props: Props) {
   const requirement = linkRequirement(form.business_domain);
   const amountNumber = Number(form.amount);
   const canSave =
+    Boolean(form.business_domain) &&
     Boolean(form.template_name.trim()) &&
     Boolean(form.category.trim()) &&
     Number.isFinite(amountNumber) &&
@@ -214,7 +215,7 @@ export default function RecurringExpensesManager(props: Props) {
     setOpen(true);
   }
 
-  function handleDomainChange(next: ExpenseBusinessDomain) {
+  function handleDomainChange(next: ExpenseBusinessDomain | "") {
     setForm((current) => ({
       ...current,
       business_domain: next,
@@ -481,6 +482,24 @@ export default function RecurringExpensesManager(props: Props) {
               void save();
             }}
           >
+            <div className="space-y-1">
+              <div className="text-sm font-medium">תחום עסקי *</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={form.business_domain}
+                onChange={(event) => handleDomainChange(event.target.value as ExpenseBusinessDomain | "")}
+              >
+                <option value="">בחרו תחום</option>
+                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                  <option key={domain} value={domain}>
+                    {getBusinessDomainLabel(domain)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {form.business_domain ? (
+              <>
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <div className="text-sm font-medium">שם תבנית *</div>
@@ -500,32 +519,16 @@ export default function RecurringExpensesManager(props: Props) {
               </div>
             </AdaptiveGrid>
 
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">סכום *</div>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={form.amount}
-                  onChange={(event) => updateForm("amount", event.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">תחום עסקי *</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={form.business_domain}
-                  onChange={(event) => handleDomainChange(event.target.value as ExpenseBusinessDomain)}
-                >
-                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                    <option key={domain} value={domain}>
-                      {getBusinessDomainLabel(domain)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </AdaptiveGrid>
+            <div className="space-y-1">
+              <div className="text-sm font-medium">סכום *</div>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.amount}
+                onChange={(event) => updateForm("amount", event.target.value)}
+              />
+            </div>
 
             {requirement === "project" ? (
               <div className="space-y-1">
@@ -714,6 +717,8 @@ export default function RecurringExpensesManager(props: Props) {
               />
               <span>פעיל</span>
             </label>
+              </>
+            ) : null}
 
             <DialogFooter className="mt-6">
               <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
