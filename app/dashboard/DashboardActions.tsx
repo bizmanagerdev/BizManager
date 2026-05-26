@@ -46,6 +46,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
+import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEditor";
+import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
 
 type Row = Record<string, unknown>;
 
@@ -1993,6 +1995,50 @@ export default function DashboardActions({
                       : HEBREW.customerFallback}
                   </div>
                 </div>
+
+                {selectedProjectCustomer && projectCustomerId ? (
+                  <InlineCustomerEditor
+                    customerId={projectCustomerId}
+                    name={getString(selectedProjectCustomer, "name")}
+                    phone={getString(selectedProjectCustomer, "phone") || null}
+                    email={getString(selectedProjectCustomer, "email") || null}
+                    address={getString(selectedProjectCustomer, "address") || null}
+                    disabled={projectSubmitting}
+                    onUpdated={(updated: InlineCustomerUpdate) => {
+                      setProjectCustomerOptions((prev) =>
+                        prev.map((c) =>
+                          getString(c, "id") === updated.id
+                            ? {
+                                ...c,
+                                name: updated.name,
+                                phone: updated.phone,
+                                email: updated.email,
+                                address: updated.address,
+                              }
+                            : c
+                        )
+                      );
+                      setProjectCustomerSearchResults((prev) =>
+                        prev === null
+                          ? prev
+                          : prev.map((c) =>
+                              getString(c, "id") === updated.id
+                                ? {
+                                    ...c,
+                                    name: updated.name,
+                                    phone: updated.phone,
+                                    email: updated.email,
+                                    address: updated.address,
+                                  }
+                                : c
+                            )
+                      );
+                      setProjectCustomerQuery((current) =>
+                        current === getString(selectedProjectCustomer, "name") ? updated.name : current
+                      );
+                    }}
+                  />
+                ) : null}
 
                 <AdaptiveGrid variant="formTwoLoose">
                   <label className="space-y-2 text-sm">

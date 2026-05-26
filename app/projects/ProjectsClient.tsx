@@ -33,6 +33,8 @@ import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
+import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEditor";
+import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
@@ -1464,6 +1466,36 @@ export default function ProjectsClient({
                     {customerPickerOpen ? "סגירת בחירה" : "בחירת לקוח"}
                   </Button>
                 </div>
+
+                {selectedCustomer ? (
+                  <InlineCustomerEditor
+                    customerId={selectedCustomer.id}
+                    name={selectedCustomer.label}
+                    phone={selectedCustomer.phone ?? null}
+                    email={selectedCustomer.email ?? null}
+                    onUpdated={(updated: InlineCustomerUpdate) => {
+                      setCustomerOptionsState((prev) =>
+                        prev.map((o) =>
+                          o.id === updated.id
+                            ? { ...o, label: updated.name, phone: updated.phone, email: updated.email }
+                            : o
+                        )
+                      );
+                      setCustomerSearchResults((prev) =>
+                        prev === null
+                          ? prev
+                          : prev.map((o) =>
+                              o.id === updated.id
+                                ? { ...o, label: updated.name, phone: updated.phone, email: updated.email }
+                                : o
+                            )
+                      );
+                      setCreateCustomerQuery((current) =>
+                        current === selectedCustomer.label ? updated.name : current
+                      );
+                    }}
+                  />
+                ) : null}
 
                 {customerPickerOpen ? (
                   <div className="space-y-2 rounded-md border p-2">

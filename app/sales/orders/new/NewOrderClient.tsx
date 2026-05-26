@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
+import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEditor";
+import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
   derivePaymentStatus,
@@ -758,7 +760,7 @@ export default function NewOrderClient({
             </div>
 
             {selectedCustomer ? (
-              <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <div className="space-y-3 rounded-md border bg-muted/30 p-3 text-sm">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-medium">לקוח נבחר: {selectedCustomer.name}</p>
                   {selectedCustomer.requiresPrepayment ? (
@@ -767,16 +769,33 @@ export default function NewOrderClient({
                     </span>
                   ) : null}
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <ValueField label="טלפון" value={selectedCustomer.phone || "-"} />
-                  <ValueField label="אימייל" value={selectedCustomer.email || "-"} valueClassName="break-all" />
-                  <ValueField label="עיר" value={selectedCustomer.city || "-"} />
-                  <ValueField
-                    label="כתובת"
-                    value={selectedCustomer.address || "-"}
-                    valueClassName="whitespace-pre-wrap"
-                  />
-                </div>
+                <InlineCustomerEditor
+                  customerId={selectedCustomer.id}
+                  name={selectedCustomer.name}
+                  phone={selectedCustomer.phone}
+                  email={selectedCustomer.email}
+                  address={selectedCustomer.address}
+                  disabled={actionLocked}
+                  onUpdated={(updated: InlineCustomerUpdate) => {
+                    setCustomerOptions((prev) =>
+                      prev.map((c) =>
+                        c.id === updated.id
+                          ? {
+                              ...c,
+                              name: updated.name,
+                              phone: updated.phone,
+                              email: updated.email,
+                              address: updated.address,
+                              city: extractCityFromAddress(updated.address),
+                            }
+                          : c
+                      )
+                    );
+                    setCustomerQuery((current) =>
+                      current === selectedCustomer.name ? updated.name : current
+                    );
+                  }}
+                />
               </div>
             ) : null}
 
