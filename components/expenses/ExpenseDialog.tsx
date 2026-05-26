@@ -122,7 +122,7 @@ export function ExpenseDialog({
   const isEditing = Boolean(editingExpense);
   const [saving, setSaving] = useState(false);
 
-  const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain>("general_business");
+  const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
   const [projectId, setProjectId] = useState("");
   const [orderId, setOrderId] = useState("");
   const [propertyId, setPropertyId] = useState("");
@@ -147,7 +147,7 @@ export function ExpenseDialog({
         ? "property_management"
         : null;
   const isSourceLocked = Boolean(lockedProjectId || lockedOrderId || lockedPropertyId);
-  const effectiveDomain = lockedDomain ?? businessDomain;
+  const effectiveDomain: ExpenseBusinessDomain | "" = lockedDomain ?? businessDomain;
   const effectiveProjectId = lockedProjectId ?? (effectiveDomain === "logistics_projects" ? projectId : "");
   const effectiveOrderId = lockedOrderId ?? (effectiveDomain === "sales" ? orderId : "");
   const effectivePropertyId = lockedPropertyId ?? (effectiveDomain === "property_management" ? propertyId : "");
@@ -184,7 +184,7 @@ export function ExpenseDialog({
       setCategory("");
       setDescription("");
       setNotes("");
-      setBusinessDomain(lockedDomain ?? "general_business");
+      setBusinessDomain(lockedDomain ?? "");
       setProjectId("");
       setOrderId("");
       setPropertyId("");
@@ -197,6 +197,10 @@ export function ExpenseDialog({
   }, [open]);
 
   const handleSubmit = async () => {
+    if (!effectiveDomain) {
+      toast.error("יש לבחור תחום");
+      return;
+    }
     const amountNumber = Number(amount);
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
       toast.error("יש להזין סכום תקין");
@@ -328,18 +332,19 @@ export function ExpenseDialog({
           ) : (
             <>
               <div className="space-y-1">
-                <div className="text-sm font-medium">תחום עסקי</div>
+                <div className="text-sm font-medium">תחום עסקי *</div>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={businessDomain}
                   onChange={(e) => {
-                    const next = e.target.value as ExpenseBusinessDomain;
+                    const next = e.target.value as ExpenseBusinessDomain | "";
                     setBusinessDomain(next);
                     setProjectId("");
                     setOrderId("");
                     setPropertyId("");
                   }}
                 >
+                  <option value="">בחרו תחום</option>
                   {EXPENSE_BUSINESS_DOMAINS.map((d) => (
                     <option key={d} value={d}>{getBusinessDomainLabel(d)}</option>
                   ))}
@@ -392,10 +397,12 @@ export function ExpenseDialog({
             </>
           )}
 
+          {effectiveDomain ? (
+            <>
           {/* Amount + Date */}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <div className="text-sm font-medium">סכום</div>
+              <div className="text-sm font-medium">סכום *</div>
               <Input
                 type="number"
                 min="0"
@@ -574,6 +581,8 @@ export function ExpenseDialog({
               )}
             </div>
           )}
+            </>
+          ) : null}
 
           <DialogFooter className="mt-6">
             <Button

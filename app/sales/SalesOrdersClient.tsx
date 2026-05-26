@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatOrderDate } from "@/lib/orders/format";
+import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import {
   derivePaymentStatus,
   paymentStatusClasses,
@@ -233,7 +234,24 @@ export default function SalesOrdersClient({ orders, contacts = [] }: { orders: R
               </thead>
               <tbody className="divide-y divide-border/70">
                 {filteredRows.map((row) => (
-                  <tr key={row.id} className="align-top hover:bg-muted/20">
+                  <tr
+                    key={row.id}
+                    className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
+                    tabIndex={0}
+                    role="link"
+                    onClick={(event) => {
+                      if (shouldIgnoreRowNavigation(event.target)) return;
+                      emitNavigationStart();
+                      window.location.href = `/sales/orders/${row.id}`;
+                    }}
+                    onKeyDown={(event) => {
+                      if (shouldIgnoreRowNavigation(event.target)) return;
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      emitNavigationStart();
+                      window.location.href = `/sales/orders/${row.id}`;
+                    }}
+                  >
                     <td className="px-4 py-4">
                       <div className="font-medium">הזמנה #{row.id.slice(0, 8)}</div>
                     </td>

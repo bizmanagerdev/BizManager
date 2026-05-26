@@ -106,6 +106,7 @@ export default function RecurringTasksClient(props: Props) {
 
   const requirement = linkRequirement(form.business_domain);
   const canSave =
+    Boolean(form.business_domain) &&
     Boolean(form.subject_template.trim()) &&
     form.assignee_user_ids.length > 0 &&
     (requirement === "project"

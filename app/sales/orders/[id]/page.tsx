@@ -333,7 +333,6 @@ export default async function SalesOrderPage({
   const orderNotes = getString((order as Row) ?? {}, "notes");
   const orderDate = getString((order as Row) ?? {}, "order_date");
   const normalizedStatus = normalizeOrderStatus(getString((order as Row) ?? {}, "status"));
-  const isOpenOrder = !["delivered", "completed", "closed", "cancelled"].includes(normalizedStatus);
 
   const subtotal = ((orderItems ?? []) as Row[]).reduce((sum, item) => {
     const quantity = getNumber(item, "quantity_ordered") ?? 0;
@@ -457,20 +456,16 @@ export default async function SalesOrderPage({
               </div>
             </div>
 
-            <div
-              className={`rounded-2xl border p-4 ${
-                isOpenOrder ? "border-destructive/30 bg-destructive-soft/80" : "border-info/30 bg-info-soft/70"
-              }`}
-            >
+            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
               <div className="grid gap-4 lg:grid-cols-[1.2fr_2fr]">
                 <div className="space-y-1">
-                  <div className={`text-xs font-medium ${isOpenOrder ? "text-destructive" : "text-info-soft-foreground"}`}>
+                  <div className="text-xs font-medium text-muted-foreground">
                     תאריך הזמנה
                   </div>
-                  <div className={`text-2xl font-semibold ${isOpenOrder ? "text-destructive" : "text-foreground"}`}>
+                  <div className="text-2xl font-semibold text-foreground">
                     {formatDate(orderDate)}
                   </div>
-                  <div className={`text-sm ${isOpenOrder ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+                  <div className="text-sm text-muted-foreground">
                     {formatRelativeDateLabel(orderDate)}
                   </div>
                 </div>

@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { UserRole } from "@/lib/auth/requireProfile";
+import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel, isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import {
   getPayrollWorkerTypeLabel,
@@ -2394,7 +2395,22 @@ export default function SalaryCenterClient({
                         const monthlyLaborCost = monthStats.totalAmount;
 
                         return (
-                          <tr key={worker.id} className={`border-b align-top ${rowClass}`}>
+                          <tr
+                            key={worker.id}
+                            className={`cursor-pointer border-b align-top hover:bg-muted/40 focus-visible:bg-muted/40 ${rowClass}`}
+                            tabIndex={0}
+                            role="button"
+                            onClick={(event) => {
+                              if (shouldIgnoreRowNavigation(event.target)) return;
+                              setSelectedWorkerId(worker.id);
+                            }}
+                            onKeyDown={(event) => {
+                              if (shouldIgnoreRowNavigation(event.target)) return;
+                              if (event.key !== "Enter" && event.key !== " ") return;
+                              event.preventDefault();
+                              setSelectedWorkerId(worker.id);
+                            }}
+                          >
                             <td className="px-3 py-3">
                               <div className="flex flex-wrap justify-end gap-2">
                                 <Button variant="outline" size="sm" onClick={() => setSelectedWorkerId(worker.id)}>
@@ -2531,7 +2547,22 @@ export default function SalaryCenterClient({
                         const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
 
                         return (
-                          <tr key={worker.id} className={`border-b align-top ${rowClass}`}>
+                          <tr
+                            key={worker.id}
+                            className={`cursor-pointer border-b align-top hover:bg-muted/40 focus-visible:bg-muted/40 ${rowClass}`}
+                            tabIndex={0}
+                            role="button"
+                            onClick={(event) => {
+                              if (shouldIgnoreRowNavigation(event.target)) return;
+                              setSelectedWorkerId(worker.id);
+                            }}
+                            onKeyDown={(event) => {
+                              if (shouldIgnoreRowNavigation(event.target)) return;
+                              if (event.key !== "Enter" && event.key !== " ") return;
+                              event.preventDefault();
+                              setSelectedWorkerId(worker.id);
+                            }}
+                          >
                             <td className="px-2 py-2">
                               <div className="flex flex-wrap justify-end gap-2">
                                 <Button variant="outline" size="sm" onClick={() => setSelectedWorkerId(worker.id)}>

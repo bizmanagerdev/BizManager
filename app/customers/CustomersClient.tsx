@@ -13,6 +13,7 @@ import {
 } from "@/components/layout/page-layout";
 import { NavLink } from "@/components/NavLink";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -318,11 +319,6 @@ export default function CustomersClient({
     if (!customerId) return;
     emitNavigationStart();
     window.location.href = customerDetailsHref(customerId);
-  }
-
-  function shouldIgnoreRowNavigation(target: EventTarget | null) {
-    if (!(target instanceof HTMLElement)) return false;
-    return Boolean(target.closest("a, button, input, textarea, select, label"));
   }
 
   return (

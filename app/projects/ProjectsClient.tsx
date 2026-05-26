@@ -7,6 +7,7 @@ import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-qu
 import { FileText, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
+import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import {
   AdaptiveDialog,
   AdaptiveGrid,
@@ -1106,17 +1107,29 @@ export default function ProjectsClient({
                 const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
                 return (
-                  <tr key={`${id}-table`} className="align-top hover:bg-muted/20">
+                  <tr
+                    key={`${id}-table`}
+                    className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
+                    tabIndex={0}
+                    role="link"
+                    onClick={(event) => {
+                      if (shouldIgnoreRowNavigation(event.target)) return;
+                      emitNavigationStart();
+                      router.push(detailHref);
+                    }}
+                    onKeyDown={(event) => {
+                      if (shouldIgnoreRowNavigation(event.target)) return;
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      emitNavigationStart();
+                      router.push(detailHref);
+                    }}
+                  >
                     <td className="px-4 py-4">
-                      <Link
-                        href={detailHref}
-                        prefetch
-                        className="block min-w-[180px]"
-                        onClick={() => emitNavigationStart()}
-                      >
+                      <div className="block min-w-[180px]">
                         <div className="font-medium">{projectDisplayName(row)}</div>
                         <div className="mt-1 text-xs text-muted-foreground">#{id.slice(0, 8)}</div>
-                      </Link>
+                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <StatusBadge value={currentStatus} type="project" />
