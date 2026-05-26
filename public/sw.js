@@ -1,4 +1,4 @@
-const V = "v9";
+const V = "v10";
 const STATIC_CACHE = `bizh-static-${V}`;   // immutable _next/static chunks
 const PAGES_CACHE  = `bizh-pages-${V}`;    // navigation responses
 const API_CACHE    = `bizh-api-${V}`;      // /api GET responses
@@ -237,7 +237,27 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 4. Page navigations — network-first; cache each page so it reopens offline
+  // 4. RSC payload refetches (router.refresh / soft navigation) — network-first.
+  // These hit the same route URL with `RSC: 1` header or `_rsc=` query param.
+  // Without this, the cache-first fallback (case 6) returns the stale page.
+  const isRscRequest =
+    request.headers.get("RSC") === "1" ||
+    request.headers.get("Next-Router-State-Tree") !== null ||
+    url.searchParams.has("_rsc");
+  if (isRscRequest) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          putInCache(PAGES_CACHE, request, res);
+          return res;
+        })
+        .catch(() => caches.match(request))
+        .then((res) => res ?? new Response("Offline", { status: 503 }))
+    );
+    return;
+  }
+
+  // 5. Page navigations — network-first; cache each page so it reopens offline
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
@@ -261,7 +281,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 5. Everything else (icons, fonts, etc.) — cache-first
+  // 6. Everything else (icons, fonts, etc.) — cache-first
   event.respondWith(
     caches.match(request).then(
       (cached) =>
