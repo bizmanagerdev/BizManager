@@ -462,6 +462,8 @@ export default function RecurringTasksClient(props: Props) {
               </div>
             ) : null}
 
+            {form.business_domain ? (
+              <>
             <div className="space-y-1">
               <div className="text-sm font-medium">כותרת תבנית *</div>
               <Input
@@ -569,6 +571,8 @@ export default function RecurringTasksClient(props: Props) {
               />
               <span>פעיל</span>
             </label>
+              </>
+            ) : null}
 
             <DialogFooter className="mt-6">
               <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
