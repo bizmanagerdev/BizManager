@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AdaptiveDialog,
   AdaptiveGrid,
@@ -85,6 +85,68 @@ export function CreateCustomerDialog({
   const [contacts, setContacts] = useState<ContactDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [similar, setSimilar] = useState<CreatedCustomer[]>([]);
+  const [similarLoading, setSimilarLoading] = useState(false);
+  const [similarDismissed, setSimilarDismissed] = useState(false);
+
+  const similarTerms = useMemo(() => {
+    const unique = new Set<string>();
+    for (const value of [name, phone, whatsapp, email, address]) {
+      const trimmed = value.trim();
+      if (trimmed.length >= 2) unique.add(trimmed);
+    }
+    return Array.from(unique);
+  }, [name, phone, whatsapp, email, address]);
+
+  const similarTermsKey = similarTerms.join("|");
+
+  useEffect(() => {
+    if (!open) return;
+    if (similarDismissed) return;
+    if (similarTerms.length === 0) {
+      setSimilar([]);
+      return;
+    }
+    const controller = new AbortController();
+    setSimilarLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const responses = await Promise.all(
+          similarTerms.map((term) =>
+            fetch(`/api/customers/search?q=${encodeURIComponent(term)}&limit=10`, {
+              signal: controller.signal,
+            })
+              .then((res) => (res.ok ? (res.json() as Promise<{ customers?: CreatedCustomer[] }>) : null))
+              .catch(() => null)
+          )
+        );
+        if (controller.signal.aborted) return;
+        const byId = new Map<string, CreatedCustomer>();
+        for (const json of responses) {
+          for (const c of json?.customers ?? []) {
+            if (!byId.has(c.id)) byId.set(c.id, c);
+          }
+        }
+        setSimilar(Array.from(byId.values()).slice(0, 10));
+      } catch {
+        // ignore — abort or network error
+      } finally {
+        if (!controller.signal.aborted) setSimilarLoading(false);
+      }
+    }, 350);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+    // similarTermsKey captures changes to similarTerms without depending on the array reference
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, similarTermsKey, similarDismissed]);
+
+  function useExistingCustomer(existing: CreatedCustomer) {
+    onCreated(existing, []);
+    reset();
+    onOpenChange(false);
+  }
 
   function reset() {
     setName("");
@@ -100,6 +162,9 @@ export function CreateCustomerDialog({
     setRequiresPrepayment(false);
     setContacts([]);
     setError(null);
+    setSimilar([]);
+    setSimilarDismissed(false);
+    setSimilarLoading(false);
   }
 
   function handleOpenChange(next: boolean) {
@@ -255,6 +320,54 @@ export function CreateCustomerDialog({
           <DialogTitle>הוספת לקוח חדש</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+
+        {!similarDismissed && similar.length > 0 ? (
+          <div className="space-y-2 rounded-md border border-warning bg-warning/15 p-3 text-sm text-warning-strong">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-medium">
+                נמצאו לקוחות דומים — אולי לא צריך ליצור חדש?
+              </div>
+              <button
+                type="button"
+                className="text-xs underline opacity-80 hover:opacity-100"
+                onClick={() => setSimilarDismissed(true)}
+              >
+                התעלם והמשך
+              </button>
+            </div>
+            <ul className="space-y-1">
+              {similar.map((match) => (
+                <li
+                  key={match.id}
+                  className="flex items-center justify-between gap-2 rounded-md bg-background/60 px-2 py-1"
+                >
+                  <div className="min-w-0 flex-1 truncate">
+                    <span className="font-medium">{match.name}</span>
+                    {match.phone ? (
+                      <span className="text-muted-foreground"> · {match.phone}</span>
+                    ) : null}
+                    {match.email ? (
+                      <span className="text-muted-foreground"> · {match.email}</span>
+                    ) : null}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={submitting}
+                    onClick={() => useExistingCustomer(match)}
+                  >
+                    שימוש בלקוח זה
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {!similarDismissed && similar.length === 0 && similarLoading ? (
+          <div className="text-xs text-muted-foreground">בודק אם קיים לקוח דומה...</div>
+        ) : null}
+
         <form
           className="space-y-3"
           onSubmit={(e) => {

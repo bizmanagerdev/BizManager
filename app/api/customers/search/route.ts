@@ -10,9 +10,14 @@ function parseLimit(value: string | null) {
 type CustomerRow = {
   id: string;
   name: string;
+  name_for_invoice: string | null;
+  registration_number: string | null;
   phone: string | null;
+  whatsapp: string | null;
   email: string | null;
   address: string | null;
+  active: boolean;
+  notes: string | null;
   requires_prepayment: boolean;
   contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
 };
@@ -28,7 +33,7 @@ export async function GET(req: Request) {
 
   let baseQuery = supabase
     .from("customers")
-    .select("id,name,phone,email,address,requires_prepayment")
+    .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes,requires_prepayment")
     .order("name", { ascending: true })
     .range(0, limit - 1);
 
@@ -50,9 +55,14 @@ export async function GET(req: Request) {
       {
         id: row.id,
         name: row.name,
+        name_for_invoice: row.name_for_invoice ?? null,
+        registration_number: row.registration_number ?? null,
         phone: row.phone,
+        whatsapp: row.whatsapp ?? null,
         email: row.email,
         address: row.address,
+        active: row.active !== false,
+        notes: row.notes ?? null,
         requires_prepayment: row.requires_prepayment === true,
       },
     ])
@@ -79,16 +89,21 @@ export async function GET(req: Request) {
     if (contactCustomerIds.length > 0) {
       const { data: extraCustomers } = await supabase
         .from("customers")
-        .select("id,name,phone,email,address,requires_prepayment")
+        .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes,requires_prepayment")
         .in("id", contactCustomerIds);
 
       for (const row of extraCustomers ?? []) {
         byId.set(row.id, {
           id: row.id,
           name: row.name,
+          name_for_invoice: row.name_for_invoice ?? null,
+          registration_number: row.registration_number ?? null,
           phone: row.phone,
+          whatsapp: row.whatsapp ?? null,
           email: row.email,
           address: row.address,
+          active: row.active !== false,
+          notes: row.notes ?? null,
           requires_prepayment: row.requires_prepayment === true,
         });
       }
