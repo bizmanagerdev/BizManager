@@ -1,6 +1,11 @@
 "use client";
 
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import type {
+  ChangeEvent as ReactChangeEvent,
+  ComponentPropsWithoutRef,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+} from "react";
 import { DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
@@ -87,14 +92,120 @@ export function AdaptiveWidth({
   );
 }
 
+// Inputs that should advance to the next field when the user presses Enter.
+// We skip checkboxes/radios/buttons/hidden/file (Enter has different semantics there)
+// and skip textareas as a SOURCE (Enter inserts a newline) — but textareas may still
+// be a destination so users land in them naturally.
+const ADVANCE_SOURCE_INPUT_TYPES = new Set([
+  "text",
+  "email",
+  "tel",
+  "url",
+  "number",
+  "search",
+  "password",
+  "date",
+  "time",
+  "datetime-local",
+  "month",
+  "week",
+]);
+
+const ADVANCE_DESTINATION_SELECTOR = [
+  'input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([disabled]):not([readonly])',
+  "select:not([disabled])",
+  "textarea:not([disabled]):not([readonly])",
+].join(",");
+
+function handleAdaptiveDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Enter") return;
+  if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.nativeEvent.isComposing) return;
+  const target = event.target as HTMLElement | null;
+  if (!target || target.tagName !== "INPUT") return;
+  const input = target as HTMLInputElement;
+  const type = (input.type || "text").toLowerCase();
+  if (!ADVANCE_SOURCE_INPUT_TYPES.has(type)) return;
+
+  const container = event.currentTarget;
+  const fields = Array.from(
+    container.querySelectorAll<HTMLElement>(ADVANCE_DESTINATION_SELECTOR)
+  ).filter((el) => el.offsetParent !== null);
+  const idx = fields.indexOf(input);
+  if (idx === -1 || idx === fields.length - 1) return; // last field — allow default (form submit)
+
+  event.preventDefault();
+  focusNextField(container, input);
+}
+
+function focusNextField(container: HTMLElement, source: HTMLElement) {
+  const fields = Array.from(
+    container.querySelectorAll<HTMLElement>(ADVANCE_DESTINATION_SELECTOR)
+  ).filter((el) => el.offsetParent !== null);
+  const idx = fields.indexOf(source);
+  if (idx === -1 || idx === fields.length - 1) return;
+  const next = fields[idx + 1];
+  next.focus();
+  if (next instanceof HTMLInputElement) {
+    try {
+      next.select();
+    } catch {
+      // some input types (date, number) don't support .select()
+    }
+  }
+}
+
+function handleAdaptiveDialogChange(event: ReactChangeEvent<HTMLDivElement>) {
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+
+  let shouldAdvance = false;
+  if (target.tagName === "SELECT") {
+    const select = target as HTMLSelectElement;
+    if (select.multiple) return;
+    if (!select.value) return; // user cleared the selection — don't jump
+    shouldAdvance = true;
+  } else if (target.tagName === "INPUT") {
+    const input = target as HTMLInputElement;
+    const type = (input.type || "text").toLowerCase();
+    if (type === "checkbox" || type === "radio") shouldAdvance = true;
+  }
+  if (!shouldAdvance) return;
+
+  // Capture refs before rAF — React reuses synthetic events.
+  const container = event.currentTarget;
+  const source = target;
+  requestAnimationFrame(() => {
+    if (!container || !source) return;
+    // Bail if focus already moved (e.g., user clicked elsewhere) so we don't steal it.
+    if (document.activeElement !== source && document.activeElement !== document.body) return;
+    focusNextField(container, source);
+  });
+}
+
 export function AdaptiveDialog({
   size,
   className,
+  onKeyDown,
+  onChange,
   ...props
 }: ComponentPropsWithoutRef<typeof DialogContent> & {
   size: keyof typeof dialogVariants;
 }) {
-  return <DialogContent className={cn(dialogVariants[size], className)} {...props} />;
+  return (
+    <DialogContent
+      className={cn(dialogVariants[size], className)}
+      onKeyDown={(event) => {
+        handleAdaptiveDialogKeyDown(event);
+        if (!event.defaultPrevented) onKeyDown?.(event);
+      }}
+      onChange={(event) => {
+        handleAdaptiveDialogChange(event);
+        onChange?.(event);
+      }}
+      {...props}
+    />
+  );
 }
 
 export function AdaptiveCell({
