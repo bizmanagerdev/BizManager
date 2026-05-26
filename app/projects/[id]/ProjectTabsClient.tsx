@@ -61,6 +61,12 @@ import {
   type SalaryAgreementRow,
   type WorkSessionRow,
 } from "@/lib/payroll";
+import {
+  normalizePayrollWorkerType,
+  shouldShowSessionHours,
+  shouldShowSessionPrice,
+  type PayrollWorkerType,
+} from "@/lib/payroll-worker-type";
 import { getStatusDotClasses } from "@/lib/ui/status-color-classes";
 import {
   getTaskPriorityColor,
@@ -137,6 +143,8 @@ export type AssignableUser = {
   email: string;
   role: string | null;
   active: boolean | null;
+  payroll_worker_type: PayrollWorkerType | null;
+  pay_tracking_mode: string | null;
 };
 
 export type ProjectSalaryAgreement = SalaryAgreementRow;
@@ -1315,25 +1323,34 @@ export default function ProjectTabsClient({
             <LtrInline>{formatDate(createdAt)}</LtrInline>
             {session ? (
               <>
-                <span>
-                  כניסה:{" "}
-                  <LtrInline>
-                    {isSameDay(createdAt, session.clock_in)
-                      ? formatTimeOnly(session.clock_in)
-                      : formatDateTime(session.clock_in)}
-                  </LtrInline>
-                </span>
-                <span>
-                  יציאה:{" "}
-                  <LtrInline>
-                    {isSameDay(createdAt, session.clock_out)
-                      ? formatTimeOnly(session.clock_out)
-                      : formatDateTime(session.clock_out)}
-                  </LtrInline>
-                </span>
-                <span>
-                  משך: <LtrInline>{formatMinutes(sessionWorkedMinutes(session))}</LtrInline>
-                </span>
+                {shouldShowSessionHours(
+                  normalizePayrollWorkerType(
+                    usersById.get(session.user_id)?.payroll_worker_type,
+                    usersById.get(session.user_id)?.pay_tracking_mode
+                  )
+                ) ? (
+                  <>
+                    <span>
+                      כניסה:{" "}
+                      <LtrInline>
+                        {isSameDay(createdAt, session.clock_in)
+                          ? formatTimeOnly(session.clock_in)
+                          : formatDateTime(session.clock_in)}
+                      </LtrInline>
+                    </span>
+                    <span>
+                      יציאה:{" "}
+                      <LtrInline>
+                        {isSameDay(createdAt, session.clock_out)
+                          ? formatTimeOnly(session.clock_out)
+                          : formatDateTime(session.clock_out)}
+                      </LtrInline>
+                    </span>
+                    <span>
+                      משך: <LtrInline>{formatMinutes(sessionWorkedMinutes(session))}</LtrInline>
+                    </span>
+                  </>
+                ) : null}
                 {options?.billedList ? (
                   <span>
                     עלות עבודה: <LtrInline>{formatIls(amount)}</LtrInline>
@@ -3786,6 +3803,15 @@ function AddExpenseDialog({
   const finalCategory =
     category === OTHER_PROJECT_EXPENSE_CATEGORY ? categoryOther.trim() : category.trim();
   const isSessionMode = isEditingSession || (!isEditing && finalCategory === EMPLOYEE_WAGE_CATEGORY);
+  const selectedSessionWorkerType = useMemo<PayrollWorkerType | null>(() => {
+    if (!sessionUserId) return null;
+    const worker = sessionUsers.find((u) => u.id === sessionUserId);
+    if (!worker) return null;
+    return normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
+  }, [sessionUserId, sessionUsers]);
+  const showSessionTimingFields = !isSessionMode || shouldShowSessionHours(selectedSessionWorkerType);
+  const showSessionPriceField = !isSessionMode || shouldShowSessionPrice(selectedSessionWorkerType);
+  const sessionDateValue = dateOnly(clockIn) || projectDateOrToday(projectStartDate);
   const movedAmountToNotesRef = useRef(false);
   const lastAutoWorkerPaymentAmountRef = useRef("");
   const originalWorkerPaymentAmountRef = useRef(0);
@@ -4089,6 +4115,16 @@ function AddExpenseDialog({
     setAmount("");
     movedAmountToNotesRef.current = true;
   }, [amount, isSessionMode]);
+
+  useEffect(() => {
+    if (!isSessionMode || selectedSessionWorkerType !== "session_only") return;
+    const date = dateOnly(clockIn) || projectDateOrToday(projectStartDate);
+    const normalizedIn = `${date}T09:00`;
+    const normalizedOut = `${date}T10:00`;
+    if (clockIn !== normalizedIn) setClockIn(normalizedIn);
+    if (clockOut !== normalizedOut) setClockOut(normalizedOut);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSessionMode, selectedSessionWorkerType]);
 
   async function createWorker() {
     const name = newWorkerName.trim();
@@ -4531,7 +4567,7 @@ function AddExpenseDialog({
             </div>
           ) : null}
 
-          {isSessionMode ? (
+          {isSessionMode && showSessionTimingFields ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1">
                 <div className="text-sm font-medium">שעת התחלה *</div>
@@ -4600,6 +4636,23 @@ function AddExpenseDialog({
             </div>
           ) : null}
 
+          {isSessionMode && !showSessionTimingFields ? (
+            <div className="space-y-1">
+              <div className="text-sm font-medium">תאריך *</div>
+              <DateInput
+                value={sessionDateValue}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (!next) return;
+                  setClockIn(`${next}T09:00`);
+                  setClockOut(`${next}T10:00`);
+                  setClockInTouched(true);
+                  setClockOutTouched(true);
+                }}
+              />
+            </div>
+          ) : null}
+
           <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4 *"}</div>
@@ -4630,6 +4683,8 @@ function AddExpenseDialog({
               ) : null}
             </div>
             <div className="space-y-1">
+              {showSessionPriceField ? (
+              <>
               <div className="text-sm font-medium">
                 {isSessionMode ? "עלות עבודה" : "\u05e1\u05db\u05d5\u05dd *"}
               </div>
@@ -4687,6 +4742,17 @@ function AddExpenseDialog({
               ) : showAmountError ? (
                 <div className="text-xs text-destructive">{amountError}</div>
               ) : null}
+              </>
+              ) : (
+              <>
+                <div className="text-sm font-medium">עלות חישוב אוטומטי</div>
+                <div className="text-xs text-muted-foreground">
+                  {suggestedWorkerPaymentAmount !== null
+                    ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedWorkerPaymentAmount)}`
+                    : "העלות תחושב אוטומטית לפי הסכם השכר לאחר שמירה."}
+                </div>
+              </>
+              )}
             </div>
           </AdaptiveGrid>
 

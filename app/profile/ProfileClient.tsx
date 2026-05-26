@@ -6,11 +6,12 @@ import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DateTimeInput } from "@/components/ui/date-input";
+import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import { EXPENSE_BUSINESS_DOMAINS, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { shouldShowSessionHours } from "@/lib/payroll-worker-type";
 import {
   calculateSessionLaborCost,
   formatCurrency,
@@ -87,6 +88,11 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
 
   const openSession = useMemo(() => sessions.find((session) => !session.clock_out) ?? null, [sessions]);
   const currentAgreement = useMemo(() => getCurrentSalaryAgreement(agreements), [agreements]);
+  const showSessionTimingForProfile = shouldShowSessionHours(profile.payroll_worker_type);
+  const sessionEditDateOnly = (() => {
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(sessionEditClockIn);
+    return match ? match[1] : new Date().toISOString().slice(0, 10);
+  })();
   const periodsById = useMemo(() => new Map(periods.map((period) => [period.id, period])), [periods]);
   const selectedMonthSummary = monthlySummaries.find((summary) => summary.key === selectedMonth) ?? monthlySummaries[0] ?? null;
   const selectedMonthSessions = useMemo(() => sessions.filter((session) => monthKeyFromDate(session.clock_in) === selectedMonth), [selectedMonth, sessions]);
@@ -348,23 +354,32 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
             <Button type="button" size="sm" variant="ghost" onClick={closeEditor}>סגור</Button>
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת התחלה</span><DateTimeInput value={sessionEditClockIn} onChange={(event) => setSessionEditClockIn(event.target.value)} /></label>
-          <label className="space-y-1"><span className="block text-xs text-muted-foreground">סה״כ שעות</span><Input inputMode="decimal" className="text-right" value={editedDurationHours} onChange={(event) => {
-            const nextValue = event.target.value;
-            if (!nextValue.trim()) {
-              setSessionEditClockOut("");
-              return;
-            }
-            const parsedHours = Number(nextValue);
-            const start = toIso(sessionEditClockIn);
-            if (!start || !Number.isFinite(parsedHours) || parsedHours <= 0) return;
-            const nextClockOut = new Date(new Date(start).getTime() + parsedHours * 60 * 60 * 1000);
-            if (Number.isNaN(nextClockOut.getTime())) return;
-            setSessionEditClockOut(toLocalDateTimeValue(nextClockOut));
-          }} placeholder="למשל 8" /></label>
-          <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת סיום</span><DateTimeInput value={sessionEditClockOut} onChange={(event) => setSessionEditClockOut(event.target.value)} /></label>
-        </div>
+        {showSessionTimingForProfile ? (
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת התחלה</span><DateTimeInput value={sessionEditClockIn} onChange={(event) => setSessionEditClockIn(event.target.value)} /></label>
+            <label className="space-y-1"><span className="block text-xs text-muted-foreground">סה״כ שעות</span><Input inputMode="decimal" className="text-right" value={editedDurationHours} onChange={(event) => {
+              const nextValue = event.target.value;
+              if (!nextValue.trim()) {
+                setSessionEditClockOut("");
+                return;
+              }
+              const parsedHours = Number(nextValue);
+              const start = toIso(sessionEditClockIn);
+              if (!start || !Number.isFinite(parsedHours) || parsedHours <= 0) return;
+              const nextClockOut = new Date(new Date(start).getTime() + parsedHours * 60 * 60 * 1000);
+              if (Number.isNaN(nextClockOut.getTime())) return;
+              setSessionEditClockOut(toLocalDateTimeValue(nextClockOut));
+            }} placeholder="למשל 8" /></label>
+            <label className="space-y-1"><span className="block text-xs text-muted-foreground">שעת סיום</span><DateTimeInput value={sessionEditClockOut} onChange={(event) => setSessionEditClockOut(event.target.value)} /></label>
+          </div>
+        ) : (
+          <label className="space-y-1 block"><span className="block text-xs text-muted-foreground">תאריך</span><DateInput value={sessionEditDateOnly} onChange={(event) => {
+            const next = event.target.value;
+            if (!next) return;
+            setSessionEditClockIn(`${next}T09:00`);
+            setSessionEditClockOut(`${next}T10:00`);
+          }} /></label>
+        )}
         <div className="grid gap-3 md:grid-cols-[220px_220px_minmax(0,1fr)]">
           <label className="space-y-1"><span className="block text-xs text-muted-foreground">תחום</span><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-right text-sm" value={sessionEditDomain} onChange={(event) => setEditorDomain(event.target.value as ExpenseBusinessDomain)}>{EXPENSE_BUSINESS_DOMAINS.map((domain) => <option key={domain} value={domain}>{getBusinessDomainLabel(domain)}</option>)}</select></label>
           {sessionEditDomain === "logistics_projects" ? linkField("פרויקט", sessionEditProjectId, setSessionEditProjectId, projectOptions) : sessionEditDomain === "property_management" ? linkField("נכס", sessionEditPropertyId, setSessionEditPropertyId, propertyOptions) : <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">אין צורך בבחירה נוספת.</div>}
@@ -451,10 +466,19 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
               <div className="space-y-3 text-right">
                 {selectedMonthSessions.length === 0 ? <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">אין עדיין משמרות בחודש הזה.</div> : selectedMonthSessions.map((session) => <div key={session.id} className="rounded-2xl border p-4 text-sm text-right">
                   <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
-                    <div className="text-base font-semibold">{formatMinutes(sessionWorkedMinutes(session))}</div>
-                    <div className="font-medium">{formatDateTime(session.clock_in)} {session.clock_out ? `- ${formatDateTime(session.clock_out)}` : "- פתוח"}</div>
+                    {showSessionTimingForProfile ? (
+                      <div className="text-base font-semibold">{formatMinutes(sessionWorkedMinutes(session))}</div>
+                    ) : null}
+                    <div className="font-medium">
+                      {showSessionTimingForProfile
+                        ? `${formatDateTime(session.clock_in)} ${session.clock_out ? `- ${formatDateTime(session.clock_out)}` : "- פתוח"}`
+                        : formatDate(session.clock_in)}
+                    </div>
                   </div>
-                  <div className="mt-1 text-muted-foreground">תחום: {getBusinessDomainLabel(session.business_domain)} | יציאה: {formatDateTime(session.clock_out)}</div>
+                  <div className="mt-1 text-muted-foreground">
+                    תחום: {getBusinessDomainLabel(session.business_domain)}
+                    {showSessionTimingForProfile ? ` | יציאה: ${formatDateTime(session.clock_out)}` : ""}
+                  </div>
                   {session.notes ? <div className="mt-2 text-muted-foreground">{session.notes}</div> : null}
                   <div className="mt-3 flex flex-row-reverse flex-wrap gap-2">
                     <Button type="button" size="sm" variant="outline" onClick={() => openSessionEditor(session)}>עריכת משמרת</Button>

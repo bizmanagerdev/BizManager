@@ -29,6 +29,11 @@ import {
   getActiveSalaryAgreementForDate,
   type SalaryAgreementRow,
 } from "@/lib/payroll";
+import {
+  shouldShowSessionHours,
+  shouldShowSessionPrice,
+  type PayrollWorkerType,
+} from "@/lib/payroll-worker-type";
 import type { FinancialAttachment } from "@/lib/payments";
 import type { CalendarEntry } from "@/lib/projectSchedule";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
@@ -65,6 +70,8 @@ type UserOption = {
   id: string;
   label: string;
   role?: UserRole;
+  payroll_worker_type?: PayrollWorkerType | null;
+  pay_tracking_mode?: string | null;
 };
 
 type EntityOption = {
@@ -590,6 +597,16 @@ export default function DashboardActions({
   );
   const canManageWorkerSessions = currentUserRole === "admin";
   const manualSessionTargetId = canManageWorkerSessions ? manualSessionUserId : currentUserId ?? "";
+  const selectedManualSessionWorkerType = useMemo<PayrollWorkerType | null>(() => {
+    if (!manualSessionTargetId) return null;
+    return availableUsers.find((u) => u.id === manualSessionTargetId)?.payroll_worker_type ?? null;
+  }, [availableUsers, manualSessionTargetId]);
+  const showManualSessionTimingFields = shouldShowSessionHours(selectedManualSessionWorkerType);
+  const showManualSessionPriceField = shouldShowSessionPrice(selectedManualSessionWorkerType);
+  const manualSessionDateOnly = useMemo(() => {
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(manualSessionClockIn);
+    return match ? match[1] : new Date().toISOString().slice(0, 10);
+  }, [manualSessionClockIn]);
   const manualSessionDuration = useMemo(
     () => durationHours(manualSessionClockIn, manualSessionClockOut),
     [manualSessionClockIn, manualSessionClockOut]
@@ -630,10 +647,37 @@ export default function DashboardActions({
     });
   }, [canManageWorkerSessions, manualSessionPaymentChoice, suggestedManualSessionAmount]);
 
+  useEffect(() => {
+    if (selectedManualSessionWorkerType !== "session_only") return;
+    const normIn = `${manualSessionDateOnly}T09:00`;
+    const normOut = `${manualSessionDateOnly}T10:00`;
+    if (manualSessionClockIn !== normIn) setManualSessionClockIn(normIn);
+    if (manualSessionClockOut !== normOut) setManualSessionClockOut(normOut);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedManualSessionWorkerType]);
+
   const finalExpenseCategory =
     expenseCategory === OTHER_EXPENSE_CATEGORY ? expenseCategoryOther.trim() : expenseCategory.trim();
   const expenseIsWorkerPayment = finalExpenseCategory === EMPLOYEE_WAGE_CATEGORY;
   const expenseTargetUserId = canManageWorkerSessions ? expenseWorkerUserId : currentUserId ?? "";
+  const selectedExpenseWorkerType = useMemo<PayrollWorkerType | null>(() => {
+    if (!expenseIsWorkerPayment || !expenseTargetUserId) return null;
+    return availableUsers.find((u) => u.id === expenseTargetUserId)?.payroll_worker_type ?? null;
+  }, [availableUsers, expenseIsWorkerPayment, expenseTargetUserId]);
+  const showExpenseSessionTimingFields = !expenseIsWorkerPayment || shouldShowSessionHours(selectedExpenseWorkerType);
+  const showExpenseSessionPriceField = !expenseIsWorkerPayment || shouldShowSessionPrice(selectedExpenseWorkerType);
+  const expenseSessionDateOnly = useMemo(() => {
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(expenseClockIn);
+    return match ? match[1] : new Date().toISOString().slice(0, 10);
+  }, [expenseClockIn]);
+  useEffect(() => {
+    if (selectedExpenseWorkerType !== "session_only") return;
+    const normIn = `${expenseSessionDateOnly}T09:00`;
+    const normOut = `${expenseSessionDateOnly}T10:00`;
+    if (expenseClockIn !== normIn) setExpenseClockIn(normIn);
+    if (expenseClockOut !== normOut) setExpenseClockOut(normOut);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedExpenseWorkerType]);
   const expenseDuration = useMemo(
     () => durationHours(expenseClockIn, expenseClockOut),
     [expenseClockIn, expenseClockOut]
@@ -1744,63 +1788,86 @@ export default function DashboardActions({
 
               {manualSessionDomain ? (
                 <>
-              <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
-                <label className="space-y-2 text-right text-sm">
-                  <span className="font-medium">כניסה</span>
-                  <DateTimeInput
-                    value={manualSessionClockIn}
-                    onChange={(e) => setManualSessionClockIn(e.target.value)}
+              {showManualSessionTimingFields ? (
+                <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
+                  <label className="space-y-2 text-right text-sm">
+                    <span className="font-medium">כניסה</span>
+                    <DateTimeInput
+                      value={manualSessionClockIn}
+                      onChange={(e) => setManualSessionClockIn(e.target.value)}
+                    />
+                  </label>
+
+                  <label className="space-y-2 text-right text-sm">
+                    <span className="font-medium">סה״כ שעות</span>
+                    <Input
+                      inputMode="decimal"
+                      value={manualSessionDuration}
+                      onChange={(e) => {
+                        const nextValue = e.target.value;
+                        if (!nextValue.trim()) {
+                          setManualSessionClockOut("");
+                          return;
+                        }
+                        const parsedHours = Number(nextValue);
+                        const clockInIso = toIso(manualSessionClockIn);
+                        if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !clockInIso) return;
+                        const nextClockOut = new Date(new Date(clockInIso).getTime() + parsedHours * 60 * 60 * 1000);
+                        if (Number.isNaN(nextClockOut.getTime())) return;
+                        const pad = (n: number) => String(n).padStart(2, "0");
+                        setManualSessionClockOut(
+                          `${nextClockOut.getFullYear()}-${pad(nextClockOut.getMonth() + 1)}-${pad(nextClockOut.getDate())}T${pad(nextClockOut.getHours())}:${pad(nextClockOut.getMinutes())}`
+                        );
+                      }}
+                      placeholder="למשל 8"
+                    />
+                  </label>
+
+                  <label className="space-y-2 text-right text-sm">
+                    <span className="font-medium">יציאה</span>
+                    <DateTimeInput
+                      value={manualSessionClockOut}
+                      onChange={(e) => setManualSessionClockOut(e.target.value)}
+                    />
+                  </label>
+                </div>
+              ) : (
+                <label className="space-y-2 text-right text-sm md:col-span-2">
+                  <span className="font-medium">תאריך</span>
+                  <DateInput
+                    value={manualSessionDateOnly}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      if (!next) return;
+                      setManualSessionClockIn(`${next}T09:00`);
+                      setManualSessionClockOut(`${next}T10:00`);
+                    }}
                   />
                 </label>
+              )}
 
+              {showManualSessionPriceField ? (
                 <label className="space-y-2 text-right text-sm">
-                  <span className="font-medium">סה״כ שעות</span>
+                  <span className="font-medium">מחיר</span>
                   <Input
                     inputMode="decimal"
-                    value={manualSessionDuration}
-                    onChange={(e) => {
-                      const nextValue = e.target.value;
-                      if (!nextValue.trim()) {
-                        setManualSessionClockOut("");
-                        return;
-                      }
-                      const parsedHours = Number(nextValue);
-                      const clockInIso = toIso(manualSessionClockIn);
-                      if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !clockInIso) return;
-                      const nextClockOut = new Date(new Date(clockInIso).getTime() + parsedHours * 60 * 60 * 1000);
-                      if (Number.isNaN(nextClockOut.getTime())) return;
-                      const pad = (n: number) => String(n).padStart(2, "0");
-                      setManualSessionClockOut(
-                        `${nextClockOut.getFullYear()}-${pad(nextClockOut.getMonth() + 1)}-${pad(nextClockOut.getDate())}T${pad(nextClockOut.getHours())}:${pad(nextClockOut.getMinutes())}`
-                      );
-                    }}
-                    placeholder="למשל 8"
+                    value={manualSessionLaborCost}
+                    onChange={(e) => setManualSessionLaborCost(e.target.value)}
+                    placeholder="אופציונלי"
                   />
+                  <span className="block text-xs text-muted-foreground">
+                    {suggestedManualSessionAmount !== null
+                      ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedManualSessionAmount)}`
+                      : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
+                  </span>
                 </label>
-
-                <label className="space-y-2 text-right text-sm">
-                  <span className="font-medium">יציאה</span>
-                  <DateTimeInput
-                    value={manualSessionClockOut}
-                    onChange={(e) => setManualSessionClockOut(e.target.value)}
-                  />
-                </label>
-              </div>
-
-              <label className="space-y-2 text-right text-sm">
-                <span className="font-medium">מחיר</span>
-                <Input
-                  inputMode="decimal"
-                  value={manualSessionLaborCost}
-                  onChange={(e) => setManualSessionLaborCost(e.target.value)}
-                  placeholder="אופציונלי"
-                />
-                <span className="block text-xs text-muted-foreground">
+              ) : (
+                <div className="text-xs text-muted-foreground md:col-span-2">
                   {suggestedManualSessionAmount !== null
-                    ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedManualSessionAmount)}`
-                    : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
-                </span>
-              </label>
+                    ? `סה״כ לתשלום עבור המשמרת (חישוב אוטומטי): ${formatIls(suggestedManualSessionAmount)}`
+                    : "העלות תחושב אוטומטית לפי הסכם השכר לאחר שמירה."}
+                </div>
+              )}
 
               {canManageWorkerSessions ? (
                 <>
@@ -2533,63 +2600,86 @@ export default function DashboardActions({
 
               {expenseIsWorkerPayment ? (
                 <>
-                  <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
-                    <label className="space-y-2 text-sm">
-                      <span>כניסה *</span>
-                      <DateTimeInput
-                        value={expenseClockIn}
-                        onChange={(e) => setExpenseClockIn(e.target.value)}
+                  {showExpenseSessionTimingFields ? (
+                    <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
+                      <label className="space-y-2 text-sm">
+                        <span>כניסה *</span>
+                        <DateTimeInput
+                          value={expenseClockIn}
+                          onChange={(e) => setExpenseClockIn(e.target.value)}
+                        />
+                      </label>
+
+                      <label className="space-y-2 text-sm">
+                        <span>סה״כ שעות</span>
+                        <Input
+                          inputMode="decimal"
+                          value={expenseDuration}
+                          onChange={(e) => {
+                            const nextValue = e.target.value;
+                            if (!nextValue.trim()) {
+                              setExpenseClockOut("");
+                              return;
+                            }
+                            const parsedHours = Number(nextValue);
+                            const clockInIso = toIso(expenseClockIn);
+                            if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !clockInIso) return;
+                            const nextClockOut = new Date(new Date(clockInIso).getTime() + parsedHours * 60 * 60 * 1000);
+                            if (Number.isNaN(nextClockOut.getTime())) return;
+                            const pad = (n: number) => String(n).padStart(2, "0");
+                            setExpenseClockOut(
+                              `${nextClockOut.getFullYear()}-${pad(nextClockOut.getMonth() + 1)}-${pad(nextClockOut.getDate())}T${pad(nextClockOut.getHours())}:${pad(nextClockOut.getMinutes())}`
+                            );
+                          }}
+                          placeholder="למשל 8"
+                        />
+                      </label>
+
+                      <label className="space-y-2 text-sm">
+                        <span>יציאה *</span>
+                        <DateTimeInput
+                          value={expenseClockOut}
+                          onChange={(e) => setExpenseClockOut(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="space-y-2 text-sm md:col-span-2">
+                      <span>תאריך *</span>
+                      <DateInput
+                        value={expenseSessionDateOnly}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          if (!next) return;
+                          setExpenseClockIn(`${next}T09:00`);
+                          setExpenseClockOut(`${next}T10:00`);
+                        }}
                       />
                     </label>
+                  )}
 
+                  {showExpenseSessionPriceField ? (
                     <label className="space-y-2 text-sm">
-                      <span>סה״כ שעות</span>
+                      <span>עלות עבודה</span>
                       <Input
                         inputMode="decimal"
-                        value={expenseDuration}
-                        onChange={(e) => {
-                          const nextValue = e.target.value;
-                          if (!nextValue.trim()) {
-                            setExpenseClockOut("");
-                            return;
-                          }
-                          const parsedHours = Number(nextValue);
-                          const clockInIso = toIso(expenseClockIn);
-                          if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !clockInIso) return;
-                          const nextClockOut = new Date(new Date(clockInIso).getTime() + parsedHours * 60 * 60 * 1000);
-                          if (Number.isNaN(nextClockOut.getTime())) return;
-                          const pad = (n: number) => String(n).padStart(2, "0");
-                          setExpenseClockOut(
-                            `${nextClockOut.getFullYear()}-${pad(nextClockOut.getMonth() + 1)}-${pad(nextClockOut.getDate())}T${pad(nextClockOut.getHours())}:${pad(nextClockOut.getMinutes())}`
-                          );
-                        }}
-                        placeholder="למשל 8"
+                        value={expenseLaborCost}
+                        onChange={(e) => setExpenseLaborCost(e.target.value)}
+                        placeholder="אופציונלי"
                       />
+                      <span className="block text-xs text-muted-foreground">
+                        {suggestedExpenseWorkerAmount !== null
+                          ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedExpenseWorkerAmount)}`
+                          : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
+                      </span>
                     </label>
-
-                    <label className="space-y-2 text-sm">
-                      <span>יציאה *</span>
-                      <DateTimeInput
-                        value={expenseClockOut}
-                        onChange={(e) => setExpenseClockOut(e.target.value)}
-                      />
-                    </label>
-                  </div>
-
-                  <label className="space-y-2 text-sm">
-                    <span>עלות עבודה</span>
-                    <Input
-                      inputMode="decimal"
-                      value={expenseLaborCost}
-                      onChange={(e) => setExpenseLaborCost(e.target.value)}
-                      placeholder="אופציונלי"
-                    />
-                    <span className="block text-xs text-muted-foreground">
+                  ) : (
+                    <div className="text-xs text-muted-foreground md:col-span-2">
                       {suggestedExpenseWorkerAmount !== null
-                        ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedExpenseWorkerAmount)}`
-                        : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
-                    </span>
-                  </label>
+                        ? `סה״כ לתשלום עבור המשמרת (חישוב אוטומטי): ${formatIls(suggestedExpenseWorkerAmount)}`
+                        : "העלות תחושב אוטומטית לפי הסכם השכר לאחר שמירה."}
+                    </div>
+                  )}
 
                   <div className="space-y-3 rounded-xl border p-3">
                     {expenseBusinessDomain === "logistics_projects" ? (

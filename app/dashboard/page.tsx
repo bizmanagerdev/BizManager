@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCashFlowPageData } from "@/lib/cashflow";
 import type { SalaryAgreementRow } from "@/lib/payroll";
+import { isPayrollWorkerType } from "@/lib/payroll-worker-type";
 
 type Row = Record<string, unknown>;
 
@@ -121,7 +122,7 @@ export default async function DashboardPage() {
       .select("customer_id,customer_name,phone,email,address")
       .order("customer_name", { ascending: true })
       .range(0, 49),
-    supabase.from("users").select("id,full_name,email,role,active").order("full_name", { ascending: true }).range(0, 499),
+    supabase.from("users").select("id,full_name,email,role,active,payroll_worker_type,pay_tracking_mode").order("full_name", { ascending: true }).range(0, 499),
     supabase
       .from("salary_agreements")
       .select("id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours")
@@ -216,15 +217,19 @@ export default async function DashboardPage() {
       const fullName = getString(row, "full_name");
       const email = getString(row, "email");
       const role = getString(row, "role");
+      const workerType = row.payroll_worker_type;
+      const payTrackingMode = getString(row, "pay_tracking_mode");
       return {
         id,
         label: fullName && fullName.trim() ? fullName : email ?? "",
         role: isUserRole(role) ? role : undefined,
         active: row.active,
+        payroll_worker_type: isPayrollWorkerType(workerType) ? workerType : null,
+        pay_tracking_mode: payTrackingMode,
       };
     })
     .filter((row) => row.id && row.label && row.active !== false)
-    .map((row) => ({ id: row.id, label: row.label, role: row.role }));
+    .map((row) => ({ id: row.id, label: row.label, role: row.role, payroll_worker_type: row.payroll_worker_type, pay_tracking_mode: row.pay_tracking_mode }));
 
   const currentOpenSession =
     currentOpenSessionRow && typeof currentOpenSessionRow.clock_in === "string"

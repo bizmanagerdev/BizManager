@@ -44,3 +44,11 @@ export function payrollWorkerTypeRequiredAgreementType(workerType: PayrollWorker
 export function payrollWorkerTypePaymentAllocationSource(workerType: PayrollWorkerType): "session" | "payslip" {
   return workerType === "session_only" ? "session" : "payslip";
 }
+
+export function shouldShowSessionHours(workerType: PayrollWorkerType | null | undefined) {
+  return workerType !== "session_only";
+}
+
+export function shouldShowSessionPrice(workerType: PayrollWorkerType | null | undefined) {
+  return workerType !== "hourly_payslip";
+}

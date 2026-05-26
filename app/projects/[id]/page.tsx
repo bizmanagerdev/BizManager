@@ -218,7 +218,7 @@ export default async function ProjectPage({
 
   const { data: assignableUsers, error: assignableUsersError } = await supabase
     .from("users")
-    .select("id,full_name,email,role,active")
+    .select("id,full_name,email,role,active,payroll_worker_type,pay_tracking_mode")
     .order("full_name", { ascending: true })
     .range(0, 199);
 

@@ -28,6 +28,8 @@ import {
   getPayrollWorkerTypeLabel,
   normalizePayrollWorkerType,
   payrollWorkerTypeAllowsSessions,
+  shouldShowSessionHours,
+  shouldShowSessionPrice,
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
 import { getPaymentStatusLabel as getSharedPaymentStatusLabel } from "@/lib/ui/status-colors";
@@ -2761,6 +2763,11 @@ export default function SalaryCenterClient({
                         const worker = usersById.get(session.user_id);
                         const linkLabel = getSessionLinkLabel(session, projectLabelsById, propertyLabelsById);
                         const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
+                        const rowWorkerType = worker
+                          ? normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode)
+                          : null;
+                        const rowShowHours = shouldShowSessionHours(rowWorkerType);
+                        const rowShowPrice = shouldShowSessionPrice(rowWorkerType);
 
                         return (
                           <tr key={session.id} className={`border-b align-top ${rowClass}`}>
@@ -2802,24 +2809,30 @@ export default function SalaryCenterClient({
                               )}
                             </td>
                             <td className="px-3 py-3">
-                              <SalaryProtected
-                                unlocked={salaryUnlocked}
-                                hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canManageSalary}
-                                onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
-                              >
-                                <span className="font-medium">{formatCurrency(sessionCostsById.get(session.id) ?? 0)}</span>
-                              </SalaryProtected>
+                              {rowShowPrice ? (
+                                <SalaryProtected
+                                  unlocked={salaryUnlocked}
+                                  hasPasswordConfigured={hasPasswordConfigured}
+                                  canUnlock={canManageSalary}
+                                  onUnlockSuccess={loadProtectedData}
+                                  fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                >
+                                  <span className="font-medium">{formatCurrency(sessionCostsById.get(session.id) ?? 0)}</span>
+                                </SalaryProtected>
+                              ) : (
+                                <span className="text-muted-foreground">אוטומטי</span>
+                              )}
                             </td>
                             <td className="px-3 py-3">
                               {session.is_billable_to_customer
                                 ? formatCurrency(session.bill_to_customer_amount)
                                 : "לא לחיוב"}
                             </td>
-                            <td className="px-3 py-3">{formatMinutes(sessionWorkedMinutes(session))}</td>
+                            <td className="px-3 py-3">
+                              {rowShowHours ? formatMinutes(sessionWorkedMinutes(session)) : <span className="text-muted-foreground">—</span>}
+                            </td>
                             <td className="px-3 py-3 text-muted-foreground">
-                              <div>{formatSessionRange(session.clock_in, session.clock_out)}</div>
+                              <div>{rowShowHours ? formatSessionRange(session.clock_in, session.clock_out) : formatDate(session.clock_in)}</div>
                               {session.notes ? <div className="mt-1 text-xs">{session.notes}</div> : null}
                             </td>
                             <td className="px-3 py-3">{linkLabel}</td>
@@ -4359,55 +4372,85 @@ export default function SalaryCenterClient({
                 </select>
               </Field>
             ) : null}
-            <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
-              <Field label="כניסה">
-                <DateTimeInput
-                  value={sessionForm.clock_in}
-                  onChange={(event) => setSessionForm((current) => ({ ...current, clock_in: event.target.value }))}
+            {shouldShowSessionHours(sessionDialogWorkerType) ? (
+              <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
+                <Field label="כניסה">
+                  <DateTimeInput
+                    value={sessionForm.clock_in}
+                    onChange={(event) => setSessionForm((current) => ({ ...current, clock_in: event.target.value }))}
+                  />
+                </Field>
+                <Field label="סה״כ שעות">
+                  <Input
+                    inputMode="decimal"
+                    value={sessionDialogDurationHours}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      if (!nextValue.trim()) {
+                        setSessionForm((current) => ({ ...current, clock_out: "" }));
+                        return;
+                      }
+                      const parsedHours = Number(nextValue);
+                      const start = new Date(sessionForm.clock_in).getTime();
+                      if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !Number.isFinite(start)) return;
+                      const nextClockOut = new Date(start + parsedHours * 60 * 60 * 1000);
+                      if (Number.isNaN(nextClockOut.getTime())) return;
+                      setSessionForm((current) => ({ ...current, clock_out: toDateTimeLocalValue(nextClockOut) }));
+                    }}
+                    placeholder="למשל 8"
+                  />
+                </Field>
+                <Field label="יציאה">
+                  <DateTimeInput
+                    value={sessionForm.clock_out}
+                    onChange={(event) => setSessionForm((current) => ({ ...current, clock_out: event.target.value }))}
+                  />
+                </Field>
+              </div>
+            ) : (
+              <Field label="תאריך">
+                <DateInput
+                  value={(() => {
+                    const m = /^(\d{4}-\d{2}-\d{2})/.exec(sessionForm.clock_in);
+                    return m ? m[1] : new Date().toISOString().slice(0, 10);
+                  })()}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    if (!next) return;
+                    setSessionForm((current) => ({
+                      ...current,
+                      clock_in: `${next}T09:00`,
+                      clock_out: `${next}T10:00`,
+                    }));
+                  }}
                 />
               </Field>
-              <Field label="סה״כ שעות">
+            )}
+            {shouldShowSessionPrice(sessionDialogWorkerType) ? (
+              <Field label="מחיר">
                 <Input
                   inputMode="decimal"
-                  value={sessionDialogDurationHours}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    if (!nextValue.trim()) {
-                      setSessionForm((current) => ({ ...current, clock_out: "" }));
-                      return;
-                    }
-                    const parsedHours = Number(nextValue);
-                    const start = new Date(sessionForm.clock_in).getTime();
-                    if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !Number.isFinite(start)) return;
-                    const nextClockOut = new Date(start + parsedHours * 60 * 60 * 1000);
-                    if (Number.isNaN(nextClockOut.getTime())) return;
-                    setSessionForm((current) => ({ ...current, clock_out: toDateTimeLocalValue(nextClockOut) }));
-                  }}
-                  placeholder="למשל 8"
+                  value={sessionForm.labor_cost}
+                  onChange={(event) =>
+                    setSessionForm((current) => ({ ...current, labor_cost: event.target.value }))
+                  }
+                  placeholder="אופציונלי"
                 />
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {sessionDialogSuggestedAmount !== null
+                    ? `סה״כ לתשלום עבור המשמרת: ${formatCurrency(sessionDialogSuggestedAmount)}`
+                    : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
+                </div>
               </Field>
-              <Field label="יציאה">
-                <DateTimeInput
-                  value={sessionForm.clock_out}
-                  onChange={(event) => setSessionForm((current) => ({ ...current, clock_out: event.target.value }))}
-                />
+            ) : (
+              <Field label="עלות חישוב אוטומטי">
+                <div className="text-xs text-muted-foreground">
+                  {sessionDialogSuggestedAmount !== null
+                    ? `סה״כ לתשלום עבור המשמרת: ${formatCurrency(sessionDialogSuggestedAmount)}`
+                    : "העלות תחושב אוטומטית לפי הסכם השכר לאחר שמירה."}
+                </div>
               </Field>
-            </div>
-            <Field label="מחיר">
-              <Input
-                inputMode="decimal"
-                value={sessionForm.labor_cost}
-                onChange={(event) =>
-                  setSessionForm((current) => ({ ...current, labor_cost: event.target.value }))
-                }
-                placeholder="אופציונלי"
-              />
-              <div className="mt-1 text-xs text-muted-foreground">
-                {sessionDialogSuggestedAmount !== null
-                  ? `סה״כ לתשלום עבור המשמרת: ${formatCurrency(sessionDialogSuggestedAmount)}`
-                  : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
-              </div>
-            </Field>
+            )}
             <Field label="חיוב לקוח">
               <select
                 value={sessionForm.is_billable_to_customer ? "yes" : "no"}
