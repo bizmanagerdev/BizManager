@@ -7,6 +7,7 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import { formatShortDate } from "@/lib/date";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import { notFound } from "next/navigation";
+import DeleteCustomerButton from "./DeleteCustomerButton";
 
 type Row = Record<string, unknown>;
 
@@ -240,6 +241,11 @@ export default async function CustomerDetailsPage({
             <Button asChild variant="outline" size="sm">
               <NavLink to={addContactHref}>הוספת איש קשר</NavLink>
             </Button>
+            <DeleteCustomerButton
+              customerId={id}
+              customerName={customerName}
+              returnHref={returnCustomersHref}
+            />
           </div>
         </div>
 

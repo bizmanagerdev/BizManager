@@ -461,120 +461,111 @@ export default function CustomersClient({
       </div>
 
       <Card className="hidden overflow-hidden border-border/70 shadow-sm md:block">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] text-sm">
-            <thead className="bg-secondary/40 text-muted-foreground">
-              <tr className="border-b border-border/70 text-right">
-                <th className="px-4 py-3 font-medium">לקוח</th>
-                <th className="px-4 py-3 font-medium">טלפון ואימייל</th>
-                <th className="px-4 py-3 font-medium">כתובת</th>
-                <th className="px-4 py-3 font-medium">Morning</th>
-                <th className="px-4 py-3 font-medium">תשלום</th>
-                <th className="px-4 py-3 font-medium">הזמנות</th>
-                <th className="px-4 py-3 font-medium">פרויקטים</th>
-                <th className="px-4 py-3 font-medium">יתרה פתוחה</th>
-                <th className="px-4 py-3 font-medium">סטטוס</th>
-                <th className="px-4 py-3 font-medium">פעולות</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/70">
-              {filtered.map((row) => {
-                const id = s(row, "customer_id");
-                const customerName = s(row, "customer_name") || "לקוח";
-                const linkedMorningClientId = s(row, "morning_client_id");
-                const openBalance = n(row, "open_balance");
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[18%]" />
+            <col className="w-[16%]" />
+            <col className="w-[18%]" />
+            <col className="w-[8%]" />
+            <col className="w-[6%]" />
+            <col className="w-[6%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+            <col className="w-[8%]" />
+          </colgroup>
+          <thead className="bg-secondary/40 text-muted-foreground">
+            <tr className="border-b border-border/70 text-right">
+              <th className="px-2 py-3 font-medium">לקוח</th>
+              <th className="px-2 py-3 font-medium">טלפון ואימייל</th>
+              <th className="px-2 py-3 font-medium">כתובת</th>
+              <th className="px-2 py-3 font-medium">Morning</th>
+              <th className="px-2 py-3 font-medium">הזמנות</th>
+              <th className="px-2 py-3 font-medium">פרויקטים</th>
+              <th className="px-2 py-3 font-medium">יתרה פתוחה</th>
+              <th className="px-2 py-3 font-medium">סטטוס</th>
+              <th className="px-2 py-3 font-medium">פעולות</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/70">
+            {filtered.map((row) => {
+              const id = s(row, "customer_id");
+              const customerName = s(row, "customer_name") || "לקוח";
+              const linkedMorningClientId = s(row, "morning_client_id");
+              const openBalance = n(row, "open_balance");
 
-                return (
-                  <tr
-                    key={`${id || customerName}-desktop`}
-                    className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
-                    tabIndex={0}
-                    role="link"
-                    onClick={(event) => {
-                      if (shouldIgnoreRowNavigation(event.target)) return;
-                      openCustomerDetails(id);
-                    }}
-                    onKeyDown={(event) => {
-                      if (shouldIgnoreRowNavigation(event.target)) return;
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      event.preventDefault();
-                      openCustomerDetails(id);
-                    }}
-                  >
-                    <td className="px-4 py-4">
-                      <div className="min-w-0 text-right">
-                        <div className="font-medium">{customerName}</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="min-w-[220px]">
-                        <div>{s(row, "phone") || "-"}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">{s(row, "email") || "-"}</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="max-w-[260px] text-muted-foreground">{s(row, "address") || "-"}</div>
-                    </td>
-                    <td className="px-4 py-4">
-                      {linkedMorningClientId ? (
-                        <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
-                          <Badge className={customerFlagBadgeClass("success")}>Morning</Badge>
-                        </a>
-                      ) : (
-                        <Badge className={customerFlagBadgeClass("neutral")}>ללא</Badge>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
+              return (
+                <tr
+                  key={`${id || customerName}-desktop`}
+                  className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
+                  tabIndex={0}
+                  role="link"
+                  onClick={(event) => {
+                    if (shouldIgnoreRowNavigation(event.target)) return;
+                    openCustomerDetails(id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (shouldIgnoreRowNavigation(event.target)) return;
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    openCustomerDetails(id);
+                  }}
+                >
+                  <td className="px-2 py-3">
+                    <div className="truncate text-right font-medium">{customerName}</div>
+                  </td>
+                  <td className="px-2 py-3">
+                    <div className="truncate">{s(row, "phone") || "-"}</div>
+                    <div className="truncate text-xs text-muted-foreground">{s(row, "email") || "-"}</div>
+                  </td>
+                  <td className="px-2 py-3">
+                    <div className="truncate text-muted-foreground">{s(row, "address") || "-"}</div>
+                  </td>
+                  <td className="px-2 py-3">
+                    {linkedMorningClientId ? (
+                      <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
+                        <Badge className={customerFlagBadgeClass("success")}>Morning</Badge>
+                      </a>
+                    ) : (
+                      <Badge className={customerFlagBadgeClass("neutral")}>ללא</Badge>
+                    )}
+                  </td>
+                  <td className="px-2 py-3">{n(row, "orders_count")}</td>
+                  <td className="px-2 py-3">{n(row, "projects_count")}</td>
+                  <td className="truncate px-2 py-3 font-medium">{ils(openBalance)}</td>
+                  <td className="px-2 py-3">
+                    <div className="flex flex-wrap gap-1">
                       {row.requires_prepayment === true ? (
                         <Badge className={customerFlagBadgeClass("danger")}>תשלום מראש</Badge>
+                      ) : null}
+                      {openBalance > 0 ? (
+                        <Badge className={customerFlagBadgeClass("danger")}>חוב פתוח</Badge>
+                      ) : null}
+                      {row.active === false ? (
+                        <Badge className={customerFlagBadgeClass("danger")}>לא פעיל</Badge>
                       ) : (
-                        <Badge className={customerFlagBadgeClass("neutral")}>רגיל</Badge>
+                        <Badge className={customerFlagBadgeClass("success")}>פעיל</Badge>
                       )}
-                    </td>
-                    <td className="px-4 py-4">{n(row, "orders_count")}</td>
-                    <td className="px-4 py-4">{n(row, "projects_count")}</td>
-                    <td className="px-4 py-4 font-medium">{ils(openBalance)}</td>
-                    <td className="px-4 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        {row.requires_prepayment === true ? (
-                          <Badge className={customerFlagBadgeClass("danger")}>תשלום מראש</Badge>
-                        ) : null}
-                        {openBalance > 0 ? (
-                          <Badge className={customerFlagBadgeClass("danger")}>
-                            חוב פתוח
-                          </Badge>
-                        ) : null}
-                        {row.active === false ? (
-                          <Badge className={customerFlagBadgeClass("danger")}>
-                            לא פעיל
-                          </Badge>
-                        ) : (
-                          <Badge className={customerFlagBadgeClass("success")}>
-                            פעיל
-                          </Badge>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex min-w-[320px] flex-wrap gap-2">
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>
-                            הוספת פרויקט
-                          </Link>
-                        </Button>
-                        <Button asChild size="sm">
-                          <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>
-                            הוספת הזמנה
-                          </Link>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                  </td>
+                  <td className="px-2 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      <Button asChild size="sm" variant="outline" className="h-8 px-2 text-xs">
+                        <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>
+                          + פרויקט
+                        </Link>
+                      </Button>
+                      <Button asChild size="sm" className="h-8 px-2 text-xs">
+                        <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>
+                          + הזמנה
+                        </Link>
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </Card>
 
       <CreateCustomerDialog

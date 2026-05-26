@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 import { Bell, ChevronDown, LogOut, User } from "lucide-react";
+import { BackButton } from "@/components/layout/BackButton";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import PwaInstallButton from "@/components/pwa/PwaInstallButton";
@@ -51,6 +52,8 @@ export function TopBar({
 
   return (
     <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border/70 bg-gradient-to-r from-primary/[0.04] via-background/95 to-secondary/[0.05] px-4 backdrop-blur-xl">
+      <BackButton />
+
       <div className="flex items-center gap-2 lg:hidden">
         {logo ?? <BrandMark size="md" />}
         <span className="text-base font-bold tracking-[0.2em] text-primary">{appName}</span>

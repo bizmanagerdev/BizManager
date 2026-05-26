@@ -21,10 +21,10 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
     <aside
       className={cn(
         "sticky top-0 hidden h-screen self-start md:flex shrink-0 flex-col border-e border-sidebar-border/80 bg-sidebar/95 backdrop-blur-xl transition-all duration-200",
-        collapsed ? "w-16 lg:w-60" : "w-60"
+        collapsed ? "w-16 lg:w-56" : "w-56"
       )}
     >
-      <div className="flex h-16 items-center border-b border-sidebar-border/80 px-4">
+      <div className="flex h-14 items-center border-b border-sidebar-border/80 px-3">
         <div className="flex items-center gap-2 overflow-hidden">
           {logo ?? <BrandMark size="lg" />}
           <span
@@ -38,15 +38,15 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
         {items.map((item) => (
           <NavLink
             key={item.title}
             to={item.url}
             end={item.url === "/"}
             className={cn(
-              "flex h-11 items-center gap-3 rounded-xl px-3 text-base text-sidebar-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground hover:shadow-sm",
-              collapsed && "justify-center px-0 lg:justify-start lg:px-3"
+              "flex h-10 items-center gap-2.5 rounded-lg px-2.5 text-sm text-sidebar-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground hover:shadow-sm",
+              collapsed && "justify-center px-0 lg:justify-start lg:px-2.5"
             )}
             activeClassName="bg-secondary text-secondary-foreground font-medium shadow-md shadow-secondary/30 hover:ring-2 hover:ring-white/50 hover:ring-offset-2 hover:ring-offset-sidebar"
             pendingClassName="bg-white/10 opacity-70"

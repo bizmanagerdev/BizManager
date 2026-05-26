@@ -18,7 +18,7 @@ export default function CashFlowOverviewCard({
       <CardHeader className="pb-3">
         <div className="space-y-1 text-right">
           <CardTitle className="text-lg">פעילות לפי תחום</CardTitle>
-          <CardDescription>כניסות ויציאות לפי תחום עסקי, 5 חודשים אחרונים.</CardDescription>
+          <CardDescription>הכנסות והוצאות לפי תחום עסקי, 5 חודשים אחרונים.</CardDescription>
         </div>
       </CardHeader>
       <CardContent>

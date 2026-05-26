@@ -92,8 +92,8 @@ export default function DomainBarChart({
               <span style={{ fontSize: 12, color: "rgb(var(--foreground))" }}>{value}</span>
             )}
           />
-          <Bar dataKey="inflow" name="כניסות" fill="rgb(var(--success))" radius={[4, 4, 0, 0]} maxBarSize={48} />
-          <Bar dataKey="outflow" name="יציאות" fill="rgb(var(--destructive))" radius={[4, 4, 0, 0]} maxBarSize={48} />
+          <Bar dataKey="inflow" name="הכנסות" fill="rgb(var(--success))" radius={[4, 4, 0, 0]} maxBarSize={48} />
+          <Bar dataKey="outflow" name="הוצאות" fill="rgb(var(--destructive))" radius={[4, 4, 0, 0]} maxBarSize={48} />
         </BarChart>
       </ResponsiveContainer>
     </div>

@@ -457,6 +457,24 @@ export default function ProjectTabsClient({
     };
   }, [expensesUi]);
 
+  const sortedExpensesUi = useMemo(() => {
+    const dateKey = (item: ExpenseListItem): string | null => {
+      if (item.source_type === "session") return item.session?.clock_in ?? null;
+      const expenseDate = item.expense?.expense_date;
+      if (typeof expenseDate === "string" && expenseDate) return expenseDate;
+      const createdAt = item.expense?.created_at;
+      if (typeof createdAt === "string" && createdAt) return createdAt;
+      return null;
+    };
+    return [...expensesUi].sort((a, b) => {
+      const ad = dateKey(a);
+      const bd = dateKey(b);
+      const at = ad ? new Date(ad).getTime() : 0;
+      const bt = bd ? new Date(bd).getTime() : 0;
+      return bt - at;
+    });
+  }, [expensesUi]);
+
   useEffect(() => {
     setExpensesUi(expenses);
   }, [expenses]);
@@ -922,6 +940,7 @@ export default function ProjectTabsClient({
         if (isSessionBillable(item.session)) return [];
         const user = usersById.get(item.session.user_id);
         const workerName = user?.full_name?.trim() || user?.email || "עובד";
+        const sessionNotes = item.session.notes?.trim() || "";
         return [
           {
             type: "expense" as const,
@@ -929,11 +948,7 @@ export default function ProjectTabsClient({
             date: item.session.clock_in ?? null,
             amount: sessionLaborCost(item.session),
             title: `שכר עובד — ${workerName}`,
-            meta: [
-              `כניסה: ${formatDateTime(item.session.clock_in)}`,
-              `יציאה: ${formatDateTime(item.session.clock_out)}`,
-              `משך: ${formatMinutes(sessionWorkedMinutes(item.session))}`,
-            ],
+            meta: sessionNotes ? [sessionNotes] : [],
             includedInBase: true,
             billedToCustomer: false,
           },
@@ -959,7 +974,7 @@ export default function ProjectTabsClient({
       const billedToCustomer = Boolean(item.project_expense?.["billed_to_customer"]);
       if (billedToCustomer) return [];
 
-      const meta: string[] = [];
+      const expenseNotes = getString(item.expense, "notes")?.trim() || "";
       return [
         {
           type: "expense" as const,
@@ -967,7 +982,7 @@ export default function ProjectTabsClient({
           date,
           amount,
           title,
-          meta,
+          meta: expenseNotes ? [expenseNotes] : [],
           includedInBase,
           billedToCustomer,
         },
@@ -1713,7 +1728,7 @@ export default function ProjectTabsClient({
                 <div className="flex-1 text-muted-foreground">אין הוצאות להצגה.</div>
               ) : (
                 <div className="flex-1 divide-y overflow-y-auto pl-1">
-                  {expensesUi.map((item, idx) => renderExpenseRow(item, idx))}
+                  {sortedExpensesUi.map((item, idx) => renderExpenseRow(item, idx))}
                 </div>
               )}
 
@@ -1752,34 +1767,25 @@ export default function ProjectTabsClient({
                       signedAmount === null
                         ? "—"
                         : formatIls(Math.abs(signedAmount));
+                    const notesText = ev.meta.filter((m) => m !== "חויב ללקוח").join(" · ");
 
                     return (
                       <div
                         key={`${ev.type}:${ev.id}`}
-                        className="py-3 flex items-start justify-between gap-4"
+                        className="flex items-center gap-3 py-1.5 text-sm"
                       >
-                        <div className="min-w-0">
-                          <div className="font-medium truncate">{ev.title}</div>
-                          <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                            <LtrInline>{formatDate(ev.date)}</LtrInline>
-                            {ev.meta.map((m) => (
-                              <span
-                                key={m}
-                                className={
-                                  m === "חויב ללקוח"
-                                    ? "inline-flex items-center rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 font-medium text-warning-soft-foreground"
-                                    : undefined
-                                }
-                              >
-                                {m}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div
+                        <span className="w-20 shrink-0 text-xs text-muted-foreground">
+                          <LtrInline>{formatDate(ev.date)}</LtrInline>
+                        </span>
+                        <span className="min-w-0 flex-1 truncate font-medium">{ev.title}</span>
+                        {notesText ? (
+                          <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:inline">
+                            {notesText}
+                          </span>
+                        ) : null}
+                        <span
                           className={
-                            "shrink-0 font-medium " +
+                            "shrink-0 whitespace-nowrap font-medium tabular-nums " +
                             (signedAmount === null
                               ? ""
                               : isIncome
@@ -1792,7 +1798,7 @@ export default function ProjectTabsClient({
                               {isIncome ? "+" : "-"} {amountText}
                             </LtrInline>
                           )}
-                        </div>
+                        </span>
                       </div>
                     );
                   })}

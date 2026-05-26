@@ -387,7 +387,7 @@ export default async function DashboardPage() {
               <div className="space-y-1 text-right">
                 <CardTitle className="text-lg">פעילות לפי תחום</CardTitle>
                 <CardDescription>
-                  איזה תחום הכי פעיל — לפי מספר תנועות. צבע ירוק = עודף כניסות, אדום = עודף יציאות.
+                  איזה תחום הכי פעיל — לפי מספר תנועות. צבע ירוק = עודף הכנסות, אדום = עודף הוצאות.
                 </CardDescription>
               </div>
             </CardHeader>

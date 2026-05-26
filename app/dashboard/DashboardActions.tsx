@@ -455,22 +455,22 @@ export default function DashboardActions({
 
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [expenseError, setExpenseError] = useState<string | null>(null);
-  const [expenseBusinessDomain, setExpenseBusinessDomain] = useState<ExpenseBusinessDomain>("logistics_projects");
-  const [expenseProjectId, setExpenseProjectId] = useState(projects[0]?.id ?? "");
+  const [expenseBusinessDomain, setExpenseBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
+  const [expenseProjectId, setExpenseProjectId] = useState("");
   const [expenseProjectQuery, setExpenseProjectQuery] = useState("");
   const [expenseOrderId, setExpenseOrderId] = useState("");
   const [expensePropertyId, setExpensePropertyId] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("");
   const [expenseCategoryOther, setExpenseCategoryOther] = useState("");
-  const [expenseDate, setExpenseDate] = useState(normalizeDateOnly(projects[0]?.startDate) || getTodayDate());
+  const [expenseDate, setExpenseDate] = useState("");
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseNotes, setExpenseNotes] = useState("");
   const [expenseIncludedInBase, setExpenseIncludedInBase] = useState(false);
   const [expenseBilledToCustomer, setExpenseBilledToCustomer] = useState(false);
   const [expenseWorkerUserId, setExpenseWorkerUserId] = useState("");
-  const [expenseClockIn, setExpenseClockIn] = useState(nowLocal(-60));
-  const [expenseClockOut, setExpenseClockOut] = useState(nowLocal());
+  const [expenseClockIn, setExpenseClockIn] = useState("");
+  const [expenseClockOut, setExpenseClockOut] = useState("");
   const [expenseLaborCost, setExpenseLaborCost] = useState("");
   const [expenseWorkerPaymentChoice, setExpenseWorkerPaymentChoice] = useState<PaymentChoice>("none");
   const [expenseWorkerPaidAmount, setExpenseWorkerPaidAmount] = useState("");
@@ -486,14 +486,14 @@ export default function DashboardActions({
 
   const [incomeSubmitting, setIncomeSubmitting] = useState(false);
   const [incomeError, setIncomeError] = useState<string | null>(null);
-  const [incomeBusinessDomain, setIncomeBusinessDomain] = useState<ExpenseBusinessDomain>("logistics_projects");
-  const [incomeProjectId, setIncomeProjectId] = useState(projects[0]?.id ?? "");
+  const [incomeBusinessDomain, setIncomeBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
+  const [incomeProjectId, setIncomeProjectId] = useState("");
   const [incomeProjectQuery, setIncomeProjectQuery] = useState("");
   const [incomeOrderId, setIncomeOrderId] = useState("");
   const [incomePropertyId, setIncomePropertyId] = useState("");
   const [incomeAmount, setIncomeAmount] = useState("");
-  const [incomeDate, setIncomeDate] = useState(normalizeDateOnly(projects[0]?.startDate) || getTodayDate());
-  const [incomeMethod, setIncomeMethod] = useState("bank_transfer");
+  const [incomeDate, setIncomeDate] = useState("");
+  const [incomeMethod, setIncomeMethod] = useState("");
   const [incomeDueDate, setIncomeDueDate] = useState("");
   const [incomeRequiresSplit, setIncomeRequiresSplit] = useState(false);
   const [incomeReference, setIncomeReference] = useState("");
@@ -542,18 +542,6 @@ export default function DashboardActions({
       return name.includes(q) || customer.includes(q);
     });
   }, [incomeProjectQuery, projects]);
-  const selectedExpenseProject = useMemo(
-    () => projects.find((project) => project.id === expenseProjectId) ?? null,
-    [expenseProjectId, projects]
-  );
-  const selectedIncomeProject = useMemo(
-    () => projects.find((project) => project.id === incomeProjectId) ?? null,
-    [incomeProjectId, projects]
-  );
-  const defaultProjectDate = useMemo(
-    () => normalizeDateOnly(projects[0]?.startDate) || getTodayDate(),
-    [projects]
-  );
   const weeklyGeneralEntries = useMemo(() => {
     // Projects active this week that started before it AND span 15+ days total
     return scheduleEntries.filter((entry) => {
@@ -672,10 +660,6 @@ export default function DashboardActions({
     return calculateSessionLaborCost(activeExpenseSessionAgreement, expenseWorkedMinutes);
   }, [activeExpenseSessionAgreement, expenseIsWorkerPayment, expenseLaborCost, expenseWorkedMinutes]);
 
-  function getProjectStartDate(projectId: string) {
-    return normalizeDateOnly(projectById.get(projectId)?.startDate) || getTodayDate();
-  }
-
   useEffect(() => {
     setProjectCustomerOptions(customers);
   }, [customers]);
@@ -741,23 +725,23 @@ export default function DashboardActions({
 
   function resetExpenseForm() {
     setExpenseError(null);
-    setExpenseBusinessDomain("logistics_projects");
-    setExpenseProjectId(projects[0]?.id ?? "");
+    setExpenseBusinessDomain("");
+    setExpenseProjectId("");
     setExpenseProjectQuery("");
     setExpenseOrderId("");
     setExpensePropertyId("");
     setExpenseAmount("");
     setExpenseCategory("");
     setExpenseCategoryOther("");
-    setExpenseDate(defaultProjectDate);
+    setExpenseDate("");
     setExpenseDescription("");
     setExpenseNotes("");
     setExpenseIncludedInBase(false);
     setExpenseBilledToCustomer(false);
     setExpensePaymentStatus("not_paid");
-    setExpenseWorkerUserId(canManageWorkerSessions ? workerUsers[0]?.id ?? "" : currentUserId ?? "");
-    setExpenseClockIn(nowLocal(-60));
-    setExpenseClockOut(nowLocal());
+    setExpenseWorkerUserId("");
+    setExpenseClockIn("");
+    setExpenseClockOut("");
     setExpenseLaborCost("");
     setExpenseWorkerPaymentChoice("none");
     setExpenseWorkerPaidAmount("");
@@ -773,14 +757,14 @@ export default function DashboardActions({
 
   function resetIncomeForm() {
     setIncomeError(null);
-    setIncomeBusinessDomain("logistics_projects");
-    setIncomeProjectId(projects[0]?.id ?? "");
+    setIncomeBusinessDomain("");
+    setIncomeProjectId("");
     setIncomeProjectQuery("");
     setIncomeOrderId("");
     setIncomePropertyId("");
     setIncomeAmount("");
-    setIncomeDate(defaultProjectDate);
-    setIncomeMethod("bank_transfer");
+    setIncomeDate("");
+    setIncomeMethod("");
     setIncomeDueDate("");
     setIncomeRequiresSplit(false);
     setIncomeReference("");
@@ -936,6 +920,10 @@ export default function DashboardActions({
 
   async function createExpense() {
     setExpenseError(null);
+    if (!expenseBusinessDomain) {
+      setExpenseError("יש לבחור תחום.");
+      return;
+    }
     const linkedProjectId = expenseBusinessDomain === "logistics_projects" ? expenseProjectId : "";
     const linkedOrderId = expenseBusinessDomain === "sales" ? expenseOrderId : "";
     const linkedPropertyId = expenseBusinessDomain === "property_management" ? expensePropertyId : "";
@@ -1202,10 +1190,22 @@ export default function DashboardActions({
 
   async function createIncome() {
     setIncomeError(null);
+    if (!incomeBusinessDomain) {
+      setIncomeError("יש לבחור תחום.");
+      return;
+    }
     const linkedProjectId = incomeBusinessDomain === "logistics_projects" ? incomeProjectId : "";
     const linkedOrderId = incomeBusinessDomain === "sales" ? incomeOrderId : "";
     const linkedPropertyId = incomeBusinessDomain === "property_management" ? incomePropertyId : "";
 
+    if (incomeBusinessDomain === "logistics_projects" && !linkedProjectId) {
+      setIncomeError(HEBREW.sessionInvalidProject);
+      return;
+    }
+    if (incomeBusinessDomain === "property_management" && !linkedPropertyId) {
+      setIncomeError(HEBREW.sessionInvalidProperty);
+      return;
+    }
     if (!incomeDate || !incomeMethod.trim()) {
       setIncomeError(HEBREW.incomeRequired);
       return;
@@ -1477,7 +1477,7 @@ export default function DashboardActions({
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setExpenseOpen(true)}
         >
-          <ArrowDownCircle className="h-7 w-7 text-destructive" strokeWidth={2.4} />
+          <ArrowUpCircle className="h-7 w-7 text-destructive" strokeWidth={2.4} />
           <span className="font-semibold">{HEBREW.expenseNew}</span>
         </Button>
 
@@ -1487,7 +1487,7 @@ export default function DashboardActions({
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setIncomeOpen(true)}
         >
-          <ArrowUpCircle className="h-7 w-7 text-success" strokeWidth={2.4} />
+          <ArrowDownCircle className="h-7 w-7 text-success" strokeWidth={2.4} />
           <span className="font-semibold">{HEBREW.incomeNew}</span>
         </Button>
 
@@ -2305,27 +2305,25 @@ export default function DashboardActions({
           <fieldset disabled={expenseSubmitting} className="contents">
             <div className="grid gap-4">
               <label className="space-y-2 text-sm">
-                <span>{HEBREW.domain}</span>
+                <span>{HEBREW.domain} *</span>
                 <select
                   className={fieldClass}
                   value={expenseBusinessDomain}
                   onChange={(e) => {
-                    const nextDomain = e.target.value as ExpenseBusinessDomain;
+                    const nextDomain = e.target.value as ExpenseBusinessDomain | "";
                     setExpenseBusinessDomain(nextDomain);
                     if (nextDomain !== "logistics_projects") {
                       setExpenseProjectId("");
-                      setExpenseDate(getTodayDate());
+                      setExpenseProjectQuery("");
                       setExpenseIncludedInBase(false);
                       setExpenseBilledToCustomer(false);
                       setExpenseBillToCustomerAmount("");
-                    } else if (!expenseProjectId && projects[0]?.id) {
-                      setExpenseProjectId(projects[0].id);
-                      setExpenseDate(getProjectStartDate(projects[0].id));
                     }
                     if (nextDomain !== "sales") setExpenseOrderId("");
                     if (nextDomain !== "property_management") setExpensePropertyId("");
                   }}
                 >
+                  <option value="">בחרו תחום</option>
                   {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
                     <option key={domain} value={domain}>
                       {getBusinessDomainLabel(domain)}
@@ -2336,23 +2334,13 @@ export default function DashboardActions({
 
               {expenseBusinessDomain === "logistics_projects" ? (
                 <div className="space-y-2 text-sm">
-                  <span>{HEBREW.project}</span>
+                  <span>{HEBREW.project} *</span>
                   <Input
                     value={expenseProjectQuery}
                     onChange={(e) => setExpenseProjectQuery(e.target.value)}
+                    placeholder="חיפוש פרויקט לפי שם או לקוח"
                   />
-                  {selectedExpenseProject ? (
-                    <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                      <p className="font-medium">פרויקט נבחר: {selectedExpenseProject.name}</p>
-                      <p className="text-muted-foreground">
-                        {selectedExpenseProject.customerName || "ללא לקוח"}
-                        {normalizeDateOnly(selectedExpenseProject.startDate)
-                          ? ` | תאריך: ${normalizeDateOnly(selectedExpenseProject.startDate)}`
-                          : ""}
-                      </p>
-                    </div>
-                  ) : null}
-                  <div className="max-h-64 space-y-2 overflow-auto rounded-md border p-2">
+                  <div className="max-h-56 space-y-1 overflow-auto rounded-md border p-1">
                     {filteredExpenseProjects.map((project) => (
                       <button
                         key={project.id}
@@ -2360,22 +2348,37 @@ export default function DashboardActions({
                         onClick={() => {
                           setExpenseProjectId(project.id);
                           setExpenseProjectQuery(project.name);
-                          setExpenseDate(getProjectStartDate(project.id));
                         }}
-                        className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
+                        className={`w-full rounded-lg border px-3 py-2 text-right text-sm transition-all duration-200 ${
                           project.id === expenseProjectId
-                            ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                            : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
+                            ? "border-primary/20 bg-primary text-primary-foreground shadow-sm shadow-primary/25"
+                            : "border-border bg-accent/40 text-accent-foreground hover:bg-accent"
                         }`}
                       >
-                        <div className="font-medium">{project.name}</div>
-                        <div
-                          className={`text-xs ${
-                            project.id === expenseProjectId ? "text-primary-foreground/80" : "text-accent-foreground/80"
-                          }`}
-                        >
-                          {project.customerName || "ללא לקוח"}
-                          {normalizeDateOnly(project.startDate) ? ` | ${normalizeDateOnly(project.startDate)}` : ""}
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                          <span className="font-medium">{project.name}</span>
+                          {project.customerName ? (
+                            <span
+                              className={`text-xs ${
+                                project.id === expenseProjectId
+                                  ? "text-primary-foreground/70"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              · {project.customerName}
+                            </span>
+                          ) : null}
+                          {normalizeDateOnly(project.startDate) ? (
+                            <span
+                              className={`text-xs ${
+                                project.id === expenseProjectId
+                                  ? "text-primary-foreground/70"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              · {normalizeDateOnly(project.startDate)}
+                            </span>
+                          ) : null}
                         </div>
                       </button>
                     ))}
@@ -2407,7 +2410,7 @@ export default function DashboardActions({
 
               {expenseBusinessDomain === "property_management" ? (
                 <label className="space-y-2 text-sm">
-                  <span>נכס</span>
+                  <span>נכס *</span>
                   <select
                     className={fieldClass}
                     value={expensePropertyId}
@@ -2424,25 +2427,27 @@ export default function DashboardActions({
                 </label>
               ) : null}
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.category}</span>
-                <select
-                  className={fieldClass}
-                  value={expenseCategory}
-                  onChange={(e) => setExpenseCategory(e.target.value)}
-                >
-                  <option value="">{HEBREW.selectCategory}</option>
-                  {DASHBOARD_EXPENSE_CATEGORY_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {expenseBusinessDomain ? (
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.category} *</span>
+                  <select
+                    className={fieldClass}
+                    value={expenseCategory}
+                    onChange={(e) => setExpenseCategory(e.target.value)}
+                  >
+                    <option value="">{HEBREW.selectCategory}</option>
+                    {DASHBOARD_EXPENSE_CATEGORY_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
 
               {expenseCategory === OTHER_EXPENSE_CATEGORY ? (
                 <label className="space-y-2 text-sm">
-                  <span>{HEBREW.otherCategoryPrompt}</span>
+                  <span>{HEBREW.otherCategoryPrompt} *</span>
                   <Input
                     value={expenseCategoryOther}
                     onChange={(e) => setExpenseCategoryOther(e.target.value)}
@@ -2453,7 +2458,7 @@ export default function DashboardActions({
               {expenseIsWorkerPayment && canManageWorkerSessions ? (
                 <div className="space-y-3">
                   <label className="space-y-2 text-sm">
-                    <span>{HEBREW.worker}</span>
+                    <span>{HEBREW.worker} *</span>
                     <select
                       className={fieldClass}
                       value={expenseWorkerUserId}
@@ -2528,7 +2533,7 @@ export default function DashboardActions({
                 <>
                   <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
                     <label className="space-y-2 text-sm">
-                      <span>כניסה</span>
+                      <span>כניסה *</span>
                       <DateTimeInput
                         value={expenseClockIn}
                         onChange={(e) => setExpenseClockIn(e.target.value)}
@@ -2561,7 +2566,7 @@ export default function DashboardActions({
                     </label>
 
                     <label className="space-y-2 text-sm">
-                      <span>יציאה</span>
+                      <span>יציאה *</span>
                       <DateTimeInput
                         value={expenseClockOut}
                         onChange={(e) => setExpenseClockOut(e.target.value)}
@@ -2643,11 +2648,11 @@ export default function DashboardActions({
                     ) : null}
                   </div>
                 </>
-              ) : (
+              ) : expenseBusinessDomain ? (
                 <>
                   <AdaptiveGrid variant="formTwoLoose">
                     <label className="space-y-2 text-sm">
-                      <span>{HEBREW.amount}</span>
+                      <span>{HEBREW.amount} *</span>
                       <Input
                         type="number"
                         min="0"
@@ -2658,13 +2663,26 @@ export default function DashboardActions({
                     </label>
 
                     <label className="space-y-2 text-sm">
-                      <span>{HEBREW.date}</span>
-                      <DateInput
-                        value={expenseDate}
-                        onChange={(e) => setExpenseDate(e.target.value)}
-                      />
+                      <span>סטטוס תשלום</span>
+                      <select
+                        className={fieldClass}
+                        value={expensePaymentStatus}
+                        onChange={(e) => setExpensePaymentStatus(e.target.value as "paid" | "partial" | "not_paid")}
+                      >
+                        <option value="not_paid">לא שולם</option>
+                        <option value="partial">חלקי</option>
+                        <option value="paid">שולם</option>
+                      </select>
                     </label>
                   </AdaptiveGrid>
+
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.date} *</span>
+                    <DateInput
+                      value={expenseDate}
+                      onChange={(e) => setExpenseDate(e.target.value)}
+                    />
+                  </label>
 
                   <label className="space-y-2 text-sm">
                     <span>{HEBREW.description}</span>
@@ -2695,82 +2713,73 @@ export default function DashboardActions({
                     </div>
                   ) : null}
                 </>
-              )}
+              ) : null}
 
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.notes}</span>
-                <Textarea value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} />
-              </label>
+              {expenseBusinessDomain ? (
+                <label className="space-y-2 text-sm">
+                  <span>{HEBREW.notes}</span>
+                  <Textarea value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} />
+                </label>
+              ) : null}
 
-              <div className="space-y-2 text-sm">
-                <div className="font-medium">סטטוס תשלום</div>
-                <select
-                  className={fieldClass}
-                  value={expensePaymentStatus}
-                  onChange={(e) => setExpensePaymentStatus(e.target.value as "paid" | "partial" | "not_paid")}
-                >
-                  <option value="not_paid">לא שולם</option>
-                  <option value="partial">חלקי</option>
-                  <option value="paid">שולם</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
-                <div className="flex items-center gap-2">
-                  <FileUploadActions
-                    files={expenseAttachmentFiles}
-                    multiple
-                    onFilesSelected={setExpenseAttachmentFiles}
-                    chooseLabel={expenseAttachmentFiles.length > 0 || expenseExistingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
-                    chooseVariant="outline"
-                    size="sm"
-                  />
-                  {expenseAttachmentFiles.length > 0 ? (
-                    <Button type="button" variant="secondary" size="sm" onClick={() => setExpenseAttachmentFiles([])}>
-                      נקה בחירה
-                    </Button>
-                  ) : null}
-                </div>
-                {expenseAttachmentFiles.length > 0 ? (
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    {expenseAttachmentFiles.map((file) => (
-                      <div key={`${file.name}-${file.size}`}>{file.name}</div>
-                    ))}
+              {expenseBusinessDomain ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
+                  <div className="flex items-center gap-2">
+                    <FileUploadActions
+                      files={expenseAttachmentFiles}
+                      multiple
+                      onFilesSelected={setExpenseAttachmentFiles}
+                      chooseLabel={expenseAttachmentFiles.length > 0 || expenseExistingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                      chooseVariant="outline"
+                      size="sm"
+                    />
+                    {expenseAttachmentFiles.length > 0 ? (
+                      <Button type="button" variant="secondary" size="sm" onClick={() => setExpenseAttachmentFiles([])}>
+                        נקה בחירה
+                      </Button>
+                    ) : null}
                   </div>
-                ) : null}
-                {expenseExistingAttachments.length > 0 ? (
-                  <div className="space-y-2">
-                    <div className="text-xs text-muted-foreground">קבצים קיימים</div>
-                    <div className="flex flex-wrap gap-2">
-                      {expenseExistingAttachments.map((attachment) => (
-                        <a
-                          key={attachment.document_id}
-                          href={attachment.url ?? "#"}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
-                        >
-                          {attachment.file_name ?? "קובץ"}
-                        </a>
+                  {expenseAttachmentFiles.length > 0 ? (
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      {expenseAttachmentFiles.map((file) => (
+                        <div key={`${file.name}-${file.size}`}>{file.name}</div>
                       ))}
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {expenseExistingAttachments
-                        .filter((attachment) => attachment.url && isImageAttachment(attachment))
-                        .map((attachment) => (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            key={`${attachment.document_id}-preview`}
-                            src={attachment.url ?? ""}
-                            alt={attachment.file_name ?? "קובץ"}
-                            className="h-20 w-20 rounded-lg border object-cover"
-                          />
+                  ) : null}
+                  {expenseExistingAttachments.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-xs text-muted-foreground">קבצים קיימים</div>
+                      <div className="flex flex-wrap gap-2">
+                        {expenseExistingAttachments.map((attachment) => (
+                          <a
+                            key={attachment.document_id}
+                            href={attachment.url ?? "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
+                          >
+                            {attachment.file_name ?? "קובץ"}
+                          </a>
                         ))}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {expenseExistingAttachments
+                          .filter((attachment) => attachment.url && isImageAttachment(attachment))
+                          .map((attachment) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={`${attachment.document_id}-preview`}
+                              src={attachment.url ?? ""}
+                              alt={attachment.file_name ?? "קובץ"}
+                              className="h-20 w-20 rounded-lg border object-cover"
+                            />
+                          ))}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
-              </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </fieldset>
 
@@ -2804,23 +2813,22 @@ export default function DashboardActions({
           <fieldset disabled={incomeSubmitting} className="contents">
             <div className="grid gap-4">
               <label className="space-y-2 text-sm">
-                <span>{HEBREW.domain}</span>
+                <span>{HEBREW.domain} *</span>
                 <select
                   className={fieldClass}
                   value={incomeBusinessDomain}
                   onChange={(e) => {
-                    const nextDomain = e.target.value as ExpenseBusinessDomain;
+                    const nextDomain = e.target.value as ExpenseBusinessDomain | "";
                     setIncomeBusinessDomain(nextDomain);
                     if (nextDomain !== "logistics_projects") {
                       setIncomeProjectId("");
-                    } else if (!incomeProjectId && projects[0]?.id) {
-                      setIncomeProjectId(projects[0].id);
-                      setIncomeDate(getProjectStartDate(projects[0].id));
+                      setIncomeProjectQuery("");
                     }
                     if (nextDomain !== "sales") setIncomeOrderId("");
                     if (nextDomain !== "property_management") setIncomePropertyId("");
                   }}
                 >
+                  <option value="">בחרו תחום</option>
                   {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
                     <option key={domain} value={domain}>
                       {getBusinessDomainLabel(domain)}
@@ -2831,23 +2839,13 @@ export default function DashboardActions({
 
               {incomeBusinessDomain === "logistics_projects" ? (
                 <div className="space-y-2 text-sm">
-                  <span>{HEBREW.project}</span>
+                  <span>{HEBREW.project} *</span>
                   <Input
                     value={incomeProjectQuery}
                     onChange={(e) => setIncomeProjectQuery(e.target.value)}
+                    placeholder="חיפוש פרויקט לפי שם או לקוח"
                   />
-                  {selectedIncomeProject ? (
-                    <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                      <p className="font-medium">פרויקט נבחר: {selectedIncomeProject.name}</p>
-                      <p className="text-muted-foreground">
-                        {selectedIncomeProject.customerName || "ללא לקוח"}
-                        {normalizeDateOnly(selectedIncomeProject.startDate)
-                          ? ` | תאריך: ${normalizeDateOnly(selectedIncomeProject.startDate)}`
-                          : ""}
-                      </p>
-                    </div>
-                  ) : null}
-                  <div className="max-h-64 space-y-2 overflow-auto rounded-md border p-2">
+                  <div className="max-h-56 space-y-1 overflow-auto rounded-md border p-1">
                     {filteredIncomeProjects.map((project) => (
                       <button
                         key={project.id}
@@ -2855,22 +2853,37 @@ export default function DashboardActions({
                         onClick={() => {
                           setIncomeProjectId(project.id);
                           setIncomeProjectQuery(project.name);
-                          setIncomeDate(getProjectStartDate(project.id));
                         }}
-                        className={`w-full rounded-xl border p-3 text-right text-sm transition-all duration-200 ${
+                        className={`w-full rounded-lg border px-3 py-2 text-right text-sm transition-all duration-200 ${
                           project.id === incomeProjectId
-                            ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                            : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
+                            ? "border-primary/20 bg-primary text-primary-foreground shadow-sm shadow-primary/25"
+                            : "border-border bg-accent/40 text-accent-foreground hover:bg-accent"
                         }`}
                       >
-                        <div className="font-medium">{project.name}</div>
-                        <div
-                          className={`text-xs ${
-                            project.id === incomeProjectId ? "text-primary-foreground/80" : "text-accent-foreground/80"
-                          }`}
-                        >
-                          {project.customerName || "ללא לקוח"}
-                          {normalizeDateOnly(project.startDate) ? ` | ${normalizeDateOnly(project.startDate)}` : ""}
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                          <span className="font-medium">{project.name}</span>
+                          {project.customerName ? (
+                            <span
+                              className={`text-xs ${
+                                project.id === incomeProjectId
+                                  ? "text-primary-foreground/70"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              · {project.customerName}
+                            </span>
+                          ) : null}
+                          {normalizeDateOnly(project.startDate) ? (
+                            <span
+                              className={`text-xs ${
+                                project.id === incomeProjectId
+                                  ? "text-primary-foreground/70"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              · {normalizeDateOnly(project.startDate)}
+                            </span>
+                          ) : null}
                         </div>
                       </button>
                     ))}
@@ -2902,7 +2915,7 @@ export default function DashboardActions({
 
               {incomeBusinessDomain === "property_management" ? (
                 <label className="space-y-2 text-sm">
-                  <span>נכס</span>
+                  <span>נכס *</span>
                   <select
                     className={fieldClass}
                     value={incomePropertyId}
@@ -2919,144 +2932,150 @@ export default function DashboardActions({
                 </label>
               ) : null}
 
-              <AdaptiveGrid variant="formTwoLoose">
-                <label className="space-y-2 text-sm">
-                  <span>{HEBREW.amount}</span>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={incomeAmount}
-                    onChange={(e) => setIncomeAmount(e.target.value)}
-                  />
-                </label>
+              {incomeBusinessDomain ? (
+                <>
+                  <AdaptiveGrid variant="formTwoLoose">
+                    <label className="space-y-2 text-sm">
+                      <span>{HEBREW.amount} *</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={incomeAmount}
+                        onChange={(e) => setIncomeAmount(e.target.value)}
+                      />
+                    </label>
 
-                <label className="space-y-2 text-sm">
-                  <span>{HEBREW.date}</span>
-                  <DateInput
-                    value={incomeDate}
-                    onChange={(e) => setIncomeDate(e.target.value)}
-                  />
-                </label>
-              </AdaptiveGrid>
+                    <label className="space-y-2 text-sm">
+                      <span>{HEBREW.paymentMethod} *</span>
+                      <select
+                        className={fieldClass}
+                        value={incomeMethod}
+                        onChange={(e) => setIncomeMethod(e.target.value)}
+                      >
+                        <option value="">בחרו אמצעי תשלום</option>
+                        <option value="bank_transfer">{HEBREW.bankTransfer}</option>
+                        <option value="cash">{HEBREW.cash}</option>
+                        <option value="check">{HEBREW.check}</option>
+                        <option value="credit_card">{HEBREW.creditCard}</option>
+                        <option value="other">{HEBREW.other}</option>
+                      </select>
+                      {incomeMethod === "check" ? (
+                        <span className="block text-xs text-muted-foreground">
+                          {"צ'ק יירשם כממתין לפירעון עד תאריך הפירעון."}
+                        </span>
+                      ) : null}
+                    </label>
+                  </AdaptiveGrid>
 
-              <AdaptiveGrid variant="formTwoLoose">
-                <label className="space-y-2 text-sm">
-                  <span>{HEBREW.paymentMethod}</span>
-                  <select
-                    className={fieldClass}
-                    value={incomeMethod}
-                    onChange={(e) => setIncomeMethod(e.target.value)}
-                  >
-                    <option value="bank_transfer">{HEBREW.bankTransfer}</option>
-                    <option value="cash">{HEBREW.cash}</option>
-                    <option value="check">{HEBREW.check}</option>
-                    <option value="credit_card">{HEBREW.creditCard}</option>
-                    <option value="other">{HEBREW.other}</option>
-                  </select>
-                  {incomeMethod === "check" ? (
-                    <span className="block text-xs text-muted-foreground">
-                      {"צ'ק יירשם כממתין לפירעון עד תאריך הפירעון."}
-                    </span>
-                  ) : null}
-                </label>
-
-                <label className="space-y-2 text-sm">
-                  <span>{incomeMethod === "check" ? HEBREW.paymentDueDate : HEBREW.reference}</span>
-                  {incomeMethod === "check" ? (
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.date} *</span>
                     <DateInput
-                      value={incomeDueDate}
-                      onChange={(e) => setIncomeDueDate(e.target.value)}
+                      value={incomeDate}
+                      onChange={(e) => setIncomeDate(e.target.value)}
                     />
-                  ) : (
-                    <Input
-                      value={incomeReference}
-                      onChange={(e) => setIncomeReference(e.target.value)}
-                    />
-                  )}
-                </label>
-              </AdaptiveGrid>
+                  </label>
 
-              {incomeMethod === "check" ? (
-                <label className="space-y-2 text-sm">
-                  <span>{HEBREW.reference}</span>
-                  <Input
-                    value={incomeReference}
-                    onChange={(e) => setIncomeReference(e.target.value)}
-                  />
-                </label>
-              ) : null}
+                  {incomeMethod === "check" ? (
+                    <AdaptiveGrid variant="formTwoLoose">
+                      <label className="space-y-2 text-sm">
+                        <span>{HEBREW.paymentDueDate} *</span>
+                        <DateInput
+                          value={incomeDueDate}
+                          onChange={(e) => setIncomeDueDate(e.target.value)}
+                        />
+                      </label>
 
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={incomeRequiresSplit}
-                  onChange={(e) => setIncomeRequiresSplit(e.target.checked)}
-                />
-                <span>{HEBREW.includesVat}</span>
-              </label>
-
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.notes}</span>
-                <Textarea value={incomeNotes} onChange={(e) => setIncomeNotes(e.target.value)} />
-              </label>
-
-              <div className="space-y-2">
-                <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
-                <div className="flex items-center gap-2">
-                  <FileUploadActions
-                    files={incomeAttachmentFiles}
-                    multiple
-                    onFilesSelected={setIncomeAttachmentFiles}
-                    chooseLabel={incomeAttachmentFiles.length > 0 || incomeExistingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
-                    chooseVariant="outline"
-                    size="sm"
-                  />
-                  {incomeAttachmentFiles.length > 0 ? (
-                    <Button type="button" variant="secondary" size="sm" onClick={() => setIncomeAttachmentFiles([])}>
-                      נקה בחירה
-                    </Button>
+                      <label className="space-y-2 text-sm">
+                        <span>{HEBREW.reference}</span>
+                        <Input
+                          value={incomeReference}
+                          onChange={(e) => setIncomeReference(e.target.value)}
+                        />
+                      </label>
+                    </AdaptiveGrid>
+                  ) : incomeMethod ? (
+                    <label className="space-y-2 text-sm">
+                      <span>{HEBREW.reference}</span>
+                      <Input
+                        value={incomeReference}
+                        onChange={(e) => setIncomeReference(e.target.value)}
+                      />
+                    </label>
                   ) : null}
-                </div>
-                {incomeAttachmentFiles.length > 0 ? (
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    {incomeAttachmentFiles.map((file) => (
-                      <div key={`${file.name}-${file.size}`}>{file.name}</div>
-                    ))}
-                  </div>
-                ) : null}
-                {incomeExistingAttachments.length > 0 ? (
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={incomeRequiresSplit}
+                      onChange={(e) => setIncomeRequiresSplit(e.target.checked)}
+                    />
+                    <span>{HEBREW.includesVat}</span>
+                  </label>
+
+                  <label className="space-y-2 text-sm">
+                    <span>{HEBREW.notes}</span>
+                    <Textarea value={incomeNotes} onChange={(e) => setIncomeNotes(e.target.value)} />
+                  </label>
+
                   <div className="space-y-2">
-                    <div className="text-xs text-muted-foreground">קבצים קיימים</div>
-                    <div className="flex flex-wrap gap-2">
-                      {incomeExistingAttachments.map((attachment) => (
-                        <a
-                          key={attachment.document_id}
-                          href={attachment.url ?? "#"}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
-                        >
-                          {attachment.file_name ?? "קובץ"}
-                        </a>
-                      ))}
+                    <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
+                    <div className="flex items-center gap-2">
+                      <FileUploadActions
+                        files={incomeAttachmentFiles}
+                        multiple
+                        onFilesSelected={setIncomeAttachmentFiles}
+                        chooseLabel={incomeAttachmentFiles.length > 0 || incomeExistingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                        chooseVariant="outline"
+                        size="sm"
+                      />
+                      {incomeAttachmentFiles.length > 0 ? (
+                        <Button type="button" variant="secondary" size="sm" onClick={() => setIncomeAttachmentFiles([])}>
+                          נקה בחירה
+                        </Button>
+                      ) : null}
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {incomeExistingAttachments
-                        .filter((attachment) => attachment.url && isImageAttachment(attachment))
-                        .map((attachment) => (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            key={`${attachment.document_id}-preview`}
-                            src={attachment.url ?? ""}
-                            alt={attachment.file_name ?? "קובץ"}
-                            className="h-20 w-20 rounded-lg border object-cover"
-                          />
+                    {incomeAttachmentFiles.length > 0 ? (
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        {incomeAttachmentFiles.map((file) => (
+                          <div key={`${file.name}-${file.size}`}>{file.name}</div>
                         ))}
-                    </div>
+                      </div>
+                    ) : null}
+                    {incomeExistingAttachments.length > 0 ? (
+                      <div className="space-y-2">
+                        <div className="text-xs text-muted-foreground">קבצים קיימים</div>
+                        <div className="flex flex-wrap gap-2">
+                          {incomeExistingAttachments.map((attachment) => (
+                            <a
+                              key={attachment.document_id}
+                              href={attachment.url ?? "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
+                            >
+                              {attachment.file_name ?? "קובץ"}
+                            </a>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {incomeExistingAttachments
+                            .filter((attachment) => attachment.url && isImageAttachment(attachment))
+                            .map((attachment) => (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                key={`${attachment.document_id}-preview`}
+                                src={attachment.url ?? ""}
+                                alt={attachment.file_name ?? "קובץ"}
+                                className="h-20 w-20 rounded-lg border object-cover"
+                              />
+                            ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
+                </>
+              ) : null}
             </div>
           </fieldset>
 
