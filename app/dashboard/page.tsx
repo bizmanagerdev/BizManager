@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { AdaptiveGrid, PageStack, ResponsiveMetricValue } from "@/components/layout/page-layout";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import DashboardActions from "@/app/dashboard/DashboardActions";
+import ToastTestButtons from "@/app/dashboard/ToastTestButtons";
 import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard";
 import DomainActivityChart from "@/components/charts/DomainActivityChart";
 import { getAlertsData } from "@/lib/alerts";
@@ -299,6 +300,9 @@ export default async function DashboardPage() {
               scheduleEntries={scheduleEntriesResult.data ?? []}
               todayIso={today.toISOString().slice(0, 10)}
             />
+            <div className="mt-4">
+              <ToastTestButtons />
+            </div>
           </CardContent>
         </Card>
 
