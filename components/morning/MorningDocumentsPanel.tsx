@@ -297,9 +297,11 @@ export default function MorningDocumentsPanel({
       ) : null}
 
       {sortedDocs.length === 0 ? (
-        <div className="rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
-          אין מסמכי Morning מקומיים להצגה.
-        </div>
+        compact ? null : (
+          <div className="rounded-xl border border-dashed px-4 py-3 text-sm text-muted-foreground">
+            אין מסמכי Morning מקומיים להצגה.
+          </div>
+        )
       ) : (
         <div className="space-y-2">
           {sortedDocs.map((document) => (

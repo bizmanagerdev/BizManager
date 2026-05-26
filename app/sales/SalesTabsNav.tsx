@@ -61,7 +61,7 @@ function triggerClassName(isActive: boolean) {
 // Same trigger styling as Radix TabsList, but sized to content and centered so
 // the bar doesn't stretch across the whole page width.
 const LIST_CLASSES =
-  "mx-auto inline-flex h-12 w-fit max-w-full items-center justify-center overflow-x-auto rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm";
+  "mx-auto flex h-12 w-fit max-w-full items-center justify-center overflow-x-auto rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm";
 
 export default function SalesTabsNav({
   activeTab,

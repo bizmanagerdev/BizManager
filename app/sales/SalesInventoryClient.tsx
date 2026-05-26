@@ -521,7 +521,7 @@ export default function SalesInventoryClient({
 
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-            <div className="flex justify-end gap-2">
+            <div className="mt-4 flex justify-end gap-2">
               <Button type="button" variant="outline" disabled={submitting} onClick={() => setAdjustmentOpen(false)}>
                 ביטול
               </Button>

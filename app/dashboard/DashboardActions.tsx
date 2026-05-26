@@ -1852,7 +1852,7 @@ export default function DashboardActions({
 
           {manualSessionError ? <p className="text-sm text-destructive">{manualSessionError}</p> : null}
 
-          <div className="flex justify-end gap-2">
+          <div className="mt-4 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setManualSessionOpen(false)} disabled={manualSessionSubmitting}>
               {HEBREW.cancel}
             </Button>
@@ -2131,7 +2131,7 @@ export default function DashboardActions({
 
           {projectError ? <p className="text-sm text-destructive">{projectError}</p> : null}
 
-          <div className="flex justify-end gap-2">
+          <div className="mt-4 flex justify-end gap-2">
             <Button
               type="button"
               variant="ghost"
@@ -2325,7 +2325,7 @@ export default function DashboardActions({
 
           {taskError ? <p className="text-sm text-destructive">{taskError}</p> : null}
 
-          <div className="flex justify-end gap-2">
+          <div className="mt-4 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setTaskOpen(false)} disabled={taskSubmitting}>
               {HEBREW.cancel}
             </Button>
@@ -2787,7 +2787,7 @@ export default function DashboardActions({
 
           {expenseError ? <p className="text-sm text-destructive">{expenseError}</p> : null}
 
-          <div className="flex justify-end gap-2">
+          <div className="mt-4 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setExpenseOpen(false)} disabled={expenseSubmitting}>
               {HEBREW.cancel}
             </Button>
@@ -3083,7 +3083,7 @@ export default function DashboardActions({
 
           {incomeError ? <p className="text-sm text-destructive">{incomeError}</p> : null}
 
-          <div className="flex justify-end gap-2">
+          <div className="mt-4 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setIncomeOpen(false)} disabled={incomeSubmitting}>
               {HEBREW.cancel}
             </Button>

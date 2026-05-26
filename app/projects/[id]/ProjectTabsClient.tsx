@@ -175,6 +175,26 @@ function formatDateTime(value: string | null) {
   return formatShortDateTime(value, "—");
 }
 
+function formatTimeOnly(value: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function isSameDay(a: string | null, b: string | null) {
+  if (!a || !b) return false;
+  const da = new Date(a);
+  const db = new Date(b);
+  if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false;
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
+}
+
 function LtrInline({
   children,
   className,
@@ -1276,19 +1296,40 @@ export default function ProjectTabsClient({
     return (
       <div
         key={session ? session.id : expenseId ?? String(idx)}
-        className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+        className="flex flex-col gap-2 py-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
       >
         <div className="min-w-0 flex-1">
-          <div className="font-medium truncate">{title}</div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-medium truncate">{title}</span>
+            <StatusBadge
+              value={session ? currentSessionPaymentStatus : String(item.expense?.payment_status ?? "not_paid")}
+              type="payment"
+            />
+            {billed && options?.showBillableBadge !== false ? (
+              <span className="inline-flex items-center rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-soft-foreground">
+                חויב ללקוח
+              </span>
+            ) : null}
+          </div>
           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
             <LtrInline>{formatDate(createdAt)}</LtrInline>
             {session ? (
               <>
                 <span>
-                  כניסה: <LtrInline>{formatDateTime(session.clock_in)}</LtrInline>
+                  כניסה:{" "}
+                  <LtrInline>
+                    {isSameDay(createdAt, session.clock_in)
+                      ? formatTimeOnly(session.clock_in)
+                      : formatDateTime(session.clock_in)}
+                  </LtrInline>
                 </span>
                 <span>
-                  יציאה: <LtrInline>{formatDateTime(session.clock_out)}</LtrInline>
+                  יציאה:{" "}
+                  <LtrInline>
+                    {isSameDay(createdAt, session.clock_out)
+                      ? formatTimeOnly(session.clock_out)
+                      : formatDateTime(session.clock_out)}
+                  </LtrInline>
                 </span>
                 <span>
                   משך: <LtrInline>{formatMinutes(sessionWorkedMinutes(session))}</LtrInline>
@@ -1300,35 +1341,24 @@ export default function ProjectTabsClient({
                 ) : null}
               </>
             ) : null}
-            {billed && options?.showBillableBadge !== false ? (
-              <span className="inline-flex items-center rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 font-medium text-warning-soft-foreground">
-                חויב ללקוח
-              </span>
-            ) : null}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StatusBadge
-              value={session ? currentSessionPaymentStatus : String(item.expense?.payment_status ?? "not_paid")}
-              type="payment"
-            />
-            {!session && (() => {
-              const expStatus = item.expense?.payment_status;
-              const expPaid = toNumber(item.expense?.paid_amount as string | number | null);
-              const expMethod = getString(item.expense, "payment_method");
-              if (expStatus !== "paid" && expStatus !== "partial") return null;
-              const methodLabel = expMethod === "bank_transfer" ? "העברה בנקאית"
-                : expMethod === "cash" ? "מזומן"
-                : expMethod === "check" ? "צ'ק"
-                : expMethod === "credit_card" ? "כרטיס אשראי"
-                : expMethod === "other" ? "אחר"
-                : null;
-              const parts: string[] = [];
-              if (expStatus === "partial" && expPaid != null && expPaid > 0) parts.push(`שולם ${formatIls(expPaid)}`);
-              if (methodLabel) parts.push(methodLabel);
-              if (!parts.length) return null;
-              return <span className="text-xs text-muted-foreground">{parts.join(" • ")}</span>;
-            })()}
-          </div>
+          {!session && (() => {
+            const expStatus = item.expense?.payment_status;
+            const expPaid = toNumber(item.expense?.paid_amount as string | number | null);
+            const expMethod = getString(item.expense, "payment_method");
+            if (expStatus !== "paid" && expStatus !== "partial") return null;
+            const methodLabel = expMethod === "bank_transfer" ? "העברה בנקאית"
+              : expMethod === "cash" ? "מזומן"
+              : expMethod === "check" ? "צ'ק"
+              : expMethod === "credit_card" ? "כרטיס אשראי"
+              : expMethod === "other" ? "אחר"
+              : null;
+            const parts: string[] = [];
+            if (expStatus === "partial" && expPaid != null && expPaid > 0) parts.push(`שולם ${formatIls(expPaid)}`);
+            if (methodLabel) parts.push(methodLabel);
+            if (!parts.length) return null;
+            return <div className="mt-1 text-xs text-muted-foreground">{parts.join(" • ")}</div>;
+          })()}
           {session?.notes ? (
             <div className="text-xs text-muted-foreground mt-1 truncate">
               {session.notes}
@@ -1573,21 +1603,21 @@ export default function ProjectTabsClient({
                     const paymentAudit = paymentAuditById[p.id] ?? null;
 
                     return (
-                      <div key={p.id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                      <div key={p.id} className="flex flex-col gap-2 py-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                         <div className="min-w-0 flex-1">
-                          <div className="font-medium truncate">
-                            {reference ? <>אסמכתא: <LtrInline>{reference}</LtrInline></> : "הכנסה"}
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="font-medium truncate">
+                              {reference ? <>אסמכתא: <LtrInline>{reference}</LtrInline></> : "הכנסה"}
+                            </span>
+                            {paymentStatus ? (
+                              <StatusBadge value={paymentStatus} type="payment" />
+                            ) : null}
                           </div>
                           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
                             <LtrInline>{formatDate(date)}</LtrInline>
                             <span>{method}</span>
                             {dueDate ? <span>פירעון: <LtrInline>{formatDate(dueDate)}</LtrInline></span> : null}
                           </div>
-                          {paymentStatus ? (
-                            <div className="mt-2">
-                              <StatusBadge value={paymentStatus} type="payment" />
-                            </div>
-                          ) : null}
                           {p.notes ? (
                             <div className="text-xs text-muted-foreground mt-1 truncate">
                               {p.notes}
@@ -1610,7 +1640,7 @@ export default function ProjectTabsClient({
                             </div>
                           ) : null}
                           {amount !== null && amount > 0 && overview.customer_id ? (
-                            <div className="mt-3 border-t border-border/60 pt-3">
+                            <div className="mt-2">
                               <MorningDocumentsPanel
                                 customerId={overview.customer_id}
                                 projectId={overview.id}
