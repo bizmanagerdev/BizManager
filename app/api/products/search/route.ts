@@ -17,8 +17,9 @@ export async function GET(req: Request) {
   const limit = parseLimit(searchParams.get("limit"));
 
   let query = supabase
-    .from("products")
-    .select("id,name,sku,barcode,description,base_price,base_cost,active")
+    .from("products_with_last_used")
+    .select("id,name,sku,barcode,description,base_price,base_cost,active,order_count,last_used_at")
+    .order("order_count", { ascending: false })
     .order("name", { ascending: true })
     .range(0, limit - 1);
 

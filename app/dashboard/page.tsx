@@ -119,7 +119,7 @@ export default async function DashboardPage() {
       .range(0, 49),
     supabase
       .from("customer_overview_view")
-      .select("customer_id,customer_name,phone,email,address")
+      .select("customer_id,customer_name,name_for_invoice,phone,email,address")
       .order("customer_name", { ascending: true })
       .range(0, 49),
     supabase.from("users").select("id,full_name,email,role,active,payroll_worker_type,pay_tracking_mode").order("full_name", { ascending: true }).range(0, 499),

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
+import { EditCustomerDialog, type EditCustomerInput } from "@/components/customers/EditCustomerDialog";
 import {
   AdaptiveCell,
   AdaptiveDialog,
@@ -87,19 +88,7 @@ export default function CustomersClient({
   const [createOpen, setCreateOpen] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
-  const [editErr, setEditErr] = useState("");
-  const [editLoading, setEditLoading] = useState(false);
-  const [editId, setEditId] = useState("");
-  const [editName, setEditName] = useState("");
-  const [editInvoiceName, setEditInvoiceName] = useState("");
-  const [editReg, setEditReg] = useState("");
-  const [editPhone, setEditPhone] = useState("");
-  const [editWhatsapp, setEditWhatsapp] = useState("");
-  const [editEmail, setEditEmail] = useState("");
-  const [editAddress, setEditAddress] = useState("");
-  const [editNotes, setEditNotes] = useState("");
-  const [editActive, setEditActive] = useState(true);
-  const [editRequiresPrepayment, setEditRequiresPrepayment] = useState(false);
+  const [editTarget, setEditTarget] = useState<EditCustomerInput | null>(null);
 
   const [contactOpen, setContactOpen] = useState(false);
   const [contactErr, setContactErr] = useState("");
@@ -144,7 +133,7 @@ export default function CustomersClient({
       if (!usingApi) {
         const q = query.trim().toLowerCase();
         const hay = [
-          s(row, "customer_name"), s(row, "phone"), s(row, "whatsapp"), s(row, "email"), s(row, "address"),
+          s(row, "customer_name"), s(row, "name_for_invoice"), s(row, "phone"), s(row, "whatsapp"), s(row, "email"), s(row, "address"),
           ...contactsOf(row).flatMap((c) => [s(c, "full_name"), s(c, "phone"), s(c, "email"), s(c, "whatsapp")]),
         ].join(" ").toLowerCase();
         if (q && !hay.includes(q)) return false;
@@ -182,74 +171,45 @@ export default function CustomersClient({
   }, [handledInitialAddContact, initialAddContactCustomerId, rows]);
 
   function openEdit(row: Row) {
-    setEditErr("");
-    setEditId(s(row, "customer_id"));
-    setEditName(s(row, "name") || s(row, "customer_name"));
-    setEditInvoiceName(s(row, "name_for_invoice"));
-    setEditReg(s(row, "registration_number"));
-    setEditPhone(s(row, "phone"));
-    setEditWhatsapp(s(row, "whatsapp"));
-    setEditEmail(s(row, "email"));
-    setEditAddress(s(row, "address"));
-    setEditNotes(s(row, "notes"));
-    setEditActive(row.active !== false);
-    setEditRequiresPrepayment(row.requires_prepayment === true);
+    setEditTarget({
+      id: s(row, "customer_id"),
+      name: s(row, "name") || s(row, "customer_name"),
+      name_for_invoice: s(row, "name_for_invoice") || null,
+      registration_number: s(row, "registration_number") || null,
+      phone: s(row, "phone") || null,
+      whatsapp: s(row, "whatsapp") || null,
+      email: s(row, "email") || null,
+      address: s(row, "address") || null,
+      notes: s(row, "notes") || null,
+      active: row.active !== false,
+      requires_prepayment: row.requires_prepayment === true,
+      contacts: contactsOf(row),
+    });
     setEditOpen(true);
   }
 
-  async function saveEdit() {
-    if (editLoading) return;
-    setEditErr("");
-    if (!editId) return setEditErr("חסר מזהה לקוח.");
-    if (!editName.trim()) return setEditErr("יש למלא שם לקוח.");
-    setEditLoading(true);
-    try {
-      const res = await fetch("/api/customers/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: editId,
-          name: editName.trim(),
-          name_for_invoice: editInvoiceName.trim() || null,
-          registration_number: editReg.trim() || null,
-          phone: editPhone.trim() || null,
-          whatsapp: editWhatsapp.trim() || null,
-          email: editEmail.trim() || null,
-          address: editAddress.trim() || null,
-          notes: editNotes.trim() || null,
-          active: editActive,
-          requires_prepayment: editRequiresPrepayment,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: Row };
-      if (!res.ok || !json.customer) return setEditErr(json.error ?? "עדכון לקוח נכשל.");
-      const u = json.customer;
-      setRows((prev) =>
-        prev.map((row) =>
-          s(row, "customer_id") !== s(u, "id")
-            ? row
-            : {
-                ...row,
-                customer_name: s(u, "name") || s(row, "customer_name"),
-                name: s(u, "name") || s(row, "name"),
-                name_for_invoice: s(u, "name_for_invoice"),
-                registration_number: s(u, "registration_number"),
-                phone: s(u, "phone"),
-                whatsapp: s(u, "whatsapp"),
-                email: s(u, "email"),
-                address: s(u, "address"),
-                notes: s(u, "notes"),
-                active: u.active !== false,
-                requires_prepayment: u.requires_prepayment === true,
-              }
-        )
-      );
-      setEditOpen(false);
-    } catch (e: unknown) {
-      setEditErr(e instanceof Error ? e.message : "שגיאה לא ידועה");
-    } finally {
-      setEditLoading(false);
-    }
+  function applySavedCustomer(u: Row, savedContacts: Row[]) {
+    setRows((prev) =>
+      prev.map((row) =>
+        s(row, "customer_id") !== s(u, "id")
+          ? row
+          : {
+              ...row,
+              customer_name: s(u, "name") || s(row, "customer_name"),
+              name: s(u, "name") || s(row, "name"),
+              name_for_invoice: s(u, "name_for_invoice"),
+              registration_number: s(u, "registration_number"),
+              phone: s(u, "phone"),
+              whatsapp: s(u, "whatsapp"),
+              email: s(u, "email"),
+              address: s(u, "address"),
+              notes: s(u, "notes"),
+              active: u.active !== false,
+              requires_prepayment: u.requires_prepayment === true,
+              contacts: savedContacts,
+            }
+      )
+    );
   }
 
   function openAddContact(row: Row) {
@@ -418,6 +378,11 @@ export default function CustomersClient({
                     ) : null}
                     {linkedMorningClientId ? <Badge className={customerFlagBadgeClass("success")}>Morning</Badge> : null}
                   </div>
+                  {s(row, "name_for_invoice") && s(row, "name_for_invoice") !== customerName ? (
+                    <div className="truncate text-[11px] text-muted-foreground">
+                      שם לחשבונית: {s(row, "name_for_invoice")}
+                    </div>
+                  ) : null}
                   <div className="truncate text-[11px] text-muted-foreground">
                     {s(row, "email") || "-"} | {s(row, "phone") || "-"}
                   </div>
@@ -508,6 +473,11 @@ export default function CustomersClient({
                 >
                   <td className="px-2 py-3">
                     <div className="truncate text-right font-medium">{customerName}</div>
+                    {s(row, "name_for_invoice") && s(row, "name_for_invoice") !== customerName ? (
+                      <div className="truncate text-right text-xs text-muted-foreground">
+                        שם לחשבונית: {s(row, "name_for_invoice")}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-2 py-3">
                     <div className="truncate">{s(row, "phone") || "-"}</div>
@@ -594,59 +564,12 @@ export default function CustomersClient({
         }}
       />
 
-      <CustomerDialog
+      <EditCustomerDialog
         open={editOpen}
         onOpenChange={setEditOpen}
-        title="עריכת לקוח"
-        description="עדכון פרטי לקוח ופרטי חשבונית."
-        submitLabel={editLoading ? "שומר..." : "שמירת שינויים"}
-        onSubmit={() => void saveEdit()}
-        error={editErr}
-        submitting={editLoading}
-      >
-        <Field label="שם לקוח *">
-          <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
-        </Field>
-        <AdaptiveGrid variant="formTwo">
-          <Field label="טלפון">
-            <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
-          </Field>
-          <Field label="וואטסאפ">
-            <Input value={editWhatsapp} onChange={(e) => setEditWhatsapp(e.target.value)} />
-          </Field>
-          <Field label="אימייל">
-            <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
-          </Field>
-        </AdaptiveGrid>
-        <Field label="שם לחשבונית">
-          <Input value={editInvoiceName} onChange={(e) => setEditInvoiceName(e.target.value)} placeholder="אם שונה משם הלקוח" />
-        </Field>
-        <Field label="ח.פ / ת.ז">
-          <Input value={editReg} onChange={(e) => setEditReg(e.target.value)} />
-        </Field>
-        <Field label="כתובת">
-          <Input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} />
-        </Field>
-        <Field label="הערות">
-          <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={3} />
-        </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={editRequiresPrepayment}
-            onChange={(e) => setEditRequiresPrepayment(e.target.checked)}
-          />
-          <span>לקוח ברשימת תשלום מראש</span>
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={editActive}
-            onChange={(e) => setEditActive(e.target.checked)}
-          />
-          <span>לקוח פעיל</span>
-        </label>
-      </CustomerDialog>
+        customer={editTarget}
+        onSaved={({ customer, contacts }) => applySavedCustomer(customer, contacts)}
+      />
 
       <CustomerDialog
         open={contactOpen}

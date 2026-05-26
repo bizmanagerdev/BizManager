@@ -888,9 +888,9 @@ export default function DashboardActions({
       try {
         const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
         if (!res.ok) return;
-        const json = await res.json() as { customers?: Array<{ id: string; name: string; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
+        const json = await res.json() as { customers?: Array<{ id: string; name: string; name_for_invoice?: string | null; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
         setProjectCustomerSearchResults(
-          (json.customers ?? []).map((c) => ({ id: c.id, name: c.name, phone: c.phone ?? null, email: c.email ?? null, contacts: c.contacts ?? [] } as Row))
+          (json.customers ?? []).map((c) => ({ id: c.id, name: c.name, name_for_invoice: c.name_for_invoice ?? null, phone: c.phone ?? null, email: c.email ?? null, contacts: c.contacts ?? [] } as Row))
         );
       } catch { /* ignore */ }
     }, 300);
@@ -1998,6 +1998,7 @@ export default function DashboardActions({
                   {filteredProjectCustomers.map((customer) => {
                     const id = getString(customer, "id");
                     const name = getFirstString(customer, ["name", "name_for_invoice"]) || HEBREW.customerFallback;
+                    const nameForInvoice = getFirstString(customer, ["name_for_invoice"]);
                     const phone = getFirstString(customer, ["phone", "mobile", "tel"]);
                     const city = getFirstString(customer, ["city"]);
                     const matchedContacts = Array.isArray(customer.contacts) ? (customer.contacts as Array<{ full_name: string; phone?: string | null }>) : [];
@@ -2026,6 +2027,11 @@ export default function DashboardActions({
                             </span>
                           ) : null}
                         </div>
+                        {nameForInvoice && nameForInvoice !== name ? (
+                          <div className={`mt-0.5 text-xs ${id === projectCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                            שם לחשבונית: {nameForInvoice}
+                          </div>
+                        ) : null}
                         {matchedContacts.length > 0 ? (
                           <div className={`mt-0.5 text-xs ${id === projectCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
                             ← {matchedContacts[0].full_name}{matchedContacts[0].phone ? ` · ${matchedContacts[0].phone}` : ""}

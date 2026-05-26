@@ -102,7 +102,7 @@ export default async function ProjectsPage({
       .range(0, OPTIONS_PAGE_SIZE - 1),
     supabase
       .from("customer_overview_view")
-      .select("customer_id,customer_name,phone,email")
+      .select("customer_id,customer_name,name_for_invoice,phone,email")
       .order("customer_name", { ascending: true })
       .range(0, OPTIONS_PAGE_SIZE - 1),
   ]);
@@ -205,7 +205,8 @@ export default async function ProjectsPage({
       const label = typeof row?.customer_name === "string" ? row.customer_name.trim() : "";
       const phone = typeof row?.phone === "string" ? row.phone : null;
       const email = typeof row?.email === "string" ? row.email : null;
-      return { id, label, phone, email };
+      const name_for_invoice = typeof row?.name_for_invoice === "string" ? row.name_for_invoice : null;
+      return { id, label, phone, email, name_for_invoice };
     })
     .filter((row: { id: string; label: string }) => row.id && row.label);
 
@@ -216,6 +217,7 @@ export default async function ProjectsPage({
         typeof row?.customer_name === "string" && row.customer_name.trim() ? row.customer_name : "",
       phone: null,
       email: null,
+      name_for_invoice: null,
     }))
     .filter((row: { id: string; label: string }) => row.id && row.label);
 

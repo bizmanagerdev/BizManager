@@ -41,6 +41,7 @@ type OrderLine = {
 type CustomerOption = {
   id: string;
   name: string;
+  nameForInvoice: string | null;
   phone: string | null;
   email: string | null;
   city: string | null;
@@ -146,6 +147,7 @@ function mapCustomerSearchResult(row: Record<string, unknown>): CustomerOption |
   return {
     id,
     name: (typeof row.name === "string" && row.name.trim() ? row.name.trim() : null) ?? "לקוח",
+    nameForInvoice: typeof row.name_for_invoice === "string" && row.name_for_invoice.trim() ? row.name_for_invoice.trim() : null,
     phone: typeof row.phone === "string" ? row.phone : null,
     email: typeof row.email === "string" ? row.email : null,
     address: typeof row.address === "string" ? row.address : null,
@@ -260,6 +262,7 @@ export default function NewOrderClient({
           name:
             getString(row, ["name", "customer_name", "name_for_invoice", "email", "phone"]) ??
             "לקוח",
+          nameForInvoice: getString(row, ["name_for_invoice"]),
           phone: getString(row, ["phone", "mobile", "tel"]),
           email: getString(row, ["email"]),
           address: getString(row, ["address"]),
@@ -828,6 +831,11 @@ export default function NewOrderClient({
                       </span>
                     ) : null}
                   </div>
+                  {customer.nameForInvoice && customer.nameForInvoice !== customer.name ? (
+                    <div className={`mt-0.5 text-xs ${customer.id === customerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                      שם לחשבונית: {customer.nameForInvoice}
+                    </div>
+                  ) : null}
                   {(customer.contacts ?? []).length > 0 ? (
                     <div className={`mt-0.5 text-xs ${customer.id === customerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
                       ← {customer.contacts![0].full_name}{customer.contacts![0].phone ? ` · ${customer.contacts![0].phone}` : ""}

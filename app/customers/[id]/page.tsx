@@ -8,6 +8,7 @@ import { formatShortDate } from "@/lib/date";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import { notFound } from "next/navigation";
 import DeleteCustomerButton from "./DeleteCustomerButton";
+import EditCustomerButton from "./EditCustomerButton";
 
 type Row = Record<string, unknown>;
 
@@ -220,7 +221,6 @@ export default async function CustomerDetailsPage({
   const inactiveContacts = ((contacts ?? []) as Row[]).filter((contact) => contact.active === false);
   const customerNameParam = customerName.trim();
   const returnCustomersHref = returnPage > 1 ? `/customers?page=${returnPage}` : "/customers";
-  const editCustomerHref = `${returnCustomersHref}${returnPage > 1 ? "&" : "?"}edit_customer_id=${encodeURIComponent(id)}`;
   const addContactHref = `${returnCustomersHref}${returnPage > 1 ? "&" : "?"}add_contact_customer_id=${encodeURIComponent(id)}`;
 
   return (
@@ -235,9 +235,22 @@ export default async function CustomerDetailsPage({
             <Button asChild variant="outline" size="sm">
               <NavLink to={returnCustomersHref}>חזרה ללקוחות</NavLink>
             </Button>
-            <Button asChild variant="outline" size="sm">
-              <NavLink to={editCustomerHref}>עריכת לקוח</NavLink>
-            </Button>
+            <EditCustomerButton
+              customer={{
+                id,
+                name: customerName,
+                name_for_invoice: s(customer as Row, "name_for_invoice") || null,
+                registration_number: s(customer as Row, "registration_number") || null,
+                phone: customerPhone || null,
+                whatsapp: customerWhatsapp || null,
+                email: customerEmail || null,
+                address: address || null,
+                notes: s(customer as Row, "notes") || null,
+                active: customer?.active !== false,
+                requires_prepayment: requiresPrepayment,
+                contacts: (contacts ?? []) as Row[],
+              }}
+            />
             <Button asChild variant="outline" size="sm">
               <NavLink to={addContactHref}>הוספת איש קשר</NavLink>
             </Button>

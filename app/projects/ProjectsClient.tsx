@@ -38,7 +38,7 @@ import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEdito
 import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
 
 type ProjectRow = Record<string, unknown>;
-type Option = { id: string; label: string; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
+type Option = { id: string; label: string; phone?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
 type SortMode = "recent" | "start_date" | "start_date_desc" | "profit_desc";
 type ProjectsView = "projects" | "quotes" | "closed";
 type ProjectMonthlySummary = {
@@ -485,9 +485,9 @@ export default function ProjectsClient({
       try {
         const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
         if (!res.ok) return;
-        const json = await res.json() as { customers?: Array<{ id: string; name: string; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
+        const json = await res.json() as { customers?: Array<{ id: string; name: string; name_for_invoice?: string | null; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
         setCustomerSearchResults(
-          (json.customers ?? []).map((c) => ({ id: c.id, label: c.name, phone: c.phone ?? null, email: c.email ?? null, contacts: c.contacts ?? [] }))
+          (json.customers ?? []).map((c) => ({ id: c.id, label: c.name, phone: c.phone ?? null, email: c.email ?? null, name_for_invoice: c.name_for_invoice ?? null, contacts: c.contacts ?? [] }))
         );
       } catch { /* ignore */ }
     }, 300);
@@ -1541,6 +1541,11 @@ export default function ProjectsClient({
                               </span>
                             ) : null}
                           </div>
+                          {customer.name_for_invoice && customer.name_for_invoice.trim() && customer.name_for_invoice.trim() !== customer.label.trim() ? (
+                            <div className={`mt-0.5 text-xs ${customer.id === createCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                              שם לחשבונית: {customer.name_for_invoice}
+                            </div>
+                          ) : null}
                           {(customer.contacts ?? []).length > 0 ? (
                             <div className={`mt-0.5 text-xs ${customer.id === createCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
                               ← {customer.contacts![0].full_name}{customer.contacts![0].phone ? ` · ${customer.contacts![0].phone}` : ""}

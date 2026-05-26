@@ -40,7 +40,7 @@ export async function GET(req: Request) {
   if (q) {
     const escaped = q.replace(/,/g, " ");
     baseQuery = baseQuery.or(
-      `name.ilike.%${escaped}%,email.ilike.%${escaped}%,phone.ilike.%${escaped}%,address.ilike.%${escaped}%`
+      `name.ilike.%${escaped}%,name_for_invoice.ilike.%${escaped}%,email.ilike.%${escaped}%,phone.ilike.%${escaped}%,address.ilike.%${escaped}%`
     );
   }
 

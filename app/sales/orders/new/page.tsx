@@ -11,12 +11,13 @@ export default async function NewSalesOrderPage() {
     await Promise.all([
       supabase
         .from("customers")
-        .select("id,name,phone,email,address,requires_prepayment")
+        .select("id,name,name_for_invoice,phone,email,address,requires_prepayment")
         .order("name", { ascending: true })
         .range(0, 49),
       supabase
-        .from("products")
-        .select("id,name,sku,barcode,description,base_price,base_cost,active")
+        .from("products_with_last_used")
+        .select("id,name,sku,barcode,description,base_price,base_cost,active,order_count,last_used_at")
+        .order("order_count", { ascending: false })
         .order("name", { ascending: true })
         .range(0, 49),
     ]);
