@@ -19,7 +19,7 @@ type CustomerRow = {
   active: boolean;
   notes: string | null;
   requires_prepayment: boolean;
-  contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
+  contacts?: Array<{ full_name: string; phone: string | null; email: string | null; whatsapp: string | null }>;
 };
 
 export async function GET(req: Request) {
@@ -73,7 +73,7 @@ export async function GET(req: Request) {
     const escaped = q.replace(/,/g, " ");
     const { data: contactRows } = await supabase
       .from("contacts")
-      .select("customer_id,full_name,phone,email")
+      .select("customer_id,full_name,phone,email,whatsapp")
       .or(`full_name.ilike.%${escaped}%,phone.ilike.%${escaped}%,email.ilike.%${escaped}%,whatsapp.ilike.%${escaped}%`)
       .eq("active", true)
       .range(0, limit - 1);
@@ -116,7 +116,12 @@ export async function GET(req: Request) {
       const customer = byId.get(cid);
       if (!customer) continue;
       if (!customer.contacts) customer.contacts = [];
-      customer.contacts.push({ full_name: c.full_name, phone: c.phone ?? null, email: c.email ?? null });
+      customer.contacts.push({
+        full_name: c.full_name,
+        phone: c.phone ?? null,
+        email: c.email ?? null,
+        whatsapp: (c as { whatsapp?: string | null }).whatsapp ?? null,
+      });
     }
   }
 

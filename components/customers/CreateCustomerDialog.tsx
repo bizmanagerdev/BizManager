@@ -30,6 +30,15 @@ export type CreatedCustomer = {
   requires_prepayment: boolean;
 };
 
+type SimilarContact = {
+  full_name: string;
+  phone: string | null;
+  email: string | null;
+  whatsapp: string | null;
+};
+
+type SimilarCustomer = CreatedCustomer & { contacts?: SimilarContact[] };
+
 type ContactDraft = {
   full_name: string;
   role: string;
@@ -85,18 +94,23 @@ export function CreateCustomerDialog({
   const [contacts, setContacts] = useState<ContactDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [similar, setSimilar] = useState<CreatedCustomer[]>([]);
+  const [similar, setSimilar] = useState<SimilarCustomer[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
   const [similarDismissed, setSimilarDismissed] = useState(false);
 
+  const contactSearchValues = contacts.flatMap((c) => [c.full_name, c.phone, c.whatsapp, c.email]);
+  const contactSearchKey = contactSearchValues.join("|");
+
   const similarTerms = useMemo(() => {
     const unique = new Set<string>();
-    for (const value of [name, phone, whatsapp, email, address]) {
+    for (const value of [name, phone, whatsapp, email, address, ...contactSearchValues]) {
       const trimmed = value.trim();
       if (trimmed.length >= 2) unique.add(trimmed);
     }
     return Array.from(unique);
-  }, [name, phone, whatsapp, email, address]);
+    // contactSearchKey captures all contact field changes without depending on the array reference
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, phone, whatsapp, email, address, contactSearchKey]);
 
   const similarTermsKey = similarTerms.join("|");
 
@@ -116,15 +130,33 @@ export function CreateCustomerDialog({
             fetch(`/api/customers/search?q=${encodeURIComponent(term)}&limit=10`, {
               signal: controller.signal,
             })
-              .then((res) => (res.ok ? (res.json() as Promise<{ customers?: CreatedCustomer[] }>) : null))
+              .then((res) => (res.ok ? (res.json() as Promise<{ customers?: SimilarCustomer[] }>) : null))
               .catch(() => null)
           )
         );
         if (controller.signal.aborted) return;
-        const byId = new Map<string, CreatedCustomer>();
+        const byId = new Map<string, SimilarCustomer>();
         for (const json of responses) {
           for (const c of json?.customers ?? []) {
-            if (!byId.has(c.id)) byId.set(c.id, c);
+            const existing = byId.get(c.id);
+            if (!existing) {
+              byId.set(c.id, { ...c, contacts: c.contacts ? [...c.contacts] : undefined });
+              continue;
+            }
+            if (c.contacts && c.contacts.length > 0) {
+              const merged = existing.contacts ? [...existing.contacts] : [];
+              for (const contact of c.contacts) {
+                const dupe = merged.some(
+                  (m) =>
+                    m.full_name === contact.full_name &&
+                    m.phone === contact.phone &&
+                    m.email === contact.email &&
+                    m.whatsapp === contact.whatsapp
+                );
+                if (!dupe) merged.push(contact);
+              }
+              existing.contacts = merged;
+            }
           }
         }
         setSimilar(Array.from(byId.values()).slice(0, 10));
@@ -322,6 +354,7 @@ export function CreateCustomerDialog({
         </DialogHeader>
 
         {!similarDismissed && similar.length > 0 ? (
+          <div className="sticky top-0 z-10 -mx-6 bg-background px-6 pb-2 pt-1">
           <div className="space-y-2 rounded-md border border-warning bg-warning/15 p-3 text-sm text-warning-strong">
             <div className="flex items-center justify-between gap-2">
               <div className="font-medium">
@@ -336,32 +369,79 @@ export function CreateCustomerDialog({
               </button>
             </div>
             <ul className="space-y-1">
-              {similar.map((match) => (
-                <li
-                  key={match.id}
-                  className="flex items-center justify-between gap-2 rounded-md bg-background/60 px-2 py-1"
-                >
-                  <div className="min-w-0 flex-1 truncate">
-                    <span className="font-medium">{match.name}</span>
-                    {match.phone ? (
-                      <span className="text-muted-foreground"> · {match.phone}</span>
-                    ) : null}
-                    {match.email ? (
-                      <span className="text-muted-foreground"> · {match.email}</span>
-                    ) : null}
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={submitting}
-                    onClick={() => useExistingCustomer(match)}
+              {similar.map((match) => {
+                const detailFields: Array<{ label: string; value: string }> = [];
+                if (match.phone) detailFields.push({ label: "טלפון", value: match.phone });
+                if (match.whatsapp && match.whatsapp !== match.phone) {
+                  detailFields.push({ label: "וואטסאפ", value: match.whatsapp });
+                }
+                if (match.email) detailFields.push({ label: "אימייל", value: match.email });
+                if (match.address) detailFields.push({ label: "כתובת", value: match.address });
+                if (match.name_for_invoice && match.name_for_invoice !== match.name) {
+                  detailFields.push({ label: "שם לחשבונית", value: match.name_for_invoice });
+                }
+                return (
+                  <li
+                    key={match.id}
+                    className="flex items-center justify-between gap-2 rounded-md bg-background/60 px-2 py-1"
                   >
-                    שימוש בלקוח זה
-                  </Button>
-                </li>
-              ))}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">
+                        <Highlight text={match.name} terms={similarTerms} />
+                      </div>
+                      {detailFields.length > 0 ? (
+                        <div className="truncate text-xs text-muted-foreground">
+                          {detailFields.map((field, idx) => (
+                            <span key={field.label}>
+                              {idx > 0 ? " · " : null}
+                              {field.label}: <Highlight text={field.value} terms={similarTerms} />
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {match.contacts && match.contacts.length > 0 ? (
+                        <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                          {match.contacts.map((contact, idx) => {
+                            const contactDetails: Array<{ label: string; value: string }> = [];
+                            if (contact.phone) {
+                              contactDetails.push({ label: "טלפון", value: contact.phone });
+                            }
+                            if (contact.whatsapp && contact.whatsapp !== contact.phone) {
+                              contactDetails.push({ label: "וואטסאפ", value: contact.whatsapp });
+                            }
+                            if (contact.email) {
+                              contactDetails.push({ label: "אימייל", value: contact.email });
+                            }
+                            return (
+                              <li key={`${match.id}-contact-${idx}`} className="truncate">
+                                <span className="opacity-70">איש קשר: </span>
+                                <Highlight text={contact.full_name} terms={similarTerms} />
+                                {contactDetails.map((field) => (
+                                  <span key={field.label}>
+                                    {" · "}
+                                    {field.label}: <Highlight text={field.value} terms={similarTerms} />
+                                  </span>
+                                ))}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={submitting}
+                      onClick={() => useExistingCustomer(match)}
+                    >
+                      שימוש בלקוח זה
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
+          </div>
           </div>
         ) : null}
         {!similarDismissed && similar.length === 0 && similarLoading ? (
@@ -575,5 +655,35 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label className="text-sm font-medium">{label}</label>
       {children}
     </div>
+  );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function Highlight({ text, terms }: { text: string; terms: string[] }) {
+  const patterns = terms
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2)
+    .map(escapeRegExp);
+  if (patterns.length === 0 || !text) return <>{text}</>;
+  const regex = new RegExp(`(${patterns.join("|")})`, "gi");
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <mark
+            key={i}
+            className="rounded-sm bg-yellow-200 px-0.5 font-bold text-foreground dark:bg-yellow-700/60"
+          >
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
   );
 }
