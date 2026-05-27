@@ -87,10 +87,15 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "הגדרות ניהול", url: "/settings", icon: Settings },
 ];
 
-const ADMIN_ONLY_URLS = new Set(["/payroll", "/activity"]);
+const ADMIN_ONLY_URLS = new Set(["/activity"]);
+const ADMIN_OR_OFFICE_URLS = new Set(["/payroll"]);
 
-function filterByRole(items: SidebarNavItem[], isAdmin: boolean) {
-  return items.filter((item) => isAdmin || !ADMIN_ONLY_URLS.has(item.url));
+function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean) {
+  return items.filter((item) => {
+    if (ADMIN_ONLY_URLS.has(item.url)) return isAdmin;
+    if (ADMIN_OR_OFFICE_URLS.has(item.url)) return isAdmin || isOffice;
+    return true;
+  });
 }
 
 export function useNavItems(initialRole?: string | null) {
@@ -148,14 +153,15 @@ export function useNavItems(initialRole?: string | null) {
   }, []);
 
   const isAdmin = viewerRole === "admin";
+  const isOffice = viewerRole === "office";
 
   const sidebarItems = useMemo(
-    () => filterByRole(SIDEBAR_ITEMS, isAdmin),
-    [isAdmin]
+    () => filterByRole(SIDEBAR_ITEMS, isAdmin, isOffice),
+    [isAdmin, isOffice]
   );
   const bottomNavMoreItems = useMemo(
-    () => filterByRole(BOTTOM_NAV_MORE_ITEMS, isAdmin),
-    [isAdmin]
+    () => filterByRole(BOTTOM_NAV_MORE_ITEMS, isAdmin, isOffice),
+    [isAdmin, isOffice]
   );
 
   return { sidebarItems, bottomNavItems: BOTTOM_NAV_ITEMS, bottomNavMoreItems };

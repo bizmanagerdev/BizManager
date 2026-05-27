@@ -12,7 +12,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(req: Request) {
   try {
-    const access = await requireRouteAccess({ allowedRoles: ["admin"] });
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
 
     const body = (await req.json().catch(() => ({}))) as { session_id?: string };

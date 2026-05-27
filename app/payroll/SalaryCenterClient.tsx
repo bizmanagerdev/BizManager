@@ -389,7 +389,7 @@ export default function SalaryCenterClient({
       ),
     [publicUsers]
   );
-  const canManageAttendance = viewerRole === "admin";
+  const canManageAttendance = viewerRole === "admin" || viewerRole === "office";
   const canCreateUsers = viewerRole === "admin";
 
   const loadProtectedData = useCallback(async () => {
