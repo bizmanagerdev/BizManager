@@ -952,6 +952,9 @@ export default function ProjectTabsClient({
       const meta: string[] = [];
       if (method && method !== "-") meta.push(method);
       if (reference) meta.push(`אסמכתא: ${reference}`);
+      if (p.payment_method === "check" && p.check_number) {
+        meta.push(`מס' צ'ק: ${p.check_number}`);
+      }
 
       return {
         type: "income",
@@ -1633,6 +1636,9 @@ export default function ProjectTabsClient({
                           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
                             <LtrInline>{formatDate(date)}</LtrInline>
                             <span>{method}</span>
+                            {p.payment_method === "check" && p.check_number ? (
+                              <span>מס&apos; צ&apos;ק: <LtrInline>{p.check_number}</LtrInline></span>
+                            ) : null}
                             {dueDate ? <span>פירעון: <LtrInline>{formatDate(dueDate)}</LtrInline></span> : null}
                           </div>
                           {p.notes ? (
@@ -5111,6 +5117,7 @@ function AddIncomeDialog({
   const [dueDate, setDueDate] = useState("");
   const [requiresSplit, setRequiresSplit] = useState(false);
   const [referenceNumber, setReferenceNumber] = useState("");
+  const [checkNumber, setCheckNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
@@ -5169,6 +5176,7 @@ function AddIncomeDialog({
     setDueDate(editingPayment?.due_date ?? "");
     setRequiresSplit(Boolean(editingPayment?.requires_split));
     setReferenceNumber(editingPayment?.reference_number ?? "");
+    setCheckNumber(editingPayment?.check_number ?? "");
     setNotes(editingPayment?.notes ?? "");
     setAttachmentFiles([]);
     setExistingAttachments(Array.isArray(editingPayment?.attachments) ? editingPayment.attachments : []);
@@ -5198,6 +5206,8 @@ function AddIncomeDialog({
           requires_split: requiresSplit,
           payment_method: paymentMethod.trim() ? paymentMethod : undefined,
           reference_number: referenceNumber.trim() ? referenceNumber : undefined,
+          check_number:
+            paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
           notes: notes.trim() ? notes : undefined,
         }),
       });
@@ -5234,6 +5244,7 @@ function AddIncomeDialog({
       setDueDate("");
       setRequiresSplit(false);
       setReferenceNumber("");
+      setCheckNumber("");
       setNotes("");
       setAttachmentFiles([]);
       setExistingAttachments([]);
@@ -5378,14 +5389,28 @@ function AddIncomeDialog({
           </AdaptiveGrid>
 
           {requiresDueDate ? (
-            <div className="space-y-1">
-              <div className="text-sm font-medium">{"\u05d0\u05e1\u05de\u05db\u05ea\u05d0 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
-              <Input
-                value={referenceNumber}
-                onChange={(e) => setReferenceNumber(e.target.value)}
-                placeholder={"\u05de\u05e1\u05e4\u05e8 \u05e7\u05d1\u05dc\u05d4/\u05d4\u05e2\u05d1\u05e8\u05d4"}
-              />
-            </div>
+            <AdaptiveGrid variant="formTwo">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">{"\u05d0\u05e1\u05de\u05db\u05ea\u05d0 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
+                <Input
+                  value={referenceNumber}
+                  onChange={(e) => setReferenceNumber(e.target.value)}
+                  placeholder={"\u05de\u05e1\u05e4\u05e8 \u05e7\u05d1\u05dc\u05d4/\u05d4\u05e2\u05d1\u05e8\u05d4"}
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm font-medium">{"\u05de\u05e1\u05e4\u05e8 \u05e6\u05f3\u05e7"}</div>
+                <Input
+                  value={checkNumber}
+                  onChange={(e) => setCheckNumber(e.target.value)}
+                  placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4 123456"}
+                  inputMode="numeric"
+                />
+                <div className="text-xs text-muted-foreground">
+                  \u05e0\u05d9\u05ea\u05df \u05dc\u05e6\u05e8\u05e3 \u05e6\u05d9\u05dc\u05d5\u05dd \u05e9\u05dc \u05d4\u05e6&apos;\u05e7 \u05d1\u05de\u05e7\u05d8\u05e2 &quot;\u05e7\u05d1\u05e6\u05d9\u05dd \u05de\u05e6\u05d5\u05e8\u05e4\u05d9\u05dd&quot; \u05dc\u05de\u05d8\u05d4.
+                </div>
+              </div>
+            </AdaptiveGrid>
           ) : null}
 
           <label className="flex items-center gap-2 text-sm">

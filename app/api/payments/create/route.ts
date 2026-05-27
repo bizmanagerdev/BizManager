@@ -20,6 +20,7 @@ type CreatePaymentPayload = {
   requires_split?: boolean;
   payment_method?: string;
   reference_number?: string;
+  check_number?: string;
   notes?: string;
 };
 
@@ -38,6 +39,8 @@ export async function POST(req: Request) {
       typeof body.payment_method === "string" ? body.payment_method.trim() : "";
     const referenceNumber =
       typeof body.reference_number === "string" ? body.reference_number.trim() : null;
+    const checkNumberInput =
+      typeof body.check_number === "string" ? body.check_number.trim() || null : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
     const orderId = typeof body.order_id === "string" ? body.order_id.trim() : "";
@@ -131,6 +134,7 @@ export async function POST(req: Request) {
           orderId: orderId || null,
           propertyId: propertyId || null,
           referenceNumber,
+          checkNumber: paymentMethod === "check" ? checkNumberInput : null,
           notes,
           dueDate: paymentMethod === "check" ? dueDate : null,
           requiresSplit,

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import NewOrderClient from "@/app/sales/orders/new/NewOrderClient";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import type { UserRole } from "@/lib/auth/requireProfile";
@@ -507,6 +508,8 @@ export default function DashboardActions({
   const [incomeDueDate, setIncomeDueDate] = useState("");
   const [incomeRequiresSplit, setIncomeRequiresSplit] = useState(false);
   const [incomeReference, setIncomeReference] = useState("");
+  const [incomeCheckNumber, setIncomeCheckNumber] = useState("");
+  const [incomeCheckPhotoFiles, setIncomeCheckPhotoFiles] = useState<File[]>([]);
   const [incomeNotes, setIncomeNotes] = useState("");
   const [incomeAttachmentFiles, setIncomeAttachmentFiles] = useState<File[]>([]);
   const [incomeExistingAttachments, setIncomeExistingAttachments] = useState<FinancialAttachment[]>([]);
@@ -815,6 +818,8 @@ export default function DashboardActions({
     setIncomeDueDate("");
     setIncomeRequiresSplit(false);
     setIncomeReference("");
+    setIncomeCheckNumber("");
+    setIncomeCheckPhotoFiles([]);
     setIncomeNotes("");
     setIncomeAttachmentFiles([]);
     setIncomeExistingAttachments([]);
@@ -1288,6 +1293,8 @@ export default function DashboardActions({
           requires_split: incomeRequiresSplit,
           payment_method: incomeMethod,
           reference_number: incomeReference.trim() || null,
+          check_number:
+            incomeMethod === "check" && incomeCheckNumber.trim() ? incomeCheckNumber.trim() : null,
           notes: incomeNotes.trim() || null,
         }),
       });
@@ -1302,6 +1309,11 @@ export default function DashboardActions({
       for (const file of incomeAttachmentFiles) {
         if (!paymentId) break;
         await uploadFinancialAttachment("payment", paymentId, file);
+      }
+      if (incomeMethod === "check" && paymentId && incomeCheckPhotoFiles.length > 0) {
+        for (const file of incomeCheckPhotoFiles) {
+          await uploadFinancialAttachment("payment", paymentId, file);
+        }
       }
 
       setIncomeOpen(false);
@@ -3088,23 +3100,32 @@ export default function DashboardActions({
                   </label>
 
                   {incomeMethod === "check" ? (
-                    <AdaptiveGrid variant="formTwoLoose">
-                      <label className="space-y-2 text-sm">
-                        <span>{HEBREW.paymentDueDate} *</span>
-                        <DateInput
-                          value={incomeDueDate}
-                          onChange={(e) => setIncomeDueDate(e.target.value)}
-                        />
-                      </label>
+                    <>
+                      <AdaptiveGrid variant="formTwoLoose">
+                        <label className="space-y-2 text-sm">
+                          <span>{HEBREW.paymentDueDate} *</span>
+                          <DateInput
+                            value={incomeDueDate}
+                            onChange={(e) => setIncomeDueDate(e.target.value)}
+                          />
+                        </label>
 
-                      <label className="space-y-2 text-sm">
-                        <span>{HEBREW.reference}</span>
-                        <Input
-                          value={incomeReference}
-                          onChange={(e) => setIncomeReference(e.target.value)}
-                        />
-                      </label>
-                    </AdaptiveGrid>
+                        <label className="space-y-2 text-sm">
+                          <span>{HEBREW.reference}</span>
+                          <Input
+                            value={incomeReference}
+                            onChange={(e) => setIncomeReference(e.target.value)}
+                          />
+                        </label>
+                      </AdaptiveGrid>
+                      <CheckDetailsFields
+                        checkNumber={incomeCheckNumber}
+                        onCheckNumberChange={setIncomeCheckNumber}
+                        photoFiles={incomeCheckPhotoFiles}
+                        onPhotoFilesChange={setIncomeCheckPhotoFiles}
+                        disabled={incomeSubmitting}
+                      />
+                    </>
                   ) : incomeMethod ? (
                     <label className="space-y-2 text-sm">
                       <span>{HEBREW.reference}</span>

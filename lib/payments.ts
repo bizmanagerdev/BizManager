@@ -17,6 +17,7 @@ export type PaymentRow = {
   amount_total: number | string | null;
   payment_method: string | null;
   reference_number: string | null;
+  check_number: string | null;
   amount_including_vat: number | string | null;
   amount_before_vat: number | string | null;
   net_amount: number | string | null;
@@ -35,7 +36,7 @@ export type PaymentRow = {
 };
 
 export const PAYMENT_SELECT =
-  "id,payment_date,amount_total,payment_method,reference_number,amount_including_vat,amount_before_vat,net_amount,payment_status,business_domain,project_id,order_id,property_id,due_date,requires_split,recorded_by,notes,created_at,updated_at";
+  "id,payment_date,amount_total,payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,net_amount,payment_status,business_domain,project_id,order_id,property_id,due_date,requires_split,recorded_by,notes,created_at,updated_at";
 
 type BuildPaymentInsertInput = {
   amountTotal: number;
@@ -48,6 +49,7 @@ type BuildPaymentInsertInput = {
   propertyId?: string | null;
   recordedBy: string;
   referenceNumber?: string | null;
+  checkNumber?: string | null;
   notes?: string | null;
   dueDate?: string | null;
   requiresSplit?: boolean;
@@ -82,6 +84,7 @@ export function buildPaymentInsert(input: BuildPaymentInsertInput) {
     amount_total: amountTotal,
     payment_method: input.paymentMethod,
     reference_number: input.referenceNumber ?? null,
+    check_number: input.checkNumber ?? null,
     amount_including_vat: amountIncludingVat,
     amount_before_vat: amountBeforeVat,
     net_amount: netAmount,

@@ -8,6 +8,7 @@ export type OrderPaymentInput = {
   payment_date?: string | null;
   payment_method?: string | null;
   reference_number?: string | null;
+  check_number?: string | null;
   notes?: string | null;
 };
 
@@ -17,6 +18,7 @@ export type OrderPaymentRow = {
   amount_total?: number | string | null;
   payment_method?: string | null;
   reference_number?: string | null;
+  check_number?: string | null;
   notes?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -82,6 +84,8 @@ export function normalizePaymentEntries(entries: OrderPaymentInput[] | undefined
       typeof entry.payment_method === "string" ? entry.payment_method.trim() : "",
     reference_number:
       typeof entry.reference_number === "string" ? entry.reference_number.trim() : null,
+    check_number:
+      typeof entry.check_number === "string" ? entry.check_number.trim() : null,
     notes: typeof entry.notes === "string" ? entry.notes.trim() : null,
   }));
 }

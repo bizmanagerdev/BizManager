@@ -376,6 +376,7 @@ export default async function SalesOrderPage({
       payment_method: getString(payment, "payment_method"),
       due_date: getString(payment, "due_date"),
       reference_number: getString(payment, "reference_number"),
+      check_number: getString(payment, "check_number"),
       notes: getString(payment, "notes"),
       insertedByLabel: paymentInsertedByLabel(payment, {
         paymentRecordedByNameByValue,

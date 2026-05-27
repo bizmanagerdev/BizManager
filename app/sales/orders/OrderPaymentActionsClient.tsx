@@ -22,6 +22,8 @@ import {
   paymentStatusLabel,
 } from "@/lib/orders/paymentStatus";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
+import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
+import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
 export type PaymentItem = {
@@ -31,6 +33,7 @@ export type PaymentItem = {
   payment_method: string | null;
   due_date: string | null;
   reference_number: string | null;
+  check_number: string | null;
   notes: string | null;
   insertedByLabel: string | null;
   morningDocuments: MorningLocalDocument[];
@@ -89,6 +92,8 @@ function EditPaymentDialog({
   const [paymentMethod, setPaymentMethod] = useState(payment.payment_method ?? "");
   const [dueDate, setDueDate] = useState(payment.due_date ?? "");
   const [referenceNumber, setReferenceNumber] = useState(payment.reference_number ?? "");
+  const [checkNumber, setCheckNumber] = useState(payment.check_number ?? "");
+  const [checkPhotoFiles, setCheckPhotoFiles] = useState<File[]>([]);
   const [notes, setNotes] = useState(payment.notes ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +147,8 @@ function EditPaymentDialog({
           payment_method: paymentMethod,
           due_date: paymentMethod === "check" ? dueDate : undefined,
           reference_number: referenceNumber.trim() || undefined,
+          check_number:
+            paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
           notes: notes.trim() || undefined,
         }),
       });
@@ -149,6 +156,9 @@ function EditPaymentDialog({
       if (!res.ok) {
         setError(json.error ?? "עדכון נכשל.");
         return;
+      }
+      if (paymentMethod === "check" && checkPhotoFiles.length > 0) {
+        await uploadCheckPhotos(payment.id, checkPhotoFiles);
       }
       await onSaved();
     } catch (err) {
@@ -217,10 +227,19 @@ function EditPaymentDialog({
           </div>
 
           {paymentMethod === "check" ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">תאריך פירעון *</label>
-              <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </div>
+            <>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">תאריך פירעון *</label>
+                <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              </div>
+              <CheckDetailsFields
+                checkNumber={checkNumber}
+                onCheckNumberChange={setCheckNumber}
+                photoFiles={checkPhotoFiles}
+                onPhotoFilesChange={setCheckPhotoFiles}
+                disabled={submitting}
+              />
+            </>
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -362,6 +381,9 @@ export function OrderPaymentActionsClient({
                     {paymentMethodLabel(payment.payment_method)}
                     {payment.reference_number
                       ? ` • אסמכתא: ${payment.reference_number}`
+                      : ""}
+                    {payment.payment_method === "check" && payment.check_number
+                      ? ` • מס' צ'ק: ${payment.check_number}`
                       : ""}
                     {payment.payment_method === "check" && payment.due_date
                       ? ` • פירעון: ${formatDate(payment.due_date)}`

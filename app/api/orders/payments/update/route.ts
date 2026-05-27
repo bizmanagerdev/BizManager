@@ -14,6 +14,7 @@ export async function POST(req: Request) {
       amount_total?: number | string;
       payment_method?: string;
       reference_number?: string | null;
+      check_number?: string | null;
       notes?: string | null;
     };
 
@@ -23,6 +24,8 @@ export async function POST(req: Request) {
     const dueDate = typeof body.due_date === "string" && body.due_date.trim() ? body.due_date.trim() : null;
     const paymentMethod = typeof body.payment_method === "string" ? body.payment_method.trim() : "";
     const referenceNumber = typeof body.reference_number === "string" ? body.reference_number.trim() || null : null;
+    const checkNumberInput = typeof body.check_number === "string" ? body.check_number.trim() || null : null;
+    const checkNumber = paymentMethod === "check" ? checkNumberInput : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;
     const amountNumber = typeof body.amount_total === "number" ? body.amount_total : Number(body.amount_total);
 
@@ -64,6 +67,7 @@ export async function POST(req: Request) {
       paymentMethod,
       dueDate: paymentMethod === "check" ? dueDate : null,
       referenceNumber,
+      checkNumber,
       notes,
       recordedBy: user.id,
     });

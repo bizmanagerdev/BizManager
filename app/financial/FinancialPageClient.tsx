@@ -38,6 +38,8 @@ import type {
 } from "@/lib/financial";
 import { cn } from "@/lib/utils";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
+import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
+import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { ObligationsTab } from "@/app/financial/ObligationsTab";
 import type { ObligationsData } from "@/lib/financial/obligations";
 
@@ -103,6 +105,7 @@ type IncomeCreateFormState = {
   dueDate: string;
   paymentMethod: "bank_transfer" | "cash" | "check" | "credit_card" | "other";
   referenceNumber: string;
+  checkNumber: string;
   notes: string;
   requiresSplit: boolean;
 };
@@ -181,6 +184,7 @@ function createIncomeFormState(): IncomeCreateFormState {
     dueDate: "",
     paymentMethod: "bank_transfer",
     referenceNumber: "",
+    checkNumber: "",
     notes: "",
     requiresSplit: false,
   };
@@ -468,6 +472,7 @@ export default function FinancialPageClient({
   const [incomeCreateForm, setIncomeCreateForm] = useState<IncomeCreateFormState>(
     () => loadDraft<IncomeCreateFormState>("income-create") ?? createIncomeFormState()
   );
+  const [incomeCheckPhotoFiles, setIncomeCheckPhotoFiles] = useState<File[]>([]);
   const [isCreatingIncome, setIsCreatingIncome] = useState(false);
 
   useEffect(() => {
@@ -594,6 +599,10 @@ export default function FinancialPageClient({
         requires_split: incomeCreateForm.requiresSplit,
         payment_method: incomeCreateForm.paymentMethod,
         reference_number: incomeCreateForm.referenceNumber.trim() || null,
+        check_number:
+          incomeCreateForm.paymentMethod === "check" && incomeCreateForm.checkNumber.trim()
+            ? incomeCreateForm.checkNumber.trim()
+            : null,
         notes: incomeCreateForm.notes.trim() || null,
       }, "הכנסה חדשה");
 
@@ -602,6 +611,7 @@ export default function FinancialPageClient({
         setIncomeCreateOpen(false);
         clearDraft("income-create");
         setIncomeCreateForm(createIncomeFormState());
+        setIncomeCheckPhotoFiles([]);
         return;
       }
       if (!result.ok) {
@@ -609,10 +619,21 @@ export default function FinancialPageClient({
         return;
       }
 
+      const createdPaymentId =
+        (result.data as { payment?: { id?: string } } | null)?.payment?.id ?? "";
+      if (
+        incomeCreateForm.paymentMethod === "check" &&
+        createdPaymentId &&
+        incomeCheckPhotoFiles.length > 0
+      ) {
+        await uploadCheckPhotos(createdPaymentId, incomeCheckPhotoFiles);
+      }
+
       toast.success("ההכנסה נוספה");
       setIncomeCreateOpen(false);
       clearDraft("income-create");
       setIncomeCreateForm(createIncomeFormState());
+      setIncomeCheckPhotoFiles([]);
       router.refresh();
     } catch (error) {
       toast.error("שגיאה ביצירת ההכנסה", {
@@ -1580,6 +1601,18 @@ export default function FinancialPageClient({
                 </div>
               ) : null}
             </div>
+
+            {incomeCreateForm.paymentMethod === "check" ? (
+              <CheckDetailsFields
+                checkNumber={incomeCreateForm.checkNumber}
+                onCheckNumberChange={(value) =>
+                  setIncomeCreateForm((current) => ({ ...current, checkNumber: value }))
+                }
+                photoFiles={incomeCheckPhotoFiles}
+                onPhotoFilesChange={setIncomeCheckPhotoFiles}
+                disabled={isCreatingIncome}
+              />
+            ) : null}
 
             <div className="space-y-1">
               <div className="text-sm font-medium">אסמכתא</div>

@@ -15,6 +15,7 @@ type CreateOrderPaymentPayload = {
   payment_method?: string;
   due_date?: string | null;
   reference_number?: string;
+  check_number?: string;
   notes?: string;
   entry_type?: string;
 };
@@ -73,6 +74,7 @@ export async function POST(req: Request) {
           paymentMethod: payment.payment_method!,
           dueDate: payment.payment_method === "check" ? dueDate : null,
           referenceNumber: payment.reference_number,
+          checkNumber: payment.payment_method === "check" ? payment.check_number : null,
           notes: payment.notes ? (notePrefix ? `${notePrefix}: ${payment.notes}` : payment.notes) : notePrefix || null,
           recordedBy: user.id,
         }),

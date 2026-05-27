@@ -19,6 +19,8 @@ import {
   paymentStatusClasses,
   paymentStatusLabel,
 } from "@/lib/orders/paymentStatus";
+import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
+import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 
 type CreatedPayment = {
   id?: string;
@@ -69,6 +71,8 @@ export default function OrderPaymentDialog({
   const [paymentMethod, setPaymentMethod] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
+  const [checkNumber, setCheckNumber] = useState("");
+  const [checkPhotoFiles, setCheckPhotoFiles] = useState<File[]>([]);
   const [notes, setNotes] = useState("");
 
   const remainingBefore = Math.max(totalAmount - paidAmount, 0);
@@ -122,6 +126,7 @@ export default function OrderPaymentDialog({
           payment_method: paymentMethod,
           due_date: paymentMethod === "check" ? dueDate : undefined,
           reference_number: referenceNumber.trim() || undefined,
+          check_number: paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
           notes: notes.trim() || undefined,
         }),
       });
@@ -138,6 +143,11 @@ export default function OrderPaymentDialog({
         return;
       }
 
+      const createdPaymentId = json.payment?.id ?? "";
+      if (paymentMethod === "check" && createdPaymentId && checkPhotoFiles.length > 0) {
+        await uploadCheckPhotos(createdPaymentId, checkPhotoFiles);
+      }
+
       onCreated?.({
         payment: json.payment ?? null,
         paymentStatus: json.payment_status ?? preview.nextStatus,
@@ -150,6 +160,8 @@ export default function OrderPaymentDialog({
       setPaymentMethod("");
       setDueDate("");
       setReferenceNumber("");
+      setCheckNumber("");
+      setCheckPhotoFiles([]);
       setNotes("");
       setOpen(false);
       router.refresh();
@@ -256,10 +268,19 @@ export default function OrderPaymentDialog({
             </div>
 
             {paymentMethod === "check" ? (
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך פירעון *</label>
-                <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </div>
+              <>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">תאריך פירעון *</label>
+                  <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                </div>
+                <CheckDetailsFields
+                  checkNumber={checkNumber}
+                  onCheckNumberChange={setCheckNumber}
+                  photoFiles={checkPhotoFiles}
+                  onPhotoFilesChange={setCheckPhotoFiles}
+                  disabled={submitting}
+                />
+              </>
             ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">

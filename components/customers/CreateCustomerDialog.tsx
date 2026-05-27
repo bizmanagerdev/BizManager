@@ -662,14 +662,15 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function Highlight({ text, terms }: { text: string; terms: string[] }) {
+function Highlight({ text, terms }: { text: string | null | undefined; terms: string[] }) {
+  const safeText = typeof text === "string" ? text : text == null ? "" : String(text);
   const patterns = terms
     .map((t) => t.trim())
     .filter((t) => t.length >= 2)
     .map(escapeRegExp);
-  if (patterns.length === 0 || !text) return <>{text}</>;
+  if (patterns.length === 0 || !safeText) return <>{safeText}</>;
   const regex = new RegExp(`(${patterns.join("|")})`, "gi");
-  const parts = text.split(regex);
+  const parts = safeText.split(regex);
   return (
     <>
       {parts.map((part, i) =>
