@@ -226,6 +226,8 @@ export default function SalesInventoryClient({
   );
 
   const [movementRows, setMovementRows] = useState<Row[]>(movements);
+  const [movementsPage, setMovementsPage] = useState(1);
+  const MOVEMENTS_PER_PAGE = 20;
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
   const [productId, setProductId] = useState("");
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("purchase_in");
@@ -404,51 +406,100 @@ export default function SalesInventoryClient({
           {items.length === 0 ? (
             <p className="text-sm text-muted-foreground">אין מוצרים להצגה במלאי.</p>
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <table className="min-w-[1080px] w-full text-sm">
-                <thead className="bg-muted/50 text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 text-right font-medium">מוצר</th>
-                    <th className="px-3 py-2 text-right font-medium">מק״ט</th>
-                    <th className="px-3 py-2 text-right font-medium">במלאי</th>
-                    <th className="px-3 py-2 text-right font-medium">שמור</th>
-                    <th className="px-3 py-2 text-right font-medium">זמין</th>
-                    <th className="px-3 py-2 text-right font-medium">נמכר</th>
-                    <th className="px-3 py-2 text-right font-medium">פעולות</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {items.map((item) => {
-                    const isLow = item.active && item.available <= item.lowStockThreshold;
-                    return (
-                      <tr
-                        key={item.productId}
-                        className={isLow ? "bg-destructive-soft/70 hover:bg-destructive-soft" : "hover:bg-muted/30"}
-                      >
-                        <td className="px-3 py-2">{item.productName}</td>
-                        <td className="px-3 py-2">{item.sku ?? "-"}</td>
-                        <td className="px-3 py-2">{item.quantityOnHand}</td>
-                        <td className="px-3 py-2">{item.quantityReserved}</td>
-                        <td className={`px-3 py-2 font-medium ${isLow ? "text-destructive" : ""}`}>
-                          {item.available}
-                        </td>
-                        <td className="px-3 py-2">{item.soldAmount}</td>
-                        <td className="px-3 py-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openAdjustmentDialog(item.productId)}
-                          >
-                            עדכון
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="hidden overflow-x-auto rounded-md border xl:block">
+                <table className="min-w-[1080px] w-full text-sm">
+                  <thead className="bg-muted/50 text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 text-right font-medium">מוצר</th>
+                      <th className="px-3 py-2 text-right font-medium">מק״ט</th>
+                      <th className="px-3 py-2 text-right font-medium">במלאי</th>
+                      <th className="px-3 py-2 text-right font-medium">שמור</th>
+                      <th className="px-3 py-2 text-right font-medium">זמין</th>
+                      <th className="px-3 py-2 text-right font-medium">נמכר</th>
+                      <th className="px-3 py-2 text-right font-medium">פעולות</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {items.map((item) => {
+                      const isLow = item.active && item.available <= item.lowStockThreshold;
+                      return (
+                        <tr
+                          key={item.productId}
+                          className={isLow ? "bg-destructive-soft/70 hover:bg-destructive-soft" : "hover:bg-muted/30"}
+                        >
+                          <td className="px-3 py-2">{item.productName}</td>
+                          <td className="px-3 py-2">{item.sku ?? "-"}</td>
+                          <td className="px-3 py-2">{item.quantityOnHand}</td>
+                          <td className="px-3 py-2">{item.quantityReserved}</td>
+                          <td className={`px-3 py-2 font-medium ${isLow ? "text-destructive" : ""}`}>
+                            {item.available}
+                          </td>
+                          <td className="px-3 py-2">{item.soldAmount}</td>
+                          <td className="px-3 py-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openAdjustmentDialog(item.productId)}
+                            >
+                              עדכון
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 xl:hidden">
+                {items.map((item) => {
+                  const isLow = item.active && item.available <= item.lowStockThreshold;
+                  return (
+                    <div
+                      key={item.productId}
+                      className={`min-w-0 overflow-hidden rounded-lg border ${isLow ? "border-destructive/50 bg-destructive-soft/40" : "border-border/70 bg-background"} p-3 shadow-sm`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold leading-tight">{item.productName}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {item.sku ? `מק״ט: ${item.sku}` : ""}
+                            {item.sku && isLow ? " • " : ""}
+                            {isLow ? <span className="font-medium text-destructive">מלאי נמוך</span> : null}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 shrink-0 rounded-lg px-2.5"
+                          onClick={() => openAdjustmentDialog(item.productId)}
+                        >
+                          עדכון
+                        </Button>
+                      </div>
+
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                        <span className="text-muted-foreground">
+                          במלאי: <span className="font-medium text-foreground">{item.quantityOnHand}</span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          שמור: <span className="font-medium text-foreground">{item.quantityReserved}</span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          זמין: <span className={`font-medium ${isLow ? "text-destructive" : "text-foreground"}`}>{item.available}</span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          נמכר: <span className="font-medium text-foreground">{item.soldAmount}</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -541,38 +592,111 @@ export default function SalesInventoryClient({
           {movementRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">אין תנועות מלאי להצגה.</p>
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <table className="min-w-[980px] w-full text-sm">
-                <thead className="bg-muted/50 text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 text-right font-medium">מוצר</th>
-                    <th className="px-3 py-2 text-right font-medium">סוג תנועה</th>
-                    <th className="px-3 py-2 text-right font-medium">כמות</th>
-                    <th className="px-3 py-2 text-right font-medium">מקור</th>
-                    <th className="px-3 py-2 text-right font-medium">תאריך</th>
-                    <th className="px-3 py-2 text-right font-medium">הערות</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {movementRows.map((row, index) => {
-                    const id = getString(row, "id") ?? `movement-${index}`;
-                    const movementProductId = getString(row, "product_id");
-                    return (
-                      <tr key={id} className="hover:bg-muted/30">
-                        <td className="px-3 py-2">
-                          {(movementProductId && productNameById.get(movementProductId)) ?? movementProductId ?? "-"}
-                        </td>
-                        <td className="px-3 py-2">{formatMovementType(getString(row, "movement_type"))}</td>
-                        <td className="px-3 py-2">{getNumber(row, "quantity") ?? "-"}</td>
-                        <td className="px-3 py-2">{formatSourceType(getString(row, "source_type"))}</td>
-                        <td className="px-3 py-2">{formatDateTime(getString(row, "created_at"))}</td>
-                        <td className="px-3 py-2">{formatMovementNotes(getString(row, "notes"))}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            (() => {
+              const totalPages = Math.max(1, Math.ceil(movementRows.length / MOVEMENTS_PER_PAGE));
+              const safePage = Math.min(movementsPage, totalPages);
+              const startIdx = (safePage - 1) * MOVEMENTS_PER_PAGE;
+              const paginatedMovements = movementRows.slice(startIdx, startIdx + MOVEMENTS_PER_PAGE);
+              return (
+                <>
+                  <div className="hidden overflow-x-auto rounded-md border xl:block">
+                    <table className="min-w-[980px] w-full text-sm">
+                      <thead className="bg-muted/50 text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 text-right font-medium">מוצר</th>
+                          <th className="px-3 py-2 text-right font-medium">סוג תנועה</th>
+                          <th className="px-3 py-2 text-right font-medium">כמות</th>
+                          <th className="px-3 py-2 text-right font-medium">מקור</th>
+                          <th className="px-3 py-2 text-right font-medium">תאריך</th>
+                          <th className="px-3 py-2 text-right font-medium">הערות</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {paginatedMovements.map((row, index) => {
+                          const id = getString(row, "id") ?? `movement-${index}`;
+                          const movementProductId = getString(row, "product_id");
+                          return (
+                            <tr key={id} className="hover:bg-muted/30">
+                              <td className="px-3 py-2">
+                                {(movementProductId && productNameById.get(movementProductId)) ?? movementProductId ?? "-"}
+                              </td>
+                              <td className="px-3 py-2">{formatMovementType(getString(row, "movement_type"))}</td>
+                              <td className="px-3 py-2">{getNumber(row, "quantity") ?? "-"}</td>
+                              <td className="px-3 py-2">{formatSourceType(getString(row, "source_type"))}</td>
+                              <td className="px-3 py-2">{formatDateTime(getString(row, "created_at"))}</td>
+                              <td className="px-3 py-2">{formatMovementNotes(getString(row, "notes"))}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 xl:hidden">
+                    {paginatedMovements.map((row, index) => {
+                      const id = getString(row, "id") ?? `movement-${index}`;
+                      const movementProductId = getString(row, "product_id");
+                      const movementType = getString(row, "movement_type");
+                      const quantity = getNumber(row, "quantity");
+                      const notes = formatMovementNotes(getString(row, "notes"));
+                      const isOut = (movementType ?? "").toLowerCase() === "out";
+                      return (
+                        <div key={id} className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-background p-3 shadow-sm">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-semibold leading-tight">
+                                {(movementProductId && productNameById.get(movementProductId)) ?? movementProductId ?? "-"}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                {formatSourceType(getString(row, "source_type"))} • {formatDateTime(getString(row, "created_at"))}
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-left">
+                              <div className="text-xs text-muted-foreground">{formatMovementType(movementType)}</div>
+                              <div className={`text-sm font-semibold ${isOut ? "text-destructive" : "text-success-soft-foreground"}`}>
+                                {isOut ? "-" : "+"}
+                                {quantity ?? "-"}
+                              </div>
+                            </div>
+                          </div>
+                          {notes && notes !== "-" ? (
+                            <div className="mt-1 truncate text-xs text-muted-foreground">{notes}</div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {totalPages > 1 ? (
+                    <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3 text-sm">
+                      <div className="text-muted-foreground">
+                        עמוד {safePage} מתוך {totalPages} • {movementRows.length} תנועות
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={safePage <= 1}
+                          onClick={() => setMovementsPage((p) => Math.max(1, p - 1))}
+                        >
+                          הקודם
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={safePage >= totalPages}
+                          onClick={() => setMovementsPage((p) => Math.min(totalPages, p + 1))}
+                        >
+                          הבא
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              );
+            })()
           )}
         </CardContent>
       </Card>

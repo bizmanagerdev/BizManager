@@ -49,6 +49,7 @@ export default function OrderPaymentDialog({
   totalAmount,
   paidAmount,
   onCreated,
+  buttonClassName,
 }: {
   orderId: string;
   totalAmount: number;
@@ -58,6 +59,7 @@ export default function OrderPaymentDialog({
     paymentStatus: string;
     totalPaid: number;
   }) => void;
+  buttonClassName?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -178,7 +180,7 @@ export default function OrderPaymentDialog({
         type="button"
         size="sm"
         variant="outline"
-        className="w-full sm:w-auto"
+        className={buttonClassName ?? "w-full sm:w-auto"}
         onClick={() => setOpen(true)}
       >
         עדכון תשלום

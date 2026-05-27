@@ -5,9 +5,9 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 
 type SalesTab = "orders" | "closed" | "inventory" | "price-list" | "deliveries";
 
-const tabs: Array<{ id: SalesTab; label: string }> = [
+const tabs: Array<{ id: SalesTab; label: string; shortLabel?: string }> = [
   { id: "orders", label: "הזמנות" },
-  { id: "closed", label: "הזמנות סגורות" },
+  { id: "closed", label: "הזמנות סגורות", shortLabel: "סגורות" },
   { id: "inventory", label: "מלאי" },
   { id: "price-list", label: "מחירון" },
   { id: "deliveries", label: "משלוחים" },
@@ -39,29 +39,26 @@ function buildTabHref(nextTab: SalesTab, searchParams: SalesTabsSearchParams) {
   return query ? `/sales?${query}` : "/sales";
 }
 
-function getTabLabel(tab: { id: SalesTab; label: string }, counts: Record<SalesTab, number>) {
-  if (tab.id === "inventory" || tab.id === "price-list" || tab.id === "closed") {
-    return tab.label;
-  }
-
-  return `${tab.label} (${counts[tab.id] ?? 0})`;
+function getCountSuffix(tab: { id: SalesTab }, counts: Record<SalesTab, number>) {
+  if (tab.id === "inventory" || tab.id === "price-list" || tab.id === "closed") return "";
+  return ` (${counts[tab.id] ?? 0})`;
 }
 
 // Mirrors the Radix TabsTrigger styling from components/ui/tabs.tsx so sales
 // tabs look identical to project / payroll / financial tabs across the app.
 function triggerClassName(isActive: boolean) {
   const base =
-    "inline-flex items-center justify-center whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+    "inline-flex min-w-0 items-center justify-center whitespace-normal rounded-xl px-2 py-2 text-center text-xs font-medium leading-tight ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:whitespace-nowrap sm:px-3 sm:text-sm";
 
   return isActive
     ? `${base} bg-primary text-primary-foreground shadow-md shadow-primary/25 hover:ring-2 hover:ring-secondary hover:ring-offset-2 hover:ring-offset-background`
     : `${base} text-muted-foreground hover:bg-secondary hover:text-secondary-foreground`;
 }
 
-// Same trigger styling as Radix TabsList, but sized to content and centered so
-// the bar doesn't stretch across the whole page width.
+// Mobile: full-width grid with 5 columns (compact labels).
+// Tablet/desktop: fits content and centers.
 const LIST_CLASSES =
-  "mx-auto flex h-12 w-fit max-w-full items-center justify-center overflow-x-auto rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm";
+  "mx-auto grid w-full grid-cols-5 items-center gap-1 rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm sm:flex sm:h-12 sm:w-fit sm:max-w-full sm:justify-center sm:overflow-x-auto";
 
 export default function SalesTabsNav({
   activeTab,
@@ -76,6 +73,7 @@ export default function SalesTabsNav({
     <div dir="rtl" className={LIST_CLASSES}>
       {tabs.map((tab) => {
         const isActive = tab.id === activeTab;
+        const countSuffix = getCountSuffix(tab, counts);
         return (
           <Link
             key={tab.id}
@@ -84,7 +82,14 @@ export default function SalesTabsNav({
             className={triggerClassName(isActive)}
             onClick={() => emitNavigationStart()}
           >
-            {getTabLabel(tab, counts)}
+            <span className="sm:hidden">
+              {(tab.shortLabel ?? tab.label)}
+              {countSuffix}
+            </span>
+            <span className="hidden sm:inline">
+              {tab.label}
+              {countSuffix}
+            </span>
           </Link>
         );
       })}

@@ -838,19 +838,19 @@ export default async function SalesPage({
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
-          </div>
+          {customerName ? (
+            <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
+          ) : null}
 
-          <div className="flex flex-wrap gap-2">
+          <div className={`grid gap-2 ${customerId ? "grid-cols-2" : "grid-cols-1"} sm:flex sm:flex-wrap`}>
             {customerId ? (
-              <Button asChild variant="outline">
+              <Button asChild variant="outline" className="h-11 sm:h-10">
                 <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>
                   חזרה ללקוח
                 </Link>
               </Button>
             ) : null}
-            <Button asChild>
+            <Button asChild className="h-11 sm:h-10">
               <Link href="/sales/orders/new">הזמנה חדשה</Link>
             </Button>
           </div>

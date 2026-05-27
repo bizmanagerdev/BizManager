@@ -741,33 +741,33 @@ export default function PriceListClient({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="חיפוש מוצר לפי שם או קוד"
-          className="max-w-sm"
-        />
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm sm:w-56"
-        >
-          <option value="">כל הקטגוריות</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </select>
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="חיפוש מוצר לפי שם או קוד"
+            className="h-11 sm:max-w-sm"
+          />
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm sm:w-56"
+          >
+            <option value="">כל הקטגוריות</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => void sharePriceList()} disabled={shareLoading}>
+        <div className="grid grid-cols-2 gap-2 lg:flex lg:items-center">
+          <Button type="button" variant="outline" className="h-11 lg:h-10" onClick={() => void sharePriceList()} disabled={shareLoading}>
             {shareLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             <span>שליחת מחירון</span>
           </Button>
-          <Button type="button" onClick={openCreateDialog}>
+          <Button type="button" className="h-11 lg:h-10" onClick={openCreateDialog}>
             הוספת מוצר
           </Button>
         </div>
@@ -777,8 +777,12 @@ export default function PriceListClient({
 
       {/* Off-screen template captured by html2canvas for the price-list PDF.
           Sentinel class names like `bg-header-navy` / `text-on-navy` are remapped
-          to brand hex values by applyPdfCaptureColorOverrides() at capture time. */}
-      <div aria-hidden="true" className="pointer-events-none fixed -left-[200vw] top-0 z-[-1] w-[1120px] bg-page p-8">
+          to brand hex values by applyPdfCaptureColorOverrides() at capture time.
+          Uses a fixed-pixel negative offset so it stays off-screen on every
+          viewport (a `vw` offset isn't enough on narrow phones). Avoid using
+          `opacity-0` or `display:none` — html2canvas honors those at capture
+          time and would produce a blank PDF. */}
+      <div aria-hidden="true" className="pointer-events-none fixed -left-[9999px] top-0 w-[1120px] bg-page p-8">
         <div
           id={PRICE_LIST_SHARE_CONTENT_ID}
           dir="rtl"
@@ -879,56 +883,109 @@ export default function PriceListClient({
       {filtered.length === 0 ? (
         <p className="text-sm text-muted-foreground">אין מוצרים להצגה במחירון.</p>
       ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="min-w-[1040px] w-full text-sm">
-            <thead className="bg-muted/50 text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-right font-medium">מוצר</th>
-                <th className="px-3 py-2 text-right font-medium">קוד</th>
-                <th className="px-3 py-2 text-right font-medium">מחיר</th>
-                <th className="px-3 py-2 text-right font-medium">מלאי נוכחי</th>
-                <th className="px-3 py-2 text-right font-medium">כמות שנרכשה</th>
-                <th className="px-3 py-2 text-right font-medium">כמות שנמכרה</th>
-                <th className="px-3 py-2 text-right font-medium">סטטוס</th>
-                <th className="px-3 py-2 text-right font-medium">פעולות</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filtered.map((product) => (
-                <tr key={product.id} className="hover:bg-muted/30">
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{product.name}</div>
-                    {product.category ? (
-                      <div className="text-xs text-muted-foreground">{product.category}</div>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2">{product.code ?? "-"}</td>
-                  <td className="px-3 py-2">{formatCurrency(product.unitPrice)}</td>
-                  <td className="px-3 py-2">{product.stock ?? "-"}</td>
-                  <td className="px-3 py-2">{product.purchasedAmount}</td>
-                  <td className="px-3 py-2">{product.soldAmount}</td>
-                  <td className="px-3 py-2">{product.active === false ? "לא פעיל" : "פעיל"}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <Button type="button" size="sm" variant="outline" onClick={() => openEdit(product)}>
-                        עריכה
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        disabled={deleteLoadingId === product.id}
-                        onClick={() => openDeleteDialog(product)}
-                      >
-                        {deleteLoadingId === product.id ? "מוחק..." : "מחיקה"}
-                      </Button>
-                    </div>
-                  </td>
+        <>
+          <div className="hidden overflow-x-auto rounded-md border xl:block">
+            <table className="min-w-[1040px] w-full text-sm">
+              <thead className="bg-muted/50 text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-right font-medium">מוצר</th>
+                  <th className="px-3 py-2 text-right font-medium">קוד</th>
+                  <th className="px-3 py-2 text-right font-medium">מחיר</th>
+                  <th className="px-3 py-2 text-right font-medium">מלאי נוכחי</th>
+                  <th className="px-3 py-2 text-right font-medium">כמות שנרכשה</th>
+                  <th className="px-3 py-2 text-right font-medium">כמות שנמכרה</th>
+                  <th className="px-3 py-2 text-right font-medium">סטטוס</th>
+                  <th className="px-3 py-2 text-right font-medium">פעולות</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y">
+                {filtered.map((product) => (
+                  <tr key={product.id} className="hover:bg-muted/30">
+                    <td className="px-3 py-2">
+                      <div className="font-medium">{product.name}</div>
+                      {product.category ? (
+                        <div className="text-xs text-muted-foreground">{product.category}</div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2">{product.code ?? "-"}</td>
+                    <td className="px-3 py-2">{formatCurrency(product.unitPrice)}</td>
+                    <td className="px-3 py-2">{product.stock ?? "-"}</td>
+                    <td className="px-3 py-2">{product.purchasedAmount}</td>
+                    <td className="px-3 py-2">{product.soldAmount}</td>
+                    <td className="px-3 py-2">{product.active === false ? "לא פעיל" : "פעיל"}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <Button type="button" size="sm" variant="outline" onClick={() => openEdit(product)}>
+                          עריכה
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          disabled={deleteLoadingId === product.id}
+                          onClick={() => openDeleteDialog(product)}
+                        >
+                          {deleteLoadingId === product.id ? "מוחק..." : "מחיקה"}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 xl:hidden">
+            {filtered.map((product) => (
+              <div
+                key={product.id}
+                className={`min-w-0 overflow-hidden rounded-lg border ${product.active === false ? "border-border/60 bg-muted/30" : "border-border/70 bg-background"} p-3 shadow-sm`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold leading-tight">{product.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {product.category ?? "ללא קטגוריה"}
+                      {product.code ? ` • ${product.code}` : ""}
+                      {product.active === false ? " • לא פעיל" : ""}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-left text-sm font-semibold">
+                    {formatCurrency(product.unitPrice)}
+                  </div>
+                </div>
+
+                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                  <span className="text-muted-foreground">
+                    מלאי: <span className="font-medium text-foreground">{product.stock ?? "-"}</span>
+                  </span>
+                  <span className="text-muted-foreground">
+                    נרכש: <span className="font-medium text-foreground">{product.purchasedAmount}</span>
+                  </span>
+                  <span className="text-muted-foreground">
+                    נמכר: <span className="font-medium text-foreground">{product.soldAmount}</span>
+                  </span>
+                </div>
+
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <Button type="button" size="sm" variant="outline" className="h-9 rounded-lg" onClick={() => openEdit(product)}>
+                    עריכה
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    className="h-9 rounded-lg"
+                    disabled={deleteLoadingId === product.id}
+                    onClick={() => openDeleteDialog(product)}
+                  >
+                    {deleteLoadingId === product.id ? "מוחק..." : "מחיקה"}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
       {tableError ? <p className="text-sm text-destructive">{tableError}</p> : null}
 

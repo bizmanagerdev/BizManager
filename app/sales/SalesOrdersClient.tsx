@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
@@ -126,6 +127,7 @@ function shouldShowPaymentAction(row: OrderView) {
 }
 
 export default function SalesOrdersClient({ orders, contacts = [] }: { orders: Row[]; contacts?: Row[] }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [paymentSnapshot] = useState(() => new Map<string, number>());
 
@@ -216,90 +218,162 @@ export default function SalesOrdersClient({ orders, contacts = [] }: { orders: R
           </CardContent>
         </Card>
       ) : (
-        <Card className="overflow-hidden border-border/70 shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1120px] text-sm">
-              <thead className="bg-secondary/40 text-muted-foreground">
-                <tr className="border-b border-border/70 text-right">
-                  <th className="px-4 py-3 font-medium">הזמנה</th>
-                  <th className="px-4 py-3 font-medium">לקוח</th>
-                  <th className="px-4 py-3 font-medium">עיר ותאריך</th>
-                  <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
-                  <th className="px-4 py-3 font-medium">סטטוס תשלום</th>
-                  <th className="px-4 py-3 font-medium">סכום</th>
-                  <th className="px-4 py-3 font-medium">שולם</th>
-                  <th className="px-4 py-3 font-medium">יתרה</th>
-                  <th className="px-4 py-3 font-medium">פעולות</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/70">
-                {filteredRows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
-                    tabIndex={0}
-                    role="link"
-                    onClick={(event) => {
-                      if (shouldIgnoreRowNavigation(event.target)) return;
-                      emitNavigationStart();
-                      window.location.href = `/sales/orders/${row.id}`;
-                    }}
-                    onKeyDown={(event) => {
-                      if (shouldIgnoreRowNavigation(event.target)) return;
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      event.preventDefault();
-                      emitNavigationStart();
-                      window.location.href = `/sales/orders/${row.id}`;
-                    }}
-                  >
-                    <td className="px-4 py-4">
-                      <div className="font-medium">הזמנה #{row.id.slice(0, 8)}</div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="min-w-[220px]">
-                        <div className="font-medium">{row.customerName}</div>
-                        <div className="mt-1 text-muted-foreground">{row.customerPhone ?? "-"}</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="min-w-[140px]">
-                        <div>{row.customerCity ?? "-"}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">{formatOrderDate(row.orderDate)}</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <StatusBadge value={row.status} type="order" className={orderStatusBadgeClasses(row.status)} />
-                    </td>
-                    <td className="px-4 py-4">
-                      <Badge className={paymentStatusClasses(row.paymentStatus)}>
-                        {paymentStatusLabel(row.paymentStatus)}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-4 font-medium">{formatCurrency(row.totalAmount)}</td>
-                    <td className="px-4 py-4">{formatCurrency(row.totalPaid)}</td>
-                    <td className="px-4 py-4">{formatCurrency(row.remainingBalance)}</td>
-                    <td className="px-4 py-4">
-                      <div className="flex min-w-[240px] flex-wrap gap-2">
-                        <Button asChild size="sm" onClick={() => emitNavigationStart()}>
-                          <Link href={`/sales/orders/${row.id}`}>צפייה בהזמנה</Link>
-                        </Button>
-                        {isActiveOrder(row.status) ? (
-                          <OrderConfirmDialog orderId={row.id} buttonLabel="אישור אספקה" />
-                        ) : shouldShowPaymentAction(row) ? (
-                          <OrderPaymentDialog
-                            orderId={row.id}
-                            totalAmount={row.totalAmount}
-                            paidAmount={row.totalPaid}
-                          />
-                        ) : null}
-                      </div>
-                    </td>
+        <>
+          <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1120px] text-sm">
+                <thead className="bg-secondary/40 text-muted-foreground">
+                  <tr className="border-b border-border/70 text-right">
+                    <th className="px-4 py-3 font-medium">הזמנה</th>
+                    <th className="px-4 py-3 font-medium">לקוח</th>
+                    <th className="px-4 py-3 font-medium">עיר ותאריך</th>
+                    <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
+                    <th className="px-4 py-3 font-medium">סטטוס תשלום</th>
+                    <th className="px-4 py-3 font-medium">סכום</th>
+                    <th className="px-4 py-3 font-medium">שולם</th>
+                    <th className="px-4 py-3 font-medium">יתרה</th>
+                    <th className="px-4 py-3 font-medium">פעולות</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border/70">
+                  {filteredRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
+                      tabIndex={0}
+                      role="link"
+                      onClick={(event) => {
+                        if (shouldIgnoreRowNavigation(event.target)) return;
+                        emitNavigationStart();
+                        router.push(`/sales/orders/${row.id}`);
+                      }}
+                      onKeyDown={(event) => {
+                        if (shouldIgnoreRowNavigation(event.target)) return;
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        emitNavigationStart();
+                        router.push(`/sales/orders/${row.id}`);
+                      }}
+                    >
+                      <td className="px-4 py-4">
+                        <div className="font-medium">הזמנה #{row.id.slice(0, 8)}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="min-w-[220px]">
+                          <div className="font-medium">{row.customerName}</div>
+                          <div className="mt-1 text-muted-foreground">{row.customerPhone ?? "-"}</div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="min-w-[140px]">
+                          <div>{row.customerCity ?? "-"}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{formatOrderDate(row.orderDate)}</div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <StatusBadge value={row.status} type="order" className={orderStatusBadgeClasses(row.status)} />
+                      </td>
+                      <td className="px-4 py-4">
+                        <Badge className={paymentStatusClasses(row.paymentStatus)}>
+                          {paymentStatusLabel(row.paymentStatus)}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-4 font-medium">{formatCurrency(row.totalAmount)}</td>
+                      <td className="px-4 py-4">{formatCurrency(row.totalPaid)}</td>
+                      <td className="px-4 py-4">{formatCurrency(row.remainingBalance)}</td>
+                      <td className="px-4 py-4">
+                        <div className="flex min-w-[240px] flex-wrap gap-2">
+                          <Button asChild size="sm" onClick={() => emitNavigationStart()}>
+                            <Link href={`/sales/orders/${row.id}`}>צפייה בהזמנה</Link>
+                          </Button>
+                          {isActiveOrder(row.status) ? (
+                            <OrderConfirmDialog orderId={row.id} buttonLabel="אישור אספקה" />
+                          ) : shouldShowPaymentAction(row) ? (
+                            <OrderPaymentDialog
+                              orderId={row.id}
+                              totalAmount={row.totalAmount}
+                              paidAmount={row.totalPaid}
+                            />
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <div className="grid grid-cols-1 gap-2 xl:hidden">
+            {filteredRows.map((row) => {
+              const showConfirm = isActiveOrder(row.status);
+              const showPayment = !showConfirm && shouldShowPaymentAction(row);
+              const hasAction = showConfirm || showPayment;
+              return (
+                <Card key={row.id} className="min-w-0 overflow-hidden border-border/70 shadow-sm">
+                  <CardContent className="space-y-2 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold leading-tight">{row.customerName}</div>
+                        <div className="truncate text-xs text-muted-foreground">{row.customerPhone ?? "-"}</div>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <StatusBadge value={row.status} type="order" className={`${orderStatusBadgeClasses(row.status)} px-1.5 py-0 text-[10px]`} />
+                          <Badge className={`${paymentStatusClasses(row.paymentStatus)} px-1.5 py-0 text-[10px]`}>
+                            {paymentStatusLabel(row.paymentStatus)}
+                          </Badge>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">#{row.id.slice(0, 8)}</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-muted-foreground">עיר:</span>
+                        <span className="truncate font-medium">{row.customerCity ?? "-"}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-muted-foreground">תאריך:</span>
+                        <span className="font-medium">{formatOrderDate(row.orderDate)}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-muted-foreground">סכום:</span>
+                        <span className="font-medium">{formatCurrency(row.totalAmount)}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-muted-foreground">יתרה:</span>
+                        <span className={`font-medium ${row.remainingBalance > 0 ? "text-destructive" : ""}`}>
+                          {formatCurrency(row.remainingBalance)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className={`grid gap-2 ${hasAction ? "grid-cols-2" : "grid-cols-1"}`}>
+                      <Button asChild type="button" size="sm" className="h-9 rounded-lg" onClick={() => emitNavigationStart()}>
+                        <Link href={`/sales/orders/${row.id}`}>צפייה</Link>
+                      </Button>
+                      {showConfirm ? (
+                        <OrderConfirmDialog
+                          orderId={row.id}
+                          buttonLabel="אישור אספקה"
+                          buttonClassName="h-9 w-full rounded-lg"
+                        />
+                      ) : showPayment ? (
+                        <OrderPaymentDialog
+                          orderId={row.id}
+                          totalAmount={row.totalAmount}
+                          paidAmount={row.totalPaid}
+                          buttonClassName="h-9 w-full rounded-lg"
+                        />
+                      ) : null}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
-        </Card>
+        </>
       )}
     </div>
   );
