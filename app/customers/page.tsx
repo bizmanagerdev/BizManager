@@ -267,6 +267,7 @@ export default async function CustomersPage({
                   : ""
               }
               currentPage={page}
+              totalCount={totalCount}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">

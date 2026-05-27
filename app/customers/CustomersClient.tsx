@@ -68,11 +68,13 @@ export default function CustomersClient({
   initialEditCustomerId = "",
   initialAddContactCustomerId = "",
   currentPage = 1,
+  totalCount,
 }: {
   initialRows: Row[];
   initialEditCustomerId?: string;
   initialAddContactCustomerId?: string;
   currentPage?: number;
+  totalCount?: number;
 }) {
   const [rows, setRows] = useState(initialRows);
   const [apiSearchRows, setApiSearchRows] = useState<Row[] | null>(null);
@@ -345,7 +347,23 @@ export default function CustomersClient({
         </AdaptiveGrid>
       ) : null}
 
-      <div className="text-sm text-muted-foreground">נמצאו {filtered.length} לקוחות</div>
+      <div className="text-sm text-muted-foreground">
+        {(() => {
+          const usingApiSearch = apiSearchRows !== null;
+          const hasClientFilter =
+            withProjects !== "all" ||
+            withOrders !== "all" ||
+            withDebt !== "all" ||
+            activeOnly !== "all";
+          if (usingApiSearch) {
+            return `נמצאו ${filtered.length} לקוחות`;
+          }
+          if (hasClientFilter) {
+            return `נמצאו ${filtered.length} לקוחות בעמוד זה (מתוך ${totalCount ?? filtered.length} סה״כ)`;
+          }
+          return `סה״כ ${totalCount ?? filtered.length} לקוחות`;
+        })()}
+      </div>
 
       <div className="space-y-2 md:hidden">
         {filtered.map((row) => {
