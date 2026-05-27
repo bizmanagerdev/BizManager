@@ -501,7 +501,7 @@ export default function DashboardActions({
   const [incomeOrderId, setIncomeOrderId] = useState("");
   const [incomePropertyId, setIncomePropertyId] = useState("");
   const [incomeAmount, setIncomeAmount] = useState("");
-  const [incomeDate, setIncomeDate] = useState("");
+  const [incomeDate, setIncomeDate] = useState(getTodayDate());
   const [incomeMethod, setIncomeMethod] = useState("");
   const [incomeDueDate, setIncomeDueDate] = useState("");
   const [incomeRequiresSplit, setIncomeRequiresSplit] = useState(false);
@@ -809,7 +809,7 @@ export default function DashboardActions({
     setIncomeOrderId("");
     setIncomePropertyId("");
     setIncomeAmount("");
-    setIncomeDate("");
+    setIncomeDate(getTodayDate());
     setIncomeMethod("");
     setIncomeDueDate("");
     setIncomeRequiresSplit(false);
