@@ -191,14 +191,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: salaryAgreementsError.message }, { status: 400 });
     }
 
-    const overlapSession = (siblingSessions ?? []).find((row) => {
-      if (typeof row.clock_in !== "string") return false;
-      const siblingClockOut = typeof row.clock_out === "string" ? row.clock_out : null;
-      return overlaps(clockIn, clockOut, row.clock_in, siblingClockOut);
-    });
+    if (workerType !== "session_only") {
+      const overlapSession = (siblingSessions ?? []).find((row) => {
+        if (typeof row.clock_in !== "string") return false;
+        const siblingClockOut = typeof row.clock_out === "string" ? row.clock_out : null;
+        return overlaps(clockIn, clockOut, row.clock_in, siblingClockOut);
+      });
 
-    if (overlapSession) {
-      return NextResponse.json({ error: "המשמרת חופפת למשמרת אחרת." }, { status: 400 });
+      if (overlapSession) {
+        return NextResponse.json({ error: "המשמרת חופפת למשמרת אחרת." }, { status: 400 });
+      }
     }
 
     if (!clockOut) {

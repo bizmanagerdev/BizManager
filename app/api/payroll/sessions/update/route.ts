@@ -145,11 +145,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "This session belongs to a locked payroll period." }, { status: 409 });
     }
 
-    const hasOverlap = ((siblingsResult.data ?? []) as Array<{ clock_in: string; clock_out: string | null }>).some(
-      (row) => overlaps(clockIn, clockOut, row.clock_in, row.clock_out)
-    );
-    if (hasOverlap) {
-      return NextResponse.json({ error: "This session overlaps another session." }, { status: 400 });
+    if (workerType !== "session_only") {
+      const hasOverlap = ((siblingsResult.data ?? []) as Array<{ clock_in: string; clock_out: string | null }>).some(
+        (row) => overlaps(clockIn, clockOut, row.clock_in, row.clock_out)
+      );
+      if (hasOverlap) {
+        return NextResponse.json({ error: "This session overlaps another session." }, { status: 400 });
+      }
     }
 
     const activeAgreement = getActiveSalaryAgreementForDate(

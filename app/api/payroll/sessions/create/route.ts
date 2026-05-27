@@ -155,14 +155,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: salaryAgreementsError.message }, { status: 400 });
     }
 
-    const overlapSession = (existingSessions ?? []).find((row) => {
-      if (typeof row.clock_in !== "string") return false;
-      const existingClockOut = typeof row.clock_out === "string" ? row.clock_out : null;
-      return overlaps(clockIn, clockOut, row.clock_in, existingClockOut);
-    });
+    if (workerType !== "session_only") {
+      const overlapSession = (existingSessions ?? []).find((row) => {
+        if (typeof row.clock_in !== "string") return false;
+        const existingClockOut = typeof row.clock_out === "string" ? row.clock_out : null;
+        return overlaps(clockIn, clockOut, row.clock_in, existingClockOut);
+      });
 
-    if (overlapSession) {
-      return NextResponse.json({ error: "המשמרת חופפת למשמרת אחרת." }, { status: 400 });
+      if (overlapSession) {
+        return NextResponse.json({ error: "המשמרת חופפת למשמרת אחרת." }, { status: 400 });
+      }
     }
 
     const workedMinutes = minutesBetween(clockIn, clockOut);
