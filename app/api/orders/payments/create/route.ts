@@ -72,7 +72,7 @@ export async function POST(req: Request) {
           orderId,
           paymentDate: payment.payment_date!,
           paymentMethod: payment.payment_method!,
-          dueDate: payment.payment_method === "check" ? dueDate : null,
+          dueDate: dueDate,
           referenceNumber: payment.reference_number,
           checkNumber: payment.payment_method === "check" ? payment.check_number : null,
           notes: payment.notes ? (notePrefix ? `${notePrefix}: ${payment.notes}` : payment.notes) : notePrefix || null,

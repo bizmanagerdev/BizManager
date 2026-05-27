@@ -73,13 +73,6 @@ export async function POST(req: Request) {
     const businessDomain = isExpenseBusinessDomain(body.business_domain)
       ? body.business_domain
       : mapProjectTypeToExpenseDomain(null);
-    const nextPaymentStatus =
-      existingPayment.payment_status === "rejected"
-        ? "rejected"
-        : paymentMethod === "check"
-        ? "pending"
-        : "cleared";
-
     const { recorded_by: ignoredRecordedBy, ...paymentValues } = buildPaymentInsert({
       amountTotal: amountNumber,
       businessDomain: isExpenseBusinessDomain(existingPayment.business_domain)
@@ -87,14 +80,16 @@ export async function POST(req: Request) {
         : businessDomain,
       paymentDate,
       paymentMethod,
-      paymentStatus: nextPaymentStatus,
+      // Preserve a manually-set 'rejected' status; otherwise let buildPaymentInsert
+      // derive pending vs cleared from the due_date.
+      paymentStatus: existingPayment.payment_status === "rejected" ? "rejected" : undefined,
       projectId,
       orderId: existingPayment.order_id,
       propertyId: existingPayment.property_id,
       referenceNumber,
       checkNumber: paymentMethod === "check" ? checkNumberInput : null,
       notes,
-      dueDate: paymentMethod === "check" ? dueDate : null,
+      dueDate,
       requiresSplit,
       recordedBy: user.id,
     });

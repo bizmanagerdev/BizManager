@@ -65,7 +65,7 @@ export async function POST(req: Request) {
       propertyId: existing.property_id ?? undefined,
       paymentDate,
       paymentMethod,
-      dueDate: paymentMethod === "check" ? dueDate : null,
+      dueDate,
       referenceNumber,
       checkNumber,
       notes,

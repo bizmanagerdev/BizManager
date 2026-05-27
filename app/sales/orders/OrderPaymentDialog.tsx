@@ -124,7 +124,7 @@ export default function OrderPaymentDialog({
           amount_total: amountNumber,
           payment_date: paymentDate,
           payment_method: paymentMethod,
-          due_date: paymentMethod === "check" ? dueDate : undefined,
+          due_date: dueDate.trim() || undefined,
           reference_number: referenceNumber.trim() || undefined,
           check_number: paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
           notes: notes.trim() || undefined,
@@ -255,7 +255,7 @@ export default function OrderPaymentDialog({
               <label className="text-sm font-medium">{entryType === "refund" ? "אמצעי החזר *" : "אמצעי תשלום *"}</label>
               <select
                 value={paymentMethod}
-                onChange={(e) => { setPaymentMethod(e.target.value); if (e.target.value !== "check") setDueDate(""); }}
+                onChange={(e) => setPaymentMethod(e.target.value)}
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">{entryType === "refund" ? "בחר אמצעי החזר..." : "בחר אמצעי תשלום..."}</option>
@@ -267,20 +267,30 @@ export default function OrderPaymentDialog({
               </select>
             </div>
 
+            {paymentMethod ? (
+              <div className="space-y-1">
+                <label className="text-sm font-medium">
+                  {paymentMethod === "check"
+                    ? "תאריך פירעון *"
+                    : "תאריך פירעון צפוי (אופציונלי)"}
+                </label>
+                <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                {paymentMethod !== "check" ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             {paymentMethod === "check" ? (
-              <>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">תאריך פירעון *</label>
-                  <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                </div>
-                <CheckDetailsFields
-                  checkNumber={checkNumber}
-                  onCheckNumberChange={setCheckNumber}
-                  photoFiles={checkPhotoFiles}
-                  onPhotoFilesChange={setCheckPhotoFiles}
-                  disabled={submitting}
-                />
-              </>
+              <CheckDetailsFields
+                checkNumber={checkNumber}
+                onCheckNumberChange={setCheckNumber}
+                photoFiles={checkPhotoFiles}
+                onPhotoFilesChange={setCheckPhotoFiles}
+                disabled={submitting}
+              />
             ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">

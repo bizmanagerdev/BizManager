@@ -1289,7 +1289,7 @@ export default function DashboardActions({
           property_id: linkedPropertyId || null,
           amount_total: amount,
           payment_date: incomeDate,
-          due_date: incomeMethod === "check" ? incomeDueDate : null,
+          due_date: incomeDueDate.trim() || null,
           requires_split: incomeRequiresSplit,
           payment_method: incomeMethod,
           reference_number: incomeReference.trim() || null,
@@ -3099,41 +3099,43 @@ export default function DashboardActions({
                     />
                   </label>
 
-                  {incomeMethod === "check" ? (
-                    <>
-                      <AdaptiveGrid variant="formTwoLoose">
-                        <label className="space-y-2 text-sm">
-                          <span>{HEBREW.paymentDueDate} *</span>
-                          <DateInput
-                            value={incomeDueDate}
-                            onChange={(e) => setIncomeDueDate(e.target.value)}
-                          />
-                        </label>
+                  {incomeMethod ? (
+                    <AdaptiveGrid variant="formTwoLoose">
+                      <label className="space-y-2 text-sm">
+                        <span>
+                          {incomeMethod === "check"
+                            ? `${HEBREW.paymentDueDate} *`
+                            : "תאריך פירעון צפוי (אופציונלי)"}
+                        </span>
+                        <DateInput
+                          value={incomeDueDate}
+                          onChange={(e) => setIncomeDueDate(e.target.value)}
+                        />
+                        {incomeMethod !== "check" ? (
+                          <span className="block text-[11px] text-muted-foreground">
+                            לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
+                          </span>
+                        ) : null}
+                      </label>
 
-                        <label className="space-y-2 text-sm">
-                          <span>{HEBREW.reference}</span>
-                          <Input
-                            value={incomeReference}
-                            onChange={(e) => setIncomeReference(e.target.value)}
-                          />
-                        </label>
-                      </AdaptiveGrid>
-                      <CheckDetailsFields
-                        checkNumber={incomeCheckNumber}
-                        onCheckNumberChange={setIncomeCheckNumber}
-                        photoFiles={incomeCheckPhotoFiles}
-                        onPhotoFilesChange={setIncomeCheckPhotoFiles}
-                        disabled={incomeSubmitting}
-                      />
-                    </>
-                  ) : incomeMethod ? (
-                    <label className="space-y-2 text-sm">
-                      <span>{HEBREW.reference}</span>
-                      <Input
-                        value={incomeReference}
-                        onChange={(e) => setIncomeReference(e.target.value)}
-                      />
-                    </label>
+                      <label className="space-y-2 text-sm">
+                        <span>{HEBREW.reference}</span>
+                        <Input
+                          value={incomeReference}
+                          onChange={(e) => setIncomeReference(e.target.value)}
+                        />
+                      </label>
+                    </AdaptiveGrid>
+                  ) : null}
+
+                  {incomeMethod === "check" ? (
+                    <CheckDetailsFields
+                      checkNumber={incomeCheckNumber}
+                      onCheckNumberChange={setIncomeCheckNumber}
+                      photoFiles={incomeCheckPhotoFiles}
+                      onPhotoFilesChange={setIncomeCheckPhotoFiles}
+                      disabled={incomeSubmitting}
+                    />
                   ) : null}
 
                   <label className="flex items-center gap-2 text-sm">

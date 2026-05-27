@@ -5202,7 +5202,7 @@ function AddIncomeDialog({
           project_id: projectId,
           amount_total: amountNumber,
           payment_date: paymentDate ? paymentDate : null,
-          due_date: paymentMethod === "check" ? dueDate : null,
+          due_date: dueDate.trim() || null,
           requires_split: requiresSplit,
           payment_method: paymentMethod.trim() ? paymentMethod : undefined,
           reference_number: referenceNumber.trim() ? referenceNumber : undefined,
@@ -5330,9 +5330,7 @@ function AddIncomeDialog({
               <select
                 value={paymentMethod}
                 onChange={(e) => {
-                  const nextMethod = e.target.value;
-                  setPaymentMethod(nextMethod);
-                  if (nextMethod !== "check") setDueDate("");
+                  setPaymentMethod(e.target.value);
                   setPaymentMethodTouched(true);
                 }}
                 onBlur={() => setPaymentMethodTouched(true)}
@@ -5360,58 +5358,51 @@ function AddIncomeDialog({
               ) : null}
             </div>
             <div className="space-y-1">
-              {requiresDueDate ? (
-                <>
-                  <div className="text-sm font-medium">תאריך פירעון *</div>
-                  <DateInput
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    aria-invalid={Boolean(dueDateError)}
-                    className={
-                      dueDateError ? "border-destructive focus-visible:ring-destructive" : ""
-                    }
-                  />
-                  {dueDateError ? (
-                    <div className="text-xs text-destructive">{dueDateError}</div>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <div className="text-sm font-medium">{"\u05d0\u05e1\u05de\u05db\u05ea\u05d0 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
-                  <Input
-                    value={referenceNumber}
-                    onChange={(e) => setReferenceNumber(e.target.value)}
-                    placeholder={"\u05de\u05e1\u05e4\u05e8 \u05e7\u05d1\u05dc\u05d4/\u05d4\u05e2\u05d1\u05e8\u05d4"}
-                  />
-                </>
-              )}
+              <div className="text-sm font-medium">
+                {requiresDueDate ? "תאריך פירעון *" : "תאריך פירעון צפוי (אופציונלי)"}
+              </div>
+              <DateInput
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                aria-invalid={Boolean(dueDateError)}
+                className={
+                  dueDateError ? "border-destructive focus-visible:ring-destructive" : ""
+                }
+              />
+              {dueDateError ? (
+                <div className="text-xs text-destructive">{dueDateError}</div>
+              ) : !requiresDueDate ? (
+                <div className="text-[11px] text-muted-foreground">
+                  לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
+                </div>
+              ) : null}
             </div>
           </AdaptiveGrid>
 
-          {requiresDueDate ? (
-            <AdaptiveGrid variant="formTwo">
+          <AdaptiveGrid variant="formTwo">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">אסמכתא (אופציונלי)</div>
+              <Input
+                value={referenceNumber}
+                onChange={(e) => setReferenceNumber(e.target.value)}
+                placeholder="מספר קבלה/העברה"
+              />
+            </div>
+            {requiresDueDate ? (
               <div className="space-y-1">
-                <div className="text-sm font-medium">{"\u05d0\u05e1\u05de\u05db\u05ea\u05d0 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>
-                <Input
-                  value={referenceNumber}
-                  onChange={(e) => setReferenceNumber(e.target.value)}
-                  placeholder={"\u05de\u05e1\u05e4\u05e8 \u05e7\u05d1\u05dc\u05d4/\u05d4\u05e2\u05d1\u05e8\u05d4"}
-                />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">{"\u05de\u05e1\u05e4\u05e8 \u05e6\u05f3\u05e7"}</div>
+                <div className="text-sm font-medium">מספר צ׳ק</div>
                 <Input
                   value={checkNumber}
                   onChange={(e) => setCheckNumber(e.target.value)}
-                  placeholder={"\u05dc\u05d3\u05d5\u05d2\u05de\u05d4 123456"}
+                  placeholder="לדוגמה 123456"
                   inputMode="numeric"
                 />
                 <div className="text-xs text-muted-foreground">
-                  \u05e0\u05d9\u05ea\u05df \u05dc\u05e6\u05e8\u05e3 \u05e6\u05d9\u05dc\u05d5\u05dd \u05e9\u05dc \u05d4\u05e6&apos;\u05e7 \u05d1\u05de\u05e7\u05d8\u05e2 &quot;\u05e7\u05d1\u05e6\u05d9\u05dd \u05de\u05e6\u05d5\u05e8\u05e4\u05d9\u05dd&quot; \u05dc\u05de\u05d8\u05d4.
+                  ניתן לצרף צילום של הצ&apos;ק במקטע &quot;קבצים מצורפים&quot; למטה.
                 </div>
               </div>
-            </AdaptiveGrid>
-          ) : null}
+            ) : null}
+          </AdaptiveGrid>
 
           <label className="flex items-center gap-2 text-sm">
             <input

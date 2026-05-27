@@ -145,7 +145,7 @@ function EditPaymentDialog({
           amount_total: signedAmount,
           payment_date: paymentDate,
           payment_method: paymentMethod,
-          due_date: paymentMethod === "check" ? dueDate : undefined,
+          due_date: dueDate.trim() || undefined,
           reference_number: referenceNumber.trim() || undefined,
           check_number:
             paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
@@ -211,10 +211,7 @@ function EditPaymentDialog({
             <label className="text-sm font-medium">אמצעי תשלום *</label>
             <select
               value={paymentMethod}
-              onChange={(e) => {
-                setPaymentMethod(e.target.value);
-                if (e.target.value !== "check") setDueDate("");
-              }}
+              onChange={(e) => setPaymentMethod(e.target.value)}
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="">בחר אמצעי תשלום...</option>
@@ -226,20 +223,30 @@ function EditPaymentDialog({
             </select>
           </div>
 
+          {paymentMethod ? (
+            <div className="space-y-1">
+              <label className="text-sm font-medium">
+                {paymentMethod === "check"
+                  ? "תאריך פירעון *"
+                  : "תאריך פירעון צפוי (אופציונלי)"}
+              </label>
+              <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              {paymentMethod !== "check" ? (
+                <p className="text-[11px] text-muted-foreground">
+                  לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           {paymentMethod === "check" ? (
-            <>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך פירעון *</label>
-                <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </div>
-              <CheckDetailsFields
-                checkNumber={checkNumber}
-                onCheckNumberChange={setCheckNumber}
-                photoFiles={checkPhotoFiles}
-                onPhotoFilesChange={setCheckPhotoFiles}
-                disabled={submitting}
-              />
-            </>
+            <CheckDetailsFields
+              checkNumber={checkNumber}
+              onCheckNumberChange={setCheckNumber}
+              photoFiles={checkPhotoFiles}
+              onPhotoFilesChange={setCheckPhotoFiles}
+              disabled={submitting}
+            />
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -385,9 +392,7 @@ export function OrderPaymentActionsClient({
                     {payment.payment_method === "check" && payment.check_number
                       ? ` • מס' צ'ק: ${payment.check_number}`
                       : ""}
-                    {payment.payment_method === "check" && payment.due_date
-                      ? ` • פירעון: ${formatDate(payment.due_date)}`
-                      : ""}
+                    {payment.due_date ? ` • פירעון: ${formatDate(payment.due_date)}` : ""}
                   </div>
                   {payment.notes ? (
                     <div className="mt-1 text-muted-foreground">הערות: {payment.notes}</div>

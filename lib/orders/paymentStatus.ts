@@ -7,6 +7,7 @@ export type OrderPaymentInput = {
   amount_total?: number | string;
   payment_date?: string | null;
   payment_method?: string | null;
+  due_date?: string | null;
   reference_number?: string | null;
   check_number?: string | null;
   notes?: string | null;
@@ -82,6 +83,8 @@ export function normalizePaymentEntries(entries: OrderPaymentInput[] | undefined
     payment_date: typeof entry.payment_date === "string" ? entry.payment_date : null,
     payment_method:
       typeof entry.payment_method === "string" ? entry.payment_method.trim() : "",
+    due_date:
+      typeof entry.due_date === "string" && entry.due_date.trim() ? entry.due_date.trim() : null,
     reference_number:
       typeof entry.reference_number === "string" ? entry.reference_number.trim() : null,
     check_number:

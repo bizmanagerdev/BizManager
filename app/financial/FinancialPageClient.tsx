@@ -584,6 +584,7 @@ export default function FinancialPageClient({
       toast.error("יש להזין תאריך פירעון לצ'ק");
       return;
     }
+    // due_date is optional for non-check methods (e.g., שוטף+30 bank transfer).
 
     setIsCreatingIncome(true);
     try {
@@ -595,7 +596,7 @@ export default function FinancialPageClient({
           incomeCreateForm.businessDomain === "property_management" ? incomeCreateForm.propertyId : null,
         amount_total: amountNumber,
         payment_date: incomeCreateForm.paymentDate,
-        due_date: incomeCreateForm.paymentMethod === "check" ? incomeCreateForm.dueDate : null,
+        due_date: incomeCreateForm.dueDate.trim() || null,
         requires_split: incomeCreateForm.requiresSplit,
         payment_method: incomeCreateForm.paymentMethod,
         reference_number: incomeCreateForm.referenceNumber.trim() || null,
@@ -1578,7 +1579,6 @@ export default function FinancialPageClient({
                     setIncomeCreateForm((current) => ({
                       ...current,
                       paymentMethod: event.target.value as IncomeCreateFormState["paymentMethod"],
-                      dueDate: event.target.value === "check" ? current.dueDate : "",
                     }))
                   }
                 >
@@ -1589,17 +1589,24 @@ export default function FinancialPageClient({
                   <option value="other">אחר</option>
                 </select>
               </div>
-              {incomeCreateForm.paymentMethod === "check" ? (
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">תאריך פירעון</div>
-                  <DateInput
-                    value={incomeCreateForm.dueDate}
-                    onChange={(event) =>
-                      setIncomeCreateForm((current) => ({ ...current, dueDate: event.target.value }))
-                    }
-                  />
+              <div className="space-y-1">
+                <div className="text-sm font-medium">
+                  {incomeCreateForm.paymentMethod === "check"
+                    ? "תאריך פירעון *"
+                    : "תאריך פירעון צפוי (אופציונלי)"}
                 </div>
-              ) : null}
+                <DateInput
+                  value={incomeCreateForm.dueDate}
+                  onChange={(event) =>
+                    setIncomeCreateForm((current) => ({ ...current, dueDate: event.target.value }))
+                  }
+                />
+                {incomeCreateForm.paymentMethod !== "check" ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             {incomeCreateForm.paymentMethod === "check" ? (

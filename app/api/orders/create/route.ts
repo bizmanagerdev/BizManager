@@ -31,6 +31,7 @@ type CreateOrderPayload = {
     amount_total?: number | string;
     payment_date?: string | null;
     payment_method?: string | null;
+    due_date?: string | null;
     reference_number?: string | null;
     check_number?: string | null;
     notes?: string | null;
@@ -167,6 +168,7 @@ export async function POST(req: Request) {
               orderId,
               paymentDate: payment.payment_date!,
               paymentMethod: payment.payment_method!,
+              dueDate: payment.due_date,
               referenceNumber: payment.reference_number,
               checkNumber: payment.payment_method === "check" ? payment.check_number : null,
               notes: payment.notes,

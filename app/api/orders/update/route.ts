@@ -36,6 +36,7 @@ type UpdateOrderPayload = {
     amount_total?: number | string;
     payment_date?: string | null;
     payment_method?: string | null;
+    due_date?: string | null;
     reference_number?: string | null;
     check_number?: string | null;
     notes?: string | null;
@@ -44,6 +45,7 @@ type UpdateOrderPayload = {
     amount_total?: number | string;
     payment_date?: string | null;
     payment_method?: string | null;
+    due_date?: string | null;
     reference_number?: string | null;
     check_number?: string | null;
     notes?: string | null;
@@ -305,6 +307,7 @@ export async function POST(req: Request) {
               orderId,
               paymentDate: payment.payment_date!,
               paymentMethod: payment.payment_method!,
+              dueDate: payment.due_date,
               referenceNumber: payment.reference_number,
               checkNumber: payment.payment_method === "check" ? payment.check_number : null,
               notes: payment.notes,
@@ -334,6 +337,7 @@ export async function POST(req: Request) {
             orderId,
             paymentDate: refund.payment_date!,
             paymentMethod: refund.payment_method!,
+            dueDate: refund.due_date,
             referenceNumber: refund.reference_number,
             checkNumber: refund.payment_method === "check" ? refund.check_number : null,
             notes: refund.notes ? `Refund: ${refund.notes}` : "Refund",

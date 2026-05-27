@@ -59,8 +59,16 @@ function normalizePaymentMethod(method: string) {
   return method.trim().toLowerCase();
 }
 
-function defaultPaymentStatusForMethod(method: string) {
-  return normalizePaymentMethod(method) === "check" ? "pending" : "cleared";
+function defaultPaymentStatusForMethod(
+  method: string,
+  paymentDate: string,
+  dueDate: string | null
+): "pending" | "cleared" {
+  if (normalizePaymentMethod(method) === "check") return "pending";
+  // Non-check method with an explicit future due_date — treat as pending
+  // (e.g. שוטף+30 bank transfers).
+  if (dueDate && paymentDate && dueDate > paymentDate) return "pending";
+  return "cleared";
 }
 
 function roundMoney(value: number) {
@@ -68,11 +76,12 @@ function roundMoney(value: number) {
 }
 
 export function buildPaymentInsert(input: BuildPaymentInsertInput) {
-  const paymentStatus =
-    input.paymentStatus ?? defaultPaymentStatusForMethod(input.paymentMethod);
   const dueDate =
     input.dueDate ??
     (normalizePaymentMethod(input.paymentMethod) === "check" ? input.paymentDate : null);
+  const paymentStatus =
+    input.paymentStatus ??
+    defaultPaymentStatusForMethod(input.paymentMethod, input.paymentDate, dueDate);
   const requiresSplit = input.requiresSplit ?? false;
   const amountTotal = roundMoney(input.amountTotal);
   const amountBeforeVat = requiresSplit ? roundMoney(amountTotal / 1.18) : null;

@@ -84,6 +84,7 @@ type PaymentDraft = {
   payment_date: string;
   amount_total: string;
   payment_method: string;
+  due_date: string;
   reference_number: string;
   check_number: string;
   check_photo_files: File[];
@@ -607,18 +608,27 @@ export default function NewOrderClient({
   }
 
   function addPaymentDraft() {
-    setNewPayments((prev) => [
-      ...prev,
-      {
-        payment_date: getTodayDate(),
-        amount_total: "",
-        payment_method: "",
-        reference_number: "",
-        check_number: "",
-        check_photo_files: [],
-        notes: "",
-      },
-    ]);
+    setNewPayments((prev) => {
+      const alreadyDrafted = prev.reduce((sum, draft) => {
+        const value = Number(draft.amount_total || 0);
+        return sum + (Number.isFinite(value) ? value : 0);
+      }, 0);
+      const openBalance = Math.max(totalAmount - existingPaidTotal - alreadyDrafted, 0);
+      const prefillAmount = openBalance > 0 ? openBalance.toFixed(2) : "";
+      return [
+        ...prev,
+        {
+          payment_date: getTodayDate(),
+          amount_total: prefillAmount,
+          payment_method: "",
+          due_date: "",
+          reference_number: "",
+          check_number: "",
+          check_photo_files: [],
+          notes: "",
+        },
+      ];
+    });
   }
 
   function updatePaymentDraft(index: number, patch: Partial<PaymentDraft>) {
@@ -669,6 +679,14 @@ export default function NewOrderClient({
       );
     });
 
+    const checkWithoutDueDate = newPayments.find(
+      (payment) => payment.payment_method === "check" && !payment.due_date.trim()
+    );
+    if (checkWithoutDueDate) {
+      setSubmitError("יש להזין תאריך פירעון לכל צ'ק.");
+      return;
+    }
+
     if (invalidPayment) {
       setSubmitError("יש להשלים לכל תשלום חדש סכום, תאריך ואמצעי תשלום.");
       return;
@@ -696,6 +714,7 @@ export default function NewOrderClient({
             amount_total: Number(payment.amount_total || 0),
             payment_date: payment.payment_date,
             payment_method: payment.payment_method,
+            due_date: payment.due_date.trim() || null,
             reference_number: payment.reference_number.trim() || null,
             check_number:
               payment.payment_method === "check" && payment.check_number.trim()
@@ -923,7 +942,7 @@ export default function NewOrderClient({
             <div className="space-y-2">
               <div className="text-sm font-medium">בחירת מוצרים</div>
               <div className="max-h-[26rem] overflow-auto rounded-xl border border-border/70 bg-muted/10 p-2.5">
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
                   {filteredProducts.map((product) => {
                     const selected = selectedLineByProductId.get(product.id);
                     return (
@@ -932,31 +951,28 @@ export default function NewOrderClient({
                         type="button"
                         disabled={actionLocked}
                         onClick={() => addProduct(product.id)}
-                        className={`group aspect-square rounded-xl border p-2.5 text-right transition ${
+                        className={`group min-h-[7.5rem] rounded-xl border p-2.5 text-right transition-colors ${
                           selected
                             ? "border-primary bg-primary/10 shadow-sm"
-                            : "border-border/70 bg-background hover:border-primary/40 hover:bg-primary/5"
+                            : "border-border/70 bg-background active:bg-primary/5 md:hover:border-primary/40 md:hover:bg-primary/5"
                         } ${actionLocked ? "cursor-not-allowed opacity-70" : ""}`}
                       >
-                        <div className="flex h-full flex-col justify-between">
+                        <div className="flex h-full flex-col justify-between gap-2">
                           <div className="flex items-start justify-between gap-2">
-                            <div className="line-clamp-3 text-sm font-semibold leading-5">
+                            <div className="line-clamp-3 break-words text-sm font-semibold leading-5">
                               {product.name}
                             </div>
                             {selected ? (
-                              <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+                              <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
                                 {selected.line.quantity_ordered}
                               </span>
                             ) : null}
                           </div>
 
-                          <div className="space-y-1 text-xs text-muted-foreground">
+                          <div className="space-y-0.5 text-xs text-muted-foreground">
                             {product.code ? <div className="truncate">קוד: {product.code}</div> : null}
-                            <div>מחיר: {formatCurrency(product.unitPrice)}</div>
-                            {product.stock !== null ? <div>מלאי: {product.stock}</div> : null}
-                            <div className="pt-1 font-medium text-primary">
-                              {selected ? "לחץ להוסיף עוד" : "לחץ להוספה"}
-                            </div>
+                            <div className="truncate">מחיר: {formatCurrency(product.unitPrice)}</div>
+                            {product.stock !== null ? <div className="truncate">מלאי: {product.stock}</div> : null}
                           </div>
                         </div>
                       </button>
@@ -1021,7 +1037,6 @@ export default function NewOrderClient({
                           </button>
                         </div>
 
-                        <div className="text-xs text-muted-foreground">לחץ על המוצר למעלה כדי להוסיף עוד</div>
                       </div>
 
                       <details className="mt-4 rounded-xl border border-dashed p-3" open={Boolean(line.discount_amount || line.notes)}>
@@ -1116,7 +1131,10 @@ export default function NewOrderClient({
           <CardContent className="space-y-3">
             <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
               <ValueField label="לקוח" value={selectedCustomer?.name || "-"} />
-              <ValueField label="עיר לקוח" value={selectedCustomer?.city || "-"} />
+              <ValueField
+                label="כתובת לקוח"
+                value={selectedCustomer?.address || selectedCustomer?.city || "-"}
+              />
               <ValueField label="אופן תשלום" value={selectedCustomer?.requiresPrepayment ? "תשלום מראש" : "רגיל"} />
               <div className="space-y-0.5">
                 <label className="text-sm font-medium">תאריך הזמנה *</label>
@@ -1274,21 +1292,40 @@ export default function NewOrderClient({
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">אמצעי תשלום *</label>
-                    <select
-                      value={payment.payment_method}
-                      disabled={actionLocked}
-                      onChange={(e) => updatePaymentDraft(index, { payment_method: e.target.value })}
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="">בחר אמצעי תשלום...</option>
-                      {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">אמצעי תשלום *</label>
+                      <select
+                        value={payment.payment_method}
+                        disabled={actionLocked}
+                        onChange={(e) => updatePaymentDraft(index, { payment_method: e.target.value })}
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="">בחר אמצעי תשלום...</option>
+                        {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">
+                        {payment.payment_method === "check"
+                          ? "תאריך פירעון *"
+                          : "תאריך פירעון צפוי (אופציונלי)"}
+                      </label>
+                      <DateInput
+                        value={payment.due_date}
+                        disabled={actionLocked}
+                        onChange={(e) => updatePaymentDraft(index, { due_date: e.target.value })}
+                      />
+                      {payment.payment_method !== "check" ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
 
                   {payment.payment_method === "check" ? (
