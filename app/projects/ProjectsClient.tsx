@@ -141,13 +141,6 @@ function formatDate(value: string | null) {
   }).format(date);
 }
 
-function getDateValue(row: ProjectRow, key: string) {
-  const value = getString(row, key);
-  if (!value) return 0;
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? time : 0;
-}
-
 function projectDisplayName(row: ProjectRow) {
   return getString(row, "name") ?? "פרויקט";
 }
@@ -288,35 +281,71 @@ export default function ProjectsClient({
   managerOptions,
   currentUserId,
   contacts = [],
+  tabCounts,
+  initialFilters,
 }: {
   initialProjects: ProjectRow[];
   customerOptions: Option[];
   managerOptions: Option[];
   currentUserId?: string;
   contacts?: ProjectRow[];
+  tabCounts?: { projects: number; quotes: number; closed: number };
+  initialFilters?: { view: ProjectsView; status: string; sort: SortMode; q: string };
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
   const [projects, setProjects] = useState<ProjectRow[]>(initialProjects);
 
-  const contactsByCustomerId = useMemo(() => {
-    const map = new Map<string, ProjectRow[]>();
-    for (const c of contacts) {
-      const cid = typeof c.customer_id === "string" ? c.customer_id : "";
-      if (!cid) continue;
-      const list = map.get(cid) ?? [];
-      list.push(c);
-      map.set(cid, list);
-    }
-    return map;
-  }, [contacts]);
-  const [activeTab, setActiveTab] = useState<ProjectsView>(() =>
-    normalizeProjectsView(searchParams.get("view"))
+  void contacts;
+  const activeTab: ProjectsView = initialFilters?.view ?? normalizeProjectsView(searchParams.get("view"));
+  const [query, setQuery] = useState(initialFilters?.q ?? "");
+  const status = initialFilters?.status ?? "all";
+  const sort: SortMode = initialFilters?.sort ?? defaultSortForTab(activeTab);
+
+  // Push filter changes to URL — server re-fetches with the new filters applied
+  // across the full dataset, then we get a fresh paginated slice back.
+  const pushFilters = useCallback(
+    (next: Partial<{ view: ProjectsView; status: string; sort: SortMode; q: string }>) => {
+      const merged = {
+        view: next.view ?? activeTab,
+        status: next.status ?? status,
+        sort: next.sort ?? sort,
+        q: next.q ?? query,
+      };
+      const params = new URLSearchParams();
+      const currentCustomerId = searchParams.get("customer_id");
+      const currentCustomerName = searchParams.get("customer_name");
+      const currentCustomerPage = searchParams.get("customer_page");
+      if (currentCustomerId) params.set("customer_id", currentCustomerId);
+      if (currentCustomerName) params.set("customer_name", currentCustomerName);
+      if (currentCustomerPage) params.set("customer_page", currentCustomerPage);
+      if (merged.view !== "projects") params.set("view", merged.view);
+      if (merged.status && merged.status !== "all") params.set("status", merged.status);
+      const defaultSort = merged.view === "closed" ? "start_date_desc" : "start_date";
+      if (merged.sort !== defaultSort) params.set("sort", merged.sort);
+      if (merged.q.trim()) params.set("q", merged.q.trim());
+      const qs = params.toString();
+      router.push(qs ? `/projects?${qs}` : "/projects", { scroll: false });
+    },
+    [activeTab, status, sort, query, router, searchParams]
   );
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<string>("all");
-  const [sort, setSort] = useState<SortMode>(defaultSortForTab("projects"));
+
+  // Debounced search submission to URL
+  const initialQueryRef = useRef(initialFilters?.q ?? "");
+  useEffect(() => {
+    if (query === initialQueryRef.current) return;
+    const timer = setTimeout(() => {
+      pushFilters({ q: query });
+      initialQueryRef.current = query;
+    }, 400);
+    return () => clearTimeout(timer);
+    // pushFilters intentionally omitted to avoid resending on its own changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const setStatus = (next: string) => pushFilters({ status: next });
+  const setSort = (next: SortMode) => pushFilters({ sort: next });
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [monthlySummaryOpen, setMonthlySummaryOpen] = useState(false);
   const [monthlySummaryMonth, setMonthlySummaryMonth] = useState(currentMonthIso());
@@ -379,57 +408,11 @@ export default function ProjectsClient({
     );
   }
 
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let list =
-      activeTab === "quotes"
-        ? projects.filter((row) => statusValue(row) === "quote")
-        : activeTab === "closed"
-          ? projects.filter((row) => statusValue(row) === "completed")
-          : projects.filter((row) => !["quote", "completed"].includes(statusValue(row)));
+  // Server already applied tab/status/sort/search filters across the full dataset.
+  const rows = projects;
 
-    if (q) {
-      list = list.filter((row) => {
-        const name = projectDisplayName(row).toLowerCase();
-        const client = clientDisplayName(row).toLowerCase();
-        if (name.includes(q) || client.includes(q)) return true;
-        const customerId = typeof row.customer_id === "string" ? row.customer_id : "";
-        return (contactsByCustomerId.get(customerId) ?? []).some((c) =>
-          [c.full_name, c.phone, c.email, c.whatsapp]
-            .some((v) => typeof v === "string" && (v as string).toLowerCase().includes(q))
-        );
-      });
-    }
-
-    if (status !== "all") {
-      list = list.filter((row) => statusValue(row) === status);
-    }
-
-    if (sort === "profit_desc") {
-      list = [...list].sort(
-        (a, b) => (profitValue(b) ?? -Infinity) - (profitValue(a) ?? -Infinity)
-      );
-    } else if (sort === "start_date_desc") {
-      list = [...list].sort((a, b) => getDateValue(b, "start_date") - getDateValue(a, "start_date"));
-    } else if (sort === "start_date") {
-      list = [...list].sort((a, b) => getDateValue(a, "start_date") - getDateValue(b, "start_date"));
-    }
-
-    return list;
-  }, [activeTab, projects, query, sort, status, contactsByCustomerId]);
-
-  const projectCount = useMemo(
-    () => projects.filter((row) => !["quote", "completed"].includes(statusValue(row))).length,
-    [projects]
-  );
-  const quoteCount = useMemo(
-    () => projects.filter((row) => statusValue(row) === "quote").length,
-    [projects]
-  );
-  const closedCount = useMemo(
-    () => projects.filter((row) => statusValue(row) === "completed").length,
-    [projects]
-  );
+  const projectCount = tabCounts?.projects ?? 0;
+  const quoteCount = tabCounts?.quotes ?? 0;
 
   const statusOptions = useMemo(() => {
     const set = new Set<string>();
@@ -514,40 +497,13 @@ export default function ProjectsClient({
     (customerSearchResults ?? []).find((row) => row.id === createCustomerId) ??
     null;
 
-  useEffect(() => {
-    const nextView = normalizeProjectsView(searchParams.get("view"));
-    setActiveTab((current) => (current === nextView ? current : nextView));
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (activeTab === "quotes") {
-      setStatus("quote");
-      setSort(defaultSortForTab(activeTab));
-      return;
-    }
-    if (activeTab === "closed") {
-      setStatus("completed");
-      setSort(defaultSortForTab(activeTab));
-      return;
-    }
-    setSort(defaultSortForTab(activeTab));
-    setStatus((current) => (current === "quote" || current === "completed" ? "all" : current));
-  }, [activeTab]);
-
   const handleTabChange = useCallback(
     (value: string) => {
       const nextTab = normalizeProjectsView(value);
-      setActiveTab(nextTab);
-      const params = new URLSearchParams(searchParams.toString());
-      if (nextTab === "projects") {
-        params.delete("view");
-      } else {
-        params.set("view", nextTab);
-      }
-      const queryString = params.toString();
-      router.replace(queryString ? `/projects?${queryString}` : "/projects", { scroll: false });
+      pushFilters({ view: nextTab, status: "all", sort: defaultSortForTab(nextTab), q: "" });
+      setQuery("");
     },
-    [router, searchParams]
+    [pushFilters]
   );
 
   function defaultCreateStatusForTab(tab: ProjectsView) {
@@ -556,8 +512,7 @@ export default function ProjectsClient({
 
   function resetFilters() {
     setQuery("");
-    setSort(defaultSortForTab(activeTab));
-    setStatus(activeTab === "quotes" ? "quote" : activeTab === "closed" ? "completed" : "all");
+    pushFilters({ q: "", status: "all", sort: defaultSortForTab(activeTab) });
   }
 
   const openCreateDialog = useCallback((nextTab: ProjectsView = activeTab) => {
@@ -884,7 +839,7 @@ export default function ProjectsClient({
               פרויקטים ({projectCount})
             </TabsTrigger>
             <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="closed">
-              סגורים ({closedCount})
+              סגורים
             </TabsTrigger>
           </TabsList>
         </div>
@@ -897,7 +852,7 @@ export default function ProjectsClient({
             פרויקטים ({projectCount})
           </TabsTrigger>
           <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="closed">
-            סגורים ({closedCount})
+            סגורים
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -1080,8 +1035,8 @@ export default function ProjectsClient({
       </div>
 
       <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1280px] text-sm">
+        <div>
+          <table className="w-full text-sm">
             <thead className="bg-secondary/40 text-muted-foreground">
               <tr className="border-b border-border/70 text-right">
                 <th className="px-4 py-3 font-medium">פרויקט</th>
@@ -1126,7 +1081,7 @@ export default function ProjectsClient({
                     }}
                   >
                     <td className="px-4 py-4">
-                      <div className="block min-w-[180px]">
+                      <div className="block">
                         <div className="font-medium">{projectDisplayName(row)}</div>
                         <div className="mt-1 text-xs text-muted-foreground">#{id.slice(0, 8)}</div>
                       </div>
@@ -1162,13 +1117,13 @@ export default function ProjectsClient({
                           type="button"
                           variant="default"
                           size="sm"
-                          className="w-full min-w-[120px] xl:w-auto"
+                          className="w-full xl:w-auto"
                           onClick={() => openApproveQuote(row)}
                         >
                           אישור הצעה
                         </Button>
                       ) : (
-                        <div className="flex min-w-[100px] items-center gap-2">
+                        <div className="flex items-center gap-2">
                           <Button
                             asChild
                             type="button"
@@ -1207,7 +1162,7 @@ export default function ProjectsClient({
                       )}
                     </td>
                     <td className="px-4 py-4">
-                      <div className="flex min-w-[110px] items-center gap-2">
+                      <div className="flex items-center gap-2">
                         <Button
                           type="button"
                           variant="outline"

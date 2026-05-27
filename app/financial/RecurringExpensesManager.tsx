@@ -395,8 +395,8 @@ export default function RecurringExpensesManager(props: Props) {
             })}
           </div>
 
-          <div className="hidden overflow-x-auto rounded-md border md:block">
-            <table dir="rtl" className="min-w-[1200px] w-full text-sm">
+          <div className="hidden rounded-md border md:block">
+            <table dir="rtl" className="w-full text-sm">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-right font-medium">שם תבנית</th>

@@ -1,8 +1,6 @@
 import AppShell from "@/components/layout/AppShell";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import Link from "next/link";
 
 export default async function MorningCustomersSettingsPage() {
   const { profile, supabase } = await requireProfile();
@@ -15,14 +13,9 @@ export default async function MorningCustomersSettingsPage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold">Morning: התאמת לקוחות</h1>
-            <p className="text-sm text-muted-foreground">מסך בקרה לקישור בטוח בין לקוחות BizH ללקוחות Morning.</p>
-          </div>
-          <Button asChild variant="outline">
-            <Link href="/settings">חזרה להגדרות</Link>
-          </Button>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold">Morning: התאמת לקוחות</h1>
+          <p className="text-sm text-muted-foreground">מסך בקרה לקישור בטוח בין לקוחות BizH ללקוחות Morning.</p>
         </div>
 
         <Card>

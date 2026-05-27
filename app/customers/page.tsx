@@ -28,8 +28,21 @@ function parsePage(value: string | undefined) {
   return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
 }
 
-function buildPageHref(page: number) {
-  return page <= 1 ? "/customers" : `/customers?page=${page}`;
+type FilterMode = "all" | "yes" | "no";
+
+function parseFilterMode(value: string | undefined): FilterMode {
+  return value === "yes" || value === "no" ? value : "all";
+}
+
+function buildPageHref(page: number, filters: { withProjects: FilterMode; withOrders: FilterMode; withDebt: FilterMode; activeOnly: FilterMode }) {
+  const params = new URLSearchParams();
+  if (page > 1) params.set("page", String(page));
+  if (filters.withProjects !== "all") params.set("with_projects", filters.withProjects);
+  if (filters.withOrders !== "all") params.set("with_orders", filters.withOrders);
+  if (filters.withDebt !== "all") params.set("with_debt", filters.withDebt);
+  if (filters.activeOnly !== "all") params.set("active_only", filters.activeOnly);
+  const qs = params.toString();
+  return qs ? `/customers?${qs}` : "/customers";
 }
 
 function rowId(row: Row) {
@@ -43,23 +56,47 @@ function rowId(row: Row) {
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ page?: string; edit_customer_id?: string; add_contact_customer_id?: string }>;
+  searchParams?: Promise<{
+    page?: string;
+    edit_customer_id?: string;
+    add_contact_customer_id?: string;
+    with_projects?: string;
+    with_orders?: string;
+    with_debt?: string;
+    active_only?: string;
+  }>;
 }) {
   const params = (await searchParams) ?? {};
   const page = parsePage(params.page);
   const from = (page - 1) * PAGE_SIZE;
   const to = page * PAGE_SIZE - 1;
+  const filters = {
+    withProjects: parseFilterMode(params.with_projects),
+    withOrders: parseFilterMode(params.with_orders),
+    withDebt: parseFilterMode(params.with_debt),
+    activeOnly: parseFilterMode(params.active_only),
+  };
 
   const { profile, supabase } = await requireProfile();
 
-  const { data: overviewRows, error: overviewError, count } = await supabase
+  let overviewQuery = supabase
     .from("customer_overview_view")
     .select(
       "customer_id,customer_name,email,phone,orders_count,projects_count,total_sales,total_paid,open_balance,last_order_at,last_payment_at,address,active,notes,name_for_invoice,registration_number",
       { count: "estimated" }
     )
-    .order("customer_name", { ascending: true })
-    .range(from, to);
+    .order("customer_name", { ascending: true });
+
+  if (filters.withProjects === "yes") overviewQuery = overviewQuery.gt("projects_count", 0);
+  if (filters.withProjects === "no") overviewQuery = overviewQuery.lte("projects_count", 0);
+  if (filters.withOrders === "yes") overviewQuery = overviewQuery.gt("orders_count", 0);
+  if (filters.withOrders === "no") overviewQuery = overviewQuery.lte("orders_count", 0);
+  if (filters.withDebt === "yes") overviewQuery = overviewQuery.gt("open_balance", 0);
+  if (filters.withDebt === "no") overviewQuery = overviewQuery.lte("open_balance", 0);
+  if (filters.activeOnly === "yes") overviewQuery = overviewQuery.eq("active", true);
+  if (filters.activeOnly === "no") overviewQuery = overviewQuery.eq("active", false);
+
+  const { data: overviewRows, error: overviewError, count } = await overviewQuery.range(from, to);
 
   const customerIds = ((overviewRows ?? []) as Row[])
     .map((row) => rowId(row))
@@ -268,6 +305,7 @@ export default async function CustomersPage({
               }
               currentPage={page}
               totalCount={totalCount}
+              initialFilters={filters}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
@@ -276,7 +314,7 @@ export default async function CustomersPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildPageHref(page - 1)}>הקודם</Link>
+                    <Link href={buildPageHref(page - 1, filters)}>הקודם</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>
@@ -285,7 +323,7 @@ export default async function CustomersPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildPageHref(page + 1)}>הבא</Link>
+                    <Link href={buildPageHref(page + 1, filters)}>הבא</Link>
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" disabled>

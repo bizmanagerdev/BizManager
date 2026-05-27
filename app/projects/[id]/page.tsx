@@ -1,5 +1,4 @@
-﻿import Link from "next/link";
-import dynamic from "next/dynamic";
+﻿import dynamic from "next/dynamic";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import ProjectDetailsActions from "@/app/projects/[id]/ProjectDetailsActions";
@@ -19,10 +18,8 @@ import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { WorkSessionRow } from "@/lib/payroll";
 import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { ChevronRight } from "lucide-react";
 import { formatShortDate } from "@/lib/date";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 
@@ -151,18 +148,10 @@ function customerPaymentStatusClasses(status: CustomerPaymentStatus) {
 
 export default async function ProjectPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
-  const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const rawView = Array.isArray(resolvedSearchParams?.view)
-    ? resolvedSearchParams?.view[0]
-    : resolvedSearchParams?.view;
-  const returnView = rawView === "quotes" || rawView === "closed" ? rawView : "projects";
-  const backHref = returnView === "projects" ? "/projects" : `/projects?view=${returnView}`;
   const { profile, supabase } = await requireProfile();
 
   const { data: overviewRaw, error: overviewError } = await supabase
@@ -874,12 +863,6 @@ export default async function ProjectPage({
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={backHref}>
-                        <ChevronRight className="h-4 w-4" />
-                        <span>חזרה לפרויקטים</span>
-                      </Link>
-                    </Button>
                     {status ? (
                       <StatusBadge value={status} type="project" />
                     ) : null}

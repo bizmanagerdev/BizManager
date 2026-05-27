@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -53,14 +54,48 @@ function formatCurrency(value: number | null) {
 export default function PriceListClient({
   initialProducts,
   initialCategories,
+  initialQuery = "",
+  initialCategoryFilter = "",
 }: {
   initialProducts: ProductRow[];
   initialCategories: CategoryOption[];
+  initialQuery?: string;
+  initialCategoryFilter?: string;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [rows, setRows] = useState<ProductRow[]>(initialProducts);
   const [categories, setCategories] = useState<CategoryOption[]>(initialCategories);
-  const [query, setQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
+  const [query, setQuery] = useState(initialQuery);
+  const categoryFilter = initialCategoryFilter;
+
+  function pushFilters(next: { q?: string; category?: string }) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("pricePage");
+    const nextQ = next.q ?? query;
+    const nextCategory = next.category ?? categoryFilter;
+    if (nextQ.trim()) params.set("q", nextQ.trim());
+    else params.delete("q");
+    if (nextCategory.trim()) params.set("category", nextCategory.trim());
+    else params.delete("category");
+    const qs = params.toString();
+    router.push(qs ? `/sales?${qs}` : "/sales", { scroll: false });
+  }
+
+  const lastPushedQueryRef = useRef(initialQuery);
+  useEffect(() => {
+    if (query === lastPushedQueryRef.current) return;
+    const timer = setTimeout(() => {
+      pushFilters({ q: query });
+      lastPushedQueryRef.current = query;
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  function setCategoryFilter(value: string) {
+    pushFilters({ category: value });
+  }
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
@@ -104,19 +139,8 @@ export default function PriceListClient({
   const isCreateNewCategory = createCategoryId === NEW_CATEGORY_VALUE;
   const isEditNewCategory = editCategoryId === NEW_CATEGORY_VALUE;
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter((row) => {
-      const matchesCategory = !categoryFilter || row.categoryId === categoryFilter;
-      const matchesQuery =
-        !q ||
-        row.name.toLowerCase().includes(q) ||
-        (row.category ?? "").toLowerCase().includes(q) ||
-        (row.code ?? "").toLowerCase().includes(q);
-
-      return matchesCategory && matchesQuery;
-    });
-  }, [rows, query, categoryFilter]);
+  // Server already filtered by ?q and ?category URL params across the full dataset.
+  const filtered = rows;
 
   function normalizeProducts(list: ProductRow[]) {
     return [...list].sort((a, b) => a.name.localeCompare(b.name, "he"));
@@ -884,8 +908,8 @@ export default function PriceListClient({
         <p className="text-sm text-muted-foreground">אין מוצרים להצגה במחירון.</p>
       ) : (
         <>
-          <div className="hidden overflow-x-auto rounded-md border xl:block">
-            <table className="min-w-[1040px] w-full text-sm">
+          <div className="hidden rounded-md border xl:block">
+            <table className="w-full text-sm">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-right font-medium">מוצר</th>

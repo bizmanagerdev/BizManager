@@ -69,23 +69,56 @@ export default function CustomersClient({
   initialAddContactCustomerId = "",
   currentPage = 1,
   totalCount,
+  initialFilters,
 }: {
   initialRows: Row[];
   initialEditCustomerId?: string;
   initialAddContactCustomerId?: string;
   currentPage?: number;
   totalCount?: number;
+  initialFilters?: {
+    withProjects: FilterMode;
+    withOrders: FilterMode;
+    withDebt: FilterMode;
+    activeOnly: FilterMode;
+  };
 }) {
+  const router = useRouter();
   const [rows, setRows] = useState(initialRows);
   const [apiSearchRows, setApiSearchRows] = useState<Row[] | null>(null);
   const [handledInitialEdit, setHandledInitialEdit] = useState(false);
   const [handledInitialAddContact, setHandledInitialAddContact] = useState(false);
   const [query, setQuery] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [withProjects, setWithProjects] = useState<FilterMode>("all");
-  const [withOrders, setWithOrders] = useState<FilterMode>("all");
-  const [withDebt, setWithDebt] = useState<FilterMode>("all");
-  const [activeOnly, setActiveOnly] = useState<FilterMode>("all");
+  const [filtersOpen, setFiltersOpen] = useState(
+    Boolean(
+      initialFilters && (
+        initialFilters.withProjects !== "all" ||
+        initialFilters.withOrders !== "all" ||
+        initialFilters.withDebt !== "all" ||
+        initialFilters.activeOnly !== "all"
+      )
+    )
+  );
+  const withProjects = initialFilters?.withProjects ?? "all";
+  const withOrders = initialFilters?.withOrders ?? "all";
+  const withDebt = initialFilters?.withDebt ?? "all";
+  const activeOnly = initialFilters?.activeOnly ?? "all";
+
+  function applyFilter(next: { withProjects?: FilterMode; withOrders?: FilterMode; withDebt?: FilterMode; activeOnly?: FilterMode }) {
+    const merged = {
+      withProjects: next.withProjects ?? withProjects,
+      withOrders: next.withOrders ?? withOrders,
+      withDebt: next.withDebt ?? withDebt,
+      activeOnly: next.activeOnly ?? activeOnly,
+    };
+    const params = new URLSearchParams();
+    if (merged.withProjects !== "all") params.set("with_projects", merged.withProjects);
+    if (merged.withOrders !== "all") params.set("with_orders", merged.withOrders);
+    if (merged.withDebt !== "all") params.set("with_debt", merged.withDebt);
+    if (merged.activeOnly !== "all") params.set("active_only", merged.activeOnly);
+    const qs = params.toString();
+    router.push(qs ? `/customers?${qs}` : "/customers", { scroll: false });
+  }
 
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -129,28 +162,10 @@ export default function CustomersClient({
   }, [query]);
 
   const filtered = useMemo(() => {
-    const usingApi = apiSearchRows !== null;
-    const baseRows = usingApi ? apiSearchRows : rows;
-    return baseRows.filter((row) => {
-      if (!usingApi) {
-        const q = query.trim().toLowerCase();
-        const hay = [
-          s(row, "customer_name"), s(row, "name_for_invoice"), s(row, "phone"), s(row, "whatsapp"), s(row, "email"), s(row, "address"),
-          ...contactsOf(row).flatMap((c) => [s(c, "full_name"), s(c, "phone"), s(c, "email"), s(c, "whatsapp")]),
-        ].join(" ").toLowerCase();
-        if (q && !hay.includes(q)) return false;
-        if (withProjects === "yes" && n(row, "projects_count") <= 0) return false;
-        if (withProjects === "no" && n(row, "projects_count") > 0) return false;
-        if (withOrders === "yes" && n(row, "orders_count") <= 0) return false;
-        if (withOrders === "no" && n(row, "orders_count") > 0) return false;
-        if (withDebt === "yes" && n(row, "open_balance") <= 0) return false;
-        if (withDebt === "no" && n(row, "open_balance") > 0) return false;
-      }
-      if (activeOnly === "yes" && row.active === false) return false;
-      if (activeOnly === "no" && row.active !== false) return false;
-      return true;
-    });
-  }, [rows, apiSearchRows, query, withProjects, withOrders, withDebt, activeOnly]);
+    // When searching: API returns full-DB matches (search is global). When not searching:
+    // server already applied the filters via URL params, so we just use the rows as-is.
+    return apiSearchRows ?? rows;
+  }, [rows, apiSearchRows]);
 
   useEffect(() => {
     setRows(initialRows);
@@ -285,7 +300,32 @@ export default function CustomersClient({
 
   return (
     <PageStack>
-      <AdaptiveGrid variant="customersToolbar">
+      <div className="space-y-3 lg:hidden">
+        <div className="min-w-0">
+          <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="שם, טלפון, אימייל או כתובת"
+            className="mt-1 h-11"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11"
+            onClick={() => setFiltersOpen((x) => !x)}
+          >
+            {filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
+          </Button>
+          <Button type="button" className="h-11" onClick={() => setCreateOpen(true)}>
+            הוספת לקוח
+          </Button>
+        </div>
+      </div>
+
+      <AdaptiveGrid variant="customersToolbar" className="hidden lg:grid">
         <AdaptiveCell variant="customersPrimary">
           <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
           <Input
@@ -315,131 +355,142 @@ export default function CustomersClient({
       </AdaptiveGrid>
 
       {filtersOpen ? (
-        <AdaptiveGrid variant="customersFilters">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <FilterSelect
             label="פרויקטים"
             value={withProjects}
-            onChange={setWithProjects}
+            onChange={(v) => applyFilter({ withProjects: v })}
             yes="עם פרויקטים"
             no="ללא פרויקטים"
           />
           <FilterSelect
             label="הזמנות"
             value={withOrders}
-            onChange={setWithOrders}
+            onChange={(v) => applyFilter({ withOrders: v })}
             yes="עם הזמנות"
             no="ללא הזמנות"
           />
           <FilterSelect
             label="חוב פתוח"
             value={withDebt}
-            onChange={setWithDebt}
+            onChange={(v) => applyFilter({ withDebt: v })}
             yes="חייבים כסף"
             no="ללא חוב"
           />
           <FilterSelect
             label="סטטוס"
             value={activeOnly}
-            onChange={setActiveOnly}
+            onChange={(v) => applyFilter({ activeOnly: v })}
             yes="פעילים"
             no="לא פעילים"
           />
-        </AdaptiveGrid>
+        </div>
       ) : null}
 
       <div className="text-sm text-muted-foreground">
         {(() => {
           const usingApiSearch = apiSearchRows !== null;
-          const hasClientFilter =
+          const hasActiveFilter =
             withProjects !== "all" ||
             withOrders !== "all" ||
             withDebt !== "all" ||
             activeOnly !== "all";
           if (usingApiSearch) {
-            return `נמצאו ${filtered.length} לקוחות`;
+            return `נמצאו ${filtered.length} לקוחות בחיפוש`;
           }
-          if (hasClientFilter) {
-            return `נמצאו ${filtered.length} לקוחות בעמוד זה (מתוך ${totalCount ?? filtered.length} סה״כ)`;
+          if (hasActiveFilter) {
+            return `סה״כ ${totalCount ?? filtered.length} לקוחות אחרי סינון`;
           }
           return `סה״כ ${totalCount ?? filtered.length} לקוחות`;
         })()}
       </div>
 
-      <div className="space-y-2 md:hidden">
+      <div className="grid grid-cols-1 gap-2 xl:hidden">
         {filtered.map((row) => {
           const id = s(row, "customer_id");
           const customerName = s(row, "customer_name") || "לקוח";
           const linkedMorningClientId = s(row, "morning_client_id");
           const openBalance = n(row, "open_balance");
+          const phone = s(row, "phone");
+          const email = s(row, "email");
+          const ordersCount = n(row, "orders_count");
+          const projectsCount = n(row, "projects_count");
           return (
-            <Card key={id || customerName} className="overflow-hidden">
-              <CardContent className="p-0">
-                <AdaptiveGrid variant="customerCard">
-                <NavLink
-                  to={customerDetailsHref(id)}
-                  className="min-w-0 text-right leading-tight"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-semibold">{customerName}</span>
+            <Card key={id || customerName} className="min-w-0 overflow-hidden border-border/70 shadow-sm">
+              <CardContent className="space-y-2 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <NavLink
+                    to={customerDetailsHref(id)}
+                    className="min-w-0 flex-1 text-right leading-tight"
+                  >
+                    <div className="truncate text-sm font-semibold">{customerName}</div>
+                    {phone || email ? (
+                      <div className="truncate text-xs text-muted-foreground">
+                        {phone || "-"}
+                        {email ? ` • ${email}` : ""}
+                      </div>
+                    ) : null}
+                  </NavLink>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-1">
                     {row.requires_prepayment === true ? (
-                      <Badge className={customerFlagBadgeClass("danger")}>תשלום מראש</Badge>
+                      <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
                     ) : null}
                     {openBalance > 0 ? (
-                      <Badge className={customerFlagBadgeClass("danger")}>
-                        חוב פתוח
-                      </Badge>
+                      <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>חוב פתוח</Badge>
                     ) : null}
                     {row.active === false ? (
-                      <Badge className={customerFlagBadgeClass("danger")}>
-                        לא פעיל
-                      </Badge>
+                      <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>לא פעיל</Badge>
                     ) : null}
-                    {linkedMorningClientId ? <Badge className={customerFlagBadgeClass("success")}>Morning</Badge> : null}
+                    {linkedMorningClientId ? (
+                      <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>Morning</Badge>
+                    ) : null}
                   </div>
-                  {s(row, "name_for_invoice") && s(row, "name_for_invoice") !== customerName ? (
-                    <div className="truncate text-[11px] text-muted-foreground">
-                      שם לחשבונית: {s(row, "name_for_invoice")}
-                    </div>
-                  ) : null}
-                  <div className="truncate text-[11px] text-muted-foreground">
-                    {s(row, "email") || "-"} | {s(row, "phone") || "-"}
+                </div>
+
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-muted-foreground">הזמנות:</span>
+                    <span className="font-medium">{ordersCount}</span>
                   </div>
-                </NavLink>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  {linkedMorningClientId ? (
-                    <Button asChild size="sm" variant="outline">
-                      <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
-                        פתיחת Morning
-                      </a>
-                    </Button>
-                  ) : null}
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>
-                      הוספת פרויקט
-                    </Link>
-                  </Button>
-                  <Button asChild size="sm">
-                    <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>
-                      הוספת הזמנה
-                    </Link>
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openCustomerDetails(id)}
-                  >
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-muted-foreground">פרויקטים:</span>
+                    <span className="font-medium">{projectsCount}</span>
+                  </div>
+                  <div className="flex items-baseline gap-1 col-span-2">
+                    <span className="text-muted-foreground">יתרה:</span>
+                    <span className={`font-medium ${openBalance > 0 ? "text-destructive" : ""}`}>{ils(openBalance)}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Button type="button" size="sm" className="h-9 rounded-lg" onClick={() => openCustomerDetails(id)}>
                     פרטי לקוח
                   </Button>
+                  <Button asChild type="button" size="sm" variant="outline" className="h-9 rounded-lg">
+                    <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>+ הזמנה</Link>
+                  </Button>
+                  <Button asChild type="button" size="sm" variant="outline" className="h-9 rounded-lg">
+                    <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>+ פרויקט</Link>
+                  </Button>
+                  {linkedMorningClientId ? (
+                    <Button asChild type="button" size="sm" variant="outline" className="h-9 rounded-lg">
+                      <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
+                        Morning
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button type="button" size="sm" variant="outline" className="h-9 rounded-lg" onClick={() => openEdit(row)}>
+                      עריכה
+                    </Button>
+                  )}
                 </div>
-                </AdaptiveGrid>
               </CardContent>
             </Card>
           );
         })}
       </div>
 
-      <Card className="hidden overflow-hidden border-border/70 shadow-sm md:block">
+      <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col className="w-[18%]" />

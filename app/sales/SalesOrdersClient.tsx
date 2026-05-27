@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
@@ -126,10 +126,30 @@ function shouldShowPaymentAction(row: OrderView) {
   return row.remainingBalance > 0.009 || row.totalPaid > row.totalAmount + 0.009;
 }
 
-export default function SalesOrdersClient({ orders, contacts = [] }: { orders: Row[]; contacts?: Row[] }) {
+export default function SalesOrdersClient({ orders, contacts = [], initialQuery = "" }: { orders: Row[]; contacts?: Row[]; initialQuery?: string }) {
   const router = useRouter();
-  const [query, setQuery] = useState("");
+  const searchParams = useSearchParams();
+  const [query, setQuery] = useState(initialQuery);
   const [paymentSnapshot] = useState(() => new Map<string, number>());
+
+  // Push search changes to the URL so the server re-queries across the full dataset.
+  const lastPushedQueryRef = useRef(initialQuery);
+  useEffect(() => {
+    if (query === lastPushedQueryRef.current) return;
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (query.trim()) {
+        params.set("q", query.trim());
+      } else {
+        params.delete("q");
+      }
+      params.delete("ordersPage");
+      const qs = params.toString();
+      router.push(qs ? `/sales?${qs}` : "/sales", { scroll: false });
+      lastPushedQueryRef.current = query;
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [query, router, searchParams]);
 
   const contactsByCustomerId = useMemo(() => {
     const map = new Map<string, Row[]>();
@@ -174,24 +194,9 @@ export default function SalesOrdersClient({ orders, contacts = [] }: { orders: R
     return mappedOrders.filter((row): row is OrderView => row !== null);
   }, [orders, paymentSnapshot]);
 
-  const filteredRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return orderRows;
-
-    return orderRows.filter((row) => {
-      if (
-        row.id.toLowerCase().includes(q) ||
-        row.customerName.toLowerCase().includes(q) ||
-        (row.customerEmail ?? "").toLowerCase().includes(q) ||
-        (row.customerPhone ?? "").toLowerCase().includes(q) ||
-        (row.customerCity ?? "").toLowerCase().includes(q)
-      ) return true;
-      return (contactsByCustomerId.get(row.customerId) ?? []).some((c) =>
-        [c.full_name, c.phone, c.email, c.whatsapp]
-          .some((v) => typeof v === "string" && v.toLowerCase().includes(q))
-      );
-    });
-  }, [orderRows, query, contactsByCustomerId]);
+  // Server already filtered by the `q` URL param across the full dataset.
+  void contactsByCustomerId;
+  const filteredRows = orderRows;
 
   return (
     <div className="space-y-4">
@@ -220,8 +225,8 @@ export default function SalesOrdersClient({ orders, contacts = [] }: { orders: R
       ) : (
         <>
           <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1120px] text-sm">
+            <div>
+              <table className="w-full text-sm">
                 <thead className="bg-secondary/40 text-muted-foreground">
                   <tr className="border-b border-border/70 text-right">
                     <th className="px-4 py-3 font-medium">הזמנה</th>
@@ -259,13 +264,13 @@ export default function SalesOrdersClient({ orders, contacts = [] }: { orders: R
                         <div className="font-medium">הזמנה #{row.id.slice(0, 8)}</div>
                       </td>
                       <td className="px-4 py-4">
-                        <div className="min-w-[220px]">
+                        <div>
                           <div className="font-medium">{row.customerName}</div>
                           <div className="mt-1 text-muted-foreground">{row.customerPhone ?? "-"}</div>
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <div className="min-w-[140px]">
+                        <div>
                           <div>{row.customerCity ?? "-"}</div>
                           <div className="mt-1 text-xs text-muted-foreground">{formatOrderDate(row.orderDate)}</div>
                         </div>
@@ -282,7 +287,7 @@ export default function SalesOrdersClient({ orders, contacts = [] }: { orders: R
                       <td className="px-4 py-4">{formatCurrency(row.totalPaid)}</td>
                       <td className="px-4 py-4">{formatCurrency(row.remainingBalance)}</td>
                       <td className="px-4 py-4">
-                        <div className="flex min-w-[240px] flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <Button asChild size="sm" onClick={() => emitNavigationStart()}>
                             <Link href={`/sales/orders/${row.id}`}>צפייה בהזמנה</Link>
                           </Button>

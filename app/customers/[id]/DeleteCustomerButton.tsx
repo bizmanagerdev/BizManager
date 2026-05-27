@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,10 +18,14 @@ export default function DeleteCustomerButton({
   customerId,
   customerName,
   returnHref,
+  iconOnly = false,
+  className,
 }: {
   customerId: string;
   customerName: string;
   returnHref: string;
+  iconOnly?: boolean;
+  className?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -70,9 +75,23 @@ export default function DeleteCustomerButton({
 
   return (
     <>
-      <Button type="button" variant="destructive" size="sm" onClick={openConfirm}>
-        מחיקת לקוח
-      </Button>
+      {iconOnly ? (
+        <Button
+          type="button"
+          variant="destructive"
+          size="icon"
+          className={className ?? "h-9 w-9 rounded-xl"}
+          onClick={openConfirm}
+          aria-label="מחיקת לקוח"
+          title="מחיקת לקוח"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ) : (
+        <Button type="button" variant="destructive" size="sm" className={className} onClick={openConfirm}>
+          מחיקת לקוח
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="text-right">

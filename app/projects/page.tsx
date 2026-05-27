@@ -23,32 +23,44 @@ function toNumber(value: unknown) {
   return null;
 }
 
-function buildCustomerReturnHref(
-  customerId: string | null,
-  customerName: string | null,
-  customerPage: string | null
-) {
-  if (!customerId) return "/customers";
-  const params = new URLSearchParams({ customer_id: customerId });
-  if (customerName) params.set("customer_name", customerName);
-  if (customerPage) params.set("page", customerPage);
-  return `/customers?${params.toString()}`;
+type ProjectsView = "projects" | "quotes" | "closed";
+type ProjectsSort = "recent" | "start_date" | "start_date_desc" | "profit_desc";
+
+function parseView(value: string | undefined): ProjectsView {
+  return value === "quotes" || value === "closed" ? value : "projects";
+}
+
+function parseSort(value: string | undefined, view: ProjectsView): ProjectsSort {
+  if (value === "recent" || value === "start_date" || value === "start_date_desc" || value === "profit_desc") {
+    return value;
+  }
+  return view === "closed" ? "start_date_desc" : "start_date";
 }
 
 function buildProjectsHref(
   page: number,
   customerId: string | null,
   customerName: string | null,
-  customerPage: string | null
+  customerPage: string | null,
+  view: ProjectsView,
+  status: string,
+  sort: ProjectsSort,
+  q: string
 ) {
   const params = new URLSearchParams();
   if (customerId) params.set("customer_id", customerId);
   if (customerName) params.set("customer_name", customerName);
   if (customerPage) params.set("customer_page", customerPage);
+  if (view !== "projects") params.set("view", view);
+  if (status && status !== "all") params.set("status", status);
+  if (sort !== (view === "closed" ? "start_date_desc" : "start_date")) params.set("sort", sort);
+  if (q.trim()) params.set("q", q.trim());
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `/projects?${query}` : "/projects";
 }
+
+const CLOSED_STATUSES = ["quote", "completed"];
 
 export default async function ProjectsPage({
   searchParams,
@@ -58,6 +70,10 @@ export default async function ProjectsPage({
     customer_id?: string;
     customer_name?: string;
     customer_page?: string;
+    view?: string;
+    status?: string;
+    sort?: string;
+    q?: string;
   }>;
 }) {
   const params = (await searchParams) ?? {};
@@ -74,6 +90,10 @@ export default async function ProjectsPage({
     typeof params.customer_page === "string" && params.customer_page.trim()
       ? params.customer_page.trim()
       : null;
+  const view = parseView(params.view);
+  const statusFilter = typeof params.status === "string" && params.status.trim() ? params.status.trim() : "all";
+  const sort = parseSort(params.sort, view);
+  const searchQuery = typeof params.q === "string" ? params.q.trim() : "";
   const from = (page - 1) * PROJECTS_PAGE_SIZE;
   const to = page * PROJECTS_PAGE_SIZE - 1;
 
@@ -90,9 +110,33 @@ export default async function ProjectsPage({
         .select(
           "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at,total_expenses,gross_profit,total_tasks,completed_tasks,open_tasks",
           { count: "estimated" }
-        )
-        .order("updated_at", { ascending: false });
+        );
+
+      if (view === "quotes") {
+        query = query.eq("status", "quote");
+      } else if (view === "closed") {
+        query = query.eq("status", "completed");
+      } else {
+        query = query.not("status", "in", `(${CLOSED_STATUSES.join(",")})`);
+      }
+
+      if (statusFilter !== "all") query = query.eq("status", statusFilter);
       if (customerId) query = query.eq("customer_id", customerId);
+      if (searchQuery) {
+        const escaped = searchQuery.replace(/[%,]/g, " ");
+        query = query.or(`name.ilike.%${escaped}%,customer_name.ilike.%${escaped}%`);
+      }
+
+      if (sort === "profit_desc") {
+        query = query.order("gross_profit", { ascending: false, nullsFirst: false });
+      } else if (sort === "start_date_desc") {
+        query = query.order("start_date", { ascending: false, nullsFirst: false });
+      } else if (sort === "start_date") {
+        query = query.order("start_date", { ascending: true, nullsFirst: false });
+      } else {
+        query = query.order("updated_at", { ascending: false });
+      }
+
       return query.range(from, to);
     })(),
     supabase
@@ -246,19 +290,44 @@ export default async function ProjectsPage({
   const hasPreviousPage = page > 1;
   const hasNextPage = typeof count === "number" ? to + 1 < count : rows.length === PROJECTS_PAGE_SIZE;
 
+  const tabCountQueries = await Promise.all([
+    (() => {
+      let q = supabase
+        .from("project_dashboard_view")
+        .select("id", { count: "estimated", head: true })
+        .not("status", "in", `(${CLOSED_STATUSES.join(",")})`);
+      if (customerId) q = q.eq("customer_id", customerId);
+      return q;
+    })(),
+    (() => {
+      let q = supabase
+        .from("project_dashboard_view")
+        .select("id", { count: "estimated", head: true })
+        .eq("status", "quote");
+      if (customerId) q = q.eq("customer_id", customerId);
+      return q;
+    })(),
+    (() => {
+      let q = supabase
+        .from("project_dashboard_view")
+        .select("id", { count: "estimated", head: true })
+        .eq("status", "completed");
+      if (customerId) q = q.eq("customer_id", customerId);
+      return q;
+    })(),
+  ]);
+  const tabCounts = {
+    projects: typeof tabCountQueries[0].count === "number" ? tabCountQueries[0].count : 0,
+    quotes: typeof tabCountQueries[1].count === "number" ? tabCountQueries[1].count : 0,
+    closed: typeof tabCountQueries[2].count === "number" ? tabCountQueries[2].count : 0,
+  };
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
-          </div>
-          {customerId ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>חזרה ללקוח</Link>
-            </Button>
-          ) : null}
-        </div>
+        {customerName ? (
+          <div className="text-lg font-medium">לקוח: {customerName}</div>
+        ) : null}
 
         {error ? (
           <div className="text-destructive text-sm">שגיאה בטעינת פרויקטים: {error.message}</div>
@@ -270,6 +339,8 @@ export default async function ProjectsPage({
               managerOptions={managerOptions}
               currentUserId={profile.id}
               contacts={(projectContacts ?? []) as Row[]}
+              tabCounts={tabCounts}
+              initialFilters={{ view, status: statusFilter, sort, q: searchQuery }}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
@@ -278,7 +349,7 @@ export default async function ProjectsPage({
               <div className="flex gap-2">
                 {hasPreviousPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildProjectsHref(page - 1, customerId, customerName, customerPage)}>
+                    <Link href={buildProjectsHref(page - 1, customerId, customerName, customerPage, view, statusFilter, sort, searchQuery)}>
                       הקודם
                     </Link>
                   </Button>
@@ -289,7 +360,7 @@ export default async function ProjectsPage({
                 )}
                 {hasNextPage ? (
                   <Button asChild variant="outline" size="sm">
-                    <Link href={buildProjectsHref(page + 1, customerId, customerName, customerPage)}>
+                    <Link href={buildProjectsHref(page + 1, customerId, customerName, customerPage, view, statusFilter, sort, searchQuery)}>
                       הבא
                     </Link>
                   </Button>

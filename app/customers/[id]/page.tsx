@@ -221,51 +221,41 @@ export default async function CustomerDetailsPage({
   const inactiveContacts = ((contacts ?? []) as Row[]).filter((contact) => contact.active === false);
   const customerNameParam = customerName.trim();
   const returnCustomersHref = returnPage > 1 ? `/customers?page=${returnPage}` : "/customers";
-  const addContactHref = `${returnCustomersHref}${returnPage > 1 ? "&" : "?"}add_contact_customer_id=${encodeURIComponent(id)}`;
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">{customerName}</h1>
-            <p className="text-sm text-muted-foreground">מרכז לקוח עם פרטי קשר, יתרה, Morning וקישורים מהירים.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline" size="sm">
-              <NavLink to={returnCustomersHref}>חזרה ללקוחות</NavLink>
-            </Button>
-            <EditCustomerButton
-              customer={{
-                id,
-                name: customerName,
-                name_for_invoice: s(customer as Row, "name_for_invoice") || null,
-                registration_number: s(customer as Row, "registration_number") || null,
-                phone: customerPhone || null,
-                whatsapp: customerWhatsapp || null,
-                email: customerEmail || null,
-                address: address || null,
-                notes: s(customer as Row, "notes") || null,
-                active: customer?.active !== false,
-                requires_prepayment: requiresPrepayment,
-                contacts: (contacts ?? []) as Row[],
-              }}
-            />
-            <Button asChild variant="outline" size="sm">
-              <NavLink to={addContactHref}>הוספת איש קשר</NavLink>
-            </Button>
-            <DeleteCustomerButton
-              customerId={id}
-              customerName={customerName}
-              returnHref={returnCustomersHref}
-            />
-          </div>
-        </div>
-
         <section className="space-y-4 rounded-3xl border border-border/70 bg-card/80 p-5 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">לקוח #{id.slice(0, 8)}</div>
+            <div className="space-y-2 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-xs font-medium text-muted-foreground">לקוח #{id.slice(0, 8)}</div>
+                <div className="flex shrink-0 items-center gap-2 lg:hidden">
+                  <EditCustomerButton
+                    iconOnly
+                    customer={{
+                      id,
+                      name: customerName,
+                      name_for_invoice: s(customer as Row, "name_for_invoice") || null,
+                      registration_number: s(customer as Row, "registration_number") || null,
+                      phone: customerPhone || null,
+                      whatsapp: customerWhatsapp || null,
+                      email: customerEmail || null,
+                      address: address || null,
+                      notes: s(customer as Row, "notes") || null,
+                      active: customer?.active !== false,
+                      requires_prepayment: requiresPrepayment,
+                      contacts: (contacts ?? []) as Row[],
+                    }}
+                  />
+                  <DeleteCustomerButton
+                    customerId={id}
+                    customerName={customerName}
+                    returnHref={returnCustomersHref}
+                    iconOnly
+                  />
+                </div>
+              </div>
               <div className="text-2xl font-semibold">{customerName}</div>
               {(() => {
                 const invoiceName = s(customer as Row, "name_for_invoice");
@@ -288,7 +278,7 @@ export default async function CustomerDetailsPage({
               </div>
               <div className="text-sm text-muted-foreground">{address || "-"}</div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               {requiresPrepayment ? (
                 <Badge className={customerFlagBadgeClass("danger")}>תשלום מראש</Badge>
               ) : null}
@@ -303,6 +293,31 @@ export default async function CustomerDetailsPage({
               ) : (
                 <Badge className={customerFlagBadgeClass("neutral")}>ללא Morning</Badge>
               )}
+              <div className="hidden items-center gap-2 lg:flex lg:ms-2">
+                <EditCustomerButton
+                  iconOnly
+                  customer={{
+                    id,
+                    name: customerName,
+                    name_for_invoice: s(customer as Row, "name_for_invoice") || null,
+                    registration_number: s(customer as Row, "registration_number") || null,
+                    phone: customerPhone || null,
+                    whatsapp: customerWhatsapp || null,
+                    email: customerEmail || null,
+                    address: address || null,
+                    notes: s(customer as Row, "notes") || null,
+                    active: customer?.active !== false,
+                    requires_prepayment: requiresPrepayment,
+                    contacts: (contacts ?? []) as Row[],
+                  }}
+                />
+                <DeleteCustomerButton
+                  customerId={id}
+                  customerName={customerName}
+                  returnHref={returnCustomersHref}
+                  iconOnly
+                />
+              </div>
             </div>
           </div>
 
@@ -380,12 +395,7 @@ export default async function CustomerDetailsPage({
             </div>
 
             <div className="rounded-2xl border border-border/70 bg-card/70 p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold">אנשי קשר</div>
-                <Button asChild size="sm" variant="outline">
-                  <NavLink to={addContactHref}>הוספת איש קשר</NavLink>
-                </Button>
-              </div>
+              <div className="mb-3 text-sm font-semibold">אנשי קשר</div>
               {activeContacts.length === 0 && inactiveContacts.length === 0 ? (
                 <p className="text-sm text-muted-foreground">אין אנשי קשר ללקוח זה.</p>
               ) : (

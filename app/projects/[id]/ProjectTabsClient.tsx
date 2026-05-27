@@ -3117,8 +3117,8 @@ function ProjectTasksTab({
                 })}
               </div>
 
-              <div className="hidden md:block rounded-md border overflow-x-auto">
-                <table className="min-w-[760px] w-full text-sm">
+              <div className="hidden md:block rounded-md border">
+                <table className="w-full text-sm">
                   <thead className="bg-muted/50 text-muted-foreground">
                     <tr>
                       <th className="text-right font-medium px-3 py-2">משימה</th>

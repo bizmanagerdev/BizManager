@@ -1,4 +1,3 @@
-import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
@@ -94,13 +93,10 @@ function inferKindFromFilename(name: string | null) {
 
 export default async function TaskPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ returnTo?: string }>;
 }) {
   const { id } = await params;
-  const { returnTo } = (await searchParams) ?? {};
   const { profile, supabase } = await requireProfile();
 
   const { data: userRows } = await supabase
@@ -227,21 +223,9 @@ export default async function TaskPage({
   const error =
     overviewError?.message ?? taskError?.message ?? null;
 
-  const safeReturnTo =
-    typeof returnTo === "string" && returnTo.startsWith("/") ? returnTo : null;
-
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <Link
-            className="text-sm text-primary"
-            href={safeReturnTo ?? "/tasks"}
-          >
-            {safeReturnTo ? "חזרה לפרויקט" : "חזרה לרשימת משימות"}
-          </Link>
-        </div>
-
         {error ? (
           <div className="text-destructive text-sm">שגיאה: {error}</div>
         ) : !overview ? (

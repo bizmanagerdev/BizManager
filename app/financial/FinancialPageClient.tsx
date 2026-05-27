@@ -74,9 +74,6 @@ type Props = {
   data: FinancialPageData;
   obligationsData: ObligationsData;
   initialFilters: InitialFilters;
-  customerId: string;
-  customerName: string;
-  customerPage: string;
   canManageExpenses: boolean;
   canViewCashflow: boolean;
   recurringProjects: Array<{ id: string; label: string }>;
@@ -149,13 +146,6 @@ function typeVariant(type: FinancialEntry["type"]) {
 
 function typeAmountClass(type: FinancialEntry["type"]) {
   return type === "inflow" ? "text-success" : "text-destructive";
-}
-
-function buildCustomerReturnHref(customerId: string, customerName: string, customerPage: string) {
-  const params = new URLSearchParams({ customer_id: customerId });
-  if (customerName) params.set("customer_name", customerName);
-  if (customerPage) params.set("page", customerPage);
-  return `/customers?${params.toString()}`;
 }
 
 function sourceTypeTitle(kind: FinancialSourceKind) {
@@ -322,9 +312,6 @@ export default function FinancialPageClient({
   data,
   obligationsData,
   initialFilters,
-  customerId,
-  customerName,
-  customerPage,
   canManageExpenses,
   canViewCashflow,
   recurringProjects,
@@ -647,22 +634,7 @@ export default function FinancialPageClient({
 
   return (
     <div className="space-y-4" dir="rtl">
-      <section className="flex items-center justify-between gap-3">
-        <div className="hidden">
-          <h1 className="text-2xl font-semibold">פיננסי</h1>
-          {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
-          <p className="text-sm text-muted-foreground">
-            תצוגת תזרים לפי תחום עסקי, כולל הכנסות והוצאות עתידיות כמו צ&apos;קים להפקדה והוצאות מתוזמנות.
-          </p>
-        </div>
-        {customerId ? (
-          <Button asChild variant="outline">
-            <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>חזרה ללקוח</Link>
-          </Button>
-        ) : null}
-      </section>
-
-      {/* View toggle — admin only */}
+{/* View toggle — admin only */}
       {resolvedCanView ? (
         <div className="flex gap-1 rounded-xl border bg-secondary/40 p-1 w-fit">
           {(["cashflow", "obligations"] as const).map((view) => (
@@ -976,8 +948,8 @@ export default function FinancialPageClient({
                 אין כרגע תנועות עתידיות או ממתינות בהתאם לסינון.
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-right text-sm">
+              <div>
+                <table className="w-full text-right text-sm">
                   <thead className="text-right text-muted-foreground">
                     <tr className="border-b">
                       <th className="px-2 py-2 font-medium">תאריך תזרים</th>
@@ -1275,8 +1247,8 @@ export default function FinancialPageClient({
                 })}
               </div>
 
-              <div className="hidden overflow-x-auto md:block">
-                <table className="min-w-full text-right text-sm">
+              <div className="hidden md:block">
+                <table className="w-full text-right text-sm">
                   <thead className="text-right text-muted-foreground">
                     <tr className="border-b">
                       <th className="px-3 py-2 font-medium">תאריך תזרים</th>

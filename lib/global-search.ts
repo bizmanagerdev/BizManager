@@ -354,7 +354,7 @@ function userResult(row: Row): GlobalSearchResult | null {
     title: name,
     subtitle: text(row.email) || null,
     meta: [text(row.role), row.active === false ? "לא פעיל" : "פעיל"].filter(Boolean),
-    href: `/payroll?worker_id=${encodeURIComponent(id)}`,
+    href: `/payroll/workers/${encodeURIComponent(id)}`,
   };
 }
 

@@ -172,9 +172,6 @@ export default async function CashFlowPageContent({
         data={data}
         obligationsData={obligationsData}
         initialFilters={initialFilters}
-        customerId={customerId}
-        customerName={customerName}
-        customerPage={customerPage}
         canManageExpenses={canManageExpenses}
         canViewCashflow={canViewCashflow}
         recurringProjects={projectOptions}

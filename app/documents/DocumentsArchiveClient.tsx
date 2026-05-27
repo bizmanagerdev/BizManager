@@ -89,13 +89,6 @@ export type DocumentArchiveItem = {
   search_text: string;
 };
 
-function buildCustomerReturnHref(customerId: string, customerName: string, customerPage: string) {
-  const params = new URLSearchParams({ customer_id: customerId });
-  if (customerName) params.set("customer_name", customerName);
-  if (customerPage) params.set("page", customerPage);
-  return `/customers?${params.toString()}`;
-}
-
 function normalizeText(value: string) {
   return value.trim().toLowerCase();
 }
@@ -216,7 +209,6 @@ export default function DocumentsArchiveClient({
   const [documentType, setDocumentType] = useState(initialFilters.type);
   const [customerId, setCustomerId] = useState(initialFilters.customer_id);
   const customerName = initialFilters.customer_name;
-  const customerPage = initialFilters.customer_page;
   const [projectId, setProjectId] = useState(initialFilters.project_id);
   const [propertyId, setPropertyId] = useState(initialFilters.property_id);
   const [fileKind, setFileKind] = useState("");
@@ -561,11 +553,6 @@ export default function DocumentsArchiveClient({
                 <Upload className="h-4 w-4" />
                 העלאת קבצים
               </Button>
-              {customerId ? (
-                <Button asChild variant="outline">
-                  <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>חזרה ללקוח</Link>
-                </Button>
-              ) : null}
               <Badge variant="outline">{filteredDocuments.length} מוצגים</Badge>
               <Badge variant="secondary">{linkedCount} משויכים</Badge>
               <Badge variant="secondary">{categorizedCount} עם קטגוריה</Badge>

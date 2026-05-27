@@ -5,13 +5,12 @@ import SalaryCenterClient from "@/app/payroll/SalaryCenterClient";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import { loadPayrollPageData } from "@/lib/payroll-page-loader";
 
-export default async function PayrollPage({
-  searchParams,
+export default async function WorkerDetailPage({
+  params,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  params: Promise<{ id: string }>;
 }) {
-  const resolvedParams = (await searchParams) ?? {};
-  const defaultWorkerId = typeof resolvedParams.worker_id === "string" ? resolvedParams.worker_id : undefined;
+  const { id } = await params;
   const { profile, supabase } = await requireProfile();
 
   if (profile.role !== "admin" && profile.role !== "office") {
@@ -26,7 +25,7 @@ export default async function PayrollPage({
         {loadError ? (
           <Card>
             <CardContent className="py-6 text-sm text-destructive">
-              {`שגיאה בטעינת מרכז השכר: ${loadError}`}
+              {`שגיאה בטעינת פרטי עובד: ${loadError}`}
             </CardContent>
           </Card>
         ) : (
@@ -39,7 +38,8 @@ export default async function PayrollPage({
             publicPeriods={periods}
             initiallyUnlocked
             hasPasswordConfigured
-            defaultWorkerId={defaultWorkerId}
+            defaultWorkerId={id}
+            mode="worker-detail"
           />
         )}
       </div>

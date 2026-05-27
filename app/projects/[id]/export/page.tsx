@@ -212,7 +212,6 @@ export default async function ProjectWorkerExportPage({
   });
 
   const exportGeneratedAt = new Date().toISOString();
-  const backHref = `/projects/${encodeURIComponent(id)}`;
   const projectName = getFirstString(overview as UnknownRow, ["name"]) ?? "פרויקט";
   const customerName = getFirstString(overview as UnknownRow, ["customer_name"]) ?? "ללא לקוח";
   const shareTitle = `דף עבודה לצוות - ${projectName} | ${customerName}`;
@@ -231,7 +230,6 @@ export default async function ProjectWorkerExportPage({
   return (
     <div className="min-h-screen bg-muted/20 text-right" dir="rtl">
       <ProjectWorkerExportActions
-        backHref={backHref}
         shareTitle={shareTitle}
         exportContentId={exportContentId}
         pdfFileName={pdfFileName}

@@ -18,7 +18,7 @@ export function normalizePayrollWorkerType(
 }
 
 export function getPayrollWorkerTypeLabel(workerType: PayrollWorkerType) {
-  if (workerType === "session_only") return "קבלנות לפי משמרות";
+  if (workerType === "session_only") return "קבלנות";
   if (workerType === "hourly_payslip") return "שעתי עם תלוש";
   return "חודשי גלובלי";
 }

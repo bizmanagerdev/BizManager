@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import Link from "next/link";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -227,14 +226,9 @@ export default function RecurringTasksClient(props: Props) {
               תבניות חודשיות שיוצרות משימות רגילות אוטומטית.
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button asChild variant="outline">
-              <Link href="/tasks">חזרה למשימות</Link>
-            </Button>
-            <Button type="button" onClick={openCreate}>
-              משימה קבועה חדשה
-            </Button>
-          </div>
+          <Button type="button" onClick={openCreate}>
+            משימה קבועה חדשה
+          </Button>
         </div>
       )}
       {props.hideHeader && (
@@ -320,8 +314,8 @@ export default function RecurringTasksClient(props: Props) {
             })}
           </div>
 
-          <div className="hidden overflow-x-auto rounded-md border md:block">
-            <table className="min-w-[1100px] w-full text-sm">
+          <div className="hidden rounded-md border md:block">
+            <table className="w-full text-sm">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-right font-medium">משימה קבועה</th>

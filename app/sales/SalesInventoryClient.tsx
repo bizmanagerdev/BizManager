@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -214,13 +215,34 @@ export default function SalesInventoryClient({
   soldAmountByProductId = {},
   lowStockThresholdByProductId = {},
   movements,
+  initialQuery = "",
 }: {
   products: Row[];
   inventoryRows: Row[];
   soldAmountByProductId?: Record<string, number>;
   lowStockThresholdByProductId?: Record<string, number>;
   movements: Row[];
+  initialQuery?: string;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
+
+  const lastPushedQueryRef = useRef(initialQuery);
+  useEffect(() => {
+    if (searchQuery === lastPushedQueryRef.current) return;
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("inventoryPage");
+      if (searchQuery.trim()) params.set("q", searchQuery.trim());
+      else params.delete("q");
+      const qs = params.toString();
+      router.push(qs ? `/sales?${qs}` : "/sales", { scroll: false });
+      lastPushedQueryRef.current = searchQuery;
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery, router, searchParams]);
+
   const [items, setItems] = useState<InventoryItem[]>(() =>
     buildInventoryItems(products, inventoryRows, soldAmountByProductId, movements, lowStockThresholdByProductId)
   );
@@ -400,15 +422,23 @@ export default function SalesInventoryClient({
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">רמות מלאי לפי מוצר</CardTitle>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-base">רמות מלאי לפי מוצר</CardTitle>
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="חיפוש מוצר לפי שם או מק״ט"
+              className="h-10 sm:max-w-xs"
+            />
+          </div>
         </CardHeader>
         <CardContent>
           {items.length === 0 ? (
             <p className="text-sm text-muted-foreground">אין מוצרים להצגה במלאי.</p>
           ) : (
             <>
-              <div className="hidden overflow-x-auto rounded-md border xl:block">
-                <table className="min-w-[1080px] w-full text-sm">
+              <div className="hidden rounded-md border xl:block">
+                <table className="w-full text-sm">
                   <thead className="bg-muted/50 text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 text-right font-medium">מוצר</th>
@@ -599,8 +629,8 @@ export default function SalesInventoryClient({
               const paginatedMovements = movementRows.slice(startIdx, startIdx + MOVEMENTS_PER_PAGE);
               return (
                 <>
-                  <div className="hidden overflow-x-auto rounded-md border xl:block">
-                    <table className="min-w-[980px] w-full text-sm">
+                  <div className="hidden rounded-md border xl:block">
+                    <table className="w-full text-sm">
                       <thead className="bg-muted/50 text-muted-foreground">
                         <tr>
                           <th className="px-3 py-2 text-right font-medium">מוצר</th>

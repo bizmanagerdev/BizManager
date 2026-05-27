@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useState } from "react";
 import { Loader2, MessageCircle } from "lucide-react";
 import html2canvas from "html2canvas";
@@ -10,12 +9,10 @@ import { Button } from "@/components/ui/button";
 type ShareMode = "whatsapp" | null;
 
 export default function ProjectWorkerExportActions({
-  backHref,
   shareTitle,
   exportContentId,
   pdfFileName,
 }: {
-  backHref: string;
   shareTitle: string;
   exportContentId: string;
   pdfFileName: string;
@@ -126,23 +123,18 @@ export default function ProjectWorkerExportActions({
 
   return (
     <div className="print:hidden border-b bg-background/95 px-4 py-3 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button type="button" variant="outline" size="sm" asChild disabled={isBusy}>
-          <Link href={backHref}>חזרה לפרויקט</Link>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={() => void sharePdfToWhatsApp()} disabled={isBusy}>
+          {activeMode === "whatsapp" ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <MessageCircle className="h-4 w-4" />
+          )}
+          <span>שיתוף PDF</span>
         </Button>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => void sharePdfToWhatsApp()} disabled={isBusy}>
-            {activeMode === "whatsapp" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <MessageCircle className="h-4 w-4" />
-            )}
-            <span>שיתוף PDF</span>
-          </Button>
-          <Button type="button" size="sm" onClick={() => void openPrintDialog()} disabled={isBusy}>
-            הדפסה / שמירה ל־PDF
-          </Button>
-        </div>
+        <Button type="button" size="sm" onClick={() => void openPrintDialog()} disabled={isBusy}>
+          הדפסה / שמירה ל־PDF
+        </Button>
       </div>
       {shareMessage ? <div className="mt-2 text-xs text-muted-foreground">{shareMessage}</div> : null}
     </div>

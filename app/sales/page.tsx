@@ -95,25 +95,14 @@ function pageRange(page: number) {
   };
 }
 
-function buildCustomerReturnHref(
-  customerId: string | null,
-  customerName: string | null,
-  customerPage: string | null
-) {
-  if (!customerId) return "/customers";
-  const params = new URLSearchParams({ customer_id: customerId });
-  if (customerName) params.set("customer_name", customerName);
-  if (customerPage) params.set("page", customerPage);
-  return `/customers?${params.toString()}`;
-}
-
 function buildSalesHref(
   activeTab: string,
   pageKey: "ordersPage" | "inventoryPage" | "pricePage" | "deliveriesPage",
   page: number,
   customerId: string | null,
   customerName: string | null,
-  customerPage: string | null
+  customerPage: string | null,
+  extras?: { q?: string; category?: string }
 ) {
   const params = new URLSearchParams();
   if (activeTab !== "orders") params.set("tab", activeTab);
@@ -121,23 +110,40 @@ function buildSalesHref(
   if (customerName) params.set("customer_name", customerName);
   if (customerPage) params.set("customer_page", customerPage);
   if (page > 1) params.set(pageKey, String(page));
+  if (extras?.q && extras.q.trim()) params.set("q", extras.q.trim());
+  if (extras?.category && extras.category.trim()) params.set("category", extras.category.trim());
   const query = params.toString();
   return query ? `/sales?${query}` : "/sales";
 }
 
-async function loadProductPageData(supabase: SupabaseClient, page: number) {
+async function loadProductPageData(
+  supabase: SupabaseClient,
+  page: number,
+  filters: { q: string; category: string } = { q: "", category: "" }
+) {
   const { from, to } = pageRange(page);
-  const {
-    data: products,
-    error: productsError,
-    count,
-  } = await supabase
+  let productsQuery = supabase
     .from("products")
     .select("id,name,sku,barcode,description,base_price,base_cost,active,category_id", {
       count: "estimated",
     })
-    .order("name", { ascending: true })
-    .range(from, to);
+    .order("name", { ascending: true });
+
+  if (filters.q) {
+    const escaped = filters.q.replace(/[%,]/g, " ");
+    productsQuery = productsQuery.or(
+      `name.ilike.%${escaped}%,sku.ilike.%${escaped}%,barcode.ilike.%${escaped}%,description.ilike.%${escaped}%`
+    );
+  }
+  if (filters.category) {
+    productsQuery = productsQuery.eq("category_id", filters.category);
+  }
+
+  const {
+    data: products,
+    error: productsError,
+    count,
+  } = await productsQuery.range(from, to);
 
   const productIds = ((products ?? []) as Row[])
     .map((row) => getString(row, "id"))
@@ -217,8 +223,12 @@ async function loadProductPageData(supabase: SupabaseClient, page: number) {
   };
 }
 
-async function loadInventoryPageData(supabase: SupabaseClient, page: number) {
-  const productPage = await loadProductPageData(supabase, page);
+async function loadInventoryPageData(
+  supabase: SupabaseClient,
+  page: number,
+  filters: { q: string; category: string } = { q: "", category: "" }
+) {
+  const productPage = await loadProductPageData(supabase, page, filters);
   const productIds = productPage.products
     .map((row) => getString(row, "id"))
     .filter((value): value is string => Boolean(value));
@@ -251,9 +261,13 @@ export default async function SalesPage({
     inventoryPage?: string;
     pricePage?: string;
     deliveriesPage?: string;
+    q?: string;
+    category?: string;
   }>;
 }) {
   const params = (await searchParams) ?? {};
+  const searchQuery = typeof params.q === "string" ? params.q.trim() : "";
+  const categoryFilter = typeof params.category === "string" ? params.category.trim() : "";
   const customerId =
     typeof params.customer_id === "string" && params.customer_id.trim()
       ? params.customer_id.trim()
@@ -347,17 +361,11 @@ export default async function SalesPage({
     if (activeTab === "closed") {
       ordersQuery = ordersQuery.in("status", CLOSED_ORDER_STATUSES);
     }
-    if (false && activeTab === "closed") {
-      ordersQuery = ordersQuery.in("status", [
-        "delivered",
-        "completed",
-        "closed",
-        "cancelled",
-        "סופקה",
-        "הושלמה",
-        "סגורה",
-        "בוטלה",
-      ]);
+    if (searchQuery) {
+      const escaped = searchQuery.replace(/[%,]/g, " ");
+      ordersQuery = ordersQuery.or(
+        `customer_name.ilike.%${escaped}%,customer_phone.ilike.%${escaped}%,customer_email.ilike.%${escaped}%,customer_city.ilike.%${escaped}%`
+      );
     }
 
     const { data, error, count } = await ordersQuery.range(from, to);
@@ -377,7 +385,7 @@ export default async function SalesPage({
           <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error.message}</p>
         ) : (
           <>
-            <SalesOrdersClient orders={rows} contacts={(orderContacts ?? []) as Row[]} />
+            <SalesOrdersClient orders={rows} contacts={(orderContacts ?? []) as Row[]} initialQuery={searchQuery} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {ordersPage} • מציגים {rows.length} מתוך {totalCount}
@@ -392,7 +400,8 @@ export default async function SalesPage({
                         ordersPage - 1,
                         customerId,
                         customerName,
-                        customerPage
+                        customerPage,
+                        { q: searchQuery }
                       )}
                     >
                       הקודם
@@ -412,7 +421,8 @@ export default async function SalesPage({
                         ordersPage + 1,
                         customerId,
                         customerName,
-                        customerPage
+                        customerPage,
+                        { q: searchQuery }
                       )}
                     >
                       הבא
@@ -447,7 +457,7 @@ export default async function SalesPage({
       categoriesError,
       thresholdsError,
     } =
-      await loadProductPageData(supabase, pricePage);
+      await loadProductPageData(supabase, pricePage, { q: searchQuery, category: categoryFilter });
 
     const purchasedByProductId = new Map<string, number>();
     purchasedMovements.forEach((row) => {
@@ -539,7 +549,12 @@ export default async function SalesPage({
           <p className="text-sm text-destructive">שגיאה בטעינת מחירון: {loadError}</p>
         ) : (
           <>
-            <PriceListClient initialProducts={productRows} initialCategories={categoryOptions} />
+            <PriceListClient
+              initialProducts={productRows}
+              initialCategories={categoryOptions}
+              initialQuery={searchQuery}
+              initialCategoryFilter={categoryFilter}
+            />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {pricePage} • מציגים {products.length} מתוך {count}
@@ -554,7 +569,8 @@ export default async function SalesPage({
                         pricePage - 1,
                         customerId,
                         customerName,
-                        customerPage
+                        customerPage,
+                        { q: searchQuery, category: categoryFilter }
                       )}
                     >
                       הקודם
@@ -574,7 +590,8 @@ export default async function SalesPage({
                         pricePage + 1,
                         customerId,
                         customerName,
-                        customerPage
+                        customerPage,
+                        { q: searchQuery, category: categoryFilter }
                       )}
                     >
                       הבא
@@ -606,7 +623,7 @@ export default async function SalesPage({
       inventoryError,
       movementsError,
       thresholdsError,
-    } = await loadInventoryPageData(supabase, inventoryPage);
+    } = await loadInventoryPageData(supabase, inventoryPage, { q: searchQuery, category: categoryFilter });
 
     const soldAmountByProductId = Object.fromEntries(
       products
@@ -650,6 +667,7 @@ export default async function SalesPage({
               soldAmountByProductId={soldAmountByProductId}
               lowStockThresholdByProductId={lowStockThresholdByProductId}
               movements={movements}
+              initialQuery={searchQuery}
             />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
@@ -665,7 +683,8 @@ export default async function SalesPage({
                         inventoryPage - 1,
                         customerId,
                         customerName,
-                        customerPage
+                        customerPage,
+                        { q: searchQuery }
                       )}
                     >
                       הקודם
@@ -685,7 +704,8 @@ export default async function SalesPage({
                         inventoryPage + 1,
                         customerId,
                         customerName,
-                        customerPage
+                        customerPage,
+                        { q: searchQuery }
                       )}
                     >
                       הבא
@@ -837,23 +857,13 @@ export default async function SalesPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {customerName ? (
             <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
           ) : null}
-
-          <div className={`grid gap-2 ${customerId ? "grid-cols-2" : "grid-cols-1"} sm:flex sm:flex-wrap`}>
-            {customerId ? (
-              <Button asChild variant="outline" className="h-11 sm:h-10">
-                <Link href={buildCustomerReturnHref(customerId, customerName, customerPage)}>
-                  חזרה ללקוח
-                </Link>
-              </Button>
-            ) : null}
-            <Button asChild className="h-11 sm:h-10">
-              <Link href="/sales/orders/new">הזמנה חדשה</Link>
-            </Button>
-          </div>
+          <Button asChild className="h-11 w-full sm:h-10 sm:w-auto">
+            <Link href="/sales/orders/new">הזמנה חדשה</Link>
+          </Button>
         </div>
 
         <SalesTabsNav activeTab={activeTab} counts={salesTabCounts} searchParams={params} />

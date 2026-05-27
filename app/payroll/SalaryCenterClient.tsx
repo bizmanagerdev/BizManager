@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AlertTriangle, LockKeyhole, Pencil, Plus, Trash2 } from "lucide-react";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ import {
   getPayrollWorkerTypeLabel,
   normalizePayrollWorkerType,
   payrollWorkerTypeAllowsSessions,
+  payrollWorkerTypeRequiresAgreement,
   shouldShowSessionHours,
   shouldShowSessionPrice,
   type PayrollWorkerType,
@@ -54,11 +56,9 @@ import {
   getCurrentMonthKey,
   getCurrentPayrollPeriod,
   getLatestHourlyOverride,
-  getPayslipItemsTotal,
   isSalaryTrackedWorker,
   getSessionLinkLabel,
   getWorkerAccessLabel,
-  getWorkerMonthStats,
   isPayrollPeriodEditable,
   normalizePayrollStatus,
   type SalaryCenterProjectOption,
@@ -81,6 +81,14 @@ type Props = {
   initiallyUnlocked: boolean;
   hasPasswordConfigured: boolean;
   defaultWorkerId?: string;
+  /**
+   * "list" (default): renders the full payroll center — top tabs, worker
+   * tables, and a worker-detail dialog that opens when a row is selected.
+   * "worker-detail": renders only the worker-detail view inline (no top tabs,
+   * no worker tables, no dialog wrapper) for the `defaultWorkerId` worker.
+   * Used by /payroll/workers/[id].
+   */
+  mode?: "list" | "worker-detail";
 };
 
 type SessionFormState = {
@@ -286,8 +294,9 @@ const DEFAULT_WORKER_PAYMENT_FORM: WorkerPaymentFormState = {
 
 const DEFAULT_WORKER_PRINT_FILTERS: WorkerPrintFilters = {
   projectId: "",
-  month: String(new Date().getMonth() + 1).padStart(2, "0"),
-  year: String(new Date().getFullYear()),
+  // Empty = "all months / all years" (no filter applied).
+  month: "",
+  year: "",
 };
 
 function createSessionSplitPart(
@@ -316,7 +325,9 @@ export default function SalaryCenterClient({
   initiallyUnlocked,
   hasPasswordConfigured,
   defaultWorkerId,
+  mode = "list",
 }: Props) {
+  const isWorkerDetailMode = mode === "worker-detail";
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState("employees");
@@ -337,6 +348,8 @@ export default function SalaryCenterClient({
   const [createUserForm, setCreateUserForm] = useState<CreateUserFormState>(DEFAULT_CREATE_USER_FORM);
   const [createUserError, setCreateUserError] = useState("");
   const [workerPrintFilters, setWorkerPrintFilters] = useState<WorkerPrintFilters>(DEFAULT_WORKER_PRINT_FILTERS);
+  // Sessions tab has its own project filter (independent of print tab).
+  const [sessionsProjectId, setSessionsProjectId] = useState("");
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [sessionForm, setSessionForm] = useState<SessionFormState>(DEFAULT_SESSION_FORM);
   const [sessionSplitParts, setSessionSplitParts] = useState<SplitPartDraft[]>([]);
@@ -662,6 +675,8 @@ export default function SalaryCenterClient({
   const isSelectedWorkerSalaryTracked = selectedWorker ? isSalaryTrackedWorker(selectedWorker) : false;
   const canSelectedWorkerHaveAgreement = Boolean(
     selectedWorker &&
+      selectedWorkerType &&
+      payrollWorkerTypeRequiresAgreement(selectedWorkerType) &&
       (selectedWorker.role === "admin" ||
         selectedWorker.role === "office" ||
         selectedWorker.role === "worker" ||
@@ -1620,6 +1635,10 @@ export default function SalaryCenterClient({
         setSelectedWorkerId("");
         setMessage("העובד הוסר מהרשימה הפעילה.");
         setPendingDeletion(null);
+        if (isWorkerDetailMode) {
+          router.push("/payroll");
+          return;
+        }
         await refreshAll();
         return;
       }
@@ -1703,27 +1722,9 @@ export default function SalaryCenterClient({
     [selectedWorkerSessions]
   );
   useEffect(() => {
-    const latestSession = selectedWorkerSessionsSorted[0] ?? null;
-    const latestDate = latestSession?.clock_in ? new Date(latestSession.clock_in) : new Date();
-    const hasValidLatestDate = !Number.isNaN(latestDate.getTime());
-    setWorkerPrintFilters({
-      projectId: "",
-      month: hasValidLatestDate
-        ? String(latestDate.getMonth() + 1).padStart(2, "0")
-        : DEFAULT_WORKER_PRINT_FILTERS.month,
-      year: hasValidLatestDate ? String(latestDate.getFullYear()) : DEFAULT_WORKER_PRINT_FILTERS.year,
-    });
-  }, [selectedWorkerId, selectedWorkerSessionsSorted]);
-  const selectedWorkerStats = selectedWorker
-    ? getWorkerMonthStats(selectedWorker.id, visibleSessions, selectedPayrollMonthKey)
-    : null;
-  const selectedWorkerMonthPayrollStats = selectedWorker
-    ? currentMonthPayrollStatsByUserId.get(selectedWorker.id) ?? null
-    : null;
-  const selectedWorkerTotalPay = useMemo(
-    () => selectedWorkerMonthPayrollStats?.totalAmount ?? 0,
-    [selectedWorkerMonthPayrollStats]
-  );
+    // Reset to "all months / all years" whenever a different worker is selected.
+    setWorkerPrintFilters({ projectId: "", month: "", year: "" });
+  }, [selectedWorkerId]);
   const selectedWorkerBalance = selectedWorker ? effectiveWorkerBalancesByUserId.get(selectedWorker.id) ?? null : null;
   const selectedWorkerDebtItems = useMemo(() => {
     if (!selectedWorker) return [];
@@ -1766,18 +1767,70 @@ export default function SalaryCenterClient({
         years.add(String(date.getFullYear()));
       }
     });
-    years.add(DEFAULT_WORKER_PRINT_FILTERS.year);
+    years.add(String(new Date().getFullYear()));
     return [...years].sort((a, b) => Number(b) - Number(a));
   }, [selectedWorkerSessionsSorted]);
-  const selectedWorkerPrintSessions = useMemo(
+  // Sessions filtered by outer month/year AND the sessions tab's own project filter.
+  // Empty month/year means "all" (no filter for that dimension).
+  const selectedWorkerSessionsByFilter = useMemo(
     () =>
       selectedWorkerSessionsSorted.filter((session) => {
-        if (workerPrintFilters.projectId && session.project_id !== workerPrintFilters.projectId) return false;
+        if (sessionsProjectId && session.project_id !== sessionsProjectId) return false;
+        if (!workerPrintFilters.month && !workerPrintFilters.year) return true;
         const sessionDate = new Date(session.clock_in);
         if (Number.isNaN(sessionDate.getTime())) return false;
         const sessionMonth = String(sessionDate.getMonth() + 1).padStart(2, "0");
         const sessionYear = String(sessionDate.getFullYear());
-        return sessionMonth === workerPrintFilters.month && sessionYear === workerPrintFilters.year;
+        if (workerPrintFilters.month && sessionMonth !== workerPrintFilters.month) return false;
+        if (workerPrintFilters.year && sessionYear !== workerPrintFilters.year) return false;
+        return true;
+      }),
+    [selectedWorkerSessionsSorted, sessionsProjectId, workerPrintFilters.month, workerPrintFilters.year]
+  );
+  // Payments filtered by outer month/year only (no project — payments aren't project-scoped).
+  // Empty month/year means "all".
+  const selectedWorkerPaymentsByPeriod = useMemo(
+    () =>
+      selectedWorkerPayments.filter((payment) => {
+        if (!workerPrintFilters.month && !workerPrintFilters.year) return true;
+        if (!payment.payment_date) return false;
+        const paymentDate = new Date(payment.payment_date);
+        if (Number.isNaN(paymentDate.getTime())) return false;
+        const month = String(paymentDate.getMonth() + 1).padStart(2, "0");
+        const year = String(paymentDate.getFullYear());
+        if (workerPrintFilters.month && month !== workerPrintFilters.month) return false;
+        if (workerPrintFilters.year && year !== workerPrintFilters.year) return false;
+        return true;
+      }),
+    [selectedWorkerPayments, workerPrintFilters.month, workerPrintFilters.year]
+  );
+  // Stats computed from the filtered sessions (uses sessions-tab project filter
+  // + outer month/year) — reflects exactly what's shown in the נוכחות list.
+  const selectedWorkerFilteredStats = useMemo(() => {
+    let totalMinutes = 0;
+    let totalAmount = 0;
+    for (const session of selectedWorkerSessionsByFilter) {
+      totalMinutes += sessionWorkedMinutes(session);
+      totalAmount += sessionCostsById.get(session.id) ?? 0;
+    }
+    return {
+      totalMinutes,
+      totalAmount,
+      sessionCount: selectedWorkerSessionsByFilter.length,
+    };
+  }, [selectedWorkerSessionsByFilter, sessionCostsById]);
+  const selectedWorkerPrintSessions = useMemo(
+    () =>
+      selectedWorkerSessionsSorted.filter((session) => {
+        if (workerPrintFilters.projectId && session.project_id !== workerPrintFilters.projectId) return false;
+        if (!workerPrintFilters.month && !workerPrintFilters.year) return true;
+        const sessionDate = new Date(session.clock_in);
+        if (Number.isNaN(sessionDate.getTime())) return false;
+        const sessionMonth = String(sessionDate.getMonth() + 1).padStart(2, "0");
+        const sessionYear = String(sessionDate.getFullYear());
+        if (workerPrintFilters.month && sessionMonth !== workerPrintFilters.month) return false;
+        if (workerPrintFilters.year && sessionYear !== workerPrintFilters.year) return false;
+        return true;
       }),
     [selectedWorkerSessionsSorted, workerPrintFilters]
   );
@@ -1829,7 +1882,14 @@ export default function SalaryCenterClient({
     const selectedProjectLabel = workerPrintFilters.projectId
       ? projectLabelsById.get(workerPrintFilters.projectId) ?? "פרויקט"
       : "כל הפרויקטים";
-    const selectedMonthLabel = formatMonthYearLabel(workerPrintFilters.year, workerPrintFilters.month);
+    const selectedMonthLabel =
+      workerPrintFilters.month && workerPrintFilters.year
+        ? formatMonthYearLabel(workerPrintFilters.year, workerPrintFilters.month)
+        : !workerPrintFilters.month && !workerPrintFilters.year
+          ? "כל החודשים"
+          : workerPrintFilters.year
+            ? `כל השנה ${workerPrintFilters.year}`
+            : `כל ${workerPrintFilters.month}/*`;
     const generatedAt = new Date();
     const generatedLabel = `${formatDate(generatedAt.toISOString())} ${generatedAt.toLocaleTimeString("he-IL", {
       hour: "2-digit",
@@ -1866,9 +1926,11 @@ export default function SalaryCenterClient({
         hours: formatMinutes(sessionWorkedMinutes(session)),
         hourlyRate: hourlyRateValue > 0 ? `${formatCurrency(hourlyRateValue)} / שעה` : "—",
         amount: formatCurrency(sessionCostsById.get(session.id) ?? 0),
+        notes: session.notes ?? "",
       };
     });
     const showHourlyColumns = workRowData.some((row) => row.isHourly);
+    const showNotesColumn = workRowData.some((row) => row.notes && row.notes.trim().length > 0);
     const workRows = workRowData
       .map((row) => {
         const hourlyCells = showHourlyColumns
@@ -1879,6 +1941,9 @@ export default function SalaryCenterClient({
             <td>${escapePrintHtml(row.isHourly ? row.hourlyRate : "—")}</td>
           `
           : "";
+        const notesCell = showNotesColumn
+          ? `<td>${escapePrintHtml(row.notes || "—")}</td>`
+          : "";
 
         return `
           <tr>
@@ -1886,10 +1951,12 @@ export default function SalaryCenterClient({
             ${hourlyCells}
             <td>${escapePrintHtml(row.workedAt)}</td>
             <td>${escapePrintHtml(row.amount)}</td>
+            ${notesCell}
           </tr>
         `;
       })
       .join("");
+    const notesHeader = showNotesColumn ? "<th>הערות</th>" : "";
     const workTableHeaders = showHourlyColumns
       ? `
         <th>תאריך</th>
@@ -1899,11 +1966,13 @@ export default function SalaryCenterClient({
         <th>תעריף שעתי</th>
         <th>פרויקט / נכס</th>
         <th>עלות עבודה</th>
+        ${notesHeader}
       `
       : `
         <th>תאריך</th>
         <th>פרויקט / נכס</th>
         <th>עלות עבודה</th>
+        ${notesHeader}
       `;
     const paymentRows = selectedWorkerPrintPayments
       .map(({ payment, scopedAmount }) => {
@@ -2252,6 +2321,7 @@ export default function SalaryCenterClient({
         </Card>
       ) : null}
 
+      {!isWorkerDetailMode ? <>
       <div className="space-y-2 py-1 text-center">
         <div className="flex justify-center">
           <select
@@ -2305,7 +2375,7 @@ export default function SalaryCenterClient({
         <Card>
           <CardContent className="grid gap-3 py-4 sm:grid-cols-3">
             <MiniStat
-              label="קבלנות לפי משמרות"
+              label="קבלנות"
               value={`${formatMinutes(summary.sessionOnlyMinutes)} • ${formatCurrency(summary.sessionOnlyAmount)}`}
             />
             <MiniStat
@@ -2366,8 +2436,8 @@ export default function SalaryCenterClient({
         <TabsContent value="employees" className="space-y-3">
           <Card>
             <CardContent className="py-4">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1140px] text-right text-xs">
+              <div>
+                <table className="w-full text-right text-xs">
                   <thead>
                     <tr className="border-b text-muted-foreground">
                       <th className="px-2 py-2 font-medium">פעולות</th>
@@ -2415,18 +2485,20 @@ export default function SalaryCenterClient({
                             role="button"
                             onClick={(event) => {
                               if (shouldIgnoreRowNavigation(event.target)) return;
-                              setSelectedWorkerId(worker.id);
+                              emitNavigationStart();
+                              router.push(`/payroll/workers/${worker.id}`);
                             }}
                             onKeyDown={(event) => {
                               if (shouldIgnoreRowNavigation(event.target)) return;
                               if (event.key !== "Enter" && event.key !== " ") return;
                               event.preventDefault();
-                              setSelectedWorkerId(worker.id);
+                              emitNavigationStart();
+                              router.push(`/payroll/workers/${worker.id}`);
                             }}
                           >
                             <td className="px-3 py-3">
                               <div className="flex flex-wrap justify-end gap-2">
-                                <Button variant="outline" size="sm" onClick={() => setSelectedWorkerId(worker.id)}>
+                                <Button variant="outline" size="sm" onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}>
                                   {"פרטים"}
                                 </Button>
                               </div>
@@ -2528,8 +2600,8 @@ export default function SalaryCenterClient({
         <TabsContent value="labor" className="space-y-3">
           <Card>
             <CardContent className="py-4">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] text-right text-xs">
+              <div>
+                <table className="w-full text-right text-xs">
                   <thead>
                     <tr className="border-b text-muted-foreground">
                       <th className="px-2 py-2 font-medium">פעולות</th>
@@ -2567,18 +2639,20 @@ export default function SalaryCenterClient({
                             role="button"
                             onClick={(event) => {
                               if (shouldIgnoreRowNavigation(event.target)) return;
-                              setSelectedWorkerId(worker.id);
+                              emitNavigationStart();
+                              router.push(`/payroll/workers/${worker.id}`);
                             }}
                             onKeyDown={(event) => {
                               if (shouldIgnoreRowNavigation(event.target)) return;
                               if (event.key !== "Enter" && event.key !== " ") return;
                               event.preventDefault();
-                              setSelectedWorkerId(worker.id);
+                              emitNavigationStart();
+                              router.push(`/payroll/workers/${worker.id}`);
                             }}
                           >
                             <td className="px-2 py-2">
                               <div className="flex flex-wrap justify-end gap-2">
-                                <Button variant="outline" size="sm" onClick={() => setSelectedWorkerId(worker.id)}>
+                                <Button variant="outline" size="sm" onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}>
                                   {"פרטים"}
                                 </Button>
                               </div>
@@ -2747,8 +2821,8 @@ export default function SalaryCenterClient({
 
           <Card>
             <CardContent className="py-4">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1100px] text-right text-sm">
+              <div>
+                <table className="w-full text-right text-sm">
                   <thead>
                     <tr className="border-b text-muted-foreground">
                       <th className="px-3 py-2 font-medium">פעולות</th>
@@ -2892,8 +2966,8 @@ export default function SalaryCenterClient({
                     {"הוספת משכורת"}
                   </Button>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] text-right text-sm">
+                <div>
+                  <table className="w-full text-right text-sm">
                     <thead>
                       <tr className="border-b text-muted-foreground">
                         <th className="px-3 py-2 font-medium">פעולות</th>
@@ -3030,7 +3104,7 @@ export default function SalaryCenterClient({
                           <button
                             key={worker.id}
                             type="button"
-                            onClick={() => setSelectedWorkerId(worker.id)}
+                            onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}
                             className="rounded-full border border-destructive/30 bg-background px-3 py-1 text-destructive transition hover:bg-destructive/10"
                           >
                             {worker.full_name ?? worker.email ?? "עובד"}
@@ -3312,21 +3386,19 @@ export default function SalaryCenterClient({
           </SalaryProtected>
         </TabsContent>
       </Tabs>
+      </> : null}
 
-      <Dialog
-        open={Boolean(selectedWorker)}
-        onOpenChange={(open) => {
-          if (!open && isPending) return;
-          if (!open) setSelectedWorkerId("");
-        }}
-      >
-        <DialogContent className="max-h-[90vh] w-full overflow-y-auto text-right sm:max-w-4xl" dir="rtl">
-          {selectedWorker ? (
-            <>
-              <DialogHeader className="sr-only">
-                <DialogTitle>{`פרטי עובד - ${selectedWorker.full_name ?? selectedWorker.email ?? "עובד"}`}</DialogTitle>
-              </DialogHeader>
-              <div className="mt-6 space-y-5">
+      {isWorkerDetailMode && !selectedWorker ? (
+        <Card>
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            {"העובד לא נמצא או שאין הרשאה לצפות בו."}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {isWorkerDetailMode && selectedWorker ? (
+        <section className="text-right" dir="rtl">
+          <div className="mt-2 space-y-5">
                 <Card>
                   <CardContent className="space-y-3 py-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3379,73 +3451,8 @@ export default function SalaryCenterClient({
                   onUnlockSuccess={loadProtectedData}
                 >
                   <Card>
-                    <CardContent className="space-y-4 py-5">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="text-lg font-semibold">כספים</div>
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <Button variant="outline" onClick={() => printSelectedWorkerSummary()}>
-                            הדפסת סיכום לעובד
-                          </Button>
-                          <Button onClick={() => openWorkerPaymentDialog()} disabled={isPending || selectedWorkerOpenDebtItems.length === 0}>
-                            הוספת תשלום
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <Field label="פרויקט להדפסה">
-                          <select
-                            value={workerPrintFilters.projectId}
-                            onChange={(event) =>
-                              setWorkerPrintFilters((current) => ({ ...current, projectId: event.target.value }))
-                            }
-                            className={selectClassName}
-                          >
-                            <option value="">כל הפרויקטים</option>
-                            {selectedWorkerProjectOptions.map((option) => (
-                              <option key={option.id} value={option.id}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </Field>
-                        <Field label="חודש להדפסה">
-                          <select
-                            value={workerPrintFilters.month}
-                            onChange={(event) =>
-                              setWorkerPrintFilters((current) => ({ ...current, month: event.target.value }))
-                            }
-                            className={selectClassName}
-                          >
-                            {Array.from({ length: 12 }, (_, index) => {
-                              const monthValue = String(index + 1).padStart(2, "0");
-                              return (
-                                <option key={monthValue} value={monthValue}>
-                                  {formatMonthYearLabel(workerPrintFilters.year, monthValue, false)}
-                                </option>
-                              );
-                            })}
-                          </select>
-                        </Field>
-                        <Field label="שנה להדפסה">
-                          <select
-                            value={workerPrintFilters.year}
-                            onChange={(event) =>
-                              setWorkerPrintFilters((current) => ({ ...current, year: event.target.value }))
-                            }
-                            className={selectClassName}
-                          >
-                            {selectedWorkerPrintYearOptions.map((year) => (
-                              <option key={year} value={year}>
-                                {year}
-                              </option>
-                            ))}
-                          </select>
-                        </Field>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {`בהדפסה יופיעו ${selectedWorkerPrintSessions.length} משמרות ו-${selectedWorkerPrintPayments.length} תשלומים עבור ${selectedWorkerProjectOptions.find((option) => option.id === workerPrintFilters.projectId)?.label ?? "כל הפרויקטים"}, ${formatMonthYearLabel(workerPrintFilters.year, workerPrintFilters.month)}.`}
-                      </div>
-                    <div className="grid gap-3 sm:grid-cols-4">
+                    <CardContent className="py-4">
+                      <div className="grid gap-3 sm:grid-cols-4">
                         <MiniStat label="סה״כ נצבר" value={formatCurrency(selectedWorkerBalance?.earned_amount ?? 0)} />
                         <MiniStat label="שולם כולל" value={formatCurrency(selectedWorkerBalance?.paid_amount ?? 0)} />
                         <MiniStat label="יתרה כוללת" value={formatCurrency(selectedWorkerBalance?.owed_amount ?? 0)} />
@@ -3454,12 +3461,83 @@ export default function SalaryCenterClient({
                           value={sharedPaymentStatusLabel(selectedWorkerBalance?.payment_status)}
                         />
                       </div>
+                    </CardContent>
+                  </Card>
+                </SalaryProtected>
+
+                <Card>
+                  <CardContent className="py-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="חודש">
+                        <select
+                          value={workerPrintFilters.month}
+                          onChange={(event) =>
+                            setWorkerPrintFilters((current) => ({ ...current, month: event.target.value }))
+                          }
+                          className={selectClassName}
+                        >
+                          <option value="">כל החודשים</option>
+                          {Array.from({ length: 12 }, (_, index) => {
+                            const monthValue = String(index + 1).padStart(2, "0");
+                            return (
+                              <option key={monthValue} value={monthValue}>
+                                {formatMonthYearLabel(workerPrintFilters.year || String(new Date().getFullYear()), monthValue, false)}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </Field>
+                      <Field label="שנה">
+                        <select
+                          value={workerPrintFilters.year}
+                          onChange={(event) =>
+                            setWorkerPrintFilters((current) => ({ ...current, year: event.target.value }))
+                          }
+                          className={selectClassName}
+                        >
+                          <option value="">כל השנים</option>
+                          {selectedWorkerPrintYearOptions.map((year) => (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Tabs defaultValue="finances" dir="rtl">
+                  <TabsList>
+                    <TabsTrigger value="finances">{"כספים"}</TabsTrigger>
+                    <TabsTrigger value="attendance">{"נוכחות"}</TabsTrigger>
+                    {canSelectedWorkerHaveAgreement ? (
+                      <TabsTrigger value="salary">{"שכר"}</TabsTrigger>
+                    ) : null}
+                    <TabsTrigger value="print">{"הדפסה"}</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="finances" className="space-y-5">
+                <SalaryProtected
+                  unlocked={salaryUnlocked}
+                  hasPasswordConfigured={hasPasswordConfigured}
+                  canUnlock={canManageSalary}
+                  onUnlockSuccess={loadProtectedData}
+                >
+                  <Card>
+                    <CardContent className="space-y-4 py-5">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-lg font-semibold">כספים</div>
+                        <Button onClick={() => openWorkerPaymentDialog()} disabled={isPending || selectedWorkerOpenDebtItems.length === 0}>
+                          הוספת תשלום
+                        </Button>
+                      </div>
                       <div className="space-y-2">
                         <div className="font-medium">היסטוריית תשלומים</div>
-                        {selectedWorkerPayments.length === 0 ? (
-                          <div className="text-sm text-muted-foreground">אין תשלומים שמורים לעובד הזה.</div>
+                        {selectedWorkerPaymentsByPeriod.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">אין תשלומים בתקופה שנבחרה.</div>
                         ) : (
-                          selectedWorkerPayments.map((payment) => (
+                          selectedWorkerPaymentsByPeriod.map((payment) => (
                             <div key={payment.id} className="rounded-xl border px-3 py-2 text-sm">
                               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                 <div className="font-medium">{formatCurrency(payment.amount)}</div>
@@ -3489,20 +3567,41 @@ export default function SalaryCenterClient({
                     </CardContent>
                   </Card>
                 </SalaryProtected>
+                  </TabsContent>
 
+                  <TabsContent value="attendance" className="space-y-5">
                 <Card>
-                  <CardContent className="space-y-3 py-5">
+                  <CardContent className="space-y-5 py-5">
                     <div className="text-lg font-semibold">{"נוכחות"}</div>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <MiniStat
-                        label="שעות החודש"
-                        value={formatMinutes(selectedWorkerMonthPayrollStats?.totalMinutes ?? selectedWorkerStats?.totalMinutes ?? 0)}
-                      />
-                      <MiniStat label="משמרות החודש" value={selectedWorkerStats ? String(selectedWorkerStats.sessionCount) : "0"} />
-                      <MiniStat label="עלות החודש" value={formatCurrency(selectedWorkerTotalPay)} />
+                    <Field label="פרויקט">
+                      <select
+                        value={sessionsProjectId}
+                        onChange={(event) => setSessionsProjectId(event.target.value)}
+                        className={selectClassName}
+                      >
+                        <option value="">כל הפרויקטים</option>
+                        {selectedWorkerProjectOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <div className={`grid gap-3 ${shouldShowSessionHours(selectedWorkerType) ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+                      {shouldShowSessionHours(selectedWorkerType) ? (
+                        <MiniStat
+                          label="שעות בתקופה"
+                          value={formatMinutes(selectedWorkerFilteredStats.totalMinutes)}
+                        />
+                      ) : null}
+                      <MiniStat label="משמרות בתקופה" value={String(selectedWorkerFilteredStats.sessionCount)} />
+                      <MiniStat label="עלות בתקופה" value={formatCurrency(selectedWorkerFilteredStats.totalAmount)} />
                     </div>
                     <div className="space-y-2">
-                      {selectedWorkerSessionsSorted.slice(0, 12).map((session) => (
+                      {selectedWorkerSessionsByFilter.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">אין משמרות בתקופה שנבחרה.</div>
+                      ) : null}
+                      {selectedWorkerSessionsByFilter.map((session) => (
                         <div key={session.id} className="rounded-xl border px-3 py-2 text-sm">
                           {(() => {
                             const payrollPeriod = getSessionPayrollPeriod(session);
@@ -3567,14 +3666,16 @@ export default function SalaryCenterClient({
                     </div>
                   </CardContent>
                 </Card>
+                  </TabsContent>
 
-                {canSelectedWorkerHaveAgreement ? (
-                  <SalaryProtected
-                    unlocked={salaryUnlocked}
-                    hasPasswordConfigured={hasPasswordConfigured}
-                    canUnlock={canManageSalary}
-                    onUnlockSuccess={loadProtectedData}
-                  >
+                  {canSelectedWorkerHaveAgreement ? (
+                    <TabsContent value="salary" className="space-y-5">
+                <SalaryProtected
+                  unlocked={salaryUnlocked}
+                  hasPasswordConfigured={hasPasswordConfigured}
+                  canUnlock={canManageSalary}
+                  onUnlockSuccess={loadProtectedData}
+                >
                     <Card>
                       <CardContent className="space-y-3 py-4">
                         <div className="text-lg font-semibold">{"שכר"}</div>
@@ -3694,13 +3795,134 @@ export default function SalaryCenterClient({
                         </div>
                       </CardContent>
                     </Card>
-                  </SalaryProtected>
-                ) : null}
-              </div>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+                </SalaryProtected>
+                    </TabsContent>
+                  ) : null}
+
+                  <TabsContent value="print" className="space-y-5">
+                    <Card>
+                      <CardContent className="space-y-4 py-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="text-lg font-semibold">הדפסה</div>
+                          <Button onClick={() => printSelectedWorkerSummary()}>
+                            הדפסת סיכום לעובד
+                          </Button>
+                        </div>
+                        <Field label="פרויקט">
+                          <select
+                            value={workerPrintFilters.projectId}
+                            onChange={(event) =>
+                              setWorkerPrintFilters((current) => ({ ...current, projectId: event.target.value }))
+                            }
+                            className={selectClassName}
+                          >
+                            <option value="">כל הפרויקטים</option>
+                            {selectedWorkerProjectOptions.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <div className="text-sm text-muted-foreground">
+                          {`בהדפסה יופיעו ${selectedWorkerPrintSessions.length} משמרות ו-${selectedWorkerPrintPayments.length} תשלומים עבור ${selectedWorkerProjectOptions.find((option) => option.id === workerPrintFilters.projectId)?.label ?? "כל הפרויקטים"}, ${formatPrintPeriodLabel(workerPrintFilters.year, workerPrintFilters.month)}.`}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardContent className="space-y-4 py-5 text-right">
+                        <div className="space-y-1 border-b pb-3">
+                          <div className="text-base font-semibold">תצוגה מקדימה</div>
+                          <div className="text-sm">
+                            <span className="font-medium">{selectedWorker.full_name ?? selectedWorker.email ?? "עובד"}</span>
+                            {selectedWorker.phone ? <span className="text-muted-foreground"> • {selectedWorker.phone}</span> : null}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {`פרויקט: ${selectedWorkerProjectOptions.find((option) => option.id === workerPrintFilters.projectId)?.label ?? "כל הפרויקטים"} • תקופה: ${formatPrintPeriodLabel(workerPrintFilters.year, workerPrintFilters.month)}`}
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <MiniStat label="סה״כ נצבר לתקופה" value={formatCurrency(selectedWorkerPrintSummary.earned)} />
+                          <MiniStat label="סה״כ שולם לתקופה" value={formatCurrency(selectedWorkerPrintSummary.paid)} />
+                          <MiniStat label="יתרה לתשלום" value={formatCurrency(selectedWorkerPrintSummary.owed)} />
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="font-medium">פירוט עבודה</div>
+                          {selectedWorkerPrintSessions.length === 0 ? (
+                            <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                              אין משמרות להצגה במסננים שנבחרו.
+                            </div>
+                          ) : (
+                            <div className="rounded-md border">
+                              <table className="w-full text-sm">
+                                <thead className="bg-muted/50 text-muted-foreground">
+                                  <tr>
+                                    <th className="px-2 py-2 text-right font-medium">תאריך</th>
+                                    <th className="px-2 py-2 text-right font-medium">שעות</th>
+                                    <th className="px-2 py-2 text-right font-medium">פרויקט / נכס</th>
+                                    <th className="px-2 py-2 text-right font-medium">עלות</th>
+                                    <th className="px-2 py-2 text-right font-medium">הערות</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                  {selectedWorkerPrintSessions.map((session) => (
+                                    <tr key={session.id}>
+                                      <td className="px-2 py-2 whitespace-nowrap">{formatDate(session.clock_in)}</td>
+                                      <td className="px-2 py-2 whitespace-nowrap">{formatMinutes(sessionWorkedMinutes(session))}</td>
+                                      <td className="px-2 py-2">{getSessionLinkLabel(session, projectLabelsById, propertyLabelsById)}</td>
+                                      <td className="px-2 py-2 whitespace-nowrap">{formatCurrency(sessionCostsById.get(session.id) ?? 0)}</td>
+                                      <td className="px-2 py-2 text-muted-foreground">{session.notes || "—"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="font-medium">פירוט תשלומים</div>
+                          {selectedWorkerPrintPayments.length === 0 ? (
+                            <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                              אין תשלומים להצגה במסננים שנבחרו.
+                            </div>
+                          ) : (
+                            <div className="rounded-md border">
+                              <table className="w-full text-sm">
+                                <thead className="bg-muted/50 text-muted-foreground">
+                                  <tr>
+                                    <th className="px-2 py-2 text-right font-medium">תאריך</th>
+                                    <th className="px-2 py-2 text-right font-medium">סכום</th>
+                                    <th className="px-2 py-2 text-right font-medium">איך שולם</th>
+                                    <th className="px-2 py-2 text-right font-medium">הערות</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                  {selectedWorkerPrintPayments.map(({ payment, scopedAmount }) => (
+                                    <tr key={payment.id}>
+                                      <td className="px-2 py-2 whitespace-nowrap">{formatDate(payment.payment_date)}</td>
+                                      <td className="px-2 py-2 whitespace-nowrap">{formatCurrency(scopedAmount)}</td>
+                                      <td className="px-2 py-2">
+                                        {[payment.payment_method, payment.reference_number].filter(Boolean).join(" • ") || "ללא פירוט"}
+                                      </td>
+                                      <td className="px-2 py-2 text-muted-foreground">{payment.notes || "—"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
+          </div>
+        </section>
+      ) : null}
 
       <Dialog
         open={workerAccessDialogOpen}
@@ -3774,7 +3996,7 @@ export default function SalaryCenterClient({
                 }
                 className={selectClassName}
               >
-                <option value="session_only">{"קבלנות לפי משמרות"}</option>
+                <option value="session_only">{"קבלנות"}</option>
                 <option value="monthly_payslip">{"חודשי גלובלי"}</option>
                 <option value="hourly_payslip">{"שעתי עם תלוש"}</option>
               </select>
@@ -4124,7 +4346,7 @@ export default function SalaryCenterClient({
                 }
                 className={selectClassName}
               >
-                <option value="session_only">{"קבלנות לפי משמרות"}</option>
+                <option value="session_only">{"קבלנות"}</option>
                 <option value="monthly_payslip">{"חודשי גלובלי"}</option>
                 <option value="hourly_payslip">{"שעתי עם תלוש"}</option>
               </select>
@@ -4958,6 +5180,13 @@ function formatLocalDate(date: Date) {
 
 function formatLocalTime(date: Date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatPrintPeriodLabel(year: string, month: string) {
+  if (!month && !year) return "כל החודשים והשנים";
+  if (year && !month) return `כל החודשים בשנת ${year}`;
+  if (month && !year) return `${formatMonthYearLabel(String(new Date().getFullYear()), month, false)} בכל השנים`;
+  return formatMonthYearLabel(year, month);
 }
 
 function formatMonthYearLabel(year: string, month: string, includeYear = true) {

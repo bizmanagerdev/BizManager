@@ -1,6 +1,5 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
-import { NavLink } from "@/components/NavLink";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { requireProfile } from "@/lib/auth/requireProfile";
@@ -404,9 +403,6 @@ export default async function SalesOrderPage({
             <Link href="/sales/orders/new" className="text-sm text-primary">
               הזמנה חדשה
             </Link>
-            <NavLink to="/sales" className="text-sm text-primary">
-              חזרה למכירות
-            </NavLink>
           </div>
         </div>
 

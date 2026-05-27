@@ -381,8 +381,8 @@ export default function TasksPageClient(props: Props) {
           </div>
 
           <Card className="hidden overflow-hidden border-border/70 shadow-sm md:block">
-            <div className="overflow-x-auto">
-            <table className="min-w-[1100px] w-full text-sm">
+            <div>
+            <table className="w-full text-sm">
               <thead className="bg-secondary/40 text-muted-foreground">
                 <tr className="border-b border-border/70">
                   <th className="px-4 py-3 text-right font-medium">משימה</th>
@@ -413,7 +413,7 @@ export default function TasksPageClient(props: Props) {
                       </td>
                       <td className="px-4 py-4">
                         <select
-                          className="h-8 min-w-[120px] rounded-md border border-input bg-background px-2 text-xs"
+                          className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
                           value={task.status ?? "todo"}
                           disabled={updatingStatusId === task.id || deletingId === task.id}
                           onChange={(e) => void updateTaskStatus(task.id, e.target.value)}
@@ -426,7 +426,7 @@ export default function TasksPageClient(props: Props) {
                         </select>
                       </td>
                       <td className="px-4 py-4">
-                        <div className="flex min-w-[220px] flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <Button asChild type="button" variant="outline" size="sm">
                             <Link href={`/tasks/${encodeURIComponent(task.id)}`} onClick={handleNavigationStart}>פרטים</Link>
                           </Button>
