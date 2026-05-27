@@ -18,6 +18,7 @@ import {
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import type { UserRole } from "@/lib/auth/requireProfile";
+import { getBusinessDomainLabel } from "@/lib/expenses";
 import {
   calculateSessionLaborCost,
   formatCurrency,
@@ -1364,7 +1365,7 @@ export default function PayrollAdminClient({
                 }
                 className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
               >
-                <option value="general_business">כללי</option>
+                <option value="general_business">שוטף</option>
                 <option value="logistics_projects">פרויקטים</option>
                 <option value="property_management">ניהול נכסים</option>
                 <option value="sales">מכירות</option>
@@ -1691,17 +1692,7 @@ function getSessionWorkLabel(
   if (session.business_domain === "sales") return "מכירות";
   if (session.business_domain === "home") return "בית";
   if (session.business_domain === "charity") return "צדקה";
-  return "עבודה כללית";
-}
-
-function getBusinessDomainLabel(value: string | null | undefined) {
-  if (value === "general_business") return "כללי";
-  if (value === "property_management") return "ניהול נכסים";
-  if (value === "sales") return "מכירות";
-  if (value === "logistics_projects") return "פרויקטים";
-  if (value === "home") return "בית";
-  if (value === "charity") return "צדקה";
-  return value || "כללי";
+  return "עבודה שוטפת";
 }
 
 function getRoleLabel(value: string | null | undefined) {

@@ -159,7 +159,7 @@ function sourceTypeTitle(kind: FinancialSourceKind) {
   if (kind === "project") return "פרויקט";
   if (kind === "property") return "נכס";
   if (kind === "order") return "הזמנה";
-  return "כללי";
+  return "שוטף";
 }
 
 function isEditableExpenseEntry(entry: FinancialEntry): entry is EditableExpenseEntry {
@@ -905,7 +905,7 @@ export default function FinancialPageClient({
                         {group.total.count} תנועות • נטו {formatCurrency(group.total.net)}
                       </div>
                     </div>
-                    <Badge variant="outline">{group.domain ? getBusinessDomainLabel(group.domain) : "כללי"}</Badge>
+                    <Badge variant="outline">{group.domain ? getBusinessDomainLabel(group.domain) : "שוטף"}</Badge>
                   </div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <div className="rounded-xl bg-muted/30 p-3 text-sm">

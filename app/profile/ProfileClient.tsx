@@ -10,7 +10,7 @@ import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { UserProfile } from "@/lib/auth/requireProfile";
-import { EXPENSE_BUSINESS_DOMAINS, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { shouldShowSessionHours } from "@/lib/payroll-worker-type";
 import {
   calculateSessionLaborCost,
@@ -547,13 +547,4 @@ function SummaryCard({ title, value, hint }: { title: string; value: string; hin
 }
 function StatCard({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl border bg-muted/20 p-4 text-right"><div className="text-sm text-muted-foreground">{label}</div><div className="mt-1 text-xl font-semibold">{value}</div></div>;
-}
-function getBusinessDomainLabel(value: string | null | undefined) {
-  if (value === "general_business") return "כללי";
-  if (value === "property_management") return "ניהול נכסים";
-  if (value === "sales") return "מכירות";
-  if (value === "logistics_projects") return "פרויקטים";
-  if (value === "home") return "בית";
-  if (value === "charity") return "צדקה";
-  return value || "כללי";
 }

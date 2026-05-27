@@ -199,12 +199,12 @@ export function buildSource(args: {
     };
   }
   if (businessDomain === "property_management") {
-    return { kind: "general" as const, id: null, label: "פעילות נכסים כללית", href: null };
+    return { kind: "general" as const, id: null, label: "פעילות נכסים שוטפת", href: null };
   }
   if (businessDomain === "sales") {
-    return { kind: "general" as const, id: null, label: "פעילות מכירות כללית", href: null };
+    return { kind: "general" as const, id: null, label: "פעילות מכירות שוטפת", href: null };
   }
-  return { kind: "general" as const, id: null, label: "פעילות כללית", href: null };
+  return { kind: "general" as const, id: null, label: "פעילות שוטפת", href: null };
 }
 
 export function resolvePaymentLinks(row: PaymentRow) {

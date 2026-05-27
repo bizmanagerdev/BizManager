@@ -21,6 +21,7 @@ import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import {
   EXPENSE_BUSINESS_DOMAINS,
+  getBusinessDomainLabel,
   mapProjectTypeToExpenseDomain,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
@@ -3205,12 +3206,3 @@ export default function DashboardActions({
   );
 }
 
-function getBusinessDomainLabel(value: string | null | undefined) {
-  if (value === "general_business") return "כללי";
-  if (value === "property_management") return "ניהול נכסים";
-  if (value === "sales") return "מכירות";
-  if (value === "logistics_projects") return "פרויקטים";
-  if (value === "home") return "בית";
-  if (value === "charity") return "צדקה";
-  return value || "כללי";
-}

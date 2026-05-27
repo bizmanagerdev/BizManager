@@ -260,7 +260,7 @@ export function getSessionLinkLabel(
   if (session.business_domain === "sales") return "מכירות";
   if (session.business_domain === "home") return "בית";
   if (session.business_domain === "charity") return "צדקה";
-  return "כללי";
+  return "שוטף";
 }
 
 export function getWorkerAccessLabel(user: Pick<SalaryCenterUserRow, "role" | "system_access">) {

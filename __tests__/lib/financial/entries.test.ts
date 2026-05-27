@@ -173,7 +173,7 @@ function makeEntry(overrides: Partial<FinancialEntry> = {}): FinancialEntry {
     amount: 100,
     signedAmount: 100,
     businessDomain: "general_business",
-    domainName: "כללי",
+    domainName: "שוטף",
     flowDate: "2024-04-01",
     recordedDate: "2024-04-01",
     dueDate: null,

@@ -2672,7 +2672,7 @@ export default function SalaryCenterClient({
                   className={selectClassName}
                 >
                   <option value="">{"הכול"}</option>
-                  <option value="general_business">{"כללי"}</option>
+                  <option value="general_business">{"שוטף"}</option>
                   <option value="logistics_projects">{"פרויקטים"}</option>
                   <option value="property_management">{"נכסים"}</option>
                   <option value="sales">{"מכירות"}</option>
@@ -4332,7 +4332,7 @@ export default function SalaryCenterClient({
                 }
                 className={selectClassName}
               >
-                <option value="general_business">{"כללי"}</option>
+                <option value="general_business">{"שוטף"}</option>
                 <option value="logistics_projects">{"פרויקטים"}</option>
                 <option value="property_management">{"נכסים"}</option>
                 <option value="sales">{"מכירות"}</option>
