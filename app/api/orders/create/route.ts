@@ -32,6 +32,7 @@ type CreateOrderPayload = {
     payment_date?: string | null;
     payment_method?: string | null;
     reference_number?: string | null;
+    check_number?: string | null;
     notes?: string | null;
   }[];
   items?: CreateOrderItemPayload[];
@@ -154,24 +155,34 @@ export async function POST(req: Request) {
     const orderId = typeof data === "string" ? data : null;
     if (!orderId) return NextResponse.json({ error: "Failed to create order" }, { status: 500 });
 
+    const insertedPaymentIds: string[] = [];
     if (payments.length > 0) {
-      const { error: paymentsInsertError } = await supabase.from("payments").insert(
-        payments.map((payment) => ({
-          ...buildPaymentInsert({
-            amountTotal: payment.amount_total,
-            businessDomain: "sales",
-            orderId,
-            paymentDate: payment.payment_date!,
-            paymentMethod: payment.payment_method!,
-            referenceNumber: payment.reference_number,
-            notes: payment.notes,
-            recordedBy: user.id,
-          }),
-        }))
-      );
+      const { data: insertedPaymentRows, error: paymentsInsertError } = await supabase
+        .from("payments")
+        .insert(
+          payments.map((payment) => ({
+            ...buildPaymentInsert({
+              amountTotal: payment.amount_total,
+              businessDomain: "sales",
+              orderId,
+              paymentDate: payment.payment_date!,
+              paymentMethod: payment.payment_method!,
+              referenceNumber: payment.reference_number,
+              checkNumber: payment.payment_method === "check" ? payment.check_number : null,
+              notes: payment.notes,
+              recordedBy: user.id,
+            }),
+          }))
+        )
+        .select("id");
 
       if (paymentsInsertError) {
         return NextResponse.json({ error: paymentsInsertError.message }, { status: 400 });
+      }
+      for (const row of insertedPaymentRows ?? []) {
+        if (row && typeof (row as { id?: unknown }).id === "string") {
+          insertedPaymentIds.push((row as { id: string }).id);
+        }
       }
     }
 
@@ -220,6 +231,7 @@ export async function POST(req: Request) {
       order_id: orderId,
       payment_status: derivedPaymentStatus,
       total_paid: totalPaid,
+      payment_ids: insertedPaymentIds,
       morning_auto_invoice: {
         skipped: invoiceOutcome.skipped,
         reason: invoiceOutcome.ok ? invoiceOutcome.reason : invoiceOutcome.reason,

@@ -26,6 +26,8 @@ import {
   paymentMethodLabel,
   paymentStatusLabel,
 } from "@/lib/orders/paymentStatus";
+import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
+import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 
 type Row = Record<string, unknown>;
 
@@ -83,6 +85,8 @@ type PaymentDraft = {
   amount_total: string;
   payment_method: string;
   reference_number: string;
+  check_number: string;
+  check_photo_files: File[];
   notes: string;
 };
 
@@ -610,6 +614,8 @@ export default function NewOrderClient({
         amount_total: "",
         payment_method: "",
         reference_number: "",
+        check_number: "",
+        check_photo_files: [],
         notes: "",
       },
     ]);
@@ -691,6 +697,10 @@ export default function NewOrderClient({
             payment_date: payment.payment_date,
             payment_method: payment.payment_method,
             reference_number: payment.reference_number.trim() || null,
+            check_number:
+              payment.payment_method === "check" && payment.check_number.trim()
+                ? payment.check_number.trim()
+                : null,
             notes: payment.notes.trim() || null,
           })),
           items: lines.map((line) => ({
@@ -706,11 +716,26 @@ export default function NewOrderClient({
       const json = (await res.json().catch(() => ({}))) as {
         error?: string;
         order_id?: string;
+        payment_ids?: string[];
       };
 
       if (!res.ok || !json.order_id) {
         setSubmitError(json.error ?? (isEditMode ? "עדכון ההזמנה נכשל." : "יצירת ההזמנה נכשלה."));
         return;
+      }
+
+      const insertedPaymentIds = Array.isArray(json.payment_ids) ? json.payment_ids : [];
+      for (let i = 0; i < newPayments.length; i++) {
+        const payment = newPayments[i];
+        const paymentId = insertedPaymentIds[i];
+        if (
+          !paymentId ||
+          payment.payment_method !== "check" ||
+          payment.check_photo_files.length === 0
+        ) {
+          continue;
+        }
+        await uploadCheckPhotos(paymentId, payment.check_photo_files);
       }
 
       if (embedded) {
@@ -1265,6 +1290,16 @@ export default function NewOrderClient({
                       ))}
                     </select>
                   </div>
+
+                  {payment.payment_method === "check" ? (
+                    <CheckDetailsFields
+                      checkNumber={payment.check_number}
+                      onCheckNumberChange={(value) => updatePaymentDraft(index, { check_number: value })}
+                      photoFiles={payment.check_photo_files}
+                      onPhotoFilesChange={(files) => updatePaymentDraft(index, { check_photo_files: files })}
+                      disabled={actionLocked}
+                    />
+                  ) : null}
 
                   <details className="rounded-md border border-dashed p-3" open={Boolean(payment.reference_number || payment.notes)}>
                     <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
