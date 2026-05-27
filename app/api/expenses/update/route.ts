@@ -41,17 +41,17 @@ export async function POST(req: Request) {
     const expenseDate = typeof body.expense_date === "string" ? body.expense_date : null;
 
     if (!expenseId) {
-      return NextResponse.json({ error: "Missing id" }, { status: 400 });
+      return NextResponse.json({ error: "חסר מזהה הוצאה." }, { status: 400 });
     }
     if (!category || !Number.isFinite(amountNumber) || amountNumber <= 0) {
-      return NextResponse.json({ error: "Missing category or amount" }, { status: 400 });
+      return NextResponse.json({ error: "יש להזין קטגוריה וסכום תקין." }, { status: 400 });
     }
     if (!expenseDate) {
-      return NextResponse.json({ error: "Missing expense_date" }, { status: 400 });
+      return NextResponse.json({ error: "יש להזין תאריך להוצאה." }, { status: 400 });
     }
     if ([projectId, orderId, propertyId].filter(Boolean).length > 1) {
       return NextResponse.json(
-        { error: "Only one of project_id, order_id, or property_id can be provided" },
+        { error: "ניתן לשייך הוצאה למקור אחד בלבד (פרויקט / הזמנה / נכס)." },
         { status: 400 }
       );
     }
@@ -78,29 +78,29 @@ export async function POST(req: Request) {
     if (projectExpenseReadError) {
       return NextResponse.json({ error: projectExpenseReadError.message }, { status: 400 });
     }
-    if (!expenseRow?.id) return NextResponse.json({ error: "Expense not found" }, { status: 404 });
+    if (!expenseRow?.id) return NextResponse.json({ error: "ההוצאה לא נמצאה." }, { status: 404 });
 
     const effectiveProjectId = expenseRow.project_id || projectExpenseRow?.project_id || "";
     const effectiveOrderId = expenseRow.order_id || "";
     const effectivePropertyId = expenseRow.property_id || "";
 
     if (effectiveProjectId && projectId !== effectiveProjectId) {
-      return NextResponse.json({ error: "Expense not found for project" }, { status: 404 });
+      return NextResponse.json({ error: "ההוצאה לא משויכת לפרויקט שנבחר." }, { status: 404 });
     }
     if (effectiveOrderId && orderId !== effectiveOrderId) {
-      return NextResponse.json({ error: "Expense not found for order" }, { status: 404 });
+      return NextResponse.json({ error: "ההוצאה לא משויכת להזמנה שנבחרה." }, { status: 404 });
     }
     if (effectivePropertyId && propertyId !== effectivePropertyId) {
-      return NextResponse.json({ error: "Expense not found for property" }, { status: 404 });
+      return NextResponse.json({ error: "ההוצאה לא משויכת לנכס שנבחר." }, { status: 404 });
     }
     if (!effectiveProjectId && projectId) {
-      return NextResponse.json({ error: "Expense not found for project" }, { status: 404 });
+      return NextResponse.json({ error: "ההוצאה לא משויכת לפרויקט שנבחר." }, { status: 404 });
     }
     if (!effectiveOrderId && orderId) {
-      return NextResponse.json({ error: "Expense not found for order" }, { status: 404 });
+      return NextResponse.json({ error: "ההוצאה לא משויכת להזמנה שנבחרה." }, { status: 404 });
     }
     if (!effectivePropertyId && propertyId) {
-      return NextResponse.json({ error: "Expense not found for property" }, { status: 404 });
+      return NextResponse.json({ error: "ההוצאה לא משויכת לנכס שנבחר." }, { status: 404 });
     }
 
     const lockedBusinessDomain = effectiveProjectId
@@ -117,10 +117,10 @@ export async function POST(req: Request) {
       "general_business";
 
     if (lockedBusinessDomain && nextBusinessDomain !== lockedBusinessDomain) {
-      return NextResponse.json({ error: "Invalid business_domain for linked expense" }, { status: 400 });
+      return NextResponse.json({ error: "תחום עסקי לא תואם להוצאה המקושרת." }, { status: 400 });
     }
     if (!isExpenseBusinessDomain(nextBusinessDomain)) {
-      return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
+      return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
     }
 
     const rawPaymentStatus = typeof body.payment_status === "string" ? body.payment_status.trim() : null;
@@ -198,7 +198,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ expense, projectExpense });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = err instanceof Error ? err.message : "שגיאה לא צפויה בעת עדכון ההוצאה.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

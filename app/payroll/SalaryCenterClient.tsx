@@ -69,6 +69,7 @@ import {
   type WorkerDebtItemRow,
   type WorkerPaymentRow,
 } from "@/lib/payroll-center";
+import { toHebrewError } from "@/lib/error-messages";
 
 type Props = {
   viewerRole: UserRole;
@@ -915,26 +916,36 @@ export default function SalaryCenterClient({
   }
 
   async function postJson(path: string, payload: Record<string, unknown>) {
-    const response = await fetch(path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    let response: Response;
+    try {
+      response = await fetch(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      throw new Error("אין חיבור לשרת. נסו שוב.");
+    }
     const json = (await response.json().catch(() => ({}))) as { error?: string };
     if (!response.ok) {
-      throw new Error(json.error ?? "Request failed.");
+      throw new Error(toHebrewError(json.error ?? response.statusText));
     }
     return json;
   }
 
-  function runAction(action: () => Promise<void>) {
+  function runAction(action: () => Promise<void>, options?: { onError?: (message: string) => void }) {
     setError("");
     setMessage("");
     startTransition(async () => {
       try {
         await action();
       } catch (actionError: unknown) {
-        setError(actionError instanceof Error ? actionError.message : "Unknown error");
+        const message = toHebrewError(actionError);
+        if (options?.onError) {
+          options.onError(message);
+        } else {
+          setError(message);
+        }
       }
     });
   }
@@ -1038,7 +1049,7 @@ export default function SalaryCenterClient({
             : "המשמרת עודכנה."
       );
       await refreshAll();
-    });
+    }, { onError: (message) => setSessionError(message) });
   }
 
   function updateSessionSplitPart(partId: string, changes: Partial<Omit<SplitPartDraft, "id">>) {
@@ -1099,7 +1110,7 @@ export default function SalaryCenterClient({
       setSessionSplitParts([]);
       setMessage("המשמרת פוצלה.");
       await refreshAll();
-    });
+    }, { onError: (message) => setSessionError(message) });
   }
 
   function renderCompactSessionLinkField(
@@ -4517,7 +4528,14 @@ export default function SalaryCenterClient({
                 />
               </Field>
             </div>
-            {sessionError ? <div className="md:col-span-2 text-sm text-destructive">{sessionError}</div> : null}
+            {sessionError ? (
+              <div
+                role="alert"
+                className="md:col-span-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+              >
+                {sessionError}
+              </div>
+            ) : null}
           </div>
 
           {sessionMode === "edit" && sessionDialogSourceSession?.clock_out ? (

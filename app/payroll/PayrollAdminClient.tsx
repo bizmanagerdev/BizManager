@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
+import { toHebrewError } from "@/lib/error-messages";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDown, GripVertical, Trash2 } from "lucide-react";
@@ -453,7 +454,7 @@ export default function PayrollAdminClient({
           return;
         }
         if (!result.ok) {
-          setCreateSessionError(result.error ?? "יצירת המשמרת נכשלה.");
+          setCreateSessionError(toHebrewError(result.error, "יצירת המשמרת נכשלה."));
           return;
         }
         setCreateSessionOpen(false);
@@ -461,7 +462,7 @@ export default function PayrollAdminClient({
         setSaveMessage("המשמרת נוספה בהצלחה.");
         router.refresh();
       } catch (error: unknown) {
-        setCreateSessionError(error instanceof Error ? error.message : "Unknown error");
+        setCreateSessionError(toHebrewError(error, "יצירת המשמרת נכשלה."));
       }
     });
   }
@@ -1478,7 +1479,14 @@ export default function PayrollAdminClient({
             <div className="md:col-span-2 text-xs text-muted-foreground">
               {`משך: ${formatMinutes(createSessionWorkedMinutes)}`}
             </div>
-            {createSessionError ? <div className="md:col-span-2 text-sm text-destructive">{createSessionError}</div> : null}
+            {createSessionError ? (
+              <div
+                role="alert"
+                className="md:col-span-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+              >
+                {createSessionError}
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { clearDraft("session-create"); setCreateSessionOpen(false); }} disabled={isPending}>

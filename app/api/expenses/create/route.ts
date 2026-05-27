@@ -41,18 +41,18 @@ export async function POST(req: Request) {
       typeof body.amount === "number" ? body.amount : typeof body.amount === "string" ? Number(body.amount) : NaN;
 
     if (!category || !Number.isFinite(amountNumber)) {
-      return NextResponse.json({ error: "Missing category or amount" }, { status: 400 });
+      return NextResponse.json({ error: "יש להזין קטגוריה וסכום." }, { status: 400 });
     }
 
     const expenseDate = typeof body.expense_date === "string" ? body.expense_date : null;
     if (!expenseDate) {
-      return NextResponse.json({ error: "Missing expense_date" }, { status: 400 });
+      return NextResponse.json({ error: "יש להזין תאריך להוצאה." }, { status: 400 });
     }
 
     const selectedLinks = [projectId, orderId, propertyId].filter(Boolean);
     if (selectedLinks.length > 1) {
       return NextResponse.json(
-        { error: "Only one of project_id, order_id, or property_id can be provided" },
+        { error: "ניתן לשייך הוצאה למקור אחד בלבד (פרויקט / הזמנה / נכס)." },
         { status: 400 }
       );
     }
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: projectError.message }, { status: 400 });
       }
       if (!project?.id) {
-        return NextResponse.json({ error: "Invalid project_id" }, { status: 400 });
+        return NextResponse.json({ error: "הפרויקט שנבחר לא קיים." }, { status: 400 });
       }
 
       if (!businessDomain) {
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: orderError.message }, { status: 400 });
       }
       if (!order?.id) {
-        return NextResponse.json({ error: "Invalid order_id" }, { status: 400 });
+        return NextResponse.json({ error: "ההזמנה שנבחרה לא קיימת." }, { status: 400 });
       }
     }
 
@@ -110,12 +110,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: propertyError.message }, { status: 400 });
       }
       if (!property?.id) {
-        return NextResponse.json({ error: "Invalid property_id" }, { status: 400 });
+        return NextResponse.json({ error: "הנכס שנבחר לא קיים." }, { status: 400 });
       }
     }
 
     if (!isExpenseBusinessDomain(businessDomain)) {
-      return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
+      return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
     }
 
     const rawPaymentStatus = typeof body.payment_status === "string" ? body.payment_status.trim() : null;
@@ -160,7 +160,7 @@ export async function POST(req: Request) {
     const createdExpenseId = typeof expense?.id === "string" ? expense.id : null;
 
     if (expenseError) return NextResponse.json({ error: expenseError.message }, { status: 400 });
-    if (!createdExpenseId) return NextResponse.json({ error: "Failed to create expense" }, { status: 500 });
+    if (!createdExpenseId) return NextResponse.json({ error: "יצירת ההוצאה נכשלה." }, { status: 500 });
 
     let projectExpense: Record<string, unknown> | null = null;
 
@@ -196,7 +196,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ expense, projectExpense });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = err instanceof Error ? err.message : "שגיאה לא צפויה בעת יצירת ההוצאה.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

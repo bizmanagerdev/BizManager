@@ -23,6 +23,7 @@ import {
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import { offlineFetch } from "@/lib/offline-queue";
+import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import type { FinancialAttachment } from "@/lib/payments";
 
@@ -101,7 +102,7 @@ async function uploadAttachment(expenseId: string, file: File): Promise<Financia
   form.set("file", file);
   const res = await fetch("/api/financial-attachments/upload", { method: "POST", body: form });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof json?.error === "string" ? json.error : "Upload failed");
+  if (!res.ok) throw new Error(typeof json?.error === "string" ? json.error : "העלאת הקובץ נכשלה.");
   return (json?.attachment ?? null) as FinancialAttachment | null;
 }
 
@@ -121,6 +122,7 @@ export function ExpenseDialog({
 }: Props) {
   const isEditing = Boolean(editingExpense);
   const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
   const [projectId, setProjectId] = useState("");
@@ -193,24 +195,30 @@ export function ExpenseDialog({
       setExistingAttachments([]);
     }
     setAttachmentFiles([]);
+    setErrorMessage("");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const handleSubmit = async () => {
+    setErrorMessage("");
     if (!effectiveDomain) {
+      setErrorMessage("יש לבחור תחום עסקי.");
       toast.error("יש לבחור תחום");
       return;
     }
     const amountNumber = Number(amount);
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      setErrorMessage("יש להזין סכום תקין (גדול מאפס).");
       toast.error("יש להזין סכום תקין");
       return;
     }
     if (!expenseDate) {
+      setErrorMessage("יש לבחור תאריך.");
       toast.error("יש לבחור תאריך");
       return;
     }
     if (!category.trim()) {
+      setErrorMessage("יש להזין קטגוריה.");
       toast.error("יש להזין קטגוריה");
       return;
     }
@@ -250,7 +258,9 @@ export function ExpenseDialog({
           projectExpense?: Record<string, unknown>;
         } | null;
         if (!res.ok) {
-          toast.error("שגיאה בעדכון ההוצאה", { description: json?.error ?? "" });
+          const hebrewMessage = toHebrewError(json?.error, "עדכון ההוצאה נכשל.");
+          setErrorMessage(hebrewMessage);
+          toast.error("שגיאה בעדכון ההוצאה", { description: hebrewMessage });
           return;
         }
         expenseData = json?.expense ?? {};
@@ -266,7 +276,9 @@ export function ExpenseDialog({
           return;
         }
         if (!result.ok) {
-          toast.error("שגיאה ביצירת ההוצאה", { description: result.error ?? "" });
+          const hebrewMessage = toHebrewError(result.error, "יצירת ההוצאה נכשלה.");
+          setErrorMessage(hebrewMessage);
+          toast.error("שגיאה ביצירת ההוצאה", { description: hebrewMessage });
           return;
         }
         const json = result.data as {
@@ -299,8 +311,13 @@ export function ExpenseDialog({
       if (savedResult instanceof Promise) await savedResult;
       onOpenChange(false);
     } catch (error) {
+      const hebrewMessage = toHebrewError(
+        error,
+        isEditing ? "עדכון ההוצאה נכשל." : "יצירת ההוצאה נכשלה."
+      );
+      setErrorMessage(hebrewMessage);
       toast.error(isEditing ? "שגיאה בעדכון ההוצאה" : "שגיאה ביצירת ההוצאה", {
-        description: error instanceof Error ? error.message : "",
+        description: hebrewMessage,
       });
     } finally {
       setSaving(false);
@@ -582,6 +599,15 @@ export function ExpenseDialog({
             </div>
           )}
             </>
+          ) : null}
+
+          {errorMessage ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+            >
+              {errorMessage}
+            </div>
           ) : null}
 
           <DialogFooter className="mt-6">

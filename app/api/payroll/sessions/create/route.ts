@@ -63,7 +63,7 @@ export async function POST(req: Request) {
     const requestedLaborCost = toOptionalNonNegativeNumber(body.labor_cost);
 
     if (!businessDomain) {
-      return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
+      return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
     }
     if (!selectedUserId) {
       return NextResponse.json({ error: "יש לבחור עובד." }, { status: 400 });
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
 
     const workerType = normalizePayrollWorkerType(selectedUser.payroll_worker_type, selectedUser.pay_tracking_mode);
     if (!payrollWorkerTypeAllowsSessions(workerType)) {
-      return NextResponse.json({ error: "This worker type does not use sessions." }, { status: 409 });
+      return NextResponse.json({ error: "סוג העובד הזה לא מתעד משמרות." }, { status: 409 });
     }
 
     if (businessDomain === "logistics_projects") {
@@ -241,7 +241,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ session: data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "שגיאה לא צפויה בעת יצירת המשמרת.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
