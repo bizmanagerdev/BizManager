@@ -15,6 +15,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CITY_OPTIONS } from "@/lib/ui/cities";
+
+function splitAddressIntoCityAndStreet(address: string | null): { city: string; street: string } {
+  if (!address) return { city: "", street: "" };
+  const idx = address.indexOf("|");
+  if (idx === -1) return { city: address.trim(), street: "" };
+  return {
+    city: address.slice(0, idx).trim(),
+    street: address.slice(idx + 1).trim(),
+  };
+}
 
 type Row = Record<string, unknown>;
 
@@ -114,6 +125,8 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
   const [phone, setPhone] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
+  const [city, setCity] = useState("");
+  const [cityOther, setCityOther] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
   const [active, setActive] = useState(true);
@@ -131,7 +144,18 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     setPhone(customer.phone ?? "");
     setWhatsapp(typeof customer.whatsapp === "number" ? String(customer.whatsapp) : (customer.whatsapp ?? ""));
     setEmail(customer.email ?? "");
-    setAddress(customer.address ?? "");
+    const { city: parsedCity, street: parsedStreet } = splitAddressIntoCityAndStreet(customer.address ?? null);
+    if (parsedCity && (CITY_OPTIONS as readonly string[]).includes(parsedCity)) {
+      setCity(parsedCity);
+      setCityOther("");
+    } else if (parsedCity) {
+      setCity("אחר");
+      setCityOther(parsedCity);
+    } else {
+      setCity("");
+      setCityOther("");
+    }
+    setAddress(parsedStreet);
     setNotes(customer.notes ?? "");
     setActive(customer.active);
     setRequiresPrepayment(customer.requires_prepayment);
@@ -190,6 +214,14 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     const primaries = visible.filter((c) => c.is_primary && c.active);
     if (primaries.length > 1) return setErr("ניתן לסמן רק איש קשר ראשי אחד.");
 
+    const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
+    const trimmedStreet = address.trim();
+    const combinedAddress = finalCity
+      ? trimmedStreet
+        ? `${finalCity} | ${trimmedStreet}`
+        : finalCity
+      : trimmedStreet || null;
+
     setLoading(true);
     try {
       const res = await fetch("/api/customers/update", {
@@ -203,7 +235,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           phone: phone.trim() || null,
           whatsapp: whatsapp.trim() || null,
           email: email.trim() || null,
-          address: address.trim() || null,
+          address: combinedAddress,
           notes: notes.trim() || null,
           active,
           requires_prepayment: requiresPrepayment,
@@ -316,8 +348,25 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
             <Field label="ח.פ / ת.ז">
               <Input value={reg} onChange={(e) => setReg(e.target.value)} />
             </Field>
+            <Field label="עיר">
+              <select
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">בחר עיר...</option>
+                {CITY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </Field>
+            {city === "אחר" ? (
+              <Field label="עיר (הקלדה חופשית)">
+                <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
+              </Field>
+            ) : null}
             <Field label="כתובת">
-              <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+              <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="רחוב ומספר" />
             </Field>
             <Field label="הערות">
               <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
