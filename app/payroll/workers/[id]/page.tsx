@@ -13,7 +13,7 @@ export default async function WorkerDetailPage({
   const { id } = await params;
   const { profile, supabase } = await requireProfile();
 
-  if (profile.role !== "admin") {
+  if (profile.role !== "admin" && profile.role !== "office") {
     redirect("/no-access");
   }
 

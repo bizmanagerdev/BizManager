@@ -3433,12 +3433,21 @@ export default function SalaryCenterClient({
                         </div>
                       </div>
                       <div className="flex flex-wrap justify-end gap-2">
-                        <Button onClick={() => setWorkerAccessDialogOpen(true)} disabled={isPending}>
-                          {"עדכון פרטי עובד"}
-                        </Button>
-                        <Button variant="destructive" onClick={() => deleteSelectedWorker()} disabled={isPending}>
-                          {"מחק עובד"}
-                        </Button>
+                        {canManageAttendance && selectedWorkerType && payrollWorkerTypeAllowsSessions(selectedWorkerType) ? (
+                          <Button variant="outline" onClick={() => openCreateSession(selectedWorkerId)} disabled={isPending}>
+                            {"הוסף משמרת"}
+                          </Button>
+                        ) : null}
+                        {canCreateUsers ? (
+                          <Button onClick={() => setWorkerAccessDialogOpen(true)} disabled={isPending}>
+                            {"עדכון פרטי עובד"}
+                          </Button>
+                        ) : null}
+                        {canCreateUsers ? (
+                          <Button variant="destructive" onClick={() => deleteSelectedWorker()} disabled={isPending}>
+                            {"מחק עובד"}
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
                   </CardContent>
