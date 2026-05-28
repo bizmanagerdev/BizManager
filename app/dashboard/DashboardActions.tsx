@@ -603,7 +603,7 @@ export default function DashboardActions({
     () => availableUsers.filter((user) => user.role === "worker" || user.role === "worker_no_access"),
     [availableUsers]
   );
-  const canManageWorkerSessions = currentUserRole === "admin";
+  const canManageWorkerSessions = currentUserRole === "admin" || currentUserRole === "office";
   const manualSessionTargetId = canManageWorkerSessions ? manualSessionUserId : currentUserId ?? "";
   const selectedManualSessionWorkerType = useMemo<PayrollWorkerType | null>(() => {
     if (!manualSessionTargetId) return null;

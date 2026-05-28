@@ -30,12 +30,12 @@ export function formatShortDateTime(value: string | null | undefined, fallback =
   return `${formatShortDate(value, fallback)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function formatRelativeDateLabel(value: string | null | undefined, fallback = "-") {
+export function formatRelativeDateLabel(value: string | null | undefined, fallback = "-", refDate?: string) {
   if (!value) return fallback;
   const date = parseDateValue(value);
   if (Number.isNaN(date.getTime())) return fallback;
 
-  const today = new Date();
+  const today = refDate ? parseDateValue(refDate) : new Date();
   const targetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const diffDays = Math.round((targetDay.getTime() - todayDay.getTime()) / (1000 * 60 * 60 * 24));
