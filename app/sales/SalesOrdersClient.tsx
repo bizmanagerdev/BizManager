@@ -2,14 +2,21 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { ChevronDown, Search } from "lucide-react";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatOrderDate } from "@/lib/orders/format";
@@ -19,6 +26,38 @@ import {
   paymentStatusClasses,
   paymentStatusLabel,
 } from "@/lib/orders/paymentStatus";
+
+type PaymentStatusFilter = "all" | "paid" | "partial" | "unpaid";
+
+const PAYMENT_FILTER_OPTIONS: { value: PaymentStatusFilter; label: string }[] = [
+  { value: "all", label: "הכל" },
+  { value: "paid", label: "שולם" },
+  { value: "partial", label: "שולם חלקית" },
+  { value: "unpaid", label: "לא שולם" },
+];
+
+const LOADER_DOT_DELAYS = [0, 150, 300, 450] as const;
+
+function FilterLoaderOverlay() {
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 z-10 flex items-start justify-center pt-24"
+      aria-hidden="true"
+    >
+      <div className="flex items-center gap-4">
+        {LOADER_DOT_DELAYS.map((delayMs, idx) => (
+          <span
+            key={delayMs}
+            className={`h-6 w-6 animate-bounce rounded-full ${
+              idx % 2 === 0 ? "bg-primary" : "bg-foreground/70"
+            }`}
+            style={{ animationDelay: `${delayMs}ms`, animationDuration: "900ms" }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 type Row = Record<string, unknown>;
 
@@ -126,11 +165,45 @@ function shouldShowPaymentAction(row: OrderView) {
   return row.remainingBalance > 0.009 || row.totalPaid > row.totalAmount + 0.009;
 }
 
-export default function SalesOrdersClient({ orders, contacts = [], initialQuery = "" }: { orders: Row[]; contacts?: Row[]; initialQuery?: string }) {
+export default function SalesOrdersClient({
+  orders,
+  contacts = [],
+  initialQuery = "",
+  showPaymentStatusFilter = false,
+  initialPaymentFilter = "",
+}: {
+  orders: Row[];
+  contacts?: Row[];
+  initialQuery?: string;
+  showPaymentStatusFilter?: boolean;
+  initialPaymentFilter?: string;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(initialQuery);
   const [paymentSnapshot] = useState(() => new Map<string, number>());
+  const paymentFilter: PaymentStatusFilter =
+    initialPaymentFilter === "paid" ||
+    initialPaymentFilter === "partial" ||
+    initialPaymentFilter === "unpaid"
+      ? initialPaymentFilter
+      : "all";
+  const [isFilterPending, startFilterTransition] = useTransition();
+
+  function setPaymentFilter(next: PaymentStatusFilter) {
+    if (next === paymentFilter) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "all") {
+      params.delete("payment_status");
+    } else {
+      params.set("payment_status", next);
+    }
+    params.delete("ordersPage");
+    const qs = params.toString();
+    startFilterTransition(() => {
+      router.push(qs ? `/sales?${qs}` : "/sales", { scroll: false });
+    });
+  }
 
   // Push search changes to the URL so the server re-queries across the full dataset.
   const lastPushedQueryRef = useRef(initialQuery);
@@ -194,7 +267,7 @@ export default function SalesOrdersClient({ orders, contacts = [], initialQuery 
     return mappedOrders.filter((row): row is OrderView => row !== null);
   }, [orders, paymentSnapshot]);
 
-  // Server already filtered by the `q` URL param across the full dataset.
+  // Server already filtered by the `q` and `payment_status` URL params across the full dataset.
   void contactsByCustomerId;
   const filteredRows = orderRows;
 
@@ -218,13 +291,33 @@ export default function SalesOrdersClient({ orders, contacts = [], initialQuery 
 
       {filteredRows.length === 0 ? (
         <Card>
-          <CardContent className="py-6 text-sm text-muted-foreground">
-            לא נמצאו הזמנות לפי החיפוש.
+          <CardContent className="space-y-3 py-6 text-sm text-muted-foreground">
+            {showPaymentStatusFilter && paymentFilter !== "all" ? (
+              <>
+                <div>
+                  אין הזמנות סגורות עם סטטוס תשלום &quot;
+                  {PAYMENT_FILTER_OPTIONS.find((o) => o.value === paymentFilter)?.label}
+                  &quot;.
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPaymentFilter("all")}
+                >
+                  נקה סינון
+                </Button>
+              </>
+            ) : (
+              <div>לא נמצאו הזמנות לפי החיפוש.</div>
+            )}
           </CardContent>
         </Card>
       ) : (
-        <>
-          <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
+        <div className="relative">
+          {isFilterPending ? <FilterLoaderOverlay /> : null}
+          <div className={isFilterPending ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
+            <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
             <div>
               <table className="w-full text-sm">
                 <thead className="bg-secondary/40 text-muted-foreground">
@@ -233,7 +326,40 @@ export default function SalesOrdersClient({ orders, contacts = [], initialQuery 
                     <th className="px-4 py-3 font-medium">לקוח</th>
                     <th className="px-4 py-3 font-medium">עיר ותאריך</th>
                     <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
-                    <th className="px-4 py-3 font-medium">סטטוס תשלום</th>
+                    <th className="px-4 py-3 font-medium">
+                      {showPaymentStatusFilter ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground focus:outline-none"
+                            >
+                              <span>סטטוס תשלום</span>
+                              {paymentFilter !== "all" ? (
+                                <span className="text-xs text-primary">
+                                  ({PAYMENT_FILTER_OPTIONS.find((o) => o.value === paymentFilter)?.label})
+                                </span>
+                              ) : null}
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuRadioGroup
+                              value={paymentFilter}
+                              onValueChange={(value) => setPaymentFilter(value as PaymentStatusFilter)}
+                            >
+                              {PAYMENT_FILTER_OPTIONS.map((option) => (
+                                <DropdownMenuRadioItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </DropdownMenuRadioItem>
+                              ))}
+                            </DropdownMenuRadioGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        "סטטוס תשלום"
+                      )}
+                    </th>
                     <th className="px-4 py-3 font-medium">סכום</th>
                     <th className="px-4 py-3 font-medium">שולם</th>
                     <th className="px-4 py-3 font-medium">יתרה</th>
@@ -378,7 +504,8 @@ export default function SalesOrdersClient({ orders, contacts = [], initialQuery 
               );
             })}
           </div>
-        </>
+          </div>
+        </div>
       )}
     </div>
   );

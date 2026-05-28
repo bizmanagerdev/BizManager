@@ -102,7 +102,7 @@ function buildSalesHref(
   customerId: string | null,
   customerName: string | null,
   customerPage: string | null,
-  extras?: { q?: string; category?: string }
+  extras?: { q?: string; category?: string; paymentStatus?: string }
 ) {
   const params = new URLSearchParams();
   if (activeTab !== "orders") params.set("tab", activeTab);
@@ -112,6 +112,7 @@ function buildSalesHref(
   if (page > 1) params.set(pageKey, String(page));
   if (extras?.q && extras.q.trim()) params.set("q", extras.q.trim());
   if (extras?.category && extras.category.trim()) params.set("category", extras.category.trim());
+  if (extras?.paymentStatus && extras.paymentStatus.trim()) params.set("payment_status", extras.paymentStatus.trim());
   const query = params.toString();
   return query ? `/sales?${query}` : "/sales";
 }
@@ -263,11 +264,19 @@ export default async function SalesPage({
     deliveriesPage?: string;
     q?: string;
     category?: string;
+    payment_status?: string;
   }>;
 }) {
   const params = (await searchParams) ?? {};
   const searchQuery = typeof params.q === "string" ? params.q.trim() : "";
   const categoryFilter = typeof params.category === "string" ? params.category.trim() : "";
+  const rawPaymentStatusFilter = typeof params.payment_status === "string" ? params.payment_status.trim() : "";
+  const paymentStatusFilter =
+    rawPaymentStatusFilter === "paid" ||
+    rawPaymentStatusFilter === "partial" ||
+    rawPaymentStatusFilter === "unpaid"
+      ? rawPaymentStatusFilter
+      : "";
   const customerId =
     typeof params.customer_id === "string" && params.customer_id.trim()
       ? params.customer_id.trim()
@@ -312,6 +321,13 @@ export default async function SalesPage({
         .select("order_id", { count: "estimated", head: true })
         .in("status", CLOSED_ORDER_STATUSES);
       if (customerId) query = query.eq("customer_id", customerId);
+      if (paymentStatusFilter === "paid") {
+        query = query.gt("total_paid", 0).lte("remaining_balance", 0.009);
+      } else if (paymentStatusFilter === "partial") {
+        query = query.gt("total_paid", 0).gt("remaining_balance", 0.009);
+      } else if (paymentStatusFilter === "unpaid") {
+        query = query.lte("total_paid", 0);
+      }
       return query;
     })(),
     supabase.from("products").select("id", { count: "estimated", head: true }),
@@ -360,6 +376,13 @@ export default async function SalesPage({
     if (customerId) ordersQuery = ordersQuery.eq("customer_id", customerId);
     if (activeTab === "closed") {
       ordersQuery = ordersQuery.in("status", CLOSED_ORDER_STATUSES);
+      if (paymentStatusFilter === "paid") {
+        ordersQuery = ordersQuery.gt("total_paid", 0).lte("remaining_balance", 0.009);
+      } else if (paymentStatusFilter === "partial") {
+        ordersQuery = ordersQuery.gt("total_paid", 0).gt("remaining_balance", 0.009);
+      } else if (paymentStatusFilter === "unpaid") {
+        ordersQuery = ordersQuery.lte("total_paid", 0);
+      }
     }
     if (searchQuery) {
       const escaped = searchQuery.replace(/[%,]/g, " ");
@@ -385,7 +408,7 @@ export default async function SalesPage({
           <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error.message}</p>
         ) : (
           <>
-            <SalesOrdersClient orders={rows} contacts={(orderContacts ?? []) as Row[]} initialQuery={searchQuery} />
+            <SalesOrdersClient orders={rows} contacts={(orderContacts ?? []) as Row[]} initialQuery={searchQuery} showPaymentStatusFilter={activeTab === "closed"} initialPaymentFilter={paymentStatusFilter} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {ordersPage} • מציגים {rows.length} מתוך {totalCount}
@@ -401,7 +424,7 @@ export default async function SalesPage({
                         customerId,
                         customerName,
                         customerPage,
-                        { q: searchQuery }
+                        { q: searchQuery, paymentStatus: paymentStatusFilter }
                       )}
                     >
                       הקודם
@@ -422,7 +445,7 @@ export default async function SalesPage({
                         customerId,
                         customerName,
                         customerPage,
-                        { q: searchQuery }
+                        { q: searchQuery, paymentStatus: paymentStatusFilter }
                       )}
                     >
                       הבא
