@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import SettingsTabs from "@/app/settings/SettingsTabs";
@@ -34,8 +35,12 @@ function normalizeStatus(v: string | null): TaskStatus {
 
 export default async function SettingsPage() {
   const { profile, supabase } = await requireProfile();
-  const isAdmin = profile.role === "admin";
-  const canManage = isAdmin || profile.role === "office";
+  if (profile.role !== "admin") {
+    redirect("/no-access");
+  }
+
+  const isAdmin = true;
+  const canManage = true;
 
   // ── Shared lookups ──────────────────────────────────────────────────────
   const [usersResult, projectsResult, propertiesResult] = await Promise.all([
