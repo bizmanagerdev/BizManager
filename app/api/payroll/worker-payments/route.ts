@@ -48,7 +48,7 @@ function toAmount(value: unknown) {
 }
 
 async function saveWorkerPayment(req: Request, mode: "create" | "update") {
-  const access = await requireRouteAccess({ allowedRoles: ["admin"] });
+  const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
   if (!access.ok) return access.response;
 
   const body = (await req.json().catch(() => ({}))) as WorkerPaymentPayload;
@@ -320,7 +320,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const access = await requireRouteAccess({ allowedRoles: ["admin"] });
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
 
     const body = (await req.json().catch(() => ({}))) as Pick<WorkerPaymentPayload, "payment_id" | "user_id">;
