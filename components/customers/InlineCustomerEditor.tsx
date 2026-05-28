@@ -81,12 +81,14 @@ export function InlineCustomerEditor({
           };
         };
         if (!json.customer) return;
+        const toStr = (v: string | null | undefined) =>
+          typeof v === "number" ? String(v) : (v ?? "");
         const next: Record<FieldKey, string> = {
-          name: json.customer.name ?? "",
-          phone: json.customer.phone ?? "",
-          whatsapp: json.customer.whatsapp ?? "",
-          email: json.customer.email ?? "",
-          address: json.customer.address ?? "",
+          name: toStr(json.customer.name),
+          phone: toStr(json.customer.phone),
+          whatsapp: toStr(json.customer.whatsapp),
+          email: toStr(json.customer.email),
+          address: toStr(json.customer.address),
         };
         setValues(next);
         savedRef.current = next;

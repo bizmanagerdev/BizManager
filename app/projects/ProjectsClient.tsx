@@ -38,7 +38,7 @@ import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEdito
 import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
 
 type ProjectRow = Record<string, unknown>;
-type Option = { id: string; label: string; phone?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
+type Option = { id: string; label: string; phone?: string | null; whatsapp?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
 type SortMode = "recent" | "start_date" | "start_date_desc" | "profit_desc";
 type ProjectsView = "projects" | "quotes" | "closed";
 type ProjectMonthlySummary = {
@@ -468,9 +468,9 @@ export default function ProjectsClient({
       try {
         const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
         if (!res.ok) return;
-        const json = await res.json() as { customers?: Array<{ id: string; name: string; name_for_invoice?: string | null; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
+        const json = await res.json() as { customers?: Array<{ id: string; name: string; name_for_invoice?: string | null; phone?: string | null; whatsapp?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
         setCustomerSearchResults(
-          (json.customers ?? []).map((c) => ({ id: c.id, label: c.name, phone: c.phone ?? null, email: c.email ?? null, name_for_invoice: c.name_for_invoice ?? null, contacts: c.contacts ?? [] }))
+          (json.customers ?? []).map((c) => ({ id: c.id, label: c.name, phone: c.phone ?? null, whatsapp: c.whatsapp ?? null, email: c.email ?? null, name_for_invoice: c.name_for_invoice ?? null, contacts: c.contacts ?? [] }))
         );
       } catch { /* ignore */ }
     }, 300);
@@ -1440,12 +1440,13 @@ export default function ProjectsClient({
                     customerId={selectedCustomer.id}
                     name={selectedCustomer.label}
                     phone={selectedCustomer.phone ?? null}
+                    whatsapp={selectedCustomer.whatsapp ?? null}
                     email={selectedCustomer.email ?? null}
                     onUpdated={(updated: InlineCustomerUpdate) => {
                       setCustomerOptionsState((prev) =>
                         prev.map((o) =>
                           o.id === updated.id
-                            ? { ...o, label: updated.name, phone: updated.phone, email: updated.email }
+                            ? { ...o, label: updated.name, phone: updated.phone, whatsapp: updated.whatsapp, email: updated.email }
                             : o
                         )
                       );
@@ -1454,7 +1455,7 @@ export default function ProjectsClient({
                           ? prev
                           : prev.map((o) =>
                               o.id === updated.id
-                                ? { ...o, label: updated.name, phone: updated.phone, email: updated.email }
+                                ? { ...o, label: updated.name, phone: updated.phone, whatsapp: updated.whatsapp, email: updated.email }
                                 : o
                             )
                       );
@@ -1845,6 +1846,7 @@ export default function ProjectsClient({
             id: customer.id,
             label: customer.name,
             phone: customer.phone,
+            whatsapp: customer.whatsapp,
             email: customer.email,
           };
           setCustomerOptionsState((prev) => [newOption, ...prev]);

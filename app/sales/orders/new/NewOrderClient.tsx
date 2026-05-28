@@ -45,6 +45,7 @@ type CustomerOption = {
   name: string;
   nameForInvoice: string | null;
   phone: string | null;
+  whatsapp: string | null;
   email: string | null;
   city: string | null;
   address: string | null;
@@ -154,6 +155,7 @@ function mapCustomerSearchResult(row: Record<string, unknown>): CustomerOption |
     name: (typeof row.name === "string" && row.name.trim() ? row.name.trim() : null) ?? "לקוח",
     nameForInvoice: typeof row.name_for_invoice === "string" && row.name_for_invoice.trim() ? row.name_for_invoice.trim() : null,
     phone: typeof row.phone === "string" ? row.phone : null,
+    whatsapp: typeof row.whatsapp === "string" ? row.whatsapp : null,
     email: typeof row.email === "string" ? row.email : null,
     address: typeof row.address === "string" ? row.address : null,
     city: typeof row.address === "string" ? extractCityFromAddress(row.address) : null,
@@ -820,6 +822,7 @@ export default function NewOrderClient({
                   customerId={selectedCustomer.id}
                   name={selectedCustomer.name}
                   phone={selectedCustomer.phone}
+                  whatsapp={selectedCustomer.whatsapp}
                   email={selectedCustomer.email}
                   address={selectedCustomer.address}
                   disabled={actionLocked}
@@ -831,6 +834,7 @@ export default function NewOrderClient({
                               ...c,
                               name: updated.name,
                               phone: updated.phone,
+                              whatsapp: updated.whatsapp,
                               email: updated.email,
                               address: updated.address,
                               city: extractCityFromAddress(updated.address),
@@ -1415,6 +1419,7 @@ export default function NewOrderClient({
             name: customer.name,
             nameForInvoice: customer.name_for_invoice ?? null,
             phone: customer.phone,
+            whatsapp: customer.whatsapp,
             email: customer.email,
             address: customer.address,
             city: extractCityFromAddress(customer.address),

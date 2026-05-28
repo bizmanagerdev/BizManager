@@ -13,7 +13,10 @@ import EditCustomerButton from "./EditCustomerButton";
 type Row = Record<string, unknown>;
 
 function s(row: Row | null | undefined, key: string) {
-  return typeof row?.[key] === "string" ? row[key] : "";
+  const v = row?.[key];
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  return "";
 }
 
 function n(value: unknown) {

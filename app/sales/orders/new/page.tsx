@@ -11,7 +11,7 @@ export default async function NewSalesOrderPage() {
     await Promise.all([
       supabase
         .from("customers")
-        .select("id,name,name_for_invoice,phone,email,address,requires_prepayment")
+        .select("id,name,name_for_invoice,phone,whatsapp,email,address,requires_prepayment")
         .order("name", { ascending: true })
         .range(0, 49),
       supabase

@@ -898,9 +898,9 @@ export default function DashboardActions({
       try {
         const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
         if (!res.ok) return;
-        const json = await res.json() as { customers?: Array<{ id: string; name: string; name_for_invoice?: string | null; phone?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
+        const json = await res.json() as { customers?: Array<{ id: string; name: string; name_for_invoice?: string | null; phone?: string | null; whatsapp?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
         setProjectCustomerSearchResults(
-          (json.customers ?? []).map((c) => ({ id: c.id, name: c.name, name_for_invoice: c.name_for_invoice ?? null, phone: c.phone ?? null, email: c.email ?? null, contacts: c.contacts ?? [] } as Row))
+          (json.customers ?? []).map((c) => ({ id: c.id, name: c.name, name_for_invoice: c.name_for_invoice ?? null, phone: c.phone ?? null, whatsapp: c.whatsapp ?? null, email: c.email ?? null, contacts: c.contacts ?? [] } as Row))
         );
       } catch { /* ignore */ }
     }, 300);
@@ -2094,6 +2094,7 @@ export default function DashboardActions({
                     customerId={projectCustomerId}
                     name={getString(selectedProjectCustomer, "name")}
                     phone={getString(selectedProjectCustomer, "phone") || null}
+                    whatsapp={getString(selectedProjectCustomer, "whatsapp") || null}
                     email={getString(selectedProjectCustomer, "email") || null}
                     address={getString(selectedProjectCustomer, "address") || null}
                     disabled={projectSubmitting}
@@ -2105,6 +2106,7 @@ export default function DashboardActions({
                                 ...c,
                                 name: updated.name,
                                 phone: updated.phone,
+                                whatsapp: updated.whatsapp,
                                 email: updated.email,
                                 address: updated.address,
                               }
@@ -2120,6 +2122,7 @@ export default function DashboardActions({
                                     ...c,
                                     name: updated.name,
                                     phone: updated.phone,
+                                    whatsapp: updated.whatsapp,
                                     email: updated.email,
                                     address: updated.address,
                                   }

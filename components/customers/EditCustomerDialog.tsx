@@ -18,7 +18,12 @@ import {
 
 type Row = Record<string, unknown>;
 
-const s = (row: Row, key: string) => (typeof row[key] === "string" ? (row[key] as string) : "");
+const s = (row: Row, key: string) => {
+  const v = row[key];
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  return "";
+};
 
 export type EditCustomerInput = {
   id: string;
@@ -124,7 +129,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     setInvoiceName(customer.name_for_invoice ?? "");
     setReg(customer.registration_number ?? "");
     setPhone(customer.phone ?? "");
-    setWhatsapp(customer.whatsapp ?? "");
+    setWhatsapp(typeof customer.whatsapp === "number" ? String(customer.whatsapp) : (customer.whatsapp ?? ""));
     setEmail(customer.email ?? "");
     setAddress(customer.address ?? "");
     setNotes(customer.notes ?? "");

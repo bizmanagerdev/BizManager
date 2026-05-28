@@ -33,7 +33,12 @@ import { Badge } from "@/components/ui/badge";
 type Row = Record<string, unknown>;
 type FilterMode = "all" | "yes" | "no";
 
-const s = (row: Row, key: string) => (typeof row[key] === "string" ? (row[key] as string) : "");
+const s = (row: Row, key: string) => {
+  const v = row[key];
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  return "";
+};
 const n = (row: Row, key: string) => {
   const v = row[key];
   if (typeof v === "number") return v;
