@@ -14,7 +14,7 @@ export default async function PayrollPage({
   const defaultWorkerId = typeof resolvedParams.worker_id === "string" ? resolvedParams.worker_id : undefined;
   const { profile, supabase } = await requireProfile();
 
-  if (profile.role !== "admin" && profile.role !== "office") {
+  if (profile.role !== "admin") {
     redirect("/no-access");
   }
 
