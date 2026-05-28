@@ -271,6 +271,7 @@ export default function NewOrderClient({
             "לקוח",
           nameForInvoice: getString(row, ["name_for_invoice"]),
           phone: getString(row, ["phone", "mobile", "tel"]),
+          whatsapp: getString(row, ["whatsapp"]),
           email: getString(row, ["email"]),
           address: getString(row, ["address"]),
           city: extractCityFromAddress(getString(row, ["address"])),
