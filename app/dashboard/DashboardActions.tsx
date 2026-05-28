@@ -108,7 +108,11 @@ function normalizePhone(value: string) {
 }
 
 function getTodayDate() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function nextMonth(dateString: string) {
@@ -474,7 +478,7 @@ export default function DashboardActions({
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseCategory, setExpenseCategory] = useState("");
   const [expenseCategoryOther, setExpenseCategoryOther] = useState("");
-  const [expenseDate, setExpenseDate] = useState("");
+  const [expenseDate, setExpenseDate] = useState(getTodayDate());
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseNotes, setExpenseNotes] = useState("");
   const [expenseIncludedInBase, setExpenseIncludedInBase] = useState(false);
@@ -783,7 +787,7 @@ export default function DashboardActions({
     setExpenseAmount("");
     setExpenseCategory("");
     setExpenseCategoryOther("");
-    setExpenseDate("");
+    setExpenseDate(getTodayDate());
     setExpenseDescription("");
     setExpenseNotes("");
     setExpenseIncludedInBase(false);
