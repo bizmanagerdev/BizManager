@@ -404,9 +404,12 @@ export default function SalaryCenterClient({
   );
   const canManageAttendance = viewerRole === "admin" || viewerRole === "office";
   const canCreateUsers = viewerRole === "admin";
+  // Office may VIEW salaries of lower-status users (the protected endpoint scopes the
+  // returned data to worker & worker_no_access). Managing salary stays admin-only.
+  const canViewSalary = viewerRole === "admin" || viewerRole === "office";
 
   const loadProtectedData = useCallback(async () => {
-    if (!canManageSalary) return;
+    if (!canViewSalary) return;
 
     setLoadingProtected(true);
     setProtectedError("");
@@ -426,13 +429,13 @@ export default function SalaryCenterClient({
     } finally {
       setLoadingProtected(false);
     }
-  }, [canManageSalary]);
+  }, [canViewSalary]);
 
   useEffect(() => {
-    if (initiallyUnlocked && canManageSalary) {
+    if (initiallyUnlocked && canViewSalary) {
       void loadProtectedData();
     }
-  }, [initiallyUnlocked, canManageSalary, loadProtectedData]);
+  }, [initiallyUnlocked, canViewSalary, loadProtectedData]);
 
   const currentMonthKey = getCurrentMonthKey();
   const usersById = useMemo(() => new Map(publicUsers.map((user) => [user.id, user])), [publicUsers]);
@@ -925,7 +928,7 @@ export default function SalaryCenterClient({
 
   async function refreshAll({ reloadProtected = true }: { reloadProtected?: boolean } = {}) {
     router.refresh();
-    if (reloadProtected && salaryUnlocked && canManageSalary) {
+    if (reloadProtected && salaryUnlocked && canViewSalary) {
       await loadProtectedData();
     }
   }
@@ -2344,7 +2347,7 @@ export default function SalaryCenterClient({
         <SalaryProtected
           unlocked={salaryUnlocked}
           hasPasswordConfigured={hasPasswordConfigured}
-          canUnlock={canManageSalary}
+          canUnlock={canViewSalary}
           onUnlockSuccess={loadProtectedData}
           fallback={<SummaryCard title="עלות עבודה החודש" value="מוגן" protectedValue />}
         >
@@ -2353,7 +2356,7 @@ export default function SalaryCenterClient({
         <SalaryProtected
           unlocked={salaryUnlocked}
           hasPasswordConfigured={hasPasswordConfigured}
-          canUnlock={canManageSalary}
+          canUnlock={canViewSalary}
           onUnlockSuccess={loadProtectedData}
           fallback={<SummaryCard title="יתרה לעובדים" value="מוגן" protectedValue />}
         >
@@ -2364,7 +2367,7 @@ export default function SalaryCenterClient({
       <SalaryProtected
         unlocked={salaryUnlocked}
         hasPasswordConfigured={hasPasswordConfigured}
-        canUnlock={canManageSalary}
+        canUnlock={canViewSalary}
         onUnlockSuccess={loadProtectedData}
         fallback={
           <Card>
@@ -2429,8 +2432,8 @@ export default function SalaryCenterClient({
           <TabsTrigger value="employees">{"עובדים"}</TabsTrigger>
           <TabsTrigger value="labor">{"פועלים"}</TabsTrigger>
           <TabsTrigger value="attendance">{"נוכחות"}</TabsTrigger>
-          <TabsTrigger value="agreements">{"משכורות"}</TabsTrigger>
-          <TabsTrigger value="payslips">{"תקופות ותלושים"}</TabsTrigger>
+          {canManageSalary ? <TabsTrigger value="agreements">{"משכורות"}</TabsTrigger> : null}
+          {canManageSalary ? <TabsTrigger value="payslips">{"תקופות ותלושים"}</TabsTrigger> : null}
         </TabsList>
 
         <TabsContent value="employees" className="space-y-3">
@@ -2507,7 +2510,7 @@ export default function SalaryCenterClient({
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canManageSalary}
+                                canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
@@ -2518,7 +2521,7 @@ export default function SalaryCenterClient({
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canManageSalary}
+                                canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
@@ -2529,7 +2532,7 @@ export default function SalaryCenterClient({
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canManageSalary}
+                                canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
@@ -2541,7 +2544,7 @@ export default function SalaryCenterClient({
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canManageSalary}
+                                canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
@@ -2552,7 +2555,7 @@ export default function SalaryCenterClient({
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canManageSalary}
+                                canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
@@ -2661,7 +2664,7 @@ export default function SalaryCenterClient({
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canManageSalary}
+                                canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
@@ -2672,7 +2675,7 @@ export default function SalaryCenterClient({
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canManageSalary}
+                                canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
@@ -2683,7 +2686,7 @@ export default function SalaryCenterClient({
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canManageSalary}
+                                canUnlock={canViewSalary}
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
@@ -2898,7 +2901,7 @@ export default function SalaryCenterClient({
                                 <SalaryProtected
                                   unlocked={salaryUnlocked}
                                   hasPasswordConfigured={hasPasswordConfigured}
-                                  canUnlock={canManageSalary}
+                                  canUnlock={canViewSalary}
                                   onUnlockSuccess={loadProtectedData}
                                   fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                                 >
@@ -2955,7 +2958,7 @@ export default function SalaryCenterClient({
           <SalaryProtected
             unlocked={salaryUnlocked}
             hasPasswordConfigured={hasPasswordConfigured}
-            canUnlock={canManageSalary}
+            canUnlock={canViewSalary}
             onUnlockSuccess={loadProtectedData}
           >
             <Card>
@@ -3049,7 +3052,7 @@ export default function SalaryCenterClient({
           <SalaryProtected
             unlocked={salaryUnlocked}
             hasPasswordConfigured={hasPasswordConfigured}
-            canUnlock={canManageSalary}
+            canUnlock={canViewSalary}
             onUnlockSuccess={loadProtectedData}
           >
             <div className="space-y-3">
@@ -3456,7 +3459,7 @@ export default function SalaryCenterClient({
                 <SalaryProtected
                   unlocked={salaryUnlocked}
                   hasPasswordConfigured={hasPasswordConfigured}
-                  canUnlock={canManageSalary}
+                  canUnlock={canViewSalary}
                   onUnlockSuccess={loadProtectedData}
                 >
                   <Card>
@@ -3516,11 +3519,11 @@ export default function SalaryCenterClient({
                   </CardContent>
                 </Card>
 
-                <Tabs defaultValue="finances" dir="rtl">
+                <Tabs defaultValue={canManageSalary ? "finances" : "attendance"} dir="rtl">
                   <TabsList>
-                    <TabsTrigger value="finances">{"כספים"}</TabsTrigger>
+                    {canManageSalary ? <TabsTrigger value="finances">{"כספים"}</TabsTrigger> : null}
                     <TabsTrigger value="attendance">{"נוכחות"}</TabsTrigger>
-                    {canSelectedWorkerHaveAgreement ? (
+                    {canSelectedWorkerHaveAgreement && canManageSalary ? (
                       <TabsTrigger value="salary">{"שכר"}</TabsTrigger>
                     ) : null}
                     <TabsTrigger value="print">{"הדפסה"}</TabsTrigger>
@@ -3530,7 +3533,7 @@ export default function SalaryCenterClient({
                 <SalaryProtected
                   unlocked={salaryUnlocked}
                   hasPasswordConfigured={hasPasswordConfigured}
-                  canUnlock={canManageSalary}
+                  canUnlock={canViewSalary}
                   onUnlockSuccess={loadProtectedData}
                 >
                   <Card>
@@ -3682,7 +3685,7 @@ export default function SalaryCenterClient({
                 <SalaryProtected
                   unlocked={salaryUnlocked}
                   hasPasswordConfigured={hasPasswordConfigured}
-                  canUnlock={canManageSalary}
+                  canUnlock={canViewSalary}
                   onUnlockSuccess={loadProtectedData}
                 >
                     <Card>
@@ -4873,7 +4876,7 @@ export default function SalaryCenterClient({
             <SalaryProtected
               unlocked={salaryUnlocked}
               hasPasswordConfigured={hasPasswordConfigured}
-              canUnlock={canManageSalary}
+              canUnlock={canViewSalary}
               onUnlockSuccess={loadProtectedData}
             >
               <div className="space-y-3 rounded-2xl border p-4">

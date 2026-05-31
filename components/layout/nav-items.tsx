@@ -87,8 +87,8 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "הגדרות ניהול", url: "/settings", icon: Settings },
 ];
 
-const ADMIN_ONLY_URLS = new Set(["/activity", "/payroll", "/financial", "/settings"]);
-const ADMIN_OR_OFFICE_URLS = new Set<string>();
+const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings"]);
+const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll"]);
 
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean) {
   return items.filter((item) => {

@@ -11,6 +11,9 @@ type SalaryProtectedProps = {
   fallback?: React.ReactNode;
 };
 
-export default function SalaryProtected({ children }: SalaryProtectedProps) {
+export default function SalaryProtected({ canUnlock, children, fallback }: SalaryProtectedProps) {
+  // Salary values are admin-only. Non-admin viewers (e.g. office) cannot unlock,
+  // so they see the protected fallback instead of the real figure.
+  if (!canUnlock) return <>{fallback ?? null}</>;
   return <>{children}</>;
 }

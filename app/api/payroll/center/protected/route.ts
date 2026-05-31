@@ -4,10 +4,10 @@ import { fetchSalaryCenterProtectedPayload, isSalaryTrackedWorker } from "@/lib/
 
 export async function GET() {
   try {
-    const access = await requireRouteAccess({ allowedRoles: ["admin"] });
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
 
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
     const usersResult = await supabase
       .from("users")
       .select("id,role,active,payroll_worker_type,pay_tracking_mode")
@@ -19,12 +19,17 @@ export async function GET() {
       return NextResponse.json({ error: usersResult.error.message }, { status: 400 });
     }
 
-    const rows = (usersResult.data ?? []) as Array<{
+    const allRows = (usersResult.data ?? []) as Array<{
       id: string;
       role: string | null;
       payroll_worker_type: "session_only" | "monthly_payslip" | "hourly_payslip" | null;
       pay_tracking_mode: "session" | "payslip" | null;
     }>;
+    // Office may view salaries only of users below them: worker & worker_no_access.
+    const rows =
+      profile.role === "office"
+        ? allRows.filter((row) => row.role === "worker" || row.role === "worker_no_access")
+        : allRows;
     const userIds = rows.map((row) => row.id).filter(Boolean);
     const salaryTrackedUserIds = rows.filter((row) => isSalaryTrackedWorker(row)).map((row) => row.id).filter(Boolean);
     const payload = await fetchSalaryCenterProtectedPayload(supabase, userIds, salaryTrackedUserIds);
