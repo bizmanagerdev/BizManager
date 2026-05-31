@@ -61,13 +61,20 @@ export function buildPaymentFlowMeta(row: PaymentRow, referenceDate: string) {
   const method = normalizePaymentMethod(row.payment_method);
   const status = normalizePaymentStatus(row.payment_status);
   const isCheck = method === "check";
-  const flowDate = isCheck && dueDate ? dueDate : paymentDate;
+  // Expected (not-yet-collected) money: a check awaiting clearance, OR any payment
+  // explicitly marked pending (e.g. שוטף+30 bank transfer). It flows on its
+  // due_date — not the record date — and must never count as posted/actual income.
+  const isExpected = status === "pending" || (isCheck && status !== "cleared");
+  const flowDate = (isCheck || isExpected) && dueDate ? dueDate : paymentDate;
   if (!flowDate) return null;
 
-  const stage: FinancialEntryStage =
-    isCheck && status !== "cleared"
-      ? flowDate > referenceDate ? "scheduled" : "pending"
-      : flowDate > referenceDate ? "scheduled" : "posted";
+  const stage: FinancialEntryStage = isExpected
+    ? flowDate > referenceDate
+      ? "scheduled"
+      : "pending"
+    : flowDate > referenceDate
+      ? "scheduled"
+      : "posted";
 
   return { flowDate, paymentDate, dueDate, stage, method, status };
 }

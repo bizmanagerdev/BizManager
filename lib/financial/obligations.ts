@@ -254,7 +254,7 @@ export async function getObligationsData(supabase: SupabaseClient): Promise<Obli
     const [paymentsResult, customerPhonesResult] = await Promise.all([
       supabase
         .from("payments")
-        .select("project_id,amount_total")
+        .select("project_id,amount_total,payment_status")
         .in("project_id", projectIdsWithPrice)
         .range(0, 4999),
       customerIds.length > 0
@@ -262,10 +262,15 @@ export async function getObligationsData(supabase: SupabaseClient): Promise<Obli
         : Promise.resolve({ data: [] as Row[] }),
     ]);
 
+    // Outstanding is measured against COLLECTED money only — a future-dated /
+    // uncleared payment (payment_status='pending') is not money in hand, so the
+    // project still counts as owing it.
     const totalPaidByProjectId = new Map<string, number>();
     for (const row of (paymentsResult.data ?? []) as Row[]) {
       const pid = str(row, "project_id");
       if (!pid) continue;
+      const status = (str(row, "payment_status") ?? "").trim().toLowerCase();
+      if (status === "pending" || status === "rejected") continue;
       totalPaidByProjectId.set(pid, (totalPaidByProjectId.get(pid) ?? 0) + toNum(row.amount_total));
     }
 

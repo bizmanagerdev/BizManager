@@ -17,6 +17,7 @@ import {
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
   derivePaymentStatus,
+  paymentCollectionChip,
   paymentMethodLabel,
   paymentStatusClasses,
   paymentStatusLabel,
@@ -31,6 +32,7 @@ export type PaymentItem = {
   payment_date: string | null;
   amount_total: number;
   payment_method: string | null;
+  payment_status: string | null;
   due_date: string | null;
   reference_number: string | null;
   check_number: string | null;
@@ -311,6 +313,7 @@ export function OrderPaymentActionsClient({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [collectingId, setCollectingId] = useState<string | null>(null);
 
   const [isRefreshPending, startRefreshTransition] = useTransition();
   const refreshResolveRef = useRef<(() => void) | null>(null);
@@ -355,6 +358,22 @@ export function OrderPaymentActionsClient({
     }
   }
 
+  async function markCollected(paymentId: string, collected: boolean) {
+    setCollectingId(paymentId);
+    try {
+      const res = await fetch("/api/payments/mark-collected", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: paymentId, collected }),
+      });
+      if (res.ok) {
+        await refreshAndWait();
+      }
+    } finally {
+      setCollectingId(null);
+    }
+  }
+
   const totalPaid = payments.reduce((s, p) => s + p.amount_total, 0);
 
   if (payments.length === 0) {
@@ -367,6 +386,11 @@ export function OrderPaymentActionsClient({
         {payments.map((payment, index) => {
           const isRefund = payment.amount_total < 0;
           const isDeleting = deletingId === payment.id;
+          const collectionChip = paymentCollectionChip(payment);
+          const isPending =
+            typeof payment.payment_status === "string" &&
+            payment.payment_status.trim().toLowerCase() === "pending";
+          const isCollecting = collectingId === payment.id;
 
           return (
             <div
@@ -382,6 +406,11 @@ export function OrderPaymentActionsClient({
                         : formatCurrency(payment.amount_total)}
                     </span>
                     <span className="text-muted-foreground">{formatDate(payment.payment_date)}</span>
+                    {collectionChip ? (
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] ${collectionChip.classes}`}>
+                        {collectionChip.label}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="mt-1 text-muted-foreground">
                     {isRefund ? "אמצעי החזר" : "אמצעי"}:{" "}
@@ -404,6 +433,18 @@ export function OrderPaymentActionsClient({
 
                 {canManage ? (
                   <div className="flex shrink-0 items-center gap-1">
+                    {isPending && !isRefund ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => void markCollected(payment.id, true)}
+                        disabled={isCollecting}
+                      >
+                        {isCollecting ? "מסמן..." : "סמן כנגבה"}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="ghost"

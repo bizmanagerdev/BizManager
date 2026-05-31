@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { formatShortDate } from "@/lib/date";
+import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
+import CustomerCollectionButton from "@/components/collections/CustomerCollectionButton";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import { notFound } from "next/navigation";
 import DeleteCustomerButton from "./DeleteCustomerButton";
@@ -155,7 +157,7 @@ export default async function CustomerDetailsPage({
             .in("id", projectIds),
           supabase
             .from("payments")
-            .select("project_id,amount_total,payment_date")
+            .select("project_id,amount_total,payment_date,payment_status,due_date")
             .in("project_id", projectIds),
         ])
       : [{ data: [] }, { data: [] }];
@@ -166,21 +168,39 @@ export default async function CustomerDetailsPage({
     if (projectId) financialByProjectId.set(projectId, row);
   });
 
-  const paidByProjectId = new Map<string, number>();
+  // COLLECTION SPLIT: collected = money actually in; expected = future-dated /
+  // uncleared (payment_status='pending'). A future payment never counts as שולם.
+  const collectedByProjectId = new Map<string, number>();
+  const expectedByProjectId = new Map<string, number>();
   const lastPaymentByProjectId = new Map<string, string>();
+  const projectPaymentsByProjectId = new Map<string, Row[]>();
   ((projectPaymentRows ?? []) as Row[]).forEach((row) => {
     const projectId = s(row, "project_id");
     if (!projectId) return;
-    paidByProjectId.set(projectId, (paidByProjectId.get(projectId) ?? 0) + n(row.amount_total));
+    const list = projectPaymentsByProjectId.get(projectId) ?? [];
+    list.push(row);
+    projectPaymentsByProjectId.set(projectId, list);
     const paymentDate = s(row, "payment_date");
     const current = lastPaymentByProjectId.get(projectId) ?? "";
     if (paymentDate && (!current || paymentDate > current)) {
       lastPaymentByProjectId.set(projectId, paymentDate);
     }
   });
+  projectPaymentsByProjectId.forEach((rows, projectId) => {
+    const split = splitPaymentAmounts(
+      rows.map((row) => ({
+        amount_total: n(row.amount_total),
+        payment_status: s(row, "payment_status") || null,
+        due_date: s(row, "due_date") || null,
+      }))
+    );
+    collectedByProjectId.set(projectId, split.collected);
+    expectedByProjectId.set(projectId, split.pending);
+  });
 
   let projectTotalSales = 0;
   let projectTotalPaid = 0;
+  let projectTotalExpected = 0;
   let projectLastPaymentAt: string | null = null;
 
   ((projectRows ?? []) as Row[]).forEach((row) => {
@@ -194,7 +214,8 @@ export default async function CustomerDetailsPage({
       (actualPrice > 0 ? actualPrice : agreedBasePrice > 0 ? agreedBasePrice : 0) + expensesBilled;
     const customerTotalPrice = Math.max(n(financialRow?.customer_total_price), fallbackTotal);
     projectTotalSales += customerTotalPrice;
-    projectTotalPaid += paidByProjectId.get(projectId) ?? 0;
+    projectTotalPaid += collectedByProjectId.get(projectId) ?? 0;
+    projectTotalExpected += expectedByProjectId.get(projectId) ?? 0;
 
     const paymentDate = lastPaymentByProjectId.get(projectId) ?? null;
     if (paymentDate && (!projectLastPaymentAt || rowDateValue(paymentDate) > rowDateValue(projectLastPaymentAt))) {
@@ -211,8 +232,11 @@ export default async function CustomerDetailsPage({
   const address = s(customer as Row, "address") || s(overview as Row, "address");
   const orderSales = n((overview as Row)?.total_sales);
   const orderPaid = n((overview as Row)?.total_paid);
+  const orderExpected = n((overview as Row)?.expected_amount);
   const totalSales = orderSales + projectTotalSales;
   const totalPaid = orderPaid + projectTotalPaid;
+  // Expected = money still due on future-dated / uncleared payments (not yet collected).
+  const totalExpected = orderExpected + projectTotalExpected;
   const openBalance = Math.max(totalSales - totalPaid, 0);
   const lastOrderAt = s(overview as Row, "last_order_at") || null;
   const overviewLastPaymentAt = s(overview as Row, "last_payment_at") || null;
@@ -324,11 +348,12 @@ export default async function CustomerDetailsPage({
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <Stat label="הזמנות" value={`${n((overview as Row)?.orders_count)}`} />
             <Stat label="פרויקטים" value={`${Math.max(n((overview as Row)?.projects_count), projectIds.length)}`} />
             <Stat label='סה"כ מכירות' value={formatCurrency(totalSales)} />
-            <Stat label="שולם" value={formatCurrency(totalPaid)} />
+            <Stat label="נגבה" value={formatCurrency(totalPaid)} />
+            <Stat label="צפוי לגבייה" value={formatCurrency(totalExpected)} />
             <Stat label="יתרה פתוחה" value={formatCurrency(openBalance)} />
           </div>
         </section>
@@ -352,6 +377,13 @@ export default async function CustomerDetailsPage({
             <div className="rounded-2xl border border-border/70 bg-card/70 p-4">
               <div className="mb-3 text-sm font-semibold">קישורים מהירים</div>
               <div className="flex flex-wrap gap-2">
+                {profile.role === "admin" || profile.role === "office" ? (
+                  <CustomerCollectionButton
+                    customerId={id}
+                    customerName={customerName}
+                    customerPhone={customerPhone || null}
+                  />
+                ) : null}
                 <Button asChild size="sm">
                   <NavLink to={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>הזמנה חדשה</NavLink>
                 </Button>

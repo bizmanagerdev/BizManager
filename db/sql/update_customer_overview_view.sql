@@ -1,7 +1,16 @@
 -- Run this in Supabase SQL Editor.
 -- Expands customer_overview_view so the customers page can rely on a single
 -- SQL-backed customer summary row for most fields.
+--
+-- COLLECTION SPLIT (2026-05): total_paid / open_balance reflect ONLY collected
+-- money (cleared or legacy rows). Future-dated / uncleared payments
+-- (payment_status='pending') are surfaced as expected_amount / overdue_amount so
+-- the customer card can show "צפוי לגבייה" separately from money actually in.
 
+-- CREATE OR REPLACE with the NEW columns (expected_amount, overdue_amount)
+-- appended at the END — preserving the original column order so dependent views
+-- (e.g. customer_open_balance_view) keep working. Changing a column's expression
+-- is allowed; only reordering/renaming columns is not.
 create or replace view public.customer_overview_view as
 with order_totals as (
   select
@@ -27,20 +36,79 @@ project_totals as (
 order_payment_totals as (
   select
     o.customer_id,
-    coalesce(sum(coalesce(pay.amount_total, 0)), 0)::numeric as total_paid,
-    max(pay.payment_date)::timestamptz as last_payment_at
+    coalesce(
+      sum(
+        case
+          when coalesce(pay.payment_status, 'cleared') not in ('pending', 'rejected')
+          then coalesce(pay.amount_total, 0)
+          else 0
+        end
+      ),
+      0
+    )::numeric as collected,
+    coalesce(
+      sum(case when pay.payment_status = 'pending' then coalesce(pay.amount_total, 0) else 0 end),
+      0
+    )::numeric as pending,
+    coalesce(
+      sum(
+        case
+          when pay.payment_status = 'pending'
+            and pay.due_date is not null
+            and pay.due_date <= current_date
+          then coalesce(pay.amount_total, 0)
+          else 0
+        end
+      ),
+      0
+    )::numeric as overdue,
+    max(
+      case
+        when coalesce(pay.payment_status, 'cleared') not in ('pending', 'rejected')
+        then pay.payment_date
+      end
+    )::timestamptz as last_payment_at
   from public.payments pay
   inner join public.orders o
-    on pay.target_type = 'order'
-   and pay.target_id = o.id
+    on pay.order_id = o.id
   where o.customer_id is not null
   group by o.customer_id
 ),
 project_payment_totals as (
   select
     p.customer_id,
-    coalesce(sum(coalesce(pay.amount_total, 0)), 0)::numeric as total_paid,
-    max(pay.payment_date)::timestamptz as last_payment_at
+    coalesce(
+      sum(
+        case
+          when coalesce(pay.payment_status, 'cleared') not in ('pending', 'rejected')
+          then coalesce(pay.amount_total, 0)
+          else 0
+        end
+      ),
+      0
+    )::numeric as collected,
+    coalesce(
+      sum(case when pay.payment_status = 'pending' then coalesce(pay.amount_total, 0) else 0 end),
+      0
+    )::numeric as pending,
+    coalesce(
+      sum(
+        case
+          when pay.payment_status = 'pending'
+            and pay.due_date is not null
+            and pay.due_date <= current_date
+          then coalesce(pay.amount_total, 0)
+          else 0
+        end
+      ),
+      0
+    )::numeric as overdue,
+    max(
+      case
+        when coalesce(pay.payment_status, 'cleared') not in ('pending', 'rejected')
+        then pay.payment_date
+      end
+    )::timestamptz as last_payment_at
   from public.payments pay
   inner join public.projects p
     on pay.project_id = p.id
@@ -50,7 +118,9 @@ project_payment_totals as (
 payment_totals as (
   select
     customer_id,
-    coalesce(sum(total_paid), 0)::numeric as total_paid,
+    coalesce(sum(collected), 0)::numeric as total_paid,
+    coalesce(sum(pending), 0)::numeric as expected_amount,
+    coalesce(sum(overdue), 0)::numeric as overdue_amount,
     max(last_payment_at)::timestamptz as last_payment_at
   from (
     select * from order_payment_totals
@@ -88,7 +158,10 @@ select
   coalesce(c.active, true) as active,
   nullif(trim(c.notes), '')::text as notes,
   nullif(trim(c.name_for_invoice), '')::text as name_for_invoice,
-  nullif(trim(c.registration_number), '')::text as registration_number
+  nullif(trim(c.registration_number), '')::text as registration_number,
+  -- New collection columns appended at the END (preserves original order)
+  coalesce(payt.expected_amount, 0)::numeric as expected_amount,
+  coalesce(payt.overdue_amount, 0)::numeric as overdue_amount
 from public.customers c
 left join order_totals ot
   on ot.customer_id = c.id

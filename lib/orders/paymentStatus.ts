@@ -174,6 +174,133 @@ function getOrderPaymentStatusColor(status: string): StatusColor {
   }
 }
 
+// ─── Collection status (נגבה בפועל vs צפוי) ─────────────────────────────────
+// A payment with a future due_date (שוטף+30, post-dated check) is inserted with
+// payment_status='pending' — the money has NOT arrived yet. "Collected" money is
+// only what actually cleared. These helpers split a set of payments into what was
+// collected vs what is still expected, and derive a collection status for the
+// owner's גבייה (collections) worklist.
+
+export type CollectionStatus = "collected" | "partial" | "awaiting" | "overdue" | "unpaid";
+
+export type PaymentSplitInput = {
+  amount_total?: number | string | null;
+  payment_status?: string | null;
+  due_date?: string | null;
+};
+
+export type PaymentSplit = {
+  collected: number; // money actually in (cleared, or legacy rows with no status)
+  pending: number; // expected money still due (payment_status='pending')
+  overdue: number; // pending money whose due_date has already passed
+};
+
+/** Money is "collected" unless it is still pending or was rejected (bounced). */
+export function isCollectedPayment(status: string | null | undefined): boolean {
+  const s = typeof status === "string" ? status.trim().toLowerCase() : "";
+  return s !== "pending" && s !== "rejected";
+}
+
+function todayIso(today: Date) {
+  return today.toISOString().slice(0, 10);
+}
+
+export function splitPaymentAmounts(
+  entries: PaymentSplitInput[] | undefined,
+  today: Date = new Date()
+): PaymentSplit {
+  const reference = todayIso(today);
+  return (entries ?? []).reduce<PaymentSplit>(
+    (acc, entry) => {
+      const amount = toNumber(entry.amount_total);
+      if (!Number.isFinite(amount)) return acc;
+      const status =
+        typeof entry.payment_status === "string" ? entry.payment_status.trim().toLowerCase() : "";
+      if (status === "rejected") return acc; // bounced — counts as nothing
+      if (status === "pending") {
+        acc.pending += amount;
+        const due = typeof entry.due_date === "string" ? entry.due_date.slice(0, 10) : "";
+        if (due && due <= reference) acc.overdue += amount;
+      } else {
+        acc.collected += amount;
+      }
+      return acc;
+    },
+    { collected: 0, pending: 0, overdue: 0 }
+  );
+}
+
+export function deriveCollectionStatus(params: {
+  totalAmount: number;
+  collected: number;
+  pending: number;
+  overdue: number;
+}): CollectionStatus {
+  const { totalAmount, collected, pending, overdue } = params;
+  if (totalAmount > 0 && collected + 0.009 >= totalAmount) return "collected";
+  if (overdue > 0.009) return "overdue"; // expected money past due — call them now
+  if (pending > 0.009) return "awaiting"; // expected money, still future-dated
+  if (collected > 0.009) return "partial"; // partly paid, remainder not scheduled
+  return "unpaid";
+}
+
+export function collectionStatusLabel(status: string, gender: "m" | "f" = "f") {
+  const f = gender === "f";
+  switch (status) {
+    case "collected":
+      return f ? "נגבתה" : "נגבה";
+    case "partial":
+      return f ? "נגבתה חלקית" : "נגבה חלקית";
+    case "awaiting":
+      return f ? "ממתינה לגבייה" : "ממתין לגבייה";
+    case "overdue":
+      return "באיחור";
+    default:
+      return f ? "לא נגבתה" : "לא נגבה";
+  }
+}
+
+function getCollectionStatusColor(status: string): StatusColor {
+  switch (status) {
+    case "collected":
+      return "success";
+    case "partial":
+      return "info";
+    case "awaiting":
+      return "warning";
+    case "overdue":
+      return "danger";
+    default:
+      return "danger";
+  }
+}
+
+export function collectionStatusClasses(status: string) {
+  return getStatusColorClasses(getCollectionStatusColor(status));
+}
+
+/**
+ * Badge for a single payment row, surfaced everywhere payments are listed.
+ * Returns null for collected/cleared money (no badge needed), a "צפוי" warning
+ * for future-dated expected money, or "באיחור" when its due_date has passed.
+ */
+export function paymentCollectionChip(
+  payment: { payment_status?: string | null; due_date?: string | null },
+  today: Date = new Date()
+): { label: string; classes: string } | null {
+  const status =
+    typeof payment.payment_status === "string" ? payment.payment_status.trim().toLowerCase() : "";
+  if (status === "rejected") {
+    return { label: "נדחה", classes: getStatusColorClasses("danger") };
+  }
+  if (status !== "pending") return null;
+  const due = typeof payment.due_date === "string" ? payment.due_date.slice(0, 10) : "";
+  if (due && due <= todayIso(today)) {
+    return { label: "באיחור", classes: getStatusColorClasses("danger") };
+  }
+  return { label: "צפוי", classes: getStatusColorClasses("warning") };
+}
+
 export function validateRequestedPaymentStatus(params: {
   requestedStatus: string;
   totalAmount: number;

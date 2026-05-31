@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { derivePaymentStatus, sumPayments } from "@/lib/orders/paymentStatus";
+import { derivePaymentStatus, splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 
 export async function POST(req: Request) {
   try {
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
 
     const { data: paymentRows } = await supabase
       .from("payments")
-      .select("amount_total")
+      .select("amount_total,payment_status,due_date")
       .eq("order_id", orderId);
 
     const { data: order } = await supabase
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
       .eq("id", orderId)
       .maybeSingle();
 
-    const totalPaid = sumPayments(paymentRows ?? []);
+    const { collected: totalPaid } = splitPaymentAmounts(paymentRows ?? []);
     const totalAmount =
       typeof order?.total_amount === "number"
         ? order.total_amount

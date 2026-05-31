@@ -39,7 +39,7 @@ import {
   Landmark,
   LayoutDashboard,
   ListTodo,
-  MessageSquareMore,
+  Coins,
   Settings,
   ShoppingCart,
   Users,
@@ -59,7 +59,7 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "משימות", url: "/tasks", icon: ListTodo },
   { title: "מכירות", url: "/sales", icon: ShoppingCart },
   { title: "לקוחות", url: "/customers", icon: Users },
-  { title: "פניות", url: "/inquiries", icon: MessageSquareMore },
+  { title: "גבייה", url: "/collections", icon: Coins },
   { title: "ניהול נכסים", url: "/properties", icon: Building2 },
   { title: "פיננסי", url: "/financial", icon: Landmark },
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
@@ -73,7 +73,7 @@ const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
   { title: "פרויקטים", url: "/projects", icon: FolderKanban },
   { title: "מכירות", url: "/sales", icon: ShoppingCart },
   { title: "לקוחות", url: "/customers", icon: Users },
-  { title: "פניות", url: "/inquiries", icon: MessageSquareMore },
+  { title: "גבייה", url: "/collections", icon: Coins },
 ];
 
 const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
@@ -88,7 +88,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
 ];
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings"]);
-const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll"]);
+const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections"]);
 
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean) {
   return items.filter((item) => {

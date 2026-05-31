@@ -16,7 +16,7 @@ import { PAYMENT_SELECT } from "@/lib/payments";
 import type { FinancialAttachment } from "@/lib/payments";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { WorkSessionRow } from "@/lib/payroll";
-import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
+import { paymentStatusClasses, paymentStatusLabel, splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -799,15 +799,18 @@ export default async function ProjectPage({
   const grossProfit = financials?.gross_profit ?? null;
   const openTasks =
     typeof tasks?.open_tasks === "number" || typeof tasks?.open_tasks === "string" ? tasks.open_tasks : 0;
-  const paidTotal = paymentsWithPhotos.reduce((sum, payment) => {
-    const amount =
-      typeof payment.amount_total === "number"
-        ? payment.amount_total
-        : typeof payment.amount_total === "string"
-          ? Number(payment.amount_total)
-          : NaN;
-    return sum + (Number.isFinite(amount) ? amount : 0);
-  }, 0);
+  // COLLECTION SPLIT: paidTotal = money actually collected; expectedTotal = money
+  // still due on future-dated / uncleared payments (payment_status='pending').
+  const projectPaymentSplit = splitPaymentAmounts(
+    paymentsWithPhotos.map((payment) => ({
+      amount_total: payment.amount_total,
+      payment_status: payment.payment_status,
+      due_date: payment.due_date,
+    }))
+  );
+  const paidTotal = projectPaymentSplit.collected;
+  const expectedTotal = projectPaymentSplit.pending;
+  const overdueExpectedTotal = projectPaymentSplit.overdue;
   const agreedBasePrice =
     typeof overview?.agreed_base_price === "number"
       ? overview.agreed_base_price
@@ -911,6 +914,19 @@ export default async function ProjectPage({
                     {customerPaymentStatusLabel(customerPaymentStatus)}
                   </Badge>
                 </div>
+                {expectedTotal > 0.009 ? (
+                  <div className="min-w-0 space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">צפוי לגבייה:</div>
+                    <div className="font-medium text-warning-soft-foreground">
+                      {formatIls(expectedTotal)}
+                      {overdueExpectedTotal > 0.009 ? (
+                        <span className="ms-1 text-xs text-destructive">
+                          ({formatIls(overdueExpectedTotal)} באיחור)
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">סטטוס:</div>
                   <div className="font-medium">{status ? projectStatusLabel(status) : "—"}</div>

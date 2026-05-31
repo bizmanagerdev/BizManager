@@ -202,9 +202,45 @@ session_totals as (
   group by s.project_id
 ),
 payment_totals as (
+  -- COLLECTION SPLIT (2026-05): collected = money actually in (cleared/legacy);
+  -- pending = future-dated / uncleared (payment_status='pending'); overdue =
+  -- pending past its due_date. The revenue fallback below uses collected money so
+  -- expected (not-yet-received) money never inflates an unpriced project's revenue.
   select
     p.project_id,
-    coalesce(sum(coalesce(p.amount_total, 0)), 0)::numeric as total_payments
+    coalesce(
+      sum(
+        case
+          when coalesce(p.payment_status, 'cleared') not in ('pending', 'rejected')
+          then coalesce(p.amount_total, 0)
+          else 0
+        end
+      ),
+      0
+    )::numeric as collected_payments,
+    coalesce(
+      sum(case when p.payment_status = 'pending' then coalesce(p.amount_total, 0) else 0 end),
+      0
+    )::numeric as pending_payments,
+    coalesce(
+      sum(
+        case
+          when p.payment_status = 'pending'
+            and p.due_date is not null
+            and p.due_date <= current_date
+          then coalesce(p.amount_total, 0)
+          else 0
+        end
+      ),
+      0
+    )::numeric as overdue_payments,
+    min(case when p.payment_status = 'pending' then p.due_date end)::date as next_due_date,
+    max(
+      case
+        when coalesce(p.payment_status, 'cleared') not in ('pending', 'rejected')
+        then p.payment_date
+      end
+    )::date as last_payment_date
   from public.payments p
   where p.project_id is not null
   group by p.project_id
@@ -215,7 +251,7 @@ revenue_base as (
     case
       when coalesce(p.actual_price, 0) > 0 then p.actual_price::numeric
       when coalesce(p.agreed_base_price, 0) > 0 then p.agreed_base_price::numeric
-      else coalesce(pt.total_payments, 0)::numeric
+      else coalesce(pt.collected_payments, 0)::numeric
     end as base_revenue
   from public.projects p
   left join payment_totals pt
@@ -245,14 +281,31 @@ select
     coalesce(rb.base_revenue, 0)::numeric +
     coalesce(et.billed_expense_amounts, 0)::numeric +
     coalesce(st.billable_session_amounts, 0)::numeric
-  )::numeric as customer_total_price
+  )::numeric as customer_total_price,
+  -- Collection columns: money in vs money still expected
+  coalesce(pt.collected_payments, 0)::numeric as total_paid,
+  coalesce(pt.collected_payments, 0)::numeric as collected_amount,
+  coalesce(pt.pending_payments, 0)::numeric as pending_amount,
+  coalesce(pt.overdue_payments, 0)::numeric as overdue_amount,
+  pt.next_due_date,
+  pt.last_payment_date,
+  greatest(
+    (
+      coalesce(rb.base_revenue, 0)::numeric +
+      coalesce(et.billed_expense_amounts, 0)::numeric +
+      coalesce(st.billable_session_amounts, 0)::numeric
+    ) - coalesce(pt.collected_payments, 0),
+    0
+  )::numeric as outstanding_amount
 from public.projects p
 left join expense_totals et
   on et.project_id = p.id
 left join session_totals st
   on st.project_id = p.id
 left join revenue_base rb
-  on rb.project_id = p.id;
+  on rb.project_id = p.id
+left join payment_totals pt
+  on pt.project_id = p.id;
 
 grant select on public.financial_project_view to authenticated;
 grant select on public.project_financials_view to authenticated;

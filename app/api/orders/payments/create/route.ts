@@ -5,7 +5,7 @@ import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import {
   derivePaymentStatus,
   normalizePaymentEntries,
-  sumPayments,
+  splitPaymentAmounts,
 } from "@/lib/orders/paymentStatus";
 
 type CreateOrderPaymentPayload = {
@@ -95,14 +95,16 @@ export async function POST(req: Request) {
 
     const { data: paymentRows, error: paymentsError } = await supabase
       .from("payments")
-      .select("amount_total")
+      .select("amount_total,payment_status,due_date")
       .eq("order_id", orderId);
 
     if (paymentsError) {
       return NextResponse.json({ error: paymentsError.message }, { status: 400 });
     }
 
-    const totalPaid = sumPayments(paymentRows ?? []);
+    // Status reflects COLLECTED money only — a future-dated / uncleared payment
+    // (payment_status='pending') must NOT mark the order as שולם.
+    const { collected: totalPaid } = splitPaymentAmounts(paymentRows ?? []);
     const totalAmount = typeof order.total_amount === "number" ? order.total_amount : Number(order.total_amount ?? 0);
     const paymentStatus = derivePaymentStatus(totalAmount, totalPaid);
 

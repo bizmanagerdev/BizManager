@@ -1,13 +1,49 @@
 -- Run this in Supabase SQL Editor.
 -- Expands order_overview_view so the sales orders list can rely on SQL-backed
 -- customer/contact/payment summary fields instead of rebuilding them in JS.
+--
+-- COLLECTION SPLIT (2026-05): total_paid / remaining_balance / payment_status
+-- reflect ONLY collected money (cleared or legacy rows). Future-dated / uncleared
+-- payments (payment_status='pending') are surfaced separately as pending_amount /
+-- overdue_amount / next_due_date. payment_status is computed here from collected
+-- money rather than trusting the stored orders.payment_status column.
 
+-- CREATE OR REPLACE with new columns appended at the END (preserving the
+-- original column order) so any dependent views keep working. payment_status,
+-- total_paid and remaining_balance keep their names/positions but now reflect
+-- COLLECTED money only — changing a column's expression is allowed.
 create or replace view public.order_overview_view as
 with payment_totals as (
   select
     p.order_id as order_id,
     count(*)::bigint as payment_count,
-    coalesce(sum(coalesce(p.amount_total, 0)), 0)::numeric as total_paid
+    coalesce(
+      sum(
+        case
+          when coalesce(p.payment_status, 'cleared') not in ('pending', 'rejected')
+          then coalesce(p.amount_total, 0)
+          else 0
+        end
+      ),
+      0
+    )::numeric as collected_amount,
+    coalesce(
+      sum(case when p.payment_status = 'pending' then coalesce(p.amount_total, 0) else 0 end),
+      0
+    )::numeric as pending_amount,
+    coalesce(
+      sum(
+        case
+          when p.payment_status = 'pending'
+            and p.due_date is not null
+            and p.due_date <= current_date
+          then coalesce(p.amount_total, 0)
+          else 0
+        end
+      ),
+      0
+    )::numeric as overdue_pending_amount,
+    min(case when p.payment_status = 'pending' then p.due_date end)::date as next_due_date
   from public.payments p
   where p.order_id is not null
   group by p.order_id
@@ -27,11 +63,15 @@ select
   o.order_date,
   o.created_at,
   coalesce(o.status::text, 'draft') as status,
-  coalesce(o.payment_status::text, 'unpaid') as payment_status,
+  case
+    when coalesce(pt.collected_amount, 0) <= 0 then 'unpaid'
+    when coalesce(pt.collected_amount, 0) + 0.009 >= coalesce(o.total_amount, 0) then 'paid'
+    else 'partial'
+  end::text as payment_status,
   coalesce(o.discount_amount, 0)::numeric as discount_amount,
   coalesce(o.total_amount, 0)::numeric as total_amount,
-  coalesce(pt.total_paid, 0)::numeric as total_paid,
-  greatest(coalesce(o.total_amount, 0) - coalesce(pt.total_paid, 0), 0)::numeric as remaining_balance,
+  coalesce(pt.collected_amount, 0)::numeric as total_paid,
+  greatest(coalesce(o.total_amount, 0) - coalesce(pt.collected_amount, 0), 0)::numeric as remaining_balance,
   coalesce(pt.payment_count, 0)::bigint as payment_count,
   o.created_by as created_by_user_id,
   coalesce(
@@ -39,7 +79,12 @@ select
     nullif(trim(u.email), '')
   )::text as created_by_name,
   nullif(trim(o.notes), '')::text as notes,
-  nullif(trim(c.name_for_invoice), '')::text as customer_name_for_invoice
+  nullif(trim(c.name_for_invoice), '')::text as customer_name_for_invoice,
+  -- New collection columns appended at the END (preserves original order)
+  coalesce(pt.collected_amount, 0)::numeric as collected_amount,
+  coalesce(pt.pending_amount, 0)::numeric as pending_amount,
+  coalesce(pt.overdue_pending_amount, 0)::numeric as overdue_amount,
+  pt.next_due_date
 from public.orders o
 left join public.customers c
   on c.id = o.customer_id

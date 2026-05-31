@@ -10,7 +10,7 @@ import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
 import { OrderPaymentActionsClient } from "@/app/sales/orders/OrderPaymentActionsClient";
 import type { PaymentItem } from "@/app/sales/orders/OrderPaymentActionsClient";
-import { derivePaymentStatus, paymentStatusClasses } from "@/lib/orders/paymentStatus";
+import { derivePaymentStatus, paymentStatusClasses, splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
@@ -160,12 +160,12 @@ export default async function SalesOrderPage({
       .eq("order_id", id),
     supabase
       .from("payments")
-      .select("id,payment_date,amount_total,payment_method,due_date,reference_number,notes,created_at,recorded_by")
+      .select("id,payment_date,amount_total,payment_method,payment_status,due_date,reference_number,check_number,notes,created_at,recorded_by")
       .eq("order_id", id)
       .order("payment_date", { ascending: false }),
     supabase
       .from("order_financials_view")
-      .select("id,total_amount,total_paid,remaining_balance,payment_count,payment_status")
+      .select("id,total_amount,total_paid,collected_amount,pending_amount,overdue_amount,remaining_balance,payment_count,payment_status,next_due_date")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -345,10 +345,20 @@ export default async function SalesOrderPage({
   const orderDiscount = getNumber((order as Row) ?? {}, "discount_amount") ?? 0;
   const totalDiscount = lineDiscount + orderDiscount;
   const derivedTotalAmount = Math.max(subtotal - totalDiscount, 0);
-  const derivedTotalPaid = ((payments ?? []) as Row[]).reduce(
-    (sum, payment) => sum + (getNumber(payment, "amount_total") ?? 0),
-    0
+  // COLLECTION SPLIT: "paid" reflects collected money only; expected (pending)
+  // money is shown separately so a future-dated payment never marks the order שולם.
+  const paymentSplit = splitPaymentAmounts(
+    ((payments ?? []) as Row[]).map((payment) => ({
+      amount_total: getNumber(payment, "amount_total") ?? 0,
+      payment_status: getString(payment, "payment_status"),
+      due_date: getString(payment, "due_date"),
+    }))
   );
+  const derivedTotalPaid = paymentSplit.collected;
+  const expectedAmount =
+    getNumber((financials as Row) ?? {}, "pending_amount") ?? paymentSplit.pending;
+  const overdueExpectedAmount =
+    getNumber((financials as Row) ?? {}, "overdue_amount") ?? paymentSplit.overdue;
   const viewTotalAmount = getNumber((financials as Row) ?? {}, "total_amount");
   const viewTotalPaid = getNumber((financials as Row) ?? {}, "total_paid");
   const useDerivedFinancials =
@@ -373,6 +383,7 @@ export default async function SalesOrderPage({
       payment_date: getString(payment, "payment_date"),
       amount_total: getNumber(payment, "amount_total") ?? 0,
       payment_method: getString(payment, "payment_method"),
+      payment_status: getString(payment, "payment_status"),
       due_date: getString(payment, "due_date"),
       reference_number: getString(payment, "reference_number"),
       check_number: getString(payment, "check_number"),
@@ -472,9 +483,22 @@ export default async function SalesOrderPage({
                     <div className="mt-1 text-sm font-medium">{formatCurrency(totalAmount)}</div>
                   </div>
                   <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
-                    <div className="text-xs text-muted-foreground">שולם</div>
+                    <div className="text-xs text-muted-foreground">נגבה</div>
                     <div className="mt-1 text-sm font-medium">{formatCurrency(totalPaid)}</div>
                   </div>
+                  {expectedAmount > 0.009 ? (
+                    <div className="rounded-2xl border border-warning-soft bg-warning-soft/40 px-3 py-2">
+                      <div className="text-xs text-muted-foreground">צפוי לגבייה</div>
+                      <div className="mt-1 text-sm font-medium text-warning-soft-foreground">
+                        {formatCurrency(expectedAmount)}
+                        {overdueExpectedAmount > 0.009 ? (
+                          <span className="ms-1 text-xs text-destructive">
+                            ({formatCurrency(overdueExpectedAmount)} באיחור)
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
                     <div className="text-xs text-muted-foreground">יתרה</div>
                     <div className={`mt-1 text-sm font-medium ${remainingBalance > 0 ? "text-warning-soft-foreground" : ""}`}>
