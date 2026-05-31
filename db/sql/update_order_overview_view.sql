@@ -5,13 +5,12 @@
 create or replace view public.order_overview_view as
 with payment_totals as (
   select
-    p.target_id as order_id,
+    p.order_id as order_id,
     count(*)::bigint as payment_count,
     coalesce(sum(coalesce(p.amount_total, 0)), 0)::numeric as total_paid
   from public.payments p
-  where p.target_type = 'order'
-    and p.target_id is not null
-  group by p.target_id
+  where p.order_id is not null
+  group by p.order_id
 )
 select
   o.id as order_id,
@@ -39,7 +38,8 @@ select
     nullif(trim(u.full_name), ''),
     nullif(trim(u.email), '')
   )::text as created_by_name,
-  nullif(trim(o.notes), '')::text as notes
+  nullif(trim(o.notes), '')::text as notes,
+  nullif(trim(c.name_for_invoice), '')::text as customer_name_for_invoice
 from public.orders o
 left join public.customers c
   on c.id = o.customer_id

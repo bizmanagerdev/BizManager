@@ -360,7 +360,7 @@ export default async function SalesPage({
             supabase
               .from("order_overview_view")
               .select(
-                "order_id,customer_id,customer_name,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,payment_count",
+                "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,payment_count",
                 { count: "estimated" }
               )
               .order("order_date", { ascending: false })
@@ -368,7 +368,7 @@ export default async function SalesPage({
         : supabase
             .from("order_overview_view")
             .select(
-              "order_id,customer_id,customer_name,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,payment_count",
+              "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,payment_count",
               { count: "estimated" }
             )
             .order("order_date", { ascending: false });
@@ -387,7 +387,7 @@ export default async function SalesPage({
     if (searchQuery) {
       const escaped = searchQuery.replace(/[%,]/g, " ");
       ordersQuery = ordersQuery.or(
-        `customer_name.ilike.%${escaped}%,customer_phone.ilike.%${escaped}%,customer_email.ilike.%${escaped}%,customer_city.ilike.%${escaped}%`
+        `customer_name.ilike.%${escaped}%,customer_name_for_invoice.ilike.%${escaped}%,customer_phone.ilike.%${escaped}%,customer_email.ilike.%${escaped}%,customer_city.ilike.%${escaped}%`
       );
     }
 
