@@ -21,9 +21,9 @@ function formatDate(s: string | null) {
 }
 
 function paymentStatusLabel(s: string | null) {
-  if (s === "paid") return "שולם";
-  if (s === "partial") return "חלקי";
-  return "לא שולם";
+  if (s === "paid") return "שולמה";
+  if (s === "partial") return "חלקית";
+  return "לא שולמה";
 }
 
 function paymentStatusVariant(s: string | null): "warning" | "destructive" {

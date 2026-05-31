@@ -75,13 +75,13 @@ function paymentInsertedByLabel(
 function formatPaymentStatus(status: string | null) {
   switch ((status ?? "").toLowerCase()) {
     case "unpaid":
-      return "לא שולם";
+      return "לא שולמה";
     case "partial":
-      return "שולם חלקית";
+      return "שולמה חלקית";
     case "paid":
-      return "שולם";
+      return "שולמה";
     case "refunded":
-      return "הוחזר";
+      return "הוחזרה";
     default:
       return status ?? "-";
   }

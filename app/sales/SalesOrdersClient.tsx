@@ -31,9 +31,9 @@ type PaymentStatusFilter = "all" | "paid" | "partial" | "unpaid";
 
 const PAYMENT_FILTER_OPTIONS: { value: PaymentStatusFilter; label: string }[] = [
   { value: "all", label: "הכל" },
-  { value: "paid", label: "שולם" },
-  { value: "partial", label: "שולם חלקית" },
-  { value: "unpaid", label: "לא שולם" },
+  { value: "paid", label: "שולמה" },
+  { value: "partial", label: "שולמה חלקית" },
+  { value: "unpaid", label: "לא שולמה" },
 ];
 
 const LOADER_DOT_DELAYS = [0, 150, 300, 450] as const;

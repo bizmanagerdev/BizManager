@@ -139,25 +139,28 @@ export function getOrderStatusColor(status: string): StatusColor {
   }
 }
 
-export function getPaymentStatusLabel(status: string) {
+export type Gender = "m" | "f";
+
+export function getPaymentStatusLabel(status: string, gender: Gender = "m") {
+  const f = gender === "f";
   switch (normalizeValue(status)) {
     case "paid":
-      return "שולם";
+      return f ? "שולמה" : "שולם";
     case "partial":
-      return "שולם חלקית";
+      return f ? "שולמה חלקית" : "שולם חלקית";
     case "not_due":
       return "טרם הגיע מועד התשלום";
     case "not_paid":
     case "unpaid":
-      return "לא שולם";
+      return f ? "לא שולמה" : "לא שולם";
     case "overpaid":
-      return "שולם יתר";
+      return f ? "שולמה ביתר" : "שולם יתר";
     case "pending":
-      return "ממתין לפירעון";
+      return f ? "ממתינה לפירעון" : "ממתין לפירעון";
     case "cleared":
-      return "התקבל";
+      return f ? "התקבלה" : "התקבל";
     case "rejected":
-      return "נדחה";
+      return f ? "נדחתה" : "נדחה";
     default:
       return status || "-";
   }
@@ -190,11 +193,11 @@ export function getTaskStatusLabel(status: string) {
     case "in_progress":
       return "בתהליך";
     case "blocked":
-      return "חסום";
+      return "חסומה";
     case "done":
-      return "בוצע";
+      return "בוצעה";
     case "cancelled":
-      return "בוטל";
+      return "בוטלה";
     default:
       return status || "-";
   }
@@ -232,10 +235,10 @@ export function getOrderStatusLabel(status: string) {
   }
 }
 
-export function getStatusLabel(type: StatusBadgeType, value: string) {
+export function getStatusLabel(type: StatusBadgeType, value: string, gender: Gender = "m") {
   switch (type) {
     case "payment":
-      return getPaymentStatusLabel(value);
+      return getPaymentStatusLabel(value, gender);
     case "project":
       return getProjectStatusLabel(value);
     case "task":

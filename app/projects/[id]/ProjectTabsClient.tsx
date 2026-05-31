@@ -275,7 +275,7 @@ function deriveCustomerPaymentStatus(totalDue: number | null, paidTotal: number)
 
 function customerPaymentStatusLabel(status: CustomerPaymentStatus) {
   if (status === "unpriced") return "לא סוכם תשלום";
-  return paymentStatusLabel(status);
+  return paymentStatusLabel(status, "m");
 }
 
 function customerPaymentStatusBadgeClasses(status: CustomerPaymentStatus) {
@@ -1315,6 +1315,7 @@ export default function ProjectTabsClient({
             <StatusBadge
               value={session ? currentSessionPaymentStatus : String(item.expense?.payment_status ?? "not_paid")}
               type="payment"
+              gender="f"
             />
             {billed && options?.showBillableBadge !== false ? (
               <span className="inline-flex items-center rounded-full border border-warning/50 bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning-soft-foreground">

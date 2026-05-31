@@ -120,14 +120,15 @@ export function derivePaymentStatus(totalAmount: number, paidAmount: number): Pa
   return "partial";
 }
 
-export function paymentStatusLabel(status: string) {
+export function paymentStatusLabel(status: string, gender: "m" | "f" = "f") {
+  const f = gender === "f";
   switch (status) {
     case "paid":
-      return "שולם";
+      return f ? "שולמה" : "שולם";
     case "partial":
-      return "שולם חלקית";
+      return f ? "שולמה חלקית" : "שולם חלקית";
     default:
-      return "לא שולם";
+      return f ? "לא שולמה" : "לא שולם";
   }
 }
 
