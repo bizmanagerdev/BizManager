@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowDownCircle,
+  ArrowLeftRight,
   ArrowUpCircle,
   Clock3,
   FolderKanban,
@@ -56,6 +57,7 @@ import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialo
 import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEditor";
 import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
 import { ProjectPicker, type ProjectPickerOption } from "@/components/projects/ProjectPicker";
+import { TransferDialog } from "@/components/financial/TransferDialog";
 
 type Row = Record<string, unknown>;
 
@@ -358,6 +360,7 @@ const HEBREW = {
   expenseCreateFailed: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
   expenseSaved: "\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
   incomeNew: "\u05d4\u05db\u05e0\u05e1\u05d4 \u05d7\u05d3\u05e9\u05d4",
+  transferNew: "\u05d4\u05e2\u05d1\u05e8\u05d4 / \u05e9\u05d9\u05d5\u05da \u05db\u05e4\u05d5\u05dc",
   incomeQuickRegister: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4",
   incomeDialogDescription:
     "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4 \u05d7\u05d3\u05e9\u05d4 \u05dc\u05ea\u05d6\u05e8\u05d9\u05dd, \u05e2\u05dd \u05d0\u05e4\u05e9\u05e8\u05d5\u05ea \u05dc\u05e7\u05e9\u05e8 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05d4\u05d6\u05de\u05e0\u05d4 \u05d0\u05d5 \u05e0\u05db\u05e1.",
@@ -436,6 +439,7 @@ export default function DashboardActions({
   const [taskOpen, setTaskOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [incomeOpen, setIncomeOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [manualSessionOpen, setManualSessionOpen] = useState(false);
   const [availableUsers, setAvailableUsers] = useState(users);
 
@@ -1563,6 +1567,16 @@ export default function DashboardActions({
           type="button"
           variant="outline"
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+          onClick={() => setTransferOpen(true)}
+        >
+          <ArrowLeftRight className="h-7 w-7" strokeWidth={2.2} />
+          <span className="font-semibold">{HEBREW.transferNew}</span>
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => {
             setProjectCreateCustomerReturnToProject(false);
             setProjectCreateCustomerOpen(true);
@@ -1606,6 +1620,15 @@ export default function DashboardActions({
           <span className="font-semibold">{HEBREW.manualSessionNew}</span>
         </Button>
       </AdaptiveGrid>
+
+      <TransferDialog
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+        projects={projects.map((p) => ({ id: p.id, label: p.name }))}
+        orders={orders.map((o) => ({ id: o.id, label: o.name }))}
+        properties={properties.map((p) => ({ id: p.id, label: p.name }))}
+        onSaved={() => router.refresh()}
+      />
 
       <Dialog open={weekOverviewOpen} onOpenChange={setWeekOverviewOpen}>
         <AdaptiveDialog size="form2xl">

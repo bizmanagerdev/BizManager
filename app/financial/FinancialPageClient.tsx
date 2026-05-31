@@ -30,6 +30,7 @@ import {
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
+import { TransferDialog } from "@/components/financial/TransferDialog";
 import type {
   FinancialEntry,
   FinancialEntryStage,
@@ -456,6 +457,7 @@ export default function FinancialPageClient({
   const [isDeletingExpense, setIsDeletingExpense] = useState(false);
   const [expenseCreateOpen, setExpenseCreateOpen] = useState(false);
   const [incomeCreateOpen, setIncomeCreateOpen] = useState(false);
+  const [transferCreateOpen, setTransferCreateOpen] = useState(false);
   const [incomeCreateForm, setIncomeCreateForm] = useState<IncomeCreateFormState>(
     () => loadDraft<IncomeCreateFormState>("income-create") ?? createIncomeFormState()
   );
@@ -668,6 +670,9 @@ export default function FinancialPageClient({
           </Button>
           <Button type="button" variant="outline" onClick={() => setIncomeCreateOpen(true)}>
             הוספת הכנסה
+          </Button>
+          <Button type="button" variant="outline" onClick={() => setTransferCreateOpen(true)}>
+            העברה / שיוך כפול
           </Button>
         </div>
       ) : null}
@@ -1397,6 +1402,15 @@ export default function FinancialPageClient({
           )}
         </CardContent>
       </Card>
+
+      <TransferDialog
+        open={transferCreateOpen}
+        onOpenChange={setTransferCreateOpen}
+        projects={recurringProjects}
+        orders={recurringOrders}
+        properties={recurringProperties}
+        onSaved={() => refreshAndWait()}
+      />
 
       <ExpenseDialog
         open={expenseCreateOpen}
