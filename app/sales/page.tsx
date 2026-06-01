@@ -9,6 +9,7 @@ import PriceListClient from "@/app/sales/PriceListClient";
 import SalesTabsNav from "@/app/sales/SalesTabsNav";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { Button } from "@/components/ui/button";
+import { DELIVERY_REGIONS, getCityRegion } from "@/lib/ui/cities";
 
 type Row = Record<string, unknown>;
 
@@ -102,7 +103,7 @@ function buildSalesHref(
   customerId: string | null,
   customerName: string | null,
   customerPage: string | null,
-  extras?: { q?: string; category?: string; paymentStatus?: string }
+  extras?: { q?: string; category?: string; paymentStatus?: string; region?: string }
 ) {
   const params = new URLSearchParams();
   if (activeTab !== "orders") params.set("tab", activeTab);
@@ -113,8 +114,24 @@ function buildSalesHref(
   if (extras?.q && extras.q.trim()) params.set("q", extras.q.trim());
   if (extras?.category && extras.category.trim()) params.set("category", extras.category.trim());
   if (extras?.paymentStatus && extras.paymentStatus.trim()) params.set("payment_status", extras.paymentStatus.trim());
+  if (extras?.region && extras.region.trim()) params.set("region", extras.region.trim());
   const query = params.toString();
   return query ? `/sales?${query}` : "/sales";
+}
+
+function buildDeliveriesRegionHref(
+  region: string | null,
+  customerId: string | null,
+  customerName: string | null,
+  customerPage: string | null
+) {
+  const params = new URLSearchParams();
+  params.set("tab", "deliveries");
+  if (customerId) params.set("customer_id", customerId);
+  if (customerName) params.set("customer_name", customerName);
+  if (customerPage) params.set("customer_page", customerPage);
+  if (region) params.set("region", region);
+  return `/sales?${params.toString()}`;
 }
 
 async function loadProductPageData(
@@ -265,6 +282,7 @@ export default async function SalesPage({
     q?: string;
     category?: string;
     payment_status?: string;
+    region?: string;
   }>;
 }) {
   const params = (await searchParams) ?? {};
@@ -293,6 +311,10 @@ export default async function SalesPage({
     params.tab === "closed" || params.tab === "inventory" || params.tab === "price-list" || params.tab === "deliveries"
       ? params.tab
       : "orders";
+  const regionFilter =
+    params.region === "צפון" || params.region === "מרכז" || params.region === "דרום"
+      ? params.region
+      : null;
 
   const ordersPage = parsePage(params.ordersPage);
   const inventoryPage = parsePage(params.inventoryPage);
@@ -796,55 +818,87 @@ export default async function SalesPage({
       }))
       .filter((row) => row.id);
 
-    const deliveriesByCity = Array.from(
-      deliveries.reduce((map, delivery) => {
-        const list = map.get(delivery.city) ?? [];
-        list.push(delivery);
-        map.set(delivery.city, list);
-        return map;
-      }, new Map<string, typeof deliveries>())
-    ).sort((a, b) => a[0].localeCompare(b[0], "he"));
+    // Filter by region if requested
+    const visibleDeliveries = regionFilter
+      ? deliveries.filter((d) => getCityRegion(d.city) === regionFilter)
+      : deliveries;
 
-    const deliveriesByCityAndCustomer = deliveriesByCity.map(([city, cityDeliveries]) => {
-      const customerGroups = Array.from(
-        cityDeliveries.reduce((map, delivery) => {
-          const customerKey =
-            delivery.customerId || `${delivery.customerName}|${delivery.address}|${delivery.customerPhone ?? ""}`;
-          const existing = map.get(customerKey);
-          if (existing) {
-            existing.orders.push(delivery);
+    function buildCustomerGroups(cityDeliveries: typeof deliveries) {
+      return Array.from(
+        cityDeliveries.reduce(
+          (map, delivery) => {
+            const customerKey =
+              delivery.customerId ||
+              `${delivery.customerName}|${delivery.address}|${delivery.customerPhone ?? ""}`;
+            const existing = map.get(customerKey);
+            if (existing) {
+              existing.orders.push(delivery);
+              return map;
+            }
+            map.set(customerKey, {
+              customerName: delivery.customerName,
+              customerPhone: delivery.customerPhone,
+              address: delivery.address,
+              orders: [delivery],
+            });
             return map;
-          }
-
-          map.set(customerKey, {
-            customerName: delivery.customerName,
-            customerPhone: delivery.customerPhone,
-            address: delivery.address,
-            orders: [delivery],
-          });
-          return map;
-        }, new Map<string, { customerName: string; customerPhone: string | null; address: string; orders: typeof deliveries }>())
+          },
+          new Map<string, { customerName: string; customerPhone: string | null; address: string; orders: typeof deliveries }>()
+        )
       );
+    }
 
-      return [city, customerGroups] as const;
-    });
+    // Group: region → city → customer
+    const byRegionMap = new Map<string, Map<string, typeof deliveries>>();
+    for (const delivery of visibleDeliveries) {
+      const region = getCityRegion(delivery.city) ?? "לא ידוע";
+      if (!byRegionMap.has(region)) byRegionMap.set(region, new Map());
+      const byCity = byRegionMap.get(region)!;
+      const list = byCity.get(delivery.city) ?? [];
+      list.push(delivery);
+      byCity.set(delivery.city, list);
+    }
+
+    const REGION_ORDER = [...DELIVERY_REGIONS, "לא ידוע"];
+    const deliveriesByRegion = REGION_ORDER
+      .filter((r) => byRegionMap.has(r))
+      .map((region) => {
+        const citiesMap = byRegionMap.get(region)!;
+        const cities = Array.from(citiesMap.entries())
+          .sort(([a], [b]) => a.localeCompare(b, "he"))
+          .map(([city, cityDeliveries]) => [city, buildCustomerGroups(cityDeliveries)] as const);
+        return [region, cities] as const;
+      });
 
     const totalCount = typeof count === "number" ? count : deliveries.length;
     const hasPreviousPage = deliveriesPage > 1;
     const hasNextPage = typeof count === "number" ? to + 1 < count : deliveries.length === PAGE_SIZE;
 
+    const regionLinks = [
+      { label: "הכל", value: null },
+      ...DELIVERY_REGIONS.map((r) => ({ label: r, value: r })),
+    ].map(({ label, value }) => ({
+      label,
+      value,
+      href: buildDeliveriesRegionHref(value, customerId, customerName, customerPage),
+      active: regionFilter === value,
+    }));
+
     content = (
       <>
         {error ? (
           <p className="text-sm text-destructive">שגיאה בטעינת משלוחים: {error.message}</p>
-        ) : deliveries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">אין כרגע הזמנות מקובצות למשלוחים.</p>
         ) : (
           <>
-            <SalesDeliveriesQueue deliveriesByCityAndCustomer={deliveriesByCityAndCustomer} />
+            <SalesDeliveriesQueue
+              deliveriesByRegion={deliveriesByRegion}
+              regionFilter={regionFilter}
+              regionLinks={regionLinks}
+              totalCount={totalCount}
+            />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
-                עמוד {deliveriesPage} • מציגים {deliveries.length} מתוך {totalCount}
+                עמוד {deliveriesPage} • מציגים {visibleDeliveries.length} מתוך {totalCount}
               </div>
               <div className="flex gap-2">
                 {hasPreviousPage ? (
@@ -856,7 +910,8 @@ export default async function SalesPage({
                         deliveriesPage - 1,
                         customerId,
                         customerName,
-                        customerPage
+                        customerPage,
+                        { region: regionFilter ?? undefined }
                       )}
                     >
                       הקודם
@@ -876,7 +931,8 @@ export default async function SalesPage({
                         deliveriesPage + 1,
                         customerId,
                         customerName,
-                        customerPage
+                        customerPage,
+                        { region: regionFilter ?? undefined }
                       )}
                     >
                       הבא
