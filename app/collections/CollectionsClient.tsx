@@ -238,39 +238,51 @@ function DebtorsView({
               </div>
 
               <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
-                {group.sources.map((source) => (
-                  <div
-                    key={source.collection_key}
-                    className="flex flex-wrap items-center justify-between gap-2 text-sm"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <NavLink
-                        to={
-                          source.source_type === "order"
-                            ? `/sales/orders/${source.source_id}`
-                            : `/projects/${source.source_id}`
-                        }
-                        className="font-medium hover:underline"
-                      >
-                        {source.source_type === "order" ? "הזמנה" : "פרויקט"} #
-                        {source.source_id.slice(0, 8)}
-                      </NavLink>
-                      <span className="text-xs text-muted-foreground">
-                        {getBusinessDomainLabel(source.business_domain)}
-                      </span>
-                      <Badge className={collectionStatusClasses(source.collection_status)}>
-                        {collectionStatusLabel(
-                          source.collection_status,
-                          source.source_type === "order" ? "f" : "m"
-                        )}
-                      </Badge>
+                {group.sources.map((source) => {
+                  const isOrder = source.source_type === "order";
+                  const href = isOrder
+                    ? `/sales/orders/${source.source_id}`
+                    : `/projects/${source.source_id}`;
+                  const linkText = isOrder
+                    ? `הזמנה #${source.source_id.slice(0, 8)}`
+                    : source.title ?? `פרויקט #${source.source_id.slice(0, 8)}`;
+                  return (
+                    <div
+                      key={source.collection_key}
+                      className="rounded-lg border border-border/50 bg-background/40 p-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <NavLink
+                            to={href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium text-primary hover:underline"
+                          >
+                            {linkText}
+                          </NavLink>
+                          <span className="text-xs text-muted-foreground">
+                            {getBusinessDomainLabel(source.business_domain)}
+                          </span>
+                          <Badge className={collectionStatusClasses(source.collection_status)}>
+                            {collectionStatusLabel(source.collection_status, isOrder ? "f" : "m")}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 text-muted-foreground">
+                          <span>חוב: {formatCurrency(source.outstanding_amount)}</span>
+                          {source.next_due_date ? (
+                            <span>פירעון: {formatDate(source.next_due_date)}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                      {isOrder && source.items.length > 0 ? (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {source.items.join(" · ")}
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <span>חוב: {formatCurrency(source.outstanding_amount)}</span>
-                      {source.next_due_date ? <span>פירעון: {formatDate(source.next_due_date)}</span> : null}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}

@@ -26,6 +26,10 @@ export type CollectionSourceRow = {
   next_due_date: string | null;
   last_payment_date: string | null;
   collection_status: CollectionStatus;
+  /** What the debt is for — project name, or a summary of the order's items. */
+  title: string | null;
+  /** Per-line item labels for orders (e.g. "מארז שי ×20"). Empty for projects. */
+  items: string[];
 };
 
 export type CollectionCustomerGroup = {
@@ -94,6 +98,82 @@ function normalizeStatus(value: string | null): CollectionStatus {
   }
 }
 
+// Attach a human-readable "what for" to each row: project name for projects,
+// ordered-item labels for orders. Best-effort — never throws.
+async function enrichCollectionTitles(
+  supabase: SupabaseClient,
+  rows: CollectionSourceRow[]
+): Promise<void> {
+  const orderIds = Array.from(
+    new Set(rows.filter((r) => r.source_type === "order").map((r) => r.source_id).filter(Boolean))
+  );
+  const projectIds = Array.from(
+    new Set(rows.filter((r) => r.source_type === "project").map((r) => r.source_id).filter(Boolean))
+  );
+
+  const projectNameById = new Map<string, string>();
+  const itemsByOrderId = new Map<string, string[]>();
+
+  try {
+    if (projectIds.length > 0) {
+      const { data } = await supabase.from("projects").select("id,name").in("id", projectIds);
+      for (const row of (data ?? []) as Row[]) {
+        const id = str(row, "id");
+        if (id) projectNameById.set(id, str(row, "name") ?? "");
+      }
+    }
+
+    if (orderIds.length > 0) {
+      const { data: items } = await supabase
+        .from("order_items")
+        .select("order_id,product_id,quantity_ordered,notes")
+        .in("order_id", orderIds)
+        .range(0, 4999);
+      const itemRows = (items ?? []) as Row[];
+
+      const productIds = Array.from(
+        new Set(itemRows.map((r) => str(r, "product_id")).filter((v): v is string => Boolean(v)))
+      );
+      const productNameById = new Map<string, string>();
+      if (productIds.length > 0) {
+        const { data: products } = await supabase
+          .from("products")
+          .select("id,name")
+          .in("id", productIds);
+        for (const row of (products ?? []) as Row[]) {
+          const id = str(row, "id");
+          if (id) productNameById.set(id, str(row, "name") ?? "");
+        }
+      }
+
+      for (const item of itemRows) {
+        const oid = str(item, "order_id");
+        if (!oid) continue;
+        const pid = str(item, "product_id");
+        const name = (pid ? productNameById.get(pid) : null) || str(item, "notes") || "פריט";
+        const qty = toNum(item.quantity_ordered);
+        const list = itemsByOrderId.get(oid) ?? [];
+        list.push(qty > 0 ? `${name} ×${qty}` : name);
+        itemsByOrderId.set(oid, list);
+      }
+    }
+  } catch {
+    // tables/columns missing — leave titles null
+    return;
+  }
+
+  for (const row of rows) {
+    if (row.source_type === "project") {
+      const name = projectNameById.get(row.source_id);
+      row.title = name && name.trim() ? name.trim() : null;
+    } else {
+      const list = itemsByOrderId.get(row.source_id) ?? [];
+      row.items = list;
+      row.title = list.length > 0 ? list.join(", ") : null;
+    }
+  }
+}
+
 export async function getCollectionsData(supabase: SupabaseClient): Promise<CollectionsData> {
   const { data, error } = await supabase
     .from("collections_view")
@@ -130,7 +210,13 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
     next_due_date: str(row, "next_due_date"),
     last_payment_date: str(row, "last_payment_date"),
     collection_status: normalizeStatus(str(row, "collection_status")),
+    title: null,
+    items: [],
   }));
+
+  // Enrich each source with WHAT the debt is for — so a caller has talking points.
+  // Projects → project name; orders → list of ordered items ("מוצר ×כמות").
+  await enrichCollectionTitles(supabase, rows);
 
   // Group by customer
   const groupMap = new Map<string, CollectionCustomerGroup>();
