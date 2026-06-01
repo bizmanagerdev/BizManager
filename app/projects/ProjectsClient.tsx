@@ -296,12 +296,13 @@ export default function ProjectsClient({
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
   const [projects, setProjects] = useState<ProjectRow[]>(initialProjects);
+  useEffect(() => { setProjects(initialProjects); }, [initialProjects]);
 
   void contacts;
-  const activeTab: ProjectsView = initialFilters?.view ?? normalizeProjectsView(searchParams.get("view"));
+  const activeTab: ProjectsView = normalizeProjectsView(searchParams.get("view"));
   const [query, setQuery] = useState(initialFilters?.q ?? "");
-  const status = initialFilters?.status ?? "all";
-  const sort: SortMode = initialFilters?.sort ?? defaultSortForTab(activeTab);
+  const status = searchParams.get("status") ?? "all";
+  const sort: SortMode = (["recent", "start_date", "start_date_desc", "profit_desc"].includes(searchParams.get("sort") ?? "") ? searchParams.get("sort") : defaultSortForTab(activeTab)) as SortMode;
 
   // Push filter changes to URL — server re-fetches with the new filters applied
   // across the full dataset, then we get a fresh paginated slice back.

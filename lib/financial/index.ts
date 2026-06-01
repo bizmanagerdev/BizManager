@@ -53,6 +53,7 @@ import {
   toNumber,
   uniqueStrings,
 } from "./utils";
+import { isCollectedPayment } from "@/lib/orders/paymentStatus";
 
 // Re-export all public types so existing imports like:
 //   import type { FinancialEntry, FinancialPageData } from "@/lib/financial"
@@ -189,6 +190,7 @@ export async function getFinancialPageData(
   const paidByProjectId = paymentRows.reduce((map, row) => {
     const links = resolvePaymentLinks(row);
     if (!links.projectId) return map;
+    if (!isCollectedPayment(row.payment_status)) return map;
     map.set(links.projectId, (map.get(links.projectId) ?? 0) + Math.abs(toNumber(row.amount_total)));
     return map;
   }, new Map<string, number>());
@@ -196,6 +198,7 @@ export async function getFinancialPageData(
   const paidByOrderId = paymentRows.reduce((map, row) => {
     const links = resolvePaymentLinks(row);
     if (!links.orderId) return map;
+    if (!isCollectedPayment(row.payment_status)) return map;
     map.set(links.orderId, (map.get(links.orderId) ?? 0) + Math.abs(toNumber(row.amount_total)));
     return map;
   }, new Map<string, number>());

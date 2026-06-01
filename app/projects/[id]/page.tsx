@@ -830,10 +830,10 @@ export default async function ProjectPage({
         ? Number(financials.expenses_billed)
         : 0;
   const baseProjectPrice =
-    agreedBasePrice !== null && Number.isFinite(agreedBasePrice)
-      ? agreedBasePrice
-      : actualPrice !== null && Number.isFinite(actualPrice)
-        ? actualPrice
+    actualPrice !== null && Number.isFinite(actualPrice) && actualPrice > 0
+      ? actualPrice
+      : agreedBasePrice !== null && Number.isFinite(agreedBasePrice) && agreedBasePrice > 0
+        ? agreedBasePrice
         : null;
   const totalCustomerCharge =
     baseProjectPrice !== null ? baseProjectPrice + (Number.isFinite(expensesBilled) ? expensesBilled : 0) : null;

@@ -158,10 +158,7 @@ export default async function ProjectsPage({
 
   const projectCustomerIds = [...new Set(rows.map((row) => (typeof row?.customer_id === "string" ? row.customer_id : "")).filter(Boolean))];
 
-  const [{ data: paymentRows }, { data: projectSettingsRows }] = await Promise.all([
-    projectIds.length > 0
-      ? supabase.from("payments").select("project_id,amount_total").in("project_id", projectIds)
-      : Promise.resolve({ data: [] as Row[] }),
+  const [{ data: projectSettingsRows }] = await Promise.all([
     projectIds.length > 0
       ? supabase.from("projects").select("id,expenses_billed_separately").in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
@@ -171,21 +168,13 @@ export default async function ProjectsPage({
     projectIds.length > 0
       ? supabase
           .from("project_financials_view")
-          .select("id,total_expenses,gross_profit,customer_total_price,expenses_billed")
+          .select("id,total_expenses,gross_profit,customer_total_price,expenses_billed,collected_amount")
           .in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
     projectCustomerIds.length > 0
       ? supabase.from("contacts").select("customer_id,full_name,phone,email,whatsapp").in("customer_id", projectCustomerIds).eq("active", true)
       : Promise.resolve({ data: [] as Row[] }),
   ]);
-
-  const paidTotalByProjectId = new Map<string, number>();
-  ((paymentRows ?? []) as Row[]).forEach((row) => {
-    const projectId = typeof row?.project_id === "string" ? row.project_id : "";
-    if (!projectId) return;
-    const amount = toNumber(row?.amount_total) ?? 0;
-    paidTotalByProjectId.set(projectId, (paidTotalByProjectId.get(projectId) ?? 0) + amount);
-  });
 
   const expensesSeparatelyByProjectId = new Map<string, boolean>();
   ((projectSettingsRows ?? []) as Row[]).forEach((row) => {
@@ -217,7 +206,7 @@ export default async function ProjectsPage({
       derivedCustomerTotalPrice > 0
         ? derivedCustomerTotalPrice
         : toNumber(financialRow?.customer_total_price) ?? 0;
-    const paidTotal = paidTotalByProjectId.get(projectId) ?? 0;
+    const paidTotal = toNumber(financialRow?.collected_amount) ?? 0;
     const expensesBilledSeparately = expensesSeparatelyByProjectId.get(projectId) ?? false;
     const amountDue = customerTotalPrice;
     const priceUnset = baseProjectPrice <= 0;
