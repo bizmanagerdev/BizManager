@@ -360,7 +360,7 @@ export default async function SalesPage({
             supabase
               .from("order_overview_view")
               .select(
-                "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,payment_count",
+                "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,pending_amount,overdue_amount,payment_count",
                 { count: "estimated" }
               )
               .order("order_date", { ascending: false })
@@ -368,7 +368,7 @@ export default async function SalesPage({
         : supabase
             .from("order_overview_view")
             .select(
-              "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,payment_count",
+              "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,pending_amount,overdue_amount,payment_count",
               { count: "estimated" }
             )
             .order("order_date", { ascending: false });
@@ -408,7 +408,7 @@ export default async function SalesPage({
           <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error.message}</p>
         ) : (
           <>
-            <SalesOrdersClient orders={rows} contacts={(orderContacts ?? []) as Row[]} initialQuery={searchQuery} showPaymentStatusFilter={activeTab === "closed"} initialPaymentFilter={paymentStatusFilter} />
+            <SalesOrdersClient orders={rows} contacts={(orderContacts ?? []) as Row[]} initialQuery={searchQuery} showPaymentStatusFilter={activeTab === "closed"} initialPaymentFilter={paymentStatusFilter} totalCount={totalCount} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {ordersPage} • מציגים {rows.length} מתוך {totalCount}

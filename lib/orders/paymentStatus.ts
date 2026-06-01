@@ -279,6 +279,24 @@ export function collectionStatusClasses(status: string) {
   return getStatusColorClasses(getCollectionStatusColor(status));
 }
 
+/** Labels for order-level payment badges. Uses "שולמה" for paid states and
+ *  keeps "ממתינה לגבייה" / "באיחור" for pending states. */
+export function orderCollectionStatusLabel(status: string, gender: "m" | "f" = "f") {
+  const f = gender === "f";
+  switch (status) {
+    case "collected":
+      return f ? "שולמה" : "שולם";
+    case "partial":
+      return f ? "שולמה חלקית" : "שולם חלקית";
+    case "awaiting":
+      return f ? "ממתינה לגבייה" : "ממתין לגבייה";
+    case "overdue":
+      return "באיחור";
+    default:
+      return f ? "לא שולמה" : "לא שולם";
+  }
+}
+
 /**
  * Badge for a single payment row, surfaced everywhere payments are listed.
  * Returns null for collected/cleared money (no badge needed), a "צפוי" warning

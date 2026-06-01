@@ -65,9 +65,13 @@ function defaultPaymentStatusForMethod(
   dueDate: string | null
 ): "pending" | "cleared" {
   if (normalizePaymentMethod(method) === "check") return "pending";
-  // Non-check method with an explicit future due_date — treat as pending
-  // (e.g. שוטף+30 bank transfers).
-  if (dueDate && paymentDate && dueDate > paymentDate) return "pending";
+  // Non-check method with a due_date that is today or in the future — treat as pending.
+  // Compare against today so that paymentDate == dueDate (both set to a future date) is
+  // correctly treated as pending, not cleared.
+  if (dueDate) {
+    const today = new Date().toISOString().slice(0, 10);
+    if (dueDate > today) return "pending";
+  }
   return "cleared";
 }
 

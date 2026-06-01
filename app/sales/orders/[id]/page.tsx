@@ -10,7 +10,7 @@ import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
 import { OrderPaymentActionsClient } from "@/app/sales/orders/OrderPaymentActionsClient";
 import type { PaymentItem } from "@/app/sales/orders/OrderPaymentActionsClient";
-import { derivePaymentStatus, paymentStatusClasses, splitPaymentAmounts } from "@/lib/orders/paymentStatus";
+import { derivePaymentStatus, splitPaymentAmounts, deriveCollectionStatus, orderCollectionStatusLabel, collectionStatusClasses } from "@/lib/orders/paymentStatus";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
@@ -72,20 +72,6 @@ function paymentInsertedByLabel(
   return null;
 }
 
-function formatPaymentStatus(status: string | null) {
-  switch ((status ?? "").toLowerCase()) {
-    case "unpaid":
-      return "לא שולמה";
-    case "partial":
-      return "שולמה חלקית";
-    case "paid":
-      return "שולמה";
-    case "refunded":
-      return "הוחזרה";
-    default:
-      return status ?? "-";
-  }
-}
 
 function normalizeOrderStatus(status: string | null) {
   switch ((status ?? "").toLowerCase()) {
@@ -374,6 +360,12 @@ export default async function SalesOrderPage({
   const paymentStatus = useDerivedFinancials
     ? derivePaymentStatus(derivedTotalAmount, derivedTotalPaid)
     : getString((financials as Row) ?? {}, "payment_status") ?? derivePaymentStatus(totalAmount, totalPaid);
+  const collectionStatus = deriveCollectionStatus({
+    totalAmount,
+    collected: paymentSplit.collected,
+    pending: paymentSplit.pending,
+    overdue: paymentSplit.overdue,
+  });
   const canManagePayments = profile.role === "admin" || profile.role === "office";
 
   const paymentsWithMeta: PaymentItem[] = ((payments ?? []) as Row[]).map((payment) => {
@@ -458,8 +450,8 @@ export default async function SalesOrderPage({
               </div>
               <div className="flex flex-wrap gap-2">
                 <StatusBadge value={getString(order as Row, "status") ?? ""} type="order" />
-                <span className={`rounded-full border px-2.5 py-1 text-xs ${paymentStatusClasses(paymentStatus)}`}>
-                  {formatPaymentStatus(paymentStatus)}
+                <span className={`rounded-full border px-2.5 py-1 text-xs ${collectionStatusClasses(collectionStatus)}`}>
+                  {orderCollectionStatusLabel(collectionStatus, "f")}
                 </span>
               </div>
             </div>

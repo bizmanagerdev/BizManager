@@ -22,9 +22,10 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { formatOrderDate } from "@/lib/orders/format";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import {
+  deriveCollectionStatus,
+  collectionStatusClasses,
+  orderCollectionStatusLabel,
   derivePaymentStatus,
-  paymentStatusClasses,
-  paymentStatusLabel,
 } from "@/lib/orders/paymentStatus";
 
 type PaymentStatusFilter = "all" | "paid" | "partial" | "unpaid";
@@ -72,6 +73,7 @@ type OrderView = {
   orderDate: string | null;
   status: string;
   paymentStatus: string;
+  collectionStatus: string;
   totalAmount: number;
   totalPaid: number;
   remainingBalance: number;
@@ -171,12 +173,14 @@ export default function SalesOrdersClient({
   initialQuery = "",
   showPaymentStatusFilter = false,
   initialPaymentFilter = "",
+  totalCount,
 }: {
   orders: Row[];
   contacts?: Row[];
   initialQuery?: string;
   showPaymentStatusFilter?: boolean;
   initialPaymentFilter?: string;
+  totalCount?: number;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -247,6 +251,8 @@ export default function SalesOrdersClient({
       const totalPaid = paymentSnapshot.has(id) ? paymentSnapshot.get(id) ?? dbPaidAmount : dbPaidAmount;
       const remainingBalance = Math.max(totalAmount - totalPaid, 0);
 
+      const pendingAmount = getNumber(row, ["pending_amount"]) ?? 0;
+      const overdueAmount = getNumber(row, ["overdue_amount"]) ?? 0;
       return {
         id,
         customerId,
@@ -258,6 +264,7 @@ export default function SalesOrdersClient({
         orderDate: getString(row, ["order_date", "created_at"]),
         status: normalizeOrderStatus(getString(row, ["status"])),
         paymentStatus: derivePaymentStatus(totalAmount, totalPaid),
+        collectionStatus: deriveCollectionStatus({ totalAmount, collected: totalPaid, pending: pendingAmount, overdue: overdueAmount }),
         totalAmount,
         totalPaid,
         remainingBalance,
@@ -287,7 +294,7 @@ export default function SalesOrdersClient({
 
       </div>
 
-      <div className="text-sm text-muted-foreground">נמצאו {filteredRows.length} הזמנות</div>
+      <div className="text-sm text-muted-foreground">נמצאו {totalCount ?? filteredRows.length} הזמנות</div>
 
       {filteredRows.length === 0 ? (
         <Card>
@@ -405,8 +412,8 @@ export default function SalesOrdersClient({
                         <StatusBadge value={row.status} type="order" className={orderStatusBadgeClasses(row.status)} />
                       </td>
                       <td className="px-4 py-4">
-                        <Badge className={paymentStatusClasses(row.paymentStatus)}>
-                          {paymentStatusLabel(row.paymentStatus)}
+                        <Badge className={collectionStatusClasses(row.collectionStatus)}>
+                          {orderCollectionStatusLabel(row.collectionStatus, "f")}
                         </Badge>
                       </td>
                       <td className="px-4 py-4 font-medium">{formatCurrency(row.totalAmount)}</td>
@@ -451,8 +458,8 @@ export default function SalesOrdersClient({
                       <div className="flex shrink-0 flex-col items-end gap-1">
                         <div className="flex flex-wrap justify-end gap-1">
                           <StatusBadge value={row.status} type="order" className={`${orderStatusBadgeClasses(row.status)} px-1.5 py-0 text-[10px]`} />
-                          <Badge className={`${paymentStatusClasses(row.paymentStatus)} px-1.5 py-0 text-[10px]`}>
-                            {paymentStatusLabel(row.paymentStatus)}
+                          <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-1.5 py-0 text-[10px]`}>
+                            {orderCollectionStatusLabel(row.collectionStatus, "f")}
                           </Badge>
                         </div>
                         <div className="text-[10px] text-muted-foreground">#{row.id.slice(0, 8)}</div>

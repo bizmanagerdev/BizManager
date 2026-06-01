@@ -66,3 +66,22 @@ describe("buildPaymentInsert — check payment defaults", () => {
     expect(result.payment_status).toBe("cleared");
   });
 });
+
+describe("buildPaymentInsert — future due_date (bank transfer)", () => {
+  it("status=pending for bank transfer with a future due_date", () => {
+    const result = buildPaymentInsert({ ...BASE_INPUT, dueDate: "2099-01-01" });
+    expect(result.payment_status).toBe("pending");
+  });
+
+  it("status=pending when paymentDate == dueDate and both are in the future", () => {
+    // Regression: equal dates used to bypass the pending check, causing the order to
+    // appear fully paid even though the money wasn't due yet.
+    const result = buildPaymentInsert({ ...BASE_INPUT, paymentDate: "2099-01-01", dueDate: "2099-01-01" });
+    expect(result.payment_status).toBe("pending");
+  });
+
+  it("status=cleared for bank transfer with a past due_date", () => {
+    const result = buildPaymentInsert({ ...BASE_INPUT, dueDate: "2020-01-01" });
+    expect(result.payment_status).toBe("cleared");
+  });
+});
