@@ -691,11 +691,12 @@ export function buildProjectReceivableEntries(args: {
   projectsById: Map<string, ProjectRow>;
   projectFinancialsById: Map<string, ProjectFinancialRow>;
   paidByProjectId: Map<string, number>;
+  pendingByProjectId: Map<string, number>;
   customerId: string | null;
   customerProjectSet: Set<string>;
   referenceDate: string;
 }): FinancialEntry[] {
-  const { projectRows, projectsById, projectFinancialsById, paidByProjectId, customerId, customerProjectSet, referenceDate } = args;
+  const { projectRows, projectsById, projectFinancialsById, paidByProjectId, pendingByProjectId, customerId, customerProjectSet, referenceDate } = args;
 
   return projectRows.flatMap((project) => {
     if (!project.id) return [];
@@ -715,7 +716,9 @@ export function buildProjectReceivableEntries(args: {
     const fallbackTotal = (actualPrice > 0 ? actualPrice : agreedBasePrice > 0 ? agreedBasePrice : 0) + expensesBilled;
     const customerTotalPrice = Math.max(toNumber(financialRow?.customer_total_price), fallbackTotal);
     const paidAmount = paidByProjectId.get(project.id) ?? 0;
-    const amount = Math.max(customerTotalPrice - paidAmount, 0);
+    // Exclude money already represented by scheduled (pending) payment entries.
+    const pendingAmount = pendingByProjectId.get(project.id) ?? 0;
+    const amount = Math.max(customerTotalPrice - paidAmount - pendingAmount, 0);
     if (!(amount > 0)) return [];
 
     const isOpenDebt = isClosedProjectStatus(linkedProject.status);
@@ -761,11 +764,12 @@ export function buildOrderReceivableEntries(args: {
   ordersById: Map<string, OrderRow>;
   orderFinancialsById: Map<string, OrderFinancialRow>;
   paidByOrderId: Map<string, number>;
+  pendingByOrderId: Map<string, number>;
   customerId: string | null;
   customerProjectSet: Set<string>;
   referenceDate: string;
 }): FinancialEntry[] {
-  const { orderRows, ordersById, orderFinancialsById, paidByOrderId, customerId, customerProjectSet, referenceDate } = args;
+  const { orderRows, ordersById, orderFinancialsById, paidByOrderId, pendingByOrderId, customerId, customerProjectSet, referenceDate } = args;
 
   return orderRows.flatMap((order) => {
     if (!order.id) return [];
@@ -789,7 +793,10 @@ export function buildOrderReceivableEntries(args: {
       normalizedOrderPaymentStatus === "paid" || normalizedOrderPaymentStatus === "cleared"
         ? 0
         : hasExplicitRemaining ? explicitRemainingBalance : derivedRemainingBalance;
-    if (!(remainingBalance > 0)) return [];
+    // Exclude money already represented by scheduled (pending) payment entries.
+    const pendingAmount = pendingByOrderId.get(order.id) ?? 0;
+    const receivableAmount = Math.max(remainingBalance - pendingAmount, 0);
+    if (!(receivableAmount > 0)) return [];
 
     const isOpenDebt = isClosedOrderStatus(linkedOrder.status);
     const flowMeta = isOpenDebt
@@ -804,8 +811,8 @@ export function buildOrderReceivableEntries(args: {
     return [{
       id: `order-receivable:${order.id}`,
       type: "inflow" as const,
-      amount: remainingBalance,
-      signedAmount: remainingBalance,
+      amount: receivableAmount,
+      signedAmount: receivableAmount,
       businessDomain: "sales" as const,
       domainName: getBusinessDomainLabel("sales"),
       flowDate: flowMeta.flowDate,

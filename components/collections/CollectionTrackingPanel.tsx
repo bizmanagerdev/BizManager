@@ -8,11 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatShortDate } from "@/lib/date";
 import { collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
 import type { CustomerReceivable } from "@/lib/collections";
+import CommunicationLogItem from "@/components/collections/CommunicationLogItem";
 import {
   COMMUNICATION_CHANNELS,
   actionTypeLabel,
-  channelLabel,
-  directionLabel,
   type CommunicationLog,
   type Reminder,
 } from "@/lib/communications";
@@ -32,21 +31,6 @@ type Props = {
   /** Called after any successful mutation, so a parent list can refresh. */
   onChanged?: () => void;
 };
-
-function formatDateTime(value: string | null) {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleString("he-IL", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return value;
-  }
-}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -381,15 +365,14 @@ export default function CollectionTrackingPanel({
         ) : (
           <div className="space-y-2">
             {logs.map((log) => (
-              <div key={log.id} className="rounded-lg border border-border/60 bg-background/50 p-2 text-sm">
-                <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                  <span>{channelLabel(log.channel)}</span>
-                  <span>· {directionLabel(log.direction)}</span>
-                  <span>· {formatDateTime(log.created_at)}</span>
-                  {log.created_by_name ? <span>· {log.created_by_name}</span> : null}
-                </div>
-                {log.content ? <div className="mt-1">{log.content}</div> : null}
-              </div>
+              <CommunicationLogItem
+                key={log.id}
+                log={log}
+                onChanged={() => {
+                  void load();
+                  onChanged?.();
+                }}
+              />
             ))}
           </div>
         )}

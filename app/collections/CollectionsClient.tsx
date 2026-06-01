@@ -12,12 +12,11 @@ import { getBusinessDomainLabel } from "@/lib/expenses";
 import { collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
 import {
   actionTypeLabel,
-  channelLabel,
-  directionLabel,
   type CommunicationLogWithCustomer,
   type Reminder,
 } from "@/lib/communications";
 import CustomerCollectionButton from "@/components/collections/CustomerCollectionButton";
+import CommunicationLogItem from "@/components/collections/CommunicationLogItem";
 import type { CollectionCustomerGroup, PaymentDueToday } from "@/lib/collections";
 
 type Props = {
@@ -42,21 +41,6 @@ function formatCurrency(value: number) {
 
 function formatDate(value: string | null) {
   return value ? formatShortDate(value) : "—";
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleString("he-IL", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return value;
-  }
 }
 
 function todayIso() {
@@ -232,7 +216,7 @@ export default function CollectionsClient({
           variant={view === "activity" ? "default" : "ghost"}
           onClick={() => setView("activity")}
         >
-          יומן שיחות{recentLogs.length ? ` (${recentLogs.length})` : ""}
+          יומן שיחות
         </Button>
       </div>
 
@@ -252,7 +236,7 @@ export default function CollectionsClient({
       ) : view === "reminders" ? (
         <RemindersView reminders={reminders} onUpdate={updateReminder} />
       ) : (
-        <ActivityView logs={recentLogs} />
+        <ActivityView logs={recentLogs} onChanged={() => router.refresh()} />
       )}
     </div>
   );
@@ -762,7 +746,13 @@ function ReminderGroup({
   );
 }
 
-function ActivityView({ logs }: { logs: CommunicationLogWithCustomer[] }) {
+function ActivityView({
+  logs,
+  onChanged,
+}: {
+  logs: CommunicationLogWithCustomer[];
+  onChanged: () => void;
+}) {
   if (logs.length === 0) {
     return (
       <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-10 text-center text-sm text-muted-foreground">
@@ -773,29 +763,7 @@ function ActivityView({ logs }: { logs: CommunicationLogWithCustomer[] }) {
   return (
     <div className="space-y-2">
       {logs.map((log) => (
-        <div key={log.id} className="rounded-xl border border-border/60 bg-card/60 p-3 text-sm">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {log.customer_id ? (
-              <NavLink to={`/customers/${log.customer_id}`} className="font-medium hover:underline">
-                {log.customer_name ?? "לקוח"}
-              </NavLink>
-            ) : (
-              <span className="font-medium">{log.customer_name ?? "כללי"}</span>
-            )}
-            {log.customer_phone ? (
-              <a href={`tel:${log.customer_phone}`} className="text-xs text-muted-foreground hover:underline">
-                ☎ {log.customer_phone}
-              </a>
-            ) : null}
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-            <span>{channelLabel(log.channel)}</span>
-            <span>· {directionLabel(log.direction)}</span>
-            <span>· {formatDateTime(log.created_at)}</span>
-            {log.created_by_name ? <span>· {log.created_by_name}</span> : null}
-          </div>
-          {log.content ? <div className="mt-1">{log.content}</div> : null}
-        </div>
+        <CommunicationLogItem key={log.id} log={log} showCustomer onChanged={onChanged} />
       ))}
     </div>
   );

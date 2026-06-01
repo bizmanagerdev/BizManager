@@ -203,6 +203,24 @@ export async function getFinancialPageData(
     return map;
   }, new Map<string, number>());
 
+  // Pending (future-dated / uncleared) payments are emitted as their own scheduled
+  // payment entries, so the receivable balance must exclude them to avoid counting
+  // the same money twice (as both an open debt and a planned check/transfer).
+  const isPendingPayment = (status: unknown) =>
+    typeof status === "string" && status.trim().toLowerCase() === "pending";
+  const pendingByProjectId = paymentRows.reduce((map, row) => {
+    const links = resolvePaymentLinks(row);
+    if (!links.projectId || !isPendingPayment(row.payment_status)) return map;
+    map.set(links.projectId, (map.get(links.projectId) ?? 0) + Math.abs(toNumber(row.amount_total)));
+    return map;
+  }, new Map<string, number>());
+  const pendingByOrderId = paymentRows.reduce((map, row) => {
+    const links = resolvePaymentLinks(row);
+    if (!links.orderId || !isPendingPayment(row.payment_status)) return map;
+    map.set(links.orderId, (map.get(links.orderId) ?? 0) + Math.abs(toNumber(row.amount_total)));
+    return map;
+  }, new Map<string, number>());
+
   const sharedArgs = { customerId, customerProjectSet, referenceDate, projectsById, propertiesById, propertyCustomersById, recordedByNames };
 
   const payments = buildPaymentEntries({ paymentRows, ordersById, ...sharedArgs });
@@ -219,10 +237,10 @@ export async function getFinancialPageData(
     ...sharedArgs,
   });
   const projectReceivableEntries = buildProjectReceivableEntries({
-    projectRows, projectsById, projectFinancialsById, paidByProjectId, customerId, customerProjectSet, referenceDate,
+    projectRows, projectsById, projectFinancialsById, paidByProjectId, pendingByProjectId, customerId, customerProjectSet, referenceDate,
   });
   const orderReceivableEntries = buildOrderReceivableEntries({
-    orderRows, ordersById, orderFinancialsById, paidByOrderId, customerId, customerProjectSet, referenceDate,
+    orderRows, ordersById, orderFinancialsById, paidByOrderId, pendingByOrderId, customerId, customerProjectSet, referenceDate,
   });
 
   const entries = sortEntries([

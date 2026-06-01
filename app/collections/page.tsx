@@ -43,9 +43,6 @@ export default async function CollectionsPage() {
       <div className="space-y-4 text-right" dir="rtl">
         <div>
           <h1 className="text-2xl font-semibold">גבייה</h1>
-          <p className="text-sm text-muted-foreground">
-            כל הכסף שחייבים לך — מי לגבות, כמה באיחור, ומתי התשלום הבא.
-          </p>
         </div>
 
         {data.loadError ? (
