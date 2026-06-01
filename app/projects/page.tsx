@@ -275,6 +275,12 @@ export default async function ProjectsPage({
     )
     .map((row: { id: string; label: string }) => ({ id: row.id, label: row.label }));
 
+  // Keep only Hebrew base letters (U+05D0–U+05EA) for a robust substring match
+  // that tolerates nikud, diacritics, invisible unicode, and spacing differences.
+  const hebrewLettersOnly = (s: string) => s.replace(/[^א-ת]/g, "");
+  const defaultProjectManagerId =
+    managerOptions.find((m) => hebrewLettersOnly(m.label).includes(hebrewLettersOnly("הלר")))?.id ?? null;
+
   const totalCount = typeof count === "number" ? count : rows.length;
   const hasPreviousPage = page > 1;
   const hasNextPage = typeof count === "number" ? to + 1 < count : rows.length === PROJECTS_PAGE_SIZE;
@@ -327,6 +333,7 @@ export default async function ProjectsPage({
               customerOptions={customerOptionsFinal}
               managerOptions={managerOptions}
               currentUserId={profile.id}
+              defaultProjectManagerId={defaultProjectManagerId ?? undefined}
               contacts={(projectContacts ?? []) as Row[]}
               tabCounts={tabCounts}
               initialFilters={{ view, status: statusFilter, sort, q: searchQuery }}

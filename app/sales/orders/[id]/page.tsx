@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
+import { Button } from "@/components/ui/button";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { requireProfile } from "@/lib/auth/requireProfile";
@@ -403,9 +404,9 @@ export default async function SalesOrderPage({
             <p className="text-sm text-muted-foreground">מרכז הזמנה עם פעולות מהירות ופרטים לפי צורך.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/sales/orders/new" className="text-sm text-primary">
-              הזמנה חדשה
-            </Link>
+            <Button asChild size="sm">
+              <Link href="/sales/orders/new">הזמנה חדשה</Link>
+            </Button>
           </div>
         </div>
 

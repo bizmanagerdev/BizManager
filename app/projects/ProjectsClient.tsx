@@ -280,6 +280,7 @@ export default function ProjectsClient({
   customerOptions,
   managerOptions,
   currentUserId,
+  defaultProjectManagerId,
   contacts = [],
   tabCounts,
   initialFilters,
@@ -288,6 +289,7 @@ export default function ProjectsClient({
   customerOptions: Option[];
   managerOptions: Option[];
   currentUserId?: string;
+  defaultProjectManagerId?: string;
   contacts?: ProjectRow[];
   tabCounts?: { projects: number; quotes: number; closed: number };
   initialFilters?: { view: ProjectsView; status: string; sort: SortMode; q: string };
@@ -365,7 +367,7 @@ export default function ProjectsClient({
   const [createStatus, setCreateStatus] = useState(defaultStatusOptions[0]);
   const [createAgreedBasePrice, setCreateAgreedBasePrice] = useState("");
   const [createExpensesSeparately, setCreateExpensesSeparately] = useState(false);
-  const [createProjectManagerId, setCreateProjectManagerId] = useState(currentUserId ?? "");
+  const [createProjectManagerId, setCreateProjectManagerId] = useState(defaultProjectManagerId ?? "");
   const [createStartDate, setCreateStartDate] = useState(todayIso());
   const [createEndDate, setCreateEndDate] = useState(
     defaultEndDateForProjectType(defaultProjectTypeOptions[0] ?? "", todayIso())
@@ -558,7 +560,10 @@ export default function ProjectsClient({
     if (draft.createEndDate) setCreateEndDate(draft.createEndDate);
     if (draft.createNotes) setCreateNotes(draft.createNotes);
     if (draft.createItemsToMove) setCreateItemsToMove(draft.createItemsToMove);
-    if (draft.createProjectManagerId) setCreateProjectManagerId(draft.createProjectManagerId);
+    // When a configured default exists, always use it — don't let old drafts override
+    if (draft.createProjectManagerId && !defaultProjectManagerId) {
+      setCreateProjectManagerId(draft.createProjectManagerId);
+    }
   }, []);
 
   // Auto-save project create draft while dialog is open
@@ -645,7 +650,7 @@ export default function ProjectsClient({
       setCreateStatus(defaultCreateStatusForTab(activeTab));
       setCreateAgreedBasePrice("");
       setCreateExpensesSeparately(false);
-      setCreateProjectManagerId(currentUserId ?? "");
+      setCreateProjectManagerId(defaultProjectManagerId ?? currentUserId ?? "");
       const now = todayIso();
       setCreateStartDate(now);
       setCreateEndDate(

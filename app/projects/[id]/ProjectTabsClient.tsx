@@ -3793,6 +3793,7 @@ function AddExpenseDialog({
   const [sessionUserId, setSessionUserId] = useState("");
   const [notes, setNotes] = useState("");
   const [billedToCustomer, setBilledToCustomer] = useState(false);
+  const [expenseBillToCustomerAmount, setExpenseBillToCustomerAmount] = useState("");
   const [expensePaymentStatus, setExpensePaymentStatus] = useState<"paid" | "partial" | "not_paid">("not_paid");
   const [expensePaidAmount, setExpensePaidAmount] = useState("");
   const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
@@ -3876,7 +3877,8 @@ function AddExpenseDialog({
         new Date(clockOutIsoValue) > new Date(clockInIsoValue)
       : Number.isFinite(Number(amount)) &&
         Number(amount) > 0 &&
-        Boolean(expenseDate));
+        Boolean(expenseDate) &&
+        (!billedToCustomer || (Number.isFinite(Number(expenseBillToCustomerAmount)) && Number(expenseBillToCustomerAmount) > 0)));
 
   const amountNumber = Number(amount);
   const amountError =
@@ -4053,6 +4055,10 @@ function AddExpenseDialog({
     setNewWorkerRole("worker_no_access");
     setNotes(isEditingSession ? editingSession?.notes ?? "" : getString(editingExpense, "notes") ?? "");
     setBilledToCustomer(Boolean(editingItem?.project_expense?.["billed_to_customer"]));
+    const rawExpBillAmount = editingItem?.project_expense?.["bill_to_customer_amount"];
+    setExpenseBillToCustomerAmount(
+      rawExpBillAmount != null && Number(rawExpBillAmount) > 0 ? String(Number(rawExpBillAmount)) : ""
+    );
     const rawStatus = getString(editingExpense, "payment_status");
     setExpensePaymentStatus(
       rawStatus === "paid" || rawStatus === "partial" || rawStatus === "not_paid"
@@ -4389,6 +4395,7 @@ function AddExpenseDialog({
           expense_date: expenseDate ? expenseDate : null,
           included_in_base_price: includedInBase,
           billed_to_customer: billedToCustomer,
+          bill_to_customer_amount: billedToCustomer ? billToCustomerAmountNumber : null,
           payment_status: expensePaymentStatus,
           paid_amount: expensePaymentStatus === "partial" ? (Number(expensePaidAmount) || null) : null,
           payment_method: (expensePaymentStatus === "paid" || expensePaymentStatus === "partial") ? (expensePaymentMethod || null) : null,
@@ -4409,6 +4416,7 @@ function AddExpenseDialog({
       setExpenseDate(projectDateOrToday(projectStartDate));
       setNotes("");
       setBilledToCustomer(false);
+      setExpenseBillToCustomerAmount("");
       setExpensePaymentStatus("not_paid");
       setExpensePaidAmount("");
       setExpensePaymentMethod("");
@@ -4990,20 +4998,38 @@ function AddExpenseDialog({
             ) : null}
 
             {!isSessionMode ? (
-              <div className="flex flex-col gap-2 text-sm">
-                <label className="flex items-center gap-2">
+              <section className="space-y-3 rounded-xl border bg-muted/30 p-4">
+                <h4 className="text-sm font-semibold">חיוב הלקוח</h4>
+                <label className="flex items-center gap-2 text-sm">
                   <input
-                  type="checkbox"
-                  checked={billedToCustomer}
-                  onChange={(e) => setBilledToCustomer(e.target.checked)}
-                />
-                <span>{"\u05dc\u05d7\u05d9\u05d5\u05d1 \u05dc\u05e7\u05d5\u05d7"}</span>
-              </label>
-              <div className="text-xs text-muted-foreground">
-                {billedToCustomer ? "ההוצאה תסומן כחויבה ללקוח." : "אם לא מסומן, ההוצאה נכללת בבסיס כברירת מחדל."}
-              </div>
-            </div>
-          ) : null}
+                    type="checkbox"
+                    checked={billedToCustomer}
+                    onChange={(e) => {
+                      setBilledToCustomer(e.target.checked);
+                      if (!e.target.checked) setExpenseBillToCustomerAmount("");
+                    }}
+                  />
+                  <span>לחיוב לקוח</span>
+                </label>
+                <div className="text-xs text-muted-foreground">
+                  {billedToCustomer
+                    ? "ההוצאה תופיע ברשימת חיובי הלקוח ולא בתזרים."
+                    : "אם לא מסומן, ההוצאה נכללת בבסיס כברירת מחדל."
+                  }
+                </div>
+                {billedToCustomer ? (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">סכום לחיוב לקוח *</div>
+                    <Input
+                      inputMode="numeric"
+                      value={expenseBillToCustomerAmount}
+                      onChange={(e) => setExpenseBillToCustomerAmount(e.target.value)}
+                      placeholder="למשל 650"
+                    />
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
           <div className="space-y-1">
             <div className="text-sm font-medium">{"\u05d4\u05e2\u05e8\u05d5\u05ea (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>

@@ -454,7 +454,8 @@ export default function DashboardActions({
   const [projectType, setProjectType] = useState("logistics");
   const [projectStatus, setProjectStatus] = useState("planned");
   const [projectPrice, setProjectPrice] = useState("");
-  const [projectManagerId, setProjectManagerId] = useState(currentUserId ?? "");
+  const defaultProjectManagerId = users.find((u) => u.label.replace(/[^א-ת]/g, "").includes("הלר"))?.id ?? "";
+  const [projectManagerId, setProjectManagerId] = useState(defaultProjectManagerId);
   const [projectStartDate, setProjectStartDate] = useState(getTodayDate());
   const [projectEndDate, setProjectEndDate] = useState(nextMonth(getTodayDate()));
   const [projectNotes, setProjectNotes] = useState("");
@@ -757,7 +758,7 @@ export default function DashboardActions({
     setProjectType("logistics");
     setProjectStatus("planned");
     setProjectPrice("");
-    setProjectManagerId(currentUserId ?? "");
+    setProjectManagerId(defaultProjectManagerId);
     setProjectStartDate(getTodayDate());
     setProjectEndDate(nextMonth(getTodayDate()));
     setProjectNotes("");
