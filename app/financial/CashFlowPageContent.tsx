@@ -6,7 +6,6 @@ import FinancialPageClient, {
 } from "@/app/financial/FinancialPageClient";
 import { getFinancialPageData } from "@/lib/financial";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
-import { getObligationsData } from "@/lib/financial/obligations";
 
 type Row = Record<string, unknown>;
 
@@ -82,21 +81,18 @@ export default async function CashFlowPageContent({
     await ensureRecurringExpensesForDate(supabase);
   }
 
-  const [data, obligationsData] = await Promise.all([
-    getFinancialPageData(supabase, {
-      customerId: customerId || null,
-      from: initialFilters.from || null,
-      to: initialFilters.to || null,
-      domain: initialFilters.domain || null,
-      sourceId: initialFilters.sourceId || null,
-      type: initialFilters.type === "all" ? null : initialFilters.type,
-      stage: initialFilters.stage === "all" ? null : initialFilters.stage,
-      q: initialFilters.q || null,
-      ledgerPage: initialFilters.ledgerPage,
-      upcomingPage: initialFilters.upcomingPage,
-    }),
-    getObligationsData(supabase),
-  ]);
+  const data = await getFinancialPageData(supabase, {
+    customerId: customerId || null,
+    from: initialFilters.from || null,
+    to: initialFilters.to || null,
+    domain: initialFilters.domain || null,
+    sourceId: initialFilters.sourceId || null,
+    type: initialFilters.type === "all" ? null : initialFilters.type,
+    stage: initialFilters.stage === "all" ? null : initialFilters.stage,
+    q: initialFilters.q || null,
+    ledgerPage: initialFilters.ledgerPage,
+    upcomingPage: initialFilters.upcomingPage,
+  });
 
   const canManageExpenses = profile.role === "admin" || profile.role === "office";
   const canViewCashflow = profile.role === "admin";
@@ -170,7 +166,6 @@ export default async function CashFlowPageContent({
           q: initialFilters.q,
         })}
         data={data}
-        obligationsData={obligationsData}
         initialFilters={initialFilters}
         canManageExpenses={canManageExpenses}
         canViewCashflow={canViewCashflow}

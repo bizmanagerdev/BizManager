@@ -41,8 +41,6 @@ import { cn } from "@/lib/utils";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
-import { ObligationsTab } from "@/app/financial/ObligationsTab";
-import type { ObligationsData } from "@/lib/financial/obligations";
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -73,7 +71,6 @@ type InitialFilters = {
 
 type Props = {
   data: FinancialPageData;
-  obligationsData: ObligationsData;
   initialFilters: InitialFilters;
   canManageExpenses: boolean;
   canViewCashflow: boolean;
@@ -311,7 +308,6 @@ function setOrDelete(params: URLSearchParams, key: string, value: string | numbe
 
 export default function FinancialPageClient({
   data,
-  obligationsData,
   initialFilters,
   canManageExpenses,
   canViewCashflow,
@@ -330,19 +326,11 @@ export default function FinancialPageClient({
   const [type, setType] = useState(initialFilters.type);
   const [stage, setStage] = useState(initialFilters.stage);
   const [resolvedCanView, setResolvedCanView] = useState(canViewCashflow);
-  const [activeView, setActiveView] = useState<"cashflow" | "obligations">(canViewCashflow ? "cashflow" : "obligations");
-  const viewCorrectedRef = useRef(false);
 
   useIsomorphicLayoutEffect(() => {
     const cached = readCachedIsAdmin();
     const effective = cached !== null ? cached : canViewCashflow;
     setResolvedCanView(effective);
-    if (!viewCorrectedRef.current) {
-      viewCorrectedRef.current = true;
-      if (effective && !canViewCashflow) {
-        setActiveView("cashflow");
-      }
-    }
   }, [canViewCashflow]);
   const [isFilterPending, startFilterTransition] = useTransition();
   const [isRefreshPending, startRefreshTransition] = useTransition();
@@ -636,32 +624,7 @@ export default function FinancialPageClient({
 
   return (
     <div className="space-y-4" dir="rtl">
-{/* View toggle — admin only */}
       {resolvedCanView ? (
-        <div className="flex gap-1 rounded-xl border bg-secondary/40 p-1 w-fit">
-          {(["cashflow", "obligations"] as const).map((view) => (
-            <button
-              key={view}
-              type="button"
-              onClick={() => setActiveView(view)}
-              className={cn(
-                "rounded-lg px-4 py-1.5 text-sm font-medium transition-colors",
-                activeView === view
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {view === "cashflow" ? "תזרים" : "יתרות"}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {activeView === "obligations" ? (
-        <ObligationsTab data={obligationsData} canManageExpenses={canManageExpenses} />
-      ) : null}
-
-      {resolvedCanView && activeView === "cashflow" ? (
         <>
       {canManageExpenses ? (
         <div className="flex flex-wrap justify-start gap-2">
