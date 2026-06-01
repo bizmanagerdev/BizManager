@@ -386,9 +386,27 @@ export default async function SalesPage({
     }
     if (searchQuery) {
       const escaped = searchQuery.replace(/[%,]/g, " ");
-      ordersQuery = ordersQuery.or(
-        `customer_name.ilike.%${escaped}%,customer_name_for_invoice.ilike.%${escaped}%,customer_phone.ilike.%${escaped}%,customer_email.ilike.%${escaped}%,customer_city.ilike.%${escaped}%`
-      );
+      // Search customers by name and invoice name to get matching customer IDs.
+      // This avoids depending on customer_name_for_invoice existing in the view,
+      // and correctly searches the invoice name even when it differs from the main name.
+      const { data: matchingCustomers } = await supabase
+        .from("customers")
+        .select("id")
+        .or(`name.ilike.%${escaped}%,name_for_invoice.ilike.%${escaped}%`)
+        .limit(300);
+      const matchedCustomerIds = ((matchingCustomers ?? []) as Row[])
+        .map((c) => (typeof c.id === "string" ? c.id : null))
+        .filter((id): id is string => id !== null);
+
+      const conditions: string[] = [
+        `customer_phone.ilike.%${escaped}%`,
+        `customer_email.ilike.%${escaped}%`,
+        `customer_city.ilike.%${escaped}%`,
+      ];
+      if (matchedCustomerIds.length > 0) {
+        conditions.push(`customer_id.in.(${matchedCustomerIds.join(",")})`);
+      }
+      ordersQuery = ordersQuery.or(conditions.join(","));
     }
 
     const { data, error, count } = await ordersQuery.range(from, to);

@@ -30,24 +30,64 @@ function parsePage(value: string | undefined) {
   return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
 }
 
-function buildTasksHref(page: number) {
-  return page <= 1 ? "/tasks" : `/tasks?page=${page}`;
+function buildTasksHref(page: number, filters: Record<string, string>) {
+  const params = new URLSearchParams(filters);
+  if (page > 1) params.set("page", String(page));
+  else params.delete("page");
+  const qs = params.toString();
+  return qs ? `/tasks?${qs}` : "/tasks";
 }
 
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ page?: string }>;
+  searchParams?: Promise<{ page?: string; q?: string; status?: string; priority?: string; domain?: string; linked_id?: string }>;
 }) {
   const params = (await searchParams) ?? {};
   const page = parsePage(params.page);
   const from = (page - 1) * PAGE_SIZE;
   const to = page * PAGE_SIZE - 1;
 
+  const q = typeof params.q === "string" ? params.q.trim() : "";
+  const filterStatus = typeof params.status === "string" ? params.status.trim() : "";
+  const filterPriority = typeof params.priority === "string" ? params.priority.trim() : "";
+  const filterDomain = typeof params.domain === "string" ? params.domain.trim() : "";
+  const filterLinkedId = typeof params.linked_id === "string" ? params.linked_id.trim() : "";
+
+  const activeFilters: Record<string, string> = {};
+  if (q) activeFilters.q = q;
+  if (filterStatus) activeFilters.status = filterStatus;
+  if (filterPriority) activeFilters.priority = filterPriority;
+  if (filterDomain) activeFilters.domain = filterDomain;
+  if (filterLinkedId) activeFilters.linked_id = filterLinkedId;
+
   const { profile, supabase } = await requireProfile();
 
   if (profile.role === "admin" || profile.role === "office") {
     await ensureRecurringTasksForDate(supabase);
+  }
+
+  let tasksQuery = supabase
+    .from("tasks")
+    .select(
+      "id,subject,status,priority,due_date,business_domain,project_id,property_id,assigned_user_id",
+      { count: "estimated" }
+    )
+    .order("due_date", { ascending: true });
+
+  if (filterStatus) tasksQuery = tasksQuery.eq("status", filterStatus);
+  if (filterPriority) tasksQuery = tasksQuery.eq("priority", filterPriority);
+  if (filterDomain) tasksQuery = tasksQuery.eq("business_domain", filterDomain);
+  if (filterLinkedId) {
+    if (filterDomain === "logistics_projects") {
+      tasksQuery = tasksQuery.eq("project_id", filterLinkedId);
+    } else if (filterDomain === "property_management") {
+      tasksQuery = tasksQuery.eq("property_id", filterLinkedId);
+    }
+  }
+  if (q) {
+    const escaped = q.replace(/[%,]/g, " ");
+    tasksQuery = tasksQuery.ilike("subject", `%${escaped}%`);
   }
 
   const [
@@ -56,14 +96,7 @@ export default async function TasksPage({
     propertiesResult,
     usersResult,
   ] = await Promise.all([
-    supabase
-      .from("tasks")
-      .select(
-        "id,subject,status,priority,due_date,business_domain,project_id,property_id,assigned_user_id",
-        { count: "estimated" }
-      )
-      .order("due_date", { ascending: true })
-      .range(from, to),
+    tasksQuery.range(from, to),
     supabase
       .from("project_dashboard_view")
       .select("id,name,customer_name")
@@ -135,8 +168,8 @@ export default async function TasksPage({
   const hasNextPage =
     typeof tasksResult.count === "number" ? to + 1 < tasksResult.count : taskRows.length === PAGE_SIZE;
 
-  const prevHref = hasPreviousPage ? buildTasksHref(page - 1) : null;
-  const nextHref = hasNextPage ? buildTasksHref(page + 1) : null;
+  const prevHref = hasPreviousPage ? buildTasksHref(page - 1, activeFilters) : null;
+  const nextHref = hasNextPage ? buildTasksHref(page + 1, activeFilters) : null;
 
   const projectOptions = projectRows
     .map((p) => {
@@ -178,6 +211,7 @@ export default async function TasksPage({
           projects={projectOptions}
           properties={propertyOptions}
           users={userOptions}
+          initialFilters={{ q, status: filterStatus, priority: filterPriority, domain: filterDomain, linkedId: filterLinkedId }}
         />
       )}
     </AppShell>

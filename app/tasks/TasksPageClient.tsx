@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,11 @@ import {
   emitProgressActivityEnd,
   emitProgressActivityStart,
 } from "@/components/layout/TopNavigationProgress";
-import { getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
+import {
+  EXPENSE_BUSINESS_DOMAINS,
+  getBusinessDomainLabel,
+  isExpenseBusinessDomain,
+} from "@/lib/expenses";
 import { Card, CardContent } from "@/components/ui/card";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 
@@ -50,18 +55,38 @@ type Props = {
   projects: TaskOption[];
   properties: TaskOption[];
   users: UserOption[];
+  initialFilters?: {
+    q: string;
+    status: string;
+    priority: string;
+    domain: string;
+    linkedId: string;
+  };
 };
 
 const STATUS_OPTIONS = ["todo", "in_progress", "blocked", "done", "cancelled"] as const;
 const PRIORITY_OPTIONS = ["low", "medium", "high", "urgent"] as const;
 
-function normalize(value: string) {
-  return value.trim().toLowerCase();
-}
-
 function domainLabel(domain: string | null) {
   if (!domain) return "—";
   return isExpenseBusinessDomain(domain) ? getBusinessDomainLabel(domain) : domain;
+}
+
+function buildTasksUrl(filters: {
+  q: string;
+  status: string;
+  priority: string;
+  domain: string;
+  linkedId: string;
+}) {
+  const params = new URLSearchParams();
+  if (filters.q) params.set("q", filters.q);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.priority) params.set("priority", filters.priority);
+  if (filters.domain) params.set("domain", filters.domain);
+  if (filters.linkedId) params.set("linked_id", filters.linkedId);
+  const qs = params.toString();
+  return qs ? `/tasks?${qs}` : "/tasks";
 }
 
 function handleNavigationStart() {
@@ -69,6 +94,15 @@ function handleNavigationStart() {
 }
 
 export default function TasksPageClient(props: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const urlQ = searchParams.get("q") ?? "";
+  const urlStatus = searchParams.get("status") ?? "";
+  const urlPriority = searchParams.get("priority") ?? "";
+  const urlDomain = searchParams.get("domain") ?? "";
+  const urlLinkedId = searchParams.get("linked_id") ?? "";
+
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -76,70 +110,73 @@ export default function TasksPageClient(props: Props) {
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [localTasks, setLocalTasks] = useState<TaskListItem[]>(props.tasks);
 
-  const [q, setQ] = useState("");
-  const [filterStatus, setFilterStatus] = useState("todo");
-  const [filterPriority, setFilterPriority] = useState("");
-  const [filterDomain, setFilterDomain] = useState("");
-  const [filterLinkedId, setFilterLinkedId] = useState("");
+  // qInput is local state for immediate feedback while debouncing URL push
+  const [qInput, setQInput] = useState(urlQ);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setLocalTasks(props.tasks);
   }, [props.tasks]);
 
-  const linkedFilterTarget = useMemo<"" | "project" | "property">(() => {
-    if (filterDomain === "logistics_projects") return "project";
-    if (filterDomain === "property_management") return "property";
-    return "";
-  }, [filterDomain]);
-
-  const linkedFilterOptions = useMemo(() => {
-    if (linkedFilterTarget === "project") return props.projects;
-    if (linkedFilterTarget === "property") return props.properties;
-    return [];
-  }, [linkedFilterTarget, props.projects, props.properties]);
-
+  // Sync qInput when URL q changes externally (e.g. browser back/forward)
   useEffect(() => {
-    setFilterLinkedId("");
-  }, [linkedFilterTarget]);
+    setQInput(urlQ);
+  }, [urlQ]);
 
-  const filteredTasks = useMemo(() => {
-    const query = normalize(q);
+  const linkedFilterTarget =
+    urlDomain === "logistics_projects"
+      ? ("project" as const)
+      : urlDomain === "property_management"
+        ? ("property" as const)
+        : ("" as const);
 
-    return localTasks.filter((task) => {
-      if (filterStatus && (task.status ?? "") !== filterStatus) return false;
-      if (filterPriority && (task.priority ?? "") !== filterPriority) return false;
-      if (filterDomain && (task.business_domain ?? "") !== filterDomain) return false;
+  const linkedFilterOptions =
+    linkedFilterTarget === "project"
+      ? props.projects
+      : linkedFilterTarget === "property"
+        ? props.properties
+        : [];
 
-      if (filterLinkedId) {
-        if (linkedFilterTarget === "project" && task.project_id !== filterLinkedId) return false;
-        if (linkedFilterTarget === "property" && task.property_id !== filterLinkedId) return false;
-      }
+  function pushFilters(filters: {
+    q: string;
+    status: string;
+    priority: string;
+    domain: string;
+    linkedId: string;
+  }) {
+    emitNavigationStart();
+    router.push(buildTasksUrl(filters));
+  }
 
-      if (!query) return true;
+  function handleQChange(value: string) {
+    setQInput(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      pushFilters({
+        q: value,
+        status: urlStatus,
+        priority: urlPriority,
+        domain: urlDomain,
+        linkedId: urlLinkedId,
+      });
+    }, 400);
+  }
 
-      const haystack = [
-        task.subject,
-        task.project_name ?? "",
-        task.property_name ?? "",
-        task.assigned_user_name ?? "",
-        task.status ?? "",
-        task.priority ?? "",
-        task.business_domain ?? "",
-      ]
-        .join(" ")
-        .toLowerCase();
+  function handleStatusChange(value: string) {
+    pushFilters({ q: urlQ, status: value, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId });
+  }
 
-      return haystack.includes(query);
-    });
-  }, [
-    filterDomain,
-    filterLinkedId,
-    filterPriority,
-    filterStatus,
-    linkedFilterTarget,
-    localTasks,
-    q,
-  ]);
+  function handlePriorityChange(value: string) {
+    pushFilters({ q: urlQ, status: urlStatus, priority: value, domain: urlDomain, linkedId: urlLinkedId });
+  }
+
+  function handleDomainChange(value: string) {
+    pushFilters({ q: urlQ, status: urlStatus, priority: urlPriority, domain: value, linkedId: "" });
+  }
+
+  function handleLinkedIdChange(value: string) {
+    pushFilters({ q: urlQ, status: urlStatus, priority: urlPriority, domain: urlDomain, linkedId: value });
+  }
 
   async function updateTaskStatus(taskId: string, status: string) {
     setUpdatingStatusId(taskId);
@@ -216,15 +253,19 @@ export default function TasksPageClient(props: Props) {
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-[220px] flex-1 space-y-1">
               <div className="text-[11px] text-muted-foreground">חיפוש</div>
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש..." />
+              <Input
+                value={qInput}
+                onChange={(e) => handleQChange(e.target.value)}
+                placeholder="חיפוש..."
+              />
             </div>
 
             <div className="w-[120px] space-y-1">
               <div className="text-[11px] text-muted-foreground">סטטוס</div>
               <select
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
+                value={urlStatus}
+                onChange={(e) => handleStatusChange(e.target.value)}
               >
                 <option value="">הכל</option>
                 {STATUS_OPTIONS.map((status) => (
@@ -239,8 +280,8 @@ export default function TasksPageClient(props: Props) {
               <div className="text-[11px] text-muted-foreground">עדיפות</div>
               <select
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={filterPriority}
-                onChange={(e) => setFilterPriority(e.target.value)}
+                value={urlPriority}
+                onChange={(e) => handlePriorityChange(e.target.value)}
               >
                 <option value="">הכל</option>
                 {PRIORITY_OPTIONS.map((priority) => (
@@ -255,28 +296,20 @@ export default function TasksPageClient(props: Props) {
               <div className="text-[11px] text-muted-foreground">דומיין</div>
               <select
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={filterDomain}
-                onChange={(e) => setFilterDomain(e.target.value)}
+                value={urlDomain}
+                onChange={(e) => handleDomainChange(e.target.value)}
               >
                 <option value="">הכל</option>
-                {Array.from(
-                  new Set(
-                    localTasks
-                      .map((task) =>
-                        typeof task.business_domain === "string" ? task.business_domain : ""
-                      )
-                      .filter(Boolean)
-                  )
-                ).map((domain) => (
+                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
                   <option key={domain} value={domain}>
-                    {domainLabel(domain)}
+                    {getBusinessDomainLabel(domain)}
                   </option>
                 ))}
               </select>
             </div>
 
             <div className="text-[11px] whitespace-nowrap text-muted-foreground">
-              מוצגות {filteredTasks.length} מתוך {props.totalCount}
+              מוצגות {props.totalCount} משימות
             </div>
           </div>
 
@@ -287,8 +320,8 @@ export default function TasksPageClient(props: Props) {
               </div>
               <select
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm sm:max-w-md"
-                value={filterLinkedId}
-                onChange={(e) => setFilterLinkedId(e.target.value)}
+                value={urlLinkedId}
+                onChange={(e) => handleLinkedIdChange(e.target.value)}
               >
                 <option value="">
                   {linkedFilterTarget === "project" ? "כל הפרויקטים" : "כל הנכסים"}
@@ -304,12 +337,12 @@ export default function TasksPageClient(props: Props) {
         </CardContent>
       </Card>
 
-      {filteredTasks.length === 0 ? (
+      {localTasks.length === 0 ? (
         <div className="text-muted-foreground">אין משימות להצגה.</div>
       ) : (
         <>
           <div className="space-y-2 md:hidden">
-            {filteredTasks.map((task) => {
+            {localTasks.map((task) => {
               const where = task.project_name ?? task.property_name ?? "—";
               return (
                 <Card key={task.id} className="overflow-hidden">
@@ -397,7 +430,7 @@ export default function TasksPageClient(props: Props) {
               </thead>
 
               <tbody className="divide-y divide-border/70">
-                {filteredTasks.map((task) => {
+                {localTasks.map((task) => {
                   const where = task.project_name ?? task.property_name ?? "—";
                   return (
                     <tr key={task.id} className="align-top hover:bg-muted/20">
@@ -463,7 +496,7 @@ export default function TasksPageClient(props: Props) {
 
           <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
             <div className="text-muted-foreground">
-              עמוד {props.page} • מציגים {filteredTasks.length} מתוך {props.totalCount}
+              עמוד {props.page} • {props.totalCount} משימות סה"כ
             </div>
             <div className="flex gap-2">
               {props.hasPreviousPage && props.prevHref ? (

@@ -1029,10 +1029,10 @@ export default function ProjectsClient({
 
       <div className="text-sm text-muted-foreground">
         {activeTab === "quotes"
-          ? `נמצאו ${rows.length} הצעות מחיר`
+          ? `נמצאו ${tabCounts?.quotes ?? rows.length} הצעות מחיר`
           : activeTab === "closed"
-            ? `נמצאו ${rows.length} פרויקטים סגורים`
-            : `נמצאו ${rows.length} פרויקטים`}
+            ? `נמצאו ${tabCounts?.closed ?? rows.length} פרויקטים סגורים`
+            : `נמצאו ${tabCounts?.projects ?? rows.length} פרויקטים`}
       </div>
 
       <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
