@@ -6,6 +6,7 @@ import DashboardActions from "@/app/dashboard/DashboardActions";
 import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard";
 import DomainActivityChart from "@/components/charts/DomainActivityChart";
 import { getAlertsData } from "@/lib/alerts";
+import { getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
 import { getScheduleEntries } from "@/lib/projectSchedule";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { Badge } from "@/components/ui/badge";
@@ -156,7 +157,7 @@ export default async function DashboardPage() {
 
   const isAdminOrOffice = profile.role === "admin" || profile.role === "office";
 
-  const [unpaidBalanceResult, workerOwedResult, openOrdersCountResult] = await Promise.all([
+  const [unpaidBalanceResult, workerOwedResult, openOrdersCountResult, dueTodayResult] = await Promise.all([
     isAdminOrOffice
       ? supabase.from("invoices").select("balance_due").in("payment_status", ["unpaid", "partial", "overdue"]).range(0, 499)
       : Promise.resolve({ data: null, error: null }),
@@ -167,7 +168,14 @@ export default async function DashboardPage() {
       .from("order_overview_view")
       .select("order_id", { count: "estimated", head: true })
       .not("status", "in", '("completed","delivered","cancelled","canceled","closed","archived","done")'),
+    isAdminOrOffice
+      ? getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[])
+      : Promise.resolve([] as PaymentDueToday[]),
   ]);
+
+  const dueTodayPayments = dueTodayResult as PaymentDueToday[];
+  const dueTodayCount = dueTodayPayments.length;
+  const dueTodayTotal = dueTodayPayments.reduce((sum, p) => sum + p.amount, 0);
 
   const activeProjectsCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "active_projects_count") ?? 0;
@@ -370,6 +378,15 @@ export default async function DashboardPage() {
                 subtitle={unpaidBalance === null ? "טבלת חשבוניות חסרה" : unpaidBalance > 0 ? "חשבוניות שלא שולמו" : "הכול שולם"}
                 href="/financial"
                 urgent={(unpaidBalance ?? 0) > 0}
+              />
+            ) : null}
+            {isAdminOrOffice ? (
+              <MetricCard
+                title="לפירעון היום"
+                value={ilsFormatter.format(dueTodayTotal)}
+                subtitle={dueTodayCount > 0 ? `${formatCount(dueTodayCount)} תשלומים לגבייה היום` : "אין תשלומים להיום"}
+                href="/collections"
+                urgent={dueTodayCount > 0}
               />
             ) : null}
             {profile.role === "admin" ? (

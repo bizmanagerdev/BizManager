@@ -86,9 +86,9 @@ function normalizePaymentStatus(value: string | null | undefined): PaymentStatus
 }
 
 function paymentStatusLabel(s: PaymentStatus) {
-  if (s === "paid") return "שולמה";
+  if (s === "paid") return "שולם";
   if (s === "partial") return "חלקית";
-  return "לא שולמה";
+  return "לא שולם";
 }
 
 function todayIso() {

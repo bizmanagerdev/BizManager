@@ -43,17 +43,17 @@ function documentStatusLabel(value: string | null | undefined) {
   switch ((value ?? "").toLowerCase()) {
     case "0":
     case "created":
-      return "נוצרה";
+      return "נוצר";
     case "1":
     case "sent":
-      return "נשלחה";
+      return "נשלח";
     case "2":
     case "paid":
-      return "שולמה";
+      return "שולם";
     case "closed":
-      return "נסגרה";
+      return "נסגר";
     case "cancelled":
-      return "בוטלה";
+      return "בוטל";
     default:
       return value || "ללא סטטוס";
   }

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { computeSourceCollection } from "@/lib/collections";
 
 type Row = Record<string, unknown>;
 
@@ -213,6 +214,79 @@ export async function getAlertsData(
         }
       : null;
 
+  // Collections — overdue receivables + reminders that need action now. Only for
+  // back-office roles (the גבייה tab is admin/office). Best-effort: the view and
+  // reminders table may not be migrated yet.
+  const isBackOffice = viewerRole === "admin" || viewerRole === "office";
+  let overdueCollectionsCount = 0;
+  let overdueCollectionsAmount = 0;
+  let dueRemindersCount = 0;
+  if (isBackOffice) {
+    const [overdueRes, remindersRes] = await Promise.all([
+      supabase
+        .from("collections_view")
+        .select(
+          "total_amount,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,reference_date"
+        )
+        .range(0, 999)
+        .then((r) => r, () => ({ data: [] as Row[], error: null })),
+      supabase
+        .from("reminders")
+        .select("id")
+        .eq("status", "pending")
+        .lte("remind_at", `${todayIso}T23:59:59`)
+        .range(0, 999)
+        .then((r) => r, () => ({ data: [] as Row[], error: null })),
+    ]);
+    // Apply the same late-payment rule the גבייה page uses (unscheduled money on a
+    // past-dated order/project is overdue, not just "unpaid").
+    for (const row of (overdueRes.data ?? []) as Row[]) {
+      const sm = computeSourceCollection({
+        total: getNumber(row, "total_amount") ?? 0,
+        collected: getNumber(row, "collected_amount") ?? 0,
+        pending: getNumber(row, "pending_amount") ?? 0,
+        overdue: getNumber(row, "overdue_amount") ?? 0,
+        outstanding: getNumber(row, "outstanding_amount") ?? 0,
+        nextDueDate: getString(row, "next_due_date"),
+        referenceDate: getString(row, "reference_date"),
+        today: todayIso,
+      });
+      if (sm.late > 0.009) {
+        overdueCollectionsCount += 1;
+        overdueCollectionsAmount += sm.late;
+      }
+    }
+    dueRemindersCount = ((remindersRes.data ?? []) as Row[]).length;
+  }
+
+  const overdueCollectionsAlert: AlertItem | null = isBackOffice
+    ? {
+        id: "overdue-collections",
+        title: "גבייה באיחור",
+        description:
+          overdueCollectionsCount > 0
+            ? `${overdueCollectionsCount} חובות באיחור (${currencyFormatterHeIl().format(overdueCollectionsAmount)})`
+            : "אין חובות באיחור",
+        href: "/collections",
+        count: overdueCollectionsCount,
+        severity: overdueCollectionsCount > 0 ? "danger" : "info",
+        countsAsActiveAlert: true,
+      }
+    : null;
+
+  const dueRemindersAlert: AlertItem | null =
+    isBackOffice && dueRemindersCount > 0
+      ? {
+          id: "collection-reminders-due",
+          title: "תזכורות גבייה",
+          description: `${dueRemindersCount} תזכורות לטיפול`,
+          href: "/collections",
+          count: dueRemindersCount,
+          severity: "warning",
+          countsAsActiveAlert: true,
+        }
+      : null;
+
   return {
     alerts: [
       {
@@ -225,6 +299,8 @@ export async function getAlertsData(
         countsAsActiveAlert: false,
       },
       ...(moneyOwedToWorkersAlert ? [moneyOwedToWorkersAlert] : []),
+      ...(overdueCollectionsAlert ? [overdueCollectionsAlert] : []),
+      ...(dueRemindersAlert ? [dueRemindersAlert] : []),
       {
         id: "unpaid-invoices",
         title: "חשבוניות לא משולמות",

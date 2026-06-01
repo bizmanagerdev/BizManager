@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatShortDate } from "@/lib/date";
+import { collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
+import type { CustomerReceivable } from "@/lib/collections";
 import {
   COMMUNICATION_CHANNELS,
   actionTypeLabel,
@@ -13,6 +16,14 @@ import {
   type CommunicationLog,
   type Reminder,
 } from "@/lib/communications";
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("he-IL", {
+    style: "currency",
+    currency: "ILS",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
 
 type Props = {
   customerId: string;
@@ -53,6 +64,8 @@ export default function CollectionTrackingPanel({
 }: Props) {
   const [logs, setLogs] = useState<CommunicationLog[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [receivables, setReceivables] = useState<CustomerReceivable[]>([]);
+  const [collectingId, setCollectingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +88,7 @@ export default function CollectionTrackingPanel({
       const json = (await res.json().catch(() => ({}))) as {
         logs?: CommunicationLog[];
         reminders?: Reminder[];
+        receivables?: CustomerReceivable[];
         error?: string;
       };
       if (!res.ok) {
@@ -83,6 +97,7 @@ export default function CollectionTrackingPanel({
       }
       setLogs(json.logs ?? []);
       setReminders(json.reminders ?? []);
+      setReceivables(json.receivables ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "שגיאה לא ידועה");
     } finally {
@@ -148,6 +163,25 @@ export default function CollectionTrackingPanel({
     }
   }
 
+  async function markCollected(paymentId: string) {
+    setCollectingId(paymentId);
+    try {
+      const res = await fetch("/api/payments/mark-collected", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: paymentId, collected: true }),
+      });
+      if (res.ok) {
+        await load();
+        onChanged?.();
+      }
+    } finally {
+      setCollectingId(null);
+    }
+  }
+
+  const totalOutstanding = receivables.reduce((sum, r) => sum + r.outstanding_amount, 0);
+
   const openReminders = reminders.filter((r) => r.status === "pending");
 
   return (
@@ -163,6 +197,69 @@ export default function CollectionTrackingPanel({
           </>
         ) : null}
       </div>
+
+      {/* What the customer owes — collected vs expected, with mark-collected */}
+      {receivables.length > 0 ? (
+        <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-semibold">מה חייב</span>
+            <span className="text-sm font-semibold">{formatCurrency(totalOutstanding)}</span>
+          </div>
+          <div className="space-y-2">
+            {receivables.map((r) => {
+              const fallbackTitle =
+                r.source_type === "order"
+                  ? `הזמנה #${r.source_id.slice(0, 8)}`
+                  : `פרויקט #${r.source_id.slice(0, 8)}`;
+              return (
+                <div
+                  key={r.collection_key}
+                  className="rounded-lg border border-border/60 bg-background/50 p-2 text-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-medium">{r.title ?? fallbackTitle}</span>
+                      <Badge className={collectionStatusClasses(r.collection_status)}>
+                        {collectionStatusLabel(r.collection_status)}
+                      </Badge>
+                    </div>
+                    <span className="font-semibold">{formatCurrency(r.outstanding_amount)}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+                    <span>תאריך: {r.reference_date ? formatShortDate(r.reference_date) : "—"}</span>
+                    {r.days_late > 0 ? (
+                      <span className="text-destructive">{r.days_late} ימים באיחור</span>
+                    ) : null}
+                  </div>
+                  {r.pending_payments.length > 0 ? (
+                    <div className="mt-2 space-y-1 border-t border-border/50 pt-2">
+                      {r.pending_payments.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between gap-2">
+                          <span className={p.overdue ? "text-destructive" : "text-muted-foreground"}>
+                            {formatCurrency(p.amount)} · פירעון{" "}
+                            {p.due_date ? formatShortDate(p.due_date) : "—"}
+                            {p.overdue ? " (באיחור)" : ""}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 shrink-0 text-xs"
+                            disabled={collectingId === p.id}
+                            onClick={() => void markCollected(p.id)}
+                          >
+                            {collectingId === p.id ? "מסמן..." : "סמן כנגבה"}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {/* Log a call */}
       <div className="rounded-xl border border-border/70 bg-background/60 p-3">

@@ -141,26 +141,26 @@ export function getOrderStatusColor(status: string): StatusColor {
 
 export type Gender = "m" | "f";
 
-export function getPaymentStatusLabel(status: string, gender: Gender = "m") {
-  const f = gender === "f";
+// Statuses are always masculine across the app (project-wide convention).
+export function getPaymentStatusLabel(status: string) {
   switch (normalizeValue(status)) {
     case "paid":
-      return f ? "שולמה" : "שולם";
+      return "שולם";
     case "partial":
-      return f ? "שולמה חלקית" : "שולם חלקית";
+      return "שולם חלקית";
     case "not_due":
       return "טרם הגיע מועד התשלום";
     case "not_paid":
     case "unpaid":
-      return f ? "לא שולמה" : "לא שולם";
+      return "לא שולם";
     case "overpaid":
-      return f ? "שולמה ביתר" : "שולם יתר";
+      return "שולם יתר";
     case "pending":
-      return f ? "ממתינה לפירעון" : "ממתין לפירעון";
+      return "ממתין לפירעון";
     case "cleared":
-      return f ? "התקבלה" : "התקבל";
+      return "התקבל";
     case "rejected":
-      return f ? "נדחתה" : "נדחה";
+      return "נדחה";
     default:
       return status || "-";
   }
@@ -193,11 +193,11 @@ export function getTaskStatusLabel(status: string) {
     case "in_progress":
       return "בתהליך";
     case "blocked":
-      return "חסומה";
+      return "חסום";
     case "done":
-      return "בוצעה";
+      return "בוצע";
     case "cancelled":
-      return "בוטלה";
+      return "בוטל";
     default:
       return status || "-";
   }
@@ -221,24 +221,24 @@ export function getTaskPriorityLabel(priority: string) {
 export function getOrderStatusLabel(status: string) {
   switch (normalizeOrderStatus(status)) {
     case "draft":
-      return "פתוחה";
+      return "פתוח";
     case "reserved":
       return "בהזמנה";
     case "delivered":
-      return "סופקה";
+      return "סופק";
     case "closed":
-      return "סגורה";
+      return "סגור";
     case "cancelled":
-      return "בוטלה";
+      return "בוטל";
     default:
       return status || "-";
   }
 }
 
-export function getStatusLabel(type: StatusBadgeType, value: string, gender: Gender = "m") {
+export function getStatusLabel(type: StatusBadgeType, value: string) {
   switch (type) {
     case "payment":
-      return getPaymentStatusLabel(value, gender);
+      return getPaymentStatusLabel(value);
     case "project":
       return getProjectStatusLabel(value);
     case "task":

@@ -138,7 +138,7 @@ function deriveCustomerPaymentStatus(totalDue: number | null, paidTotal: number)
 
 function customerPaymentStatusLabel(status: CustomerPaymentStatus) {
   if (status === "unpriced") return "לא סוכם תשלום";
-  return paymentStatusLabel(status, "m");
+  return paymentStatusLabel(status);
 }
 
 function customerPaymentStatusClasses(status: CustomerPaymentStatus) {

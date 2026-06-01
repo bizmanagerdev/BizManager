@@ -85,13 +85,13 @@ function formatCurrency(value: number) {
 function formatPaymentStatus(status: string | null) {
   switch ((status ?? "").toLowerCase()) {
     case "unpaid":
-      return "לא שולמה";
+      return "לא שולם";
     case "partial":
-      return "שולמה חלקית";
+      return "שולם חלקית";
     case "paid":
-      return "שולמה";
+      return "שולם";
     case "refunded":
-      return "הוחזרה";
+      return "הוחזר";
     default:
       return status ?? "-";
   }

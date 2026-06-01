@@ -32,9 +32,9 @@ type PaymentStatusFilter = "all" | "paid" | "partial" | "unpaid";
 
 const PAYMENT_FILTER_OPTIONS: { value: PaymentStatusFilter; label: string }[] = [
   { value: "all", label: "הכל" },
-  { value: "paid", label: "שולמה" },
-  { value: "partial", label: "שולמה חלקית" },
-  { value: "unpaid", label: "לא שולמה" },
+  { value: "paid", label: "שולם" },
+  { value: "partial", label: "שולם חלקית" },
+  { value: "unpaid", label: "לא שולם" },
 ];
 
 const LOADER_DOT_DELAYS = [0, 150, 300, 450] as const;
@@ -413,7 +413,7 @@ export default function SalesOrdersClient({
                       </td>
                       <td className="px-4 py-4">
                         <Badge className={collectionStatusClasses(row.collectionStatus)}>
-                          {orderCollectionStatusLabel(row.collectionStatus, "f")}
+                          {orderCollectionStatusLabel(row.collectionStatus)}
                         </Badge>
                       </td>
                       <td className="px-4 py-4 font-medium">{formatCurrency(row.totalAmount)}</td>
@@ -459,7 +459,7 @@ export default function SalesOrdersClient({
                         <div className="flex flex-wrap justify-end gap-1">
                           <StatusBadge value={row.status} type="order" className={`${orderStatusBadgeClasses(row.status)} px-1.5 py-0 text-[10px]`} />
                           <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-1.5 py-0 text-[10px]`}>
-                            {orderCollectionStatusLabel(row.collectionStatus, "f")}
+                            {orderCollectionStatusLabel(row.collectionStatus)}
                           </Badge>
                         </div>
                         <div className="text-[10px] text-muted-foreground">#{row.id.slice(0, 8)}</div>

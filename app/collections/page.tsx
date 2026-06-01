@@ -2,8 +2,13 @@ import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { getCollectionsData } from "@/lib/collections";
-import { getOpenReminders, type Reminder } from "@/lib/communications";
+import { getCollectionsData, getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
+import {
+  getOpenReminders,
+  getRecentCommunications,
+  type CommunicationLogWithCustomer,
+  type Reminder,
+} from "@/lib/communications";
 import CollectionsClient from "./CollectionsClient";
 
 export const revalidate = 60;
@@ -17,12 +22,20 @@ export default async function CollectionsPage() {
   }
 
   const data = await getCollectionsData(supabase);
-  // Best-effort: reminders tables may not be migrated yet.
+  // Best-effort: reminders / communication tables may not be migrated yet.
   let openReminders: Reminder[] = [];
+  let recentLogs: CommunicationLogWithCustomer[] = [];
+  let dueToday: PaymentDueToday[] = [];
   try {
-    openReminders = await getOpenReminders(supabase);
+    [openReminders, recentLogs, dueToday] = await Promise.all([
+      getOpenReminders(supabase).catch(() => [] as Reminder[]),
+      getRecentCommunications(supabase).catch(() => [] as CommunicationLogWithCustomer[]),
+      getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[]),
+    ]);
   } catch {
     openReminders = [];
+    recentLogs = [];
+    dueToday = [];
   }
 
   return (
@@ -49,6 +62,8 @@ export default async function CollectionsPage() {
             customers={data.customers}
             totals={data.totals}
             reminders={openReminders}
+            recentLogs={recentLogs}
+            dueToday={dueToday}
           />
         )}
       </div>

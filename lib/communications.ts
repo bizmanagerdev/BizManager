@@ -80,11 +80,11 @@ export function actionTypeLabel(value: string | null | undefined) {
 export function reminderStatusLabel(value: string | null | undefined) {
   switch (value) {
     case "done":
-      return "בוצעה";
+      return "בוצע";
     case "cancelled":
-      return "בוטלה";
+      return "בוטל";
     default:
-      return "ממתינה";
+      return "ממתין";
   }
 }
 
@@ -237,6 +237,71 @@ export async function getOpenReminders(
       created_at: str(r, "created_at") ?? "",
       updated_at: str(r, "updated_at") ?? "",
       assigned_to_name: names.get(str(r, "assigned_to") ?? "") ?? null,
+      customer_name: cust?.name ?? null,
+      customer_phone: cust?.phone ?? null,
+    };
+  });
+}
+
+export type CommunicationLogWithCustomer = CommunicationLog & {
+  customer_name: string | null;
+  customer_phone: string | null;
+};
+
+/** Recent communication logs across all customers (newest first) — powers the
+ *  global "יומן שיחות" feed on the גבייה page. */
+export async function getRecentCommunications(
+  supabase: SupabaseClient,
+  options?: { limit?: number }
+): Promise<CommunicationLogWithCustomer[]> {
+  const limit = options?.limit ?? 60;
+  const { data, error } = await supabase
+    .from("communication_logs")
+    .select(LOG_SELECT)
+    .order("created_at", { ascending: false })
+    .range(0, limit - 1);
+
+  if (error || !data) return [];
+  const rows = data as Row[];
+
+  const userIds = rows
+    .map((r) => str(r, "created_by") ?? str(r, "user_id"))
+    .filter((v): v is string => Boolean(v));
+  const customerIds = rows
+    .map((r) => str(r, "customer_id"))
+    .filter((v): v is string => Boolean(v));
+
+  const [names, customersRes] = await Promise.all([
+    resolveUserNames(supabase, userIds),
+    customerIds.length > 0
+      ? supabase.from("customers").select("id,name,phone").in("id", Array.from(new Set(customerIds)))
+      : Promise.resolve({ data: [] as Row[] }),
+  ]);
+
+  const customerById = new Map<string, { name: string | null; phone: string | null }>();
+  for (const row of (customersRes.data ?? []) as Row[]) {
+    const id = str(row, "id");
+    if (id) customerById.set(id, { name: str(row, "name"), phone: str(row, "phone") });
+  }
+
+  return rows.map((r) => {
+    const cust = customerById.get(str(r, "customer_id") ?? "");
+    return {
+      id: str(r, "id") ?? "",
+      customer_id: str(r, "customer_id"),
+      user_id: str(r, "user_id"),
+      channel: str(r, "channel") ?? "phone",
+      direction: str(r, "direction") ?? "outgoing",
+      content: str(r, "content"),
+      category: str(r, "category") ?? "collection",
+      order_id: str(r, "order_id"),
+      project_id: str(r, "project_id"),
+      property_id: str(r, "property_id"),
+      payment_id: str(r, "payment_id"),
+      created_by: str(r, "created_by"),
+      created_at: str(r, "created_at") ?? "",
+      created_by_name:
+        names.get(str(r, "created_by") ?? "") ?? names.get(str(r, "user_id") ?? "") ?? null,
       customer_name: cust?.name ?? null,
       customer_phone: cust?.phone ?? null,
     };

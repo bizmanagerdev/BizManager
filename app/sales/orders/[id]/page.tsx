@@ -452,7 +452,7 @@ export default async function SalesOrderPage({
               <div className="flex flex-wrap gap-2">
                 <StatusBadge value={getString(order as Row, "status") ?? ""} type="order" />
                 <span className={`rounded-full border px-2.5 py-1 text-xs ${collectionStatusClasses(collectionStatus)}`}>
-                  {orderCollectionStatusLabel(collectionStatus, "f")}
+                  {orderCollectionStatusLabel(collectionStatus)}
                 </span>
               </div>
             </div>

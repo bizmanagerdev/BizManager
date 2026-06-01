@@ -192,14 +192,14 @@ function extractCityFromAddress(address: string | null) {
 }
 
 const ORDER_STATUS_OPTIONS = [
-  { value: "draft", label: "פתוחה" },
-  { value: "confirmed", label: "מאושרת" },
+  { value: "draft", label: "פתוח" },
+  { value: "confirmed", label: "מאושר" },
   { value: "processing", label: "בטיפול" },
   { value: "out_for_delivery", label: "במשלוח" },
-  { value: "delivered", label: "סופקה" },
-  { value: "completed", label: "הושלמה" },
-  { value: "closed", label: "סגורה" },
-  { value: "cancelled", label: "בוטלה" },
+  { value: "delivered", label: "סופק" },
+  { value: "completed", label: "הושלם" },
+  { value: "closed", label: "סגור" },
+  { value: "cancelled", label: "בוטל" },
 ] as const;
 
 export default function NewOrderClient({

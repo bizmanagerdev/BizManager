@@ -1012,7 +1012,7 @@ export default function FinancialPageClient({
                                 (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
                                 "border-destructive/40 bg-destructive/10 text-destructive"
                               )}>
-                                {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולמה" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקית" : "לא שולמה"}
+                                {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקית" : "לא שולם"}
                               </span>
                               {(() => {
                                 const st = entry.paymentStatus ?? "not_paid";
@@ -1157,7 +1157,7 @@ export default function FinancialPageClient({
                               (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
                               "border-destructive/40 bg-destructive/10 text-destructive"
                             )}>
-                              {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולמה" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקית" : "לא שולמה"}
+                              {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקית" : "לא שולם"}
                             </span>
                             {(() => {
                               const st = entry.paymentStatus ?? "not_paid";
@@ -1292,7 +1292,7 @@ export default function FinancialPageClient({
                                 (entry.paymentStatus ?? "not_paid") === "partial" ? "border-warning/40 bg-warning/15 text-warning-strong" :
                                 "border-destructive/40 bg-destructive/10 text-destructive"
                               )}>
-                                {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולמה" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקית" : "לא שולמה"}
+                                {(entry.paymentStatus ?? "not_paid") === "paid" ? "שולם" : (entry.paymentStatus ?? "not_paid") === "partial" ? "חלקית" : "לא שולם"}
                               </span>
                               {(() => {
                                 const st = entry.paymentStatus ?? "not_paid";

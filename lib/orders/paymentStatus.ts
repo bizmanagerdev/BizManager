@@ -120,15 +120,15 @@ export function derivePaymentStatus(totalAmount: number, paidAmount: number): Pa
   return "partial";
 }
 
-export function paymentStatusLabel(status: string, gender: "m" | "f" = "f") {
-  const f = gender === "f";
+// Statuses are always masculine across the app (project-wide convention).
+export function paymentStatusLabel(status: string) {
   switch (status) {
     case "paid":
-      return f ? "שולמה" : "שולם";
+      return "שולם";
     case "partial":
-      return f ? "שולמה חלקית" : "שולם חלקית";
+      return "שולם חלקית";
     default:
-      return f ? "לא שולמה" : "לא שולם";
+      return "לא שולם";
   }
 }
 
@@ -244,19 +244,20 @@ export function deriveCollectionStatus(params: {
   return "unpaid";
 }
 
-export function collectionStatusLabel(status: string, gender: "m" | "f" = "f") {
-  const f = gender === "f";
+// Collection-status wording. These describe the תשלום / חוב (masculine), so the
+// labels are gender-invariant.
+export function collectionStatusLabel(status: string) {
   switch (status) {
     case "collected":
-      return f ? "נגבתה" : "נגבה";
+      return "שולם";
     case "partial":
-      return f ? "נגבתה חלקית" : "נגבה חלקית";
+      return "שולם חלקית";
     case "awaiting":
-      return f ? "ממתינה לגבייה" : "ממתין לגבייה";
+      return "תשלום צפוי";
     case "overdue":
       return "באיחור";
     default:
-      return f ? "לא נגבתה" : "לא נגבה";
+      return "לא שולם";
   }
 }
 
@@ -279,21 +280,19 @@ export function collectionStatusClasses(status: string) {
   return getStatusColorClasses(getCollectionStatusColor(status));
 }
 
-/** Labels for order-level payment badges. Uses "שולמה" for paid states and
- *  keeps "ממתינה לגבייה" / "באיחור" for pending states. */
-export function orderCollectionStatusLabel(status: string, gender: "m" | "f" = "f") {
-  const f = gender === "f";
+/** Labels for order-level payment badges. Masculine across the app. */
+export function orderCollectionStatusLabel(status: string) {
   switch (status) {
     case "collected":
-      return f ? "שולמה" : "שולם";
+      return "שולם";
     case "partial":
-      return f ? "שולמה חלקית" : "שולם חלקית";
+      return "שולם חלקית";
     case "awaiting":
-      return f ? "ממתינה לגבייה" : "ממתין לגבייה";
+      return "ממתין לגבייה";
     case "overdue":
       return "באיחור";
     default:
-      return f ? "לא שולמה" : "לא שולם";
+      return "לא שולם";
   }
 }
 

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { getCustomerActivity } from "@/lib/communications";
+import { getCustomerReceivables } from "@/lib/collections";
 
-// Communication logs + reminders for one customer — feeds the מעקב גבייה panel.
+// Communication logs + reminders + open receivables for one customer — feeds the
+// מעקב גבייה panel (call log, follow-ups, and what the customer still owes).
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -15,8 +17,11 @@ export async function GET(req: Request) {
     if (!access.ok) return access.response;
     const { supabase } = access.value;
 
-    const activity = await getCustomerActivity(supabase, customerId);
-    return NextResponse.json(activity);
+    const [activity, receivables] = await Promise.all([
+      getCustomerActivity(supabase, customerId),
+      getCustomerReceivables(supabase, customerId).catch(() => []),
+    ]);
+    return NextResponse.json({ ...activity, receivables });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
