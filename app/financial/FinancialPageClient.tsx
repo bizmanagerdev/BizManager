@@ -916,9 +916,9 @@ export default function FinancialPageClient({
                 אין כרגע תנועות עתידיות או ממתינות בהתאם לסינון.
               </div>
             ) : (
-              <div>
+              <div className="max-h-[70vh] overflow-auto">
                 <table className="w-full text-right text-sm">
-                  <thead className="text-right text-muted-foreground">
+                  <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
                     <tr className="border-b">
                       <th className="px-2 py-2 font-medium">תאריך תזרים</th>
                       <th className="px-2 py-2 font-medium">פירעון</th>
@@ -1215,9 +1215,9 @@ export default function FinancialPageClient({
                 })}
               </div>
 
-              <div className="hidden md:block">
+              <div className="hidden max-h-[70vh] overflow-auto md:block">
                 <table className="w-full text-right text-sm">
-                  <thead className="text-right text-muted-foreground">
+                  <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
                     <tr className="border-b">
                       <th className="px-3 py-2 font-medium">תאריך תזרים</th>
                       <th className="px-3 py-2 font-medium">סטטוס</th>

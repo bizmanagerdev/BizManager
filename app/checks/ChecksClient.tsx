@@ -202,9 +202,9 @@ export default function ChecksClient({ checks }: Props) {
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden overflow-x-auto rounded-2xl border border-border/70 sm:block">
+          <div className="hidden max-h-[70vh] overflow-auto rounded-2xl border border-border/70 sm:block">
             <table className="w-full min-w-[820px] border-collapse text-sm">
-              <thead className="bg-muted">
+              <thead className="sticky top-0 z-10 bg-muted">
                 <tr className="border-b border-border/70 text-xs text-muted-foreground">
                   <th className="px-3 py-2 text-right font-medium">לקוח</th>
                   <th className="px-3 py-2 text-right font-medium">מס׳ צ׳ק</th>

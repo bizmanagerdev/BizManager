@@ -856,9 +856,9 @@ export default function PriceListClient({
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[24px] border border-brand">
+            <div className="max-h-[70vh] overflow-auto rounded-[24px] border border-brand">
               <table className="w-full border-collapse text-right text-sm">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-muted-pdf">
                   <tr className="bg-muted-pdf text-muted-pdf">
                     <th className="px-4 py-3 font-medium">מוצר</th>
                     <th className="px-4 py-3 font-medium">קוד</th>
@@ -908,9 +908,9 @@ export default function PriceListClient({
         <p className="text-sm text-muted-foreground">אין מוצרים להצגה במחירון.</p>
       ) : (
         <>
-          <div className="hidden rounded-md border xl:block">
+          <div className="hidden max-h-[70vh] overflow-auto rounded-md border xl:block">
             <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-muted-foreground">
+              <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-right font-medium">מוצר</th>
                   <th className="px-3 py-2 text-right font-medium">קוד</th>

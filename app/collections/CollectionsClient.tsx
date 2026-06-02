@@ -842,7 +842,7 @@ function DebtorsTable({
       ) : (
         <>
           {/* Desktop: aging table with a sticky header */}
-          <div className="hidden overflow-x-auto rounded-2xl border border-border/70 sm:block">
+          <div className="hidden max-h-[70vh] overflow-auto rounded-2xl border border-border/70 sm:block">
             <table className="w-full min-w-[720px] border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-muted">
                 <tr className="border-b border-border/70 text-xs text-muted-foreground">

@@ -414,9 +414,9 @@ export default function TasksPageClient(props: Props) {
           </div>
 
           <Card className="hidden overflow-hidden border-border/70 shadow-sm md:block">
-            <div>
+            <div className="max-h-[70vh] overflow-auto">
             <table className="w-full text-sm">
-              <thead className="bg-secondary/40 text-muted-foreground">
+              <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                 <tr className="border-b border-border/70">
                   <th className="px-4 py-3 text-right font-medium">משימה</th>
                   <th className="px-4 py-3 text-right font-medium">מקושר ל</th>

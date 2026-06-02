@@ -3173,9 +3173,9 @@ function ProjectTasksTab({
                 })}
               </div>
 
-              <div className="hidden md:block rounded-md border">
+              <div className="hidden max-h-[70vh] overflow-auto md:block rounded-md border">
                 <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-muted-foreground">
+                  <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                     <tr>
                       <th className="text-right font-medium px-3 py-2">משימה</th>
                       <th className="text-right font-medium px-3 py-2">תאריך יעד</th>

@@ -495,7 +495,7 @@ export default function CustomersClient({
         })}
       </div>
 
-      <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
+      <Card className="hidden max-h-[70vh] overflow-auto border-border/70 shadow-sm xl:block">
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col className="w-[18%]" />
@@ -508,7 +508,7 @@ export default function CustomersClient({
             <col className="w-[10%]" />
             <col className="w-[8%]" />
           </colgroup>
-          <thead className="bg-secondary/40 text-muted-foreground">
+          <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
             <tr className="border-b border-border/70 text-right">
               <th className="px-2 py-3 font-medium">לקוח</th>
               <th className="px-2 py-3 font-medium">טלפון ואימייל</th>

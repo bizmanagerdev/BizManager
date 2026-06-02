@@ -437,9 +437,9 @@ export default function SalesInventoryClient({
             <p className="text-sm text-muted-foreground">אין מוצרים להצגה במלאי.</p>
           ) : (
             <>
-              <div className="hidden rounded-md border xl:block">
+              <div className="hidden max-h-[70vh] overflow-auto rounded-md border xl:block">
                 <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-muted-foreground">
+                  <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 text-right font-medium">מוצר</th>
                       <th className="px-3 py-2 text-right font-medium">מק״ט</th>
@@ -629,9 +629,9 @@ export default function SalesInventoryClient({
               const paginatedMovements = movementRows.slice(startIdx, startIdx + MOVEMENTS_PER_PAGE);
               return (
                 <>
-                  <div className="hidden rounded-md border xl:block">
+                  <div className="hidden max-h-[70vh] overflow-auto rounded-md border xl:block">
                     <table className="w-full text-sm">
-                      <thead className="bg-muted/50 text-muted-foreground">
+                      <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                         <tr>
                           <th className="px-3 py-2 text-right font-medium">מוצר</th>
                           <th className="px-3 py-2 text-right font-medium">סוג תנועה</th>

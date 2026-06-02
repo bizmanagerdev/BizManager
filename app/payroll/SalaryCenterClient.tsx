@@ -2439,9 +2439,9 @@ export default function SalaryCenterClient({
         <TabsContent value="employees" className="space-y-3">
           <Card>
             <CardContent className="py-4">
-              <div>
+              <div className="max-h-[70vh] overflow-auto">
                 <table className="w-full text-right text-xs">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-muted">
                     <tr className="border-b text-muted-foreground">
                       <th className="px-2 py-2 font-medium">פעולות</th>
                       <th className="px-2 py-2 font-medium">יתרה כוללת</th>
@@ -2603,9 +2603,9 @@ export default function SalaryCenterClient({
         <TabsContent value="labor" className="space-y-3">
           <Card>
             <CardContent className="py-4">
-              <div>
+              <div className="max-h-[70vh] overflow-auto">
                 <table className="w-full text-right text-xs">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-muted">
                     <tr className="border-b text-muted-foreground">
                       <th className="px-2 py-2 font-medium">פעולות</th>
                       <th className="px-2 py-2 font-medium">יתרה כוללת</th>
@@ -2824,9 +2824,9 @@ export default function SalaryCenterClient({
 
           <Card>
             <CardContent className="py-4">
-              <div>
+              <div className="max-h-[70vh] overflow-auto">
                 <table className="w-full text-right text-sm">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-muted">
                     <tr className="border-b text-muted-foreground">
                       <th className="px-3 py-2 font-medium">פעולות</th>
                       <th className="px-3 py-2 font-medium">עלות עבודה</th>
@@ -2969,9 +2969,9 @@ export default function SalaryCenterClient({
                     {"הוספת משכורת"}
                   </Button>
                 </div>
-                <div>
+                <div className="max-h-[70vh] overflow-auto">
                   <table className="w-full text-right text-sm">
-                    <thead>
+                    <thead className="sticky top-0 z-10 bg-muted">
                       <tr className="border-b text-muted-foreground">
                         <th className="px-3 py-2 font-medium">פעולות</th>
                         <th className="px-3 py-2 font-medium">מצב</th>
@@ -3868,9 +3868,9 @@ export default function SalaryCenterClient({
                               אין משמרות להצגה במסננים שנבחרו.
                             </div>
                           ) : (
-                            <div className="rounded-md border">
+                            <div className="max-h-[70vh] overflow-auto rounded-md border">
                               <table className="w-full text-sm">
-                                <thead className="bg-muted/50 text-muted-foreground">
+                                <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                                   <tr>
                                     <th className="px-2 py-2 text-right font-medium">תאריך</th>
                                     <th className="px-2 py-2 text-right font-medium">שעות</th>
@@ -3902,9 +3902,9 @@ export default function SalaryCenterClient({
                               אין תשלומים להצגה במסננים שנבחרו.
                             </div>
                           ) : (
-                            <div className="rounded-md border">
+                            <div className="max-h-[70vh] overflow-auto rounded-md border">
                               <table className="w-full text-sm">
-                                <thead className="bg-muted/50 text-muted-foreground">
+                                <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                                   <tr>
                                     <th className="px-2 py-2 text-right font-medium">תאריך</th>
                                     <th className="px-2 py-2 text-right font-medium">סכום</th>

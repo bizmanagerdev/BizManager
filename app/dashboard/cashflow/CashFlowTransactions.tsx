@@ -70,9 +70,9 @@ export default function CashFlowTransactions({ basePath, result, searchParams }:
               ))}
             </div>
 
-            <div className="hidden md:block">
+            <div className="hidden max-h-[70vh] overflow-auto md:block">
               <table className="w-full text-right text-sm">
-                <thead className="text-right text-muted-foreground">
+                <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
                   <tr className="border-b">
                     <th className="px-3 py-2 font-medium">תאריך</th>
                     <th className="px-3 py-2 font-medium">סוג</th>
