@@ -1,9 +1,32 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 import { logAuditEvent } from "@/lib/audit";
-import { createSupabaseRouteClient } from "@/lib/supabase/route";
 
 export async function POST(req: Request) {
-  const supabase = await createSupabaseRouteClient();
+  const cookieStore = await cookies();
+
+  // 303 (See Other) forces the browser to follow with a GET — a default 307
+  // would re-POST to /login and yield a 405. Sign-out cookie clearing is written
+  // straight onto THIS response so the session is reliably removed.
+  const response = NextResponse.redirect(new URL("/login", req.url), { status: 303 });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
+    }
+  );
 
   // Record the logout in the activity feed while still authenticated (best-effort).
   try {
@@ -33,6 +56,5 @@ export async function POST(req: Request) {
   }
 
   await supabase.auth.signOut();
-  const url = new URL("/login", req.url);
-  return NextResponse.redirect(url);
+  return response;
 }
