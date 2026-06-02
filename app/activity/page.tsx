@@ -35,6 +35,7 @@ export default async function ActivityPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <ActivityClient
+        key={`${tableName}|${action}|${result.page}`}
         items={result.items}
         totalCount={result.totalCount}
         page={result.page}

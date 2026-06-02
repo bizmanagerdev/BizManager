@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 type AuditLogPrimitive = string | number | boolean | null;
 type AuditLogValue = AuditLogPrimitive | AuditLogValue[] | { [key: string]: AuditLogValue };
 
-type AuditLogRow = {
+export type AuditLogRow = {
   id: string;
   table_name: string;
   record_id: string;
@@ -12,6 +12,7 @@ type AuditLogRow = {
   user_role: string | null;
   created_at: string | null;
   new_data?: AuditLogValue;
+  old_data?: AuditLogValue;
 };
 
 type AuditActorRow = {
@@ -74,15 +75,25 @@ export function entityLabel(tableName: string) {
     case "payroll_periods": return "תקופת שכר";
     case "payslips": return "תלוש שכר";
     case "products": return "מוצר";
+    case "product_categories": return "קטגוריית מוצר";
+    case "inventory_movements": return "תנועת מלאי";
     case "inquiries": return "פנייה";
+    case "recurring_expense_templates": return "הוצאה קבועה";
+    case "recurring_task_templates": return "משימה קבועה";
+    case "communications": return "תקשורת";
     case "morning_documents": return "מסמך Morning";
     case "morning_settings": return "הגדרות Morning";
+    case "auth": return "מערכת";
     default: return tableName;
   }
 }
 
-function actionLabel(action: string) {
+export function actionLabel(action: string) {
   switch (action) {
+    case "login":
+      return "התחבר";
+    case "logout":
+      return "התנתק";
     case "create":
     case "INSERT":
       return "נוצר";
@@ -117,7 +128,7 @@ function actionLabel(action: string) {
   }
 }
 
-function buildDetails(tableName: string, newData: AuditLogValue): string {
+export function buildDetails(tableName: string, newData: AuditLogValue): string {
   if (!newData || typeof newData !== "object" || Array.isArray(newData)) return "";
   const d = newData as Record<string, AuditLogValue>;
 
@@ -206,13 +217,96 @@ function buildDetails(tableName: string, newData: AuditLogValue): string {
       if (amt) parts.push(amt);
       break;
     }
+    case "auth": {
+      const email = str(d.email);
+      if (email) parts.push(email);
+      const device = str(d.device);
+      if (device) parts.push(device);
+      break;
+    }
   }
 
   return parts.join(" · ");
 }
 
-function buildSummary(tableName: string, action: string) {
+export function buildSummary(tableName: string, action: string) {
   return `${entityLabel(tableName)} ${actionLabel(action)}`;
+}
+
+// ── Field-level change detail ("what happened") ─────────────────────────────
+// Shown for update actions: compares old_data → new_data on a curated set of
+// meaningful fields so the feed reads e.g. "סטטוס: פתוח → הושלם".
+
+const CHANGE_FIELD_LABELS: Record<string, string> = {
+  status: "סטטוס",
+  payment_status: "סטטוס תשלום",
+  collection_status: "סטטוס גבייה",
+  priority: "עדיפות",
+  amount: "סכום",
+  total_price: "סכום",
+  total_amount: "סכום",
+  agreed_base_price: "מחיר",
+  actual_price: "מחיר",
+  payment_method: "אמצעי תשלום",
+  name: "שם",
+  full_name: "שם",
+  phone: "טלפון",
+  email: "אימייל",
+  subject: "נושא",
+  title: "נושא",
+  description: "תיאור",
+  due_date: "לתשלום עד",
+  start_date: "תאריך התחלה",
+  end_date: "תאריך סיום",
+  notes: "הערות",
+};
+
+// Order controls how changes are listed; first matches win.
+const CHANGE_FIELDS = Object.keys(CHANGE_FIELD_LABELS);
+
+// Masculine, project-wide (see feedback-hebrew-gender-agreement).
+const STATUS_VALUE_LABELS: Record<string, string> = {
+  open: "פתוח", closed: "סגור", active: "פעיל", inactive: "לא פעיל",
+  pending: "ממתין", in_progress: "בתהליך", completed: "הושלם", done: "הושלם",
+  todo: "לביצוע", to_do: "לביצוע", blocked: "חסום", on_hold: "מושהה",
+  cancelled: "בוטל", canceled: "בוטל", paid: "שולם", unpaid: "לא שולם",
+  partial: "חלקי", draft: "טיוטה", new: "חדש", lost: "אבוד", won: "זכה",
+  low: "נמוכה", medium: "בינונית", high: "גבוהה", urgent: "דחופה",
+};
+
+function formatChangeValue(field: string, value: AuditLogValue): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (field === "amount" || field.endsWith("_price") || field.endsWith("_amount")) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return `₪${n.toLocaleString("he-IL")}`;
+  }
+  const s = String(value);
+  return STATUS_VALUE_LABELS[s] ?? s;
+}
+
+function isUpdateAction(action: string): boolean {
+  return action === "update" || action === "UPDATE" || action === "status_changed" || action === "priority_changed";
+}
+
+function buildChanges(oldData: AuditLogValue, newData: AuditLogValue): string {
+  if (!oldData || typeof oldData !== "object" || Array.isArray(oldData)) return "";
+  if (!newData || typeof newData !== "object" || Array.isArray(newData)) return "";
+  const o = oldData as Record<string, AuditLogValue>;
+  const n = newData as Record<string, AuditLogValue>;
+
+  const parts: string[] = [];
+  for (const field of CHANGE_FIELDS) {
+    if (!(field in o) && !(field in n)) continue;
+    const before = o[field] ?? null;
+    const after = n[field] ?? null;
+    if (JSON.stringify(before) === JSON.stringify(after)) continue;
+    const part = `${CHANGE_FIELD_LABELS[field]}: ${formatChangeValue(field, before)} → ${formatChangeValue(field, after)}`;
+    // Skip duplicates (e.g. agreed_base_price + actual_price both → "מחיר").
+    if (parts.includes(part)) continue;
+    parts.push(part);
+    if (parts.length >= 3) break;
+  }
+  return parts.join(" · ");
 }
 
 function actorDisplayName(actor: AuditActorRow) {
@@ -265,8 +359,14 @@ async function getActorNames(supabase: SupabaseClient, actorIds: string[]) {
   return new Map(Object.entries(resolved));
 }
 
-function normalizeAuditRows(rows: AuditLogRow[], actorNames: Map<string, string>): AuditFeedItem[] {
-  return rows.map((row) => ({
+export function buildAuditFeedItem(row: AuditLogRow, actorName: string | null): AuditFeedItem {
+  const base = buildDetails(row.table_name, row.new_data ?? null);
+  const changes = isUpdateAction(row.action)
+    ? buildChanges(row.old_data ?? null, row.new_data ?? null)
+    : "";
+  const details = [base, changes].filter(Boolean).join(" · ");
+
+  return {
     id: row.id,
     tableName: row.table_name,
     recordId: row.record_id,
@@ -274,12 +374,51 @@ function normalizeAuditRows(rows: AuditLogRow[], actorNames: Map<string, string>
     actionLabel: actionLabel(row.action),
     entityLabel: entityLabel(row.table_name),
     summary: buildSummary(row.table_name, row.action),
-    details: buildDetails(row.table_name, row.new_data ?? null),
-    actorName: row.changed_by ? actorNames.get(row.changed_by) ?? "משתמש" : "מערכת",
+    details,
+    actorName: row.changed_by ? actorName ?? "משתמש" : "מערכת",
     actorRole: row.user_role,
     createdAt: row.created_at,
-  }));
+  };
 }
+
+function normalizeAuditRows(rows: AuditLogRow[], actorNames: Map<string, string>): AuditFeedItem[] {
+  return rows.map((row) =>
+    buildAuditFeedItem(row, row.changed_by ? actorNames.get(row.changed_by) ?? null : null)
+  );
+}
+
+// Tables covered by the database trigger `log_changes` (trg_audit_*), which
+// already writes a full audit_logs row (with old/new data + actor) on every
+// INSERT/UPDATE/DELETE. The app must NOT also log plain CRUD for these, or every
+// action shows up twice (a bare app row + a detailed trigger row).
+// Keep this list in sync with the DB trigger coverage (see
+// db/sql/extend_audit_to_all_tables.sql).
+export const TRIGGER_AUDITED_TABLES = new Set([
+  "orders",
+  "order_items",
+  "payments",
+  "projects",
+  "customers",
+  "users",
+  "contacts",
+  "expenses",
+  "tasks",
+  "documents",
+  "attendance_sessions",
+  "worker_payments",
+]);
+
+// Plain row-CRUD actions the DB trigger already records. Distinct semantic
+// events the trigger can't express (morning_* sync/failure notices, etc.) are
+// still logged by the app even on a covered table.
+const TRIGGER_HANDLED_ACTIONS = new Set([
+  "create",
+  "update",
+  "delete",
+  "status_changed",
+  "priority_changed",
+  "upload",
+]);
 
 export async function logAuditEvent({
   supabase,
@@ -292,6 +431,10 @@ export async function logAuditEvent({
   newData,
 }: LogAuditParams) {
   if (!tableName || !recordId || !action) return;
+
+  // The DB trigger already records plain CRUD for these tables — skip to avoid
+  // duplicate rows, but keep distinct semantic events (morning_*, login, etc.).
+  if (TRIGGER_AUDITED_TABLES.has(tableName) && TRIGGER_HANDLED_ACTIONS.has(action)) return;
 
   const { error } = await supabase.from("audit_logs").insert({
     table_name: tableName,
@@ -316,7 +459,7 @@ export async function logAuditEvent({
 export async function getRecentAuditEvents(supabase: SupabaseClient, limit = 8) {
   const { data, error } = await supabase
     .from("audit_logs")
-    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data")
+    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data,old_data")
     .order("created_at", { ascending: false })
     .range(0, Math.max(limit - 1, 0));
 
@@ -359,7 +502,7 @@ export async function getLatestAuditByRecordIds(
   const rowLimit = Math.min(Math.max(recordIds.length * 3, 50), 5000);
   let query = supabase
     .from("audit_logs")
-    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data")
+    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data,old_data")
     .eq("table_name", tableName)
     .in("record_id", recordIds)
     .order("created_at", { ascending: false });
@@ -420,6 +563,7 @@ export const AUDIT_TABLE_OPTIONS = [
   { value: "attendance_sessions", label: "שעות עבודה" },
   { value: "worker_payments", label: "תשלומי עובדים" },
   { value: "users", label: "משתמשים" },
+  { value: "auth", label: "כניסות למערכת" },
 ] as const;
 
 export const AUDIT_ACTION_OPTIONS = [
@@ -429,6 +573,8 @@ export const AUDIT_ACTION_OPTIONS = [
   { value: "delete", label: "מחיקה" },
   { value: "status_changed", label: "שינוי סטטוס" },
   { value: "upload", label: "העלאה" },
+  { value: "login", label: "התחברות" },
+  { value: "logout", label: "התנתקות" },
 ] as const;
 
 export async function getAuditFeedPaginated(
@@ -448,7 +594,7 @@ export async function getAuditFeedPaginated(
 
   let query = supabase
     .from("audit_logs")
-    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data", { count: "exact" })
+    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data,old_data", { count: "exact" })
     .order("created_at", { ascending: false })
     .range(offset, offset + AUDIT_PAGE_SIZE - 1);
 

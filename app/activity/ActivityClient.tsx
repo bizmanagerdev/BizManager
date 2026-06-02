@@ -1,11 +1,18 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import type { AuditFeedItem } from "@/lib/audit";
+import {
+  buildAuditFeedItem,
+  resolveUserDisplayNamesForValues,
+  type AuditFeedItem,
+  type AuditLogRow,
+} from "@/lib/audit";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import OnlineUsersCard from "./OnlineUsersCard";
 
 function formatRelativeTime(isoString: string | null) {
   if (!isoString) return "";
@@ -34,12 +41,27 @@ function formatFullDate(isoString: string | null) {
 }
 
 function actionColor(action: string) {
-  switch (action) {
-    case "create": return "bg-success-soft text-success-soft-foreground";
-    case "delete": return "bg-destructive text-destructive-foreground";
-    case "status_changed": return "bg-info-soft text-info-soft-foreground";
-    case "upload": return "bg-accent text-accent-foreground";
-    default: return "bg-background text-muted-foreground";
+  const a = action.toLowerCase();
+  // Morning.co integration events (morning_customer_linked, morning_*_failed, …)
+  if (a.startsWith("morning")) return "bg-warning-soft text-warning-soft-foreground";
+  switch (a) {
+    case "create":
+    case "insert":
+    case "login":
+      return "bg-success-soft text-success-soft-foreground"; // green — נוצר / התחבר
+    case "update":
+    case "status_changed":
+      return "bg-info-soft text-info-soft-foreground"; // blue — עודכן
+    case "priority_changed":
+      return "bg-warning-soft text-warning-soft-foreground"; // amber
+    case "delete":
+      return "bg-destructive-soft text-destructive-soft-foreground"; // red — נמחק
+    case "upload":
+      return "bg-accent text-accent-foreground";
+    case "logout":
+      return "bg-muted text-muted-foreground";
+    default:
+      return "bg-muted text-muted-foreground";
   }
 }
 
@@ -57,7 +79,6 @@ type Props = {
 
 export default function ActivityClient({
   items,
-  totalCount,
   page,
   totalPages,
   error,
@@ -70,6 +91,54 @@ export default function ActivityClient({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+
+  // Live feed: rows that arrived via realtime since this view mounted (newest
+  // first). The parent remounts this component (via `key`) whenever the filter
+  // or page changes, so this state resets cleanly — no re-sync effect needed.
+  const [extraItems, setExtraItems] = useState<AuditFeedItem[]>([]);
+
+  // Realtime: only prepend on the first page so pagination stays coherent.
+  useEffect(() => {
+    if (page !== 1) return;
+    const supabase = createSupabaseBrowserClient();
+
+    const channel = supabase
+      .channel("activity-feed")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "audit_logs" },
+        async (payload) => {
+          const row = payload.new as AuditLogRow;
+          if (!row?.id) return;
+          // Respect the active filters.
+          if (currentTable && row.table_name !== currentTable) return;
+          if (currentAction && row.action !== currentAction) return;
+
+          let actorName: string | null = null;
+          if (row.changed_by) {
+            const names = await resolveUserDisplayNamesForValues(supabase, [row.changed_by]);
+            actorName = names[row.changed_by] ?? null;
+          }
+          const item = buildAuditFeedItem(row, actorName);
+
+          setExtraItems((prev) => {
+            if (prev.some((existing) => existing.id === item.id)) return prev;
+            return [item, ...prev];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [page, currentTable, currentAction]);
+
+  // Merge realtime rows ahead of the server page, dropping any the server
+  // already included (avoids a flash of duplicates after navigation).
+  const existingIds = new Set(items.map((i) => i.id));
+  const displayItems = [...extraItems.filter((i) => !existingIds.has(i.id)), ...items];
+  const liveCount = displayItems.length - items.length;
 
   function updateParams(updates: Record<string, string>) {
     const next = new URLSearchParams(searchParams.toString());
@@ -89,6 +158,8 @@ export default function ActivityClient({
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
+      <OnlineUsersCard />
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <select
@@ -112,6 +183,18 @@ export default function ActivityClient({
             ))}
           </select>
         </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-soft-foreground/60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-success-soft-foreground" />
+            </span>
+            עדכון חי
+          </span>
+          {liveCount > 0 && (
+            <Badge variant="secondary" className="text-xs">{`${liveCount} חדש`}</Badge>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -120,7 +203,7 @@ export default function ActivityClient({
         </Card>
       )}
 
-      {!error && items.length === 0 && (
+      {!error && displayItems.length === 0 && (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             אין פעילות להצגה
@@ -128,9 +211,9 @@ export default function ActivityClient({
         </Card>
       )}
 
-      {!error && items.length > 0 && (
+      {!error && displayItems.length > 0 && (
         <div className="space-y-2">
-          {items.map((item) => (
+          {displayItems.map((item) => (
             <Card key={item.id} className={isPending ? "opacity-60 transition-opacity" : ""}>
               <CardContent className="py-3 px-4">
                 <div className="flex items-start justify-between gap-3">

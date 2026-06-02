@@ -6,6 +6,7 @@ import { TopBar } from "@/components/layout/TopBar";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { TopNavigationProgress } from "@/components/layout/TopNavigationProgress";
 import OfflineBanner from "@/components/layout/OfflineBanner";
+import PresenceTracker from "@/components/layout/PresenceTracker";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 import { useNavItems } from "@/components/layout/nav-items";
 
@@ -41,6 +42,7 @@ export default function AppShell({
       <Suspense fallback={null}>
         <TopNavigationProgress />
       </Suspense>
+      <PresenceTracker userName={userName} viewerRole={viewerRole} />
       {sidebar.length > 0 && <AppSidebar items={sidebar} appName={appName} />}
       <div className="flex flex-1 flex-col min-w-0">
         <TopBar appName={appName} userName={userName} showSearch={showSearch} />
