@@ -82,17 +82,14 @@ function daysSince(dateIso: string | null): number | null {
 // customer actually has overdue debt (no point flagging a not-yet-due customer).
 function LastContactSignal({ lastContactAt, overdue }: { lastContactAt: string | null; overdue: boolean }) {
   if (!lastContactAt) {
-    if (!overdue) return null;
+    if (!overdue) return <span className="text-muted-foreground/40">—</span>;
     return <span className="text-[11px] font-medium text-warning-strong">⚠ טרם נוצר קשר</span>;
   }
   const days = daysSince(lastContactAt);
-  const label =
-    days === 0 ? "נוצר קשר היום" : days === 1 ? "נוצר קשר אתמול" : `נוצר קשר לפני ${days} ימים`;
+  const label = days === 0 ? "היום" : formatDate(lastContactAt);
   const stale = (days ?? 0) >= 7;
   return (
-    <span className={`text-[11px] ${stale ? "text-warning-strong" : "text-muted-foreground"}`}>
-      {label}
-    </span>
+    <span className={`text-xs ${stale ? "text-warning-strong" : "text-muted-foreground"}`}>{label}</span>
   );
 }
 
@@ -763,7 +760,7 @@ function DebtorsTable({
         <>
           {/* Desktop: aging table with a sticky header */}
           <div className="hidden overflow-x-auto rounded-2xl border border-border/70 sm:block">
-            <table className="w-full min-w-[560px] border-collapse text-sm">
+            <table className="w-full min-w-[720px] border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-muted">
                 <tr className="border-b border-border/70 text-xs text-muted-foreground">
                   <th className="px-3 py-2 text-right font-medium">
@@ -780,6 +777,7 @@ function DebtorsTable({
                   </th>
                   <th className="px-3 py-2 text-right font-medium">טלפון</th>
                   <th className="px-3 py-2 text-right font-medium">סטטוס</th>
+                  <th className="px-3 py-2 text-right font-medium">יצירת קשר</th>
                   <th className="px-3 py-2 text-right font-medium">תזכורת</th>
                   <th className="px-3 py-2 text-center font-medium">סה״כ חוב</th>
                   <th className="px-2 py-2 text-center font-medium">פעולות</th>
@@ -805,7 +803,7 @@ function DebtorsTable({
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-border/70 bg-muted/30 text-xs font-semibold">
-                  <td className="px-3 py-2 text-right" colSpan={4}>
+                  <td className="px-3 py-2 text-right" colSpan={5}>
                     סה״כ ({filtered.length} לקוחות)
                   </td>
                   <td className="px-3 py-2 text-center">{formatCurrency(footer.outstanding)}</td>
@@ -886,12 +884,6 @@ function FragmentRow({
                 />
                 <span>{group.customer_name}</span>
               </button>
-              <div className="ps-5">
-                <LastContactSignal
-                  lastContactAt={group.last_contact_at}
-                  overdue={group.overdue_amount > 0.009}
-                />
-              </div>
             </div>
           </div>
         </td>
@@ -913,6 +905,12 @@ function FragmentRow({
               {group.oldest_days_late} ימים באיחור
             </div>
           ) : null}
+        </td>
+        <td className="px-3 py-2">
+          <LastContactSignal
+            lastContactAt={group.last_contact_at}
+            overdue={group.overdue_amount > 0.009}
+          />
         </td>
         <td className="px-3 py-2">
           {group.next_reminder_at ? (
@@ -937,7 +935,7 @@ function FragmentRow({
       </tr>
       {isOpen ? (
         <tr className={`border-b border-border/50 ${tint || "bg-muted/10"}`}>
-          <td colSpan={6} className="px-3 py-3">
+          <td colSpan={7} className="px-3 py-3">
             <div className="space-y-2">
               {group.sources.map((source) => (
                 <SourceDetail key={source.collection_key} source={source} />
