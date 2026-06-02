@@ -160,7 +160,7 @@ export default async function ProjectsPage({
 
   const [{ data: projectSettingsRows }] = await Promise.all([
     projectIds.length > 0
-      ? supabase.from("projects").select("id,expenses_billed_separately").in("id", projectIds)
+      ? supabase.from("projects").select("id,expenses_billed_separately,payment_terms,due_date").in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
   ]);
 
@@ -177,10 +177,14 @@ export default async function ProjectsPage({
   ]);
 
   const expensesSeparatelyByProjectId = new Map<string, boolean>();
+  const paymentTermsByProjectId = new Map<string, string | null>();
+  const dueDateByProjectId = new Map<string, string | null>();
   ((projectSettingsRows ?? []) as Row[]).forEach((row) => {
     const projectId = typeof row?.id === "string" ? row.id : "";
     if (!projectId) return;
     expensesSeparatelyByProjectId.set(projectId, row?.expenses_billed_separately === true);
+    paymentTermsByProjectId.set(projectId, typeof row?.payment_terms === "string" ? row.payment_terms : null);
+    dueDateByProjectId.set(projectId, typeof row?.due_date === "string" ? row.due_date.slice(0, 10) : null);
   });
 
   const financialByProjectId = new Map<string, Row>();
@@ -229,6 +233,8 @@ export default async function ProjectsPage({
       paid_total: paidTotal,
       amount_due: amountDue,
       payment_status_list: paymentStatus,
+      payment_terms: paymentTermsByProjectId.get(projectId) ?? null,
+      due_date: dueDateByProjectId.get(projectId) ?? null,
     };
   });
 

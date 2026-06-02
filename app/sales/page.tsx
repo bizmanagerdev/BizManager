@@ -10,6 +10,7 @@ import SalesTabsNav from "@/app/sales/SalesTabsNav";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { Button } from "@/components/ui/button";
 import { DELIVERY_REGIONS, getCityRegion } from "@/lib/ui/cities";
+import { fetchOrderDueDates } from "@/lib/collections";
 
 type Row = Record<string, unknown>;
 
@@ -442,13 +443,23 @@ export default async function SalesPage({
       ? await supabase.from("contacts").select("customer_id,full_name,phone,email,whatsapp").in("customer_id", orderCustomerIds).eq("active", true)
       : { data: [] as Row[] };
 
+    // Attach each order's effective due date (payment terms) for the late-status badge.
+    const orderDueById = await fetchOrderDueDates(
+      supabase,
+      rows.map((r) => (typeof r.order_id === "string" ? r.order_id : "")).filter(Boolean)
+    );
+    const ordersWithDue = rows.map((r) => ({
+      ...r,
+      due_date: orderDueById.get(typeof r.order_id === "string" ? r.order_id : "") ?? null,
+    }));
+
     content = (
       <>
         {error ? (
           <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error.message}</p>
         ) : (
           <>
-            <SalesOrdersClient orders={rows} contacts={(orderContacts ?? []) as Row[]} initialQuery={searchQuery} showPaymentStatusFilter={activeTab === "closed"} initialPaymentFilter={paymentStatusFilter} totalCount={totalCount} />
+            <SalesOrdersClient orders={ordersWithDue} contacts={(orderContacts ?? []) as Row[]} initialQuery={searchQuery} showPaymentStatusFilter={activeTab === "closed"} initialPaymentFilter={paymentStatusFilter} totalCount={totalCount} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {ordersPage} • מציגים {rows.length} מתוך {totalCount}

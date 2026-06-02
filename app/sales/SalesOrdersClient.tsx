@@ -22,11 +22,11 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { formatOrderDate } from "@/lib/orders/format";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import {
-  deriveCollectionStatus,
   collectionStatusClasses,
   orderCollectionStatusLabel,
   derivePaymentStatus,
 } from "@/lib/orders/paymentStatus";
+import { computeSourceCollection } from "@/lib/collections";
 
 type PaymentStatusFilter = "all" | "paid" | "partial" | "unpaid";
 
@@ -71,6 +71,7 @@ type OrderView = {
   customerCity: string | null;
   customerAddress: string | null;
   orderDate: string | null;
+  dueDate: string | null;
   status: string;
   paymentStatus: string;
   collectionStatus: string;
@@ -241,6 +242,7 @@ export default function SalesOrdersClient({
   }, [contacts]);
 
   const orderRows = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
     const mappedOrders = orders.map<OrderView | null>((row) => {
       const id = getString(row, ["order_id", "id"]);
       const customerId = getString(row, ["customer_id"]);
@@ -253,6 +255,20 @@ export default function SalesOrdersClient({
 
       const pendingAmount = getNumber(row, ["pending_amount"]) ?? 0;
       const overdueAmount = getNumber(row, ["overdue_amount"]) ?? 0;
+      const orderDate = getString(row, ["order_date", "created_at"]);
+      const dueDate = getString(row, ["due_date"]);
+      // Term-aware status: an order past its due date with money owed shows באיחור.
+      const sm = computeSourceCollection({
+        total: totalAmount,
+        collected: totalPaid,
+        pending: pendingAmount,
+        overdue: overdueAmount,
+        outstanding: remainingBalance,
+        nextDueDate: getString(row, ["next_due_date"]),
+        referenceDate: orderDate,
+        dueDate,
+        today,
+      });
       return {
         id,
         customerId,
@@ -261,10 +277,11 @@ export default function SalesOrdersClient({
         customerPhone: getString(row, ["customer_phone"]),
         customerCity: getString(row, ["customer_city"]),
         customerAddress: getString(row, ["customer_address"]),
-        orderDate: getString(row, ["order_date", "created_at"]),
+        orderDate,
+        dueDate,
         status: normalizeOrderStatus(getString(row, ["status"])),
         paymentStatus: derivePaymentStatus(totalAmount, totalPaid),
-        collectionStatus: deriveCollectionStatus({ totalAmount, collected: totalPaid, pending: pendingAmount, overdue: overdueAmount }),
+        collectionStatus: sm.status,
         totalAmount,
         totalPaid,
         remainingBalance,
@@ -406,6 +423,9 @@ export default function SalesOrdersClient({
                         <div>
                           <div>{row.customerCity ?? "-"}</div>
                           <div className="mt-1 text-xs text-muted-foreground">{formatOrderDate(row.orderDate)}</div>
+                          {row.dueDate ? (
+                            <div className="text-xs text-muted-foreground">פירעון: {formatOrderDate(row.dueDate)}</div>
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-4 py-4">
@@ -474,6 +494,10 @@ export default function SalesOrdersClient({
                       <div className="flex items-baseline gap-1">
                         <span className="text-muted-foreground">תאריך:</span>
                         <span className="font-medium">{formatOrderDate(row.orderDate)}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-muted-foreground">פירעון:</span>
+                        <span className="font-medium">{row.dueDate ? formatOrderDate(row.dueDate) : "-"}</span>
                       </div>
                       <div className="flex items-baseline gap-1">
                         <span className="text-muted-foreground">סכום:</span>

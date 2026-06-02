@@ -11,7 +11,9 @@ import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
 import { OrderPaymentActionsClient } from "@/app/sales/orders/OrderPaymentActionsClient";
 import type { PaymentItem } from "@/app/sales/orders/OrderPaymentActionsClient";
-import { derivePaymentStatus, splitPaymentAmounts, deriveCollectionStatus, orderCollectionStatusLabel, collectionStatusClasses } from "@/lib/orders/paymentStatus";
+import { derivePaymentStatus, splitPaymentAmounts, orderCollectionStatusLabel, collectionStatusClasses } from "@/lib/orders/paymentStatus";
+import { computeSourceCollection } from "@/lib/collections";
+import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
@@ -138,7 +140,7 @@ export default async function SalesOrderPage({
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("id,customer_id,order_date,status,payment_status,discount_amount,notes")
+      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -361,12 +363,19 @@ export default async function SalesOrderPage({
   const paymentStatus = useDerivedFinancials
     ? derivePaymentStatus(derivedTotalAmount, derivedTotalPaid)
     : getString((financials as Row) ?? {}, "payment_status") ?? derivePaymentStatus(totalAmount, totalPaid);
-  const collectionStatus = deriveCollectionStatus({
-    totalAmount,
+  const orderDueDate = getString((order as Row) ?? {}, "due_date");
+  const orderPaymentTerms = getString((order as Row) ?? {}, "payment_terms");
+  const collectionStatus = computeSourceCollection({
+    total: totalAmount,
     collected: paymentSplit.collected,
     pending: paymentSplit.pending,
     overdue: paymentSplit.overdue,
-  });
+    outstanding: remainingBalance,
+    nextDueDate: getString((financials as Row) ?? {}, "next_due_date"),
+    referenceDate: orderDate,
+    dueDate: orderDueDate,
+    today: new Date().toISOString().slice(0, 10),
+  }).status;
   const canManagePayments = profile.role === "admin" || profile.role === "office";
 
   const paymentsWithMeta: PaymentItem[] = ((payments ?? []) as Row[]).map((payment) => {
@@ -468,6 +477,16 @@ export default async function SalesOrderPage({
                   </div>
                   <div className="text-sm text-muted-foreground">
                     {formatRelativeDateLabel(orderDate)}
+                  </div>
+                  <div className="mt-2 text-sm">
+                    <span className="text-muted-foreground">צורת תשלום: </span>
+                    <span className="font-medium">{paymentTermsLabel(orderPaymentTerms)}</span>
+                    {orderDueDate ? (
+                      <>
+                        <span className="text-muted-foreground"> · תאריך פירעון: </span>
+                        <span className="font-medium">{formatDate(orderDueDate)}</span>
+                      </>
+                    ) : null}
                   </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

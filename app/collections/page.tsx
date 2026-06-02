@@ -41,10 +41,6 @@ export default async function CollectionsPage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4 text-right" dir="rtl">
-        <div>
-          <h1 className="text-2xl font-semibold">גבייה</h1>
-        </div>
-
         {data.loadError ? (
           <Card>
             <CardContent className="py-6 text-sm text-destructive">

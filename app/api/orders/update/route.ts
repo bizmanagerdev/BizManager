@@ -12,6 +12,7 @@ import {
   tryAutoIssueInvoiceForOrder,
   tryAutoIssueReceiptForPayment,
 } from "@/lib/morning/service";
+import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
 
 const BUCKET = "business-documents";
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -30,6 +31,8 @@ type UpdateOrderPayload = {
   order_date?: string;
   status?: string;
   payment_status?: string;
+  payment_terms?: string | null;
+  due_date?: string | null;
   discount_amount?: number | string;
   notes?: string | null;
   payments?: {
@@ -359,9 +362,14 @@ export async function POST(req: Request) {
     }
 
     const derivedPaymentStatus = derivePaymentStatus(totalAmount, totalPaidAfterSave);
+    const paymentTerms = normalizePaymentTerms(body.payment_terms);
+    const dueDate =
+      typeof body.due_date === "string" && body.due_date.trim()
+        ? body.due_date.trim()
+        : computeDueDate(orderDate, paymentTerms);
     const { error: updateError } = await supabase
       .from("orders")
-      .update({ payment_status: derivedPaymentStatus })
+      .update({ payment_status: derivedPaymentStatus, payment_terms: paymentTerms, due_date: dueDate })
       .eq("id", orderId);
 
     if (updateError) {

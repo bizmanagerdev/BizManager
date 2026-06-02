@@ -7,6 +7,7 @@ import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-qu
 import { FileText, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
+import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import {
   AdaptiveDialog,
@@ -372,6 +373,8 @@ export default function ProjectsClient({
   const [createEndDate, setCreateEndDate] = useState(
     defaultEndDateForProjectType(defaultProjectTypeOptions[0] ?? "", todayIso())
   );
+  const [createPaymentTerms, setCreatePaymentTerms] = useState("immediate");
+  const [createDueDate, setCreateDueDate] = useState(() => computeDueDate(todayIso(), "immediate") ?? "");
   const [createNotes, setCreateNotes] = useState("");
   const [createItemsToMove, setCreateItemsToMove] = useState("");
   const [createAttachmentFiles, setCreateAttachmentFiles] = useState<File[]>([]);
@@ -393,6 +396,8 @@ export default function ProjectsClient({
   const [editProjectManagerId, setEditProjectManagerId] = useState("");
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
+  const [editPaymentTerms, setEditPaymentTerms] = useState("immediate");
+  const [editDueDate, setEditDueDate] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [editItemsToMove, setEditItemsToMove] = useState("");
   const [approveQuoteOpen, setApproveQuoteOpen] = useState(false);
@@ -612,6 +617,8 @@ export default function ProjectsClient({
         project_manager_id: createProjectManagerId || null,
         start_date: createStartDate || null,
         end_date: createEndDate || null,
+        payment_terms: createPaymentTerms,
+        due_date: createDueDate || null,
         notes: createNotes.trim() || null,
         items_to_move: textToItemsToMove(createItemsToMove),
       }, "פרויקט חדש");
@@ -680,6 +687,8 @@ export default function ProjectsClient({
     setEditProjectManagerId(getString(row, "project_manager_id") ?? "");
     setEditStartDate(getString(row, "start_date") ?? "");
     setEditEndDate(getString(row, "end_date") ?? "");
+    setEditPaymentTerms(getString(row, "payment_terms") ?? "immediate");
+    setEditDueDate((getString(row, "due_date") ?? "").slice(0, 10));
     setEditNotes(getString(row, "notes") ?? "");
     setEditItemsToMove(itemsToMoveToText(getStringArray(row, "items_to_move")));
     setEditOpen(true);
@@ -751,6 +760,8 @@ export default function ProjectsClient({
           project_manager_id: editProjectManagerId || null,
           start_date: editStartDate || null,
           end_date: editEndDate || null,
+          payment_terms: editPaymentTerms,
+          due_date: editDueDate || null,
           notes: editNotes.trim() || null,
           items_to_move: textToItemsToMove(editItemsToMove),
         }),
@@ -1593,6 +1604,8 @@ export default function ProjectsClient({
                     if (isMovingProjectType(createProjectType)) {
                       setCreateEndDate(nextStartDate);
                     }
+                    const computed = computeDueDate(nextStartDate, createPaymentTerms);
+                    if (computed) setCreateDueDate(computed);
                   }}
                 />
               </div>
@@ -1602,6 +1615,32 @@ export default function ProjectsClient({
                   value={createEndDate}
                   onChange={(e) => setCreateEndDate(e.target.value)}
                 />
+              </div>
+            </AdaptiveGrid>
+
+            <AdaptiveGrid variant="formTwo">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">צורת תשלום</label>
+                <select
+                  value={createPaymentTerms}
+                  onChange={(e) => {
+                    const t = e.target.value;
+                    setCreatePaymentTerms(t);
+                    const computed = computeDueDate(createStartDate, t);
+                    if (computed) setCreateDueDate(computed);
+                  }}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  {PAYMENT_TERMS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">תאריך פירעון</label>
+                <DateInput value={createDueDate} onChange={(e) => setCreateDueDate(e.target.value)} />
               </div>
             </AdaptiveGrid>
 
@@ -1776,11 +1815,45 @@ export default function ProjectsClient({
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <label className="text-sm font-medium">תאריך התחלה</label>
-                <DateInput value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} />
+                <DateInput
+                  value={editStartDate}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEditStartDate(v);
+                    const computed = computeDueDate(v, editPaymentTerms);
+                    if (computed) setEditDueDate(computed);
+                  }}
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">תאריך סיום</label>
                 <DateInput value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} />
+              </div>
+            </AdaptiveGrid>
+
+            <AdaptiveGrid variant="formTwo">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">צורת תשלום</label>
+                <select
+                  value={editPaymentTerms}
+                  onChange={(e) => {
+                    const t = e.target.value;
+                    setEditPaymentTerms(t);
+                    const computed = computeDueDate(editStartDate, t);
+                    if (computed) setEditDueDate(computed);
+                  }}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  {PAYMENT_TERMS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">תאריך פירעון</label>
+                <DateInput value={editDueDate} onChange={(e) => setEditDueDate(e.target.value)} />
               </div>
             </AdaptiveGrid>
 

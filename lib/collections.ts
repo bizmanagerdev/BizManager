@@ -28,6 +28,8 @@ export type CollectionSourceRow = {
   collection_status: CollectionStatus;
   /** Whole days the late portion is overdue (0 if nothing is late). */
   days_late: number;
+  /** Pending (future-dated / uncleared) payments on this source, for inline "סמן כנגבה". */
+  pending_payments: ReceivablePendingPayment[];
   /** What the debt is for — project name, or a summary of the order's items. */
   title: string | null;
   /** Per-line item labels for orders (e.g. "מארז שי ×20"). Empty for projects. */
@@ -157,10 +159,11 @@ export type SourceCollectionComputed = {
 };
 
 /**
- * Late-payment rule: outstanding money with no future-dated payment, on an
- * order/project whose date is already past, counts as a LATE payment (overdue) —
- * not merely "unpaid". Pending payments past their due_date are late too. Money
- * with a future due date is "expected" (צפוי) until that date arrives.
+ * Late-payment rule: outstanding money with no future-dated payment, on a source
+ * whose DUE DATE has already passed, counts as a LATE payment (overdue) — not
+ * merely "unpaid". The due date comes from the order's payment terms (`dueDate`);
+ * when absent it falls back to the reference date (= מיידי). Pending payments past
+ * their own due_date are late too. Money with a future due date is "expected" (צפוי).
  */
 export function computeSourceCollection(p: {
   total: number;
@@ -170,18 +173,26 @@ export function computeSourceCollection(p: {
   outstanding: number;
   nextDueDate: string | null;
   referenceDate: string | null;
+  /** Effective due date from payment terms; falls back to referenceDate (מיידי). */
+  dueDate?: string | null;
   today: string;
 }): SourceCollectionComputed {
   const futureScheduled = Math.max(p.pending - p.overdue, 0);
   const unscheduled = Math.max(p.outstanding - p.pending, 0);
   const refDay = p.referenceDate ? p.referenceDate.slice(0, 10) : null;
-  const refPast = !!refDay && refDay < p.today;
-  const late = p.overdue + (refPast ? unscheduled : 0);
+  const dueDay = p.dueDate ? p.dueDate.slice(0, 10) : refDay;
+  const duePast = !!dueDay && dueDay < p.today;
+  const late = p.overdue + (duePast ? unscheduled : 0);
 
   let daysLate = 0;
   if (late > 0.009) {
-    const dueDay = p.nextDueDate ? p.nextDueDate.slice(0, 10) : null;
-    const ageDay = dueDay && dueDay < p.today ? dueDay : refDay;
+    const pendingDueDay =
+      p.nextDueDate && p.nextDueDate.slice(0, 10) < p.today ? p.nextDueDate.slice(0, 10) : null;
+    // Anchor the day-count on the earliest (most overdue) relevant past due date.
+    const candidates = [duePast ? dueDay : null, pendingDueDay].filter(
+      (x): x is string => Boolean(x)
+    );
+    const ageDay = candidates.sort()[0] ?? null;
     if (ageDay) daysLate = Math.max(daysBetweenIso(p.today, ageDay), 0);
   }
 
@@ -193,6 +204,32 @@ export function computeSourceCollection(p: {
   else status = "unpaid";
 
   return { expected: futureScheduled, late, daysLate, status };
+}
+
+async function fetchDueDates(
+  supabase: SupabaseClient,
+  table: "orders" | "projects",
+  ids: string[]
+): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>();
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (unique.length === 0) return map;
+  const { data } = await supabase.from(table).select("id,due_date").in("id", unique);
+  for (const row of (data ?? []) as Row[]) {
+    const id = str(row, "id");
+    if (id) map.set(id, str(row, "due_date"));
+  }
+  return map;
+}
+
+/** Effective due date per order (orders.due_date), keyed by order id. */
+export function fetchOrderDueDates(supabase: SupabaseClient, orderIds: string[]) {
+  return fetchDueDates(supabase, "orders", orderIds);
+}
+
+/** Effective due date per project (projects.due_date), keyed by project id. */
+export function fetchProjectDueDates(supabase: SupabaseClient, projectIds: string[]) {
+  return fetchDueDates(supabase, "projects", projectIds);
 }
 
 // Attach a human-readable "what for" to each row: project name for projects,
@@ -290,7 +327,19 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const rows: CollectionSourceRow[] = ((data ?? []) as Row[]).map((row) => {
+  const rawRows = (data ?? []) as Row[];
+  // Per-source effective due dates (from payment terms / override) drive the late calc.
+  const [orderDueById, projectDueById] = await Promise.all([
+    fetchOrderDueDates(
+      supabase,
+      rawRows.filter((r) => str(r, "source_type") !== "project").map((r) => str(r, "source_id") ?? "")
+    ),
+    fetchProjectDueDates(
+      supabase,
+      rawRows.filter((r) => str(r, "source_type") === "project").map((r) => str(r, "source_id") ?? "")
+    ),
+  ]);
+  const rows: CollectionSourceRow[] = rawRows.map((row) => {
     const total = toNum(row.total_amount);
     const collected = toNum(row.collected_amount);
     const pending = toNum(row.pending_amount);
@@ -298,6 +347,12 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
     const outstanding = toNum(row.outstanding_amount);
     const referenceDate = str(row, "reference_date");
     const nextDueDate = str(row, "next_due_date");
+    const sourceType = str(row, "source_type") === "project" ? "project" : "order";
+    const sourceId = str(row, "source_id") ?? "";
+    const dueDate =
+      sourceType === "order"
+        ? orderDueById.get(sourceId) ?? null
+        : projectDueById.get(sourceId) ?? null;
     const sm = computeSourceCollection({
       total,
       collected,
@@ -306,11 +361,12 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
       outstanding,
       nextDueDate,
       referenceDate,
+      dueDate,
       today,
     });
     return {
-      source_type: str(row, "source_type") === "project" ? "project" : "order",
-      source_id: str(row, "source_id") ?? "",
+      source_type: sourceType,
+      source_id: sourceId,
       collection_key: str(row, "collection_key") ?? "",
       customer_id: str(row, "customer_id"),
       customer_name: str(row, "customer_name") ?? "לקוח",
@@ -328,6 +384,7 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
       last_payment_date: str(row, "last_payment_date"),
       collection_status: sm.status,
       days_late: sm.daysLate,
+      pending_payments: [],
       title: null,
       items: [],
     };
@@ -336,6 +393,8 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
   // Enrich each source with WHAT the debt is for — so a caller has talking points.
   // Projects → project name; orders → list of ordered items ("מוצר ×כמות").
   await enrichCollectionTitles(supabase, rows);
+  // Attach pending payments so each open debt can be marked collected inline.
+  await attachPendingPayments(supabase, rows);
 
   // Group by customer
   const groupMap = new Map<string, CollectionCustomerGroup>();
@@ -438,7 +497,18 @@ export async function getCustomerReceivables(
   // Reuse the title-enrichment helper (project name / order item summary) by
   // shaping minimal CollectionSourceRow objects.
   const today = new Date().toISOString().slice(0, 10);
-  const sourceRows: CollectionSourceRow[] = (data as Row[]).map((row) => {
+  const rawRows = data as Row[];
+  const [orderDueById, projectDueById] = await Promise.all([
+    fetchOrderDueDates(
+      supabase,
+      rawRows.filter((r) => str(r, "source_type") !== "project").map((r) => str(r, "source_id") ?? "")
+    ),
+    fetchProjectDueDates(
+      supabase,
+      rawRows.filter((r) => str(r, "source_type") === "project").map((r) => str(r, "source_id") ?? "")
+    ),
+  ]);
+  const sourceRows: CollectionSourceRow[] = rawRows.map((row) => {
     const total = toNum(row.total_amount);
     const collected = toNum(row.collected_amount);
     const pending = toNum(row.pending_amount);
@@ -446,6 +516,12 @@ export async function getCustomerReceivables(
     const outstanding = toNum(row.outstanding_amount);
     const referenceDate = str(row, "reference_date");
     const nextDueDate = str(row, "next_due_date");
+    const sourceType = str(row, "source_type") === "project" ? "project" : "order";
+    const sourceId = str(row, "source_id") ?? "";
+    const dueDate =
+      sourceType === "order"
+        ? orderDueById.get(sourceId) ?? null
+        : projectDueById.get(sourceId) ?? null;
     const sm = computeSourceCollection({
       total,
       collected,
@@ -454,11 +530,12 @@ export async function getCustomerReceivables(
       outstanding,
       nextDueDate,
       referenceDate,
+      dueDate,
       today,
     });
     return {
-      source_type: str(row, "source_type") === "project" ? "project" : "order",
-      source_id: str(row, "source_id") ?? "",
+      source_type: sourceType,
+      source_id: sourceId,
       collection_key: str(row, "collection_key") ?? "",
       customer_id: customerId,
       customer_name: "",
@@ -475,6 +552,7 @@ export async function getCustomerReceivables(
       last_payment_date: null,
       collection_status: sm.status,
       days_late: sm.daysLate,
+      pending_payments: [],
       title: null,
       items: [],
     };
@@ -483,46 +561,7 @@ export async function getCustomerReceivables(
   await enrichCollectionTitles(supabase, sourceRows);
 
   // Pull the pending payments for every source so each can be marked collected.
-  const orderIds = sourceRows.filter((r) => r.source_type === "order").map((r) => r.source_id);
-  const projectIds = sourceRows.filter((r) => r.source_type === "project").map((r) => r.source_id);
-  const pendingByKey = new Map<string, ReceivablePendingPayment[]>();
-
-  const collectPending = (rows: Row[], keyPrefix: "order" | "project", idKey: string) => {
-    for (const row of rows) {
-      const sourceId = str(row, idKey);
-      const id = str(row, "id");
-      if (!sourceId || !id) continue;
-      const key = `${keyPrefix}:${sourceId}`;
-      const due = str(row, "due_date");
-      const list = pendingByKey.get(key) ?? [];
-      list.push({
-        id,
-        amount: toNum(row.amount_total),
-        due_date: due,
-        overdue: Boolean(due && due.slice(0, 10) <= today),
-      });
-      pendingByKey.set(key, list);
-    }
-  };
-
-  await Promise.all([
-    orderIds.length > 0
-      ? supabase
-          .from("payments")
-          .select("id,amount_total,due_date,order_id")
-          .eq("payment_status", "pending")
-          .in("order_id", orderIds)
-          .then(({ data: rows }) => collectPending((rows ?? []) as Row[], "order", "order_id"))
-      : Promise.resolve(),
-    projectIds.length > 0
-      ? supabase
-          .from("payments")
-          .select("id,amount_total,due_date,project_id")
-          .eq("payment_status", "pending")
-          .in("project_id", projectIds)
-          .then(({ data: rows }) => collectPending((rows ?? []) as Row[], "project", "project_id"))
-      : Promise.resolve(),
-  ]);
+  await attachPendingPayments(supabase, sourceRows);
 
   return sourceRows.map((r) => ({
     source_type: r.source_type,
@@ -539,10 +578,65 @@ export async function getCustomerReceivables(
     next_due_date: r.next_due_date,
     days_late: r.days_late,
     collection_status: r.collection_status,
-    pending_payments: (pendingByKey.get(r.collection_key) ?? []).sort((a, b) =>
-      (a.due_date ?? "").localeCompare(b.due_date ?? "")
-    ),
+    pending_payments: r.pending_payments,
   }));
+}
+
+/**
+ * Fetches the pending (future-dated / uncleared) payments for each source and
+ * attaches them as `pending_payments`, so a row can be marked collected inline.
+ */
+async function attachPendingPayments(
+  supabase: SupabaseClient,
+  rows: CollectionSourceRow[]
+): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  const orderIds = rows.filter((r) => r.source_type === "order").map((r) => r.source_id).filter(Boolean);
+  const projectIds = rows.filter((r) => r.source_type === "project").map((r) => r.source_id).filter(Boolean);
+  const byKey = new Map<string, ReceivablePendingPayment[]>();
+
+  const collect = (prows: Row[], prefix: "order" | "project", idKey: string) => {
+    for (const row of prows) {
+      const sourceId = str(row, idKey);
+      const id = str(row, "id");
+      if (!sourceId || !id) continue;
+      const key = `${prefix}:${sourceId}`;
+      const due = str(row, "due_date");
+      const list = byKey.get(key) ?? [];
+      list.push({
+        id,
+        amount: toNum(row.amount_total),
+        due_date: due,
+        overdue: Boolean(due && due.slice(0, 10) <= today),
+      });
+      byKey.set(key, list);
+    }
+  };
+
+  await Promise.all([
+    orderIds.length > 0
+      ? supabase
+          .from("payments")
+          .select("id,amount_total,due_date,order_id")
+          .eq("payment_status", "pending")
+          .in("order_id", orderIds)
+          .then(({ data }) => collect((data ?? []) as Row[], "order", "order_id"))
+      : Promise.resolve(),
+    projectIds.length > 0
+      ? supabase
+          .from("payments")
+          .select("id,amount_total,due_date,project_id")
+          .eq("payment_status", "pending")
+          .in("project_id", projectIds)
+          .then(({ data }) => collect((data ?? []) as Row[], "project", "project_id"))
+      : Promise.resolve(),
+  ]);
+
+  for (const r of rows) {
+    r.pending_payments = (byKey.get(r.collection_key) ?? []).sort((a, b) =>
+      (a.due_date ?? "").localeCompare(b.due_date ?? "")
+    );
+  }
 }
 
 export type PaymentDueToday = {

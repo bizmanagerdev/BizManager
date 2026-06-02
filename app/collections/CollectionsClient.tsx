@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, MessageCircle } from "lucide-react";
+import { ChevronDown, MessageCircle, Phone } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/communications";
 import CustomerCollectionButton from "@/components/collections/CustomerCollectionButton";
 import CommunicationLogItem from "@/components/collections/CommunicationLogItem";
+import BulkActions from "@/components/collections/BulkActions";
 import type { CollectionCustomerGroup, PaymentDueToday } from "@/lib/collections";
 
 type Props = {
@@ -28,7 +29,7 @@ type Props = {
 };
 
 type View = "debtors" | "reminders" | "activity";
-type FilterKey = "all" | "overdue" | "due_soon";
+type FilterKey = "all" | "overdue" | "due_soon" | "uncontacted";
 type SortKey = "amount" | "oldest" | "name" | "due";
 
 function formatCurrency(value: number) {
@@ -66,6 +67,34 @@ function whatsappLink(number: string | null, message: string): string | null {
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
 
+function daysSince(dateIso: string | null): number | null {
+  if (!dateIso) return null;
+  const d = new Date(dateIso);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.max(Math.floor((now.getTime() - d.getTime()) / 86_400_000), 0);
+}
+
+// "Who haven't I chased" signal — flags never-contacted debtors and shows recency.
+function LastContactSignal({ lastContactAt }: { lastContactAt: string | null }) {
+  if (!lastContactAt) {
+    return (
+      <span className="text-[11px] font-medium text-warning-strong">⚠ טרם נוצר קשר</span>
+    );
+  }
+  const days = daysSince(lastContactAt);
+  const label =
+    days === 0 ? "נוצר קשר היום" : days === 1 ? "נוצר קשר אתמול" : `נוצר קשר לפני ${days} ימים`;
+  const stale = (days ?? 0) >= 7;
+  return (
+    <span className={`text-[11px] ${stale ? "text-warning-strong" : "text-muted-foreground"}`}>
+      {label}
+    </span>
+  );
+}
+
 function SummaryCard({
   label,
   value,
@@ -79,7 +108,7 @@ function SummaryCard({
     tone === "danger"
       ? "text-destructive"
       : tone === "warning"
-        ? "text-warning-soft-foreground"
+        ? "text-warning-strong"
         : "text-foreground";
   return (
     <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
@@ -122,6 +151,7 @@ export default function CollectionsClient({
       if (filter === "due_soon" && !(isDueSoon(c.next_due_date) || c.overdue_amount > 0.009)) {
         return false;
       }
+      if (filter === "uncontacted" && c.last_contact_at) return false;
       if (domain !== "all" && !c.sources.some((s) => s.business_domain === domain)) return false;
       if (q) {
         const haystack = `${c.customer_name} ${c.customer_phone ?? ""}`.toLowerCase();
@@ -311,12 +341,19 @@ function DueTodaySection({
   );
 }
 
-const AGING_COLUMNS: { key: keyof CollectionCustomerGroup["aging"]; label: string; tone: "muted" | "warning" | "danger" }[] = [
-  { key: "current", label: "שוטף", tone: "muted" },
-  { key: "d30", label: "1-30", tone: "muted" },
-  { key: "d60", label: "31-60", tone: "warning" },
-  { key: "d90", label: "61-90", tone: "warning" },
-  { key: "d90plus", label: "90+", tone: "danger" },
+// Aging buckets by DAYS LATE. "שוטף" is avoided as a header because in Israeli
+// business it means a payment TERM (end-of-month, שוטף+30/+40), not "not late".
+const AGING_COLUMNS: {
+  key: keyof CollectionCustomerGroup["aging"];
+  label: string;
+  tone: "muted" | "warning" | "danger";
+  hint: string;
+}[] = [
+  { key: "current", label: "צפוי", tone: "muted", hint: "טרם הגיע מועד התשלום — תשלום עתידי מתוזמן" },
+  { key: "d30", label: "1–30 ימים", tone: "muted", hint: "באיחור 1–30 ימים" },
+  { key: "d60", label: "31–60 ימים", tone: "warning", hint: "באיחור 31–60 ימים" },
+  { key: "d90", label: "61–90 ימים", tone: "warning", hint: "באיחור 61–90 ימים" },
+  { key: "d90plus", label: "90+ ימים", tone: "danger", hint: "באיחור מעל 90 ימים" },
 ];
 
 function AgingValue({ value, tone }: { value: number; tone: "muted" | "warning" | "danger" }) {
@@ -325,9 +362,202 @@ function AgingValue({ value, tone }: { value: number; tone: "muted" | "warning" 
     tone === "danger"
       ? "font-semibold text-destructive"
       : tone === "warning"
-        ? "font-medium text-warning-soft-foreground"
+        ? "font-medium text-warning-strong"
         : "";
   return <span className={cls}>{formatCurrency(value)}</span>;
+}
+
+// Subtle row/card tint by worst aging bucket, so the riskiest debts stand out.
+function severityTint(group: CollectionCustomerGroup): string {
+  if (group.aging.d90plus > 0.009) return "bg-destructive/5";
+  if (group.aging.d90 > 0.009 || group.aging.d60 > 0.009) return "bg-warning/5";
+  return "";
+}
+
+function buildWaMessage(group: CollectionCustomerGroup): string {
+  return `שלום, נותרה יתרה לתשלום בסך ${formatCurrency(group.outstanding_amount)}. נשמח להסדרת התשלום. תודה!`;
+}
+
+// One-tap "collect" for a source's pending (future-dated / uncleared) payments.
+function MarkCollectedButton({ paymentIds }: { paymentIds: string[] }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    if (busy || paymentIds.length === 0) return;
+    setBusy(true);
+    try {
+      await Promise.all(
+        paymentIds.map((id) =>
+          fetch("/api/payments/mark-collected", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id, collected: true }),
+          })
+        )
+      );
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="h-7 text-xs"
+      disabled={busy}
+      onClick={() => void run()}
+    >
+      {busy ? "מסמן..." : "סמן כנגבה"}
+    </Button>
+  );
+}
+
+function CustomerActions({
+  group,
+  wa,
+  withCall = false,
+}: {
+  group: CollectionCustomerGroup;
+  wa: string | null;
+  withCall?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      {withCall && group.customer_phone ? (
+        <a
+          href={`tel:${group.customer_phone}`}
+          title="התקשרות"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input hover:bg-muted"
+        >
+          <Phone className="h-4 w-4" />
+        </a>
+      ) : null}
+      {wa ? (
+        <a
+          href={wa}
+          target="_blank"
+          rel="noreferrer"
+          title="שליחת תזכורת בוואטסאפ"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input hover:bg-muted"
+        >
+          <MessageCircle className="h-4 w-4 text-success" />
+        </a>
+      ) : null}
+      {group.customer_id ? (
+        <CustomerCollectionButton
+          customerId={group.customer_id}
+          customerName={group.customer_name}
+          customerPhone={group.customer_phone}
+          label="מעקב"
+          refreshOnClose
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// One open debt (order/project) — shared by the desktop expanded row and the
+// mobile card. Offers inline "סמן כנגבה" when the debt has pending payments.
+function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][number] }) {
+  const isOrder = source.source_type === "order";
+  const href = isOrder ? `/sales/orders/${source.source_id}` : `/projects/${source.source_id}`;
+  const linkText = isOrder
+    ? `הזמנה #${source.source_id.slice(0, 8)}`
+    : source.title ?? `פרויקט #${source.source_id.slice(0, 8)}`;
+  const pendingIds = source.pending_payments.map((p) => p.id);
+  return (
+    <div className="rounded-lg border border-border/50 bg-background/60 p-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <NavLink to={href} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
+            {linkText}
+          </NavLink>
+          <span className="text-xs text-muted-foreground">{getBusinessDomainLabel(source.business_domain)}</span>
+          <Badge className={collectionStatusClasses(source.collection_status)}>
+            {collectionStatusLabel(source.collection_status)}
+          </Badge>
+          {source.days_late > 0 ? (
+            <span className="text-xs font-medium text-destructive">{source.days_late} ימים באיחור</span>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span>תאריך: {formatDate(source.reference_date)}</span>
+          {source.next_due_date ? <span>פירעון: {formatDate(source.next_due_date)}</span> : null}
+          <span className="font-semibold text-foreground">{formatCurrency(source.outstanding_amount)}</span>
+          {pendingIds.length > 0 ? <MarkCollectedButton paymentIds={pendingIds} /> : null}
+        </div>
+      </div>
+      {isOrder && source.items.length > 0 ? (
+        <div className="mt-1 text-xs text-muted-foreground">{source.items.join(" · ")}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function CustomerCard({
+  group,
+  isOpen,
+  onToggle,
+  wa,
+  selected,
+  onToggleSelect,
+}: {
+  group: CollectionCustomerGroup;
+  isOpen: boolean;
+  onToggle: () => void;
+  wa: string | null;
+  selected: boolean;
+  onToggleSelect?: () => void;
+}) {
+  const tint = severityTint(group);
+  return (
+    <div className={`rounded-2xl border border-border/70 p-3 ${tint}`}>
+      <div className="flex items-start gap-2">
+        {onToggleSelect ? (
+          <input
+            type="checkbox"
+            aria-label="בחירת לקוח"
+            checked={selected}
+            onChange={onToggleSelect}
+            className="mt-1 h-4 w-4 shrink-0"
+          />
+        ) : null}
+        <button type="button" onClick={onToggle} className="flex w-full items-start justify-between gap-2 text-right">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+              />
+              <span className="font-semibold">{group.customer_name}</span>
+              <Badge className={collectionStatusClasses(group.status)}>{collectionStatusLabel(group.status)}</Badge>
+            </div>
+            {group.customer_phone ? (
+              <div className="mt-1 text-sm text-muted-foreground">☎ {group.customer_phone}</div>
+            ) : null}
+            {group.oldest_days_late > 0 ? (
+              <div className="text-xs text-destructive">{group.oldest_days_late} ימים באיחור</div>
+            ) : null}
+            <div className="mt-0.5">
+              <LastContactSignal lastContactAt={group.last_contact_at} />
+            </div>
+          </div>
+          <div className="shrink-0 text-lg font-semibold">{formatCurrency(group.outstanding_amount)}</div>
+        </button>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border/50 pt-2">
+        <CustomerActions group={group} wa={wa} withCall />
+      </div>
+      {isOpen ? (
+        <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
+          {group.sources.map((source) => (
+            <SourceDetail key={source.collection_key} source={source} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function DebtorsTable({
@@ -354,10 +584,12 @@ function DebtorsTable({
   filtered: CollectionCustomerGroup[];
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const tabs: { key: FilterKey; label: string }[] = [
     { key: "all", label: "הכל" },
     { key: "overdue", label: "באיחור" },
     { key: "due_soon", label: "לגבייה בקרוב" },
+    { key: "uncontacted", label: "טרם נוצר קשר" },
   ];
 
   function toggle(key: string) {
@@ -368,6 +600,29 @@ function DebtorsTable({
       return next;
     });
   }
+
+  const selectableIds = filtered.map((g) => g.customer_id).filter((x): x is string => Boolean(x));
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (selectableIds.every((id) => prev.has(id))) selectableIds.forEach((id) => next.delete(id));
+      else selectableIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+  function clearSelection() {
+    setSelected(new Set());
+  }
+  const selectedGroups = filtered.filter((g) => g.customer_id && selected.has(g.customer_id));
 
   const footer = filtered.reduce(
     (acc, c) => {
@@ -428,6 +683,30 @@ function DebtorsTable({
         />
       </div>
 
+      <div className="space-y-1">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {AGING_COLUMNS.map((c) => (
+            <div
+              key={c.key}
+              title={c.hint}
+              className="rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-center"
+            >
+              <div className="text-[11px] text-muted-foreground">{c.label}</div>
+              <div className="text-sm font-semibold">
+                <AgingValue value={footer[c.key]} tone={c.tone} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          חלוקת החוב לפי ימי איחור · ׳צפוי׳ = טרם הגיע מועד התשלום (תשלום עתידי מתוזמן, למשל צ׳ק דחוי).
+        </p>
+      </div>
+
+      {selectedGroups.length > 0 ? (
+        <BulkActions groups={selectedGroups} onClear={clearSelection} />
+      ) : null}
+
       {filtered.length === 0 ? (
         <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-10 text-center text-sm text-muted-foreground">
           {filter === "all" && !search.trim() && domain === "all"
@@ -435,55 +714,81 @@ function DebtorsTable({
             : "אין פריטים שתואמים לסינון."}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-border/70">
-          <table className="w-full min-w-[820px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-border/70 bg-muted/40 text-xs text-muted-foreground">
-                <th className="px-3 py-2 text-right font-medium">לקוח</th>
-                <th className="px-3 py-2 text-right font-medium">טלפון</th>
-                <th className="px-3 py-2 text-right font-medium">סטטוס</th>
-                {AGING_COLUMNS.map((c) => (
-                  <th key={c.key} className="px-2 py-2 text-center font-medium">
-                    {c.label}
+        <>
+          {/* Desktop: aging table with a sticky header */}
+          <div className="hidden overflow-x-auto rounded-2xl border border-border/70 sm:block">
+            <table className="w-full min-w-[560px] border-collapse text-sm">
+              <thead className="sticky top-0 z-10 bg-muted">
+                <tr className="border-b border-border/70 text-xs text-muted-foreground">
+                  <th className="px-3 py-2 text-right font-medium">
+                    <span className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        aria-label="בחר הכל"
+                        checked={allSelected}
+                        onChange={toggleSelectAll}
+                        className="h-4 w-4"
+                      />
+                      לקוח
+                    </span>
                   </th>
-                ))}
-                <th className="px-3 py-2 text-center font-medium">סה״כ חוב</th>
-                <th className="px-2 py-2 text-center font-medium">פעולות</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((group) => {
-                const key = group.customer_id ?? group.customer_name;
-                const isOpen = expanded.has(key);
-                const waMessage = `שלום, נותרה יתרה לתשלום בסך ${formatCurrency(group.outstanding_amount)}. נשמח להסדרת התשלום. תודה!`;
-                const wa = whatsappLink(group.customer_whatsapp ?? group.customer_phone, waMessage);
-                return (
-                  <FragmentRow
-                    key={key}
-                    group={group}
-                    isOpen={isOpen}
-                    onToggle={() => toggle(key)}
-                    wa={wa}
-                  />
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-border/70 bg-muted/30 text-xs font-semibold">
-                <td className="px-3 py-2 text-right" colSpan={3}>
-                  סה״כ ({filtered.length} לקוחות)
-                </td>
-                {AGING_COLUMNS.map((c) => (
-                  <td key={c.key} className="px-2 py-2 text-center">
-                    <AgingValue value={footer[c.key]} tone={c.tone} />
+                  <th className="px-3 py-2 text-right font-medium">טלפון</th>
+                  <th className="px-3 py-2 text-right font-medium">סטטוס</th>
+                  <th className="px-3 py-2 text-center font-medium">סה״כ חוב</th>
+                  <th className="px-2 py-2 text-center font-medium">פעולות</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((group) => {
+                  const key = group.customer_id ?? group.customer_name;
+                  const cid = group.customer_id;
+                  return (
+                    <FragmentRow
+                      key={key}
+                      group={group}
+                      isOpen={expanded.has(key)}
+                      onToggle={() => toggle(key)}
+                      wa={whatsappLink(group.customer_whatsapp ?? group.customer_phone, buildWaMessage(group))}
+                      selected={cid ? selected.has(cid) : false}
+                      onToggleSelect={cid ? () => toggleSelect(cid) : undefined}
+                    />
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-border/70 bg-muted/30 text-xs font-semibold">
+                  <td className="px-3 py-2 text-right" colSpan={3}>
+                    סה״כ ({filtered.length} לקוחות)
                   </td>
-                ))}
-                <td className="px-3 py-2 text-center">{formatCurrency(footer.outstanding)}</td>
-                <td className="px-2 py-2" />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+                  <td className="px-3 py-2 text-center">{formatCurrency(footer.outstanding)}</td>
+                  <td className="px-2 py-2" />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="space-y-3 sm:hidden">
+            {filtered.map((group) => {
+              const key = group.customer_id ?? group.customer_name;
+              const cid = group.customer_id;
+              return (
+                <CustomerCard
+                  key={key}
+                  group={group}
+                  isOpen={expanded.has(key)}
+                  onToggle={() => toggle(key)}
+                  wa={whatsappLink(group.customer_whatsapp ?? group.customer_phone, buildWaMessage(group))}
+                  selected={cid ? selected.has(cid) : false}
+                  onToggleSelect={cid ? () => toggleSelect(cid) : undefined}
+                />
+              );
+            })}
+            <div className="rounded-2xl border border-border/70 bg-muted/30 p-3 text-sm font-semibold">
+              סה״כ ({filtered.length} לקוחות): {formatCurrency(footer.outstanding)}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -494,26 +799,47 @@ function FragmentRow({
   isOpen,
   onToggle,
   wa,
+  selected,
+  onToggleSelect,
 }: {
   group: CollectionCustomerGroup;
   isOpen: boolean;
   onToggle: () => void;
   wa: string | null;
+  selected: boolean;
+  onToggleSelect?: () => void;
 }) {
+  const tint = severityTint(group);
   return (
     <>
-      <tr className="border-b border-border/50 hover:bg-muted/30">
+      <tr className={`border-b border-border/50 hover:bg-muted/30 ${tint}`}>
         <td className="px-3 py-2">
-          <button
-            type="button"
-            onClick={onToggle}
-            className="flex items-center gap-1 text-right font-medium hover:underline"
-          >
-            <ChevronDown
-              className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
-            />
-            <span>{group.customer_name}</span>
-          </button>
+          <div className="flex items-start gap-2">
+            {onToggleSelect ? (
+              <input
+                type="checkbox"
+                aria-label="בחירת לקוח"
+                checked={selected}
+                onChange={onToggleSelect}
+                className="mt-1 h-4 w-4 shrink-0"
+              />
+            ) : null}
+            <div className="min-w-0">
+              <button
+                type="button"
+                onClick={onToggle}
+                className="flex items-center gap-1 text-right font-medium hover:underline"
+              >
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+                />
+                <span>{group.customer_name}</span>
+              </button>
+              <div className="ps-5">
+                <LastContactSignal lastContactAt={group.last_contact_at} />
+              </div>
+            </div>
+          </div>
         </td>
         <td className="px-3 py-2 text-muted-foreground">
           {group.customer_phone ? (
@@ -534,90 +860,20 @@ function FragmentRow({
             </div>
           ) : null}
         </td>
-        {AGING_COLUMNS.map((c) => (
-          <td key={c.key} className="px-2 py-2 text-center text-xs">
-            <AgingValue value={group.aging[c.key]} tone={c.tone} />
-          </td>
-        ))}
         <td className="px-3 py-2 text-center font-semibold">{formatCurrency(group.outstanding_amount)}</td>
         <td className="px-2 py-2">
-          <div className="flex items-center justify-center gap-1">
-            {wa ? (
-              <a
-                href={wa}
-                target="_blank"
-                rel="noreferrer"
-                title="שליחת תזכורת בוואטסאפ"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-input hover:bg-muted"
-              >
-                <MessageCircle className="h-4 w-4 text-success" />
-              </a>
-            ) : null}
-            {group.customer_id ? (
-              <CustomerCollectionButton
-                customerId={group.customer_id}
-                customerName={group.customer_name}
-                customerPhone={group.customer_phone}
-                label="מעקב"
-                refreshOnClose
-              />
-            ) : null}
+          <div className="flex items-center justify-center">
+            <CustomerActions group={group} wa={wa} />
           </div>
         </td>
       </tr>
       {isOpen ? (
-        <tr className="border-b border-border/50 bg-muted/10">
-          <td colSpan={10} className="px-3 py-3">
+        <tr className={`border-b border-border/50 ${tint || "bg-muted/10"}`}>
+          <td colSpan={5} className="px-3 py-3">
             <div className="space-y-2">
-              {group.sources.map((source) => {
-                const isOrder = source.source_type === "order";
-                const href = isOrder
-                  ? `/sales/orders/${source.source_id}`
-                  : `/projects/${source.source_id}`;
-                const linkText = isOrder
-                  ? `הזמנה #${source.source_id.slice(0, 8)}`
-                  : source.title ?? `פרויקט #${source.source_id.slice(0, 8)}`;
-                return (
-                  <div
-                    key={source.collection_key}
-                    className="rounded-lg border border-border/50 bg-background/60 p-2"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <NavLink
-                          to={href}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="font-medium text-primary hover:underline"
-                        >
-                          {linkText}
-                        </NavLink>
-                        <span className="text-xs text-muted-foreground">
-                          {getBusinessDomainLabel(source.business_domain)}
-                        </span>
-                        <Badge className={collectionStatusClasses(source.collection_status)}>
-                          {collectionStatusLabel(source.collection_status)}
-                        </Badge>
-                        {source.days_late > 0 ? (
-                          <span className="text-xs font-medium text-destructive">
-                            {source.days_late} ימים באיחור
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>תאריך: {formatDate(source.reference_date)}</span>
-                        {source.next_due_date ? <span>פירעון: {formatDate(source.next_due_date)}</span> : null}
-                        <span className="font-semibold text-foreground">
-                          {formatCurrency(source.outstanding_amount)}
-                        </span>
-                      </div>
-                    </div>
-                    {isOrder && source.items.length > 0 ? (
-                      <div className="mt-1 text-xs text-muted-foreground">{source.items.join(" · ")}</div>
-                    ) : null}
-                  </div>
-                );
-              })}
+              {group.sources.map((source) => (
+                <SourceDetail key={source.collection_key} source={source} />
+              ))}
             </div>
           </td>
         </tr>
@@ -682,7 +938,7 @@ function ReminderGroup({
   onUpdate: (id: string, status: "done" | "cancelled") => void;
 }) {
   const titleClass =
-    tone === "danger" ? "text-destructive" : tone === "warning" ? "text-warning-soft-foreground" : "text-foreground";
+    tone === "danger" ? "text-destructive" : tone === "warning" ? "text-warning-strong" : "text-foreground";
   return (
     <div className="space-y-2">
       <div className={`text-sm font-semibold ${titleClass}`}>

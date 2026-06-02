@@ -43,7 +43,7 @@ export async function GET(
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("id,customer_id,order_date,status,payment_status,discount_amount,notes")
+      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -146,6 +146,8 @@ export async function GET(
     order_date: (getString(order as Row, ["order_date"]) ?? "").slice(0, 10),
     status: getString(order as Row, ["status"]) ?? "draft",
     payment_status: getString(order as Row, ["payment_status"]) ?? "unpaid",
+    payment_terms: getString(order as Row, ["payment_terms"]),
+    due_date: (getString(order as Row, ["due_date"]) ?? "").slice(0, 10) || null,
     discount_amount: getNumber(order as Row, ["discount_amount"]) ?? 0,
     notes: getString(order as Row, ["notes"]) ?? "",
     items: (orderItems ?? []).map((item) => {

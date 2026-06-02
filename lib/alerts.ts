@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { computeSourceCollection } from "@/lib/collections";
+import { computeSourceCollection, fetchOrderDueDates, fetchProjectDueDates } from "@/lib/collections";
 
 type Row = Record<string, unknown>;
 
@@ -226,7 +226,7 @@ export async function getAlertsData(
       supabase
         .from("collections_view")
         .select(
-          "total_amount,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,reference_date"
+          "source_type,source_id,total_amount,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,reference_date"
         )
         .range(0, 999)
         .then((r) => r, () => ({ data: [] as Row[], error: null })),
@@ -238,9 +238,26 @@ export async function getAlertsData(
         .range(0, 999)
         .then((r) => r, () => ({ data: [] as Row[], error: null })),
     ]);
-    // Apply the same late-payment rule the גבייה page uses (unscheduled money on a
-    // past-dated order/project is overdue, not just "unpaid").
-    for (const row of (overdueRes.data ?? []) as Row[]) {
+    // Apply the same term-aware late rule the גבייה page uses (unscheduled money
+    // past the order's due date is overdue, not just "unpaid").
+    const overdueRows = (overdueRes.data ?? []) as Row[];
+    const [orderDueById, projectDueById] = await Promise.all([
+      fetchOrderDueDates(
+        supabase,
+        overdueRows
+          .filter((r) => getString(r, "source_type") !== "project")
+          .map((r) => getString(r, "source_id") ?? "")
+      ),
+      fetchProjectDueDates(
+        supabase,
+        overdueRows
+          .filter((r) => getString(r, "source_type") === "project")
+          .map((r) => getString(r, "source_id") ?? "")
+      ),
+    ]);
+    for (const row of overdueRows) {
+      const isProject = getString(row, "source_type") === "project";
+      const sourceId = getString(row, "source_id") ?? "";
       const sm = computeSourceCollection({
         total: getNumber(row, "total_amount") ?? 0,
         collected: getNumber(row, "collected_amount") ?? 0,
@@ -249,6 +266,7 @@ export async function getAlertsData(
         outstanding: getNumber(row, "outstanding_amount") ?? 0,
         nextDueDate: getString(row, "next_due_date"),
         referenceDate: getString(row, "reference_date"),
+        dueDate: (isProject ? projectDueById.get(sourceId) : orderDueById.get(sourceId)) ?? null,
         today: todayIso,
       });
       if (sm.late > 0.009) {

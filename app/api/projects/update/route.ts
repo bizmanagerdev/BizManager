@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
 
 type UpdateProjectPayload = {
   id?: string;
@@ -14,6 +15,8 @@ type UpdateProjectPayload = {
   project_manager_id?: string | null;
   start_date?: string | null;
   end_date?: string | null;
+  payment_terms?: string | null;
+  due_date?: string | null;
   notes?: string | null;
   items_to_move?: string[] | null;
 };
@@ -55,6 +58,11 @@ export async function POST(req: Request) {
     const projectManagerId = typeof body.project_manager_id === "string" ? body.project_manager_id : null;
     const startDate = typeof body.start_date === "string" ? body.start_date : null;
     const endDate = typeof body.end_date === "string" ? body.end_date : null;
+    const paymentTerms = normalizePaymentTerms(body.payment_terms);
+    const dueDate =
+      typeof body.due_date === "string" && body.due_date.trim()
+        ? body.due_date.trim()
+        : computeDueDate(startDate, paymentTerms);
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
     const itemsToMove = sanitizeStringArray(body.items_to_move);
     const allowedProjectTypes = new Set(["logistics", "construction", "moving", "other", "home"]);
@@ -86,12 +94,14 @@ export async function POST(req: Request) {
         project_manager_id: projectManagerId,
         start_date: startDate,
         end_date: endDate,
+        payment_terms: paymentTerms,
+        due_date: dueDate,
         notes,
         items_to_move: projectType === "moving" ? itemsToMove : null,
       })
       .eq("id", id)
       .select(
-        "id,customer_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,notes,items_to_move,created_at,updated_at"
+        "id,customer_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,payment_terms,due_date,notes,items_to_move,created_at,updated_at"
       )
       .maybeSingle();
 

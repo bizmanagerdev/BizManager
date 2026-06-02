@@ -28,6 +28,7 @@ import {
 } from "@/lib/orders/paymentStatus";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
+import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 
 type Row = Record<string, unknown>;
 
@@ -67,6 +68,8 @@ type InitialOrder = {
   order_date: string;
   status: string;
   payment_status: string;
+  payment_terms?: string | null;
+  due_date?: string | null;
   discount_amount: number;
   notes: string;
   items: OrderLine[];
@@ -245,8 +248,26 @@ export default function NewOrderClient({
   const [orderStatus, setOrderStatus] = useState(
     initialStatusOverride ?? initialOrder?.status ?? "draft"
   );
+  const [paymentTerms, setPaymentTerms] = useState(initialOrder?.payment_terms ?? "immediate");
+  const [dueDate, setDueDate] = useState(
+    initialOrder?.due_date ??
+      computeDueDate(initialOrder?.order_date ?? new Date().toISOString().slice(0, 10), "immediate") ??
+      ""
+  );
   const [orderDiscount, setOrderDiscount] = useState(String(initialOrder?.discount_amount ?? 0));
   const [notes, setNotes] = useState(initialOrder?.notes ?? "");
+
+  // When the term or order date changes, refresh the suggested due date (still editable).
+  function applyOrderDate(value: string) {
+    setOrderDate(value);
+    const computed = computeDueDate(value, paymentTerms);
+    if (computed) setDueDate(computed);
+  }
+  function applyPaymentTerms(value: string) {
+    setPaymentTerms(value);
+    const computed = computeDueDate(orderDate, value);
+    if (computed) setDueDate(computed);
+  }
 
   const [productQuery, setProductQuery] = useState("");
   const [lines, setLines] = useState<OrderLine[]>(initialOrder?.items ?? []);
@@ -711,6 +732,8 @@ export default function NewOrderClient({
           order_date: orderDate,
           status: orderStatus,
           payment_status: paymentStatus,
+          payment_terms: paymentTerms,
+          due_date: dueDate || null,
           discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
           notes: notes.trim() || null,
           payments: newPayments.map((payment) => ({
@@ -1145,7 +1168,7 @@ export default function NewOrderClient({
                 <label className="text-sm font-medium">תאריך הזמנה *</label>
                 <DateInput
                   value={orderDate}
-                  onChange={(e) => setOrderDate(e.target.value)}
+                  onChange={(e) => applyOrderDate(e.target.value)}
                   placeholder="בחר תאריך הזמנה"
                 />
               </div>
@@ -1163,6 +1186,28 @@ export default function NewOrderClient({
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="space-y-0.5">
+                <label className="text-sm font-medium">צורת תשלום</label>
+                <select
+                  value={paymentTerms}
+                  onChange={(e) => applyPaymentTerms(e.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  {PAYMENT_TERMS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-0.5">
+                <label className="text-sm font-medium">תאריך פירעון</label>
+                <DateInput
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  placeholder="מחושב אוטומטית מצורת התשלום"
+                />
               </div>
               <ValueField label="סטטוס תשלום" value={paymentStatusLabel(paymentStatus)} />
               <ValueField label="פריטים" value={String(totalUnits)} />

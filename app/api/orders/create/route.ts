@@ -11,6 +11,7 @@ import {
   normalizePaymentEntries,
   sumPayments,
 } from "@/lib/orders/paymentStatus";
+import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
 
 type CreateOrderItemPayload = {
   product_id?: string;
@@ -25,6 +26,8 @@ type CreateOrderPayload = {
   order_date?: string;
   status?: string;
   payment_status?: string;
+  payment_terms?: string | null;
+  due_date?: string | null;
   discount_amount?: number | string;
   notes?: string | null;
   payments?: {
@@ -189,9 +192,16 @@ export async function POST(req: Request) {
     }
 
     const derivedPaymentStatus = derivePaymentStatus(totalAmount, totalPaid);
+    // Payment terms + the resulting due date. An explicit due_date overrides the
+    // term-computed one; otherwise it's computed from order_date + the term.
+    const paymentTerms = normalizePaymentTerms(body.payment_terms);
+    const dueDate =
+      typeof body.due_date === "string" && body.due_date.trim()
+        ? body.due_date.trim()
+        : computeDueDate(orderDate, paymentTerms);
     const { error: updateError } = await supabase
       .from("orders")
-      .update({ payment_status: derivedPaymentStatus })
+      .update({ payment_status: derivedPaymentStatus, payment_terms: paymentTerms, due_date: dueDate })
       .eq("id", orderId);
 
     if (updateError) {
