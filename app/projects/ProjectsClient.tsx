@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { FileText, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { paymentStatusClasses } from "@/lib/orders/paymentStatus";
+import { paymentStatusClasses, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import {
@@ -1075,6 +1075,7 @@ export default function ProjectsClient({
                 const currentStatus = statusValue(row);
                 const openTasks = getNumber(row, "open_tasks");
                 const paymentStatus = paymentStatusValue(row);
+                const collectionStatus = getString(row, "collection_status") ?? paymentStatus;
                 const startDate = formatDate(getString(row, "start_date"));
                 const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
@@ -1108,9 +1109,15 @@ export default function ProjectsClient({
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">{startDate}</td>
                     <td className="px-4 py-4">
-                      <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
-                        {paymentStatusLabel(paymentStatus)}
-                      </Badge>
+                      {paymentStatus === "unpriced" ? (
+                        <Badge className={paymentStatusBadgeClasses("unpriced")}>
+                          {paymentStatusLabel("unpriced")}
+                        </Badge>
+                      ) : (
+                        <Badge className={collectionStatusClasses(collectionStatus)}>
+                          {collectionStatusLabel(collectionStatus)}
+                        </Badge>
+                      )}
                     </td>
                     <td className="px-4 py-4">{clientDisplayName(row)}</td>
                     <td className="px-4 py-4">

@@ -7,6 +7,7 @@ import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard"
 import DomainActivityChart from "@/components/charts/DomainActivityChart";
 import { getAlertsData } from "@/lib/alerts";
 import { getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
+import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { getScheduleEntries } from "@/lib/projectSchedule";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { Badge } from "@/components/ui/badge";
@@ -349,6 +350,39 @@ export default async function DashboardPage() {
             )}
           </CardContent>
         </Card>
+
+        {isAdminOrOffice && dueTodayPayments.length > 0 ? (
+          <Card className="border-warning/40">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg">תשלומים לפירעון היום</CardTitle>
+                  <CardDescription>צ׳קים והעברות שמועד פירעונם היום — לגבייה/הפקדה.</CardDescription>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/collections">לגבייה</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {dueTodayPayments.map((p) => (
+                <Link
+                  key={p.id}
+                  href="/collections"
+                  className="flex items-center justify-between gap-3 rounded-2xl border p-3 text-sm transition-colors hover:bg-muted/40"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium">{p.customer_name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {p.payment_method ? paymentMethodLabel(p.payment_method) : "תשלום"}
+                    </div>
+                  </div>
+                  <div className="font-semibold">{ilsFormatter.format(p.amount)}</div>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+        ) : null}
 
         <AdaptiveGrid variant="dashboardMain">
           <AdaptiveGrid variant="dashboardMetrics">

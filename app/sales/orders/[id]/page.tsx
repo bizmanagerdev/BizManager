@@ -11,8 +11,8 @@ import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
 import { OrderPaymentActionsClient } from "@/app/sales/orders/OrderPaymentActionsClient";
 import type { PaymentItem } from "@/app/sales/orders/OrderPaymentActionsClient";
-import { derivePaymentStatus, splitPaymentAmounts, orderCollectionStatusLabel, collectionStatusClasses } from "@/lib/orders/paymentStatus";
-import { computeSourceCollection } from "@/lib/collections";
+import { derivePaymentStatus, splitPaymentAmounts, orderCollectionStatusLabel, collectionStatusClasses, paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { computeSourceCollection, isOpenOrderStatus } from "@/lib/collections";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
 import type { MorningLocalDocument } from "@/lib/morning/types";
@@ -365,6 +365,17 @@ export default async function SalesOrderPage({
     : getString((financials as Row) ?? {}, "payment_status") ?? derivePaymentStatus(totalAmount, totalPaid);
   const orderDueDate = getString((order as Row) ?? {}, "due_date");
   const orderPaymentTerms = getString((order as Row) ?? {}, "payment_terms");
+  const orderPendingMethods = Array.from(
+    new Set(
+      ((payments ?? []) as Row[])
+        .filter(
+          (p) =>
+            (getString(p, "payment_status") ?? "").toLowerCase() === "pending" &&
+            getString(p, "payment_method")
+        )
+        .map((p) => paymentMethodLabel(getString(p, "payment_method")))
+    )
+  );
   const collectionStatus = computeSourceCollection({
     total: totalAmount,
     collected: paymentSplit.collected,
@@ -374,6 +385,7 @@ export default async function SalesOrderPage({
     nextDueDate: getString((financials as Row) ?? {}, "next_due_date"),
     referenceDate: orderDate,
     dueDate: orderDueDate,
+    blockOverdue: isOpenOrderStatus(getString((order as Row) ?? {}, "status")),
     today: new Date().toISOString().slice(0, 10),
   }).status;
   const canManagePayments = profile.role === "admin" || profile.role === "office";
@@ -485,6 +497,12 @@ export default async function SalesOrderPage({
                       <>
                         <span className="text-muted-foreground"> · תאריך פירעון: </span>
                         <span className="font-medium">{formatDate(orderDueDate)}</span>
+                      </>
+                    ) : null}
+                    {orderPendingMethods.length > 0 ? (
+                      <>
+                        <span className="text-muted-foreground"> · אמצעי: </span>
+                        <span className="font-medium">{orderPendingMethods.join(", ")}</span>
                       </>
                     ) : null}
                   </div>

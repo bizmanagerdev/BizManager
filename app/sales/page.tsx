@@ -450,7 +450,7 @@ export default async function SalesPage({
     );
     const ordersWithDue = rows.map((r) => ({
       ...r,
-      due_date: orderDueById.get(typeof r.order_id === "string" ? r.order_id : "") ?? null,
+      due_date: orderDueById.get(typeof r.order_id === "string" ? r.order_id : "")?.dueDate ?? null,
     }));
 
     content = (

@@ -40,7 +40,12 @@ import {
   paymentMethodLabel,
   paymentStatusClasses,
   paymentStatusLabel,
+  splitPaymentAmounts,
+  collectionStatusClasses,
+  collectionStatusLabel,
 } from "@/lib/orders/paymentStatus";
+import { computeSourceCollection } from "@/lib/collections";
+import { paymentTermsLabel } from "@/lib/paymentTerms";
 import {
   type PaymentRow,
   type FinancialAttachment,
@@ -384,6 +389,8 @@ type CashFlowEvent =
 export default function ProjectTabsClient({
   viewerRole,
   overview,
+  paymentTerms,
+  dueDate,
   financials,
   tasks,
   projectTasks,
@@ -408,6 +415,8 @@ export default function ProjectTabsClient({
 }: {
   viewerRole: string | null;
   overview: ProjectOverview;
+  paymentTerms: string | null;
+  dueDate: string | null;
   financials: ProjectFinancials;
   tasks: ProjectTaskProgress;
   projectTasks: Record<string, unknown>[];
@@ -913,11 +922,31 @@ export default function ProjectTabsClient({
     displayedBasePrice === null
       ? customerTotalPrice
       : displayedBasePrice + (billedExpensesTotal ?? 0);
-  const paymentsTotal = paymentsUi.reduce(
-    (sum, p) => sum + (toNumber(p.amount_total) ?? 0),
-    0
+  // Collection split: "שולם" reflects COLLECTED money only; pending (future-dated)
+  // payments are expected, not paid — so the status can read תשלום צפוי / באיחור.
+  const paymentSplit = splitPaymentAmounts(
+    paymentsUi.map((p) => ({
+      amount_total: toNumber(p.amount_total) ?? 0,
+      payment_status: typeof p.payment_status === "string" ? p.payment_status : null,
+      due_date: typeof p.due_date === "string" ? p.due_date : null,
+    }))
   );
+  const paymentsTotal = paymentSplit.collected;
   const customerPaymentStatus = deriveCustomerPaymentStatus(displayedCustomerPrice, paymentsTotal);
+  const collectionStatus =
+    displayedCustomerPrice === null
+      ? null
+      : computeSourceCollection({
+          total: displayedCustomerPrice,
+          collected: paymentSplit.collected,
+          pending: paymentSplit.pending,
+          overdue: paymentSplit.overdue,
+          outstanding: Math.max(displayedCustomerPrice - paymentSplit.collected, 0),
+          nextDueDate: null,
+          referenceDate: typeof overview.start_date === "string" ? overview.start_date : null,
+          dueDate,
+          today: new Date().toISOString().slice(0, 10),
+        }).status;
   const remainingCustomerBalance =
     displayedCustomerPrice !== null ? Math.max(displayedCustomerPrice - paymentsTotal, 0) : null;
   const tasksSorted = useMemo(() => {
@@ -1548,12 +1577,18 @@ export default function ProjectTabsClient({
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">סטטוס תשלום לקוח</div>
                 <div className="mt-2">
-                  <Badge className={customerPaymentStatusBadgeClasses(customerPaymentStatus)}>
-                    {customerPaymentStatusLabel(customerPaymentStatus)}
-                  </Badge>
+                  {collectionStatus ? (
+                    <Badge className={collectionStatusClasses(collectionStatus)}>
+                      {collectionStatusLabel(collectionStatus)}
+                    </Badge>
+                  ) : (
+                    <Badge className={customerPaymentStatusBadgeClasses(customerPaymentStatus)}>
+                      {customerPaymentStatusLabel(customerPaymentStatus)}
+                    </Badge>
+                  )}
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
-                  <span>שולם </span>
+                  <span>נגבה </span>
                   <LtrInline>{formatIls(paymentsTotal)}</LtrInline>
                   {remainingCustomerBalance !== null ? (
                     <>
@@ -1561,6 +1596,10 @@ export default function ProjectTabsClient({
                       <LtrInline>{formatIls(remainingCustomerBalance)}</LtrInline>
                     </>
                   ) : null}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  <span>צורת תשלום: {paymentTermsLabel(paymentTerms)}</span>
+                  {dueDate ? <span> • פירעון: <LtrInline>{formatDate(dueDate)}</LtrInline></span> : null}
                 </div>
               </div>
             </div>

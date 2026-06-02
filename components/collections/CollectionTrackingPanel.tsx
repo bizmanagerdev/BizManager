@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatShortDate } from "@/lib/date";
-import { collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
+import { collectionStatusClasses, collectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { paymentTermsLabel } from "@/lib/paymentTerms";
 import type { CustomerReceivable } from "@/lib/collections";
 import CommunicationLogItem from "@/components/collections/CommunicationLogItem";
 import {
@@ -60,6 +61,8 @@ export default function CollectionTrackingPanel({
   const [withFollowUp, setWithFollowUp] = useState(false);
   const [followUpDate, setFollowUpDate] = useState("");
   const [followUpContent, setFollowUpContent] = useState("");
+  const [reminderDate, setReminderDate] = useState("");
+  const [reminderNote, setReminderNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -128,6 +131,40 @@ export default function CollectionTrackingPanel({
       setWithFollowUp(false);
       setFollowUpDate("");
       setFollowUpContent("");
+      await load();
+      onChanged?.();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function addReminder() {
+    if (submitting) return;
+    if (!reminderDate) {
+      setError("יש לבחור תאריך לתזכורת.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/reminders/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          customer_id: customerId,
+          remind_at: reminderDate,
+          content: reminderNote.trim() || undefined,
+          action_type: "call",
+          category: "collection",
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(json.error ?? "שמירת התזכורת נכשלה");
+        return;
+      }
+      setReminderDate("");
+      setReminderNote("");
       await load();
       onChanged?.();
     } finally {
@@ -211,6 +248,10 @@ export default function CollectionTrackingPanel({
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
                     <span>תאריך: {r.reference_date ? formatShortDate(r.reference_date) : "—"}</span>
+                    <span>צורת תשלום: {paymentTermsLabel(r.payment_terms)}</span>
+                    {r.due_date || r.next_due_date ? (
+                      <span>פירעון: {formatShortDate((r.due_date ?? r.next_due_date) as string)}</span>
+                    ) : null}
                     {r.days_late > 0 ? (
                       <span className="text-destructive">{r.days_late} ימים באיחור</span>
                     ) : null}
@@ -222,6 +263,7 @@ export default function CollectionTrackingPanel({
                           <span className={p.overdue ? "text-destructive" : "text-muted-foreground"}>
                             {formatCurrency(p.amount)} · פירעון{" "}
                             {p.due_date ? formatShortDate(p.due_date) : "—"}
+                            {p.payment_method ? ` · ${paymentMethodLabel(p.payment_method)}` : ""}
                             {p.overdue ? " (באיחור)" : ""}
                           </span>
                           <Button
@@ -302,6 +344,31 @@ export default function CollectionTrackingPanel({
         <div className="mt-3 flex justify-end">
           <Button type="button" size="sm" onClick={() => void logCall()} disabled={submitting}>
             {submitting ? "שומר..." : "שמירה"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Set a reminder without logging a call */}
+      <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+        <div className="mb-2 text-sm font-semibold">קביעת תזכורת</div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <DateInput value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
+          <input
+            value={reminderNote}
+            onChange={(e) => setReminderNote(e.target.value)}
+            placeholder="על מה להזכיר? (אופציונלי)"
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+          />
+        </div>
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void addReminder()}
+            disabled={submitting}
+          >
+            {submitting ? "שומר..." : "הוספת תזכורת"}
           </Button>
         </div>
       </div>

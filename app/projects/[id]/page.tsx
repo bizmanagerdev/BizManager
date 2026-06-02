@@ -16,7 +16,9 @@ import { PAYMENT_SELECT } from "@/lib/payments";
 import type { FinancialAttachment } from "@/lib/payments";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { WorkSessionRow } from "@/lib/payroll";
-import { paymentStatusClasses, paymentStatusLabel, splitPaymentAmounts } from "@/lib/orders/paymentStatus";
+import { paymentStatusClasses, paymentStatusLabel, splitPaymentAmounts, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
+import { computeSourceCollection } from "@/lib/collections";
+import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -164,9 +166,15 @@ export default async function ProjectPage({
 
   const { data: projectDetailsRaw } = await supabase
     .from("projects")
-    .select("id,notes,items_to_move")
+    .select("id,notes,items_to_move,payment_terms,due_date")
     .eq("id", id)
-    .maybeSingle<{ id: string; notes: string | null; items_to_move: string[] | null }>();
+    .maybeSingle<{
+      id: string;
+      notes: string | null;
+      items_to_move: string[] | null;
+      payment_terms: string | null;
+      due_date: string | null;
+    }>();
 
   const overview: ProjectOverview | null = overviewRaw
     ? {
@@ -838,6 +846,25 @@ export default async function ProjectPage({
   const totalCustomerCharge =
     baseProjectPrice !== null ? baseProjectPrice + (Number.isFinite(expensesBilled) ? expensesBilled : 0) : null;
   const customerPaymentStatus = deriveCustomerPaymentStatus(totalCustomerCharge, paidTotal);
+  const projectDueDate =
+    typeof projectDetailsRaw?.due_date === "string" ? projectDetailsRaw.due_date.slice(0, 10) : null;
+  const projectPaymentTerms =
+    typeof projectDetailsRaw?.payment_terms === "string" ? projectDetailsRaw.payment_terms : null;
+  // Term-aware collection status (תשלום צפוי / באיחור …) for priced projects.
+  const collectionStatus =
+    totalCustomerCharge === null
+      ? null
+      : computeSourceCollection({
+          total: totalCustomerCharge,
+          collected: paidTotal,
+          pending: expectedTotal,
+          overdue: overdueExpectedTotal,
+          outstanding: Math.max(totalCustomerCharge - paidTotal, 0),
+          nextDueDate: null,
+          referenceDate: startDate,
+          dueDate: projectDueDate,
+          today: new Date().toISOString().slice(0, 10),
+        }).status;
   const customerOptions = ((customers ?? []) as UnknownRow[])
     .map((row) => ({
       id: typeof row.customer_id === "string" ? row.customer_id : "",
@@ -910,10 +937,26 @@ export default async function ProjectPage({
                 </div>
                 <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">תשלום לקוח:</div>
-                  <Badge className={customerPaymentStatusClasses(customerPaymentStatus)}>
-                    {customerPaymentStatusLabel(customerPaymentStatus)}
-                  </Badge>
+                  {collectionStatus ? (
+                    <Badge className={collectionStatusClasses(collectionStatus)}>
+                      {collectionStatusLabel(collectionStatus)}
+                    </Badge>
+                  ) : (
+                    <Badge className={customerPaymentStatusClasses(customerPaymentStatus)}>
+                      {customerPaymentStatusLabel(customerPaymentStatus)}
+                    </Badge>
+                  )}
                 </div>
+                <div className="min-w-0 space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">צורת תשלום:</div>
+                  <div className="font-medium">{paymentTermsLabel(projectPaymentTerms)}</div>
+                </div>
+                {projectDueDate ? (
+                  <div className="min-w-0 space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">תאריך פירעון:</div>
+                    <div className="font-medium">{formatDate(projectDueDate)}</div>
+                  </div>
+                ) : null}
                 {expectedTotal > 0.009 ? (
                   <div className="min-w-0 space-y-1">
                     <div className="text-xs font-medium text-muted-foreground">צפוי לגבייה:</div>
@@ -986,6 +1029,8 @@ export default async function ProjectPage({
           <ProjectTabsClient
             viewerRole={profile.role}
             overview={overview}
+            paymentTerms={projectPaymentTerms}
+            dueDate={projectDueDate}
             financials={financials ?? null}
             tasks={tasks ?? null}
             projectTasks={projectTasks ?? []}

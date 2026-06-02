@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, MessageCircle, Phone } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatShortDate } from "@/lib/date";
 import { getBusinessDomainLabel } from "@/lib/expenses";
-import { collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
+import { collectionStatusClasses, collectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { paymentTermsLabel } from "@/lib/paymentTerms";
 import {
   actionTypeLabel,
   type CommunicationLogWithCustomer,
@@ -77,12 +78,12 @@ function daysSince(dateIso: string | null): number | null {
   return Math.max(Math.floor((now.getTime() - d.getTime()) / 86_400_000), 0);
 }
 
-// "Who haven't I chased" signal — flags never-contacted debtors and shows recency.
-function LastContactSignal({ lastContactAt }: { lastContactAt: string | null }) {
+// "Who haven't I chased" signal. The never-contacted warning shows only when the
+// customer actually has overdue debt (no point flagging a not-yet-due customer).
+function LastContactSignal({ lastContactAt, overdue }: { lastContactAt: string | null; overdue: boolean }) {
   if (!lastContactAt) {
-    return (
-      <span className="text-[11px] font-medium text-warning-strong">⚠ טרם נוצר קשר</span>
-    );
+    if (!overdue) return null;
+    return <span className="text-[11px] font-medium text-warning-strong">⚠ טרם נוצר קשר</span>;
   }
   const days = daysSince(lastContactAt);
   const label =
@@ -132,6 +133,13 @@ export default function CollectionsClient({
   const [domain, setDomain] = useState("all");
   const [sort, setSort] = useState<SortKey>("amount");
   const [collectingId, setCollectingId] = useState<string | null>(null);
+  const [focusReminderCustomer, setFocusReminderCustomer] = useState<string | null>(null);
+
+  // Jump from a debtor row to that customer's reminder in the תזכורות tab.
+  function openReminders(customerId: string | null) {
+    setFocusReminderCustomer(customerId);
+    setView("reminders");
+  }
 
   const domainOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -262,9 +270,14 @@ export default function CollectionsClient({
           sort={sort}
           setSort={setSort}
           filtered={filtered}
+          onOpenReminders={openReminders}
         />
       ) : view === "reminders" ? (
-        <RemindersView reminders={reminders} onUpdate={updateReminder} />
+        <RemindersView
+          reminders={reminders}
+          onUpdate={updateReminder}
+          focusCustomerId={focusReminderCustomer}
+        />
       ) : (
         <ActivityView logs={recentLogs} onChanged={() => router.refresh()} />
       )}
@@ -318,6 +331,9 @@ function DueTodaySection({
                   <NavLink to={href} target="_blank" rel="noreferrer" className="text-primary hover:underline">
                     {p.source_type === "order" ? "הזמנה" : "פרויקט"}
                   </NavLink>
+                ) : null}
+                {p.payment_method ? (
+                  <span className="text-muted-foreground">{paymentMethodLabel(p.payment_method)}</span>
                 ) : null}
               </div>
               <div className="flex items-center gap-3">
@@ -467,27 +483,40 @@ function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][n
     ? `הזמנה #${source.source_id.slice(0, 8)}`
     : source.title ?? `פרויקט #${source.source_id.slice(0, 8)}`;
   const pendingIds = source.pending_payments.map((p) => p.id);
+  const methods = Array.from(
+    new Set(source.pending_payments.filter((p) => p.payment_method).map((p) => paymentMethodLabel(p.payment_method)))
+  );
   return (
     <div className="rounded-lg border border-border/50 bg-background/60 p-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <NavLink to={href} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">
-            {linkText}
-          </NavLink>
-          <span className="text-xs text-muted-foreground">{getBusinessDomainLabel(source.business_domain)}</span>
-          <Badge className={collectionStatusClasses(source.collection_status)}>
-            {collectionStatusLabel(source.collection_status)}
-          </Badge>
-          {source.days_late > 0 ? (
-            <span className="text-xs font-medium text-destructive">{source.days_late} ימים באיחור</span>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span>תאריך: {formatDate(source.reference_date)}</span>
-          {source.next_due_date ? <span>פירעון: {formatDate(source.next_due_date)}</span> : null}
-          <span className="font-semibold text-foreground">{formatCurrency(source.outstanding_amount)}</span>
-          {pendingIds.length > 0 ? <MarkCollectedButton paymentIds={pendingIds} /> : null}
-        </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <NavLink
+          to={href}
+          target="_blank"
+          rel="noreferrer"
+          className="text-sm font-medium text-primary hover:underline"
+        >
+          {linkText}
+        </NavLink>
+        <Badge className={collectionStatusClasses(source.collection_status)}>
+          {collectionStatusLabel(source.collection_status)}
+        </Badge>
+        <span className="text-muted-foreground">תאריך: {formatDate(source.reference_date)}</span>
+        <span className="font-semibold text-foreground">{formatCurrency(source.outstanding_amount)}</span>
+        <span className="text-muted-foreground">צורת תשלום: {paymentTermsLabel(source.payment_terms)}</span>
+        {source.due_date || source.next_due_date ? (
+          <span className="text-muted-foreground">פירעון: {formatDate(source.due_date ?? source.next_due_date)}</span>
+        ) : null}
+        {methods.length > 0 ? (
+          <span className="text-muted-foreground">אמצעי: {methods.join(", ")}</span>
+        ) : null}
+        {source.days_late > 0 ? (
+          <span className="font-medium text-destructive">{source.days_late} ימים באיחור</span>
+        ) : null}
+        {pendingIds.length > 0 ? (
+          <span className="ms-auto">
+            <MarkCollectedButton paymentIds={pendingIds} />
+          </span>
+        ) : null}
       </div>
       {isOrder && source.items.length > 0 ? (
         <div className="mt-1 text-xs text-muted-foreground">{source.items.join(" · ")}</div>
@@ -503,6 +532,7 @@ function CustomerCard({
   wa,
   selected,
   onToggleSelect,
+  onOpenReminders,
 }: {
   group: CollectionCustomerGroup;
   isOpen: boolean;
@@ -510,6 +540,7 @@ function CustomerCard({
   wa: string | null;
   selected: boolean;
   onToggleSelect?: () => void;
+  onOpenReminders: (customerId: string | null) => void;
 }) {
   const tint = severityTint(group);
   return (
@@ -540,7 +571,10 @@ function CustomerCard({
               <div className="text-xs text-destructive">{group.oldest_days_late} ימים באיחור</div>
             ) : null}
             <div className="mt-0.5">
-              <LastContactSignal lastContactAt={group.last_contact_at} />
+              <LastContactSignal
+                lastContactAt={group.last_contact_at}
+                overdue={group.overdue_amount > 0.009}
+              />
             </div>
           </div>
           <div className="shrink-0 text-lg font-semibold">{formatCurrency(group.outstanding_amount)}</div>
@@ -548,6 +582,16 @@ function CustomerCard({
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border/50 pt-2">
         <CustomerActions group={group} wa={wa} withCall />
+        {group.next_reminder_at ? (
+          <button
+            type="button"
+            onClick={() => onOpenReminders(group.customer_id)}
+            title="מעבר לתזכורת"
+            className="ms-auto text-xs text-primary hover:underline"
+          >
+            🔔 תזכורת {formatDate(group.next_reminder_at)}
+          </button>
+        ) : null}
       </div>
       {isOpen ? (
         <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
@@ -571,6 +615,7 @@ function DebtorsTable({
   sort,
   setSort,
   filtered,
+  onOpenReminders,
 }: {
   filter: FilterKey;
   setFilter: (f: FilterKey) => void;
@@ -582,6 +627,7 @@ function DebtorsTable({
   sort: SortKey;
   setSort: (s: SortKey) => void;
   filtered: CollectionCustomerGroup[];
+  onOpenReminders: (customerId: string | null) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -734,6 +780,7 @@ function DebtorsTable({
                   </th>
                   <th className="px-3 py-2 text-right font-medium">טלפון</th>
                   <th className="px-3 py-2 text-right font-medium">סטטוס</th>
+                  <th className="px-3 py-2 text-right font-medium">תזכורת</th>
                   <th className="px-3 py-2 text-center font-medium">סה״כ חוב</th>
                   <th className="px-2 py-2 text-center font-medium">פעולות</th>
                 </tr>
@@ -751,13 +798,14 @@ function DebtorsTable({
                       wa={whatsappLink(group.customer_whatsapp ?? group.customer_phone, buildWaMessage(group))}
                       selected={cid ? selected.has(cid) : false}
                       onToggleSelect={cid ? () => toggleSelect(cid) : undefined}
+                      onOpenReminders={onOpenReminders}
                     />
                   );
                 })}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-border/70 bg-muted/30 text-xs font-semibold">
-                  <td className="px-3 py-2 text-right" colSpan={3}>
+                  <td className="px-3 py-2 text-right" colSpan={4}>
                     סה״כ ({filtered.length} לקוחות)
                   </td>
                   <td className="px-3 py-2 text-center">{formatCurrency(footer.outstanding)}</td>
@@ -781,6 +829,7 @@ function DebtorsTable({
                   wa={whatsappLink(group.customer_whatsapp ?? group.customer_phone, buildWaMessage(group))}
                   selected={cid ? selected.has(cid) : false}
                   onToggleSelect={cid ? () => toggleSelect(cid) : undefined}
+                  onOpenReminders={onOpenReminders}
                 />
               );
             })}
@@ -801,6 +850,7 @@ function FragmentRow({
   wa,
   selected,
   onToggleSelect,
+  onOpenReminders,
 }: {
   group: CollectionCustomerGroup;
   isOpen: boolean;
@@ -808,6 +858,7 @@ function FragmentRow({
   wa: string | null;
   selected: boolean;
   onToggleSelect?: () => void;
+  onOpenReminders: (customerId: string | null) => void;
 }) {
   const tint = severityTint(group);
   return (
@@ -836,7 +887,10 @@ function FragmentRow({
                 <span>{group.customer_name}</span>
               </button>
               <div className="ps-5">
-                <LastContactSignal lastContactAt={group.last_contact_at} />
+                <LastContactSignal
+                  lastContactAt={group.last_contact_at}
+                  overdue={group.overdue_amount > 0.009}
+                />
               </div>
             </div>
           </div>
@@ -860,6 +914,20 @@ function FragmentRow({
             </div>
           ) : null}
         </td>
+        <td className="px-3 py-2">
+          {group.next_reminder_at ? (
+            <button
+              type="button"
+              onClick={() => onOpenReminders(group.customer_id)}
+              title="מעבר לתזכורת"
+              className="text-xs text-primary hover:underline"
+            >
+              🔔 {formatDate(group.next_reminder_at)}
+            </button>
+          ) : (
+            <span className="text-muted-foreground/40">—</span>
+          )}
+        </td>
         <td className="px-3 py-2 text-center font-semibold">{formatCurrency(group.outstanding_amount)}</td>
         <td className="px-2 py-2">
           <div className="flex items-center justify-center">
@@ -869,7 +937,7 @@ function FragmentRow({
       </tr>
       {isOpen ? (
         <tr className={`border-b border-border/50 ${tint || "bg-muted/10"}`}>
-          <td colSpan={5} className="px-3 py-3">
+          <td colSpan={6} className="px-3 py-3">
             <div className="space-y-2">
               {group.sources.map((source) => (
                 <SourceDetail key={source.collection_key} source={source} />
@@ -885,9 +953,11 @@ function FragmentRow({
 function RemindersView({
   reminders,
   onUpdate,
+  focusCustomerId,
 }: {
   reminders: Reminder[];
   onUpdate: (id: string, status: "done" | "cancelled") => void;
+  focusCustomerId?: string | null;
 }) {
   const today = todayIso();
   const groups = useMemo(() => {
@@ -903,6 +973,13 @@ function RemindersView({
     return { overdue, today: todayList, upcoming };
   }, [reminders, today]);
 
+  // When arriving from a debtor row, scroll to that customer's reminder.
+  useEffect(() => {
+    if (!focusCustomerId) return;
+    const el = document.querySelector<HTMLElement>(`[data-reminder-customer="${focusCustomerId}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusCustomerId]);
+
   if (reminders.length === 0) {
     return (
       <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-10 text-center text-sm text-muted-foreground">
@@ -914,13 +991,13 @@ function RemindersView({
   return (
     <div className="space-y-5">
       {groups.overdue.length > 0 ? (
-        <ReminderGroup title="באיחור" tone="danger" reminders={groups.overdue} onUpdate={onUpdate} />
+        <ReminderGroup title="באיחור" tone="danger" reminders={groups.overdue} onUpdate={onUpdate} focusCustomerId={focusCustomerId} />
       ) : null}
       {groups.today.length > 0 ? (
-        <ReminderGroup title="היום" tone="warning" reminders={groups.today} onUpdate={onUpdate} />
+        <ReminderGroup title="היום" tone="warning" reminders={groups.today} onUpdate={onUpdate} focusCustomerId={focusCustomerId} />
       ) : null}
       {groups.upcoming.length > 0 ? (
-        <ReminderGroup title="קרובות" reminders={groups.upcoming} onUpdate={onUpdate} />
+        <ReminderGroup title="קרובות" reminders={groups.upcoming} onUpdate={onUpdate} focusCustomerId={focusCustomerId} />
       ) : null}
     </div>
   );
@@ -931,11 +1008,13 @@ function ReminderGroup({
   tone = "default",
   reminders,
   onUpdate,
+  focusCustomerId,
 }: {
   title: string;
   tone?: "default" | "danger" | "warning";
   reminders: Reminder[];
   onUpdate: (id: string, status: "done" | "cancelled") => void;
+  focusCustomerId?: string | null;
 }) {
   const titleClass =
     tone === "danger" ? "text-destructive" : tone === "warning" ? "text-warning-strong" : "text-foreground";
@@ -947,8 +1026,13 @@ function ReminderGroup({
       {reminders.map((r) => (
         <div
           key={r.id}
+          data-reminder-customer={r.customer_id ?? undefined}
           className={`rounded-xl border p-3 text-sm ${
-            tone === "danger" ? "border-destructive/40 bg-destructive-soft/40" : "border-border/70 bg-card/60"
+            focusCustomerId && r.customer_id === focusCustomerId
+              ? "border-primary ring-2 ring-primary"
+              : tone === "danger"
+                ? "border-destructive/40 bg-destructive-soft/40"
+                : "border-border/70 bg-card/60"
           }`}
         >
           <div className="flex flex-wrap items-start justify-between gap-2">

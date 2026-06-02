@@ -156,7 +156,7 @@ export function getPaymentStatusLabel(status: string) {
     case "overpaid":
       return "שולם יתר";
     case "pending":
-      return "ממתין לפירעון";
+      return "תשלום צפוי";
     case "cleared":
       return "התקבל";
     case "rejected":

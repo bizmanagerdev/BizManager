@@ -257,7 +257,9 @@ export default function SalesOrdersClient({
       const overdueAmount = getNumber(row, ["overdue_amount"]) ?? 0;
       const orderDate = getString(row, ["order_date", "created_at"]);
       const dueDate = getString(row, ["due_date"]);
-      // Term-aware status: an order past its due date with money owed shows באיחור.
+      const rawStatus = getString(row, ["status"]);
+      // Term-aware status: a closed order past its due date shows באיחור; an OPEN
+      // order is never overdue (payment isn't forced until products are delivered).
       const sm = computeSourceCollection({
         total: totalAmount,
         collected: totalPaid,
@@ -267,6 +269,7 @@ export default function SalesOrdersClient({
         nextDueDate: getString(row, ["next_due_date"]),
         referenceDate: orderDate,
         dueDate,
+        blockOverdue: isActiveOrder(rawStatus ?? ""),
         today,
       });
       return {

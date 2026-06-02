@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { computeSourceCollection, fetchOrderDueDates, fetchProjectDueDates } from "@/lib/collections";
+import { computeSourceCollection, fetchOrderDueDates, fetchProjectDueDates, isOpenOrderStatus } from "@/lib/collections";
 
 type Row = Record<string, unknown>;
 
@@ -266,7 +266,9 @@ export async function getAlertsData(
         outstanding: getNumber(row, "outstanding_amount") ?? 0,
         nextDueDate: getString(row, "next_due_date"),
         referenceDate: getString(row, "reference_date"),
-        dueDate: (isProject ? projectDueById.get(sourceId) : orderDueById.get(sourceId)) ?? null,
+        dueDate:
+          (isProject ? projectDueById.get(sourceId)?.dueDate : orderDueById.get(sourceId)?.dueDate) ?? null,
+        blockOverdue: !isProject && isOpenOrderStatus(orderDueById.get(sourceId)?.status),
         today: todayIso,
       });
       if (sm.late > 0.009) {

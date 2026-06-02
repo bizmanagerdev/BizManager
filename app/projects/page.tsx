@@ -3,6 +3,7 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import ProjectsClient from "@/app/projects/ProjectsClient";
+import { computeSourceCollection } from "@/lib/collections";
 
 type Row = Record<string, unknown>;
 
@@ -168,7 +169,7 @@ export default async function ProjectsPage({
     projectIds.length > 0
       ? supabase
           .from("project_financials_view")
-          .select("id,total_expenses,gross_profit,customer_total_price,expenses_billed,collected_amount")
+          .select("id,total_expenses,gross_profit,customer_total_price,expenses_billed,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date")
           .in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
     projectCustomerIds.length > 0
@@ -235,6 +236,21 @@ export default async function ProjectsPage({
       payment_status_list: paymentStatus,
       payment_terms: paymentTermsByProjectId.get(projectId) ?? null,
       due_date: dueDateByProjectId.get(projectId) ?? null,
+      // Term-aware collection status (תשלום צפוי / באיחור …) for the status badge.
+      collection_status: priceUnset
+        ? "unpriced"
+        : computeSourceCollection({
+            total: customerTotalPrice,
+            collected: paidTotal,
+            pending: toNumber(financialRow?.pending_amount) ?? 0,
+            overdue: toNumber(financialRow?.overdue_amount) ?? 0,
+            outstanding:
+              toNumber(financialRow?.outstanding_amount) ?? Math.max(customerTotalPrice - paidTotal, 0),
+            nextDueDate: typeof financialRow?.next_due_date === "string" ? financialRow.next_due_date : null,
+            referenceDate: typeof row?.start_date === "string" ? row.start_date : null,
+            dueDate: dueDateByProjectId.get(projectId) ?? null,
+            today: new Date().toISOString().slice(0, 10),
+          }).status,
     };
   });
 

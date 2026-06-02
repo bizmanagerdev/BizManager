@@ -25,6 +25,10 @@ export type CollectionSourceRow = {
   outstanding_amount: number;
   next_due_date: string | null;
   last_payment_date: string | null;
+  /** Effective due date from the order/project payment term (or manual override). */
+  due_date: string | null;
+  /** Payment term key (immediate/eom/eom_30/...). */
+  payment_terms: string | null;
   collection_status: CollectionStatus;
   /** Whole days the late portion is overdue (0 if nothing is late). */
   days_late: number;
@@ -83,6 +87,7 @@ export type ReceivablePendingPayment = {
   id: string;
   amount: number;
   due_date: string | null;
+  payment_method: string | null;
   overdue: boolean;
 };
 
@@ -101,6 +106,8 @@ export type CustomerReceivable = {
   pending_amount: number;
   overdue_amount: number;
   next_due_date: string | null;
+  due_date: string | null;
+  payment_terms: string | null;
   days_late: number;
   collection_status: CollectionStatus;
   pending_payments: ReceivablePendingPayment[];
@@ -175,6 +182,8 @@ export function computeSourceCollection(p: {
   referenceDate: string | null;
   /** Effective due date from payment terms; falls back to referenceDate (מיידי). */
   dueDate?: string | null;
+  /** Open orders aren't "late" — payment isn't forced until delivery/closing. */
+  blockOverdue?: boolean;
   today: string;
 }): SourceCollectionComputed {
   const futureScheduled = Math.max(p.pending - p.overdue, 0);
@@ -182,7 +191,10 @@ export function computeSourceCollection(p: {
   const refDay = p.referenceDate ? p.referenceDate.slice(0, 10) : null;
   const dueDay = p.dueDate ? p.dueDate.slice(0, 10) : refDay;
   const duePast = !!dueDay && dueDay < p.today;
-  const late = p.overdue + (duePast ? unscheduled : 0);
+  const late = p.blockOverdue ? 0 : p.overdue + (duePast ? unscheduled : 0);
+  // Expected (צפוי) = money not yet late: future-scheduled payments PLUS unscheduled
+  // money whose due date hasn't arrived (e.g. an order on שוטף+60 still within term).
+  const expected = futureScheduled + (duePast ? 0 : unscheduled);
 
   let daysLate = 0;
   if (late > 0.009) {
@@ -199,37 +211,67 @@ export function computeSourceCollection(p: {
   let status: CollectionStatus;
   if (p.total > 0 && p.collected + 0.009 >= p.total) status = "collected";
   else if (late > 0.009) status = "overdue";
-  else if (futureScheduled > 0.009) status = "awaiting";
   else if (p.collected > 0.009) status = "partial";
+  else if (expected > 0.009) status = "awaiting";
   else status = "unpaid";
 
-  return { expected: futureScheduled, late, daysLate, status };
+  return { expected, late, daysLate, status };
 }
 
-async function fetchDueDates(
+export type SourceTermInfo = {
+  dueDate: string | null;
+  paymentTerms: string | null;
+  status: string | null;
+};
+
+const CLOSED_ORDER_STATUSES = new Set([
+  "delivered",
+  "completed",
+  "closed",
+  "cancelled",
+  "סופקה",
+  "הושלמה",
+  "סגורה",
+  "בוטלה",
+]);
+
+/** An order is "open" (products not yet delivered/closed) — payment isn't forced,
+ *  so it should never show as overdue. */
+export function isOpenOrderStatus(status: string | null | undefined): boolean {
+  const s = typeof status === "string" ? status.trim().toLowerCase() : "";
+  return s.length > 0 && !CLOSED_ORDER_STATUSES.has(s);
+}
+
+async function fetchTermInfo(
   supabase: SupabaseClient,
   table: "orders" | "projects",
   ids: string[]
-): Promise<Map<string, string | null>> {
-  const map = new Map<string, string | null>();
+): Promise<Map<string, SourceTermInfo>> {
+  const map = new Map<string, SourceTermInfo>();
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (unique.length === 0) return map;
-  const { data } = await supabase.from(table).select("id,due_date").in("id", unique);
+  const { data } = await supabase.from(table).select("id,due_date,payment_terms,status").in("id", unique);
   for (const row of (data ?? []) as Row[]) {
     const id = str(row, "id");
-    if (id) map.set(id, str(row, "due_date"));
+    if (id) {
+      map.set(id, {
+        dueDate: str(row, "due_date"),
+        paymentTerms: str(row, "payment_terms"),
+        status: str(row, "status"),
+      });
+    }
   }
   return map;
 }
 
-/** Effective due date per order (orders.due_date), keyed by order id. */
+/** Effective due date + payment term per order, keyed by order id. */
 export function fetchOrderDueDates(supabase: SupabaseClient, orderIds: string[]) {
-  return fetchDueDates(supabase, "orders", orderIds);
+  return fetchTermInfo(supabase, "orders", orderIds);
 }
 
-/** Effective due date per project (projects.due_date), keyed by project id. */
+/** Effective due date + payment term per project, keyed by project id. */
 export function fetchProjectDueDates(supabase: SupabaseClient, projectIds: string[]) {
-  return fetchDueDates(supabase, "projects", projectIds);
+  return fetchTermInfo(supabase, "projects", projectIds);
 }
 
 // Attach a human-readable "what for" to each row: project name for projects,
@@ -349,10 +391,9 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
     const nextDueDate = str(row, "next_due_date");
     const sourceType = str(row, "source_type") === "project" ? "project" : "order";
     const sourceId = str(row, "source_id") ?? "";
-    const dueDate =
-      sourceType === "order"
-        ? orderDueById.get(sourceId) ?? null
-        : projectDueById.get(sourceId) ?? null;
+    const term = sourceType === "order" ? orderDueById.get(sourceId) : projectDueById.get(sourceId);
+    const dueDate = term?.dueDate ?? null;
+    const paymentTerms = term?.paymentTerms ?? null;
     const sm = computeSourceCollection({
       total,
       collected,
@@ -362,6 +403,7 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
       nextDueDate,
       referenceDate,
       dueDate,
+      blockOverdue: sourceType === "order" && isOpenOrderStatus(term?.status),
       today,
     });
     return {
@@ -382,6 +424,8 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
       outstanding_amount: outstanding,
       next_due_date: nextDueDate,
       last_payment_date: str(row, "last_payment_date"),
+      due_date: dueDate,
+      payment_terms: paymentTerms,
       collection_status: sm.status,
       days_late: sm.daysLate,
       pending_payments: [],
@@ -518,10 +562,9 @@ export async function getCustomerReceivables(
     const nextDueDate = str(row, "next_due_date");
     const sourceType = str(row, "source_type") === "project" ? "project" : "order";
     const sourceId = str(row, "source_id") ?? "";
-    const dueDate =
-      sourceType === "order"
-        ? orderDueById.get(sourceId) ?? null
-        : projectDueById.get(sourceId) ?? null;
+    const term = sourceType === "order" ? orderDueById.get(sourceId) : projectDueById.get(sourceId);
+    const dueDate = term?.dueDate ?? null;
+    const paymentTerms = term?.paymentTerms ?? null;
     const sm = computeSourceCollection({
       total,
       collected,
@@ -531,6 +574,7 @@ export async function getCustomerReceivables(
       nextDueDate,
       referenceDate,
       dueDate,
+      blockOverdue: sourceType === "order" && isOpenOrderStatus(term?.status),
       today,
     });
     return {
@@ -550,6 +594,8 @@ export async function getCustomerReceivables(
       outstanding_amount: outstanding,
       next_due_date: nextDueDate,
       last_payment_date: null,
+      due_date: dueDate,
+      payment_terms: paymentTerms,
       collection_status: sm.status,
       days_late: sm.daysLate,
       pending_payments: [],
@@ -576,6 +622,8 @@ export async function getCustomerReceivables(
     pending_amount: r.pending_amount,
     overdue_amount: r.overdue_amount,
     next_due_date: r.next_due_date,
+    due_date: r.due_date,
+    payment_terms: r.payment_terms,
     days_late: r.days_late,
     collection_status: r.collection_status,
     pending_payments: r.pending_payments,
@@ -607,6 +655,7 @@ async function attachPendingPayments(
         id,
         amount: toNum(row.amount_total),
         due_date: due,
+        payment_method: str(row, "payment_method"),
         overdue: Boolean(due && due.slice(0, 10) <= today),
       });
       byKey.set(key, list);
@@ -617,7 +666,7 @@ async function attachPendingPayments(
     orderIds.length > 0
       ? supabase
           .from("payments")
-          .select("id,amount_total,due_date,order_id")
+          .select("id,amount_total,due_date,payment_method,order_id")
           .eq("payment_status", "pending")
           .in("order_id", orderIds)
           .then(({ data }) => collect((data ?? []) as Row[], "order", "order_id"))
@@ -625,7 +674,7 @@ async function attachPendingPayments(
     projectIds.length > 0
       ? supabase
           .from("payments")
-          .select("id,amount_total,due_date,project_id")
+          .select("id,amount_total,due_date,payment_method,project_id")
           .eq("payment_status", "pending")
           .in("project_id", projectIds)
           .then(({ data }) => collect((data ?? []) as Row[], "project", "project_id"))
@@ -643,6 +692,7 @@ export type PaymentDueToday = {
   id: string;
   amount: number;
   due_date: string | null;
+  payment_method: string | null;
   customer_id: string | null;
   customer_name: string;
   customer_phone: string | null;
@@ -661,7 +711,7 @@ export async function getPaymentsDueToday(
   const today = todayIso ?? new Date().toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from("payments")
-    .select("id,amount_total,due_date,order_id,project_id")
+    .select("id,amount_total,due_date,payment_method,order_id,project_id")
     .eq("payment_status", "pending")
     .eq("due_date", today);
 
@@ -739,6 +789,7 @@ export async function getPaymentsDueToday(
       id: str(row, "id") ?? "",
       amount: toNum(row.amount_total),
       due_date: str(row, "due_date"),
+      payment_method: str(row, "payment_method"),
       customer_id: customerId,
       customer_name: cust?.name ?? "לקוח",
       customer_phone: cust?.phone ?? null,

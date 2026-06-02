@@ -58,3 +58,19 @@ begin
     execute format('alter table public.reminders alter column %I drop not null', col.column_name);
   end loop;
 end $$;
+
+-- content is optional in the app (a call can be logged with only a follow-up, and a
+-- reminder can have no note), but some deployed tables created it NOT NULL.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema='public' and table_name='communication_logs'
+               and column_name='content' and is_nullable='NO') then
+    alter table public.communication_logs alter column content drop not null;
+  end if;
+  if exists (select 1 from information_schema.columns
+             where table_schema='public' and table_name='reminders'
+               and column_name='content' and is_nullable='NO') then
+    alter table public.reminders alter column content drop not null;
+  end if;
+end $$;

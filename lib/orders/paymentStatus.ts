@@ -280,20 +280,10 @@ export function collectionStatusClasses(status: string) {
   return getStatusColorClasses(getCollectionStatusColor(status));
 }
 
-/** Labels for order-level payment badges. Masculine across the app. */
+/** Labels for order-level payment badges. Identical to collectionStatusLabel so
+ *  the same wording (תשלום צפוי / באיחור …) appears everywhere. */
 export function orderCollectionStatusLabel(status: string) {
-  switch (status) {
-    case "collected":
-      return "שולם";
-    case "partial":
-      return "שולם חלקית";
-    case "awaiting":
-      return "ממתין לגבייה";
-    case "overdue":
-      return "באיחור";
-    default:
-      return "לא שולם";
-  }
+  return collectionStatusLabel(status);
 }
 
 /**
