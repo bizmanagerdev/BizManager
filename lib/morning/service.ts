@@ -935,6 +935,24 @@ export async function tryAutoIssueInvoiceForOrder(
     });
 
     const morningDocumentId = getString(result.morningDocument as DbRow | null, ["id"]);
+
+    // Reflect the issued invoice in the manual invoicing tracker (best-effort;
+    // wrapped so a tracker hiccup never reports the invoice itself as failed).
+    try {
+      await supabase
+        .from("orders")
+        .update({ invoice_sent_at: new Date().toISOString() })
+        .eq("id", orderId)
+        .is("invoice_sent_at", null);
+      await supabase
+        .from("orders")
+        .update({ needs_invoice: true })
+        .eq("id", orderId)
+        .is("needs_invoice", null);
+    } catch {
+      // ignore — invoice already issued successfully
+    }
+
     return { ok: true, skipped: false, reason: null, morningDocumentId };
   } catch (error) {
     const message = error instanceof Error ? error.message : "auto-issue invoice failed";

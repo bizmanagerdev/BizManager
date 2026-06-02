@@ -13,8 +13,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -35,6 +37,16 @@ const PAYMENT_FILTER_OPTIONS: { value: PaymentStatusFilter; label: string }[] = 
   { value: "paid", label: "שולם" },
   { value: "partial", label: "שולם חלקית" },
   { value: "unpaid", label: "לא שולם" },
+];
+
+type InvoiceFilter = "all" | "needs" | "no" | "pending" | "sent";
+
+const INVOICE_FILTER_OPTIONS: { value: InvoiceFilter; label: string }[] = [
+  { value: "all", label: "כל החשבוניות" },
+  { value: "needs", label: "צריך חשבונית" },
+  { value: "no", label: "לא צריך חשבונית" },
+  { value: "pending", label: "טרם הונפקה" },
+  { value: "sent", label: "הונפקה" },
 ];
 
 const LOADER_DOT_DELAYS = [0, 150, 300, 450] as const;
@@ -78,7 +90,31 @@ type OrderView = {
   totalAmount: number;
   totalPaid: number;
   remainingBalance: number;
+  needsInvoice: boolean | null;
+  invoiceSentAt: string | null;
+  deliveryConfirmedAt: string | null;
 };
+
+type InvoiceState = "needs_unsent" | "needs_sent" | "no" | "undecided";
+
+function invoiceState(row: { needsInvoice: boolean | null; invoiceSentAt: string | null }): InvoiceState {
+  if (row.needsInvoice === false) return "no";
+  if (row.needsInvoice === true) return row.invoiceSentAt ? "needs_sent" : "needs_unsent";
+  return "undecided";
+}
+
+function invoiceBadge(state: InvoiceState): { label: string; className: string } {
+  switch (state) {
+    case "needs_sent":
+      return { label: "הונפקה", className: "bg-success-soft text-success-soft-foreground border-transparent" };
+    case "needs_unsent":
+      return { label: "טרם הונפקה", className: "bg-warning-soft text-warning-soft-foreground border-transparent" };
+    case "no":
+      return { label: "לא צריך חשבונית", className: "bg-muted text-muted-foreground border-transparent" };
+    default:
+      return { label: "חשבונית לא הוגדרה", className: "border-border bg-background text-muted-foreground" };
+  }
+}
 
 function getString(row: Row, keys: string[]) {
   for (const key of keys) {
@@ -168,12 +204,64 @@ function shouldShowPaymentAction(row: OrderView) {
   return row.remainingBalance > 0.009 || row.totalPaid > row.totalAmount + 0.009;
 }
 
+function InvoiceQuickMenu({ row }: { row: OrderView }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const state = invoiceState(row);
+  const badge = invoiceBadge(state);
+
+  async function apply(update: Record<string, unknown>) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/orders/invoice-status", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ order_id: row.id, ...update }),
+      });
+      if (res.ok) router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={busy}
+          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${badge.className} disabled:opacity-50`}
+        >
+          <span>{badge.label}</span>
+          {state === "needs_sent" && row.invoiceSentAt ? (
+            <span className="opacity-80">· {formatOrderDate(row.invoiceSentAt)}</span>
+          ) : null}
+          <ChevronDown className="h-3 w-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem onSelect={() => void apply({ needs_invoice: true })}>צריך חשבונית</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void apply({ needs_invoice: false })}>לא צריך חשבונית</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem disabled={Boolean(row.invoiceSentAt)} onSelect={() => void apply({ invoice_sent: true })}>
+          סמן כהונפקה
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={!row.invoiceSentAt} onSelect={() => void apply({ invoice_sent: false })}>
+          בטל סימון הנפקה
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export default function SalesOrdersClient({
   orders,
   contacts = [],
   initialQuery = "",
   showPaymentStatusFilter = false,
   initialPaymentFilter = "",
+  initialInvoiceFilter = "",
   totalCount,
 }: {
   orders: Row[];
@@ -181,6 +269,7 @@ export default function SalesOrdersClient({
   initialQuery?: string;
   showPaymentStatusFilter?: boolean;
   initialPaymentFilter?: string;
+  initialInvoiceFilter?: string;
   totalCount?: number;
 }) {
   const router = useRouter();
@@ -202,6 +291,29 @@ export default function SalesOrdersClient({
       params.delete("payment_status");
     } else {
       params.set("payment_status", next);
+    }
+    params.delete("ordersPage");
+    const qs = params.toString();
+    startFilterTransition(() => {
+      router.push(qs ? `/sales?${qs}` : "/sales", { scroll: false });
+    });
+  }
+
+  const invoiceFilter: InvoiceFilter =
+    initialInvoiceFilter === "needs" ||
+    initialInvoiceFilter === "no" ||
+    initialInvoiceFilter === "pending" ||
+    initialInvoiceFilter === "sent"
+      ? initialInvoiceFilter
+      : "all";
+
+  function setInvoiceFilter(next: InvoiceFilter) {
+    if (next === invoiceFilter) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "all") {
+      params.delete("invoice");
+    } else {
+      params.set("invoice", next);
     }
     params.delete("ordersPage");
     const qs = params.toString();
@@ -288,6 +400,9 @@ export default function SalesOrdersClient({
         totalAmount,
         totalPaid,
         remainingBalance,
+        needsInvoice: typeof row.needs_invoice === "boolean" ? row.needs_invoice : null,
+        invoiceSentAt: getString(row, ["invoice_sent_at"]),
+        deliveryConfirmedAt: getString(row, ["delivery_confirmed_at"]),
       };
     });
 
@@ -311,7 +426,33 @@ export default function SalesOrdersClient({
           />
         </div>
 
-
+        <div className="flex flex-wrap items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={`gap-1 ${invoiceFilter !== "all" ? "border-primary text-primary" : ""}`}
+              >
+                <span>חשבונית: {INVOICE_FILTER_OPTIONS.find((o) => o.value === invoiceFilter)?.label}</span>
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuRadioGroup
+                value={invoiceFilter}
+                onValueChange={(value) => setInvoiceFilter(value as InvoiceFilter)}
+              >
+                {INVOICE_FILTER_OPTIONS.map((option) => (
+                  <DropdownMenuRadioItem key={option.value} value={option.value}>
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       <div className="text-sm text-muted-foreground">נמצאו {totalCount ?? filteredRows.length} הזמנות</div>
@@ -353,6 +494,7 @@ export default function SalesOrdersClient({
                     <th className="px-4 py-3 font-medium">לקוח</th>
                     <th className="px-4 py-3 font-medium">עיר ותאריך</th>
                     <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
+                    <th className="px-4 py-3 font-medium">חשבונית</th>
                     <th className="px-4 py-3 font-medium">
                       {showPaymentStatusFilter ? (
                         <DropdownMenu>
@@ -429,10 +571,16 @@ export default function SalesOrdersClient({
                           {row.dueDate ? (
                             <div className="text-xs text-muted-foreground">פירעון: {formatOrderDate(row.dueDate)}</div>
                           ) : null}
+                          {row.deliveryConfirmedAt ? (
+                            <div className="text-xs text-muted-foreground">סופק: {formatOrderDate(row.deliveryConfirmedAt)}</div>
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-4 py-4">
                         <StatusBadge value={row.status} type="order" className={orderStatusBadgeClasses(row.status)} />
+                      </td>
+                      <td className="px-4 py-4">
+                        <InvoiceQuickMenu row={row} />
                       </td>
                       <td className="px-4 py-4">
                         <Badge className={collectionStatusClasses(row.collectionStatus)}>
@@ -512,6 +660,13 @@ export default function SalesOrdersClient({
                           {formatCurrency(row.remainingBalance)}
                         </span>
                       </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <InvoiceQuickMenu row={row} />
+                      {row.deliveryConfirmedAt ? (
+                        <span className="text-xs text-muted-foreground">סופק: {formatOrderDate(row.deliveryConfirmedAt)}</span>
+                      ) : null}
                     </div>
 
                     <div className={`grid gap-2 ${hasAction ? "grid-cols-2" : "grid-cols-1"}`}>

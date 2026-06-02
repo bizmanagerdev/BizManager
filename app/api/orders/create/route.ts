@@ -29,6 +29,7 @@ type CreateOrderPayload = {
   payment_terms?: string | null;
   due_date?: string | null;
   discount_amount?: number | string;
+  needs_invoice?: boolean | null;
   notes?: string | null;
   payments?: {
     amount_total?: number | string;
@@ -71,6 +72,7 @@ export async function POST(req: Request) {
     const orderDate = typeof body.order_date === "string" ? body.order_date : "";
     const status = typeof body.status === "string" && body.status.trim() ? body.status.trim() : "draft";
     const discountAmount = toNonNegativeInt(body.discount_amount ?? 0);
+    const needsInvoice = typeof body.needs_invoice === "boolean" ? body.needs_invoice : null;
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
     const payments = normalizePaymentEntries(body.payments);
 
@@ -201,7 +203,12 @@ export async function POST(req: Request) {
         : computeDueDate(orderDate, paymentTerms);
     const { error: updateError } = await supabase
       .from("orders")
-      .update({ payment_status: derivedPaymentStatus, payment_terms: paymentTerms, due_date: dueDate })
+      .update({
+        payment_status: derivedPaymentStatus,
+        payment_terms: paymentTerms,
+        due_date: dueDate,
+        needs_invoice: needsInvoice,
+      })
       .eq("id", orderId);
 
     if (updateError) {

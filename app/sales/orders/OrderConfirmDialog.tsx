@@ -148,6 +148,7 @@ export default function OrderConfirmDialog({
   const [refundReferenceNumber, setRefundReferenceNumber] = useState("");
   const [refundNotes, setRefundNotes] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
+  const [deliveryDate, setDeliveryDate] = useState(getTodayDate());
   const [deliveryImages, setDeliveryImages] = useState<File[]>([]);
 
   useEffect(() => {
@@ -192,6 +193,7 @@ export default function OrderConfirmDialog({
     setRefundReferenceNumber("");
     setRefundNotes("");
     setDeliveryNotes(data.initialOrder.notes ?? "");
+    setDeliveryDate(getTodayDate());
     setDeliveryImages([]);
     setError(null);
   }, [data]);
@@ -282,6 +284,7 @@ export default function OrderConfirmDialog({
         order_date: data.initialOrder.order_date,
         status: finalStatus,
         payment_status: finalPaymentStatus,
+        delivery_date: deliveryDate || getTodayDate(),
         discount_amount: data.initialOrder.discount_amount,
         notes: deliveryNotes.trim(),
         items: lines.map((line) => ({
@@ -583,6 +586,12 @@ export default function OrderConfirmDialog({
 
               <Section step="3" title="הוכחת אספקה" description="צרף תמונות ועדכן הערות מסירה.">
                 <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">תאריך אספקה</label>
+                    <DateInput value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+                    <p className="text-xs text-muted-foreground">התאריך שבו אושרה האספקה בפועל.</p>
+                  </div>
+
                   <div className="space-y-1">
                     <label className="text-sm font-medium">העלאת תמונה</label>
                     <FileUploadActions

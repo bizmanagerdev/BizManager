@@ -71,6 +71,7 @@ type InitialOrder = {
   payment_terms?: string | null;
   due_date?: string | null;
   discount_amount: number;
+  needs_invoice?: boolean | null;
   notes: string;
   items: OrderLine[];
 };
@@ -255,6 +256,7 @@ export default function NewOrderClient({
       ""
   );
   const [orderDiscount, setOrderDiscount] = useState(String(initialOrder?.discount_amount ?? 0));
+  const [needsInvoice, setNeedsInvoice] = useState<boolean | null>(initialOrder?.needs_invoice ?? null);
   const [notes, setNotes] = useState(initialOrder?.notes ?? "");
 
   // When the term or order date changes, refresh the suggested due date (still editable).
@@ -679,6 +681,10 @@ export default function NewOrderClient({
       setSubmitError("יש להוסיף לפחות מוצר אחד.");
       return;
     }
+    if (!isEditMode && needsInvoice === null) {
+      setSubmitError("יש לבחור האם ההזמנה צריכה חשבונית.");
+      return;
+    }
 
     const invalidLine = lines.find(
       (line) =>
@@ -735,6 +741,7 @@ export default function NewOrderClient({
           payment_terms: paymentTerms,
           due_date: dueDate || null,
           discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
+          needs_invoice: needsInvoice,
           notes: notes.trim() || null,
           payments: newPayments.map((payment) => ({
             amount_total: Number(payment.amount_total || 0),
@@ -1244,6 +1251,39 @@ export default function NewOrderClient({
                     onChange={(e) => setOrderDiscount(String(toNonNegativeInt(Number(e.target.value || 0))))}
                     placeholder="הזן סכום הנחה"
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">חשבונית *</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={actionLocked}
+                      onClick={() => setNeedsInvoice(true)}
+                      className={`h-10 flex-1 rounded-md border px-3 text-sm transition-colors disabled:opacity-50 ${
+                        needsInvoice === true
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-input bg-background hover:bg-muted/40"
+                      }`}
+                    >
+                      צריך חשבונית
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actionLocked}
+                      onClick={() => setNeedsInvoice(false)}
+                      className={`h-10 flex-1 rounded-md border px-3 text-sm transition-colors disabled:opacity-50 ${
+                        needsInvoice === false
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-input bg-background hover:bg-muted/40"
+                      }`}
+                    >
+                      לא צריך חשבונית
+                    </button>
+                  </div>
+                  {!isEditMode && needsInvoice === null ? (
+                    <p className="text-xs text-muted-foreground">בחר/י אם ההזמנה צריכה חשבונית.</p>
+                  ) : null}
                 </div>
 
                 <div className="space-y-0.5">

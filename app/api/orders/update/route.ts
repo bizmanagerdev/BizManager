@@ -33,6 +33,7 @@ type UpdateOrderPayload = {
   payment_status?: string;
   payment_terms?: string | null;
   due_date?: string | null;
+  delivery_date?: string | null;
   discount_amount?: number | string;
   notes?: string | null;
   payments?: {
@@ -367,9 +368,18 @@ export async function POST(req: Request) {
       typeof body.due_date === "string" && body.due_date.trim()
         ? body.due_date.trim()
         : computeDueDate(orderDate, paymentTerms);
+    // The delivery-confirmation date is only sent by the "אישור אספקה" flow.
+    const orderUpdate: Record<string, unknown> = {
+      payment_status: derivedPaymentStatus,
+      payment_terms: paymentTerms,
+      due_date: dueDate,
+    };
+    if (typeof body.delivery_date === "string" && body.delivery_date.trim()) {
+      orderUpdate.delivery_confirmed_at = body.delivery_date.trim();
+    }
     const { error: updateError } = await supabase
       .from("orders")
-      .update({ payment_status: derivedPaymentStatus, payment_terms: paymentTerms, due_date: dueDate })
+      .update(orderUpdate)
       .eq("id", orderId);
 
     if (updateError) {

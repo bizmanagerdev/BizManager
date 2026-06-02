@@ -9,6 +9,7 @@ import DeleteOrderButton from "@/app/sales/orders/[id]/DeleteOrderButton";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
+import OrderInvoicePanel from "@/app/sales/orders/[id]/OrderInvoicePanel";
 import { OrderPaymentActionsClient } from "@/app/sales/orders/OrderPaymentActionsClient";
 import type { PaymentItem } from "@/app/sales/orders/OrderPaymentActionsClient";
 import { derivePaymentStatus, splitPaymentAmounts, orderCollectionStatusLabel, collectionStatusClasses, paymentMethodLabel } from "@/lib/orders/paymentStatus";
@@ -140,7 +141,7 @@ export default async function SalesOrderPage({
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes")
+      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -320,6 +321,10 @@ export default async function SalesOrderPage({
   const customerCity = extractCityFromAddress(fullAddress) ?? "-";
   const orderNotes = getString((order as Row) ?? {}, "notes");
   const orderDate = getString((order as Row) ?? {}, "order_date");
+  const orderNeedsInvoice =
+    typeof (order as Row)?.needs_invoice === "boolean" ? ((order as Row).needs_invoice as boolean) : null;
+  const orderInvoiceSentAt = getString((order as Row) ?? {}, "invoice_sent_at");
+  const orderDeliveryConfirmedAt = getString((order as Row) ?? {}, "delivery_confirmed_at");
   const normalizedStatus = normalizeOrderStatus(getString((order as Row) ?? {}, "status"));
 
   const subtotal = ((orderItems ?? []) as Row[]).reduce((sum, item) => {
@@ -542,6 +547,13 @@ export default async function SalesOrderPage({
                 </div>
               </div>
             </div>
+
+            <OrderInvoicePanel
+              orderId={id}
+              needsInvoice={orderNeedsInvoice}
+              invoiceSentAt={orderInvoiceSentAt}
+              deliveryConfirmedAt={orderDeliveryConfirmedAt}
+            />
 
             {false ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">

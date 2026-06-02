@@ -104,7 +104,7 @@ function buildSalesHref(
   customerId: string | null,
   customerName: string | null,
   customerPage: string | null,
-  extras?: { q?: string; category?: string; paymentStatus?: string; region?: string }
+  extras?: { q?: string; category?: string; paymentStatus?: string; region?: string; invoice?: string }
 ) {
   const params = new URLSearchParams();
   if (activeTab !== "orders") params.set("tab", activeTab);
@@ -116,6 +116,7 @@ function buildSalesHref(
   if (extras?.category && extras.category.trim()) params.set("category", extras.category.trim());
   if (extras?.paymentStatus && extras.paymentStatus.trim()) params.set("payment_status", extras.paymentStatus.trim());
   if (extras?.region && extras.region.trim()) params.set("region", extras.region.trim());
+  if (extras?.invoice && extras.invoice.trim()) params.set("invoice", extras.invoice.trim());
   const query = params.toString();
   return query ? `/sales?${query}` : "/sales";
 }
@@ -284,6 +285,7 @@ export default async function SalesPage({
     category?: string;
     payment_status?: string;
     region?: string;
+    invoice?: string;
   }>;
 }) {
   const params = (await searchParams) ?? {};
@@ -295,6 +297,14 @@ export default async function SalesPage({
     rawPaymentStatusFilter === "partial" ||
     rawPaymentStatusFilter === "unpaid"
       ? rawPaymentStatusFilter
+      : "";
+  const rawInvoiceFilter = typeof params.invoice === "string" ? params.invoice.trim() : "";
+  const invoiceFilter =
+    rawInvoiceFilter === "needs" ||
+    rawInvoiceFilter === "no" ||
+    rawInvoiceFilter === "pending" ||
+    rawInvoiceFilter === "sent"
+      ? rawInvoiceFilter
       : "";
   const customerId =
     typeof params.customer_id === "string" && params.customer_id.trim()
@@ -383,7 +393,7 @@ export default async function SalesPage({
             supabase
               .from("order_overview_view")
               .select(
-                "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,pending_amount,overdue_amount,payment_count",
+                "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,pending_amount,overdue_amount,payment_count,needs_invoice,invoice_sent_at,delivery_confirmed_at",
                 { count: "estimated" }
               )
               .order("order_date", { ascending: false })
@@ -391,12 +401,21 @@ export default async function SalesPage({
         : supabase
             .from("order_overview_view")
             .select(
-              "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,pending_amount,overdue_amount,payment_count",
+              "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,pending_amount,overdue_amount,payment_count,needs_invoice,invoice_sent_at,delivery_confirmed_at",
               { count: "estimated" }
             )
             .order("order_date", { ascending: false });
 
     if (customerId) ordersQuery = ordersQuery.eq("customer_id", customerId);
+    if (invoiceFilter === "needs") {
+      ordersQuery = ordersQuery.eq("needs_invoice", true);
+    } else if (invoiceFilter === "no") {
+      ordersQuery = ordersQuery.eq("needs_invoice", false);
+    } else if (invoiceFilter === "pending") {
+      ordersQuery = ordersQuery.eq("needs_invoice", true).is("invoice_sent_at", null);
+    } else if (invoiceFilter === "sent") {
+      ordersQuery = ordersQuery.not("invoice_sent_at", "is", null);
+    }
     if (activeTab === "closed") {
       ordersQuery = ordersQuery.in("status", CLOSED_ORDER_STATUSES);
       if (paymentStatusFilter === "paid") {
@@ -459,7 +478,7 @@ export default async function SalesPage({
           <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error.message}</p>
         ) : (
           <>
-            <SalesOrdersClient orders={ordersWithDue} contacts={(orderContacts ?? []) as Row[]} initialQuery={searchQuery} showPaymentStatusFilter={activeTab === "closed"} initialPaymentFilter={paymentStatusFilter} totalCount={totalCount} />
+            <SalesOrdersClient orders={ordersWithDue} contacts={(orderContacts ?? []) as Row[]} initialQuery={searchQuery} showPaymentStatusFilter={activeTab === "closed"} initialPaymentFilter={paymentStatusFilter} initialInvoiceFilter={invoiceFilter} totalCount={totalCount} />
             <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
               <div className="text-muted-foreground">
                 עמוד {ordersPage} • מציגים {rows.length} מתוך {totalCount}
@@ -475,7 +494,7 @@ export default async function SalesPage({
                         customerId,
                         customerName,
                         customerPage,
-                        { q: searchQuery, paymentStatus: paymentStatusFilter }
+                        { q: searchQuery, paymentStatus: paymentStatusFilter, invoice: invoiceFilter }
                       )}
                     >
                       הקודם
@@ -496,7 +515,7 @@ export default async function SalesPage({
                         customerId,
                         customerName,
                         customerPage,
-                        { q: searchQuery, paymentStatus: paymentStatusFilter }
+                        { q: searchQuery, paymentStatus: paymentStatusFilter, invoice: invoiceFilter }
                       )}
                     >
                       הבא
