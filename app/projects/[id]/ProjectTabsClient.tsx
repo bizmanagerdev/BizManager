@@ -918,10 +918,6 @@ export default function ProjectTabsClient({
   );
   const billedExpensesTotal = billedExpensesFromDb ?? 0;
   const displayedBasePrice = agreedBasePriceUi ?? agreedBasePrice;
-  const displayedCustomerPrice =
-    displayedBasePrice === null
-      ? customerTotalPrice
-      : displayedBasePrice + (billedExpensesTotal ?? 0);
   // Collection split: "שולם" reflects COLLECTED money only; pending (future-dated)
   // payments are expected, not paid — so the status can read תשלום צפוי / באיחור.
   const paymentSplit = splitPaymentAmounts(
@@ -932,6 +928,19 @@ export default function ProjectTabsClient({
     }))
   );
   const paymentsTotal = paymentSplit.collected;
+  // Expected price = agreed base + charges billed to the customer.
+  const expectedCustomerPrice =
+    displayedBasePrice === null
+      ? customerTotalPrice
+      : displayedBasePrice + (billedExpensesTotal ?? 0);
+  // מחיר בפועל = the HIGHER of the expected price vs the amount actually received,
+  // so an overpayment shows as the real price (gross profit follows from the view).
+  const displayedCustomerPrice =
+    expectedCustomerPrice === null
+      ? paymentsTotal > 0
+        ? paymentsTotal
+        : null
+      : Math.max(expectedCustomerPrice, paymentsTotal);
   const customerPaymentStatus = deriveCustomerPaymentStatus(displayedCustomerPrice, paymentsTotal);
   const collectionStatus =
     displayedCustomerPrice === null
@@ -1603,7 +1612,15 @@ export default function ProjectTabsClient({
                 </div>
               </div>
             </div>
-            {billedExpensesTotal > 0 ? (
+            {expectedCustomerPrice !== null &&
+            displayedCustomerPrice !== null &&
+            displayedCustomerPrice > expectedCustomerPrice ? (
+              <div className="text-xs text-muted-foreground">
+                <span>מחיר בפועל עודכן לסכום שהתקבל מהלקוח: </span>
+                <LtrInline>{formatIls(displayedCustomerPrice)}</LtrInline>
+                <span>.</span>
+              </div>
+            ) : billedExpensesTotal > 0 ? (
               <div className="text-xs text-muted-foreground">
                 <span>מחיר בפועל מחושב כמחיר הבסיס ועוד </span>
                 <LtrInline>{formatIls(billedExpensesTotal)}</LtrInline>
@@ -2498,7 +2515,7 @@ export default function ProjectTabsClient({
             {updateBasePriceValue.trim() !== "" && Number.isFinite(updateBasePriceNumber) ? (
               <div className="text-xs text-muted-foreground">
                 המחיר בפועל שיוצג לאחר השמירה:{" "}
-                {formatIls(updateBasePriceNumber + (billedExpensesTotal ?? 0))}
+                {formatIls(Math.max(updateBasePriceNumber + (billedExpensesTotal ?? 0), paymentsTotal))}
               </div>
             ) : null}
           </div>

@@ -182,7 +182,14 @@ function profitValue(row: ProjectRow) {
 }
 
 function actualPriceValue(row: ProjectRow) {
-  return getNumber(row, "actual_price") ?? getNumber(row, "agreed_base_price");
+  // customer_total_price from project_financials_view is the effective price:
+  // GREATEST(agreed base + billed add-ons, amount received). Fall back to the raw
+  // project columns only when the view value is missing.
+  return (
+    getNumber(row, "customer_total_price") ??
+    getNumber(row, "actual_price") ??
+    getNumber(row, "agreed_base_price")
+  );
 }
 
 function normalizeProjectsView(value: string | null): ProjectsView {
