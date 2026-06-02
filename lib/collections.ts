@@ -693,6 +693,7 @@ export type PaymentDueToday = {
   amount: number;
   due_date: string | null;
   payment_method: string | null;
+  check_number: string | null;
   customer_id: string | null;
   customer_name: string;
   customer_phone: string | null;
@@ -711,7 +712,7 @@ export async function getPaymentsDueToday(
   const today = todayIso ?? new Date().toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from("payments")
-    .select("id,amount_total,due_date,payment_method,order_id,project_id")
+    .select("id,amount_total,due_date,payment_method,check_number,order_id,project_id")
     .eq("payment_status", "pending")
     .eq("due_date", today);
 
@@ -790,6 +791,7 @@ export async function getPaymentsDueToday(
       amount: toNum(row.amount_total),
       due_date: str(row, "due_date"),
       payment_method: str(row, "payment_method"),
+      check_number: str(row, "check_number"),
       customer_id: customerId,
       customer_name: cust?.name ?? "לקוח",
       customer_phone: cust?.phone ?? null,

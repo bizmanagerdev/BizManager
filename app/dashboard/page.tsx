@@ -7,7 +7,9 @@ import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard"
 import DomainActivityChart from "@/components/charts/DomainActivityChart";
 import { getAlertsData } from "@/lib/alerts";
 import { getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
+import { getOpenReminders, actionTypeLabel, type Reminder } from "@/lib/communications";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { formatShortDate } from "@/lib/date";
 import { getScheduleEntries } from "@/lib/projectSchedule";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { Badge } from "@/components/ui/badge";
@@ -158,25 +160,35 @@ export default async function DashboardPage() {
 
   const isAdminOrOffice = profile.role === "admin" || profile.role === "office";
 
-  const [unpaidBalanceResult, workerOwedResult, openOrdersCountResult, dueTodayResult] = await Promise.all([
-    isAdminOrOffice
-      ? supabase.from("invoices").select("balance_due").in("payment_status", ["unpaid", "partial", "overdue"]).range(0, 499)
-      : Promise.resolve({ data: null, error: null }),
-    profile.role === "admin"
-      ? supabase.from("worker_debt_items_view").select("owed_amount").eq("source_type", "payslip").gt("owed_amount", 0.009).range(0, 999)
-      : Promise.resolve({ data: null, error: null }),
-    supabase
-      .from("order_overview_view")
-      .select("order_id", { count: "estimated", head: true })
-      .not("status", "in", '("completed","delivered","cancelled","canceled","closed","archived","done")'),
-    isAdminOrOffice
-      ? getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[])
-      : Promise.resolve([] as PaymentDueToday[]),
-  ]);
+  const [unpaidBalanceResult, workerOwedResult, openOrdersCountResult, dueTodayResult, remindersResult] =
+    await Promise.all([
+      isAdminOrOffice
+        ? supabase.from("invoices").select("balance_due").in("payment_status", ["unpaid", "partial", "overdue"]).range(0, 499)
+        : Promise.resolve({ data: null, error: null }),
+      profile.role === "admin"
+        ? supabase.from("worker_debt_items_view").select("owed_amount").eq("source_type", "payslip").gt("owed_amount", 0.009).range(0, 999)
+        : Promise.resolve({ data: null, error: null }),
+      supabase
+        .from("order_overview_view")
+        .select("order_id", { count: "estimated", head: true })
+        .not("status", "in", '("completed","delivered","cancelled","canceled","closed","archived","done")'),
+      isAdminOrOffice
+        ? getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[])
+        : Promise.resolve([] as PaymentDueToday[]),
+      isAdminOrOffice
+        ? getOpenReminders(supabase).catch(() => [] as Reminder[])
+        : Promise.resolve([] as Reminder[]),
+    ]);
 
   const dueTodayPayments = dueTodayResult as PaymentDueToday[];
   const dueTodayCount = dueTodayPayments.length;
   const dueTodayTotal = dueTodayPayments.reduce((sum, p) => sum + p.amount, 0);
+
+  // Reminders due now (today or overdue) — "who do I need to call back".
+  const dashboardTodayIso = today.toISOString().slice(0, 10);
+  const dueReminders = (remindersResult as Reminder[])
+    .filter((r) => r.remind_at.slice(0, 10) <= dashboardTodayIso)
+    .slice(0, 8);
 
   const activeProjectsCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "active_projects_count") ?? 0;
@@ -360,7 +372,7 @@ export default async function DashboardPage() {
                   <CardDescription>צ׳קים והעברות שמועד פירעונם היום — לגבייה/הפקדה.</CardDescription>
                 </div>
                 <Button asChild variant="outline" size="sm">
-                  <Link href="/collections">לגבייה</Link>
+                  <Link href="/collections">לפניות</Link>
                 </Button>
               </div>
             </CardHeader>
@@ -372,14 +384,66 @@ export default async function DashboardPage() {
                   className="flex items-center justify-between gap-3 rounded-2xl border p-3 text-sm transition-colors hover:bg-muted/40"
                 >
                   <div className="min-w-0">
-                    <div className="font-medium">{p.customer_name}</div>
+                    <div className="font-medium">
+                      {p.customer_name}
+                      {p.customer_phone ? ` · ${p.customer_phone}` : ""}
+                    </div>
                     <div className="text-xs text-muted-foreground">
-                      {p.payment_method ? paymentMethodLabel(p.payment_method) : "תשלום"}
+                      {p.payment_method === "check"
+                        ? `צ׳ק${p.check_number ? ` מס׳ ${p.check_number}` : ""} — להפקדה`
+                        : p.payment_method
+                          ? paymentMethodLabel(p.payment_method)
+                          : "תשלום"}
                     </div>
                   </div>
                   <div className="font-semibold">{ilsFormatter.format(p.amount)}</div>
                 </Link>
               ))}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {isAdminOrOffice && dueReminders.length > 0 ? (
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg">תזכורות לטיפול</CardTitle>
+                  <CardDescription>אנשים להחזיר אליהם שיחה / לעקוב — היום ובאיחור.</CardDescription>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/collections">לכל התזכורות</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {dueReminders.map((r) => {
+                const overdue = r.remind_at.slice(0, 10) < dashboardTodayIso;
+                return (
+                  <Link
+                    key={r.id}
+                    href="/collections"
+                    className="flex items-center justify-between gap-3 rounded-2xl border p-3 text-sm transition-colors hover:bg-muted/40"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium">
+                        {r.customer_name ?? "כללי"}
+                        {r.customer_phone ? ` · ${r.customer_phone}` : ""}
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {actionTypeLabel(r.action_type)}
+                        {r.content ? ` · ${r.content}` : ""}
+                      </div>
+                    </div>
+                    <div
+                      className={`shrink-0 text-xs ${overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}
+                    >
+                      {overdue ? "באיחור · " : ""}
+                      {formatShortDate(r.remind_at)}
+                    </div>
+                  </Link>
+                );
+              })}
             </CardContent>
           </Card>
         ) : null}

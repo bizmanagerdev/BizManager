@@ -124,7 +124,7 @@ export default function CollectionsClient({
   dueToday,
 }: Props) {
   const router = useRouter();
-  const [view, setView] = useState<View>("debtors");
+  const [view, setView] = useState<View>("activity");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [search, setSearch] = useState("");
   const [domain, setDomain] = useState("all");
@@ -210,27 +210,24 @@ export default function CollectionsClient({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="סה״כ לגבייה" value={formatCurrency(totals.outstanding)} />
-        <SummaryCard label="באיחור" value={formatCurrency(totals.overdue)} tone="danger" />
-        <SummaryCard label="צפוי (טרם נגבה)" value={formatCurrency(totals.pending)} tone="warning" />
-        <SummaryCard label="לקוחות חייבים" value={`${totals.customerCount}`} />
-      </div>
+      {/* להיום — what needs attention today: reminders due + payments to collect now */}
+      <TodayOverview
+        reminders={reminders}
+        dueToday={dueToday}
+        collectingId={collectingId}
+        onCollect={markCollected}
+        onUpdateReminder={updateReminder}
+      />
 
-      {/* Today's due payments — on top, money to collect now */}
-      {dueToday.length > 0 ? (
-        <DueTodaySection dueToday={dueToday} collectingId={collectingId} onCollect={markCollected} />
-      ) : null}
-
-      {/* View switch */}
+      {/* View switch — call history first, then reminders, then debtors */}
       <div className="flex flex-wrap gap-2 border-b border-border/60 pb-2">
         <Button
           type="button"
           size="sm"
-          variant={view === "debtors" ? "default" : "ghost"}
-          onClick={() => setView("debtors")}
+          variant={view === "activity" ? "default" : "ghost"}
+          onClick={() => setView("activity")}
         >
-          חייבים
+          יומן שיחות
         </Button>
         <Button
           type="button"
@@ -248,27 +245,15 @@ export default function CollectionsClient({
         <Button
           type="button"
           size="sm"
-          variant={view === "activity" ? "default" : "ghost"}
-          onClick={() => setView("activity")}
+          variant={view === "debtors" ? "default" : "ghost"}
+          onClick={() => setView("debtors")}
         >
-          יומן שיחות
+          חייבים{totals.customerCount ? ` (${totals.customerCount})` : ""}
         </Button>
       </div>
 
-      {view === "debtors" ? (
-        <DebtorsTable
-          filter={filter}
-          setFilter={setFilter}
-          search={search}
-          setSearch={setSearch}
-          domain={domain}
-          setDomain={setDomain}
-          domainOptions={domainOptions}
-          sort={sort}
-          setSort={setSort}
-          filtered={filtered}
-          onOpenReminders={openReminders}
-        />
+      {view === "activity" ? (
+        <ActivityView logs={recentLogs} onChanged={() => router.refresh()} />
       ) : view === "reminders" ? (
         <RemindersView
           reminders={reminders}
@@ -276,8 +261,102 @@ export default function CollectionsClient({
           focusCustomerId={focusReminderCustomer}
         />
       ) : (
-        <ActivityView logs={recentLogs} onChanged={() => router.refresh()} />
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard label="סה״כ לגבייה" value={formatCurrency(totals.outstanding)} />
+            <SummaryCard label="באיחור" value={formatCurrency(totals.overdue)} tone="danger" />
+            <SummaryCard label="צפוי (טרם נגבה)" value={formatCurrency(totals.pending)} tone="warning" />
+            <SummaryCard label="לקוחות חייבים" value={`${totals.customerCount}`} />
+          </div>
+          <DebtorsTable
+            filter={filter}
+            setFilter={setFilter}
+            search={search}
+            setSearch={setSearch}
+            domain={domain}
+            setDomain={setDomain}
+            domainOptions={domainOptions}
+            sort={sort}
+            setSort={setSort}
+            filtered={filtered}
+            onOpenReminders={openReminders}
+          />
+        </div>
       )}
+    </div>
+  );
+}
+
+// "להיום" — the landing digest: reminders due today/overdue + payments to collect
+// today. Renders nothing on a clear day so the call log (default tab) leads.
+function TodayOverview({
+  reminders,
+  dueToday,
+  collectingId,
+  onCollect,
+  onUpdateReminder,
+}: {
+  reminders: Reminder[];
+  dueToday: PaymentDueToday[];
+  collectingId: string | null;
+  onCollect: (paymentId: string) => void;
+  onUpdateReminder: (id: string, status: "done" | "cancelled") => void;
+}) {
+  const today = todayIso();
+  const dueReminders = reminders.filter((r) => r.remind_at.slice(0, 10) <= today);
+  if (dueReminders.length === 0 && dueToday.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      {dueReminders.length > 0 ? (
+        <div className="rounded-2xl border border-warning/40 bg-warning/5 p-4">
+          <div className="mb-2 text-sm font-semibold">תזכורות להיום ({dueReminders.length})</div>
+          <div className="space-y-2">
+            {dueReminders.map((r) => {
+              const overdue = r.remind_at.slice(0, 10) < today;
+              return (
+                <div
+                  key={r.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-background/60 p-2 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {r.customer_id ? (
+                      <NavLink to={`/customers/${r.customer_id}`} className="font-medium hover:underline">
+                        {r.customer_name ?? "לקוח"}
+                      </NavLink>
+                    ) : (
+                      <span className="font-medium">{r.customer_name ?? "כללי"}</span>
+                    )}
+                    {r.customer_phone ? (
+                      <a href={`tel:${r.customer_phone}`} className="text-muted-foreground hover:underline">
+                        ☎ {r.customer_phone}
+                      </a>
+                    ) : null}
+                    <span className="text-muted-foreground">{actionTypeLabel(r.action_type)}</span>
+                    {r.content ? <span className="text-muted-foreground">· {r.content}</span> : null}
+                    <span className={overdue ? "font-medium text-destructive" : "text-muted-foreground"}>
+                      {overdue ? "באיחור · " : ""}
+                      {formatShortDate(r.remind_at)}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => onUpdateReminder(r.id, "done")}
+                  >
+                    בוצע
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {dueToday.length > 0 ? (
+        <DueTodaySection dueToday={dueToday} collectingId={collectingId} onCollect={onCollect} />
+      ) : null}
     </div>
   );
 }
@@ -329,7 +408,11 @@ function DueTodaySection({
                     {p.source_type === "order" ? "הזמנה" : "פרויקט"}
                   </NavLink>
                 ) : null}
-                {p.payment_method ? (
+                {p.payment_method === "check" ? (
+                  <span className="text-muted-foreground">
+                    צ׳ק{p.check_number ? ` מס׳ ${p.check_number}` : ""} — להפקדה
+                  </span>
+                ) : p.payment_method ? (
                   <span className="text-muted-foreground">{paymentMethodLabel(p.payment_method)}</span>
                 ) : null}
               </div>

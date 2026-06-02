@@ -32,6 +32,7 @@ function writeCachedRole(role: string) {
 }
 import {
   Activity,
+  Banknote,
   Bell,
   Building2,
   FolderKanban,
@@ -39,7 +40,7 @@ import {
   Landmark,
   LayoutDashboard,
   ListTodo,
-  Coins,
+  MessagesSquare,
   Settings,
   ShoppingCart,
   Users,
@@ -59,9 +60,10 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "משימות", url: "/tasks", icon: ListTodo },
   { title: "מכירות", url: "/sales", icon: ShoppingCart },
   { title: "לקוחות", url: "/customers", icon: Users },
-  { title: "גבייה", url: "/collections", icon: Coins },
+  { title: "פניות ומעקב גבייה", url: "/collections", icon: MessagesSquare },
   { title: "ניהול נכסים", url: "/properties", icon: Building2 },
   { title: "פיננסי", url: "/financial", icon: Landmark },
+  { title: "צ׳קים", url: "/checks", icon: Banknote },
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
   { title: "מסמכים", url: "/documents", icon: FolderOpen },
   { title: "פעילות", url: "/activity", icon: Activity },
@@ -73,7 +75,7 @@ const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
   { title: "פרויקטים", url: "/projects", icon: FolderKanban },
   { title: "מכירות", url: "/sales", icon: ShoppingCart },
   { title: "לקוחות", url: "/customers", icon: Users },
-  { title: "גבייה", url: "/collections", icon: Coins },
+  { title: "פניות", url: "/collections", icon: MessagesSquare },
 ];
 
 const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
@@ -81,6 +83,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "משימות", url: "/tasks", icon: ListTodo },
   { title: "ניהול נכסים", url: "/properties", icon: Building2 },
   { title: "פיננסי", url: "/financial", icon: Landmark },
+  { title: "צ׳קים", url: "/checks", icon: Banknote },
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
   { title: "מסמכים", url: "/documents", icon: FolderOpen },
   { title: "פעילות", url: "/activity", icon: Activity },
@@ -88,7 +91,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
 ];
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings"]);
-const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections"]);
+const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/checks"]);
 
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean) {
   return items.filter((item) => {
