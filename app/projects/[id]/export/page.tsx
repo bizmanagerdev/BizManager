@@ -6,7 +6,9 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import ProjectWorkerExportActions from "@/app/projects/[id]/export/ProjectWorkerExportActions";
 
-const DOCUMENTS_BUCKET = "business-documents";
+import { STORAGE_BUCKET } from "@/lib/storage";
+
+const DOCUMENTS_BUCKET = STORAGE_BUCKET;
 
 type UnknownRow = Record<string, unknown>;
 

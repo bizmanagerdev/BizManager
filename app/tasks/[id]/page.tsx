@@ -3,7 +3,9 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 import TaskDetailClient from "@/app/tasks/[id]/TaskDetailClient";
 
-const DOCUMENTS_BUCKET = "business-documents";
+import { STORAGE_BUCKET } from "@/lib/storage";
+
+const DOCUMENTS_BUCKET = STORAGE_BUCKET;
 
 type TaskOverviewRow = {
   task_id: string;

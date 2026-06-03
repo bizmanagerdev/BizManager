@@ -2,7 +2,9 @@
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
-const BUCKET = "business-documents";
+import { STORAGE_BUCKET } from "@/lib/storage";
+
+const BUCKET = STORAGE_BUCKET;
 
 export async function POST(req: Request) {
   try {

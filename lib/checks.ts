@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
+import { STORAGE_BUCKET } from "@/lib/storage";
 
 // Central "check register": every payment recorded as a צ׳ק, surfaced in one
 // searchable place so the office can answer "which check is this / whose is it /
 // when do we deposit it" without drilling into each order or project.
 
-const BUCKET = "business-documents";
+const BUCKET = STORAGE_BUCKET;
 
 export type CheckStatus = "pending" | "cleared" | "bounced";
 

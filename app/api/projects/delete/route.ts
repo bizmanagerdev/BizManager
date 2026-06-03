@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
-const DOCUMENTS_BUCKET = "business-documents";
+import { STORAGE_BUCKET } from "@/lib/storage";
+
+const DOCUMENTS_BUCKET = STORAGE_BUCKET;
 
 type DeleteProjectPayload = {
   id?: string;

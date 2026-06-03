@@ -8,7 +8,9 @@ import DocumentsArchiveClient, {
   type DocumentArchiveItem,
 } from "@/app/documents/DocumentsArchiveClient";
 
-const DOCUMENTS_BUCKET = "business-documents";
+import { STORAGE_BUCKET } from "@/lib/storage";
+
+const DOCUMENTS_BUCKET = STORAGE_BUCKET;
 const MAX_DOCUMENTS = 1000;
 
 type DocumentsSearchParams = {

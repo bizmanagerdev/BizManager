@@ -1,7 +1,8 @@
 ﻿import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { STORAGE_BUCKET } from "@/lib/storage";
 
-const BUCKET = "business-documents";
+const BUCKET = STORAGE_BUCKET;
 const MAX_BYTES = 200 * 1024 * 1024;
 
 function safeExtensionFromFilename(name: string) {

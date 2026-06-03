@@ -10,6 +10,7 @@ import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
 import OrderInvoicePanel from "@/app/sales/orders/[id]/OrderInvoicePanel";
+import { STORAGE_BUCKET } from "@/lib/storage";
 import { OrderPaymentActionsClient } from "@/app/sales/orders/OrderPaymentActionsClient";
 import type { PaymentItem } from "@/app/sales/orders/OrderPaymentActionsClient";
 import { derivePaymentStatus, splitPaymentAmounts, orderCollectionStatusLabel, collectionStatusClasses, paymentMethodLabel } from "@/lib/orders/paymentStatus";
@@ -290,7 +291,7 @@ export default async function SalesOrderPage({
 
       const storageKey = getString(document, "storage_key");
       const { data: signed } = storageKey
-        ? await supabase.storage.from("business-documents").createSignedUrl(storageKey, 60 * 60)
+        ? await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(storageKey, 60 * 60)
         : { data: null };
 
       return {

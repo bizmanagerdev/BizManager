@@ -3,7 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
-const DOCUMENTS_BUCKET = "business-documents";
+import { STORAGE_BUCKET } from "@/lib/storage";
+
+const DOCUMENTS_BUCKET = STORAGE_BUCKET;
 
 async function deleteOrderDirectly(
   supabase: SupabaseClient,

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { STORAGE_BUCKET } from "@/lib/storage";
 import StatementDetailClient, { type StatementRowView } from "./StatementDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -78,7 +79,7 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
   let fileUrl: string | null = null;
   if (typeof statement.storage_key === "string" && statement.storage_key) {
     const { data: signed } = await supabase.storage
-      .from("business-documents")
+      .from(STORAGE_BUCKET)
       .createSignedUrl(statement.storage_key, 60 * 60);
     fileUrl = signed?.signedUrl ?? null;
   }

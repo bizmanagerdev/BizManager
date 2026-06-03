@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { STORAGE_BUCKET } from "@/lib/storage";
 
 type Row = Record<string, unknown>;
 
@@ -207,7 +208,7 @@ export async function GET(
 
       const storageKey = getString(row, ["storage_key"]);
       const { data: signed } = storageKey
-        ? await supabase.storage.from("business-documents").createSignedUrl(storageKey, 60 * 60)
+        ? await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(storageKey, 60 * 60)
         : { data: null };
 
       return {

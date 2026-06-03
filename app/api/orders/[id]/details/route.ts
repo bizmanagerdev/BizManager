@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import { derivePaymentStatus } from "@/lib/orders/paymentStatus";
+import { STORAGE_BUCKET } from "@/lib/storage";
 
 type Row = Record<string, unknown>;
-const BUCKET = "business-documents";
+const BUCKET = STORAGE_BUCKET;
 
 function getString(row: Row | null | undefined, key: string) {
   const value = row?.[key];

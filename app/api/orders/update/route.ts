@@ -13,8 +13,9 @@ import {
   tryAutoIssueReceiptForPayment,
 } from "@/lib/morning/service";
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
+import { STORAGE_BUCKET } from "@/lib/storage";
 
-const BUCKET = "business-documents";
+const BUCKET = STORAGE_BUCKET;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 type OrderItemPayload = {

@@ -24,13 +24,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatShortDate } from "@/lib/date";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
+import { STORAGE_BUCKET } from "@/lib/storage";
 
 const ProjectTabsClient = dynamic(() => import("@/app/projects/[id]/ProjectTabsClient"), {
   // No skeleton — the top navigation progress bar covers loading feedback.
   loading: () => null,
 });
 
-const DOCUMENTS_BUCKET = "business-documents";
+const DOCUMENTS_BUCKET = STORAGE_BUCKET;
 
 type UnknownRow = Record<string, unknown>;
 
