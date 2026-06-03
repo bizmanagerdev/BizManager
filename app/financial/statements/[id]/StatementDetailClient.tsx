@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
 
 type Option = { id: string; name: string };
@@ -157,8 +160,6 @@ export default function StatementDetailClient({
         </div>
       </div>
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-auto">
@@ -170,15 +171,19 @@ export default function StatementDetailClient({
                   <th className="px-3 py-2 font-medium">סכום</th>
                   <th className="px-3 py-2 font-medium">קטגוריה</th>
                   <th className="px-3 py-2 font-medium">תחום עסקי</th>
-                  <th className="px-3 py-2 font-medium">שיוך</th>
+                  <th className="px-3 py-2 font-medium">פירוט</th>
                   <th className="px-3 py-2 font-medium"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {rows.map((row) => {
-                  const isEditing = editingId === row.id;
+                  const editable = row.expenseExists;
                   return (
-                    <tr key={row.id} className={isEditing ? "bg-muted/40 align-top" : "align-top"}>
+                    <tr
+                      key={row.id}
+                      onClick={editable ? () => startEdit(row) : undefined}
+                      className={`align-top ${editable ? "cursor-pointer hover:bg-muted/40" : ""}`.trim()}
+                    >
                       <td className="whitespace-nowrap px-3 py-2">{formatIsoDisplay(row.expenseDate)}</td>
                       <td className="px-3 py-2">{row.description || "—"}</td>
                       <td className="whitespace-nowrap px-3 py-2 font-medium">{formatCurrency(row.amount)}</td>
@@ -192,10 +197,8 @@ export default function StatementDetailClient({
                           <span className="rounded bg-warning-soft px-1.5 py-0.5 text-xs text-warning-soft-foreground">
                             נמחקה
                           </span>
-                        ) : isEditing ? null : (
-                          <Button variant="outline" size="sm" onClick={() => startEdit(row)}>
-                            עריכה
-                          </Button>
+                        ) : (
+                          <Pencil className="inline h-4 w-4 text-muted-foreground" aria-label="עריכה" />
                         )}
                       </td>
                     </tr>
@@ -207,12 +210,16 @@ export default function StatementDetailClient({
         </CardContent>
       </Card>
 
-      {/* Inline editor */}
-      {editingId && draft ? (
-        <Card>
-          <CardContent className="space-y-3 py-4">
-            <div className="text-sm font-medium">עריכת שורה</div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Edit dialog */}
+      <Dialog open={editingId !== null} onOpenChange={(open) => { if (!open && !saving) cancelEdit(); }}>
+        <AdaptiveDialog size="formLg">
+          <DialogHeader>
+            <DialogTitle>עריכת שורה</DialogTitle>
+            <DialogDescription>העדכון יישמר בהוצאה המקושרת.</DialogDescription>
+          </DialogHeader>
+          {draft ? (
+            <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field label="בית עסק">
                 <Input value={draft.description} onChange={(e) => patchDraft({ description: e.target.value })} className="h-9" />
               </Field>
@@ -293,6 +300,7 @@ export default function StatementDetailClient({
                 <Input value={draft.notes} onChange={(e) => patchDraft({ notes: e.target.value })} className="h-9" />
               </Field>
             </div>
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex gap-2">
               <Button onClick={() => void save()} disabled={saving}>
                 {saving ? "שומר..." : "שמירה"}
@@ -301,9 +309,10 @@ export default function StatementDetailClient({
                 ביטול
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      ) : null}
+            </div>
+          ) : null}
+        </AdaptiveDialog>
+      </Dialog>
     </div>
   );
 }

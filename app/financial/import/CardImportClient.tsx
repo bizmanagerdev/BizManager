@@ -101,7 +101,9 @@ type Assignment = { include?: boolean; businessDomain?: string; projectId?: stri
 function mapAssignment(value: string, projects: Option[], properties: Option[]): Assignment {
   const v = norm(value);
   if (!v) return {};
-  if (v.includes("לא לתעד") || v === "ללא תיעוד" || v === "אל תתעד" || v === "לא") return { include: false };
+  // "Don't document" markers — including a plain X — leave the row unchecked.
+  if (v.includes("לא לתעד") || v === "ללא תיעוד" || v === "אל תתעד" || v === "לא" || v.toLowerCase() === "x" || v === "✗" || v === "✖")
+    return { include: false };
   if (v === "בית") return { businessDomain: "home" };
   if (v === "צדקה") return { businessDomain: "charity" };
   if (v === "שוטף" || v === "כללי" || v === "עסקי" || v === "כללי עסקי") return { businessDomain: "general_business" };
