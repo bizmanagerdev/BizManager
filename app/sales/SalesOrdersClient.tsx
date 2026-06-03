@@ -226,21 +226,19 @@ function InvoiceQuickMenu({ row }: { row: OrderView }) {
   }
 
   return (
-    <DropdownMenu>
+    <div className="space-y-1">
+      <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           disabled={busy}
-          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${badge.className} disabled:opacity-50`}
+          className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-medium ${badge.className} disabled:opacity-50`}
         >
           <span>{badge.label}</span>
-          {state === "needs_sent" && row.invoiceSentAt ? (
-            <span className="opacity-80">· {formatOrderDate(row.invoiceSentAt)}</span>
-          ) : null}
-          <ChevronDown className="h-3 w-3" />
+          <ChevronDown className="h-3 w-3 shrink-0" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onSelect={() => void apply({ needs_invoice: true })}>צריך חשבונית</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void apply({ needs_invoice: false })}>לא צריך חשבונית</DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -251,7 +249,11 @@ function InvoiceQuickMenu({ row }: { row: OrderView }) {
           בטל סימון הנפקה
         </DropdownMenuItem>
       </DropdownMenuContent>
-    </DropdownMenu>
+      </DropdownMenu>
+      {state === "needs_sent" && row.invoiceSentAt ? (
+        <div className="text-[11px] text-muted-foreground">{formatOrderDate(row.invoiceSentAt)}</div>
+      ) : null}
+    </div>
   );
 }
 
@@ -568,9 +570,6 @@ export default function SalesOrdersClient({
                         <div>
                           <div>{row.customerCity ?? "-"}</div>
                           <div className="mt-1 text-xs text-muted-foreground">{formatOrderDate(row.orderDate)}</div>
-                          {row.dueDate ? (
-                            <div className="text-xs text-muted-foreground">פירעון: {formatOrderDate(row.dueDate)}</div>
-                          ) : null}
                           {row.deliveryConfirmedAt ? (
                             <div className="text-xs text-muted-foreground">סופק: {formatOrderDate(row.deliveryConfirmedAt)}</div>
                           ) : null}
@@ -579,7 +578,7 @@ export default function SalesOrdersClient({
                       <td className="px-4 py-4">
                         <StatusBadge value={row.status} type="order" className={orderStatusBadgeClasses(row.status)} />
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
                         <InvoiceQuickMenu row={row} />
                       </td>
                       <td className="px-4 py-4">
@@ -645,10 +644,6 @@ export default function SalesOrdersClient({
                       <div className="flex items-baseline gap-1">
                         <span className="text-muted-foreground">תאריך:</span>
                         <span className="font-medium">{formatOrderDate(row.orderDate)}</span>
-                      </div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-muted-foreground">פירעון:</span>
-                        <span className="font-medium">{row.dueDate ? formatOrderDate(row.dueDate) : "-"}</span>
                       </div>
                       <div className="flex items-baseline gap-1">
                         <span className="text-muted-foreground">סכום:</span>

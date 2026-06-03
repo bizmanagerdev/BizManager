@@ -1229,6 +1229,41 @@ export default function NewOrderClient({
               <ValueField label="סכום סופי" value={formatCurrency(totalAmount)} valueClassName="text-base font-semibold" />
             </div>
 
+            <div className="space-y-2 rounded-md border p-3">
+              <label className="text-sm font-medium">
+                חשבונית <span className="text-destructive">*</span>
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={actionLocked}
+                  onClick={() => setNeedsInvoice(true)}
+                  className={`h-10 flex-1 rounded-md border px-3 text-sm transition-colors disabled:opacity-50 ${
+                    needsInvoice === true
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input bg-background hover:bg-muted/40"
+                  }`}
+                >
+                  צריך חשבונית
+                </button>
+                <button
+                  type="button"
+                  disabled={actionLocked}
+                  onClick={() => setNeedsInvoice(false)}
+                  className={`h-10 flex-1 rounded-md border px-3 text-sm transition-colors disabled:opacity-50 ${
+                    needsInvoice === false
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input bg-background hover:bg-muted/40"
+                  }`}
+                >
+                  לא צריך חשבונית
+                </button>
+              </div>
+              {needsInvoice === null ? (
+                <p className="text-xs text-muted-foreground">חובה לבחור אם ההזמנה צריכה חשבונית.</p>
+              ) : null}
+            </div>
+
             <details className="rounded-md border border-dashed p-3" open={Boolean(effectiveOrderDiscount || notes)}>
               <summary className="cursor-pointer text-sm font-medium">פרטים נוספים להזמנה</summary>
               <div className="mt-3 space-y-2.5">
@@ -1251,39 +1286,6 @@ export default function NewOrderClient({
                     onChange={(e) => setOrderDiscount(String(toNonNegativeInt(Number(e.target.value || 0))))}
                     placeholder="הזן סכום הנחה"
                   />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">חשבונית *</label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      disabled={actionLocked}
-                      onClick={() => setNeedsInvoice(true)}
-                      className={`h-10 flex-1 rounded-md border px-3 text-sm transition-colors disabled:opacity-50 ${
-                        needsInvoice === true
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-input bg-background hover:bg-muted/40"
-                      }`}
-                    >
-                      צריך חשבונית
-                    </button>
-                    <button
-                      type="button"
-                      disabled={actionLocked}
-                      onClick={() => setNeedsInvoice(false)}
-                      className={`h-10 flex-1 rounded-md border px-3 text-sm transition-colors disabled:opacity-50 ${
-                        needsInvoice === false
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-input bg-background hover:bg-muted/40"
-                      }`}
-                    >
-                      לא צריך חשבונית
-                    </button>
-                  </div>
-                  {!isEditMode && needsInvoice === null ? (
-                    <p className="text-xs text-muted-foreground">בחר/י אם ההזמנה צריכה חשבונית.</p>
-                  ) : null}
                 </div>
 
                 <div className="space-y-0.5">

@@ -5,8 +5,11 @@ type Payload = {
   order_id?: string;
   // null clears the choice (undecided); boolean sets it.
   needs_invoice?: boolean | null;
-  // true → stamp invoice_sent_at = now(); false → clear it.
+  // Quick toggle: true → stamp invoice_sent_at = now(); false → clear it.
   invoice_sent?: boolean;
+  // Explicit issued date (allows backdating). Takes precedence over invoice_sent.
+  // ISO date string, or null to clear.
+  invoice_sent_at?: string | null;
   // ISO date string, or null to clear.
   delivery_confirmed_at?: string | null;
 };
@@ -23,7 +26,10 @@ export async function POST(req: Request) {
     if ("needs_invoice" in body) {
       update.needs_invoice = typeof body.needs_invoice === "boolean" ? body.needs_invoice : null;
     }
-    if ("invoice_sent" in body) {
+    if ("invoice_sent_at" in body) {
+      const value = body.invoice_sent_at;
+      update.invoice_sent_at = typeof value === "string" && value.trim() ? value.trim() : null;
+    } else if ("invoice_sent" in body) {
       update.invoice_sent_at = body.invoice_sent ? new Date().toISOString() : null;
     }
     if ("delivery_confirmed_at" in body) {
