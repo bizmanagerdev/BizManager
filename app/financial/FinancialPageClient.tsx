@@ -3,7 +3,7 @@
 import DomainBarChart from "@/components/charts/DomainBarChart";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { CalendarDays, Landmark, Loader2, Pencil, Search, TimerReset, Trash2 } from "lucide-react";
@@ -357,13 +357,115 @@ export default function FinancialPageClient({
   const domainGroups = data.domainGroups;
   const upcomingEntries = data.upcomingEntries;
   const ledgerEntries = data.ledgerEntries;
-  const filteredEntries = { length: data.ledgerTotalCount };
   const pagedUpcomingEntries = upcomingEntries;
-  const pagedLedgerEntries = ledgerEntries;
   const currentUpcomingPage = data.upcomingPage;
   const upcomingTotalPages = data.upcomingTotalPages;
-  const currentLedgerPage = data.ledgerPage;
-  const ledgerTotalPages = data.ledgerTotalPages;
+
+  // ── Ledger-only client controls (instant, no route reload) ──────────────────
+  const [ledgerVisible, setLedgerVisible] = useState(60);
+  const [ledgerSearch, setLedgerSearch] = useState("");
+  const [ledgerMonth, setLedgerMonth] = useState("");
+  const [ledgerSort, setLedgerSort] = useState<{ key: "date" | "amount" | "domain"; dir: "asc" | "desc" }>({
+    key: "date",
+    dir: "desc",
+  });
+  const ledgerScrollRef = useRef<HTMLDivElement>(null);
+  const ledgerSentinelRef = useRef<HTMLDivElement>(null);
+  const ledgerMobileSentinelRef = useRef<HTMLDivElement>(null);
+
+  const ledgerMonths = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of ledgerEntries) {
+      const m = (e.flowDate ?? "").slice(0, 7);
+      if (m) set.add(m);
+    }
+    return Array.from(set).sort().reverse();
+  }, [ledgerEntries]);
+
+  const displayLedger = useMemo(() => {
+    const q = ledgerSearch.trim().toLowerCase();
+    let list = ledgerEntries;
+    if (ledgerMonth) list = list.filter((e) => (e.flowDate ?? "").slice(0, 7) === ledgerMonth);
+    if (q) {
+      list = list.filter((e) =>
+        [e.description, e.domainName, e.sourceLabel, e.reference, e.recordedByName].some(
+          (v) => typeof v === "string" && v.toLowerCase().includes(q)
+        )
+      );
+    }
+    const { key, dir } = ledgerSort;
+    const sorted = [...list].sort((a, b) => {
+      let cmp = 0;
+      if (key === "amount") cmp = a.amount - b.amount;
+      else if (key === "domain") cmp = (a.domainName ?? "").localeCompare(b.domainName ?? "", "he");
+      else cmp = (a.flowDate ?? "").localeCompare(b.flowDate ?? "");
+      if (cmp === 0) cmp = a.id.localeCompare(b.id);
+      return dir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [ledgerEntries, ledgerSearch, ledgerMonth, ledgerSort]);
+
+  const filteredEntries = { length: displayLedger.length };
+  const pagedLedgerEntries = displayLedger.slice(0, ledgerVisible);
+  const ledgerHasMore = pagedLedgerEntries.length < displayLedger.length;
+
+  const toggleLedgerSort = (key: "date" | "amount" | "domain") => {
+    setLedgerVisible(60);
+    setLedgerSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "domain" ? "asc" : "desc" }
+    );
+  };
+  const sortArrow = (key: "date" | "amount" | "domain") =>
+    ledgerSort.key === key ? (ledgerSort.dir === "asc" ? " ▲" : " ▼") : "";
+
+  function exportLedgerCsv() {
+    const csvCell = (v: unknown) => {
+      const s = String(v ?? "");
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const headers = ["תאריך תזרים", "סוג", "סטטוס", "תחום", "מקור", "פירוט", "סכום"];
+    const lines = displayLedger.map((e) => [
+      e.flowDate ?? "",
+      typeLabel(e.type),
+      stageLabel(e.stage),
+      e.domainName ?? "",
+      e.sourceLabel ?? "",
+      e.description ?? "",
+      `${e.type === "inflow" ? "" : "-"}${e.amount}`,
+    ]);
+    const csv = [headers, ...lines].map((row) => row.map(csvCell).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cashflow-ledger-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Infinite scroll: reveal more of the (filtered) ledger as the bottom sentinel
+  // comes into view — no page navigation, so the page never re-loads.
+  useEffect(() => {
+    if (ledgerVisible >= displayLedger.length) return;
+    const loadMore = () => setLedgerVisible((v) => Math.min(v + 60, displayLedger.length));
+    const observers: IntersectionObserver[] = [];
+    const observe = (target: Element | null, root: Element | null) => {
+      if (!target) return;
+      const io = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) loadMore();
+        },
+        { root, rootMargin: "400px" }
+      );
+      io.observe(target);
+      observers.push(io);
+    };
+    observe(ledgerSentinelRef.current, ledgerScrollRef.current);
+    observe(ledgerMobileSentinelRef.current, null);
+    return () => observers.forEach((io) => io.disconnect());
+  }, [ledgerVisible, displayLedger]);
 
   const replaceSearch = (
     mutate: (params: URLSearchParams) => void,
@@ -439,7 +541,6 @@ export default function FinancialPageClient({
   const upcomingCount = data.upcomingTotalCount;
   const sourceCount = data.sourceCount;
   const setUpcomingPage = (page: number) => replaceFilters({ upcomingPage: page });
-  const setLedgerPage = (page: number) => replaceFilters({ ledgerPage: page });
   const [editingExpense, setEditingExpense] = useState<EditableExpenseEntry | null>(null);
   const [deletingExpense, setDeletingExpense] = useState<EditableExpenseEntry | null>(null);
   const [isDeletingExpense, setIsDeletingExpense] = useState(false);
@@ -1097,6 +1198,50 @@ export default function FinancialPageClient({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[12rem] flex-1">
+              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={ledgerSearch}
+                onChange={(e) => {
+                  setLedgerVisible(60);
+                  setLedgerSearch(e.target.value);
+                }}
+                placeholder="חיפוש ביומן (פירוט, מקור, תחום)"
+                className="h-9 pr-9"
+              />
+            </div>
+            <select
+              value={ledgerMonth}
+              onChange={(e) => {
+                setLedgerVisible(60);
+                setLedgerMonth(e.target.value);
+              }}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">כל החודשים</option>
+              {ledgerMonths.map((m) => (
+                <option key={m} value={m}>{`${m.slice(5)}/${m.slice(0, 4)}`}</option>
+              ))}
+            </select>
+            {ledgerSearch || ledgerMonth ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setLedgerVisible(60);
+                  setLedgerSearch("");
+                  setLedgerMonth("");
+                }}
+              >
+                ניקוי
+              </Button>
+            ) : null}
+            <Button type="button" variant="outline" size="sm" onClick={exportLedgerCsv} disabled={displayLedger.length === 0}>
+              ייצוא ל-CSV
+            </Button>
+          </div>
           {filteredEntries.length === 0 ? (
             <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
               לא נמצאו תנועות עבור הסינון שנבחר.
@@ -1215,16 +1360,28 @@ export default function FinancialPageClient({
                 })}
               </div>
 
-              <div className="hidden max-h-[70vh] overflow-auto md:block">
+              <div ref={ledgerScrollRef} className="hidden max-h-[70vh] overflow-auto md:block">
                 <table className="w-full text-right text-sm">
                   <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
                     <tr className="border-b">
-                      <th className="px-3 py-2 font-medium">תאריך תזרים</th>
+                      <th className="px-3 py-2 font-medium">
+                        <button type="button" onClick={() => toggleLedgerSort("date")} className="inline-flex items-center hover:text-foreground">
+                          תאריך תזרים{sortArrow("date")}
+                        </button>
+                      </th>
                       <th className="px-3 py-2 font-medium">סטטוס</th>
                       <th className="px-3 py-2 font-medium">סוג</th>
-                      <th className="px-3 py-2 font-medium">תחום / מקור</th>
+                      <th className="px-3 py-2 font-medium">
+                        <button type="button" onClick={() => toggleLedgerSort("domain")} className="inline-flex items-center hover:text-foreground">
+                          תחום / מקור{sortArrow("domain")}
+                        </button>
+                      </th>
                       <th className="px-3 py-2 font-medium">פירוט</th>
-                      <th className="px-3 py-2 font-medium">סכום</th>
+                      <th className="px-3 py-2 font-medium">
+                        <button type="button" onClick={() => toggleLedgerSort("amount")} className="inline-flex items-center hover:text-foreground">
+                          סכום{sortArrow("amount")}
+                        </button>
+                      </th>
                       {canManageExpenses ? <th className="px-3 py-2 font-medium">פעולות</th> : null}
                     </tr>
                   </thead>
@@ -1240,17 +1397,17 @@ export default function FinancialPageClient({
                         )}
                         onClick={() => navigateToEntry(entry)}
                       >
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-2 align-top">
                           <div dir="ltr" className="tabular-nums">{formatShortDate(entry.flowDate)}</div>
                           <div className="text-xs text-muted-foreground">{formatRelativeDateLabel(entry.flowDate, "-", data.todayIso)}</div>
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-2 align-top">
                           <Badge variant={stageVariant(entry.stage)}>{stageLabel(entry.stage)}</Badge>
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-2 align-top">
                           <Badge variant={typeVariant(entry.type)}>{typeLabel(entry.type)}</Badge>
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-2 align-top">
                           <div>{entry.domainName}</div>
                           <div className="text-xs text-muted-foreground">
                             {entry.sourceHref ? (
@@ -1269,7 +1426,7 @@ export default function FinancialPageClient({
                             )}
                           </div>
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-2 align-top">
                           <div>{entry.description}</div>
                           <div className="text-xs text-muted-foreground">
                             {[
@@ -1311,12 +1468,12 @@ export default function FinancialPageClient({
                             </div>
                           ) : null}
                         </td>
-                        <td dir="ltr" className={cn("px-3 py-3 text-left font-semibold tabular-nums", typeAmountClass(entry.type))}>
+                        <td dir="ltr" className={cn("px-3 py-2 align-top text-left font-semibold tabular-nums", typeAmountClass(entry.type))}>
                           {entry.type === "inflow" ? "+" : "-"}
                           {formatCurrency(entry.amount)}
                         </td>
                         {canManageExpenses ? (
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-2 align-top">
                             {editableExpense ? (
                               <div className="flex items-center justify-end gap-1">
                                 <Button
@@ -1354,13 +1511,15 @@ export default function FinancialPageClient({
                     })}
                   </tbody>
                 </table>
+                {ledgerHasMore ? <div ref={ledgerSentinelRef} className="h-1" /> : null}
               </div>
-              <PaginationControls
-                page={currentLedgerPage}
-                totalPages={ledgerTotalPages}
-                onPageChange={setLedgerPage}
-                itemLabel={`${filteredEntries.length} תנועות ביומן`}
-              />
+              {ledgerHasMore ? <div ref={ledgerMobileSentinelRef} className="h-1 md:hidden" /> : null}
+              <div className="pt-3 text-center text-xs text-muted-foreground">
+                מציג {pagedLedgerEntries.length} מתוך {displayLedger.length} תנועות
+                {data.ledgerTotalCount > ledgerEntries.length
+                  ? " · המערכת טוענת עד 1500 — סננו לפי תאריך לצפייה בנוספות"
+                  : ""}
+              </div>
             </>
           )}
         </CardContent>

@@ -34,7 +34,6 @@ import {
   summarizeEntries,
 } from "./entries";
 import {
-  LEDGER_PAGE_SIZE,
   UPCOMING_PAGE_SIZE,
   type FinancialPageData,
   type FinancialPageFilters,
@@ -93,7 +92,6 @@ export async function getFinancialPageData(
       ? filters.stage
       : null;
   const query = normalizeText(filters.q);
-  const ledgerPage = normalizePositiveInteger(filters.ledgerPage, 1);
   const upcomingPage = normalizePositiveInteger(filters.upcomingPage, 1);
   const customerProjectIds = await resolveCustomerProjectIds(supabase, customerId);
   const customerProjectSet = new Set(customerProjectIds);
@@ -290,7 +288,11 @@ export async function getFinancialPageData(
   const scheduledLiabilityEntries = filteredEntries.filter((entry) => entry.type === "outflow" && entry.stage === "scheduled");
   const sourceCount = new Set(filteredEntries.map((entry) => entry.sourceId).filter((value): value is string => Boolean(value))).size;
 
-  const ledgerPagination = paginateEntries(filteredEntries, ledgerPage, LEDGER_PAGE_SIZE);
+  // Return the full sorted ledger (capped) so the client can infinite-scroll it
+  // without re-running this heavy build on every page change.
+  const LEDGER_MAX = 1500;
+  const sortedLedger = sortEntries(filteredEntries);
+  const ledgerVisibleEntries = sortedLedger.slice(0, LEDGER_MAX);
   const upcomingSortedEntries = [...futureEntries].sort(
     (left, right) =>
       left.flowDate.localeCompare(right.flowDate) ||
@@ -315,10 +317,10 @@ export async function getFinancialPageData(
     sourceKind,
     sourceOptions,
     sourceCount,
-    ledgerEntries: ledgerPagination.entries,
-    ledgerTotalCount: ledgerPagination.totalCount,
-    ledgerPage: ledgerPagination.page,
-    ledgerTotalPages: ledgerPagination.totalPages,
+    ledgerEntries: ledgerVisibleEntries,
+    ledgerTotalCount: filteredEntries.length,
+    ledgerPage: 1,
+    ledgerTotalPages: 1,
     upcomingEntries: upcomingPagination.entries,
     upcomingTotalCount: upcomingPagination.totalCount,
     upcomingPage: upcomingPagination.page,

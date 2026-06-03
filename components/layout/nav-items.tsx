@@ -35,8 +35,10 @@ import {
   Banknote,
   Bell,
   Building2,
+  CreditCard,
   FolderKanban,
   FolderOpen,
+  HandCoins,
   Landmark,
   LayoutDashboard,
   ListTodo,
@@ -51,6 +53,7 @@ export type SidebarNavItem = {
   title: string;
   url: string;
   icon: ComponentType<{ className?: string }>;
+  children?: SidebarNavItem[];
 };
 
 const SIDEBAR_ITEMS: SidebarNavItem[] = [
@@ -62,8 +65,17 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "לקוחות", url: "/customers", icon: Users },
   { title: "פניות ומעקב גבייה", url: "/collections", icon: MessagesSquare },
   { title: "ניהול נכסים", url: "/properties", icon: Building2 },
-  { title: "פיננסי", url: "/financial", icon: Landmark },
-  { title: "צ׳קים", url: "/checks", icon: Banknote },
+  {
+    title: "פיננסי",
+    url: "/financial",
+    icon: Landmark,
+    children: [
+      { title: "תזרים", url: "/financial", icon: Landmark },
+      { title: "צ׳קים", url: "/checks", icon: Banknote },
+      { title: "הלוואות והחזרים", url: "/financial/loans", icon: HandCoins },
+      { title: "שיוך כרטיסי אשראי", url: "/financial/import", icon: CreditCard },
+    ],
+  },
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
   { title: "מסמכים", url: "/documents", icon: FolderOpen },
   { title: "פעילות", url: "/activity", icon: Activity },
@@ -84,20 +96,26 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "ניהול נכסים", url: "/properties", icon: Building2 },
   { title: "פיננסי", url: "/financial", icon: Landmark },
   { title: "צ׳קים", url: "/checks", icon: Banknote },
+  { title: "הלוואות והחזרים", url: "/financial/loans", icon: HandCoins },
+  { title: "שיוך כרטיסי אשראי", url: "/financial/import", icon: CreditCard },
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
   { title: "מסמכים", url: "/documents", icon: FolderOpen },
   { title: "פעילות", url: "/activity", icon: Activity },
   { title: "הגדרות ניהול", url: "/settings", icon: Settings },
 ];
 
-const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings"]);
+const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/import"]);
 const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/checks"]);
 
-function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean) {
-  return items.filter((item) => {
-    if (ADMIN_ONLY_URLS.has(item.url)) return isAdmin;
-    if (ADMIN_OR_OFFICE_URLS.has(item.url)) return isAdmin || isOffice;
-    return true;
+function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean): SidebarNavItem[] {
+  return items.flatMap((item) => {
+    if (item.children) {
+      const children = filterByRole(item.children, isAdmin, isOffice);
+      return children.length > 0 ? [{ ...item, children }] : [];
+    }
+    if (ADMIN_ONLY_URLS.has(item.url)) return isAdmin ? [item] : [];
+    if (ADMIN_OR_OFFICE_URLS.has(item.url)) return isAdmin || isOffice ? [item] : [];
+    return [item];
   });
 }
 

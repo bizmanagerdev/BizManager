@@ -1,7 +1,8 @@
 "use client";
 
 import { type ReactNode, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/ui/brand-mark";
@@ -12,6 +13,82 @@ interface Props {
   items: SidebarNavItem[];
   appName?: string;
   logo?: ReactNode;
+}
+
+const linkBase =
+  "flex h-10 items-center gap-2.5 rounded-lg px-2.5 text-sm text-sidebar-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground hover:shadow-sm";
+const linkActive =
+  "bg-secondary text-secondary-foreground font-medium shadow-md shadow-secondary/30 hover:ring-2 hover:ring-white/50 hover:ring-offset-2 hover:ring-offset-sidebar";
+const linkPending = "bg-white/10 opacity-70";
+
+function NavGroup({ item, collapsed }: { item: SidebarNavItem; collapsed: boolean }) {
+  const pathname = usePathname();
+  const children = item.children ?? [];
+  const childActive = children.some((c) => pathname === c.url || pathname.startsWith(`${c.url}/`));
+  const [open, setOpen] = useState(false);
+  // Auto-expand whenever a child route is active (no effect needed).
+  const expanded = open || childActive;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className={cn(
+          linkBase,
+          "w-full",
+          collapsed && "justify-center px-0 lg:justify-start lg:px-2.5",
+          childActive && "text-secondary-foreground"
+        )}
+      >
+        <item.icon className="h-4 w-4 shrink-0" />
+        <span className={cn("flex-1 text-right", collapsed ? "hidden lg:inline" : "inline")}>{item.title}</span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 transition-transform",
+            expanded ? "" : "-rotate-90",
+            collapsed ? "hidden lg:block" : "block"
+          )}
+        />
+      </button>
+      {expanded ? (
+        <div
+          className={cn(
+            "mt-0.5 space-y-0.5",
+            // Indent + a vertical guide line so children clearly read as sub-items
+            // (only when labels are visible; icon-only mode stays un-indented).
+            collapsed
+              ? "lg:ms-[1.15rem] lg:border-s lg:border-sidebar-border/50 lg:ps-2"
+              : "ms-[1.15rem] border-s border-sidebar-border/50 ps-2"
+          )}
+        >
+          {children.map((child) => (
+            <NavLink
+              key={child.url + child.title}
+              to={child.url}
+              end={child.url === "/financial"}
+              className={cn(
+                "flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] text-sidebar-foreground/75 transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground",
+                collapsed && "justify-center px-0 lg:justify-start lg:px-2"
+              )}
+              activeClassName="bg-secondary text-secondary-foreground font-medium"
+              pendingClassName={linkPending}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-50",
+                  collapsed ? "hidden lg:block" : "block"
+                )}
+              />
+              <child.icon className="h-3.5 w-3.5 shrink-0" />
+              <span className={cn(collapsed ? "hidden lg:inline" : "inline")}>{child.title}</span>
+            </NavLink>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function AppSidebar({ items, appName = "BizH", logo }: Props) {
@@ -39,22 +116,23 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
-        {items.map((item) => (
-          <NavLink
-            key={item.title}
-            to={item.url}
-            end={item.url === "/"}
-            className={cn(
-              "flex h-10 items-center gap-2.5 rounded-lg px-2.5 text-sm text-sidebar-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground hover:shadow-sm",
-              collapsed && "justify-center px-0 lg:justify-start lg:px-2.5"
-            )}
-            activeClassName="bg-secondary text-secondary-foreground font-medium shadow-md shadow-secondary/30 hover:ring-2 hover:ring-white/50 hover:ring-offset-2 hover:ring-offset-sidebar"
-            pendingClassName="bg-white/10 opacity-70"
-          >
-            <item.icon className="h-4 w-4 shrink-0" />
-            <span className={cn(collapsed ? "hidden lg:inline" : "inline")}>{item.title}</span>
-          </NavLink>
-        ))}
+        {items.map((item) =>
+          item.children && item.children.length > 0 ? (
+            <NavGroup key={item.title} item={item} collapsed={collapsed} />
+          ) : (
+            <NavLink
+              key={item.title}
+              to={item.url}
+              end={item.url === "/"}
+              className={cn(linkBase, collapsed && "justify-center px-0 lg:justify-start lg:px-2.5")}
+              activeClassName={linkActive}
+              pendingClassName={linkPending}
+            >
+              <item.icon className="h-4 w-4 shrink-0" />
+              <span className={cn(collapsed ? "hidden lg:inline" : "inline")}>{item.title}</span>
+            </NavLink>
+          )
+        )}
       </nav>
 
       <div className="border-t border-sidebar-border/80 p-2 lg:hidden">
@@ -64,11 +142,7 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
           onClick={() => setCollapsed(!collapsed)}
           className="w-full rounded-xl text-sidebar-foreground hover:bg-sidebar-accent hover:text-white"
         >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       </div>
     </aside>
