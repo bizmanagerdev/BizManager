@@ -33,16 +33,14 @@ import {
   type SalaryAgreementRow,
 } from "@/lib/payroll";
 import {
+  payrollWorkerTypeAllowsSessions,
   shouldShowSessionHours,
   shouldShowSessionPrice,
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
 import type { FinancialAttachment } from "@/lib/payments";
 import type { CalendarEntry } from "@/lib/projectSchedule";
-import { CITY_OPTIONS } from "@/lib/ui/cities";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Dialog,
   DialogDescription,
@@ -178,43 +176,11 @@ function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function isWithinDayRange(day: Date, start: Date, end: Date) {
-  return day >= start && day <= end;
-}
-
-function formatWeekDay(date: Date) {
-  return new Intl.DateTimeFormat("he-IL", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  }).format(date);
-}
-
-function formatDateShort(isoOrNull: string | null | undefined) {
-  if (!isoOrNull) return null;
-  const date = toDateOnly(isoOrNull);
-  if (!date) return null;
-  return new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "short", year: "numeric" }).format(date);
-}
-
-function formatEntryDateRange(entry: CalendarEntry) {
-  const start = formatDateShort(entry.startDate);
-  if (!start) return null;
-  if (!entry.endDate || entry.startDate === entry.endDate) return start;
-  const end = formatDateShort(entry.endDate);
-  if (!end || end === start) return start;
-  return `${start} — ${end}`;
-}
-
 function formatWeekRangeLabel(start: Date, end: Date) {
   return `${new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long" }).format(start)} - ${new Intl.DateTimeFormat(
     "he-IL",
     { day: "numeric", month: "long", year: "numeric" }
   ).format(end)}`;
-}
-
-function entryTypeLabel(kind: CalendarEntry["kind"]) {
-  return kind === "task" ? "משימה" : "פרויקט";
 }
 
 function shortWeekDay(date: Date) {
@@ -414,7 +380,6 @@ export default function DashboardActions({
   currentOpenSession,
   salaryAgreements,
   scheduleEntries,
-  todayIso,
 }: {
   customers: Row[];
   products: Row[];
@@ -427,7 +392,6 @@ export default function DashboardActions({
   currentOpenSession?: OpenSessionInfo | null;
   salaryAgreements: SalaryAgreementRow[];
   scheduleEntries: CalendarEntry[];
-  todayIso: string;
 }) {
   const router = useRouter();
 
@@ -1342,6 +1306,15 @@ export default function DashboardActions({
     return "";
   }
 
+  // "Open shift" is a self-service action — only show it to workers whose pay
+  // type actually tracks sessions (קבלנות / שעתי), not monthly-payslip or staff
+  // with no worker type.
+  const currentUserWorkerType = currentUserId
+    ? availableUsers.find((u) => u.id === currentUserId)?.payroll_worker_type ?? null
+    : null;
+  const canStartOwnSession =
+    currentUserWorkerType != null && payrollWorkerTypeAllowsSessions(currentUserWorkerType);
+
   async function startOwnSession() {
     if (!currentUserId || currentOpenSession?.id || selfSessionSubmitting) return;
 
@@ -1597,16 +1570,18 @@ export default function DashboardActions({
           <span className="font-semibold">{HEBREW.taskNew}</span>
         </Button>
 
-        <Button
-          type="button"
-          variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
-          onClick={() => void startOwnSession()}
-          disabled={Boolean(currentOpenSession) || selfSessionSubmitting}
-        >
-          <PlayCircle className="h-7 w-7" strokeWidth={2.2} />
-          <span className="font-semibold">{HEBREW.selfSessionStart}</span>
-        </Button>
+        {canStartOwnSession ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+            onClick={() => void startOwnSession()}
+            disabled={Boolean(currentOpenSession) || selfSessionSubmitting}
+          >
+            <PlayCircle className="h-7 w-7" strokeWidth={2.2} />
+            <span className="font-semibold">{HEBREW.selfSessionStart}</span>
+          </Button>
+        ) : null}
 
         <Button
           type="button"

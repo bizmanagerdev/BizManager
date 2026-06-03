@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarDays, Landmark, Loader2, Pencil, Search, TimerReset, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Search, TimerReset, Trash2 } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
@@ -893,7 +893,7 @@ export default function FinancialPageClient({
         />
       </section>
 
-      <section dir="rtl" className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <section dir="rtl" className="grid gap-4">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg text-right">מבט תחומים עסקיים</CardTitle>

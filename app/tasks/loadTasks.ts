@@ -134,7 +134,8 @@ export async function loadTasksPage(
   });
 
   const totalCount = typeof count === "number" ? count : taskRows.length;
-  const hasMore = typeof count === "number" ? to + 1 < count : taskRows.length === TASKS_PAGE_SIZE;
+  // Drive "has more" off page fullness, not the estimated count.
+  const hasMore = taskRows.length === TASKS_PAGE_SIZE;
 
   return { tasks, totalCount, hasMore, error: error?.message ?? null };
 }

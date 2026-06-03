@@ -258,7 +258,9 @@ export async function loadCustomersPage(
     projectPaymentError?.message ??
     null;
   const totalCount = typeof count === "number" ? count : rowsWithContacts.length;
-  const hasMore = typeof count === "number" ? to + 1 < count : rowsWithContacts.length === CUSTOMERS_PAGE_SIZE;
+  // Drive "has more" off page fullness, not the estimated count — the estimate
+  // for a view can be wildly off, which would either stall the scroll or loop.
+  const hasMore = rowsWithContacts.length === CUSTOMERS_PAGE_SIZE;
 
   return { rows: rowsWithContacts, totalCount, hasMore, error };
 }

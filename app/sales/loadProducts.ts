@@ -286,7 +286,8 @@ export async function loadPriceListPage(
     products,
     categories,
     totalCount: data.count,
-    hasMore: safePage * PRODUCTS_PAGE_SIZE < data.count,
+    // Drive "has more" off page fullness, not the estimated count.
+    hasMore: data.products.length === PRODUCTS_PAGE_SIZE,
     error,
   };
 }
@@ -452,7 +453,8 @@ export async function loadInventoryListPage(
     items,
     movements: movementRows,
     totalCount: data.count,
-    hasMore: safePage * PRODUCTS_PAGE_SIZE < data.count,
+    // Drive "has more" off page fullness, not the estimated count.
+    hasMore: data.products.length === PRODUCTS_PAGE_SIZE,
     error,
   };
 }

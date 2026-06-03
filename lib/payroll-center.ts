@@ -1,7 +1,6 @@
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
 import {
   getPayTrackingModeForWorkerType,
-  isPayrollWorkerType,
   normalizePayrollWorkerType,
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";

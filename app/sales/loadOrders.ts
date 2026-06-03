@@ -120,7 +120,8 @@ export async function loadOrdersPage(
   }));
 
   const totalCount = typeof count === "number" ? count : rows.length;
-  const hasMore = typeof count === "number" ? to + 1 < count : rows.length === ORDERS_PAGE_SIZE;
+  // Drive "has more" off page fullness, not the estimated count.
+  const hasMore = rows.length === ORDERS_PAGE_SIZE;
 
   return { rows: rowsWithDue, totalCount, hasMore, error: error?.message ?? null };
 }

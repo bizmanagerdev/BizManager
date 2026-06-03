@@ -18,21 +18,6 @@ function getString(row: Row | null | undefined, key: string) {
   return typeof value === "string" ? value : null;
 }
 
-function getNumber(row: Row | null | undefined, key: string) {
-  const value = row?.[key];
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function looksLikeMissingSchema(message: string) {
-  const value = message.toLowerCase();
-  return value.includes("does not exist") || value.includes("could not find") || value.includes("schema cache");
-}
-
 function normalizeType(value: string | undefined) {
   return value === "inflow" || value === "outflow" ? value : "all";
 }

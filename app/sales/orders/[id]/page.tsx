@@ -13,7 +13,7 @@ import OrderInvoicePanel from "@/app/sales/orders/[id]/OrderInvoicePanel";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { OrderPaymentActionsClient } from "@/app/sales/orders/OrderPaymentActionsClient";
 import type { PaymentItem } from "@/app/sales/orders/OrderPaymentActionsClient";
-import { derivePaymentStatus, splitPaymentAmounts, orderCollectionStatusLabel, collectionStatusClasses, paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { splitPaymentAmounts, orderCollectionStatusLabel, collectionStatusClasses, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { computeSourceCollection, isOpenOrderStatus } from "@/lib/collections";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
@@ -77,21 +77,6 @@ function paymentInsertedByLabel(
   return null;
 }
 
-
-function normalizeOrderStatus(status: string | null) {
-  switch ((status ?? "").toLowerCase()) {
-    case "approved":
-      return "confirmed";
-    case "in_progress":
-      return "processing";
-    case "ready":
-      return "out_for_delivery";
-    case "done":
-      return "completed";
-    default:
-      return (status ?? "").toLowerCase();
-  }
-}
 
 function extractCityFromAddress(address: string | null) {
   if (!address) return null;
@@ -326,7 +311,6 @@ export default async function SalesOrderPage({
     typeof (order as Row)?.needs_invoice === "boolean" ? ((order as Row).needs_invoice as boolean) : null;
   const orderInvoiceSentAt = getString((order as Row) ?? {}, "invoice_sent_at");
   const orderDeliveryConfirmedAt = getString((order as Row) ?? {}, "delivery_confirmed_at");
-  const normalizedStatus = normalizeOrderStatus(getString((order as Row) ?? {}, "status"));
 
   const subtotal = ((orderItems ?? []) as Row[]).reduce((sum, item) => {
     const quantity = getNumber(item, "quantity_ordered") ?? 0;
@@ -366,9 +350,6 @@ export default async function SalesOrderPage({
     ? Math.max(derivedTotalAmount - derivedTotalPaid, 0)
     : getNumber((financials as Row) ?? {}, "remaining_balance") ?? Math.max(totalAmount - totalPaid, 0);
   const paymentCount = getNumber((financials as Row) ?? {}, "payment_count") ?? (payments ?? []).length;
-  const paymentStatus = useDerivedFinancials
-    ? derivePaymentStatus(derivedTotalAmount, derivedTotalPaid)
-    : getString((financials as Row) ?? {}, "payment_status") ?? derivePaymentStatus(totalAmount, totalPaid);
   const orderDueDate = getString((order as Row) ?? {}, "due_date");
   const orderPaymentTerms = getString((order as Row) ?? {}, "payment_terms");
   const orderPendingMethods = Array.from(

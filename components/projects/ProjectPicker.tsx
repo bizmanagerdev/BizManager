@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 
 export type ProjectPickerOption = {
@@ -52,15 +52,13 @@ export function ProjectPicker({
   const [query, setQuery] = useState(selected?.label ?? "");
 
   // Sync the query with externally-driven changes to the selected id (e.g. parent reset).
-  // Tracking the previous id ensures we only re-sync when the selection actually changes,
-  // not on every render — so it doesn't clobber the user's typing.
-  const lastSyncedIdRef = useRef(value);
-  useEffect(() => {
-    if (lastSyncedIdRef.current !== value) {
-      lastSyncedIdRef.current = value;
-      setQuery(selected?.label ?? "");
-    }
-  }, [value, selected]);
+  // React's "adjust state during render" pattern — guarded by the previous id so it only
+  // re-syncs when the selection actually changes, never clobbering the user's typing.
+  const [lastSyncedId, setLastSyncedId] = useState(value);
+  if (lastSyncedId !== value) {
+    setLastSyncedId(value);
+    setQuery(selected?.label ?? "");
+  }
 
   const filtered = useMemo(() => {
     const q = normalize(query);

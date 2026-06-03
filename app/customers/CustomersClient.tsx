@@ -519,7 +519,8 @@ export default function CustomersClient({
       </div>
       {!apiSearchRows && hasMore ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
 
-      <Card ref={scrollRef} className="hidden max-h-[70vh] overflow-auto border-border/70 shadow-sm xl:block">
+      <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
+        <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col className="w-[18%]" />
@@ -631,13 +632,14 @@ export default function CustomersClient({
           </tbody>
         </table>
         {!apiSearchRows && hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
+        </div>
       </Card>
 
       {!apiSearchRows ? (
         <div className="pt-1 text-center text-xs text-muted-foreground">
           {loadingMore
             ? "טוען…"
-            : `מציג ${rows.length}${totalCount != null ? ` מתוך ${totalCount}` : ""} לקוחות`}
+            : `מציג ${rows.length}${totalCount != null ? ` מתוך ${Math.max(totalCount, rows.length)}` : ""} לקוחות`}
         </div>
       ) : null}
 

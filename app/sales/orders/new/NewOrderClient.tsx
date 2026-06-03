@@ -9,13 +9,6 @@ import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
 import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEditor";

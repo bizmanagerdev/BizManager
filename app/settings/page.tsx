@@ -81,10 +81,10 @@ export default async function SettingsPage() {
         .select("id,subject_template,description_template,business_domain,project_id,property_id,default_priority,default_status,create_day_of_month,due_day_of_month,start_date,end_date,is_active")
         .order("created_at", { ascending: true });
 
-      taskMissingSchema = Boolean(tr.error?.message && looksLikeMissingSchema(tr.error.message));
+      const missingSchema = Boolean(tr.error?.message && looksLikeMissingSchema(tr.error.message));
 
       const ar =
-        taskMissingSchema || (tr.data ?? []).length === 0
+        missingSchema || (tr.data ?? []).length === 0
           ? { data: [], error: null }
           : await supabase
               .from("recurring_task_template_assignees")
@@ -95,6 +95,10 @@ export default async function SettingsPage() {
 
       return [tr, ar];
     })();
+
+    taskMissingSchema = Boolean(
+      templatesResult.error?.message && looksLikeMissingSchema(templatesResult.error.message)
+    );
 
     const assigneeMap = new Map<string, string[]>();
     ((assigneesResult.data ?? []) as Row[]).forEach((r) => {

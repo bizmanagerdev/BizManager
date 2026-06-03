@@ -179,7 +179,9 @@ export async function loadProjectsPage(
   });
 
   const totalCount = typeof count === "number" ? count : rows.length;
-  const hasMore = typeof count === "number" ? to + 1 < count : rows.length === PROJECTS_PAGE_SIZE;
+  // Drive "has more" off page fullness, not the estimated count (estimates for a
+  // view can be wildly off, which would either stall the scroll or loop).
+  const hasMore = rows.length === PROJECTS_PAGE_SIZE;
 
   return { rows: rowsWithPaymentStatus, totalCount, hasMore, error: error?.message ?? null };
 }

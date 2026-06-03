@@ -6,10 +6,8 @@ import type {
   ExpenseRow,
   FinancialDomainGroup,
   FinancialEntry,
-  FinancialEntryOrigin,
   FinancialEntryStage,
   FinancialEntryType,
-  FinancialSourceKind,
   FinancialSummary,
   OrderFinancialRow,
   OrderRow,
@@ -23,14 +21,12 @@ import type {
 } from "./types";
 import {
   isFutureEntry,
-  monthKeyFromIso,
   nextMonthDueDate,
   normalizeDate,
   normalizePaymentMethod,
   normalizePaymentStatus,
   normalizeStatusValue,
   normalizeDomain,
-  recurringExpenseClampedDate,
   todayIso,
   toNumber,
 } from "./utils";

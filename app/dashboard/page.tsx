@@ -323,7 +323,6 @@ export default async function DashboardPage() {
               currentOpenSession={currentOpenSession}
               salaryAgreements={salaryAgreements}
               scheduleEntries={scheduleEntriesResult.data ?? []}
-              todayIso={today.toISOString().slice(0, 10)}
             />
           </CardContent>
         </Card>

@@ -174,7 +174,7 @@ export function CreateCustomerDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, similarTermsKey, similarDismissed]);
 
-  function useExistingCustomer(existing: CreatedCustomer) {
+  function applyExistingCustomer(existing: CreatedCustomer) {
     onCreated(existing, []);
     reset();
     onOpenChange(false);
@@ -433,7 +433,7 @@ export function CreateCustomerDialog({
                       size="sm"
                       variant="outline"
                       disabled={submitting}
-                      onClick={() => useExistingCustomer(match)}
+                      onClick={() => applyExistingCustomer(match)}
                     >
                       שימוש בלקוח זה
                     </Button>

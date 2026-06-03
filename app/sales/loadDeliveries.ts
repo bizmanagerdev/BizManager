@@ -94,7 +94,8 @@ export async function loadDeliveriesPage(
     .filter((row) => row.id);
 
   const totalCount = typeof count === "number" ? count : deliveries.length;
-  const hasMore = typeof count === "number" ? to + 1 < count : deliveries.length === DELIVERIES_PAGE_SIZE;
+  // Drive "has more" off page fullness, not the estimated count.
+  const hasMore = deliveries.length === DELIVERIES_PAGE_SIZE;
 
   return { deliveries, totalCount, hasMore, error: error?.message ?? null };
 }
