@@ -18,11 +18,15 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase } = access.value;
 
+    // Match on either date column: prior credit-card imports store the billing date in
+    // expense_date and the spend date in transaction_date, so a row can fall in range by
+    // either one.
     const { data, error } = await supabase
       .from("expenses")
-      .select("expense_date,amount,description")
-      .gte("expense_date", from)
-      .lte("expense_date", to)
+      .select("expense_date,transaction_date,amount,description")
+      .or(
+        `and(expense_date.gte.${from},expense_date.lte.${to}),and(transaction_date.gte.${from},transaction_date.lte.${to})`
+      )
       .limit(5000);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });

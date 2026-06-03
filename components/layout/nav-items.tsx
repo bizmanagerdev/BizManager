@@ -74,6 +74,7 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
       { title: "צ׳קים", url: "/checks", icon: Banknote },
       { title: "הלוואות והחזרים", url: "/financial/loans", icon: HandCoins },
       { title: "שיוך כרטיסי אשראי", url: "/financial/import", icon: CreditCard },
+      { title: "דפי אשראי שיובאו", url: "/financial/statements", icon: CreditCard },
     ],
   },
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
@@ -98,6 +99,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "צ׳קים", url: "/checks", icon: Banknote },
   { title: "הלוואות והחזרים", url: "/financial/loans", icon: HandCoins },
   { title: "שיוך כרטיסי אשראי", url: "/financial/import", icon: CreditCard },
+  { title: "דפי אשראי שיובאו", url: "/financial/statements", icon: CreditCard },
   { title: "עובדים ושכר", url: "/payroll", icon: Wallet },
   { title: "מסמכים", url: "/documents", icon: FolderOpen },
   { title: "פעילות", url: "/activity", icon: Activity },
@@ -105,7 +107,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
 ];
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/import"]);
-const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/checks"]);
+const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/checks", "/financial/statements"]);
 
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean): SidebarNavItem[] {
   return items.flatMap((item) => {
