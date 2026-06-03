@@ -97,42 +97,61 @@ export default function ActivityClient({
   // or page changes, so this state resets cleanly — no re-sync effect needed.
   const [extraItems, setExtraItems] = useState<AuditFeedItem[]>([]);
 
-  // Realtime: only prepend on the first page so pagination stays coherent.
+  // Realtime: prepend new rows instantly. Only on the first page so pagination
+  // stays coherent. The realtime socket must carry the user's auth token —
+  // otherwise RLS on audit_logs silently drops the events before they reach us.
   useEffect(() => {
     if (page !== 1) return;
     const supabase = createSupabaseBrowserClient();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
 
-    const channel = supabase
-      .channel("activity-feed")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "audit_logs" },
-        async (payload) => {
-          const row = payload.new as AuditLogRow;
-          if (!row?.id) return;
-          // Respect the active filters.
-          if (currentTable && row.table_name !== currentTable) return;
-          if (currentAction && row.action !== currentAction) return;
+    void (async () => {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) supabase.realtime.setAuth(token);
+      if (cancelled) return;
 
-          let actorName: string | null = null;
-          if (row.changed_by) {
-            const names = await resolveUserDisplayNamesForValues(supabase, [row.changed_by]);
-            actorName = names[row.changed_by] ?? null;
+      channel = supabase
+        .channel("activity-feed")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "audit_logs" },
+          async (payload) => {
+            const row = payload.new as AuditLogRow;
+            if (!row?.id) return;
+            // Respect the active filters.
+            if (currentTable && row.table_name !== currentTable) return;
+            if (currentAction && row.action !== currentAction) return;
+
+            let actorName: string | null = null;
+            if (row.changed_by) {
+              const names = await resolveUserDisplayNamesForValues(supabase, [row.changed_by]);
+              actorName = names[row.changed_by] ?? null;
+            }
+            const item = buildAuditFeedItem(row, actorName);
+
+            setExtraItems((prev) => {
+              if (prev.some((existing) => existing.id === item.id)) return prev;
+              return [item, ...prev];
+            });
           }
-          const item = buildAuditFeedItem(row, actorName);
-
-          setExtraItems((prev) => {
-            if (prev.some((existing) => existing.id === item.id)) return prev;
-            return [item, ...prev];
-          });
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    })();
 
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [page, currentTable, currentAction]);
+
+  // Safety net: refresh the server data on an interval so the feed stays current
+  // even if realtime is ever blocked — no manual refresh required.
+  useEffect(() => {
+    const id = setInterval(() => router.refresh(), 15000);
+    return () => clearInterval(id);
+  }, [router]);
 
   // Merge realtime rows ahead of the server page, dropping any the server
   // already included (avoids a flash of duplicates after navigation).
