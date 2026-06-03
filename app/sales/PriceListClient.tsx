@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { loadMorePriceList } from "@/app/sales/actions";
+import type { ProductsFilters } from "@/app/sales/loadProducts";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { Loader2, Send } from "lucide-react";
@@ -54,20 +57,46 @@ function formatCurrency(value: number | null) {
 export default function PriceListClient({
   initialProducts,
   initialCategories,
+  initialHasMore = false,
+  totalCount,
   initialQuery = "",
   initialCategoryFilter = "",
 }: {
   initialProducts: ProductRow[];
   initialCategories: CategoryOption[];
+  initialHasMore?: boolean;
+  totalCount?: number;
   initialQuery?: string;
   initialCategoryFilter?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [rows, setRows] = useState<ProductRow[]>(initialProducts);
+  const categoryFilter = initialCategoryFilter;
+
+  // Fetch-from-DB-as-you-scroll: accumulate product pages and pull the next one
+  // from the server when the bottom comes into view (no "next page" button).
+  const fetchFilters = useMemo<ProductsFilters>(
+    () => ({ q: initialQuery, category: initialCategoryFilter }),
+    [initialQuery, initialCategoryFilter]
+  );
+  const fetchPage = useCallback((page: number) => loadMorePriceList(page, fetchFilters), [fetchFilters]);
+  const getRowId = useCallback((product: ProductRow) => product.id, []);
+  const {
+    rows,
+    setRows,
+    hasMore,
+    loading: loadingMore,
+    sentinelRef,
+    mobileSentinelRef,
+    scrollRef,
+  } = useInfiniteScroll<ProductRow>({
+    initialRows: initialProducts,
+    initialHasMore,
+    fetchPage,
+    getId: getRowId,
+  });
   const [categories, setCategories] = useState<CategoryOption[]>(initialCategories);
   const [query, setQuery] = useState(initialQuery);
-  const categoryFilter = initialCategoryFilter;
 
   function pushFilters(next: { q?: string; category?: string }) {
     const params = new URLSearchParams(searchParams.toString());
@@ -908,7 +937,7 @@ export default function PriceListClient({
         <p className="text-sm text-muted-foreground">אין מוצרים להצגה במחירון.</p>
       ) : (
         <>
-          <div className="hidden max-h-[70vh] overflow-auto rounded-md border xl:block">
+          <div ref={scrollRef} className="hidden max-h-[70vh] overflow-auto rounded-md border xl:block">
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                 <tr>
@@ -957,6 +986,7 @@ export default function PriceListClient({
                 ))}
               </tbody>
             </table>
+            {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
           </div>
 
           <div className="grid grid-cols-1 gap-2 xl:hidden">
@@ -1008,6 +1038,12 @@ export default function PriceListClient({
                 </div>
               </div>
             ))}
+          </div>
+          {hasMore ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
+          <div className="pt-3 text-center text-xs text-muted-foreground">
+            {loadingMore
+              ? "טוען…"
+              : `מציג ${filtered.length}${totalCount != null ? ` מתוך ${totalCount}` : ""} מוצרים`}
           </div>
         </>
       )}

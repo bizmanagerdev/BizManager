@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import AppShell from "@/components/layout/AppShell";
 import SalesDeliveriesQueue from "@/app/sales/SalesDeliveriesQueue";
 import SalesInventoryClient from "@/app/sales/SalesInventoryClient";
@@ -9,15 +8,13 @@ import PriceListClient from "@/app/sales/PriceListClient";
 import SalesTabsNav from "@/app/sales/SalesTabsNav";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { Button } from "@/components/ui/button";
-import { DELIVERY_REGIONS, getCityRegion } from "@/lib/ui/cities";
-import { fetchOrderDueDates } from "@/lib/collections";
-
-type Row = Record<string, unknown>;
+import { DELIVERY_REGIONS } from "@/lib/ui/cities";
+import { loadOrdersPage } from "@/app/sales/loadOrders";
+import { loadPriceListPage, loadInventoryListPage } from "@/app/sales/loadProducts";
+import { loadDeliveriesPage } from "@/app/sales/loadDeliveries";
 
 export const revalidate = 30;
 
-const PAGE_SIZE = 50;
-const MOVEMENTS_PAGE_SIZE = 200;
 const CLOSED_ORDER_STATUSES = [
   "delivered",
   "completed",
@@ -35,92 +32,6 @@ function applyOpenOrdersFilter<TQuery extends { not: (...args: [string, string, 
   return query.not("status", "in", `(${CLOSED_ORDER_STATUSES.join(",")})`);
 }
 
-function getString(row: Row, key: string) {
-  const value = row[key];
-  return typeof value === "string" ? value : null;
-}
-
-function getNumber(row: Row, key: string) {
-  const value = row[key];
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function productName(row: Row) {
-  return (
-    getString(row, "name") ??
-    getString(row, "product_name") ??
-    getString(row, "title") ??
-    getString(row, "sku") ??
-    "מוצר"
-  );
-}
-
-function productCode(row: Row) {
-  return getString(row, "sku") ?? getString(row, "code") ?? getString(row, "barcode") ?? null;
-}
-
-function productUnitPrice(row: Row) {
-  return getNumber(row, "base_price");
-}
-
-function productCategoryName(row: Row, categoryById: Map<string, string>) {
-  const categoryId = getString(row, "category_id");
-  if (!categoryId) return null;
-  return categoryById.get(categoryId) ?? null;
-}
-
-function isMissingColumnError(error: unknown, columnName: string) {
-  if (!error || typeof error !== "object") return false;
-  const code = "code" in error ? error.code : null;
-  const message = "message" in error ? error.message : null;
-  return (
-    code === "42703" &&
-    typeof message === "string" &&
-    message.toLowerCase().includes(columnName.toLowerCase())
-  );
-}
-
-function parsePage(value: string | undefined) {
-  const page = Number(value ?? "1");
-  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
-}
-
-function pageRange(page: number) {
-  return {
-    from: (page - 1) * PAGE_SIZE,
-    to: page * PAGE_SIZE - 1,
-  };
-}
-
-function buildSalesHref(
-  activeTab: string,
-  pageKey: "ordersPage" | "inventoryPage" | "pricePage" | "deliveriesPage",
-  page: number,
-  customerId: string | null,
-  customerName: string | null,
-  customerPage: string | null,
-  extras?: { q?: string; category?: string; paymentStatus?: string; region?: string; invoice?: string }
-) {
-  const params = new URLSearchParams();
-  if (activeTab !== "orders") params.set("tab", activeTab);
-  if (customerId) params.set("customer_id", customerId);
-  if (customerName) params.set("customer_name", customerName);
-  if (customerPage) params.set("customer_page", customerPage);
-  if (page > 1) params.set(pageKey, String(page));
-  if (extras?.q && extras.q.trim()) params.set("q", extras.q.trim());
-  if (extras?.category && extras.category.trim()) params.set("category", extras.category.trim());
-  if (extras?.paymentStatus && extras.paymentStatus.trim()) params.set("payment_status", extras.paymentStatus.trim());
-  if (extras?.region && extras.region.trim()) params.set("region", extras.region.trim());
-  if (extras?.invoice && extras.invoice.trim()) params.set("invoice", extras.invoice.trim());
-  const query = params.toString();
-  return query ? `/sales?${query}` : "/sales";
-}
-
 function buildDeliveriesRegionHref(
   region: string | null,
   customerId: string | null,
@@ -134,139 +45,6 @@ function buildDeliveriesRegionHref(
   if (customerPage) params.set("customer_page", customerPage);
   if (region) params.set("region", region);
   return `/sales?${params.toString()}`;
-}
-
-async function loadProductPageData(
-  supabase: SupabaseClient,
-  page: number,
-  filters: { q: string; category: string } = { q: "", category: "" }
-) {
-  const { from, to } = pageRange(page);
-  let productsQuery = supabase
-    .from("products")
-    .select("id,name,sku,barcode,description,base_price,base_cost,active,category_id", {
-      count: "estimated",
-    })
-    .order("name", { ascending: true });
-
-  if (filters.q) {
-    const escaped = filters.q.replace(/[%,]/g, " ");
-    productsQuery = productsQuery.or(
-      `name.ilike.%${escaped}%,sku.ilike.%${escaped}%,barcode.ilike.%${escaped}%,description.ilike.%${escaped}%`
-    );
-  }
-  if (filters.category) {
-    productsQuery = productsQuery.eq("category_id", filters.category);
-  }
-
-  const {
-    data: products,
-    error: productsError,
-    count,
-  } = await productsQuery.range(from, to);
-
-  const productIds = ((products ?? []) as Row[])
-    .map((row) => getString(row, "id"))
-    .filter((value): value is string => Boolean(value));
-
-  const [
-    { data: inventoryRows, error: inventoryError },
-    { data: purchasedMovements, error: purchasedMovementsError },
-    { data: soldMovements, error: soldMovementsError },
-    { data: customerReturnMovements, error: customerReturnMovementsError },
-    { data: categoryRows, error: categoriesError },
-    thresholdResult,
-  ] =
-    await Promise.all([
-      productIds.length > 0
-        ? supabase
-            .from("inventory")
-            .select("product_id,quantity_on_hand,quantity_reserved,updated_at")
-            .in("product_id", productIds)
-        : Promise.resolve({ data: [], error: null }),
-      productIds.length > 0
-        ? supabase
-            .from("inventory_movements")
-            .select("product_id,movement_type,quantity")
-            .eq("movement_type", "in")
-            .in("product_id", productIds)
-        : Promise.resolve({ data: [], error: null }),
-      productIds.length > 0
-        ? supabase
-            .from("inventory_movements")
-            .select("product_id,movement_type,quantity,source_type")
-            .eq("movement_type", "out")
-            .eq("source_type", "order")
-            .in("product_id", productIds)
-        : Promise.resolve({ data: [], error: null }),
-      productIds.length > 0
-        ? supabase
-            .from("inventory_movements")
-            .select("product_id,movement_type,quantity,source_type,notes")
-            .eq("movement_type", "in")
-            .eq("source_type", "manual_adjustment")
-            .in("product_id", productIds)
-            .or("notes.ilike.%החזרת לקוח%,notes.ilike.%customer return%")
-        : Promise.resolve({ data: [], error: null }),
-      supabase.from("product_categories").select("id,name,active").order("name", { ascending: true }),
-      productIds.length > 0
-        ? supabase.from("products").select("id,low_stock_threshold").in("id", productIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-
-  const thresholdRows = isMissingColumnError(thresholdResult.error, "low_stock_threshold")
-    ? []
-    : ((thresholdResult.data ?? []) as Row[]);
-  const thresholdsError = isMissingColumnError(thresholdResult.error, "low_stock_threshold")
-    ? null
-    : thresholdResult.error;
-
-  return {
-    products: (products ?? []) as Row[],
-    inventoryRows: (inventoryRows ?? []) as Row[],
-    purchasedMovements: (purchasedMovements ?? []) as Row[],
-    soldMovements: (soldMovements ?? []) as Row[],
-    customerReturnMovements: (customerReturnMovements ?? []) as Row[],
-    categoryRows: (categoryRows ?? []) as Row[],
-    thresholdRows,
-    count: typeof count === "number" ? count : ((products ?? []) as Row[]).length,
-    productsError,
-    inventoryError,
-    movementsError:
-      purchasedMovementsError?.message
-        ? purchasedMovementsError
-        : soldMovementsError?.message
-          ? soldMovementsError
-          : customerReturnMovementsError,
-    categoriesError,
-    thresholdsError,
-  };
-}
-
-async function loadInventoryPageData(
-  supabase: SupabaseClient,
-  page: number,
-  filters: { q: string; category: string } = { q: "", category: "" }
-) {
-  const productPage = await loadProductPageData(supabase, page, filters);
-  const productIds = productPage.products
-    .map((row) => getString(row, "id"))
-    .filter((value): value is string => Boolean(value));
-
-  const { data: movements, error: movementsError } = productIds.length
-    ? await supabase
-        .from("inventory_movements")
-        .select("id,product_id,movement_type,quantity,source_type,source_id,performed_by,notes,created_at")
-        .in("product_id", productIds)
-        .order("created_at", { ascending: false })
-        .range(0, MOVEMENTS_PAGE_SIZE - 1)
-    : { data: [], error: null };
-
-  return {
-    ...productPage,
-    movements: (movements ?? []) as Row[],
-    movementsError: productPage.movementsError?.message ? productPage.movementsError : movementsError,
-  };
 }
 
 export default async function SalesPage({
@@ -327,11 +105,6 @@ export default async function SalesPage({
       ? params.region
       : null;
 
-  const ordersPage = parsePage(params.ordersPage);
-  const inventoryPage = parsePage(params.inventoryPage);
-  const pricePage = parsePage(params.pricePage);
-  const deliveriesPage = parsePage(params.deliveriesPage);
-
   const { profile, supabase } = await requireProfile();
   const [
     { count: openOrdersCount },
@@ -386,523 +159,79 @@ export default async function SalesPage({
   let content: ReactNode = null;
 
   if (activeTab === "orders" || activeTab === "closed") {
-    const { from, to } = pageRange(ordersPage);
-    let ordersQuery =
-      activeTab === "orders"
-        ? applyOpenOrdersFilter(
-            supabase
-              .from("order_overview_view")
-              .select(
-                "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,pending_amount,overdue_amount,payment_count,needs_invoice,invoice_sent_at,delivery_confirmed_at",
-                { count: "estimated" }
-              )
-              .order("order_date", { ascending: false })
-          )
-        : supabase
-            .from("order_overview_view")
-            .select(
-              "order_id,customer_id,customer_name,customer_name_for_invoice,customer_email,customer_phone,customer_city,customer_address,order_date,created_at,status,payment_status,total_amount,total_paid,remaining_balance,pending_amount,overdue_amount,payment_count,needs_invoice,invoice_sent_at,delivery_confirmed_at",
-              { count: "estimated" }
-            )
-            .order("order_date", { ascending: false });
+    const ordersFilters = {
+      tab: activeTab,
+      customerId,
+      q: searchQuery,
+      paymentStatus: paymentStatusFilter,
+      invoice: invoiceFilter,
+    } as const;
+    const { rows: ordersWithDue, totalCount, hasMore, error } = await loadOrdersPage(supabase, {
+      page: 1,
+      filters: ordersFilters,
+    });
 
-    if (customerId) ordersQuery = ordersQuery.eq("customer_id", customerId);
-    if (invoiceFilter === "needs") {
-      ordersQuery = ordersQuery.eq("needs_invoice", true);
-    } else if (invoiceFilter === "no") {
-      ordersQuery = ordersQuery.eq("needs_invoice", false);
-    } else if (invoiceFilter === "pending") {
-      ordersQuery = ordersQuery.eq("needs_invoice", true).is("invoice_sent_at", null);
-    } else if (invoiceFilter === "sent") {
-      ordersQuery = ordersQuery.not("invoice_sent_at", "is", null);
-    }
-    if (activeTab === "closed") {
-      ordersQuery = ordersQuery.in("status", CLOSED_ORDER_STATUSES);
-      if (paymentStatusFilter === "paid") {
-        ordersQuery = ordersQuery.gt("total_paid", 0).lte("remaining_balance", 0.009);
-      } else if (paymentStatusFilter === "partial") {
-        ordersQuery = ordersQuery.gt("total_paid", 0).gt("remaining_balance", 0.009);
-      } else if (paymentStatusFilter === "unpaid") {
-        ordersQuery = ordersQuery.lte("total_paid", 0);
-      }
-    }
-    if (searchQuery) {
-      const escaped = searchQuery.replace(/[%,]/g, " ");
-      // Search customers by name and invoice name to get matching customer IDs.
-      // This avoids depending on customer_name_for_invoice existing in the view,
-      // and correctly searches the invoice name even when it differs from the main name.
-      const { data: matchingCustomers } = await supabase
-        .from("customers")
-        .select("id")
-        .or(`name.ilike.%${escaped}%,name_for_invoice.ilike.%${escaped}%`)
-        .limit(300);
-      const matchedCustomerIds = ((matchingCustomers ?? []) as Row[])
-        .map((c) => (typeof c.id === "string" ? c.id : null))
-        .filter((id): id is string => id !== null);
-
-      const conditions: string[] = [
-        `customer_phone.ilike.%${escaped}%`,
-        `customer_email.ilike.%${escaped}%`,
-        `customer_city.ilike.%${escaped}%`,
-      ];
-      if (matchedCustomerIds.length > 0) {
-        conditions.push(`customer_id.in.(${matchedCustomerIds.join(",")})`);
-      }
-      ordersQuery = ordersQuery.or(conditions.join(","));
-    }
-
-    const { data, error, count } = await ordersQuery.range(from, to);
-    const rows = (data ?? []) as Row[];
-    const totalCount = typeof count === "number" ? count : rows.length;
-    const hasPreviousPage = ordersPage > 1;
-    const hasNextPage = typeof count === "number" ? to + 1 < count : rows.length === PAGE_SIZE;
-
-    const orderCustomerIds = [...new Set(rows.map((r) => (typeof r.customer_id === "string" ? r.customer_id : "")).filter(Boolean))];
-    const { data: orderContacts } = orderCustomerIds.length > 0
-      ? await supabase.from("contacts").select("customer_id,full_name,phone,email,whatsapp").in("customer_id", orderCustomerIds).eq("active", true)
-      : { data: [] as Row[] };
-
-    // Attach each order's effective due date (payment terms) for the late-status badge.
-    const orderDueById = await fetchOrderDueDates(
-      supabase,
-      rows.map((r) => (typeof r.order_id === "string" ? r.order_id : "")).filter(Boolean)
-    );
-    const ordersWithDue = rows.map((r) => ({
-      ...r,
-      due_date: orderDueById.get(typeof r.order_id === "string" ? r.order_id : "")?.dueDate ?? null,
-    }));
-
-    content = (
-      <>
-        {error ? (
-          <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error.message}</p>
-        ) : (
-          <>
-            <SalesOrdersClient orders={ordersWithDue} contacts={(orderContacts ?? []) as Row[]} initialQuery={searchQuery} showPaymentStatusFilter={activeTab === "closed"} initialPaymentFilter={paymentStatusFilter} initialInvoiceFilter={invoiceFilter} totalCount={totalCount} />
-            <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
-              <div className="text-muted-foreground">
-                עמוד {ordersPage} • מציגים {rows.length} מתוך {totalCount}
-              </div>
-              <div className="flex gap-2">
-                {hasPreviousPage ? (
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={buildSalesHref(
-                        activeTab,
-                        "ordersPage",
-                        ordersPage - 1,
-                        customerId,
-                        customerName,
-                        customerPage,
-                        { q: searchQuery, paymentStatus: paymentStatusFilter, invoice: invoiceFilter }
-                      )}
-                    >
-                      הקודם
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" disabled>
-                    הקודם
-                  </Button>
-                )}
-                {hasNextPage ? (
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={buildSalesHref(
-                        activeTab,
-                        "ordersPage",
-                        ordersPage + 1,
-                        customerId,
-                        customerName,
-                        customerPage,
-                        { q: searchQuery, paymentStatus: paymentStatusFilter, invoice: invoiceFilter }
-                      )}
-                    >
-                      הבא
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" disabled>
-                    הבא
-                  </Button>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </>
+    content = error ? (
+      <p className="text-sm text-destructive">שגיאה בטעינת הזמנות: {error}</p>
+    ) : (
+      <SalesOrdersClient
+        orders={ordersWithDue}
+        initialHasMore={hasMore}
+        initialQuery={searchQuery}
+        showPaymentStatusFilter={activeTab === "closed"}
+        initialPaymentFilter={paymentStatusFilter}
+        initialInvoiceFilter={invoiceFilter}
+        customerId={customerId}
+        totalCount={totalCount}
+      />
     );
   }
 
   if (activeTab === "price-list") {
-    const {
-      products,
-      inventoryRows,
-      purchasedMovements,
-      soldMovements,
-      customerReturnMovements,
-      categoryRows,
-      thresholdRows,
-      count,
-      productsError,
-      inventoryError,
-      movementsError,
-      categoriesError,
-      thresholdsError,
-    } =
-      await loadProductPageData(supabase, pricePage, { q: searchQuery, category: categoryFilter });
+    const { products, categories, totalCount, hasMore, error: loadError } = await loadPriceListPage(
+      supabase,
+      { page: 1, filters: { q: searchQuery, category: categoryFilter } }
+    );
 
-    const purchasedByProductId = new Map<string, number>();
-    purchasedMovements.forEach((row) => {
-      const productId = getString(row, "product_id");
-      if (!productId) return;
-      const qty = getNumber(row, "quantity") ?? 0;
-      if (!Number.isFinite(qty)) return;
-      purchasedByProductId.set(productId, (purchasedByProductId.get(productId) ?? 0) + qty);
-    });
-
-    const soldByProductId = new Map<string, number>();
-    soldMovements.forEach((row) => {
-      const productId = getString(row, "product_id");
-      if (!productId) return;
-      const qty = getNumber(row, "quantity") ?? 0;
-      if (!Number.isFinite(qty)) return;
-      soldByProductId.set(productId, (soldByProductId.get(productId) ?? 0) + qty);
-    });
-
-    customerReturnMovements.forEach((row) => {
-      const productId = getString(row, "product_id");
-      if (!productId) return;
-      const qty = getNumber(row, "quantity") ?? 0;
-      if (!Number.isFinite(qty)) return;
-      soldByProductId.set(productId, Math.max(0, (soldByProductId.get(productId) ?? 0) - qty));
-    });
-
-    const inventoryByProductId = new Map<string, number | null>();
-    inventoryRows.forEach((row) => {
-      const productId = getString(row, "product_id");
-      if (!productId) return;
-      inventoryByProductId.set(productId, getNumber(row, "quantity_on_hand"));
-    });
-
-    const categoryById = new Map<string, string>();
-    categoryRows.forEach((row) => {
-      const id = getString(row, "id");
-      const name = getString(row, "name");
-      if (!id || !name) return;
-      categoryById.set(id, name);
-    });
-
-    const thresholdById = new Map<string, number | null>();
-    thresholdRows.forEach((row) => {
-      const id = getString(row, "id");
-      if (!id) return;
-      thresholdById.set(id, getNumber(row, "low_stock_threshold"));
-    });
-
-    const productRows = products
-      .map((row) => ({
-        id: getString(row, "id") ?? "",
-        name: productName(row),
-        categoryId: getString(row, "category_id"),
-        category: productCategoryName(row, categoryById),
-        lowStockThreshold: thresholdById.get(getString(row, "id") ?? "") ?? 5,
-        code: productCode(row),
-        unitPrice: productUnitPrice(row),
-        stock: inventoryByProductId.get(getString(row, "id") ?? "") ?? null,
-        purchasedAmount: purchasedByProductId.get(getString(row, "id") ?? "") ?? 0,
-        soldAmount: soldByProductId.get(getString(row, "id") ?? "") ?? 0,
-        description: getString(row, "description"),
-        active: row.active === false ? false : true,
-      }))
-      .filter((row) => row.id)
-      .sort((a, b) => a.name.localeCompare(b.name, "he"));
-
-    const categoryOptions = categoryRows
-      .map((row) => ({
-        id: getString(row, "id") ?? "",
-        name: getString(row, "name") ?? "",
-        active: row.active !== false,
-      }))
-      .filter((row) => row.id && row.name);
-
-    const hasPreviousPage = pricePage > 1;
-    const hasNextPage = pricePage * PAGE_SIZE < count;
-    const loadError =
-      productsError?.message ??
-      inventoryError?.message ??
-      movementsError?.message ??
-      categoriesError?.message ??
-      thresholdsError?.message ??
-      null;
-
-    content = (
-      <>
-        {loadError ? (
-          <p className="text-sm text-destructive">שגיאה בטעינת מחירון: {loadError}</p>
-        ) : (
-          <>
-            <PriceListClient
-              initialProducts={productRows}
-              initialCategories={categoryOptions}
-              initialQuery={searchQuery}
-              initialCategoryFilter={categoryFilter}
-            />
-            <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
-              <div className="text-muted-foreground">
-                עמוד {pricePage} • מציגים {products.length} מתוך {count}
-              </div>
-              <div className="flex gap-2">
-                {hasPreviousPage ? (
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={buildSalesHref(
-                        activeTab,
-                        "pricePage",
-                        pricePage - 1,
-                        customerId,
-                        customerName,
-                        customerPage,
-                        { q: searchQuery, category: categoryFilter }
-                      )}
-                    >
-                      הקודם
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" disabled>
-                    הקודם
-                  </Button>
-                )}
-                {hasNextPage ? (
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={buildSalesHref(
-                        activeTab,
-                        "pricePage",
-                        pricePage + 1,
-                        customerId,
-                        customerName,
-                        customerPage,
-                        { q: searchQuery, category: categoryFilter }
-                      )}
-                    >
-                      הבא
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" disabled>
-                    הבא
-                  </Button>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </>
+    content = loadError ? (
+      <p className="text-sm text-destructive">שגיאה בטעינת מחירון: {loadError}</p>
+    ) : (
+      <PriceListClient
+        initialProducts={products}
+        initialCategories={categories}
+        initialHasMore={hasMore}
+        totalCount={totalCount}
+        initialQuery={searchQuery}
+        initialCategoryFilter={categoryFilter}
+      />
     );
   }
 
   if (activeTab === "inventory") {
-    const {
-      products,
-      inventoryRows,
-      soldMovements,
-      customerReturnMovements,
-      movements,
-      thresholdRows,
-      count,
-      productsError,
-      inventoryError,
-      movementsError,
-      thresholdsError,
-    } = await loadInventoryPageData(supabase, inventoryPage, { q: searchQuery, category: categoryFilter });
-
-    const soldAmountByProductId = Object.fromEntries(
-      products
-        .map((product) => getString(product, "id"))
-        .filter((value): value is string => Boolean(value))
-        .map((productId) => {
-          const soldQty = soldMovements
-            .filter((row) => getString(row, "product_id") === productId)
-            .reduce((sum, row) => sum + (getNumber(row, "quantity") ?? 0), 0);
-          const returnedQty = customerReturnMovements
-            .filter((row) => getString(row, "product_id") === productId)
-            .reduce((sum, row) => sum + (getNumber(row, "quantity") ?? 0), 0);
-          return [productId, Math.max(0, soldQty - returnedQty)];
-        })
+    const { items, movements, totalCount, hasMore, error: loadError } = await loadInventoryListPage(
+      supabase,
+      { page: 1, filters: { q: searchQuery, category: categoryFilter } }
     );
 
-    const lowStockThresholdByProductId = Object.fromEntries(
-      thresholdRows
-        .map((row) => {
-          const id = getString(row, "id");
-          if (!id) return null;
-          return [id, getNumber(row, "low_stock_threshold") ?? 5] as const;
-        })
-        .filter((entry): entry is readonly [string, number] => entry !== null)
-    );
-
-    const hasPreviousPage = inventoryPage > 1;
-    const hasNextPage = inventoryPage * PAGE_SIZE < count;
-    const loadError =
-      productsError?.message ?? inventoryError?.message ?? movementsError?.message ?? thresholdsError?.message ?? null;
-
-    content = (
-      <>
-        {loadError ? (
-          <p className="text-sm text-destructive">שגיאה בטעינת מלאי: {loadError}</p>
-        ) : (
-          <>
-            <SalesInventoryClient
-              products={products}
-              inventoryRows={inventoryRows}
-              soldAmountByProductId={soldAmountByProductId}
-              lowStockThresholdByProductId={lowStockThresholdByProductId}
-              movements={movements}
-              initialQuery={searchQuery}
-            />
-            <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
-              <div className="text-muted-foreground">
-                עמוד {inventoryPage} • מציגים {products.length} מתוך {count}
-              </div>
-              <div className="flex gap-2">
-                {hasPreviousPage ? (
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={buildSalesHref(
-                        activeTab,
-                        "inventoryPage",
-                        inventoryPage - 1,
-                        customerId,
-                        customerName,
-                        customerPage,
-                        { q: searchQuery }
-                      )}
-                    >
-                      הקודם
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" disabled>
-                    הקודם
-                  </Button>
-                )}
-                {hasNextPage ? (
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={buildSalesHref(
-                        activeTab,
-                        "inventoryPage",
-                        inventoryPage + 1,
-                        customerId,
-                        customerName,
-                        customerPage,
-                        { q: searchQuery }
-                      )}
-                    >
-                      הבא
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" disabled>
-                    הבא
-                  </Button>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </>
+    content = loadError ? (
+      <p className="text-sm text-destructive">שגיאה בטעינת מלאי: {loadError}</p>
+    ) : (
+      <SalesInventoryClient
+        initialItems={items}
+        movements={movements}
+        initialHasMore={hasMore}
+        totalCount={totalCount}
+        initialQuery={searchQuery}
+        initialCategoryFilter={categoryFilter}
+      />
     );
   }
 
   if (activeTab === "deliveries") {
-    const { from, to } = pageRange(deliveriesPage);
-    let deliveriesQuery = applyOpenOrdersFilter(
-      supabase
-        .from("delivery_overview_view")
-        .select(
-          "order_id,customer_id,customer_name,customer_phone,customer_address,customer_city,order_date,created_at,status,total_amount,notes",
-          { count: "estimated" }
-        )
-        .order("order_date", { ascending: false })
-    );
-
-    if (customerId) deliveriesQuery = deliveriesQuery.eq("customer_id", customerId);
-
-    const { data, error, count } = await deliveriesQuery.range(from, to);
-
-    const deliveries = ((data ?? []) as Row[])
-      .map((row) => ({
-        id: getString(row, "order_id") ?? "",
-        customerId: getString(row, "customer_id") ?? "",
-        orderDate: getString(row, "order_date") ?? getString(row, "created_at"),
-        status: getString(row, "status") ?? "-",
-        totalAmount: getNumber(row, "total_amount"),
-        notes: getString(row, "notes"),
-        customerName: getString(row, "customer_name") ?? "לקוח",
-        customerPhone: getString(row, "customer_phone"),
-        city: getString(row, "customer_city") ?? "ללא עיר",
-        address: getString(row, "customer_address") ?? "-",
-      }))
-      .filter((row) => row.id);
-
-    // Filter by region if requested
-    const visibleDeliveries = regionFilter
-      ? deliveries.filter((d) => getCityRegion(d.city) === regionFilter)
-      : deliveries;
-
-    function buildCustomerGroups(cityDeliveries: typeof deliveries) {
-      return Array.from(
-        cityDeliveries.reduce(
-          (map, delivery) => {
-            const customerKey =
-              delivery.customerId ||
-              `${delivery.customerName}|${delivery.address}|${delivery.customerPhone ?? ""}`;
-            const existing = map.get(customerKey);
-            if (existing) {
-              existing.orders.push(delivery);
-              return map;
-            }
-            map.set(customerKey, {
-              customerName: delivery.customerName,
-              customerPhone: delivery.customerPhone,
-              address: delivery.address,
-              orders: [delivery],
-            });
-            return map;
-          },
-          new Map<string, { customerName: string; customerPhone: string | null; address: string; orders: typeof deliveries }>()
-        )
-      );
-    }
-
-    // Group: region → city → customer
-    const byRegionMap = new Map<string, Map<string, typeof deliveries>>();
-    for (const delivery of visibleDeliveries) {
-      const region = getCityRegion(delivery.city) ?? "לא ידוע";
-      if (!byRegionMap.has(region)) byRegionMap.set(region, new Map());
-      const byCity = byRegionMap.get(region)!;
-      const list = byCity.get(delivery.city) ?? [];
-      list.push(delivery);
-      byCity.set(delivery.city, list);
-    }
-
-    const REGION_ORDER = [...DELIVERY_REGIONS, "לא ידוע"];
-    const deliveriesByRegion = REGION_ORDER
-      .filter((r) => byRegionMap.has(r))
-      .map((region) => {
-        const citiesMap = byRegionMap.get(region)!;
-        const cities = Array.from(citiesMap.entries())
-          .sort(([a], [b]) => a.localeCompare(b, "he"))
-          .map(([city, cityDeliveries]) => [city, buildCustomerGroups(cityDeliveries)] as const);
-        return [region, cities] as const;
-      });
-
-    const totalCount = typeof count === "number" ? count : deliveries.length;
-    const hasPreviousPage = deliveriesPage > 1;
-    const hasNextPage = typeof count === "number" ? to + 1 < count : deliveries.length === PAGE_SIZE;
+    const { deliveries, totalCount, hasMore, error: loadError } = await loadDeliveriesPage(supabase, {
+      page: 1,
+      filters: { customerId },
+    });
 
     const regionLinks = [
       { label: "הכל", value: null },
@@ -914,70 +243,17 @@ export default async function SalesPage({
       active: regionFilter === value,
     }));
 
-    content = (
-      <>
-        {error ? (
-          <p className="text-sm text-destructive">שגיאה בטעינת משלוחים: {error.message}</p>
-        ) : (
-          <>
-            <SalesDeliveriesQueue
-              deliveriesByRegion={deliveriesByRegion}
-              regionFilter={regionFilter}
-              regionLinks={regionLinks}
-              totalCount={totalCount}
-            />
-            <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
-              <div className="text-muted-foreground">
-                עמוד {deliveriesPage} • מציגים {visibleDeliveries.length} מתוך {totalCount}
-              </div>
-              <div className="flex gap-2">
-                {hasPreviousPage ? (
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={buildSalesHref(
-                        activeTab,
-                        "deliveriesPage",
-                        deliveriesPage - 1,
-                        customerId,
-                        customerName,
-                        customerPage,
-                        { region: regionFilter ?? undefined }
-                      )}
-                    >
-                      הקודם
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" disabled>
-                    הקודם
-                  </Button>
-                )}
-                {hasNextPage ? (
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={buildSalesHref(
-                        activeTab,
-                        "deliveriesPage",
-                        deliveriesPage + 1,
-                        customerId,
-                        customerName,
-                        customerPage,
-                        { region: regionFilter ?? undefined }
-                      )}
-                    >
-                      הבא
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" disabled>
-                    הבא
-                  </Button>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </>
+    content = loadError ? (
+      <p className="text-sm text-destructive">שגיאה בטעינת משלוחים: {loadError}</p>
+    ) : (
+      <SalesDeliveriesQueue
+        initialDeliveries={deliveries}
+        initialHasMore={hasMore}
+        regionFilter={regionFilter}
+        regionLinks={regionLinks}
+        totalCount={totalCount}
+        customerId={customerId}
+      />
     );
   }
 

@@ -38,6 +38,7 @@ import type {
   FinancialSourceKind,
 } from "@/lib/financial";
 import { cn } from "@/lib/utils";
+import { useRevealOnScroll } from "@/hooks/useRevealOnScroll";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
@@ -234,48 +235,6 @@ function SelectField({
   );
 }
 
-function PaginationControls({
-  page,
-  totalPages,
-  onPageChange,
-  itemLabel,
-}: {
-  page: number;
-  totalPages: number;
-  onPageChange: (page: number) => void;
-  itemLabel: string;
-}) {
-  if (totalPages <= 1) return null;
-
-  return (
-    <div className="flex flex-col gap-3 border-t pt-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-      <div className="text-muted-foreground">
-        עמוד {page} מתוך {totalPages} • {itemLabel}
-      </div>
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-        >
-          הקודם
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
-        >
-          הבא
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function FilterLoadingDots() {
   return (
     <div className="flex justify-center" aria-live="polite" aria-label="Loading filtered financial data">
@@ -357,9 +316,9 @@ export default function FinancialPageClient({
   const domainGroups = data.domainGroups;
   const upcomingEntries = data.upcomingEntries;
   const ledgerEntries = data.ledgerEntries;
-  const pagedUpcomingEntries = upcomingEntries;
-  const currentUpcomingPage = data.upcomingPage;
-  const upcomingTotalPages = data.upcomingTotalPages;
+  // Scroll-to-load the upcoming list instead of paging it (same feel as the ledger).
+  const upcomingReveal = useRevealOnScroll(upcomingEntries, { initial: 15, step: 15 });
+  const pagedUpcomingEntries = upcomingReveal.visibleItems;
 
   // ── Ledger-only client controls (instant, no route reload) ──────────────────
   const [ledgerVisible, setLedgerVisible] = useState(60);
@@ -540,7 +499,6 @@ export default function FinancialPageClient({
 
   const upcomingCount = data.upcomingTotalCount;
   const sourceCount = data.sourceCount;
-  const setUpcomingPage = (page: number) => replaceFilters({ upcomingPage: page });
   const [editingExpense, setEditingExpense] = useState<EditableExpenseEntry | null>(null);
   const [deletingExpense, setDeletingExpense] = useState<EditableExpenseEntry | null>(null);
   const [isDeletingExpense, setIsDeletingExpense] = useState(false);
@@ -1017,7 +975,7 @@ export default function FinancialPageClient({
                 אין כרגע תנועות עתידיות או ממתינות בהתאם לסינון.
               </div>
             ) : (
-              <div className="max-h-[70vh] overflow-auto">
+              <div ref={upcomingReveal.scrollRef} className="max-h-[70vh] overflow-auto">
                 <table className="w-full text-right text-sm">
                   <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
                     <tr className="border-b">
@@ -1178,14 +1136,14 @@ export default function FinancialPageClient({
                     })}
                   </tbody>
                 </table>
+                {upcomingReveal.hasMore ? <div ref={upcomingReveal.sentinelRef} className="h-1" /> : null}
               </div>
             )}
-            <PaginationControls
-              page={currentUpcomingPage}
-              totalPages={upcomingTotalPages}
-              onPageChange={setUpcomingPage}
-              itemLabel={`${upcomingEntries.length} תנועות עתידיות`}
-            />
+            {upcomingEntries.length > 0 ? (
+              <div className="pt-3 text-center text-xs text-muted-foreground">
+                מציג {upcomingReveal.visibleCount} מתוך {upcomingCount} תנועות עתידיות
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </section>

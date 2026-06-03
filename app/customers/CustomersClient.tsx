@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { loadMoreCustomers } from "@/app/customers/actions";
+import type { CustomersFilters } from "@/app/customers/loadCustomers";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
 import { EditCustomerDialog, type EditCustomerInput } from "@/components/customers/EditCustomerDialog";
@@ -70,16 +73,16 @@ function customerFlagBadgeClass(tone: "success" | "danger" | "neutral") {
 
 export default function CustomersClient({
   initialRows,
+  initialHasMore = false,
   initialEditCustomerId = "",
   initialAddContactCustomerId = "",
-  currentPage = 1,
   totalCount,
   initialFilters,
 }: {
   initialRows: Row[];
+  initialHasMore?: boolean;
   initialEditCustomerId?: string;
   initialAddContactCustomerId?: string;
-  currentPage?: number;
   totalCount?: number;
   initialFilters?: {
     withProjects: FilterMode;
@@ -89,7 +92,6 @@ export default function CustomersClient({
   };
 }) {
   const router = useRouter();
-  const [rows, setRows] = useState(initialRows);
   const [apiSearchRows, setApiSearchRows] = useState<Row[] | null>(null);
   const [handledInitialEdit, setHandledInitialEdit] = useState(false);
   const [handledInitialAddContact, setHandledInitialAddContact] = useState(false);
@@ -108,6 +110,32 @@ export default function CustomersClient({
   const withOrders = initialFilters?.withOrders ?? "all";
   const withDebt = initialFilters?.withDebt ?? "all";
   const activeOnly = initialFilters?.activeOnly ?? "all";
+
+  // Fetch-from-DB-as-you-scroll: accumulate customer pages and pull the next one
+  // from the server when the bottom comes into view (no "next page" button).
+  const fetchFilters = useMemo<CustomersFilters>(
+    () => ({ withProjects, withOrders, withDebt, activeOnly }),
+    [withProjects, withOrders, withDebt, activeOnly]
+  );
+  const fetchPage = useCallback(
+    (page: number) => loadMoreCustomers(page, fetchFilters),
+    [fetchFilters]
+  );
+  const getRowId = useCallback((row: Row) => s(row, "customer_id"), []);
+  const {
+    rows,
+    setRows,
+    hasMore,
+    loading: loadingMore,
+    sentinelRef,
+    mobileSentinelRef,
+    scrollRef,
+  } = useInfiniteScroll<Row>({
+    initialRows,
+    initialHasMore,
+    fetchPage,
+    getId: getRowId,
+  });
 
   function applyFilter(next: { withProjects?: FilterMode; withOrders?: FilterMode; withDebt?: FilterMode; activeOnly?: FilterMode }) {
     const merged = {
@@ -171,10 +199,6 @@ export default function CustomersClient({
     // server already applied the filters via URL params, so we just use the rows as-is.
     return apiSearchRows ?? rows;
   }, [rows, apiSearchRows]);
-
-  useEffect(() => {
-    setRows(initialRows);
-  }, [initialRows]);
 
   useEffect(() => {
     if (handledInitialEdit || !initialEditCustomerId || rows.length === 0) return;
@@ -293,8 +317,7 @@ export default function CustomersClient({
   }
 
   function customerDetailsHref(customerId: string) {
-    const base = `/customers/${encodeURIComponent(customerId)}`;
-    return currentPage > 1 ? `${base}?return_page=${currentPage}` : base;
+    return `/customers/${encodeURIComponent(customerId)}`;
   }
 
   function openCustomerDetails(customerId: string) {
@@ -494,8 +517,9 @@ export default function CustomersClient({
           );
         })}
       </div>
+      {!apiSearchRows && hasMore ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
 
-      <Card className="hidden max-h-[70vh] overflow-auto border-border/70 shadow-sm xl:block">
+      <Card ref={scrollRef} className="hidden max-h-[70vh] overflow-auto border-border/70 shadow-sm xl:block">
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col className="w-[18%]" />
@@ -606,7 +630,16 @@ export default function CustomersClient({
             })}
           </tbody>
         </table>
+        {!apiSearchRows && hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
       </Card>
+
+      {!apiSearchRows ? (
+        <div className="pt-1 text-center text-xs text-muted-foreground">
+          {loadingMore
+            ? "טוען…"
+            : `מציג ${rows.length}${totalCount != null ? ` מתוך ${totalCount}` : ""} לקוחות`}
+        </div>
+      ) : null}
 
       <CreateCustomerDialog
         open={createOpen}

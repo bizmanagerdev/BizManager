@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { loadMoreProjects } from "@/app/projects/actions";
+import type { ProjectsFilters } from "@/app/projects/loadProjects";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { FileText, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -285,30 +288,61 @@ function defaultEndDateForProjectType(projectType: string, startDate: string) {
 
 export default function ProjectsClient({
   initialProjects,
+  initialHasMore = false,
+  totalCount,
   customerOptions,
   managerOptions,
   currentUserId,
   defaultProjectManagerId,
-  contacts = [],
   tabCounts,
   initialFilters,
 }: {
   initialProjects: ProjectRow[];
+  initialHasMore?: boolean;
+  totalCount?: number;
   customerOptions: Option[];
   managerOptions: Option[];
   currentUserId?: string;
   defaultProjectManagerId?: string;
-  contacts?: ProjectRow[];
   tabCounts?: { projects: number; quotes: number; closed: number };
-  initialFilters?: { view: ProjectsView; status: string; sort: SortMode; q: string };
+  initialFilters?: { view: ProjectsView; status: string; customerId: string | null; sort: SortMode; q: string };
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
-  const [projects, setProjects] = useState<ProjectRow[]>(initialProjects);
-  useEffect(() => { setProjects(initialProjects); }, [initialProjects]);
 
-  void contacts;
+  // Fetch-from-DB-as-you-scroll: accumulate project pages and pull the next one
+  // from the server when the bottom comes into view (no "next page" button).
+  const fetchFilters = useMemo<ProjectsFilters>(
+    () => ({
+      view: initialFilters?.view ?? "projects",
+      status: initialFilters?.status ?? "all",
+      customerId: initialFilters?.customerId ?? null,
+      sort: initialFilters?.sort ?? "start_date",
+      q: initialFilters?.q ?? "",
+    }),
+    [initialFilters]
+  );
+  const fetchPage = useCallback(
+    (page: number) => loadMoreProjects(page, fetchFilters),
+    [fetchFilters]
+  );
+  const getRowId = useCallback((row: ProjectRow) => String(row.id ?? ""), []);
+  const {
+    rows: projects,
+    setRows: setProjects,
+    hasMore,
+    loading: loadingMore,
+    sentinelRef,
+    mobileSentinelRef,
+    scrollRef,
+  } = useInfiniteScroll<ProjectRow>({
+    initialRows: initialProjects,
+    initialHasMore,
+    fetchPage,
+    getId: getRowId,
+  });
+
   const activeTab: ProjectsView = normalizeProjectsView(searchParams.get("view"));
   const [query, setQuery] = useState(initialFilters?.q ?? "");
   const status = searchParams.get("status") ?? "all";
@@ -1059,7 +1093,7 @@ export default function ProjectsClient({
       </div>
 
       <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
-        <div className="max-h-[70vh] overflow-auto">
+        <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
               <tr className="border-b border-border/70 text-right">
@@ -1222,6 +1256,7 @@ export default function ProjectsClient({
               })}
             </tbody>
           </table>
+          {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
         </div>
       </Card>
 
@@ -1363,6 +1398,15 @@ export default function ProjectsClient({
           );
         })}
       </div>
+      {hasMore ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
+
+      {rows.length > 0 ? (
+        <div className="pt-1 text-center text-xs text-muted-foreground">
+          {loadingMore
+            ? "טוען…"
+            : `מציג ${rows.length}${totalCount != null ? ` מתוך ${totalCount}` : ""} פרויקטים`}
+        </div>
+      ) : null}
 
       <Dialog
         open={approveQuoteOpen}

@@ -1,12 +1,12 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   buildAuditFeedItem,
+  getAuditFeedPaginated,
   resolveUserDisplayNamesForValues,
   type AuditFeedItem,
   type AuditLogRow,
@@ -79,8 +79,7 @@ type Props = {
 
 export default function ActivityClient({
   items,
-  page,
-  totalPages,
+  totalCount,
   error,
   tableOptions,
   actionOptions,
@@ -92,16 +91,78 @@ export default function ActivityClient({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
+  // Server-loaded rows accumulated so far. Seeded with the first page rendered
+  // on the server, then grown as the bottom sentinel scrolls into view — no
+  // "next page" button. The parent remounts this component (via `key`) when the
+  // filter changes, so this state resets cleanly back to page one.
+  const [serverItems, setServerItems] = useState<AuditFeedItem[]>(items);
+  const [nextPage, setNextPage] = useState(2);
+  const [hasMore, setHasMore] = useState(items.length < totalCount);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
   // Live feed: rows that arrived via realtime since this view mounted (newest
-  // first). The parent remounts this component (via `key`) whenever the filter
-  // or page changes, so this state resets cleanly — no re-sync effect needed.
+  // first).
   const [extraItems, setExtraItems] = useState<AuditFeedItem[]>([]);
 
-  // Realtime: prepend new rows instantly. Only on the first page so pagination
-  // stays coherent. The realtime socket must carry the user's auth token —
-  // otherwise RLS on audit_logs silently drops the events before they reach us.
+  // Fold any newly-arrived first-page rows (from the 15s safety refresh below)
+  // into the accumulated list, keeping newest-first order and never duplicating.
   useEffect(() => {
-    if (page !== 1) return;
+    setServerItems((prev) => {
+      const seen = new Set(prev.map((i) => i.id));
+      const fresh = items.filter((i) => !seen.has(i.id));
+      return fresh.length ? [...fresh, ...prev] : prev;
+    });
+  }, [items]);
+
+  // Fetch the next page from the database when the bottom comes into view, and
+  // reconnect after each load so a tall screen keeps filling until it's done.
+  useEffect(() => {
+    if (!hasMore || loadingMore) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    const loadMore = async () => {
+      setLoadingMore(true);
+      setLoadMoreError(null);
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const result = await getAuditFeedPaginated(supabase, {
+          page: nextPage,
+          tableName: currentTable || null,
+          action: currentAction || null,
+        });
+        if (result.error) {
+          setLoadMoreError(result.error);
+          return;
+        }
+        setServerItems((prev) => {
+          const seen = new Set(prev.map((i) => i.id));
+          const fresh = result.items.filter((i) => !seen.has(i.id));
+          return fresh.length ? [...prev, ...fresh] : prev;
+        });
+        setNextPage(result.page + 1);
+        setHasMore(result.page < result.totalPages);
+      } finally {
+        setLoadingMore(false);
+      }
+    };
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+      },
+      { rootMargin: "400px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, loadingMore, nextPage, currentTable, currentAction]);
+
+  // Realtime: prepend new rows instantly. The realtime socket must carry the
+  // user's auth token — otherwise RLS on audit_logs silently drops the events
+  // before they reach us.
+  useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     let channel: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
@@ -144,7 +205,7 @@ export default function ActivityClient({
       cancelled = true;
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [page, currentTable, currentAction]);
+  }, [currentTable, currentAction]);
 
   // Safety net: refresh the server data on an interval so the feed stays current
   // even if realtime is ever blocked — no manual refresh required.
@@ -153,11 +214,11 @@ export default function ActivityClient({
     return () => clearInterval(id);
   }, [router]);
 
-  // Merge realtime rows ahead of the server page, dropping any the server
-  // already included (avoids a flash of duplicates after navigation).
-  const existingIds = new Set(items.map((i) => i.id));
-  const displayItems = [...extraItems.filter((i) => !existingIds.has(i.id)), ...items];
-  const liveCount = displayItems.length - items.length;
+  // Merge realtime rows ahead of the accumulated server rows, dropping any the
+  // server already included (avoids a flash of duplicates).
+  const existingIds = new Set(serverItems.map((i) => i.id));
+  const displayItems = [...extraItems.filter((i) => !existingIds.has(i.id)), ...serverItems];
+  const liveCount = displayItems.length - serverItems.length;
 
   function updateParams(updates: Record<string, string>) {
     const next = new URLSearchParams(searchParams.toString());
@@ -166,12 +227,6 @@ export default function ActivityClient({
       else next.delete(key);
     }
     next.delete("page");
-    startTransition(() => router.replace(`${pathname}?${next.toString()}`));
-  }
-
-  function goToPage(p: number) {
-    const next = new URLSearchParams(searchParams.toString());
-    next.set("page", String(p));
     startTransition(() => router.replace(`${pathname}?${next.toString()}`));
   }
 
@@ -271,27 +326,15 @@ export default function ActivityClient({
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1 || isPending}
-            onClick={() => goToPage(page - 1)}
-          >
-            הקודם
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            {page} / {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages || isPending}
-            onClick={() => goToPage(page + 1)}
-          >
-            הבא
-          </Button>
+      {!error && hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
+
+      {loadMoreError && (
+        <p className="pt-1 text-center text-sm text-destructive">{`שגיאה בטעינת פעילות נוספת: ${loadMoreError}`}</p>
+      )}
+
+      {!error && displayItems.length > 0 && (
+        <div className="pt-2 text-center text-xs text-muted-foreground">
+          {loadingMore ? "טוען…" : `מציג ${serverItems.length} מתוך ${totalCount} פעולות`}
         </div>
       )}
     </div>

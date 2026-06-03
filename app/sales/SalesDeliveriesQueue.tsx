@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useMemo } from "react";
 import { MapPin, Phone, Truck } from "lucide-react";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -8,19 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatShortDate } from "@/lib/date";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
-
-type DeliveryItem = {
-  id: string;
-  customerId: string;
-  orderDate: string | null;
-  status: string;
-  totalAmount: number | null;
-  notes: string | null;
-  customerName: string;
-  customerPhone: string | null;
-  city: string;
-  address: string;
-};
+import { DELIVERY_REGIONS, getCityRegion } from "@/lib/ui/cities";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { loadMoreDeliveries } from "@/app/sales/actions";
+import type { DeliveryItem } from "@/app/sales/loadDeliveries";
 
 type CustomerGroup = {
   customerName: string;
@@ -35,6 +27,59 @@ type RegionLink = {
   href: string;
   active: boolean;
 };
+
+// region → city → [customerKey, group]
+type GroupedDeliveries = ReadonlyArray<
+  readonly [string, ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, CustomerGroup]>]>]
+>;
+
+function buildCustomerGroups(cityDeliveries: DeliveryItem[]) {
+  return Array.from(
+    cityDeliveries.reduce((map, delivery) => {
+      const customerKey =
+        delivery.customerId ||
+        `${delivery.customerName}|${delivery.address}|${delivery.customerPhone ?? ""}`;
+      const existing = map.get(customerKey);
+      if (existing) {
+        existing.orders.push(delivery);
+        return map;
+      }
+      map.set(customerKey, {
+        customerName: delivery.customerName,
+        customerPhone: delivery.customerPhone,
+        address: delivery.address,
+        orders: [delivery],
+      });
+      return map;
+    }, new Map<string, CustomerGroup>())
+  );
+}
+
+// Group the (region-filtered) deliveries into region → city → customer for display.
+function groupDeliveries(deliveries: DeliveryItem[], regionFilter: string | null): GroupedDeliveries {
+  const visible = regionFilter
+    ? deliveries.filter((d) => getCityRegion(d.city) === regionFilter)
+    : deliveries;
+
+  const byRegionMap = new Map<string, Map<string, DeliveryItem[]>>();
+  for (const delivery of visible) {
+    const region = getCityRegion(delivery.city) ?? "לא ידוע";
+    if (!byRegionMap.has(region)) byRegionMap.set(region, new Map());
+    const byCity = byRegionMap.get(region)!;
+    const list = byCity.get(delivery.city) ?? [];
+    list.push(delivery);
+    byCity.set(delivery.city, list);
+  }
+
+  const REGION_ORDER = [...DELIVERY_REGIONS, "לא ידוע"];
+  return REGION_ORDER.filter((r) => byRegionMap.has(r)).map((region) => {
+    const citiesMap = byRegionMap.get(region)!;
+    const cities = Array.from(citiesMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b, "he"))
+      .map(([city, cityDeliveries]) => [city, buildCustomerGroups(cityDeliveries)] as const);
+    return [region, cities] as const;
+  });
+}
 
 function formatCurrency(value: number | null) {
   if (value === null) return "-";
@@ -52,21 +97,42 @@ function phoneHref(value: string | null) {
 }
 
 export default function SalesDeliveriesQueue({
-  deliveriesByRegion,
+  initialDeliveries,
+  initialHasMore = false,
   regionFilter,
   regionLinks,
   totalCount,
+  customerId = null,
 }: {
-  deliveriesByRegion: ReadonlyArray<
-    readonly [
-      string,
-      ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, CustomerGroup]>]>,
-    ]
-  >;
+  initialDeliveries: DeliveryItem[];
+  initialHasMore?: boolean;
   regionFilter: string | null;
   regionLinks: RegionLink[];
   totalCount: number;
+  customerId?: string | null;
 }) {
+  // Fetch-from-DB-as-you-scroll: accumulate delivery pages, then group region →
+  // city → customer over everything loaded so far (no "next page" button).
+  const fetchFilters = useMemo(() => ({ customerId }), [customerId]);
+  const fetchPage = useCallback((page: number) => loadMoreDeliveries(page, fetchFilters), [fetchFilters]);
+  const getRowId = useCallback((delivery: DeliveryItem) => delivery.id, []);
+  const {
+    rows: deliveries,
+    hasMore,
+    loading: loadingMore,
+    sentinelRef,
+  } = useInfiniteScroll<DeliveryItem>({
+    initialRows: initialDeliveries,
+    initialHasMore,
+    fetchPage,
+    getId: getRowId,
+  });
+
+  const deliveriesByRegion = useMemo(
+    () => groupDeliveries(deliveries, regionFilter),
+    [deliveries, regionFilter]
+  );
+
   const totalVisible = deliveriesByRegion.reduce(
     (sum, [, cities]) =>
       sum +
@@ -219,6 +285,13 @@ export default function SalesDeliveriesQueue({
           );
         })
       )}
+
+      {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
+      {deliveries.length > 0 ? (
+        <div className="pt-1 text-center text-xs text-muted-foreground">
+          {loadingMore ? "טוען…" : `נטענו ${deliveries.length} מתוך ${totalCount} משלוחים`}
+        </div>
+      ) : null}
     </div>
   );
 }

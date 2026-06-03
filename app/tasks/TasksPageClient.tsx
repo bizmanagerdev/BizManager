@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { loadMoreTasks } from "@/app/tasks/actions";
+import type { TasksFilters } from "@/app/tasks/loadTasks";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,13 +48,8 @@ export type TaskListItem = {
 
 type Props = {
   tasks: TaskListItem[];
-  page: number;
-  pageSize: number;
+  initialHasMore?: boolean;
   totalCount: number;
-  hasPreviousPage: boolean;
-  hasNextPage: boolean;
-  prevHref: string | null;
-  nextHref: string | null;
   projects: TaskOption[];
   properties: TaskOption[];
   users: UserOption[];
@@ -108,15 +106,42 @@ export default function TasksPageClient(props: Props) {
   const [editId, setEditId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
-  const [localTasks, setLocalTasks] = useState<TaskListItem[]>(props.tasks);
+
+  // Fetch-from-DB-as-you-scroll: accumulate task pages and pull the next one from
+  // the server when the bottom comes into view (no "next page" button).
+  const fetchFilters = useMemo<TasksFilters>(
+    () => ({
+      q: props.initialFilters?.q ?? "",
+      status: props.initialFilters?.status ?? "",
+      priority: props.initialFilters?.priority ?? "",
+      domain: props.initialFilters?.domain ?? "",
+      linkedId: props.initialFilters?.linkedId ?? "",
+    }),
+    [props.initialFilters]
+  );
+  const fetchPage = useCallback(
+    (page: number) => loadMoreTasks(page, fetchFilters),
+    [fetchFilters]
+  );
+  const getRowId = useCallback((task: TaskListItem) => task.id, []);
+  const {
+    rows: localTasks,
+    setRows: setLocalTasks,
+    hasMore,
+    loading: loadingMore,
+    sentinelRef,
+    mobileSentinelRef,
+    scrollRef,
+  } = useInfiniteScroll<TaskListItem>({
+    initialRows: props.tasks,
+    initialHasMore: props.initialHasMore ?? false,
+    fetchPage,
+    getId: getRowId,
+  });
 
   // qInput is local state for immediate feedback while debouncing URL push
   const [qInput, setQInput] = useState(urlQ);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    setLocalTasks(props.tasks);
-  }, [props.tasks]);
 
   // Sync qInput when URL q changes externally (e.g. browser back/forward)
   useEffect(() => {
@@ -412,9 +437,10 @@ export default function TasksPageClient(props: Props) {
               );
             })}
           </div>
+          {hasMore ? <div ref={mobileSentinelRef} className="h-1 md:hidden" /> : null}
 
           <Card className="hidden overflow-hidden border-border/70 shadow-sm md:block">
-            <div className="max-h-[70vh] overflow-auto">
+            <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                 <tr className="border-b border-border/70">
@@ -491,33 +517,12 @@ export default function TasksPageClient(props: Props) {
                 })}
               </tbody>
             </table>
+            {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
             </div>
           </Card>
 
-          <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm">
-            <div className="text-muted-foreground">
-              עמוד {props.page} • {props.totalCount} משימות סה"כ
-            </div>
-            <div className="flex gap-2">
-              {props.hasPreviousPage && props.prevHref ? (
-                <Button asChild variant="outline" size="sm">
-                  <Link href={props.prevHref} onClick={handleNavigationStart}>הקודם</Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled>
-                  הקודם
-                </Button>
-              )}
-              {props.hasNextPage && props.nextHref ? (
-                <Button asChild variant="outline" size="sm">
-                  <Link href={props.nextHref} onClick={handleNavigationStart}>הבא</Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled>
-                  הבא
-                </Button>
-              )}
-            </div>
+          <div className="border-t pt-4 text-center text-xs text-muted-foreground">
+            {loadingMore ? "טוען…" : `מציג ${localTasks.length} מתוך ${props.totalCount} משימות`}
           </div>
         </>
       )}

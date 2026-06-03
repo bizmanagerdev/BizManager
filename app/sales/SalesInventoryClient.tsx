@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatShortDateTime } from "@/lib/date";
+import { useRevealOnScroll } from "@/hooks/useRevealOnScroll";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { loadMoreInventory } from "@/app/sales/actions";
+import type { InventoryItem, ProductsFilters } from "@/app/sales/loadProducts";
 import {
   Dialog,
   DialogContent,
@@ -17,18 +21,6 @@ import {
 
 type Row = Record<string, unknown>;
 
-type InventoryItem = {
-  productId: string;
-  productName: string;
-  sku: string | null;
-  lowStockThreshold: number;
-  active: boolean;
-  quantityOnHand: number;
-  quantityReserved: number;
-  available: number;
-  soldAmount: number;
-};
-
 type AdjustmentType =
   | "purchase_in"
   | "customer_return_in"
@@ -36,84 +28,6 @@ type AdjustmentType =
   | "damage_out"
   | "manual_in"
   | "manual_out";
-
-function buildInventoryItems(
-  products: Row[],
-  inventoryRows: Row[],
-  soldAmountByProductId: Record<string, number>,
-  movements: Row[],
-  lowStockThresholdByProductId: Record<string, number>
-) {
-  const movementNetByProduct = new Map<string, number>();
-  movements.forEach((row) => {
-    const productId = getString(row, "product_id");
-    if (!productId) return;
-    const qty = getNumber(row, "quantity") ?? 0;
-    if (!Number.isFinite(qty) || qty <= 0) return;
-    const movementType = (getString(row, "movement_type") ?? "").toLowerCase();
-    const signed =
-      movementType === "out"
-        ? -qty
-        : movementType === "in" || movementType === "adjustment"
-          ? qty
-          : 0;
-    movementNetByProduct.set(productId, (movementNetByProduct.get(productId) ?? 0) + signed);
-  });
-
-  const productById = new Map<string, Row>();
-  products.forEach((p) => {
-    const id = getString(p, "id");
-    if (id) productById.set(id, p);
-  });
-
-  const byProductId = new Map<string, InventoryItem>();
-
-  productById.forEach((p, id) => {
-    const productStockFallback =
-      getNumber(p, "stock") ??
-      getNumber(p, "quantity") ??
-      getNumber(p, "available_quantity") ??
-      getNumber(p, "in_stock") ??
-      0;
-    const movementFallback = movementNetByProduct.get(id) ?? 0;
-    const quantityOnHand = productStockFallback !== 0 ? productStockFallback : movementFallback;
-
-    byProductId.set(id, {
-      productId: id,
-      productName: productName(p),
-      sku: getString(p, "sku"),
-      lowStockThreshold: lowStockThresholdByProductId[id] ?? 5,
-      active: p.active !== false,
-      quantityOnHand,
-      quantityReserved: 0,
-      available: quantityOnHand,
-      soldAmount: soldAmountByProductId[id] ?? 0,
-    });
-  });
-
-  inventoryRows.forEach((row) => {
-    const productId = getString(row, "product_id");
-    if (!productId) return;
-    const p = productById.get(productId);
-    const quantityOnHand = getNumber(row, "quantity_on_hand") ?? 0;
-    const quantityReserved = getNumber(row, "quantity_reserved") ?? 0;
-    byProductId.set(productId, {
-      productId,
-      productName: p ? productName(p) : productId,
-      sku: p ? getString(p, "sku") : null,
-      lowStockThreshold: lowStockThresholdByProductId[productId] ?? 5,
-      active: p?.active !== false,
-      quantityOnHand,
-      quantityReserved,
-      available: quantityOnHand - quantityReserved,
-      soldAmount: soldAmountByProductId[productId] ?? 0,
-    });
-  });
-
-  return Array.from(byProductId.values()).sort((a, b) =>
-    a.productName.localeCompare(b.productName, "he")
-  );
-}
 
 function getString(row: Row, key: string) {
   const value = row[key];
@@ -130,15 +44,6 @@ function getNumber(row: Row, key: string) {
   return null;
 }
 
-function productName(row: Row) {
-  return (
-    getString(row, "name") ??
-    getString(row, "product_name") ??
-    getString(row, "title") ??
-    getString(row, "sku") ??
-    "מוצר"
-  );
-}
 
 function getAdjustmentMeta(adjustmentType: AdjustmentType) {
   switch (adjustmentType) {
@@ -210,19 +115,19 @@ function formatDateTime(value: string | null) {
 }
 
 export default function SalesInventoryClient({
-  products,
-  inventoryRows,
-  soldAmountByProductId = {},
-  lowStockThresholdByProductId = {},
+  initialItems,
   movements,
+  initialHasMore = false,
+  totalCount,
   initialQuery = "",
+  initialCategoryFilter = "",
 }: {
-  products: Row[];
-  inventoryRows: Row[];
-  soldAmountByProductId?: Record<string, number>;
-  lowStockThresholdByProductId?: Record<string, number>;
+  initialItems: InventoryItem[];
   movements: Row[];
+  initialHasMore?: boolean;
+  totalCount?: number;
   initialQuery?: string;
+  initialCategoryFilter?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -243,13 +148,39 @@ export default function SalesInventoryClient({
     return () => clearTimeout(timer);
   }, [searchQuery, router, searchParams]);
 
-  const [items, setItems] = useState<InventoryItem[]>(() =>
-    buildInventoryItems(products, inventoryRows, soldAmountByProductId, movements, lowStockThresholdByProductId)
+  // Fetch-from-DB-as-you-scroll: accumulate inventory pages and pull the next one
+  // from the server when the bottom comes into view (no "next page" button).
+  const fetchFilters = useMemo<ProductsFilters>(
+    () => ({ q: initialQuery, category: initialCategoryFilter }),
+    [initialQuery, initialCategoryFilter]
   );
+  const fetchPage = useCallback((page: number) => loadMoreInventory(page, fetchFilters), [fetchFilters]);
+  const getItemId = useCallback((item: InventoryItem) => item.productId, []);
+  const {
+    rows: items,
+    setRows: setItems,
+    hasMore,
+    loading: loadingMore,
+    sentinelRef: itemsSentinelRef,
+    mobileSentinelRef: itemsMobileSentinelRef,
+    scrollRef: itemsScrollRef,
+  } = useInfiniteScroll<InventoryItem>({
+    initialRows: initialItems,
+    initialHasMore,
+    fetchPage,
+    getId: getItemId,
+  });
 
   const [movementRows, setMovementRows] = useState<Row[]>(movements);
-  const [movementsPage, setMovementsPage] = useState(1);
-  const MOVEMENTS_PER_PAGE = 20;
+  // Keep the movements card in sync with the page's products when filters change.
+  const [prevMovements, setPrevMovements] = useState<Row[]>(movements);
+  if (movements !== prevMovements) {
+    setPrevMovements(movements);
+    setMovementRows(movements);
+  }
+  // Scroll-to-load instead of a "next page" button — reveal more rows as the
+  // bottom of the list comes into view.
+  const movementsReveal = useRevealOnScroll(movementRows, { initial: 20, step: 20 });
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
   const [productId, setProductId] = useState("");
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("purchase_in");
@@ -267,42 +198,23 @@ export default function SalesInventoryClient({
 
   const productOptions = useMemo(
     () =>
-      products
-        .map((p) => {
-          const id = getString(p, "id");
-          if (!id) return null;
-          return {
-            id,
-            label: productName(p),
-            sku: getString(p, "sku"),
-          };
-        })
-        .filter((x): x is { id: string; label: string; sku: string | null } => x !== null)
+      items
+        .map((item) => ({ id: item.productId, label: item.productName, sku: item.sku }))
         .sort((a, b) => a.label.localeCompare(b.label, "he")),
-    [products]
+    [items]
   );
 
   const productNameById = useMemo(() => {
     const map = new Map<string, string>();
-    products.forEach((row) => {
-      const id = getString(row, "id");
-      if (id) map.set(id, productName(row));
-    });
+    items.forEach((item) => map.set(item.productId, item.productName));
     return map;
-  }, [products]);
+  }, [items]);
 
   useEffect(() => {
     if (!adjustmentOpen) return;
     const timeout = setTimeout(() => quantityInputRef.current?.focus(), 120);
     return () => clearTimeout(timeout);
   }, [adjustmentOpen]);
-
-  useEffect(() => {
-    setItems(
-      buildInventoryItems(products, inventoryRows, soldAmountByProductId, movements, lowStockThresholdByProductId)
-    );
-    setMovementRows(movements);
-  }, [products, inventoryRows, soldAmountByProductId, movements, lowStockThresholdByProductId]);
 
   function resetAdjustmentForm(nextProductId = "") {
     setProductId(nextProductId);
@@ -363,7 +275,7 @@ export default function SalesInventoryClient({
             productId,
             productName: option?.label ?? productId,
             sku: option?.sku ?? null,
-            lowStockThreshold: lowStockThresholdByProductId[productId] ?? 5,
+            lowStockThreshold: 5,
             active: true,
             quantityOnHand: nextOnHand,
             quantityReserved: nextReserved,
@@ -437,7 +349,7 @@ export default function SalesInventoryClient({
             <p className="text-sm text-muted-foreground">אין מוצרים להצגה במלאי.</p>
           ) : (
             <>
-              <div className="hidden max-h-[70vh] overflow-auto rounded-md border xl:block">
+              <div ref={itemsScrollRef} className="hidden max-h-[70vh] overflow-auto rounded-md border xl:block">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                     <tr>
@@ -481,6 +393,7 @@ export default function SalesInventoryClient({
                     })}
                   </tbody>
                 </table>
+                {hasMore ? <div ref={itemsSentinelRef} className="h-1" /> : null}
               </div>
 
               <div className="grid grid-cols-1 gap-2 xl:hidden">
@@ -528,6 +441,12 @@ export default function SalesInventoryClient({
                     </div>
                   );
                 })}
+              </div>
+              {hasMore ? <div ref={itemsMobileSentinelRef} className="h-1 xl:hidden" /> : null}
+              <div className="pt-3 text-center text-xs text-muted-foreground">
+                {loadingMore
+                  ? "טוען…"
+                  : `מציג ${items.length}${totalCount != null ? ` מתוך ${totalCount}` : ""} פריטי מלאי`}
               </div>
             </>
           )}
@@ -623,13 +542,10 @@ export default function SalesInventoryClient({
             <p className="text-sm text-muted-foreground">אין תנועות מלאי להצגה.</p>
           ) : (
             (() => {
-              const totalPages = Math.max(1, Math.ceil(movementRows.length / MOVEMENTS_PER_PAGE));
-              const safePage = Math.min(movementsPage, totalPages);
-              const startIdx = (safePage - 1) * MOVEMENTS_PER_PAGE;
-              const paginatedMovements = movementRows.slice(startIdx, startIdx + MOVEMENTS_PER_PAGE);
+              const paginatedMovements = movementsReveal.visibleItems;
               return (
                 <>
-                  <div className="hidden max-h-[70vh] overflow-auto rounded-md border xl:block">
+                  <div ref={movementsReveal.scrollRef} className="hidden max-h-[70vh] overflow-auto rounded-md border xl:block">
                     <table className="w-full text-sm">
                       <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                         <tr>
@@ -660,6 +576,7 @@ export default function SalesInventoryClient({
                         })}
                       </tbody>
                     </table>
+                    {movementsReveal.hasMore ? <div ref={movementsReveal.sentinelRef} className="h-1" /> : null}
                   </div>
 
                   <div className="grid grid-cols-1 gap-2 xl:hidden">
@@ -696,34 +613,11 @@ export default function SalesInventoryClient({
                       );
                     })}
                   </div>
+                  {movementsReveal.hasMore ? <div ref={movementsReveal.mobileSentinelRef} className="h-1 xl:hidden" /> : null}
 
-                  {totalPages > 1 ? (
-                    <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3 text-sm">
-                      <div className="text-muted-foreground">
-                        עמוד {safePage} מתוך {totalPages} • {movementRows.length} תנועות
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={safePage <= 1}
-                          onClick={() => setMovementsPage((p) => Math.max(1, p - 1))}
-                        >
-                          הקודם
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={safePage >= totalPages}
-                          onClick={() => setMovementsPage((p) => Math.min(totalPages, p + 1))}
-                        >
-                          הבא
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
+                  <div className="mt-3 border-t pt-3 text-center text-xs text-muted-foreground">
+                    מציג {movementsReveal.visibleCount} מתוך {movementsReveal.total} תנועות
+                  </div>
                 </>
               );
             })()

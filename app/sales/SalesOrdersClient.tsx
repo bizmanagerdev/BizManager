@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ChevronDown, Search } from "lucide-react";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { loadMoreOrders } from "@/app/sales/actions";
+import type { OrdersFilters } from "@/app/sales/loadOrders";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -259,25 +262,66 @@ function InvoiceQuickMenu({ row }: { row: OrderView }) {
 
 export default function SalesOrdersClient({
   orders,
-  contacts = [],
+  initialHasMore = false,
   initialQuery = "",
   showPaymentStatusFilter = false,
   initialPaymentFilter = "",
   initialInvoiceFilter = "",
+  customerId = null,
   totalCount,
 }: {
   orders: Row[];
-  contacts?: Row[];
+  initialHasMore?: boolean;
   initialQuery?: string;
   showPaymentStatusFilter?: boolean;
   initialPaymentFilter?: string;
   initialInvoiceFilter?: string;
+  customerId?: string | null;
   totalCount?: number;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(initialQuery);
   const [paymentSnapshot] = useState(() => new Map<string, number>());
+
+  // Fetch-from-DB-as-you-scroll: accumulate order pages and pull the next one
+  // from the server when the bottom comes into view (no "next page" button).
+  const fetchFilters = useMemo<OrdersFilters>(
+    () => ({
+      tab: showPaymentStatusFilter ? "closed" : "orders",
+      customerId,
+      q: initialQuery,
+      paymentStatus:
+        initialPaymentFilter === "paid" ||
+        initialPaymentFilter === "partial" ||
+        initialPaymentFilter === "unpaid"
+          ? initialPaymentFilter
+          : "",
+      invoice:
+        initialInvoiceFilter === "needs" ||
+        initialInvoiceFilter === "no" ||
+        initialInvoiceFilter === "pending" ||
+        initialInvoiceFilter === "sent"
+          ? initialInvoiceFilter
+          : "",
+    }),
+    [showPaymentStatusFilter, customerId, initialQuery, initialPaymentFilter, initialInvoiceFilter]
+  );
+  const fetchPage = useCallback((page: number) => loadMoreOrders(page, fetchFilters), [fetchFilters]);
+  const getRowId = useCallback((row: Row) => getString(row, ["order_id", "id"]) ?? "", []);
+  const {
+    rows: accumulatedOrders,
+    hasMore,
+    loading: loadingMore,
+    sentinelRef,
+    mobileSentinelRef,
+    scrollRef,
+  } = useInfiniteScroll<Row>({
+    initialRows: orders,
+    initialHasMore,
+    fetchPage,
+    getId: getRowId,
+  });
   const paymentFilter: PaymentStatusFilter =
     initialPaymentFilter === "paid" ||
     initialPaymentFilter === "partial" ||
@@ -343,21 +387,9 @@ export default function SalesOrdersClient({
     return () => clearTimeout(timer);
   }, [query, router, searchParams]);
 
-  const contactsByCustomerId = useMemo(() => {
-    const map = new Map<string, Row[]>();
-    for (const c of contacts) {
-      const cid = typeof c.customer_id === "string" ? c.customer_id : "";
-      if (!cid) continue;
-      const list = map.get(cid) ?? [];
-      list.push(c);
-      map.set(cid, list);
-    }
-    return map;
-  }, [contacts]);
-
   const orderRows = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
-    const mappedOrders = orders.map<OrderView | null>((row) => {
+    const mappedOrders = accumulatedOrders.map<OrderView | null>((row) => {
       const id = getString(row, ["order_id", "id"]);
       const customerId = getString(row, ["customer_id"]);
       if (!id || !customerId) return null;
@@ -409,10 +441,9 @@ export default function SalesOrdersClient({
     });
 
     return mappedOrders.filter((row): row is OrderView => row !== null);
-  }, [orders, paymentSnapshot]);
+  }, [accumulatedOrders, paymentSnapshot]);
 
   // Server already filtered by the `q` and `payment_status` URL params across the full dataset.
-  void contactsByCustomerId;
   const filteredRows = orderRows;
 
   return (
@@ -488,7 +519,7 @@ export default function SalesOrdersClient({
           {isFilterPending ? <FilterLoaderOverlay /> : null}
           <div className={isFilterPending ? "pointer-events-none opacity-50 transition-opacity" : "transition-opacity"}>
             <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
-            <div className="max-h-[70vh] overflow-auto">
+            <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                   <tr className="border-b border-border/70 text-right">
@@ -609,6 +640,7 @@ export default function SalesOrdersClient({
                   ))}
                 </tbody>
               </table>
+              {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
             </div>
           </Card>
 
@@ -688,6 +720,12 @@ export default function SalesOrdersClient({
               );
             })}
           </div>
+          {hasMore ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
+          </div>
+          <div className="pt-3 text-center text-xs text-muted-foreground">
+            {loadingMore
+              ? "טוען…"
+              : `מציג ${filteredRows.length}${totalCount != null ? ` מתוך ${totalCount}` : ""} הזמנות`}
           </div>
         </div>
       )}

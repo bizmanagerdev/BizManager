@@ -28,13 +28,11 @@ import {
   buildWorkerOwedEntries,
   buildWorkerPaymentEntries,
   matchesEntryFilters,
-  paginateEntries,
   resolvePaymentLinks,
   sortEntries,
   summarizeEntries,
 } from "./entries";
 import {
-  UPCOMING_PAGE_SIZE,
   type FinancialPageData,
   type FinancialPageFilters,
 } from "./types";
@@ -46,7 +44,6 @@ import {
   normalizeCustomerId,
   normalizeDate,
   normalizeDomain,
-  normalizePositiveInteger,
   normalizeText,
   todayIso,
   toNumber,
@@ -92,7 +89,6 @@ export async function getFinancialPageData(
       ? filters.stage
       : null;
   const query = normalizeText(filters.q);
-  const upcomingPage = normalizePositiveInteger(filters.upcomingPage, 1);
   const customerProjectIds = await resolveCustomerProjectIds(supabase, customerId);
   const customerProjectSet = new Set(customerProjectIds);
 
@@ -299,7 +295,10 @@ export async function getFinancialPageData(
       (left.recordedDate ?? "").localeCompare(right.recordedDate ?? "") ||
       left.id.localeCompare(right.id)
   );
-  const upcomingPagination = paginateEntries(upcomingSortedEntries, upcomingPage, UPCOMING_PAGE_SIZE);
+  // Send the full upcoming list (capped) so the client can scroll-to-load it,
+  // just like the ledger above — no "next page" round-trips to the server.
+  const UPCOMING_MAX = 1000;
+  const upcomingVisibleEntries = upcomingSortedEntries.slice(0, UPCOMING_MAX);
 
   return {
     todayIso: referenceDate,
@@ -321,9 +320,9 @@ export async function getFinancialPageData(
     ledgerTotalCount: filteredEntries.length,
     ledgerPage: 1,
     ledgerTotalPages: 1,
-    upcomingEntries: upcomingPagination.entries,
-    upcomingTotalCount: upcomingPagination.totalCount,
-    upcomingPage: upcomingPagination.page,
-    upcomingTotalPages: upcomingPagination.totalPages,
+    upcomingEntries: upcomingVisibleEntries,
+    upcomingTotalCount: upcomingSortedEntries.length,
+    upcomingPage: 1,
+    upcomingTotalPages: 1,
   };
 }
