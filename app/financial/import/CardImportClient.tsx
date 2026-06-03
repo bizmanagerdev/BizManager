@@ -596,6 +596,21 @@ export default function CardImportClient({
       setImportError("יש לבחור תחום עסקי לכל שורה מסומנת.");
       return;
     }
+    // Expenses must be positive (DB constraint). Catch it here and name the rows so the
+    // user can uncheck them (usually refunds) instead of hitting a raw DB error.
+    const invalidAmountRows = includedRows.filter((r) => !(Number.isFinite(r.amount) && r.amount > 0));
+    if (invalidAmountRows.length > 0) {
+      const names = invalidAmountRows
+        .slice(0, 5)
+        .map((r) => `${r.description || "ללא שם"} (${formatCurrency(r.amount)})`)
+        .join(", ");
+      setImportError(
+        `לא ניתן לייבא — ${invalidAmountRows.length} שורות מסומנות עם סכום לא חוקי (חייב להיות גדול מ-0): ${names}${
+          invalidAmountRows.length > 5 ? " ועוד…" : ""
+        }. הסר/י את הסימון (למשל זיכויים/החזרים) או תקן/י את הסכום.`
+      );
+      return;
+    }
     setImporting(true);
     try {
       // Save the original file as an attachment (best-effort — import proceeds regardless).
@@ -939,8 +954,15 @@ export default function CardImportClient({
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {rows.map((row, index) => (
-                        <tr key={index} className={`${row.duplicate ? "bg-warning-soft/20 " : ""}${row.include ? "" : "opacity-50"}`.trim()}>
+                      {rows.map((row, index) => {
+                        const invalidAmount = row.include && !(Number.isFinite(row.amount) && row.amount > 0);
+                        return (
+                        <tr
+                          key={index}
+                          className={`${
+                            invalidAmount ? "bg-destructive/10 " : row.duplicate ? "bg-warning-soft/20 " : ""
+                          }${row.include ? "" : "opacity-50"}`.trim()}
+                        >
                           <td className="px-2 py-2">
                             <input type="checkbox" checked={row.include} onChange={(e) => updateRow(index, { include: e.target.checked })} />
                           </td>
@@ -1050,7 +1072,8 @@ export default function CardImportClient({
                             )}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

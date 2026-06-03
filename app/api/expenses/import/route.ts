@@ -69,7 +69,16 @@ export async function POST(req: Request) {
         return;
       }
       if (!Number.isFinite(amount)) {
-        errors.push({ index, message: "סכום לא תקין" });
+        errors.push({ index, message: `סכום לא תקין (${description ?? "ללא שם"})` });
+        return;
+      }
+      // Expenses require a positive amount (DB constraint expenses_amount_check). Reject
+      // here so the whole batch insert can't fail on it — and name the offending row.
+      if (amount <= 0) {
+        errors.push({
+          index,
+          message: `הסכום חייב להיות גדול מ-0 — ${description ?? "ללא שם"} (${amount}). אם זה זיכוי/החזר, אין לסמן אותו לייבוא.`,
+        });
         return;
       }
       if (!expenseDate) {
@@ -113,7 +122,10 @@ export async function POST(req: Request) {
       .select("id");
 
     if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 400 });
+      const friendly = /expenses_amount_check|amount/i.test(insertError.message)
+        ? "אחת השורות מכילה סכום לא חוקי (הסכום חייב להיות גדול מ-0). בדוק/י את השורות המסומנות, במיוחד זיכויים/החזרים."
+        : insertError.message;
+      return NextResponse.json({ error: friendly }, { status: 400 });
     }
 
     const insertedIds = ((inserted ?? []) as { id: string }[]).map((r) => r.id);
