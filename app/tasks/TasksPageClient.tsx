@@ -218,9 +218,15 @@ export default function TasksPageClient(props: Props) {
         return;
       }
 
-      setLocalTasks((prev) =>
-        prev.map((task) => (task.id === taskId ? { ...task, status } : task))
-      );
+      setLocalTasks((prev) => {
+        // Marking a task done removes it from the open view (default + any
+        // non-"done" status filter), so drop it instead of leaving a stale row.
+        // When the user is explicitly viewing "done", keep it in place.
+        if (status === "done" && urlStatus !== "done") {
+          return prev.filter((task) => task.id !== taskId);
+        }
+        return prev.map((task) => (task.id === taskId ? { ...task, status } : task));
+      });
       toast.success("הסטטוס עודכן");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "";

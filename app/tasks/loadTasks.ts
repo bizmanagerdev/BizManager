@@ -63,7 +63,14 @@ export async function loadTasksPage(
     )
     .order("due_date", { ascending: true });
 
-  if (status) tasksQuery = tasksQuery.eq("status", status);
+  if (status) {
+    tasksQuery = tasksQuery.eq("status", status);
+  } else {
+    // Default view (status filter = "הכל") hides completed tasks. They stay
+    // reachable by explicitly picking "done" in the status filter. Keep
+    // null-status rows (treated as "todo") visible.
+    tasksQuery = tasksQuery.or("status.is.null,status.neq.done");
+  }
   if (priority) tasksQuery = tasksQuery.eq("priority", priority);
   if (domain) tasksQuery = tasksQuery.eq("business_domain", domain);
   if (linkedId) {
