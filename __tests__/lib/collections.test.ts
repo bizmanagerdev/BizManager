@@ -20,12 +20,22 @@ function run(over: Partial<Parameters<typeof computeSourceCollection>[0]>) {
 
 describe("computeSourceCollection", () => {
   it("unscheduled money with a FUTURE due date is expected (awaiting), not unpaid/late", () => {
-    // Order on שוטף+60: dated 01/06, due 29/08 — still within term.
+    // Order on שוטף+60: dated 01/06, due 29/08 — a real future term the customer
+    // agreed to, so it is genuinely "expected" even with nothing registered yet.
     const r = run({ dueDate: "2026-08-29" });
     expect(r.status).toBe("awaiting");
     expect(r.expected).toBe(680);
     expect(r.late).toBe(0);
     expect(r.daysLate).toBe(0);
+  });
+
+  it("an immediate-term order placed today with no payment is unpaid, not 'expected'", () => {
+    // referenceDate = today, מיידי terms (no dueDate) → due now, nothing registered.
+    // Pays-on-the-spot money is not "expected" — it is simply not paid yet.
+    const r = run({ referenceDate: TODAY, dueDate: null });
+    expect(r.status).toBe("unpaid");
+    expect(r.expected).toBe(0);
+    expect(r.late).toBe(0);
   });
 
   it("unscheduled money past its due date is overdue, with a day count", () => {

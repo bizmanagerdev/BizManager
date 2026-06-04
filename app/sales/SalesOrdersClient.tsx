@@ -81,6 +81,7 @@ type OrderView = {
   id: string;
   customerId: string;
   customerName: string;
+  customerNameForInvoice: string | null;
   customerEmail: string | null;
   customerPhone: string | null;
   customerCity: string | null;
@@ -422,6 +423,7 @@ export default function SalesOrdersClient({
         id,
         customerId,
         customerName: getString(row, ["customer_name"]) ?? customerId,
+        customerNameForInvoice: getString(row, ["customer_name_for_invoice"]),
         customerEmail: getString(row, ["customer_email"]),
         customerPhone: getString(row, ["customer_phone"]),
         customerCity: getString(row, ["customer_city"]),
@@ -594,6 +596,9 @@ export default function SalesOrdersClient({
                       <td className="px-4 py-4">
                         <div>
                           <div className="font-medium">{row.customerName}</div>
+                          {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
+                            <div className="text-xs text-muted-foreground">לחשבונית: {row.customerNameForInvoice}</div>
+                          ) : null}
                           <div className="mt-1 text-muted-foreground">{row.customerPhone ?? "-"}</div>
                         </div>
                       </td>
@@ -601,9 +606,6 @@ export default function SalesOrdersClient({
                         <div>
                           <div>{row.customerCity ?? "-"}</div>
                           <div className="mt-1 text-xs text-muted-foreground">{formatOrderDate(row.orderDate)}</div>
-                          {row.deliveryConfirmedAt ? (
-                            <div className="text-xs text-muted-foreground">סופק: {formatOrderDate(row.deliveryConfirmedAt)}</div>
-                          ) : null}
                         </div>
                       </td>
                       <td className="px-4 py-4">
@@ -655,6 +657,9 @@ export default function SalesOrdersClient({
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-semibold leading-tight">{row.customerName}</div>
+                        {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
+                          <div className="truncate text-xs text-muted-foreground">לחשבונית: {row.customerNameForInvoice}</div>
+                        ) : null}
                         <div className="truncate text-xs text-muted-foreground">{row.customerPhone ?? "-"}</div>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
@@ -691,9 +696,6 @@ export default function SalesOrdersClient({
 
                     <div className="flex items-center justify-between gap-2">
                       <InvoiceQuickMenu row={row} />
-                      {row.deliveryConfirmedAt ? (
-                        <span className="text-xs text-muted-foreground">סופק: {formatOrderDate(row.deliveryConfirmedAt)}</span>
-                      ) : null}
                     </div>
 
                     <div className={`grid gap-2 ${hasAction ? "grid-cols-2" : "grid-cols-1"}`}>

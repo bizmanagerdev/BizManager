@@ -170,7 +170,12 @@ export type SourceCollectionComputed = {
  * whose DUE DATE has already passed, counts as a LATE payment (overdue) — not
  * merely "unpaid". The due date comes from the order's payment terms (`dueDate`);
  * when absent it falls back to the reference date (= מיידי). Pending payments past
- * their own due_date are late too. Money with a future due date is "expected" (צפוי).
+ * their own due_date are late too.
+ *
+ * "Expected" (צפוי) is money not yet due: a registered future-dated payment (e.g. a
+ * post-dated check) OR unscheduled money on a genuinely FUTURE due date (שוטף+30/60
+ * — a later date the customer agreed to). Money due NOW (מיידי / due today) is not
+ * "expected": with nothing registered it reads unpaid until a payment is recorded.
  */
 export function computeSourceCollection(p: {
   total: number;
@@ -191,10 +196,13 @@ export function computeSourceCollection(p: {
   const refDay = p.referenceDate ? p.referenceDate.slice(0, 10) : null;
   const dueDay = p.dueDate ? p.dueDate.slice(0, 10) : refDay;
   const duePast = !!dueDay && dueDay < p.today;
+  const dueFuture = !!dueDay && dueDay > p.today;
   const late = p.blockOverdue ? 0 : p.overdue + (duePast ? unscheduled : 0);
-  // Expected (צפוי) = money not yet late: future-scheduled payments PLUS unscheduled
-  // money whose due date hasn't arrived (e.g. an order on שוטף+60 still within term).
-  const expected = futureScheduled + (duePast ? 0 : unscheduled);
+  // Expected (צפוי) = registered future-dated payments, PLUS unscheduled money on a
+  // genuinely FUTURE due date (e.g. שוטף+60 — a later date the customer agreed to).
+  // Money due NOW — מיידי terms or anything due today — is NOT "expected": with
+  // nothing registered it reads unpaid until a payment is actually recorded.
+  const expected = futureScheduled + (dueFuture ? unscheduled : 0);
 
   let daysLate = 0;
   if (late > 0.009) {
