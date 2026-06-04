@@ -6,6 +6,7 @@
 // store the billing date in expense_date and the real spend date in transaction_date;
 // older rows (and manual entries) may only have expense_date.
 export type ExistingExpense = {
+  id?: string; // present when the match can be linked to the live expense
   expense_date: string;
   transaction_date?: string | null;
   amount: number;

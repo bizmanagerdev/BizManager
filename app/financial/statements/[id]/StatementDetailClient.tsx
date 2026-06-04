@@ -128,6 +128,8 @@ export default function StatementDetailClient({
   const [markingDone, setMarkingDone] = useState(false);
 
   const [dupByRowId, setDupByRowId] = useState<Record<string, ExistingExpense | null>>({});
+  // Rows the user dismissed as "not a duplicate" — stay un-flagged even when the scan re-runs.
+  const [ignoredDupIds, setIgnoredDupIds] = useState<Set<string>>(() => new Set());
 
   // Income dialog (per-row or per-card).
   const [incomeOpen, setIncomeOpen] = useState(false);
@@ -283,6 +285,7 @@ export default function StatementDetailClient({
       if (!res.ok) return;
       const data = (await res.json().catch(() => ({}))) as { expenses?: ExistingExpense[] };
       const existing: ExistingExpense[] = (data.expenses ?? []).map((e) => ({
+        id: typeof e.id === "string" ? e.id : undefined,
         expense_date: String(e.expense_date ?? "").slice(0, 10),
         transaction_date: e.transaction_date ? String(e.transaction_date).slice(0, 10) : null,
         amount: Number(e.amount),
@@ -290,6 +293,10 @@ export default function StatementDetailClient({
       }));
       const map: Record<string, ExistingExpense | null> = {};
       for (const r of candidates) {
+        if (ignoredDupIds.has(r.id)) {
+          map[r.id] = null; // dismissed as "not a duplicate"
+          continue;
+        }
         map[r.id] = findDuplicate(
           { amount: r.amount, billingDate: r.expenseDate, txnDate: r.transactionDate, description: r.description },
           existing,
@@ -402,6 +409,44 @@ export default function StatementDetailClient({
   async function uncheckDuplicates() {
     const ids = rows.filter((r) => dupRowIds.includes(r.id) && r.include).map((r) => r.id);
     await bulkSetInclude(ids, false);
+  }
+
+  // Dismiss a false-positive duplicate flag for one row (it's not actually a duplicate).
+  function ignoreDup(rowId: string) {
+    setIgnoredDupIds((prev) => new Set(prev).add(rowId));
+    setDupByRowId((prev) => ({ ...prev, [rowId]: null }));
+  }
+
+  // Confirm a flagged row IS a duplicate: link it to the existing expense so it reads as
+  // "created" (already accounted for) instead of staying pending.
+  async function markExisting(row: StatementRowView, dup: ExistingExpense) {
+    if (!dup.id) {
+      setRowError("לא נמצא מזהה ההוצאה הקיימת — נסה/י לבדוק כפילויות מחדש.");
+      return;
+    }
+    const prev = rows;
+    setRows(prev.map((r) => (r.id === row.id ? { ...r, expenseId: dup.id ?? null, expenseExists: true } : r)));
+    setSavingRowId(row.id);
+    setRowError(null);
+    try {
+      const res = await fetch("/api/expenses/statement-rows/link-existing", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ row_id: row.id, expense_id: dup.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setRows(prev);
+        setRowError(data.error ?? "הקישור נכשל.");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setRows(prev);
+      setRowError("הקישור נכשל.");
+    } finally {
+      setSavingRowId(null);
+    }
   }
 
   // Draft rows marked "X". The toggle unchecks them all (or re-checks if none are checked).
@@ -580,16 +625,17 @@ export default function StatementDetailClient({
         </div>
       </div>
 
-      {/* Action bar: assign hint + create expenses */}
+      {/* Action bar: assign hint on top, then helpers + the create CTA on a separate row */}
       <Card>
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+        <CardContent className="space-y-3 py-3">
           <div className="text-sm text-muted-foreground">
             בחר/י תחום עסקי לכל שורה (עמודת &quot;שיוך מקורי&quot; מציגה את מה שסומן בקובץ), ואז צור/י את ההוצאות.
             {dupRowIds.length > 0 ? (
               <span className="ms-1 text-warning-soft-foreground">זוהו {dupRowIds.length} כפילויות אפשריות מול הוצאות קיימות.</span>
             ) : null}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {xDraftRows.length > 0 ? (
               <label className="flex items-center gap-2 text-sm" title="בטל את הסימון 'להוצאה' לכל שורות ה-X בבת אחת">
                 <button
@@ -616,6 +662,7 @@ export default function StatementDetailClient({
                 אל תיצור הוצאה לכפילויות
               </Button>
             ) : null}
+            </div>
             <Button
               size="sm"
               onClick={() => void createExpenses()}
@@ -764,14 +811,35 @@ export default function StatementDetailClient({
                       {showDupCol ? (
                         <td className="px-3 py-2">
                           {dup ? (
-                            <span
-                              title={`קיים: ${formatIsoDisplay(dup.transaction_date || dup.expense_date)} · ${formatCurrency(
-                                dup.amount
-                              )} — ${dup.description}`}
-                              className="inline-block rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-soft-foreground"
-                            >
-                              כפילות?
-                            </span>
+                            <div className="space-y-1">
+                              <span
+                                title={`קיים: ${formatIsoDisplay(dup.transaction_date || dup.expense_date)} · ${formatCurrency(
+                                  dup.amount
+                                )} — ${dup.description}`}
+                                className="inline-block rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-soft-foreground"
+                              >
+                                כפילות?
+                              </span>
+                              {dup.id ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void markExisting(row, dup)}
+                                  disabled={savingRowId === row.id}
+                                  title="זו אכן כפילות — קשר/י להוצאה הקיימת וסמן/י כקיים"
+                                  className="block whitespace-nowrap rounded border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-50"
+                                >
+                                  כן, כבר קיים
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => ignoreDup(row.id)}
+                                title="זו אינה כפילות — הסר/י את הסימון"
+                                className="block whitespace-nowrap rounded border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                              >
+                                לא כפילות
+                              </button>
+                            </div>
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
                           )}
@@ -972,13 +1040,13 @@ export default function StatementDetailClient({
                   </select>
                 </Field>
               ) : incomeForm.businessDomain === "sales" ? (
-                <Field label="הזמנה (לקוח)">
+                <Field label="הזמנה (אופציונלי)">
                   <select
                     value={incomeForm.orderId}
                     onChange={(e) => patchIncome({ orderId: e.target.value })}
                     className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                   >
-                    <option value="">— ללא הזמנה —</option>
+                    <option value="">— כללי (ללא הזמנה) —</option>
                     {orders.map((o) => (
                       <option key={o.id} value={o.id}>
                         {o.name}

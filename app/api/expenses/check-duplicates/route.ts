@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     // either one.
     const { data, error } = await supabase
       .from("expenses")
-      .select("expense_date,transaction_date,amount,description")
+      .select("id,expense_date,transaction_date,amount,description")
       .or(
         `and(expense_date.gte.${from},expense_date.lte.${to}),and(transaction_date.gte.${from},transaction_date.lte.${to})`
       )
