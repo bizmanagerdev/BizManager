@@ -221,6 +221,7 @@ export async function getAlertsData(
   let overdueCollectionsCount = 0;
   let overdueCollectionsAmount = 0;
   let dueRemindersCount = 0;
+  let unassignedStatementsCount = 0;
   if (isBackOffice) {
     const [overdueRes, remindersRes] = await Promise.all([
       supabase
@@ -277,6 +278,36 @@ export async function getAlertsData(
       }
     }
     dueRemindersCount = ((remindersRes.data ?? []) as Row[]).length;
+
+    // Saved credit-card statements that still have rows to assign + create as expenses,
+    // excluding any marked done. Best-effort: tables/columns may not be migrated yet
+    // (errors resolve to empty → count 0, no false alerts).
+    const [statementsRes, pendingRowsRes] = await Promise.all([
+      supabase
+        .from("card_statements")
+        .select("id,marked_done")
+        .range(0, 999)
+        .then((r) => r, () => ({ data: [] as Row[], error: null })),
+      supabase
+        .from("card_statement_rows")
+        .select("statement_id")
+        .eq("include", true)
+        .is("expense_id", null)
+        .range(0, 9999)
+        .then((r) => r, () => ({ data: [] as Row[], error: null })),
+    ]);
+    const doneStatementIds = new Set(
+      ((statementsRes.data ?? []) as Row[])
+        .filter((r) => getBoolean(r, "marked_done") === true)
+        .map((r) => getString(r, "id"))
+        .filter((id): id is string => Boolean(id))
+    );
+    const pendingStatementIds = new Set<string>();
+    for (const r of (pendingRowsRes.data ?? []) as Row[]) {
+      const sid = getString(r, "statement_id");
+      if (sid && !doneStatementIds.has(sid)) pendingStatementIds.add(sid);
+    }
+    unassignedStatementsCount = pendingStatementIds.size;
   }
 
   const overdueCollectionsAlert: AlertItem | null = isBackOffice
@@ -307,6 +338,19 @@ export async function getAlertsData(
         }
       : null;
 
+  const unassignedStatementsAlert: AlertItem | null =
+    isBackOffice && unassignedStatementsCount > 0
+      ? {
+          id: "card-statements-unassigned",
+          title: "פירוטי אשראי לא משויכים",
+          description: `${unassignedStatementsCount} פירוטי אשראי ממתינים לשיוך ויצירת הוצאות`,
+          href: "/financial/statements",
+          count: unassignedStatementsCount,
+          severity: "warning",
+          countsAsActiveAlert: true,
+        }
+      : null;
+
   return {
     alerts: [
       {
@@ -321,6 +365,7 @@ export async function getAlertsData(
       ...(moneyOwedToWorkersAlert ? [moneyOwedToWorkersAlert] : []),
       ...(overdueCollectionsAlert ? [overdueCollectionsAlert] : []),
       ...(dueRemindersAlert ? [dueRemindersAlert] : []),
+      ...(unassignedStatementsAlert ? [unassignedStatementsAlert] : []),
       {
         id: "unpaid-invoices",
         title: "חשבוניות לא משולמות",

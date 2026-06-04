@@ -3,8 +3,12 @@ import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 
-// Edits a saved statement row by updating the live expense it created (and its project
-// link), then mirrors the change onto the row snapshot. Admin/office only.
+// Edits a saved statement row.
+//  • If the row already created an expense → update the live expense (and its project link),
+//    then mirror the change onto the snapshot row. Domain/amount/date are required.
+//  • If the row has no expense yet (draft) → update only the snapshot row. Domain is optional
+//    so a partial assignment can be saved; an `include` toggle is also accepted.
+// Admin/office only.
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as {
@@ -18,20 +22,30 @@ export async function POST(req: Request) {
       notes?: string;
       expense_date?: string | null;
       transaction_date?: string | null;
+      include?: boolean;
     };
 
     const rowId = typeof body.row_id === "string" ? body.row_id.trim() : "";
     if (!rowId) return NextResponse.json({ error: "חסר מזהה שורה." }, { status: 400 });
 
-    const businessDomain = typeof body.business_domain === "string" ? body.business_domain.trim() : "";
-    if (!isExpenseBusinessDomain(businessDomain)) {
-      return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
-    }
-    const amount = typeof body.amount === "number" ? body.amount : Number(body.amount);
-    if (!Number.isFinite(amount)) return NextResponse.json({ error: "סכום לא תקין." }, { status: 400 });
-    const expenseDate = typeof body.expense_date === "string" && body.expense_date.trim() ? body.expense_date.trim() : "";
-    if (!expenseDate) return NextResponse.json({ error: "חסר תאריך." }, { status: 400 });
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    if (!access.ok) return access.response;
+    const { supabase, profile } = access.value;
 
+    const { data: row, error: rowError } = await supabase
+      .from("card_statement_rows")
+      .select("id,expense_id")
+      .eq("id", rowId)
+      .maybeSingle();
+    if (rowError) return NextResponse.json({ error: rowError.message }, { status: 400 });
+    if (!row?.id) return NextResponse.json({ error: "השורה לא נמצאה." }, { status: 404 });
+    const expenseId = typeof row.expense_id === "string" ? row.expense_id : "";
+
+    // Shared, normalized field values.
+    const businessDomainRaw = typeof body.business_domain === "string" ? body.business_domain.trim() : "";
+    const businessDomain = isExpenseBusinessDomain(businessDomainRaw) ? businessDomainRaw : "";
+    const amount = typeof body.amount === "number" ? body.amount : Number(body.amount);
+    const expenseDate = typeof body.expense_date === "string" && body.expense_date.trim() ? body.expense_date.trim() : "";
     const transactionDate =
       typeof body.transaction_date === "string" && body.transaction_date.trim() ? body.transaction_date.trim() : null;
     const category = typeof body.category === "string" && body.category.trim() ? body.category.trim() : "כרטיס אשראי";
@@ -46,21 +60,29 @@ export async function POST(req: Request) {
         ? body.property_id.trim()
         : null;
 
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
-    if (!access.ok) return access.response;
-    const { supabase, profile } = access.value;
-
-    const { data: row, error: rowError } = await supabase
-      .from("card_statement_rows")
-      .select("id,expense_id")
-      .eq("id", rowId)
-      .maybeSingle();
-    if (rowError) return NextResponse.json({ error: rowError.message }, { status: 400 });
-    if (!row?.id) return NextResponse.json({ error: "השורה לא נמצאה." }, { status: 404 });
-    const expenseId = typeof row.expense_id === "string" ? row.expense_id : "";
+    // ── Draft row (no expense yet): update only the snapshot, domain optional ──────────
     if (!expenseId) {
-      return NextResponse.json({ error: "ההוצאה המקושרת נמחקה ולא ניתן לערוך שורה זו." }, { status: 409 });
+      const snapshot: Record<string, unknown> = {
+        business_domain: businessDomain || null,
+        project_id: projectId,
+        property_id: propertyId,
+        category,
+        description,
+        notes,
+        expense_date: expenseDate || null,
+        transaction_date: transactionDate,
+      };
+      if (Number.isFinite(amount)) snapshot.amount = amount;
+      if (typeof body.include === "boolean") snapshot.include = body.include;
+      const { error: snapError } = await supabase.from("card_statement_rows").update(snapshot).eq("id", rowId);
+      if (snapError) return NextResponse.json({ error: snapError.message }, { status: 400 });
+      return NextResponse.json({ ok: true });
     }
+
+    // ── Row with a live expense: strict validation, update the expense too ─────────────
+    if (!businessDomain) return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
+    if (!Number.isFinite(amount)) return NextResponse.json({ error: "סכום לא תקין." }, { status: 400 });
+    if (!expenseDate) return NextResponse.json({ error: "חסר תאריך." }, { status: 400 });
 
     const { error: expenseError } = await supabase
       .from("expenses")

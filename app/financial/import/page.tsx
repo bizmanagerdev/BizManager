@@ -12,7 +12,7 @@ type Option = { id: string; name: string };
 export default async function ImportExpensesPage() {
   const { profile, supabase } = await requireProfile();
 
-  if (profile.role !== "admin") {
+  if (profile.role !== "admin" && profile.role !== "office") {
     redirect("/no-access");
   }
 

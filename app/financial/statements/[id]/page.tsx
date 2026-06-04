@@ -30,22 +30,29 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
 
   const { data: statement } = await supabase
     .from("card_statements")
-    .select("id,file_name,source,created_count,total_rows,created_at,storage_key")
+    .select("id,file_name,source,created_count,total_rows,created_at,storage_key,marked_done")
     .eq("id", id)
     .maybeSingle();
   if (!statement?.id) notFound();
 
-  const [{ data: rowRows }, { data: projectRows }, { data: propertyRows }] = await Promise.all([
+  const [{ data: rowRows }, { data: projectRows }, { data: propertyRows }, { data: orderRows }] = await Promise.all([
     supabase
       .from("card_statement_rows")
       .select(
-        "id,expense_id,expense_date,transaction_date,amount,description,category,business_domain,project_id,property_id,notes," +
-          "expense:expenses(id,amount,category,description,business_domain,project_id,property_id,expense_date,transaction_date,notes)"
+        "id,expense_id,income_payment_id,expense_date,transaction_date,amount,description,category,business_domain,project_id,property_id,notes,assignment_raw,include," +
+          "expense:expenses(id,amount,category,description,business_domain,project_id,property_id,expense_date,transaction_date,notes)," +
+          "income_payment:payments(id,amount_total)"
       )
       .eq("statement_id", id)
       .order("created_at", { ascending: true }),
     supabase.from("projects").select("id,name").order("name", { ascending: true }),
     supabase.from("properties").select("id,name").order("name", { ascending: true }),
+    // Orders for the income source picker — labeled by customer + date (orders have no number).
+    supabase
+      .from("orders")
+      .select("id,order_date,customer:customers(name)")
+      .order("order_date", { ascending: false })
+      .limit(500),
   ]);
 
   const projects: Option[] = ((projectRows ?? []) as Option[]).filter(
@@ -54,12 +61,25 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
   const properties: Option[] = ((propertyRows ?? []) as Option[]).filter(
     (r) => typeof r.id === "string" && typeof r.name === "string"
   );
+  const orders: Option[] = ((orderRows ?? []) as Record<string, unknown>[])
+    .filter((r) => typeof r.id === "string")
+    .map((r) => {
+      const cust = r.customer as { name?: string } | { name?: string }[] | null;
+      const custName = (Array.isArray(cust) ? cust[0]?.name : cust?.name) ?? "";
+      const date = String(r.order_date ?? "").slice(0, 10);
+      const label = [custName || "הזמנה", date].filter(Boolean).join(" · ");
+      return { id: String(r.id), name: label };
+    });
 
   // Prefer the live expense (source of truth); fall back to the import snapshot.
   const rows: StatementRowView[] = ((rowRows ?? []) as unknown as Record<string, unknown>[]).map((r) => {
     const embed = r.expense as LiveExpense | LiveExpense[] | null;
     const live = (Array.isArray(embed) ? embed[0] : embed) ?? null;
     const expenseExists = Boolean(r.expense_id) && Boolean(live?.id);
+    const incEmbed = r.income_payment as { id?: string; amount_total?: number | string | null } | { id?: string; amount_total?: number | string | null }[] | null;
+    const incPay = (Array.isArray(incEmbed) ? incEmbed[0] : incEmbed) ?? null;
+    const incomePaymentId = typeof r.income_payment_id === "string" ? r.income_payment_id : null;
+    const incomeExists = Boolean(incomePaymentId) && Boolean(incPay?.id);
     return {
       id: String(r.id),
       expenseId: typeof r.expense_id === "string" ? r.expense_id : null,
@@ -73,6 +93,12 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
       projectId: String((live?.project_id ?? r.project_id ?? "") || ""),
       propertyId: String((live?.property_id ?? r.property_id ?? "") || ""),
       notes: String((live?.notes ?? r.notes ?? "") || ""),
+      // Statement-row-only fields (never on the live expense).
+      assignmentRaw: String((r.assignment_raw ?? "") || ""),
+      include: r.include !== false,
+      incomePaymentId,
+      incomeExists,
+      incomeAmount: Number(incPay?.amount_total ?? 0),
     };
   });
 
@@ -94,10 +120,12 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
           createdCount: Number(statement.created_count ?? 0),
           totalRows: Number(statement.total_rows ?? 0),
           createdAt: String(statement.created_at ?? ""),
+          markedDone: statement.marked_done === true,
         }}
         rows={rows}
         projects={projects}
         properties={properties}
+        orders={orders}
         fileUrl={fileUrl}
       />
     </AppShell>

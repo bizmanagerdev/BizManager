@@ -2,19 +2,16 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
 import {
   norm,
   parseAmount,
   parseDateToIso,
-  shiftIso,
-  findDuplicate,
   parseStatementLines,
-  type ExistingExpense,
   type ParsedTxn,
   type MerchantMemory,
 } from "@/lib/financial/cardImport";
@@ -24,27 +21,23 @@ type Option = { id: string; name: string };
 type Sheet = { name: string; rows: string[][] };
 
 type ReviewRow = {
-  include: boolean;
+  include: boolean; // saved on the row; governs later expense creation
   expenseDate: string; // ISO yyyy-mm-dd (charge date)
-  txnDate: string; // ISO yyyy-mm-dd (transaction date, used for duplicate check)
+  txnDate: string; // ISO yyyy-mm-dd (transaction date)
   amount: number;
   description: string;
   notes: string;
   card: string; // detected card key ("" if none)
-  assignmentRaw: string; // original שיוך text from the sheet (reference)
-  businessDomain: string;
+  assignmentRaw: string; // original שיוך text from the sheet (persisted as reference)
+  businessDomain: string; // pre-resolved head-start (assigned for real on the statement page)
   projectId: string;
   propertyId: string;
-  autoAssigned: boolean; // domain was pre-filled from merchant memory (not the sheet's שיוך)
-  duplicate: ExistingExpense | null; // matched existing expense, if any
 };
-
-type ImportResult = { created: number; errors: { index: number; message: string }[] };
 
 const FALLBACK_CATEGORY = "כרטיס אשראי";
 
 // ── Parsing helpers ─────────────────────────────────────────────────────────
-// norm / parseAmount / parseDateToIso / shiftIso / findDuplicate now live in
+// norm / parseAmount / parseDateToIso / parseStatementLines live in
 // @/lib/financial/cardImport (pure + unit-tested).
 
 const FIELD_TOKENS = {
@@ -96,12 +89,12 @@ function extractCardName(rowCells: string[]): string | null {
 
 type Assignment = { include?: boolean; businessDomain?: string; projectId?: string; propertyId?: string };
 
-// Map the spreadsheet's own שיוך value → a domain (+ project/property), so the
-// user's existing assignments pre-fill the dropdowns.
+// Map the spreadsheet's own שיוך value → a domain (+ project/property), so the user's
+// existing assignments pre-fill as a head-start (they finalize them on the statement page).
 function mapAssignment(value: string, projects: Option[], properties: Option[]): Assignment {
   const v = norm(value);
   if (!v) return {};
-  // "Don't document" markers — including a plain X — leave the row unchecked.
+  // "Don't document" markers — including a plain X — leave the row's include off.
   if (v.includes("לא לתעד") || v === "ללא תיעוד" || v === "אל תתעד" || v === "לא" || v.toLowerCase() === "x" || v === "✗" || v === "✖")
     return { include: false };
   if (v === "בית") return { businessDomain: "home" };
@@ -209,12 +202,13 @@ export default function CardImportClient({
   smartExtractEnabled: boolean;
   merchantMemory: MerchantMemory;
 }) {
+  const router = useRouter();
   const [step, setStep] = useState<"upload" | "map" | "review">("upload");
   const [source, setSource] = useState<"excel" | "pdf">("excel");
   const [fileName, setFileName] = useState<string>("");
   const [fileError, setFileError] = useState<string | null>(null);
 
-  // The uploaded file (Excel or PDF), kept so the import can save it as an attachment.
+  // The uploaded file (Excel or PDF), kept so the save can store it as an attachment.
   const [sourceFile, setSourceFile] = useState<File | null>(null);
 
   // PDF flow
@@ -234,13 +228,8 @@ export default function CardImportClient({
 
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [cardLabels, setCardLabels] = useState<Record<string, string>>({});
-  const [bulkDomain, setBulkDomain] = useState("");
-  const [matchWindow, setMatchWindow] = useState(3);
-  const [checkingDup, setCheckingDup] = useState(false);
-  const [dupError, setDupError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [result, setResult] = useState<ImportResult | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const currentSheet = sheets[sheetIndex];
   const headerCells = currentSheet?.rows[headerRow] ?? [];
@@ -252,40 +241,23 @@ export default function CardImportClient({
     () => Array.from(new Set(rows.map((r) => r.card).filter(Boolean))),
     [rows]
   );
-  // How many rows share each normalized merchant — drives the "apply to all of this
-  // merchant" affordance.
-  const merchantCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const r of rows) {
-      const k = norm(r.description);
-      if (k) counts[k] = (counts[k] ?? 0) + 1;
-    }
-    return counts;
-  }, [rows]);
 
   function categoryFor(card: string): string {
     return (cardLabels[card] ?? card).trim() || FALLBACK_CATEGORY;
   }
 
-  // Decide a row's assignment: the sheet's שיוך column wins; otherwise fall back to what
-  // we remember for this merchant (auto). Empty when neither applies.
+  // Decide a row's pre-filled assignment: the sheet's שיוך wins; otherwise fall back to what
+  // we remember for this merchant. Empty when neither applies — it's finalized later.
   function resolveAssignment(
     description: string,
     sheet: Assignment
-  ): { businessDomain: string; projectId: string; propertyId: string; autoAssigned: boolean } {
+  ): { businessDomain: string; projectId: string; propertyId: string } {
     if (sheet.businessDomain) {
-      return {
-        businessDomain: sheet.businessDomain,
-        projectId: sheet.projectId ?? "",
-        propertyId: sheet.propertyId ?? "",
-        autoAssigned: false,
-      };
+      return { businessDomain: sheet.businessDomain, projectId: sheet.projectId ?? "", propertyId: sheet.propertyId ?? "" };
     }
     const mem = merchantMemory[norm(description)];
-    if (mem) {
-      return { businessDomain: mem.businessDomain, projectId: mem.projectId, propertyId: mem.propertyId, autoAssigned: true };
-    }
-    return { businessDomain: "", projectId: "", propertyId: "", autoAssigned: false };
+    if (mem) return { businessDomain: mem.businessDomain, projectId: mem.projectId, propertyId: mem.propertyId };
+    return { businessDomain: "", projectId: "", propertyId: "" };
   }
 
   function applyAutoDetect(sheet: Sheet) {
@@ -311,7 +283,6 @@ export default function CardImportClient({
 
   async function onFile(file: File) {
     setFileError(null);
-    setResult(null);
     setPdfNotice(null);
     setSourceFile(file);
     const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
@@ -407,7 +378,7 @@ export default function CardImportClient({
   }
 
   // Build review rows from normalized transactions (PDF paths). expense_date stays the
-  // billing date (cash-flow correct); the transaction date drives dedup and notes.
+  // billing date (cash-flow correct); the transaction date drives notes.
   function loadTxns(txns: ParsedTxn[]) {
     const labels: Record<string, string> = {};
     const out: ReviewRow[] = txns
@@ -421,8 +392,8 @@ export default function CardImportClient({
         const description = t.merchant || "ללא שם";
         const resolved = resolveAssignment(description, {});
         return {
-          // Refunds/credits (negative) are flagged and left unchecked — the cash-flow view
-          // treats every expense as an outflow, so a negative amount would mislead it.
+          // Refunds/credits (negative) are saved for the record but left out of expense
+          // creation — the cash-flow view treats every expense as an outflow.
           include: t.amount > 0,
           expenseDate: t.billingDate || t.txnDate,
           txnDate: t.txnDate,
@@ -434,15 +405,12 @@ export default function CardImportClient({
           businessDomain: resolved.businessDomain,
           projectId: resolved.projectId,
           propertyId: resolved.propertyId,
-          autoAssigned: resolved.autoAssigned,
-          duplicate: null,
         };
       });
     setCardLabels(labels);
     setRows(out);
     setStep("review");
     setPdfNotice(null);
-    void checkDuplicates(out, matchWindow);
   }
 
   function selectSheet(idx: number) {
@@ -488,134 +456,29 @@ export default function CardImportClient({
         businessDomain: resolved.businessDomain,
         projectId: resolved.projectId,
         propertyId: resolved.propertyId,
-        autoAssigned: resolved.autoAssigned,
-        duplicate: null,
       });
     }
 
     setCardLabels(labels);
     setRows(out);
     setStep("review");
-    void checkDuplicates(out, matchWindow);
   }
 
-  // Fetch existing expenses around the rows' dates and flag/uncheck likely repeats.
-  // Span BOTH the transaction and billing dates so prior imports (saved under the billing
-  // date) and manual entries (saved under the transaction date) are both pulled in.
-  async function checkDuplicates(reviewRows: ReviewRow[], windowDays: number) {
-    const dates = reviewRows.flatMap((r) => [r.txnDate, r.expenseDate]).filter(Boolean).sort();
-    if (dates.length === 0) return;
-    setCheckingDup(true);
-    setDupError(null);
-    try {
-      const from = shiftIso(dates[0], -windowDays);
-      const to = shiftIso(dates[dates.length - 1], windowDays);
-      const res = await fetch("/api/expenses/check-duplicates", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ from, to }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { expenses?: ExistingExpense[]; error?: string };
-      if (!res.ok) {
-        setDupError(data.error ?? "בדיקת הכפילויות נכשלה.");
-        return;
-      }
-      const existing: ExistingExpense[] = (data.expenses ?? []).map((e) => ({
-        expense_date: String(e.expense_date ?? "").slice(0, 10),
-        transaction_date: e.transaction_date ? String(e.transaction_date).slice(0, 10) : null,
-        amount: Number(e.amount),
-        description: String(e.description ?? ""),
-      }));
-      setRows((prev) =>
-        prev.map((row) => {
-          const dup = findDuplicate(
-            { amount: row.amount, billingDate: row.expenseDate, txnDate: row.txnDate, description: row.description },
-            existing,
-            windowDays
-          );
-          return { ...row, duplicate: dup, include: dup ? false : row.include };
-        })
-      );
-    } catch {
-      setDupError("בדיקת הכפילויות נכשלה.");
-    } finally {
-      setCheckingDup(false);
-    }
-  }
-
-  function updateRow(index: number, patch: Partial<ReviewRow>) {
-    setRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  }
-
-  function setRowDomain(index: number, domain: string) {
-    updateRow(index, { businessDomain: domain, projectId: "", propertyId: "", autoAssigned: false });
-  }
-
-  function applyDomainToAll() {
-    if (!bulkDomain) return;
-    setRows((prev) =>
-      prev.map((row) =>
-        row.include ? { ...row, businessDomain: bulkDomain, projectId: "", propertyId: "", autoAssigned: false } : row
-      )
-    );
-  }
-
-  // Copy a row's assignment to every included row with the same merchant.
-  function applyToSameMerchant(index: number) {
-    const src = rows[index];
-    if (!src || !src.businessDomain) return;
-    const key = norm(src.description);
-    setRows((prev) =>
-      prev.map((row) =>
-        row.include && norm(row.description) === key
-          ? {
-              ...row,
-              businessDomain: src.businessDomain,
-              projectId: src.projectId,
-              propertyId: src.propertyId,
-              autoAssigned: false,
-            }
-          : row
-      )
-    );
-  }
-
-  const includedRows = rows.filter((r) => r.include);
-  const allAssigned = includedRows.length > 0 && includedRows.every((r) => r.businessDomain);
+  const includedCount = rows.filter((r) => r.include).length;
   // Show the original שיוך value as a reference only when the sheet had that column.
   const showAssignmentRef = rows.some((r) => r.assignmentRaw);
-  const dupCount = rows.filter((r) => r.duplicate).length;
   const refundCount = rows.filter((r) => r.amount < 0).length;
 
-  async function doImport() {
-    if (importing) return;
-    setImportError(null);
-    if (includedRows.length === 0) {
-      setImportError("לא נבחרו שורות לייבוא.");
+  async function doSave() {
+    if (saving) return;
+    setSaveError(null);
+    if (rows.length === 0) {
+      setSaveError("אין שורות לשמירה.");
       return;
     }
-    if (!allAssigned) {
-      setImportError("יש לבחור תחום עסקי לכל שורה מסומנת.");
-      return;
-    }
-    // Expenses must be positive (DB constraint). Catch it here and name the rows so the
-    // user can uncheck them (usually refunds) instead of hitting a raw DB error.
-    const invalidAmountRows = includedRows.filter((r) => !(Number.isFinite(r.amount) && r.amount > 0));
-    if (invalidAmountRows.length > 0) {
-      const names = invalidAmountRows
-        .slice(0, 5)
-        .map((r) => `${r.description || "ללא שם"} (${formatCurrency(r.amount)})`)
-        .join(", ");
-      setImportError(
-        `לא ניתן לייבא — ${invalidAmountRows.length} שורות מסומנות עם סכום לא חוקי (חייב להיות גדול מ-0): ${names}${
-          invalidAmountRows.length > 5 ? " ועוד…" : ""
-        }. הסר/י את הסימון (למשל זיכויים/החזרים) או תקן/י את הסכום.`
-      );
-      return;
-    }
-    setImporting(true);
+    setSaving(true);
     try {
-      // Save the original file as an attachment (best-effort — import proceeds regardless).
+      // Save the original file as an attachment (best-effort — the save proceeds regardless).
       let documentId: string | null = null;
       let storageKey: string | null = null;
       if (sourceFile) {
@@ -629,21 +492,23 @@ export default function CardImportClient({
             storageKey = up.storage_key ?? null;
           }
         } catch {
-          /* keep importing even if the file upload fails */
+          /* keep saving even if the file upload fails */
         }
       }
 
       const payload = {
-        rows: includedRows.map((r) => ({
+        rows: rows.map((r) => ({
           expense_date: r.expenseDate,
           transaction_date: r.txnDate || null,
           amount: r.amount,
           description: r.description,
           category: categoryFor(r.card),
-          business_domain: r.businessDomain,
+          business_domain: r.businessDomain || null,
           project_id: r.businessDomain === "logistics_projects" ? r.projectId || null : null,
           property_id: r.businessDomain === "property_management" ? r.propertyId || null : null,
           notes: r.notes || null,
+          assignment_raw: r.assignmentRaw || null,
+          include: r.include,
         })),
         statement: {
           file_name: fileName,
@@ -658,16 +523,17 @@ export default function CardImportClient({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = (await res.json().catch(() => ({}))) as ImportResult & { error?: string };
-      if (!res.ok) {
-        setImportError(data.error ?? "הייבוא נכשל.");
+      const data = (await res.json().catch(() => ({}))) as { statement_id?: string; error?: string };
+      if (!res.ok || !data.statement_id) {
+        setSaveError(data.error ?? "שמירת הדף נכשלה.");
+        setSaving(false);
         return;
       }
-      setResult({ created: data.created ?? 0, errors: data.errors ?? [] });
+      // Off to the statement page to assign domains and create the expenses.
+      router.push(`/financial/statements/${data.statement_id}`);
     } catch {
-      setImportError("הייבוא נכשל.");
-    } finally {
-      setImporting(false);
+      setSaveError("שמירת הדף נכשלה.");
+      setSaving(false);
     }
   }
 
@@ -678,9 +544,8 @@ export default function CardImportClient({
     setPresetApplied(false);
     setSheets([]);
     setRows([]);
-    setResult(null);
     setFileName("");
-    setImportError(null);
+    setSaveError(null);
     setPdfFile(null);
     setPdfBusy(false);
     setPdfNotice(null);
@@ -690,48 +555,23 @@ export default function CardImportClient({
     <div className="space-y-4 text-right" dir="rtl">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">ייבוא הוצאות מכרטיס אשראי</h1>
+          <h1 className="text-lg font-semibold">העלאת פירוט אשראי</h1>
           <p className="text-sm text-muted-foreground">
-            העלאת Excel/CSV, ובחירת התחום העסקי לכל שורה. כל שורה נשמרת כהוצאה (שולמה, אשראי); הקטגוריה היא שם הכרטיס.
+            העלאת Excel/CSV/PDF ושמירת הפירוט. שיוך התחומים העסקיים ויצירת ההוצאות נעשים אחר כך בעמוד הפירוט.
           </p>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/financial">חזרה לפיננסי</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/financial/statements">פירוטים שנשמרו</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/financial">חזרה לפיננסי</Link>
+          </Button>
+        </div>
       </div>
 
-      {/* RESULT */}
-      {result ? (
-        <Card>
-          <CardContent className="space-y-3 py-5">
-            <div className="text-base font-medium text-success-soft-foreground">נוצרו {result.created} הוצאות בהצלחה.</div>
-            {result.errors.length > 0 ? (
-              <div className="text-sm text-destructive">
-                {result.errors.length} שורות נכשלו:
-                <ul className="mr-4 list-disc">
-                  {result.errors.slice(0, 10).map((e, i) => (
-                    <li key={i}>
-                      {e.index >= 0 ? `שורה ${e.index + 1}: ` : ""}
-                      {e.message}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            <div className="flex gap-2">
-              <Button asChild>
-                <Link href="/financial">צפייה בפיננסי</Link>
-              </Button>
-              <Button variant="outline" onClick={reset}>
-                ייבוא קובץ נוסף
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
       {/* STEP 1 — UPLOAD */}
-      {!result && step === "upload" ? (
+      {step === "upload" ? (
         <Card>
           <CardContent className="space-y-3 py-6">
             <label className="text-sm font-medium">בחר/י קובץ Excel, CSV או PDF</label>
@@ -768,7 +608,7 @@ export default function CardImportClient({
 
             <p className="text-xs text-muted-foreground">
               Excel/CSV: קובץ עם כמה כרטיסים נתמך — כל כרטיס מזוהה לפי שורת הכותרת שלו, וכל שורה מקבלת את שם הכרטיס
-              כקטגוריה. אם קיימת עמודת &quot;שיוך&quot;, הבחירה תמולא אוטומטית.
+              כקטגוריה. אם קיימת עמודת &quot;שיוך&quot;, היא תישמר כעמודת ייחוס וגם תמלא מראש את הבחירה.
               {" "}PDF: ננסה לקרוא את הדף ישירות
               {smartExtractEnabled ? ", ובמקרה הצורך נציע חילוץ חכם (הקובץ יישלח לשירות AI חיצוני)." : " (חילוץ חכם אינו מוגדר בשרת)."}
             </p>
@@ -777,7 +617,7 @@ export default function CardImportClient({
       ) : null}
 
       {/* STEP 2 — MAP COLUMNS */}
-      {!result && step === "map" && currentSheet ? (
+      {step === "map" && currentSheet ? (
         <Card>
           <CardContent className="space-y-4 py-5">
             <div className="text-sm text-muted-foreground">קובץ: {fileName}</div>
@@ -818,7 +658,7 @@ export default function CardImportClient({
               <ColumnSelect label="עמודת תאריך (חיוב) *" value={colDate} onChange={setColDate} headerCells={headerCells} columnCount={columnCount} />
               <ColumnSelect label="עמודת סכום (חיוב) *" value={colAmount} onChange={setColAmount} headerCells={headerCells} columnCount={columnCount} />
               <ColumnSelect label="עמודת שם בית עסק" value={colMerchant} onChange={setColMerchant} headerCells={headerCells} columnCount={columnCount} optional />
-              <ColumnSelect label="עמודת שיוך (מילוי אוטומטי)" value={colAssignment} onChange={setColAssignment} headerCells={headerCells} columnCount={columnCount} optional />
+              <ColumnSelect label="עמודת שיוך (ייחוס + מילוי מראש)" value={colAssignment} onChange={setColAssignment} headerCells={headerCells} columnCount={columnCount} optional />
               <ColumnSelect label="עמודת תאריך עסקה (להערה)" value={colTxnDate} onChange={setColTxnDate} headerCells={headerCells} columnCount={columnCount} optional />
             </div>
 
@@ -840,7 +680,7 @@ export default function CardImportClient({
 
             <div className="flex gap-2">
               <Button onClick={buildReview} disabled={colDate < 0 || colAmount < 0}>
-                המשך לבחירת שיוך
+                המשך לתצוגה מקדימה
               </Button>
               <Button variant="outline" onClick={reset}>
                 החלפת קובץ
@@ -853,8 +693,8 @@ export default function CardImportClient({
         </Card>
       ) : null}
 
-      {/* STEP 3 — REVIEW & ASSIGN */}
-      {!result && step === "review" ? (
+      {/* STEP 3 — PREVIEW & SAVE */}
+      {step === "review" ? (
         <div className="space-y-3">
           {rows.length === 0 ? (
             <Card>
@@ -890,53 +730,12 @@ export default function CardImportClient({
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-muted-foreground">
-                  נמצאו {rows.length} שורות · נבחרו {includedRows.length}
+                  נמצאו {rows.length} שורות · {includedCount} מסומנות ליצירת הוצאה
                   {refundCount > 0 ? ` · ${refundCount} זיכויים לא סומנו` : ""}
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">החל תחום על הכל:</span>
-                  <select
-                    value={bulkDomain}
-                    onChange={(e) => setBulkDomain(e.target.value)}
-                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="">— בחר —</option>
-                    {EXPENSE_BUSINESS_DOMAINS.map((d) => (
-                      <option key={d} value={d}>
-                        {getBusinessDomainLabel(d)}
-                      </option>
-                    ))}
-                  </select>
-                  <Button variant="outline" size="sm" onClick={applyDomainToAll} disabled={!bulkDomain}>
-                    החל
-                  </Button>
+                <div className="text-xs text-muted-foreground">
+                  כל השורות יישמרו בפירוט. שיוך התחומים ויצירת ההוצאות נעשים בעמוד הפירוט לאחר השמירה.
                 </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 rounded-md border bg-warning-soft/15 px-3 py-2 text-sm">
-                <span className="text-muted-foreground">בדיקת כפילויות מול הוצאות קיימות (לפי סכום + תאריך עסקה):</span>
-                <span>טווח ±</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={31}
-                  value={matchWindow}
-                  onChange={(e) => setMatchWindow(Math.max(0, Math.min(31, Number(e.target.value) || 0)))}
-                  className="h-8 w-16 rounded-md border border-input bg-background px-2 text-sm"
-                />
-                <span>ימים</span>
-                <Button variant="outline" size="sm" disabled={checkingDup} onClick={() => void checkDuplicates(rows, matchWindow)}>
-                  {checkingDup ? "בודק..." : "בדוק כפילויות"}
-                </Button>
-                {dupError ? (
-                  <span className="text-destructive">{dupError}</span>
-                ) : dupCount > 0 ? (
-                  <span className="font-medium text-warning-soft-foreground">
-                    זוהו {dupCount} כפילויות אפשריות — לא סומנו לייבוא.
-                  </span>
-                ) : !checkingDup ? (
-                  <span className="text-muted-foreground">לא זוהו כפילויות.</span>
-                ) : null}
               </div>
 
               <Card className="overflow-hidden">
@@ -944,30 +743,17 @@ export default function CardImportClient({
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                       <tr className="text-right">
-                        <th className="px-2 py-2 font-medium">ייבוא</th>
                         <th className="px-2 py-2 font-medium">תאריך</th>
                         <th className="px-2 py-2 font-medium">בית עסק</th>
                         <th className="px-2 py-2 font-medium">סכום</th>
-                        <th className="px-2 py-2 font-medium">כפילות?</th>
                         <th className="px-2 py-2 font-medium">קטגוריה</th>
                         {showAssignmentRef ? <th className="px-2 py-2 font-medium">שיוך מקורי</th> : null}
-                        <th className="px-2 py-2 font-medium">תחום עסקי *</th>
-                        <th className="px-2 py-2 font-medium">שיוך (פרויקט/נכס)</th>
+                        <th className="px-2 py-2 font-medium">להוצאה?</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {rows.map((row, index) => {
-                        const invalidAmount = row.include && !(Number.isFinite(row.amount) && row.amount > 0);
-                        return (
-                        <tr
-                          key={index}
-                          className={`${
-                            invalidAmount ? "bg-destructive/10 " : row.duplicate ? "bg-warning-soft/20 " : ""
-                          }${row.include ? "" : "opacity-50"}`.trim()}
-                        >
-                          <td className="px-2 py-2">
-                            <input type="checkbox" checked={row.include} onChange={(e) => updateRow(index, { include: e.target.checked })} />
-                          </td>
+                      {rows.map((row, index) => (
+                        <tr key={index} className={row.include ? "" : "opacity-60"}>
                           <td className="whitespace-nowrap px-2 py-2">{formatIsoDisplay(row.expenseDate)}</td>
                           <td className="px-2 py-2">{row.description}</td>
                           <td className="whitespace-nowrap px-2 py-2 font-medium">
@@ -976,128 +762,47 @@ export default function CardImportClient({
                             </span>
                             {row.amount < 0 ? (
                               <span
-                                title="זיכוי/החזר — לא חושב נכון בתזרים, לכן לא מסומן כברירת מחדל"
+                                title="זיכוי/החזר — לא ייווצר כהוצאה כברירת מחדל"
                                 className="ms-1 inline-block rounded bg-success-soft px-1 py-0.5 text-[10px] font-medium text-success-soft-foreground"
                               >
                                 זיכוי
                               </span>
                             ) : null}
                           </td>
-                          <td className="px-2 py-2">
-                            {row.duplicate ? (
-                              <div className="space-y-0.5">
-                                <span className="inline-block rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-soft-foreground">
-                                  כפילות?
-                                </span>
-                                <div
-                                  className="whitespace-nowrap text-[11px] leading-tight text-muted-foreground"
-                                  title={row.duplicate.description}
-                                >
-                                  קיים: {formatIsoDisplay(row.duplicate.transaction_date || row.duplicate.expense_date)} ·{" "}
-                                  {formatCurrency(row.duplicate.amount)}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </td>
                           <td className="whitespace-nowrap px-2 py-2 text-xs text-muted-foreground">{categoryFor(row.card)}</td>
                           {showAssignmentRef ? (
                             <td className="whitespace-nowrap px-2 py-2 text-xs text-muted-foreground">{row.assignmentRaw || "—"}</td>
                           ) : null}
                           <td className="px-2 py-2">
-                            <div className="flex items-center gap-1">
-                              <select
-                                value={row.businessDomain}
-                                disabled={!row.include}
-                                onChange={(e) => setRowDomain(index, e.target.value)}
-                                className="h-8 w-full min-w-[8rem] rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-                              >
-                                <option value="">— בחר —</option>
-                                {EXPENSE_BUSINESS_DOMAINS.map((d) => (
-                                  <option key={d} value={d}>
-                                    {getBusinessDomainLabel(d)}
-                                  </option>
-                                ))}
-                              </select>
-                              {row.autoAssigned ? (
-                                <span
-                                  title="מולא אוטומטית לפי בית העסק (ניתן לשנות)"
-                                  className="shrink-0 rounded bg-info-soft px-1 py-0.5 text-[10px] font-medium text-info-soft-foreground"
-                                >
-                                  אוטו
-                                </span>
-                              ) : null}
-                              {row.include && row.businessDomain && (merchantCounts[norm(row.description)] ?? 0) > 1 ? (
-                                <button
-                                  type="button"
-                                  onClick={() => applyToSameMerchant(index)}
-                                  title={`החל שיוך זה על כל השורות של "${row.description}"`}
-                                  className="shrink-0 rounded border border-input px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
-                                >
-                                  כל הדומים
-                                </button>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td className="px-2 py-2">
-                            {row.businessDomain === "logistics_projects" ? (
-                              <select
-                                value={row.projectId}
-                                disabled={!row.include}
-                                onChange={(e) => updateRow(index, { projectId: e.target.value })}
-                                className="h-8 w-full min-w-[10rem] rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-                              >
-                                <option value="">— ללא פרויקט —</option>
-                                {projects.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : row.businessDomain === "property_management" ? (
-                              <select
-                                value={row.propertyId}
-                                disabled={!row.include}
-                                onChange={(e) => updateRow(index, { propertyId: e.target.value })}
-                                className="h-8 w-full min-w-[10rem] rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-                              >
-                                <option value="">— ללא נכס —</option>
-                                {properties.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
+                            <input
+                              type="checkbox"
+                              checked={row.include}
+                              onChange={(e) =>
+                                setRows((prev) => prev.map((r, i) => (i === index ? { ...r, include: e.target.checked } : r)))
+                              }
+                            />
                           </td>
                         </tr>
-                        );
-                      })}
+                      ))}
                     </tbody>
                   </table>
                 </div>
               </Card>
 
-              {importError ? <p className="text-sm text-destructive">{importError}</p> : null}
+              {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => void doImport()} disabled={importing || !allAssigned}>
-                  {importing ? "מייבא..." : `ייבוא ${includedRows.length} הוצאות`}
+                <Button onClick={() => void doSave()} disabled={saving}>
+                  {saving ? "שומר..." : `שמירת פירוט אשראי (${rows.length} שורות)`}
                 </Button>
                 <Button
                   variant="outline"
                   onClick={() => (source === "pdf" ? reset() : setStep("map"))}
-                  disabled={importing}
+                  disabled={saving}
                 >
                   {source === "pdf" ? "החלפת קובץ" : "חזרה למיפוי"}
                 </Button>
               </div>
-              {!allAssigned ? (
-                <p className="text-xs text-muted-foreground">יש לבחור תחום עסקי לכל שורה מסומנת לפני הייבוא.</p>
-              ) : null}
             </>
           )}
         </div>

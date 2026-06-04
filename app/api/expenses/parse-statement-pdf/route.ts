@@ -100,7 +100,7 @@ function normalizeTxn(r: RawTxn): ParsedTxn | null {
 
 export async function POST(req: Request) {
   try {
-    const access = await requireRouteAccess({ allowedRoles: ["admin"] });
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
 
     if (!isAnthropicConfigured()) {

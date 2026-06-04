@@ -15,7 +15,7 @@ export default async function CardStatementsPage() {
 
   const { data } = await supabase
     .from("card_statements")
-    .select("id,file_name,source,created_count,total_rows,created_at")
+    .select("id,file_name,source,created_count,total_rows,created_at,marked_done")
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -26,12 +26,14 @@ export default async function CardStatementsPage() {
       <div className="space-y-4 text-right" dir="rtl">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg font-semibold">דפי אשראי שיובאו</h1>
-            <p className="text-sm text-muted-foreground">כל ייבוא נשמר כאן — לחצ/י על שורה כדי לפתוח ולערוך.</p>
+            <h1 className="text-lg font-semibold">פירוטי אשראי שנשמרו</h1>
+            <p className="text-sm text-muted-foreground">
+              כל פירוט שהועלה נשמר כאן — לחצ/י על שורה כדי לשייך תחומים, ליצור הוצאות ולערוך.
+            </p>
           </div>
           <div className="flex gap-2">
             <Button asChild size="sm">
-              <Link href="/financial/import">ייבוא חדש</Link>
+              <Link href="/financial/import">העלאת פירוט חדש</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
               <Link href="/financial">חזרה לפיננסי</Link>
