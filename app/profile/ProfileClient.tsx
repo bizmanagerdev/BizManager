@@ -10,7 +10,7 @@ import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { UserProfile } from "@/lib/auth/requireProfile";
-import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { EXPENSE_BUSINESS_DOMAINS, WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { shouldShowSessionHours } from "@/lib/payroll-worker-type";
 import {
   calculateSessionLaborCost,
@@ -381,7 +381,7 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
           }} /></label>
         )}
         <div className="grid gap-3 md:grid-cols-[220px_220px_minmax(0,1fr)]">
-          <label className="space-y-1"><span className="block text-xs text-muted-foreground">תחום</span><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-right text-sm" value={sessionEditDomain} onChange={(event) => setEditorDomain(event.target.value as ExpenseBusinessDomain)}>{EXPENSE_BUSINESS_DOMAINS.map((domain) => <option key={domain} value={domain}>{getBusinessDomainLabel(domain)}</option>)}</select></label>
+          <label className="space-y-1"><span className="block text-xs text-muted-foreground">תחום</span><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-right text-sm" value={sessionEditDomain} onChange={(event) => setEditorDomain(event.target.value as ExpenseBusinessDomain)}>{WORK_SESSION_BUSINESS_DOMAINS.map((domain) => <option key={domain} value={domain}>{getBusinessDomainLabel(domain)}</option>)}</select></label>
           {sessionEditDomain === "logistics_projects" ? linkField("פרויקט", sessionEditProjectId, setSessionEditProjectId, projectOptions) : sessionEditDomain === "property_management" ? linkField("נכס", sessionEditPropertyId, setSessionEditPropertyId, propertyOptions) : <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">אין צורך בבחירה נוספת.</div>}
           <label className="space-y-1"><span className="block text-xs text-muted-foreground">הערות</span><textarea className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-right text-sm outline-none" value={sessionEditNotes} onChange={(event) => setSessionEditNotes(event.target.value)} /></label>
         </div>
@@ -404,7 +404,7 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
               </div>
               <div className="flex flex-row-reverse flex-wrap items-end justify-end gap-2">
                 {!isLast ? <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">דקות</span><Input type="number" min="1" className="h-9 w-24 text-right" value={splitParts[index]?.minutes ?? ""} onChange={(event) => updateSplitMinutes(part.id, event.target.value, sessionWorkedMinutes(session))} /></label> : <div className="min-w-20 rounded-md border border-dashed px-3 py-2 text-center text-xs text-muted-foreground">יתרה</div>}
-                <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">תחום</span><select className="h-9 w-40 rounded-md border border-input bg-background px-3 text-right text-sm" value={splitParts[index]?.domain ?? "general_business"} onChange={(event) => updateSplitPart(part.id, { domain: event.target.value as ExpenseBusinessDomain })}>{EXPENSE_BUSINESS_DOMAINS.map((domain) => <option key={domain} value={domain}>{getBusinessDomainLabel(domain)}</option>)}</select></label>
+                <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">תחום</span><select className="h-9 w-40 rounded-md border border-input bg-background px-3 text-right text-sm" value={splitParts[index]?.domain ?? "general_business"} onChange={(event) => updateSplitPart(part.id, { domain: event.target.value as ExpenseBusinessDomain })}>{WORK_SESSION_BUSINESS_DOMAINS.map((domain) => <option key={domain} value={domain}>{getBusinessDomainLabel(domain)}</option>)}</select></label>
                 {splitParts[index]?.domain === "logistics_projects" ? linkField("פרויקט", splitParts[index]?.projectId ?? "", (value) => updateSplitPart(part.id, { projectId: value }), projectOptions, true) : null}
                 {splitParts[index]?.domain === "property_management" ? linkField("נכס", splitParts[index]?.propertyId ?? "", (value) => updateSplitPart(part.id, { propertyId: value }), propertyOptions, true) : null}
               </div>
@@ -436,7 +436,7 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
           {openSession ? <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px]">
             <Input value={sessionNote} onChange={(event) => setSessionNote(event.target.value)} placeholder="הערות למשמרת" />
             <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={sessionDomain} onChange={(event) => setSessionDomain(event.target.value as ExpenseBusinessDomain)}>
-              {EXPENSE_BUSINESS_DOMAINS.map((domain) => <option key={domain} value={domain}>{getBusinessDomainLabel(domain)}</option>)}
+              {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => <option key={domain} value={domain}>{getBusinessDomainLabel(domain)}</option>)}
             </select>
             <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm">{`זמן פתיחה: ${formatDateTime(openSession.clock_in)}`}</div>
           </div> : null}

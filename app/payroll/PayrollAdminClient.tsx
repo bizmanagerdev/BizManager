@@ -19,7 +19,7 @@ import {
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import type { UserRole } from "@/lib/auth/requireProfile";
-import { getBusinessDomainLabel } from "@/lib/expenses";
+import { getBusinessDomainLabel, WORK_SESSION_BUSINESS_DOMAINS } from "@/lib/expenses";
 import {
   calculateSessionLaborCost,
   formatCurrency,
@@ -1366,12 +1366,11 @@ export default function PayrollAdminClient({
                 }
                 className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
               >
-                <option value="general_business">שוטף</option>
-                <option value="logistics_projects">פרויקטים</option>
-                <option value="property_management">ניהול נכסים</option>
-                <option value="sales">מכירות</option>
-                <option value="home">בית</option>
-                <option value="charity">צדקה</option>
+                {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => (
+                  <option key={domain} value={domain}>
+                    {getBusinessDomainLabel(domain)}
+                  </option>
+                ))}
               </select>
             </Field>
             <div className="md:col-span-2 grid gap-3 md:grid-cols-3">

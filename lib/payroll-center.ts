@@ -1,4 +1,4 @@
-import type { ExpenseBusinessDomain } from "@/lib/expenses";
+import { getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
 import {
   getPayTrackingModeForWorkerType,
   normalizePayrollWorkerType,
@@ -256,10 +256,7 @@ export function getSessionLinkLabel(
   if (session.business_domain === "property_management" && session.property_id) {
     return propertyLabelsById.get(session.property_id) ?? "נכס";
   }
-  if (session.business_domain === "sales") return "מכירות";
-  if (session.business_domain === "home") return "בית";
-  if (session.business_domain === "charity") return "צדקה";
-  return "שוטף";
+  return getBusinessDomainLabel(session.business_domain);
 }
 
 export function getWorkerAccessLabel(user: Pick<SalaryCenterUserRow, "role" | "system_access">) {

@@ -12,7 +12,8 @@ create table if not exists public.recurring_expense_templates (
       'general_business',
       'logistics_projects',
       'sales',
-      'property_management'
+      'property_management',
+      'spaceit'
     )
   ),
   project_id uuid null references public.projects (id) on delete set null,

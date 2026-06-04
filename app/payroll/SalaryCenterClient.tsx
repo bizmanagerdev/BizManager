@@ -24,7 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
-import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel, isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel, isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import {
   getPayrollWorkerTypeLabel,
   normalizePayrollWorkerType,
@@ -2760,12 +2760,11 @@ export default function SalaryCenterClient({
                   className={selectClassName}
                 >
                   <option value="">{"הכול"}</option>
-                  <option value="general_business">{"שוטף"}</option>
-                  <option value="logistics_projects">{"פרויקטים"}</option>
-                  <option value="property_management">{"נכסים"}</option>
-                  <option value="sales">{"מכירות"}</option>
-                  <option value="home">{"בית"}</option>
-                  <option value="charity">{"צדקה"}</option>
+                  {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => (
+                    <option key={domain} value={domain}>
+                      {getBusinessDomainLabel(domain)}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <Field label="פרויקט">
@@ -4577,12 +4576,11 @@ export default function SalaryCenterClient({
                 }
                 className={selectClassName}
               >
-                <option value="general_business">{"שוטף"}</option>
-                <option value="logistics_projects">{"פרויקטים"}</option>
-                <option value="property_management">{"נכסים"}</option>
-                <option value="sales">{"מכירות"}</option>
-                <option value="home">{"בית"}</option>
-                <option value="charity">{"צדקה"}</option>
+                {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => (
+                  <option key={domain} value={domain}>
+                    {getBusinessDomainLabel(domain)}
+                  </option>
+                ))}
               </select>
             </Field>
             {sessionForm.business_domain === "logistics_projects" ? (
@@ -4840,7 +4838,7 @@ export default function SalaryCenterClient({
                               updateSessionSplitPart(part.id, { domain: event.target.value as ExpenseBusinessDomain })
                             }
                           >
-                            {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                            {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => (
                               <option key={domain} value={domain}>
                                 {getBusinessDomainLabel(domain)}
                               </option>

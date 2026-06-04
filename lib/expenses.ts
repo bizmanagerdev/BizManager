@@ -5,9 +5,16 @@ export const EXPENSE_BUSINESS_DOMAINS = [
   "logistics_projects",
   "sales",
   "property_management",
+  "spaceit",
 ] as const;
 
 export type ExpenseBusinessDomain = (typeof EXPENSE_BUSINESS_DOMAINS)[number];
+
+// Business domains selectable for work sessions. Charity is excluded — workers
+// don't log paid hours against charity.
+export const WORK_SESSION_BUSINESS_DOMAINS = EXPENSE_BUSINESS_DOMAINS.filter(
+  (domain) => domain !== "charity",
+);
 
 export const EXPENSE_SOURCE_TYPES = ["project", "order", "property"] as const;
 
@@ -48,5 +55,6 @@ export function getBusinessDomainLabel(value: string | null | undefined) {
   if (value === "logistics_projects") return "פרויקטים";
   if (value === "home") return "בית";
   if (value === "charity") return "צדקה";
+  if (value === "spaceit") return "ספייסיט";
   return value || "שוטף";
 }
