@@ -16,7 +16,7 @@ function getString(row: Row, key: string) {
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ q?: string; status?: string; priority?: string; domain?: string; linked_id?: string }>;
+  searchParams?: Promise<{ q?: string; status?: string; priority?: string; domain?: string; linked_id?: string; scope?: string }>;
 }) {
   const params = (await searchParams) ?? {};
 
@@ -26,17 +26,21 @@ export default async function TasksPage({
   const filterDomain = typeof params.domain === "string" ? params.domain.trim() : "";
   const filterLinkedId = typeof params.linked_id === "string" ? params.linked_id.trim() : "";
 
+  const { profile, supabase } = await requireProfile();
+  const canSeeAll = profile.role === "admin" || profile.role === "office";
+  // Default to "mine"; only admin/office may opt into "all".
+  const filterScope: "mine" | "all" = canSeeAll && params.scope === "all" ? "all" : "mine";
+
   const filters = {
     q,
     status: filterStatus,
     priority: filterPriority,
     domain: filterDomain,
     linkedId: filterLinkedId,
+    scope: filterScope,
   };
 
-  const { profile, supabase } = await requireProfile();
-
-  if (profile.role === "admin" || profile.role === "office") {
+  if (canSeeAll) {
     await ensureRecurringTasksForDate(supabase);
   }
 
@@ -46,7 +50,7 @@ export default async function TasksPage({
     propertiesResult,
     usersResult,
   ] = await Promise.all([
-    loadTasksPage(supabase, { page: 1, filters }),
+    loadTasksPage(supabase, { page: 1, filters, userId: profile.id, canSeeAll }),
     supabase
       .from("project_dashboard_view")
       .select("id,name,customer_name")
@@ -107,7 +111,8 @@ export default async function TasksPage({
           projects={projectOptions}
           properties={propertyOptions}
           users={userOptions}
-          initialFilters={{ q, status: filterStatus, priority: filterPriority, domain: filterDomain, linkedId: filterLinkedId }}
+          canSeeAll={canSeeAll}
+          initialFilters={{ q, status: filterStatus, priority: filterPriority, domain: filterDomain, linkedId: filterLinkedId, scope: filterScope }}
         />
       )}
     </AppShell>

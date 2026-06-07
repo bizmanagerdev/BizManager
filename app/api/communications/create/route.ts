@@ -15,7 +15,7 @@ export async function POST(req: Request) {
       project_id?: string | null;
       property_id?: string | null;
       payment_id?: string | null;
-      follow_up?: { remind_at?: string; content?: string; action_type?: string } | null;
+      follow_up?: { remind_at?: string; content?: string; action_type?: string; assigned_to?: string | null } | null;
     };
 
     const customerId = typeof body.customer_id === "string" ? body.customer_id.trim() : "";
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
         .from("reminders")
         .insert({
           customer_id: customerId,
-          assigned_to: profile.id,
+          assigned_to: nullable(followUp.assigned_to) ?? profile.id,
           remind_at: followUp.remind_at.trim(),
           content: nullable(followUp.content),
           action_type: nullable(followUp.action_type) ?? "call",

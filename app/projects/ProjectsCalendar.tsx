@@ -5,6 +5,11 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { CalendarEntry } from "@/lib/projectSchedule";
+import { hebrewDayLabel, hebrewFullDate, getHolidaysInRange } from "@/lib/hebrew-calendar";
+
+function isoLocal(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function toDateOnly(value: string | null) {
   if (!value) return null;
@@ -27,11 +32,15 @@ function fmtFullDay(d: Date) {
 }
 
 function entryKindLabel(kind: CalendarEntry["kind"]) {
-  return kind === "task" ? "משימה" : "פרויקט";
+  if (kind === "task") return "משימה";
+  if (kind === "reminder") return "תזכורת";
+  return "פרויקט";
 }
 
 function entryKindVariant(kind: CalendarEntry["kind"]) {
-  return kind === "task" ? ("warning" as const) : ("secondary" as const);
+  if (kind === "task") return "warning" as const;
+  if (kind === "reminder") return "info" as const;
+  return "secondary" as const;
 }
 
 // Sunday–Saturday header labels (right-to-left in RTL)
@@ -59,6 +68,12 @@ export default function ProjectsCalendar({
       return d;
     });
   }, [monthDate]);
+
+  // Hebrew holidays across the visible 6-week grid (Israel schedule).
+  const holidaysByDay = useMemo(
+    () => getHolidaysInRange(calendarDays[0], calendarDays[calendarDays.length - 1]),
+    [calendarDays]
+  );
 
   const normalizedEntries = useMemo(
     () =>
@@ -138,18 +153,23 @@ export default function ProjectsCalendar({
           const isSelected = isSameDay(day, selectedDate);
           const dayEntries = entriesOnDay(day);
           const taskCount = dayEntries.filter((e) => e.kind === "task").length;
+          const reminderCount = dayEntries.filter((e) => e.kind === "reminder").length;
           const projectCount = dayEntries.filter((e) => e.kind === "project").length;
+          const holiday = holidaysByDay.get(isoLocal(day)) ?? null;
 
           return (
             <button
               key={day.toISOString()}
               type="button"
               onClick={() => setSelectedDate(day)}
-              className={`flex flex-col items-center gap-1 bg-background px-1 py-2 transition-colors ${
-                isSelected ? "bg-secondary/10" : "hover:bg-secondary/10"
-              } ${!inMonth ? "opacity-35" : ""}`}
+              title={holiday ?? undefined}
+              className={`flex flex-col items-center gap-0.5 px-1 py-2 transition-colors ${
+                holiday ? "bg-info-soft/40" : "bg-background"
+              } ${isSelected ? "ring-1 ring-inset ring-primary/40" : "hover:bg-secondary/10"} ${
+                !inMonth ? "opacity-35" : ""
+              }`}
             >
-              {/* Day number */}
+              {/* Day number (Gregorian) */}
               <span
                 className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-medium transition-colors ${
                   isToday
@@ -162,11 +182,26 @@ export default function ProjectsCalendar({
                 {day.getDate()}
               </span>
 
+              {/* Hebrew day numeral */}
+              <span className={`text-[10px] leading-none ${holiday ? "text-info-soft-foreground" : "text-muted-foreground"}`}>
+                {hebrewDayLabel(day)}
+              </span>
+
+              {/* Holiday name (truncated) */}
+              {holiday ? (
+                <span className="max-w-full truncate text-[9px] leading-tight text-info-soft-foreground">
+                  {holiday}
+                </span>
+              ) : null}
+
               {/* Event dots */}
-              {(taskCount > 0 || projectCount > 0) && (
+              {(taskCount > 0 || reminderCount > 0 || projectCount > 0) && (
                 <div className="flex gap-0.5">
                   {taskCount > 0 && (
                     <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+                  )}
+                  {reminderCount > 0 && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-info" />
                   )}
                   {projectCount > 0 && (
                     <span className="h-1.5 w-1.5 rounded-full bg-success" />
@@ -186,9 +221,11 @@ export default function ProjectsCalendar({
       </div>
 
       {/* Legend */}
-      <div className="flex gap-4 text-xs text-muted-foreground">
+      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />משימה</span>
+        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-info" />תזכורת</span>
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />פרויקט</span>
+        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-info-soft" />חג / מועד</span>
       </div>
 
       {/* Selected day panel */}
@@ -196,6 +233,12 @@ export default function ProjectsCalendar({
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
             <div className="font-semibold">{fmtFullDay(selectedDate)}</div>
+            <div className="text-xs text-muted-foreground">{hebrewFullDate(selectedDate)}</div>
+            {holidaysByDay.get(isoLocal(selectedDate)) ? (
+              <div className="mt-0.5 text-sm font-medium text-info-soft-foreground">
+                {holidaysByDay.get(isoLocal(selectedDate))}
+              </div>
+            ) : null}
             <div className="text-sm text-muted-foreground">
               {selectedEntries.length > 0
                 ? `${selectedEntries.length} פריטים`
@@ -217,7 +260,7 @@ export default function ProjectsCalendar({
                   <span className="font-medium">{entry.title}</span>
                   <Badge variant={entryKindVariant(entry.kind)}>{entryKindLabel(entry.kind)}</Badge>
                   {entry.priority && <StatusBadge value={entry.priority} type="priority" />}
-                  {entry.status && (
+                  {entry.status && entry.kind !== "reminder" && (
                     <StatusBadge value={entry.status} type={entry.kind === "task" ? "task" : "project"} />
                   )}
                 </div>

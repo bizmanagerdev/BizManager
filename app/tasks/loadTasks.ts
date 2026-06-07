@@ -21,6 +21,8 @@ export type TasksFilters = {
   priority: string;
   domain: string;
   linkedId: string;
+  // "mine" = assigned to me; "all" = everyone (back-office only, enforced server-side).
+  scope: "mine" | "all";
 };
 
 export const TASKS_PAGE_SIZE = 50;
@@ -48,9 +50,17 @@ export type TasksPageResult = {
  */
 export async function loadTasksPage(
   supabase: SupabaseClient,
-  { page, filters }: { page: number; filters: TasksFilters }
+  {
+    page,
+    filters,
+    userId,
+    canSeeAll,
+  }: { page: number; filters: TasksFilters; userId: string; canSeeAll: boolean }
 ): Promise<TasksPageResult> {
   const { q, status, priority, domain, linkedId } = filters;
+  // Non back-office users can only ever see their own tasks, regardless of the
+  // requested scope (defence in depth — never trust a client-supplied scope).
+  const scope = canSeeAll ? filters.scope : "mine";
   const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   const from = (safePage - 1) * TASKS_PAGE_SIZE;
   const to = safePage * TASKS_PAGE_SIZE - 1;
@@ -62,6 +72,8 @@ export async function loadTasksPage(
       { count: "estimated" }
     )
     .order("due_date", { ascending: true });
+
+  if (scope === "mine") tasksQuery = tasksQuery.eq("assigned_user_id", userId);
 
   if (status) {
     tasksQuery = tasksQuery.eq("status", status);

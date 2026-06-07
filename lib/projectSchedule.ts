@@ -1,8 +1,9 @@
-﻿import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getOpenReminders } from "@/lib/communications";
 
 type Row = Record<string, unknown>;
 
-export type CalendarEntryKind = "project" | "task";
+export type CalendarEntryKind = "project" | "task" | "reminder";
 
 export type CalendarEntry = {
   id: string;
@@ -16,9 +17,19 @@ export type CalendarEntry = {
   priority: string | null;
 };
 
+export type ScheduleScope = "mine" | "all";
+
+const OPEN_TASK_STATUSES = ["todo", "in_progress", "blocked"];
+
 function getString(row: Row, key: string) {
   const value = row[key];
   return typeof value === "string" ? value : null;
+}
+
+function uniqueIds(rows: Row[], key: string) {
+  return [
+    ...new Set(rows.map((row) => (typeof row[key] === "string" ? (row[key] as string) : "")).filter(Boolean)),
+  ];
 }
 
 function compareNullableDates(a: string | null, b: string | null) {
@@ -28,67 +39,147 @@ function compareNullableDates(a: string | null, b: string | null) {
   return 0;
 }
 
-export async function getScheduleEntries(supabase: SupabaseClient): Promise<CalendarEntry[]> {
-  const [{ data: projectRows, error: projectsError }, { data: taskRows, error: tasksError }] =
-    await Promise.all([
-      supabase
-        .from("project_dashboard_view")
-        .select("id,name,customer_name,start_date,end_date,status")
-        .order("updated_at", { ascending: false })
-        .range(0, 499),
-      supabase
-        .from("task_overview_view")
-        .select("task_id,subject,status,priority,due_date,project_name,assigned_user_name")
-        .in("status", ["todo", "in_progress", "blocked"])
-        .order("due_date", { ascending: true })
-        .range(0, 499),
-    ]);
+/**
+ * Unified calendar feed: open tasks (by due date), projects (by start/end) and
+ * pending reminders (by remind_at). `scope` decides personal vs everything:
+ *   - "mine" → tasks assigned to me, projects I manage, reminders I own/created.
+ *   - "all"  → everything (back-office only; gated by the caller).
+ * Ownership is filtered on the base tables (`tasks.assigned_user_id`,
+ * `projects.project_manager_id`) since the *_view layers don't expose those
+ * columns; display names are resolved with small follow-up lookups.
+ */
+export async function getScheduleEntries(
+  supabase: SupabaseClient,
+  { scope, userId }: { scope: ScheduleScope; userId: string }
+): Promise<CalendarEntry[]> {
+  let tasksQuery = supabase
+    .from("tasks")
+    .select("id,subject,status,priority,due_date,assigned_user_id,project_id")
+    .in("status", OPEN_TASK_STATUSES)
+    .order("due_date", { ascending: true })
+    .range(0, 499);
+  if (scope === "mine") tasksQuery = tasksQuery.eq("assigned_user_id", userId);
 
-  if (projectsError) throw projectsError;
+  let projectsQuery = supabase
+    .from("projects")
+    .select("id,name,status,start_date,end_date,project_manager_id,customer_id")
+    .order("start_date", { ascending: true })
+    .range(0, 499);
+  if (scope === "mine") projectsQuery = projectsQuery.eq("project_manager_id", userId);
+
+  const [
+    { data: taskRows, error: tasksError },
+    { data: projectRows, error: projectsError },
+    reminders,
+  ] = await Promise.all([
+    tasksQuery,
+    projectsQuery,
+    getOpenReminders(supabase, { scope, userId, limit: 500 }),
+  ]);
+
   if (tasksError) throw tasksError;
+  if (projectsError) throw projectsError;
 
-  const projectEntries = ((projectRows ?? []) as Row[])
-    .map((row) => ({
-      id: getString(row, "id") ?? "",
-      kind: "project" as const,
-      title: getString(row, "name") ?? "פרויקט",
-      subtitle: getString(row, "customer_name") ?? "ללא לקוח",
-      href: `/projects/${getString(row, "id") ?? ""}`,
-      startDate: getString(row, "start_date"),
-      endDate: getString(row, "end_date"),
-      status: getString(row, "status"),
-      priority: null,
-    }))
-    .filter((row) => row.id && row.startDate);
+  const tasks = (taskRows ?? []) as Row[];
+  const projects = (projectRows ?? []) as Row[];
 
-  const taskEntries = ((taskRows ?? []) as Row[])
+  // Resolve names: task→project, task→assignee, project→customer.
+  const taskProjectIds = uniqueIds(tasks, "project_id");
+  const taskUserIds = uniqueIds(tasks, "assigned_user_id");
+  const projectCustomerIds = uniqueIds(projects, "customer_id");
+
+  const empty = Promise.resolve({ data: [] as Row[] });
+  const [projectNamesRes, userNamesRes, customerNamesRes] = await Promise.all([
+    taskProjectIds.length
+      ? supabase.from("projects").select("id,name").in("id", taskProjectIds)
+      : empty,
+    taskUserIds.length
+      ? supabase.from("users").select("id,full_name,email").in("id", taskUserIds)
+      : empty,
+    projectCustomerIds.length
+      ? supabase.from("customers").select("id,name").in("id", projectCustomerIds)
+      : empty,
+  ]);
+
+  const projectNameById = new Map(
+    ((projectNamesRes.data ?? []) as Row[])
+      .map((r) => [getString(r, "id"), getString(r, "name")] as const)
+      .filter((e): e is readonly [string, string | null] => Boolean(e[0]))
+  );
+  const userNameById = new Map(
+    ((userNamesRes.data ?? []) as Row[])
+      .map((r) => [getString(r, "id"), getString(r, "full_name") ?? getString(r, "email")] as const)
+      .filter((e): e is readonly [string, string | null] => Boolean(e[0]))
+  );
+  const customerNameById = new Map(
+    ((customerNamesRes.data ?? []) as Row[])
+      .map((r) => [getString(r, "id"), getString(r, "name")] as const)
+      .filter((e): e is readonly [string, string | null] => Boolean(e[0]))
+  );
+
+  const taskEntries: CalendarEntry[] = tasks
     .map((row) => {
-      const taskId = getString(row, "task_id") ?? "";
-      const projectName = getString(row, "project_name");
-      const assignee = getString(row, "assigned_user_name");
-      const subtitleParts = [projectName, assignee].filter(
-        (value): value is string => Boolean(value && value.trim())
-      );
-
+      const taskId = getString(row, "id") ?? "";
+      const projectId = getString(row, "project_id");
+      const assigneeId = getString(row, "assigned_user_id");
+      const subtitleParts = [
+        projectId ? projectNameById.get(projectId) ?? null : null,
+        assigneeId ? userNameById.get(assigneeId) ?? null : null,
+      ].filter((value): value is string => Boolean(value && value.trim()));
+      const due = getString(row, "due_date");
       return {
         id: taskId,
         kind: "task" as const,
         title: getString(row, "subject") ?? "משימה",
         subtitle: subtitleParts.join(" • ") || "ללא שיוך",
         href: `/tasks/${taskId}`,
-        startDate: getString(row, "due_date"),
-        endDate: getString(row, "due_date"),
+        startDate: due,
+        endDate: due,
         status: getString(row, "status"),
         priority: getString(row, "priority"),
       };
     })
     .filter((row) => row.id && row.startDate);
 
-  return [...taskEntries, ...projectEntries].sort((a, b) => {
+  const reminderEntries: CalendarEntry[] = reminders
+    .map((r) => {
+      const day = r.remind_at ? r.remind_at.slice(0, 10) : null;
+      return {
+        id: r.id,
+        kind: "reminder" as const,
+        title: r.content?.trim() || "תזכורת",
+        subtitle: r.customer_name ?? "ללא לקוח",
+        href: "/collections",
+        startDate: day,
+        endDate: day,
+        status: r.status,
+        priority: null,
+      };
+    })
+    .filter((row) => row.id && row.startDate);
+
+  const projectEntries: CalendarEntry[] = projects
+    .map((row) => {
+      const projectId = getString(row, "id") ?? "";
+      const customerId = getString(row, "customer_id");
+      return {
+        id: projectId,
+        kind: "project" as const,
+        title: getString(row, "name") ?? "פרויקט",
+        subtitle: (customerId ? customerNameById.get(customerId) : null) ?? "ללא לקוח",
+        href: `/projects/${projectId}`,
+        startDate: getString(row, "start_date"),
+        endDate: getString(row, "end_date"),
+        status: getString(row, "status"),
+        priority: null,
+      };
+    })
+    .filter((row) => row.id && row.startDate);
+
+  return [...taskEntries, ...reminderEntries, ...projectEntries].sort((a, b) => {
     const byStart = compareNullableDates(a.startDate, b.startDate);
     if (byStart !== 0) return byStart;
     if (a.kind !== b.kind) return a.kind === "task" ? -1 : 1;
     return a.title.localeCompare(b.title, "he");
   });
 }
-

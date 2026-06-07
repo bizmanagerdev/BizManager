@@ -188,13 +188,20 @@ export async function getCustomerActivity(
 /** Open (pending) reminders across all customers, soonest first. Powers the תזכורות view. */
 export async function getOpenReminders(
   supabase: SupabaseClient,
-  options?: { limit?: number }
+  options?: { limit?: number; scope?: "mine" | "all"; userId?: string }
 ): Promise<Reminder[]> {
   const limit = options?.limit ?? 200;
-  const { data, error } = await supabase
+  let query = supabase
     .from("reminders")
     .select(REMINDER_SELECT)
-    .eq("status", "pending")
+    .eq("status", "pending");
+
+  // "Mine" = reminders I'm in charge of OR that I created (both columns exist).
+  if (options?.scope === "mine" && options.userId) {
+    query = query.or(`assigned_to.eq.${options.userId},created_by.eq.${options.userId}`);
+  }
+
+  const { data, error } = await query
     .order("remind_at", { ascending: true })
     .range(0, limit - 1);
 

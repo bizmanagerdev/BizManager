@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
+import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
+import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import {
   Dialog,
   DialogContent,
@@ -44,13 +46,19 @@ export default function BulkActions({
   onClear: () => void;
 }) {
   const router = useRouter();
+  const { currentUserId } = useAssignableUsers();
   const [mode, setMode] = useState<null | "reminder" | "whatsapp">(null);
   const [remindAt, setRemindAt] = useState("");
   const [actionType, setActionType] = useState("call");
   const [content, setContent] = useState("");
+  const [assignee, setAssignee] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentUserId) setAssignee((prev) => prev || currentUserId);
+  }, [currentUserId]);
 
   const targets = groups.filter((g) => g.customer_id);
 
@@ -74,6 +82,7 @@ export default function BulkActions({
               action_type: actionType,
               content: content.trim() || undefined,
               category: "collection",
+              assigned_to: assignee || undefined,
             }),
           })
         )
@@ -135,6 +144,10 @@ export default function BulkActions({
               onChange={(e) => setContent(e.target.value)}
               placeholder="תוכן התזכורת (אופציונלי)"
             />
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">אחראי</div>
+              <AssigneeSelect value={assignee} onChange={setAssignee} includeMeDefault />
+            </div>
             {error ? <div className="text-sm text-destructive">{error}</div> : null}
           </div>
           <DialogFooter>

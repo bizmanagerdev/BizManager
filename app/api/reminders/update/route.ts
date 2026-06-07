@@ -10,6 +10,7 @@ export async function POST(req: Request) {
       status?: string;
       remind_at?: string;
       content?: string;
+      assigned_to?: string | null;
     };
 
     const id = typeof body.id === "string" ? body.id.trim() : "";
@@ -30,6 +31,10 @@ export async function POST(req: Request) {
     }
     if (typeof body.content === "string") {
       updates.content = body.content.trim() || null;
+    }
+    if ("assigned_to" in body) {
+      const assignee = typeof body.assigned_to === "string" ? body.assigned_to.trim() : "";
+      updates.assigned_to = assignee || null;
     }
 
     const { data, error } = await supabase

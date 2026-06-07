@@ -2,7 +2,9 @@ import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getAlertsData, type AlertItem } from "@/lib/alerts";
-import { getScheduleEntries } from "@/lib/projectSchedule";
+import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
+import { getTodayInboxData } from "@/lib/today-inbox";
+import TodayInbox from "@/components/TodayInbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,16 +37,24 @@ const SEVERITY_CONFIG = {
 export default async function AlertsPage() {
   const { profile, supabase } = await requireProfile();
   const todayIso = new Date().toISOString().slice(0, 10);
+  const canSeeAll = profile.role === "admin" || profile.role === "office";
 
-  const [{ alerts, errors }, scheduleResult] = await Promise.all([
-    getAlertsData(supabase, { viewerRole: profile.role }),
-    getScheduleEntries(supabase).then(
+  const safeSchedule = (p: Promise<CalendarEntry[]>) =>
+    p.then(
       (entries) => ({ entries, error: null as string | null }),
       (error: { message?: string }) => ({
-        entries: [],
+        entries: [] as CalendarEntry[],
         error: error?.message ?? "שגיאה בטעינת לוח הזמנים",
       })
-    ),
+    );
+
+  const [{ alerts, errors }, mineSchedule, allSchedule, todayInbox] = await Promise.all([
+    getAlertsData(supabase, { viewerRole: profile.role }),
+    safeSchedule(getScheduleEntries(supabase, { scope: "mine", userId: profile.id })),
+    canSeeAll
+      ? safeSchedule(getScheduleEntries(supabase, { scope: "all", userId: profile.id }))
+      : Promise.resolve({ entries: [] as CalendarEntry[], error: null as string | null }),
+    getTodayInboxData(supabase, profile),
   ]);
 
   const pageErrors = [
@@ -52,7 +62,8 @@ export default async function AlertsPage() {
     errors.invoices,
     errors.payroll,
     errors.projects,
-    scheduleResult.error,
+    mineSchedule.error,
+    allSchedule.error,
   ].filter(Boolean) as string[];
 
   const actionAlerts = alerts.filter(
@@ -77,6 +88,8 @@ export default async function AlertsPage() {
             <CardContent className="p-4 text-sm text-destructive">{pageErrors.join(" | ")}</CardContent>
           </Card>
         )}
+
+        <TodayInbox data={todayInbox} />
 
         {allClear && (
           <div className="flex items-center gap-3 rounded-xl border border-success/40 bg-success-soft px-5 py-4">
@@ -116,7 +129,11 @@ export default async function AlertsPage() {
           </Card>
         )}
 
-        <CalendarSection entries={scheduleResult.entries} todayIso={todayIso} />
+        <CalendarSection
+          entries={mineSchedule.entries}
+          allEntries={canSeeAll ? allSchedule.entries : null}
+          todayIso={todayIso}
+        />
 
       </div>
     </AppShell>

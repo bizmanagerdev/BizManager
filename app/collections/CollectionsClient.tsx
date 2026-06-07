@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, MessageCircle, Phone } from "lucide-react";
+import { Bell, ChevronDown, MessageCircle, Phone } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,12 +20,18 @@ import {
 import CustomerCollectionButton from "@/components/collections/CustomerCollectionButton";
 import CommunicationLogItem from "@/components/collections/CommunicationLogItem";
 import BulkActions from "@/components/collections/BulkActions";
+import AddCollectionEntryDialog from "@/components/collections/AddCollectionEntryDialog";
+import EditReminderDialog from "@/components/collections/EditReminderDialog";
 import type { CollectionCustomerGroup, PaymentDueToday } from "@/lib/collections";
 
 type Props = {
   customers: CollectionCustomerGroup[];
   totals: { outstanding: number; pending: number; overdue: number; customerCount: number };
-  reminders: Reminder[];
+  /** Reminders I own/created (always supplied). */
+  remindersMine: Reminder[];
+  /** Everyone's reminders (admin/office only; empty otherwise). */
+  remindersAll: Reminder[];
+  canSeeAll: boolean;
   recentLogs: CommunicationLogWithCustomer[];
   dueToday: PaymentDueToday[];
 };
@@ -120,7 +126,9 @@ function SummaryCard({
 export default function CollectionsClient({
   customers,
   totals,
-  reminders: remindersProp,
+  remindersMine,
+  remindersAll,
+  canSeeAll,
   recentLogs,
   dueToday,
 }: Props) {
@@ -128,10 +136,16 @@ export default function CollectionsClient({
   // Reminders marked done/cancelled are hidden immediately so the action is
   // visible even before router.refresh() re-fetches (and regardless of caching).
   const [completedReminderIds, setCompletedReminderIds] = useState<Set<string>>(() => new Set());
-  const reminders = useMemo(
-    () => remindersProp.filter((r) => !completedReminderIds.has(r.id)),
-    [remindersProp, completedReminderIds]
+  // The תזכורות tab can show "mine" or (for back-office) "all"; "להיום" is always personal.
+  const [reminderScope, setReminderScope] = useState<"mine" | "all">("mine");
+  const myReminders = useMemo(
+    () => remindersMine.filter((r) => !completedReminderIds.has(r.id)),
+    [remindersMine, completedReminderIds]
   );
+  const reminders = useMemo(() => {
+    const source = reminderScope === "all" && canSeeAll ? remindersAll : remindersMine;
+    return source.filter((r) => !completedReminderIds.has(r.id));
+  }, [reminderScope, canSeeAll, remindersAll, remindersMine, completedReminderIds]);
   const [view, setView] = useState<View>("activity");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [search, setSearch] = useState("");
@@ -139,6 +153,9 @@ export default function CollectionsClient({
   const [sort, setSort] = useState<SortKey>("amount");
   const [collectingId, setCollectingId] = useState<string | null>(null);
   const [focusReminderCustomer, setFocusReminderCustomer] = useState<string | null>(null);
+  const [addReminderOpen, setAddReminderOpen] = useState(false);
+  const [addCallOpen, setAddCallOpen] = useState(false);
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
 
   // Jump from a debtor row to that customer's reminder in the תזכורות tab.
   function openReminders(customerId: string | null) {
@@ -229,9 +246,46 @@ export default function CollectionsClient({
 
   return (
     <div className="space-y-4">
-      {/* להיום — what needs attention today: reminders due + payments to collect now */}
+      {/* Page-level quick actions — add a follow-up without drilling into a debtor */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-lg font-semibold">פניות ומעקב גבייה</h1>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" onClick={() => setAddCallOpen(true)}>
+            <MessageCircle className="me-1 h-4 w-4" />
+            תיעוד שיחה
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => setAddReminderOpen(true)}>
+            <Bell className="me-1 h-4 w-4" />
+            הוספת תזכורת
+          </Button>
+        </div>
+      </div>
+
+      <AddCollectionEntryDialog
+        mode="reminder"
+        open={addReminderOpen}
+        onOpenChange={setAddReminderOpen}
+        onSaved={() => router.refresh()}
+      />
+      <AddCollectionEntryDialog
+        mode="call"
+        open={addCallOpen}
+        onOpenChange={setAddCallOpen}
+        onSaved={() => router.refresh()}
+      />
+
+      <EditReminderDialog
+        reminder={editingReminder}
+        open={Boolean(editingReminder)}
+        onOpenChange={(o) => {
+          if (!o) setEditingReminder(null);
+        }}
+        onSaved={() => router.refresh()}
+      />
+
+      {/* להיום — always personal: my reminders due + payments to collect now */}
       <TodayOverview
-        reminders={reminders}
+        reminders={myReminders}
         dueToday={dueToday}
         collectingId={collectingId}
         onCollect={markCollected}
@@ -274,11 +328,40 @@ export default function CollectionsClient({
       {view === "activity" ? (
         <ActivityView logs={recentLogs} onChanged={() => router.refresh()} />
       ) : view === "reminders" ? (
-        <RemindersView
-          reminders={reminders}
-          onUpdate={updateReminder}
-          focusCustomerId={focusReminderCustomer}
-        />
+        <div className="space-y-3">
+          {canSeeAll ? (
+            <div className="flex w-fit rounded-xl border bg-secondary/40 p-0.5 text-sm">
+              <button
+                type="button"
+                onClick={() => setReminderScope("mine")}
+                className={`rounded-lg px-3 py-1 transition-colors ${
+                  reminderScope === "mine"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-secondary/10"
+                }`}
+              >
+                שלי
+              </button>
+              <button
+                type="button"
+                onClick={() => setReminderScope("all")}
+                className={`rounded-lg px-3 py-1 transition-colors ${
+                  reminderScope === "all"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-secondary/10"
+                }`}
+              >
+                הכל
+              </button>
+            </div>
+          ) : null}
+          <RemindersView
+            reminders={reminders}
+            onUpdate={updateReminder}
+            onEdit={setEditingReminder}
+            focusCustomerId={focusReminderCustomer}
+          />
+        </div>
       ) : (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -1053,10 +1136,12 @@ function FragmentRow({
 function RemindersView({
   reminders,
   onUpdate,
+  onEdit,
   focusCustomerId,
 }: {
   reminders: Reminder[];
   onUpdate: (id: string, status: "done" | "cancelled") => void;
+  onEdit: (reminder: Reminder) => void;
   focusCustomerId?: string | null;
 }) {
   const today = todayIso();
@@ -1091,13 +1176,13 @@ function RemindersView({
   return (
     <div className="space-y-5">
       {groups.overdue.length > 0 ? (
-        <ReminderGroup title="באיחור" tone="danger" reminders={groups.overdue} onUpdate={onUpdate} focusCustomerId={focusCustomerId} />
+        <ReminderGroup title="באיחור" tone="danger" reminders={groups.overdue} onUpdate={onUpdate} onEdit={onEdit} focusCustomerId={focusCustomerId} />
       ) : null}
       {groups.today.length > 0 ? (
-        <ReminderGroup title="היום" tone="warning" reminders={groups.today} onUpdate={onUpdate} focusCustomerId={focusCustomerId} />
+        <ReminderGroup title="היום" tone="warning" reminders={groups.today} onUpdate={onUpdate} onEdit={onEdit} focusCustomerId={focusCustomerId} />
       ) : null}
       {groups.upcoming.length > 0 ? (
-        <ReminderGroup title="קרובות" reminders={groups.upcoming} onUpdate={onUpdate} focusCustomerId={focusCustomerId} />
+        <ReminderGroup title="קרובות" reminders={groups.upcoming} onUpdate={onUpdate} onEdit={onEdit} focusCustomerId={focusCustomerId} />
       ) : null}
     </div>
   );
@@ -1108,12 +1193,14 @@ function ReminderGroup({
   tone = "default",
   reminders,
   onUpdate,
+  onEdit,
   focusCustomerId,
 }: {
   title: string;
   tone?: "default" | "danger" | "warning";
   reminders: Reminder[];
   onUpdate: (id: string, status: "done" | "cancelled") => void;
+  onEdit: (reminder: Reminder) => void;
   focusCustomerId?: string | null;
 }) {
   const titleClass =
@@ -1168,6 +1255,15 @@ function ReminderGroup({
                 onClick={() => onUpdate(r.id, "done")}
               >
                 בוצע
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs"
+                onClick={() => onEdit(r)}
+              >
+                ערוך
               </Button>
               <Button
                 type="button"

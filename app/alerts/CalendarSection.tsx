@@ -8,18 +8,53 @@ import type { CalendarEntry } from "@/lib/projectSchedule";
 
 export default function CalendarSection({
   entries,
+  allEntries = null,
   todayIso,
 }: {
   entries: CalendarEntry[];
+  /** When provided (admin/office), enables the שלי/הכל scope toggle. */
+  allEntries?: CalendarEntry[] | null;
   todayIso: string;
 }) {
-  const [view, setView] = useState<"timeline" | "calendar">("timeline");
+  const [view, setView] = useState<"timeline" | "calendar">("calendar");
+  const [scope, setScope] = useState<"mine" | "all">("mine");
+
+  const canToggleScope = allEntries !== null;
+  const shownEntries = scope === "all" && allEntries ? allEntries : entries;
 
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-base">לוח אירועים</CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-base">לוח אירועים</CardTitle>
+            {canToggleScope ? (
+              <div className="flex rounded-xl border bg-secondary/40 p-0.5 text-sm">
+                <button
+                  type="button"
+                  onClick={() => setScope("mine")}
+                  className={`rounded-lg px-3 py-1 transition-colors ${
+                    scope === "mine"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-secondary/10"
+                  }`}
+                >
+                  שלי
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScope("all")}
+                  className={`rounded-lg px-3 py-1 transition-colors ${
+                    scope === "all"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-secondary/10"
+                  }`}
+                >
+                  הכל
+                </button>
+              </div>
+            ) : null}
+          </div>
           <div className="flex rounded-xl border bg-secondary/40 p-0.5 text-sm">
             <button
               type="button"
@@ -50,15 +85,16 @@ export default function CalendarSection({
       <CardContent>
         {view === "timeline" ? (
           <>
-            <div className="mb-3 flex gap-3 text-xs text-muted-foreground">
+            <div className="mb-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
               <LegendDot color="bg-warning" label="משימה" />
+              <LegendDot color="bg-info" label="תזכורת" />
               <LegendDot color="bg-success" label="פרויקט מתחיל" />
               <LegendDot color="bg-destructive" label="פרויקט מסתיים" />
             </div>
-            <AlertsTimeline entries={entries} todayIso={todayIso} days={21} />
+            <AlertsTimeline entries={shownEntries} todayIso={todayIso} days={21} />
           </>
         ) : (
-          <ProjectsCalendar entries={entries} todayIso={todayIso} />
+          <ProjectsCalendar entries={shownEntries} todayIso={todayIso} />
         )}
       </CardContent>
     </Card>

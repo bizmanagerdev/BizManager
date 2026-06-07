@@ -11,6 +11,8 @@ import { getOpenReminders, actionTypeLabel, type Reminder } from "@/lib/communic
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { formatShortDate } from "@/lib/date";
 import { getScheduleEntries } from "@/lib/projectSchedule";
+import { getTodayInboxData } from "@/lib/today-inbox";
+import TodayInbox from "@/components/TodayInbox";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -94,6 +96,7 @@ export default async function DashboardPage() {
     cashFlowOverviewResult,
     alertsResult,
     scheduleEntriesResult,
+    todayInbox,
   ] = await Promise.all([
     supabase
       .from("operations_dashboard_view")
@@ -150,12 +153,13 @@ export default async function DashboardPage() {
         error: error?.message ?? "שגיאה בטעינת נתוני תזרים",
       })),
     getAlertsData(supabase, { viewerRole: profile.role }),
-    getScheduleEntries(supabase)
+    getScheduleEntries(supabase, { scope: "mine", userId: profile.id })
       .then((data) => ({ data, error: null as string | null }))
       .catch((error: { message?: string }) => ({
         data: [],
         error: error?.message ?? "שגיאה בטעינת לוח הזמנים",
       })),
+    getTodayInboxData(supabase, profile),
   ]);
 
   const isAdminOrOffice = profile.role === "admin" || profile.role === "office";
@@ -308,6 +312,8 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         ) : null}
+
+        <TodayInbox data={todayInbox} />
 
         <Card>
           <CardContent className="pt-6">

@@ -21,19 +21,25 @@ export default async function CollectionsPage() {
     redirect("/no-access");
   }
 
+  // Everyone reaching this page is admin/office (guarded above), so the "all"
+  // scope is always available here.
+  const canSeeAll = true;
   const data = await getCollectionsData(supabase);
   // Best-effort: reminders / communication tables may not be migrated yet.
-  let openReminders: Reminder[] = [];
+  let remindersMine: Reminder[] = [];
+  let remindersAll: Reminder[] = [];
   let recentLogs: CommunicationLogWithCustomer[] = [];
   let dueToday: PaymentDueToday[] = [];
   try {
-    [openReminders, recentLogs, dueToday] = await Promise.all([
-      getOpenReminders(supabase).catch(() => [] as Reminder[]),
+    [remindersMine, remindersAll, recentLogs, dueToday] = await Promise.all([
+      getOpenReminders(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as Reminder[]),
+      getOpenReminders(supabase, { scope: "all" }).catch(() => [] as Reminder[]),
       getRecentCommunications(supabase).catch(() => [] as CommunicationLogWithCustomer[]),
       getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[]),
     ]);
   } catch {
-    openReminders = [];
+    remindersMine = [];
+    remindersAll = [];
     recentLogs = [];
     dueToday = [];
   }
@@ -54,7 +60,9 @@ export default async function CollectionsPage() {
           <CollectionsClient
             customers={data.customers}
             totals={data.totals}
-            reminders={openReminders}
+            remindersMine={remindersMine}
+            remindersAll={remindersAll}
+            canSeeAll={canSeeAll}
             recentLogs={recentLogs}
             dueToday={dueToday}
           />

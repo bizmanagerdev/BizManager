@@ -10,6 +10,9 @@ import { collectionStatusClasses, collectionStatusLabel, paymentMethodLabel } fr
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import type { CustomerReceivable } from "@/lib/collections";
 import CommunicationLogItem from "@/components/collections/CommunicationLogItem";
+import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
+import EditReminderDialog from "@/components/collections/EditReminderDialog";
+import { useAssignableUsers } from "@/hooks/useAssignableUsers";
 import {
   COMMUNICATION_CHANNELS,
   actionTypeLabel,
@@ -54,6 +57,8 @@ export default function CollectionTrackingPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const { currentUserId } = useAssignableUsers();
+
   // Log-call form
   const [channel, setChannel] = useState("phone");
   const [direction, setDirection] = useState("outgoing");
@@ -61,9 +66,19 @@ export default function CollectionTrackingPanel({
   const [withFollowUp, setWithFollowUp] = useState(false);
   const [followUpDate, setFollowUpDate] = useState("");
   const [followUpContent, setFollowUpContent] = useState("");
+  const [followUpAssignee, setFollowUpAssignee] = useState("");
   const [reminderDate, setReminderDate] = useState("");
   const [reminderNote, setReminderNote] = useState("");
+  const [reminderAssignee, setReminderAssignee] = useState("");
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Default both assignee pickers to the current user once the list resolves.
+  useEffect(() => {
+    if (!currentUserId) return;
+    setFollowUpAssignee((prev) => prev || currentUserId);
+    setReminderAssignee((prev) => prev || currentUserId);
+  }, [currentUserId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -118,7 +133,11 @@ export default function CollectionTrackingPanel({
           direction,
           content: content.trim() || undefined,
           follow_up: withFollowUp
-            ? { remind_at: followUpDate, content: followUpContent.trim() || undefined }
+            ? {
+                remind_at: followUpDate,
+                content: followUpContent.trim() || undefined,
+                assigned_to: followUpAssignee || undefined,
+              }
             : undefined,
         }),
       });
@@ -131,6 +150,7 @@ export default function CollectionTrackingPanel({
       setWithFollowUp(false);
       setFollowUpDate("");
       setFollowUpContent("");
+      setFollowUpAssignee(currentUserId ?? "");
       await load();
       onChanged?.();
     } finally {
@@ -156,6 +176,7 @@ export default function CollectionTrackingPanel({
           content: reminderNote.trim() || undefined,
           action_type: "call",
           category: "collection",
+          assigned_to: reminderAssignee || undefined,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -165,6 +186,7 @@ export default function CollectionTrackingPanel({
       }
       setReminderDate("");
       setReminderNote("");
+      setReminderAssignee(currentUserId ?? "");
       await load();
       onChanged?.();
     } finally {
@@ -328,14 +350,20 @@ export default function CollectionTrackingPanel({
           קבע תזכורת המשך
         </label>
         {withFollowUp ? (
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <DateInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
-            <input
-              value={followUpContent}
-              onChange={(e) => setFollowUpContent(e.target.value)}
-              placeholder="להתקשר שוב..."
-              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-            />
+          <div className="mt-2 space-y-2">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <DateInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
+              <input
+                value={followUpContent}
+                onChange={(e) => setFollowUpContent(e.target.value)}
+                placeholder="להתקשר שוב..."
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">אחראי לתזכורת</div>
+              <AssigneeSelect value={followUpAssignee} onChange={setFollowUpAssignee} includeMeDefault />
+            </div>
           </div>
         ) : null}
 
@@ -359,6 +387,10 @@ export default function CollectionTrackingPanel({
             placeholder="על מה להזכיר? (אופציונלי)"
             className="h-10 rounded-md border border-input bg-background px-3 text-sm"
           />
+        </div>
+        <div className="mt-2 space-y-1">
+          <div className="text-xs text-muted-foreground">אחראי</div>
+          <AssigneeSelect value={reminderAssignee} onChange={setReminderAssignee} includeMeDefault />
         </div>
         <div className="mt-3 flex justify-end">
           <Button
@@ -409,6 +441,15 @@ export default function CollectionTrackingPanel({
                       size="sm"
                       variant="ghost"
                       className="h-7 text-xs"
+                      onClick={() => setEditingReminder(r)}
+                    >
+                      ערוך
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs"
                       onClick={() => void updateReminder(r.id, "cancelled")}
                     >
                       בטל
@@ -444,6 +485,18 @@ export default function CollectionTrackingPanel({
           </div>
         )}
       </div>
+
+      <EditReminderDialog
+        reminder={editingReminder}
+        open={Boolean(editingReminder)}
+        onOpenChange={(o) => {
+          if (!o) setEditingReminder(null);
+        }}
+        onSaved={() => {
+          void load();
+          onChanged?.();
+        }}
+      />
     </div>
   );
 }

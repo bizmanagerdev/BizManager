@@ -53,12 +53,14 @@ type Props = {
   projects: TaskOption[];
   properties: TaskOption[];
   users: UserOption[];
+  canSeeAll?: boolean;
   initialFilters?: {
     q: string;
     status: string;
     priority: string;
     domain: string;
     linkedId: string;
+    scope: "mine" | "all";
   };
 };
 
@@ -70,19 +72,23 @@ function domainLabel(domain: string | null) {
   return isExpenseBusinessDomain(domain) ? getBusinessDomainLabel(domain) : domain;
 }
 
-function buildTasksUrl(filters: {
+type TaskUrlFilters = {
   q: string;
   status: string;
   priority: string;
   domain: string;
   linkedId: string;
-}) {
+  scope: "mine" | "all";
+};
+
+function buildTasksUrl(filters: TaskUrlFilters) {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
   if (filters.status) params.set("status", filters.status);
   if (filters.priority) params.set("priority", filters.priority);
   if (filters.domain) params.set("domain", filters.domain);
   if (filters.linkedId) params.set("linked_id", filters.linkedId);
+  if (filters.scope === "all") params.set("scope", "all");
   const qs = params.toString();
   return qs ? `/tasks?${qs}` : "/tasks";
 }
@@ -100,6 +106,8 @@ export default function TasksPageClient(props: Props) {
   const urlPriority = searchParams.get("priority") ?? "";
   const urlDomain = searchParams.get("domain") ?? "";
   const urlLinkedId = searchParams.get("linked_id") ?? "";
+  const canSeeAll = props.canSeeAll ?? false;
+  const urlScope: "mine" | "all" = canSeeAll && searchParams.get("scope") === "all" ? "all" : "mine";
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -116,6 +124,7 @@ export default function TasksPageClient(props: Props) {
       priority: props.initialFilters?.priority ?? "",
       domain: props.initialFilters?.domain ?? "",
       linkedId: props.initialFilters?.linkedId ?? "",
+      scope: props.initialFilters?.scope ?? "mine",
     }),
     [props.initialFilters]
   );
@@ -162,13 +171,7 @@ export default function TasksPageClient(props: Props) {
         ? props.properties
         : [];
 
-  function pushFilters(filters: {
-    q: string;
-    status: string;
-    priority: string;
-    domain: string;
-    linkedId: string;
-  }) {
+  function pushFilters(filters: TaskUrlFilters) {
     emitNavigationStart();
     router.push(buildTasksUrl(filters));
   }
@@ -183,24 +186,30 @@ export default function TasksPageClient(props: Props) {
         priority: urlPriority,
         domain: urlDomain,
         linkedId: urlLinkedId,
+        scope: urlScope,
       });
     }, 400);
   }
 
   function handleStatusChange(value: string) {
-    pushFilters({ q: urlQ, status: value, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId });
+    pushFilters({ q: urlQ, status: value, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope });
   }
 
   function handlePriorityChange(value: string) {
-    pushFilters({ q: urlQ, status: urlStatus, priority: value, domain: urlDomain, linkedId: urlLinkedId });
+    pushFilters({ q: urlQ, status: urlStatus, priority: value, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope });
   }
 
   function handleDomainChange(value: string) {
-    pushFilters({ q: urlQ, status: urlStatus, priority: urlPriority, domain: value, linkedId: "" });
+    pushFilters({ q: urlQ, status: urlStatus, priority: urlPriority, domain: value, linkedId: "", scope: urlScope });
   }
 
   function handleLinkedIdChange(value: string) {
-    pushFilters({ q: urlQ, status: urlStatus, priority: urlPriority, domain: urlDomain, linkedId: value });
+    pushFilters({ q: urlQ, status: urlStatus, priority: urlPriority, domain: urlDomain, linkedId: value, scope: urlScope });
+  }
+
+  function handleScopeChange(value: "mine" | "all") {
+    if (value === urlScope) return;
+    pushFilters({ q: urlQ, status: urlStatus, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: value });
   }
 
   async function updateTaskStatus(taskId: string, status: string) {
@@ -273,7 +282,35 @@ export default function TasksPageClient(props: Props) {
         <TasksRealtimeBadge />
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {canSeeAll ? (
+          <div className="flex rounded-xl border bg-secondary/40 p-0.5 text-sm">
+            <button
+              type="button"
+              onClick={() => handleScopeChange("mine")}
+              className={`rounded-lg px-3 py-1 transition-colors ${
+                urlScope === "mine"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-secondary/10"
+              }`}
+            >
+              המשימות שלי
+            </button>
+            <button
+              type="button"
+              onClick={() => handleScopeChange("all")}
+              className={`rounded-lg px-3 py-1 transition-colors ${
+                urlScope === "all"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-secondary/10"
+              }`}
+            >
+              כל המשימות
+            </button>
+          </div>
+        ) : (
+          <span />
+        )}
         <Button type="button" onClick={() => setCreateOpen(true)}>
           הוספת משימה
         </Button>

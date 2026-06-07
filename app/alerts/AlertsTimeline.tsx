@@ -8,7 +8,7 @@ import type { CalendarEntry } from "@/lib/projectSchedule";
 
 type TimelineEvent = {
   id: string;
-  kind: "task" | "project-start" | "project-end";
+  kind: "task" | "reminder" | "project-start" | "project-end";
   title: string;
   subtitle: string;
   href: string;
@@ -75,12 +75,12 @@ export default function AlertsTimeline({
       const end = toDateOnly(entry.endDate) ?? start;
       if (!start) continue;
 
-      if (entry.kind === "task") {
+      if (entry.kind === "task" || entry.kind === "reminder") {
         const iso = toIso(start);
         if (start >= today && start <= rangeEnd) {
           addEvent(iso, {
             id: entry.id,
-            kind: "task",
+            kind: entry.kind,
             title: entry.title,
             subtitle: entry.subtitle,
             href: entry.href,
@@ -190,7 +190,7 @@ export default function AlertsTimeline({
                       {event.priority && (
                         <StatusBadge value={event.priority} type="priority" />
                       )}
-                      {event.status && (
+                      {event.status && event.kind !== "reminder" && (
                         <StatusBadge
                           value={event.status}
                           type={event.kind === "task" ? "task" : "project"}
@@ -216,6 +216,7 @@ export default function AlertsTimeline({
 function EventDot({ kind }: { kind: TimelineEvent["kind"] }) {
   const colors = {
     task: "bg-warning",
+    reminder: "bg-info",
     "project-start": "bg-success",
     "project-end": "bg-destructive",
   };
@@ -226,6 +227,7 @@ function EventDot({ kind }: { kind: TimelineEvent["kind"] }) {
 
 function EventKindBadge({ kind }: { kind: TimelineEvent["kind"] }) {
   if (kind === "task") return <Badge variant="warning" className="text-[10px]">משימה</Badge>;
+  if (kind === "reminder") return <Badge variant="info" className="text-[10px]">תזכורת</Badge>;
   if (kind === "project-start") return <Badge variant="secondary" className="text-[10px]">פרויקט מתחיל</Badge>;
   return <Badge variant="outline" className="text-[10px]">פרויקט מסתיים</Badge>;
 }
