@@ -31,7 +31,25 @@ export default function PwaRegistration() {
       return;
     }
 
-    void navigator.serviceWorker.register("/sw.js");
+    void navigator.serviceWorker.register("/sw.js").then((reg) => {
+      // Proactively check for a newer service worker on each load (don't wait for the
+      // browser's periodic check) so a fixed build / cache-version bump is picked up fast.
+      void reg.update().catch(() => {});
+    });
+
+    // Self-heal stale caches: when an UPDATED service worker takes control (it purges old
+    // caches on activate), reload once so the page runs the fresh build instead of stale
+    // chunks — e.g. a device stuck on an old bundle recovers with no manual cache clearing.
+    // Guarded against reload loops; skips the first install (no prior controller) so new
+    // visitors don't double-load.
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    const onControllerChange = () => {
+      if (!hadController) return;
+      if (sessionStorage.getItem("__sw_reloaded__")) return;
+      sessionStorage.setItem("__sw_reloaded__", "1");
+      window.location.reload();
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
 
     // Listen for the SW telling us to drain the queue (Background Sync fallback path)
     const handleMessage = (event: MessageEvent) => {
@@ -58,6 +76,7 @@ export default function PwaRegistration() {
 
     return () => {
       navigator.serviceWorker.removeEventListener("message", handleMessage);
+      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
     };
   }, []);
 
