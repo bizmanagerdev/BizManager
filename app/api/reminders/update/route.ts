@@ -32,8 +32,20 @@ export async function POST(req: Request) {
       updates.content = body.content.trim() || null;
     }
 
-    const { error } = await supabase.from("reminders").update(updates).eq("id", id);
+    const { data, error } = await supabase
+      .from("reminders")
+      .update(updates)
+      .eq("id", id)
+      .select("id");
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    // No row came back → the update matched nothing the caller may change (wrong
+    // id, or blocked by row-level security). Surface it instead of a false "ok".
+    if (!data || data.length === 0) {
+      return NextResponse.json(
+        { error: "התזכורת לא נמצאה או שאין הרשאה לעדכן אותה." },
+        { status: 404 }
+      );
+    }
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

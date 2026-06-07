@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { ChevronDown, MessageCircle, Phone } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
@@ -119,11 +120,18 @@ function SummaryCard({
 export default function CollectionsClient({
   customers,
   totals,
-  reminders,
+  reminders: remindersProp,
   recentLogs,
   dueToday,
 }: Props) {
   const router = useRouter();
+  // Reminders marked done/cancelled are hidden immediately so the action is
+  // visible even before router.refresh() re-fetches (and regardless of caching).
+  const [completedReminderIds, setCompletedReminderIds] = useState<Set<string>>(() => new Set());
+  const reminders = useMemo(
+    () => remindersProp.filter((r) => !completedReminderIds.has(r.id)),
+    [remindersProp, completedReminderIds]
+  );
   const [view, setView] = useState<View>("activity");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [search, setSearch] = useState("");
@@ -186,12 +194,23 @@ export default function CollectionsClient({
   const overdueReminderCount = reminders.filter((r) => r.remind_at.slice(0, 10) < todayIso()).length;
 
   async function updateReminder(id: string, status: "done" | "cancelled") {
-    const res = await fetch("/api/reminders/update", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, status }),
-    });
-    if (res.ok) router.refresh();
+    try {
+      const res = await fetch("/api/reminders/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(json.error ?? "עדכון התזכורת נכשל.");
+        return;
+      }
+      setCompletedReminderIds((prev) => new Set(prev).add(id));
+      toast.success(status === "done" ? "התזכורת סומנה כבוצעה." : "התזכורת בוטלה.");
+      router.refresh();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "עדכון התזכורת נכשל.");
+    }
   }
 
   async function markCollected(paymentId: string) {

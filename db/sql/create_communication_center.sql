@@ -67,6 +67,21 @@ begin
   end if;
 end $$;
 
+-- Keep status within the app's canonical set (pending / done / cancelled).
+-- Re-created idempotently in case an older/looser constraint exists.
+alter table public.reminders drop constraint if exists reminders_status_check;
+update public.reminders
+set status = case
+  when status in ('completed', 'complete', 'closed') then 'done'
+  when status in ('canceled') then 'cancelled'
+  else 'pending'
+end
+where status is null
+   or status not in ('pending', 'done', 'cancelled');
+alter table public.reminders
+  add constraint reminders_status_check
+  check (status in ('pending', 'done', 'cancelled'));
+
 create index if not exists reminders_status_due_idx
   on public.reminders (status, remind_at);
 create index if not exists reminders_customer_idx
