@@ -4908,11 +4908,11 @@ function AddExpenseDialog({
                       onChange={(e) => setExpensePaymentMethod(e.target.value)}
                     >
                       <option value="">בחר אמצעי</option>
-                      <option value="bank_transfer">העברה בנקאית</option>
-                      <option value="cash">מזומן</option>
-                      <option value="check">צ&apos;ק</option>
-                      <option value="credit_card">כרטיס אשראי</option>
-                      <option value="other">אחר</option>
+                      {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   {expensePaymentStatus === "partial" && (

@@ -1,5 +1,6 @@
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import type { StatusColor } from "@/lib/ui/status-colors";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
@@ -25,13 +26,9 @@ export type OrderPaymentRow = {
   updated_at?: string | null;
 };
 
-export const ORDER_PAYMENT_METHOD_OPTIONS = [
-  { value: "cash", label: "מזומן" },
-  { value: "bank_transfer", label: "העברה בנקאית" },
-  { value: "credit_card", label: "כרטיס אשראי" },
-  { value: "check", label: "צ'ק" },
-  { value: "other", label: "אחר" },
-] as const;
+// Shared, single source of truth (see lib/payments). Kept under this name so the
+// existing order/project payment dialogs that import it stay unchanged.
+export const ORDER_PAYMENT_METHOD_OPTIONS = PAYMENT_METHOD_OPTIONS;
 
 function normalizePaymentMethodValue(method: string | null | undefined) {
   const raw = typeof method === "string" ? method.trim() : "";

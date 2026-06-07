@@ -22,6 +22,7 @@ import {
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import { toHebrewError } from "@/lib/error-messages";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { cn } from "@/lib/utils";
 
 type SourceOption = { id: string; label: string };
@@ -407,11 +408,11 @@ export function TransferDialog({
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
               >
-                <option value="bank_transfer">העברה בנקאית</option>
-                <option value="cash">מזומן</option>
-                <option value="check">צ&apos;ק</option>
-                <option value="credit_card">כרטיס אשראי</option>
-                <option value="other">אחר</option>
+                {PAYMENT_METHOD_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
             {paymentMethod === "check" ? (

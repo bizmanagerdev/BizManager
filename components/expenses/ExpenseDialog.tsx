@@ -25,7 +25,7 @@ import {
 import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
-import type { FinancialAttachment } from "@/lib/payments";
+import { PAYMENT_METHOD_OPTIONS, type FinancialAttachment } from "@/lib/payments";
 
 type PaymentStatus = "paid" | "partial" | "not_paid";
 
@@ -478,11 +478,11 @@ export function ExpenseDialog({
                   onChange={(e) => setPaymentMethod(e.target.value)}
                 >
                   <option value="">בחר אמצעי</option>
-                  <option value="bank_transfer">העברה בנקאית</option>
-                  <option value="cash">מזומן</option>
-                  <option value="check">צ&apos;ק</option>
-                  <option value="credit_card">כרטיס אשראי</option>
-                  <option value="other">אחר</option>
+                  {PAYMENT_METHOD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               {paymentStatus === "partial" && (

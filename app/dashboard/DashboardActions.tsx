@@ -38,7 +38,7 @@ import {
   shouldShowSessionPrice,
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
-import type { FinancialAttachment } from "@/lib/payments";
+import { PAYMENT_METHOD_OPTIONS, type FinancialAttachment } from "@/lib/payments";
 import type { CalendarEntry } from "@/lib/projectSchedule";
 import { Button } from "@/components/ui/button";
 import {
@@ -460,6 +460,7 @@ export default function DashboardActions({
   const [expenseWorkerPaidAmount, setExpenseWorkerPaidAmount] = useState("");
   const [expenseBillToCustomerAmount, setExpenseBillToCustomerAmount] = useState("");
   const [expensePaymentStatus, setExpensePaymentStatus] = useState<"paid" | "partial" | "not_paid">("not_paid");
+  const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
   const [expenseAttachmentFiles, setExpenseAttachmentFiles] = useState<File[]>([]);
   const [expenseExistingAttachments, setExpenseExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [expenseNewWorkerOpen, setExpenseNewWorkerOpen] = useState(false);
@@ -762,6 +763,7 @@ export default function DashboardActions({
     setExpenseIncludedInBase(false);
     setExpenseBilledToCustomer(false);
     setExpensePaymentStatus("not_paid");
+    setExpensePaymentMethod("");
     setExpenseWorkerUserId("");
     setExpenseClockIn("");
     setExpenseClockOut("");
@@ -1130,6 +1132,10 @@ export default function DashboardActions({
           included_in_base_price: expenseBusinessDomain === "logistics_projects" ? expenseIncludedInBase : false,
           billed_to_customer: expenseBusinessDomain === "logistics_projects" ? expenseBilledToCustomer : false,
           payment_status: expensePaymentStatus,
+          payment_method:
+            expensePaymentStatus === "paid" || expensePaymentStatus === "partial"
+              ? expensePaymentMethod || null
+              : null,
         }),
       });
 
@@ -2804,6 +2810,24 @@ export default function DashboardActions({
                       </select>
                     </label>
                   </AdaptiveGrid>
+
+                  {expensePaymentStatus === "paid" || expensePaymentStatus === "partial" ? (
+                    <label className="space-y-2 text-sm">
+                      <span>{HEBREW.paymentMethod}</span>
+                      <select
+                        className={fieldClass}
+                        value={expensePaymentMethod}
+                        onChange={(e) => setExpensePaymentMethod(e.target.value)}
+                      >
+                        <option value="">בחרו אמצעי תשלום</option>
+                        {PAYMENT_METHOD_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
 
                   <label className="space-y-2 text-sm">
                     <span>{HEBREW.date} *</span>

@@ -38,6 +38,17 @@ export type PaymentRow = {
 export const PAYMENT_SELECT =
   "id,payment_date,amount_total,payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,net_amount,payment_status,business_domain,project_id,order_id,property_id,due_date,requires_split,recorded_by,notes,created_at,updated_at";
 
+// Single source of truth for the payment-method dropdown, shared by both the
+// expense dialog and the order/project payment dialogs so they always match.
+// Values must stay in sync with paymentMethodLabel() in lib/orders/paymentStatus.
+export const PAYMENT_METHOD_OPTIONS = [
+  { value: "cash", label: "מזומן" },
+  { value: "bank_transfer", label: "העברה בנקאית" },
+  { value: "credit_card", label: "כרטיס אשראי" },
+  { value: "check", label: "צ'ק" },
+  { value: "other", label: "אחר" },
+] as const;
+
 type BuildPaymentInsertInput = {
   amountTotal: number;
   businessDomain: ExpenseBusinessDomain;
