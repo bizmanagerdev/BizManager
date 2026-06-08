@@ -52,10 +52,12 @@ export default async function CashFlowPageContent({
   profile,
   supabase,
   searchParams,
+  view = "flow",
 }: {
   profile: UserProfile;
   supabase: SupabaseClient;
   searchParams: Record<string, string | string[] | undefined>;
+  view?: "flow" | "reports";
 }) {
   const customerId = firstValue(searchParams.customer_id)?.trim() ?? "";
   const customerName = firstValue(searchParams.customer_name)?.trim() ?? "";
@@ -152,6 +154,7 @@ export default async function CashFlowPageContent({
         })}
         data={data}
         initialFilters={initialFilters}
+        view={view}
         canManageExpenses={canManageExpenses}
         canViewCashflow={canViewCashflow}
         recurringProjects={projectOptions}

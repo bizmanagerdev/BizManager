@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
+import { getOrderStatusColor } from "@/lib/ui/status-colors";
 import { formatOrderDate } from "@/lib/orders/format";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import {
@@ -110,13 +112,13 @@ function invoiceState(row: { needsInvoice: boolean | null; invoiceSentAt: string
 function invoiceBadge(state: InvoiceState): { label: string; className: string } {
   switch (state) {
     case "needs_sent":
-      return { label: "הונפקה", className: "bg-success-soft text-success-soft-foreground border-transparent" };
+      return { label: "הונפקה", className: getStatusColorClasses("success") };
     case "needs_unsent":
-      return { label: "טרם הונפקה", className: "bg-warning-soft text-warning-soft-foreground border-transparent" };
+      return { label: "טרם הונפקה", className: getStatusColorClasses("warning") };
     case "no":
-      return { label: "לא צריך חשבונית", className: "bg-muted text-muted-foreground border-transparent" };
+      return { label: "לא צריך חשבונית", className: getStatusColorClasses("neutral") };
     default:
-      return { label: "חשבונית לא הוגדרה", className: "border-border bg-background text-muted-foreground" };
+      return { label: "חשבונית לא הוגדרה", className: getStatusColorClasses("neutral") };
   }
 }
 
@@ -182,22 +184,7 @@ function normalizeOrderStatus(value: string | null) {
 }
 
 export function orderStatusBadgeClasses(status: string) {
-  switch (normalizeOrderStatus(status)) {
-    case "draft":
-      return "bg-destructive text-destructive-foreground border-transparent";
-    case "delivered":
-    case "completed":
-    case "closed":
-      return "bg-success text-success-foreground border-transparent";
-    case "confirmed":
-    case "processing":
-    case "out_for_delivery":
-      return "bg-warning text-warning-foreground border-transparent";
-    case "cancelled":
-      return "border-border bg-background text-muted-foreground";
-    default:
-      return "bg-warning text-warning-foreground border-transparent";
-  }
+  return getStatusColorClasses(getOrderStatusColor(status));
 }
 
 function isActiveOrder(status: string) {

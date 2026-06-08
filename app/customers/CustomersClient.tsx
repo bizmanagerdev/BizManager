@@ -18,6 +18,7 @@ import {
 import { NavLink } from "@/components/NavLink";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,14 +62,7 @@ const morningClientUrl = (morningClientId: string) =>
   `https://app.greeninvoice.co.il/incomes/clients/${encodeURIComponent(morningClientId)}/documents`;
 
 function customerFlagBadgeClass(tone: "success" | "danger" | "neutral") {
-  switch (tone) {
-    case "success":
-      return "bg-success text-success-foreground border-transparent";
-    case "danger":
-      return "bg-destructive text-destructive-foreground border-transparent";
-    default:
-      return "border-border bg-background text-muted-foreground";
-  }
+  return getStatusColorClasses(tone);
 }
 
 export default function CustomersClient({

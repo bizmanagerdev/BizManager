@@ -3,6 +3,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
+import { STATUS_PILL_CLASSES } from "@/lib/ui/status-color-classes";
 
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-transparent text-sm font-medium ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
@@ -22,6 +23,10 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         success:
           "bg-success text-success-foreground shadow-md shadow-success/20 hover:bg-success/90 hover:-translate-y-0.5",
+        /* Soft "outline" variants — base colors come from STATUS_PILL_CLASSES (same source as
+           the status badges); the button only adds interaction (shadow/hover). */
+        "success-outline": `${STATUS_PILL_CLASSES.success} shadow-sm hover:bg-success/20 hover:-translate-y-0.5`,
+        "destructive-outline": `${STATUS_PILL_CLASSES.danger} shadow-sm hover:bg-destructive/20 hover:-translate-y-0.5`,
       },
       size: {
         default: "h-11 px-4 py-2",

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import MorningQuoteDialog from "@/components/morning/MorningQuoteDialog";
 import type { MorningLocalDocument } from "@/lib/morning/types";
@@ -45,14 +46,14 @@ function statusLabel(status: string | null | undefined) {
 }
 
 function statusClass(status: string | null | undefined, hasError: boolean) {
-  if (hasError) return "bg-destructive text-destructive-foreground border-transparent";
+  if (hasError) return getStatusColorClasses("danger");
   switch (status) {
     case "matched":
-      return "bg-success text-success-foreground border-transparent";
+      return getStatusColorClasses("success");
     case "manual_review":
-      return "bg-warning text-warning-foreground border-transparent";
+      return getStatusColorClasses("warning");
     default:
-      return "border-border bg-background text-muted-foreground";
+      return getStatusColorClasses("neutral");
   }
 }
 

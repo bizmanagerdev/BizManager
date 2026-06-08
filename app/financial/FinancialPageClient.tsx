@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Pencil, Search, TimerReset, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Search, SlidersHorizontal, TimerReset, Trash2 } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
@@ -21,8 +21,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
+import FinancialTotalsStrip from "@/app/financial/FinancialTotalsStrip";
+import ProfitLossPanel from "@/app/financial/reports/ProfitLossPanel";
+import MonthlyTrendPanel from "@/app/financial/reports/MonthlyTrendPanel";
+import ForecastPanel from "@/app/financial/reports/ForecastPanel";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import {
   EXPENSE_BUSINESS_DOMAINS,
@@ -73,6 +78,8 @@ type InitialFilters = {
 type Props = {
   data: FinancialPageData;
   initialFilters: InitialFilters;
+  /** "flow" = the cash-flow ledger page; "reports" = totals + domain views + P&L. */
+  view?: "flow" | "reports";
   canManageExpenses: boolean;
   canViewCashflow: boolean;
   recurringProjects: Array<{ id: string; label: string }>;
@@ -130,9 +137,9 @@ function stageLabel(stage: FinancialEntryStage) {
 }
 
 function stageVariant(stage: FinancialEntryStage) {
-  if (stage === "scheduled") return "outline" as const;
-  if (stage === "pending") return "warning" as const;
-  return "success" as const;
+  if (stage === "scheduled") return "info-outline" as const;
+  if (stage === "pending") return "warning-outline" as const;
+  return "success-outline" as const;
 }
 
 function typeLabel(type: FinancialEntry["type"]) {
@@ -140,7 +147,7 @@ function typeLabel(type: FinancialEntry["type"]) {
 }
 
 function typeVariant(type: FinancialEntry["type"]) {
-  return type === "inflow" ? ("success" as const) : ("destructive" as const);
+  return type === "inflow" ? ("success-outline" as const) : ("destructive-outline" as const);
 }
 
 function typeAmountClass(type: FinancialEntry["type"]) {
@@ -268,6 +275,7 @@ function setOrDelete(params: URLSearchParams, key: string, value: string | numbe
 export default function FinancialPageClient({
   data,
   initialFilters,
+  view = "flow",
   canManageExpenses,
   canViewCashflow,
   recurringProjects,
@@ -277,6 +285,24 @@ export default function FinancialPageClient({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Inner report tab (סיכום / תחומים / רווח והפסד). Local state — switching it must
+  // not trigger a server re-query, unlike the shared URL-driven filters.
+  const [reportTab, setReportTab] = useState("summary");
+  // Flow view: which table is shown (full ledger vs upcoming flow).
+  const [flowTab, setFlowTab] = useState<"ledger" | "upcoming">("ledger");
+  // Filter panel is collapsed by default; opens automatically when filters arrive active.
+  const [filtersOpen, setFiltersOpen] = useState(
+    () =>
+      Boolean(
+        initialFilters.q ||
+          initialFilters.from ||
+          initialFilters.to ||
+          initialFilters.domain ||
+          initialFilters.sourceId ||
+          (initialFilters.type && initialFilters.type !== "all") ||
+          (initialFilters.stage && initialFilters.stage !== "all")
+      )
+  );
   const [query, setQuery] = useState(initialFilters.q);
   const [from, setFrom] = useState(initialFilters.from);
   const [to, setTo] = useState(initialFilters.to);
@@ -313,6 +339,15 @@ export default function FinancialPageClient({
     summaries.actual.net +
     data.openReceivablesSummary.inflow -
     data.openLiabilitiesSummary.outflow;
+  const activeFilterCount = [
+    query,
+    from,
+    to,
+    domain,
+    sourceId,
+    type !== "all" ? type : "",
+    stage !== "all" ? stage : "",
+  ].filter(Boolean).length;
   const domainGroups = data.domainGroups;
   const upcomingEntries = data.upcomingEntries;
   const ledgerEntries = data.ledgerEntries;
@@ -685,22 +720,39 @@ export default function FinancialPageClient({
     <div className="space-y-4" dir="rtl">
       {resolvedCanView ? (
         <>
-      {canManageExpenses ? (
-        <div className="flex flex-wrap justify-start gap-2">
-          <Button type="button" onClick={() => setExpenseCreateOpen(true)}>
-            הוספת הוצאה
-          </Button>
-          <Button type="button" variant="outline" onClick={() => setIncomeCreateOpen(true)}>
-            הוספת הכנסה
-          </Button>
-          <Button type="button" variant="outline" onClick={() => setTransferCreateOpen(true)}>
-            העברה / שיוך כפול
-          </Button>
-        </div>
-      ) : null}
+      <FinancialTotalsStrip data={data} />
 
       <div dir="rtl" className="space-y-4 text-right">
-      <div ref={filtersCardRef}>
+      <div ref={filtersCardRef} className="print:hidden space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {canManageExpenses && view === "flow" ? (
+          <>
+            <Button type="button" variant="secondary" onClick={() => setIncomeCreateOpen(true)}>
+              הוספת הכנסה
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setExpenseCreateOpen(true)}>
+              הוספת הוצאה
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setTransferCreateOpen(true)}>
+              העברה / שיוך כפול
+            </Button>
+          </>
+        ) : null}
+        <Button type="button" variant="outline" onClick={() => setFiltersOpen((value) => !value)}>
+          <SlidersHorizontal className="ml-2 h-4 w-4" />
+          סינון
+          {activeFilterCount > 0 ? (
+            <Badge variant="secondary" className="ms-2">{activeFilterCount}</Badge>
+          ) : null}
+        </Button>
+        {activeFilterCount > 0 ? (
+          <Button type="button" variant="ghost" onClick={resetFilters}>
+            <TimerReset className="ml-1 h-4 w-4" />
+            איפוס
+          </Button>
+        ) : null}
+      </div>
+      {filtersOpen ? (
       <Card>
         <CardHeader className="hidden">
           <CardTitle className="text-lg text-right">סינון וניווט</CardTitle>
@@ -805,22 +857,17 @@ export default function FinancialPageClient({
             </SelectField>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-sm sm:flex-row">
-            <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
-              <Badge variant="outline">{filteredEntries.length} תנועות</Badge>
-              <Badge variant="outline">{sourceCount} מקורות</Badge>
-              <Badge variant="outline">{upcomingCount} צפויות / ממתינות</Badge>
-            </div>
-            <Button type="button" variant="outline" onClick={resetFilters}>
-              <TimerReset className="ml-2 h-4 w-4" />
-              איפוס
-            </Button>
+          <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm text-muted-foreground">
+            <Badge variant="outline">{filteredEntries.length} תנועות</Badge>
+            <Badge variant="outline">{sourceCount} מקורות</Badge>
+            <Badge variant="outline">{upcomingCount} צפויות / ממתינות</Badge>
           </div>
         </CardContent>
       </Card>
+      ) : null}
       </div>
 
-      <div ref={contentAreaRef} className="relative">
+      <div ref={contentAreaRef} className="relative space-y-4">
         {isFilterPending ? (
           <div
             className="fixed bottom-0 z-30 bg-background/60 backdrop-blur-[2px]"
@@ -836,6 +883,16 @@ export default function FinancialPageClient({
           </div>
         ) : null}
 
+      {view === "reports" ? (
+      <Tabs value={reportTab} onValueChange={setReportTab} dir="rtl" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-3 print:hidden sm:grid-cols-5">
+          <TabsTrigger value="summary">סיכום</TabsTrigger>
+          <TabsTrigger value="domains">תחומים</TabsTrigger>
+          <TabsTrigger value="pl">רווח והפסד</TabsTrigger>
+          <TabsTrigger value="trend">מגמה חודשית</TabsTrigger>
+          <TabsTrigger value="forecast">תחזית</TabsTrigger>
+        </TabsList>
+        <TabsContent value="summary" className="space-y-4">
       <section dir="rtl" className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           title="כניסות בפועל"
@@ -892,7 +949,8 @@ export default function FinancialPageClient({
           accent={data.forecastSummary.net >= 0 ? "success" : "destructive"}
         />
       </section>
-
+        </TabsContent>
+        <TabsContent value="domains" className="space-y-4">
       <section dir="rtl" className="grid gap-4">
         <Card>
           <CardHeader className="pb-3">
@@ -961,7 +1019,45 @@ export default function FinancialPageClient({
             )}
           </CardContent>
         </Card>
-
+      </section>
+        </TabsContent>
+        <TabsContent value="pl" className="space-y-4">
+          <ProfitLossPanel
+            rows={data.profitLoss}
+            expenseCategories={data.profitLossExpenseCategories}
+            previousRows={data.profitLossPrevious}
+            previousPeriod={data.profitLossPreviousPeriod}
+            from={initialFilters.from || null}
+            to={initialFilters.to || null}
+          />
+        </TabsContent>
+        <TabsContent value="trend" className="space-y-4">
+          <MonthlyTrendPanel points={data.monthlyTrend} />
+        </TabsContent>
+        <TabsContent value="forecast" className="space-y-4">
+          <ForecastPanel changes={data.forecastMonthly} openingBalance={data.actualSummary.net} />
+        </TabsContent>
+      </Tabs>
+      ) : (
+      <Tabs
+        value={flowTab}
+        onValueChange={(value) => setFlowTab(value as "ledger" | "upcoming")}
+        dir="rtl"
+        className="space-y-4"
+      >
+        <TabsList className="grid w-full grid-cols-2 print:hidden">
+          <TabsTrigger value="ledger">יומן מלא</TabsTrigger>
+          <TabsTrigger value="upcoming">
+            תזרים עתידי
+            {upcomingCount > 0 ? (
+              <span className="ms-2 inline-flex items-center rounded-full bg-foreground/10 px-1.5 text-[11px] font-semibold leading-5">
+                {upcomingCount}
+              </span>
+            ) : null}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="upcoming">
+      <section dir="rtl" className="grid gap-4">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg text-right">תזרים עתידי קרוב</CardTitle>
@@ -1147,7 +1243,8 @@ export default function FinancialPageClient({
           </CardContent>
         </Card>
       </section>
-
+        </TabsContent>
+        <TabsContent value="ledger">
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg text-right">יומן תזרים מלא</CardTitle>
@@ -1482,6 +1579,9 @@ export default function FinancialPageClient({
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
+      )}
 
       <TransferDialog
         open={transferCreateOpen}

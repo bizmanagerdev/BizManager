@@ -35,6 +35,7 @@ import {
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
 import { getPaymentStatusLabel as getSharedPaymentStatusLabel } from "@/lib/ui/status-colors";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import {
   getActiveSalaryAgreementForDate,
   calculateSessionLaborCost,
@@ -5055,14 +5056,7 @@ function StatusPill({
   children: React.ReactNode;
   tone: "muted" | "success" | "warning" | "danger";
 }) {
-  const className =
-    tone === "success"
-      ? "bg-success text-success-foreground border-transparent"
-      : tone === "warning"
-        ? "bg-warning text-warning-foreground border-transparent"
-        : tone === "danger"
-          ? "bg-destructive text-destructive-foreground border-transparent"
-          : "border-border bg-background text-muted-foreground";
+  const className = getStatusColorClasses(tone === "muted" ? "neutral" : tone);
 
   return <Badge className={className}>{children}</Badge>;
 }

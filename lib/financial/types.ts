@@ -224,6 +224,43 @@ export type FinancialDomainGroup = {
   total: FinancialSummary;
 };
 
+// Per-domain profit & loss row. Both bases are computed in one pass so the UI
+// can toggle between them with no re-fetch (see aggregateProfitLoss in entries.ts):
+//  - cash (בפועל):     posted income vs posted expenses/wages (+ paid portion of partials).
+//  - accrual (כולל פתוחים): cash + open receivables (earned) and open liabilities (incurred).
+export type ProfitLossDomainRow = {
+  domain: ExpenseBusinessDomain | null;
+  domainName: string;
+  isPersonal: boolean; // home | charity
+  cashRevenue: number;
+  cashExpense: number;
+  accrualRevenue: number;
+  accrualExpense: number;
+};
+
+// Expense line item by category (cash/accrual) — see aggregateExpenseCategories in entries.ts.
+export type ProfitLossCategoryRow = {
+  category: string;
+  cashExpense: number;
+  accrualExpense: number;
+};
+
+// One month of realized (posted) cash movement — see buildMonthlyTrend in entries.ts.
+export type MonthlyTrendPoint = {
+  month: string; // YYYY-MM
+  inflow: number;
+  outflow: number;
+  net: number;
+};
+
+// One future month's expected net change (scheduled + pending items) — see
+// buildForecastMonthly in entries.ts. The running projected balance is computed
+// client-side starting from the current actual balance.
+export type ForecastChangePoint = {
+  month: string; // YYYY-MM
+  change: number;
+};
+
 export type FinancialPageData = {
   todayIso: string;
   actualSummary: FinancialSummary;
@@ -236,6 +273,14 @@ export type FinancialPageData = {
   openLiabilitiesSummary: FinancialSummary;
   scheduledLiabilitiesSummary: FinancialSummary;
   domainGroups: FinancialDomainGroup[];
+  profitLoss: ProfitLossDomainRow[];
+  profitLossExpenseCategories: ProfitLossCategoryRow[];
+  // Same-shape rows for the immediately-preceding equal-length period (empty unless
+  // both from+to are set); profitLossPreviousPeriod holds that window's dates.
+  profitLossPrevious: ProfitLossDomainRow[];
+  profitLossPreviousPeriod: { from: string; to: string } | null;
+  monthlyTrend: MonthlyTrendPoint[];
+  forecastMonthly: ForecastChangePoint[];
   domainOptions: ExpenseBusinessDomain[];
   sourceKind: FinancialSourceKind | null;
   sourceOptions: Array<{ id: string; label: string }>;

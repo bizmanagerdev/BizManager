@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { formatShortDate } from "@/lib/date";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
 import CustomerCollectionButton from "@/components/collections/CustomerCollectionButton";
 import type { MorningLocalDocument } from "@/lib/morning/types";
@@ -49,14 +50,7 @@ function rowDateValue(value: string | null) {
 }
 
 function customerFlagBadgeClass(tone: "success" | "danger" | "neutral") {
-  switch (tone) {
-    case "success":
-      return "bg-success text-success-foreground border-transparent";
-    case "danger":
-      return "bg-destructive text-destructive-foreground border-transparent";
-    default:
-      return "border-border bg-background text-muted-foreground";
-  }
+  return getStatusColorClasses(tone);
 }
 
 function parsePage(value: string | undefined) {

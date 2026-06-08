@@ -1,18 +1,23 @@
 import type { StatusColor } from "@/lib/ui/status-colors";
 
 /**
- * Bold solid status pill classes — solid colored bg + high-contrast text,
- * no border. White text on green/red/blue (passes contrast); dark navy text
- * on yellow (only readable option for warning).
+ * THE single source of truth for status-pill styling. Every status badge/pill in
+ * the app — the <Badge> status variants, <StatusBadge>, and all feature helpers —
+ * derives its classes from here, so the look stays consistent and changes in one
+ * place. Style = soft outline: light tinted bg + colored anchor text + colored
+ * border. Warning uses navy text (orange text on a light bg is unreadable). The
+ * actual colors come from the --*-soft / --* CSS tokens in globals.css.
  */
+export const STATUS_PILL_CLASSES: Record<StatusColor, string> = {
+  success: "border border-success bg-success-soft text-success-soft-foreground",
+  warning: "border border-warning bg-warning-soft text-warning-soft-foreground",
+  danger: "border border-destructive bg-destructive-soft text-destructive-soft-foreground",
+  info: "border border-info bg-info-soft text-info-soft-foreground",
+  neutral: "border border-border bg-muted/40 text-muted-foreground",
+};
+
 export function getStatusColorClasses(color: StatusColor) {
-  return {
-    success: "bg-success text-success-foreground border-transparent",
-    warning: "bg-warning text-warning-foreground border-transparent",
-    danger: "bg-destructive text-destructive-foreground border-transparent",
-    info: "bg-info text-info-foreground border-transparent",
-    neutral: "bg-background text-muted-foreground border border-border",
-  }[color];
+  return STATUS_PILL_CLASSES[color];
 }
 
 export function getStatusDotClasses(color: StatusColor) {

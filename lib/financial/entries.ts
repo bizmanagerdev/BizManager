@@ -9,9 +9,13 @@ import type {
   FinancialEntryStage,
   FinancialEntryType,
   FinancialSummary,
+  ForecastChangePoint,
+  MonthlyTrendPoint,
   OrderFinancialRow,
   OrderRow,
   PaymentRow,
+  ProfitLossCategoryRow,
+  ProfitLossDomainRow,
   ProjectFinancialRow,
   ProjectRow,
   PropertyRow,
@@ -316,6 +320,235 @@ export function buildDomainGroups(entries: FinancialEntry[], referenceDate: stri
     (left, right) =>
       Math.abs(right.total.net) - Math.abs(left.total.net) || right.total.count - left.total.count
   );
+}
+
+// Domains that are personal rather than business activity. The P&L excludes them
+// by default (the UI offers a toggle to include them).
+const PERSONAL_DOMAINS: ReadonlySet<string> = new Set(["home", "charity"]);
+
+export function isPersonalDomain(domain: string | null | undefined): boolean {
+  return domain != null && PERSONAL_DOMAINS.has(domain);
+}
+
+/**
+ * Pure per-domain profit & loss aggregation over the entries whose `flowDate`
+ * falls within [from, to]. Both bases are computed in one pass:
+ *  - cash (בפועל):     posted income vs posted expenses/wages (+ paid portion of partial expenses).
+ *  - accrual (כולל פתוחים): cash + open receivables (earned) and open liabilities (incurred).
+ * Scheduled/future entries are excluded from both (forecast, not realized/earned).
+ * Returns every domain with activity, sorted by accrual net (revenue - expense) desc.
+ */
+export function aggregateProfitLoss(
+  entries: FinancialEntry[],
+  options: { from?: string | null; to?: string | null } = {}
+): ProfitLossDomainRow[] {
+  const from = options.from || null;
+  const to = options.to || null;
+  const rows = new Map<string, ProfitLossDomainRow>();
+
+  for (const entry of entries) {
+    if (from && entry.flowDate < from) continue;
+    if (to && entry.flowDate > to) continue;
+
+    const key = entry.businessDomain ?? "__unassigned__";
+    let row = rows.get(key);
+    if (!row) {
+      const domain = entry.businessDomain;
+      row = {
+        domain,
+        domainName: entry.domainName || getBusinessDomainLabel(domain),
+        isPersonal: domain != null && PERSONAL_DOMAINS.has(domain),
+        cashRevenue: 0,
+        cashExpense: 0,
+        accrualRevenue: 0,
+        accrualExpense: 0,
+      };
+      rows.set(key, row);
+    }
+
+    const { type, stage, origin, amount } = entry;
+    const partialPaid =
+      entry.expensePaidAmount != null && entry.expensePaidAmount > 0 ? entry.expensePaidAmount : 0;
+
+    if (type === "inflow") {
+      if (origin === "payment" && stage === "posted") {
+        row.cashRevenue += amount;
+        row.accrualRevenue += amount;
+      } else if (
+        (origin === "project_receivable" || origin === "order_receivable") &&
+        stage === "pending"
+      ) {
+        // Earned but not yet collected — accrual only.
+        row.accrualRevenue += amount;
+      }
+    } else if (type === "outflow") {
+      if (origin === "expense") {
+        if (stage === "posted") {
+          row.cashExpense += amount;
+          row.accrualExpense += amount;
+        } else if (stage === "pending") {
+          // Incurred but unpaid (not_paid / partial): full amount accrues; only
+          // the already-paid portion counts as cash out.
+          row.accrualExpense += amount;
+          row.cashExpense += partialPaid;
+        }
+      } else if (origin === "worker_payment" && stage === "posted") {
+        row.cashExpense += amount;
+        row.accrualExpense += amount;
+      } else if (origin === "worker_owed" && stage === "pending") {
+        // Wages incurred but unpaid — accrual only.
+        row.accrualExpense += amount;
+      }
+    }
+  }
+
+  return Array.from(rows.values())
+    .filter(
+      (row) =>
+        row.cashRevenue !== 0 ||
+        row.cashExpense !== 0 ||
+        row.accrualRevenue !== 0 ||
+        row.accrualExpense !== 0
+    )
+    .sort(
+      (left, right) =>
+        right.accrualRevenue - right.accrualExpense - (left.accrualRevenue - left.accrualExpense)
+    );
+}
+
+const WAGES_CATEGORY = "שכר עובדים";
+const UNCATEGORIZED = "ללא קטגוריה";
+
+/**
+ * Expense line items by category over [from, to] — the classic P&L expense
+ * breakdown. Worker pay (paid + owed) collapses into a single "שכר עובדים" line.
+ * Both bases mirror aggregateProfitLoss's expense rules so the UI basis toggle
+ * keeps the category table consistent with the totals.
+ */
+export function aggregateExpenseCategories(
+  entries: FinancialEntry[],
+  options: { from?: string | null; to?: string | null } = {}
+): ProfitLossCategoryRow[] {
+  const from = options.from || null;
+  const to = options.to || null;
+  const rows = new Map<string, ProfitLossCategoryRow>();
+
+  const add = (category: string, cash: number, accrual: number) => {
+    let row = rows.get(category);
+    if (!row) {
+      row = { category, cashExpense: 0, accrualExpense: 0 };
+      rows.set(category, row);
+    }
+    row.cashExpense += cash;
+    row.accrualExpense += accrual;
+  };
+
+  for (const entry of entries) {
+    if (entry.type !== "outflow") continue;
+    if (from && entry.flowDate < from) continue;
+    if (to && entry.flowDate > to) continue;
+
+    const { stage, origin, amount } = entry;
+    const partialPaid =
+      entry.expensePaidAmount != null && entry.expensePaidAmount > 0 ? entry.expensePaidAmount : 0;
+
+    if (origin === "expense") {
+      const category = entry.expenseCategory?.trim() || UNCATEGORIZED;
+      if (stage === "posted") add(category, amount, amount);
+      else if (stage === "pending") add(category, partialPaid, amount);
+    } else if (origin === "worker_payment" && stage === "posted") {
+      add(WAGES_CATEGORY, amount, amount);
+    } else if (origin === "worker_owed" && stage === "pending") {
+      add(WAGES_CATEGORY, 0, amount);
+    }
+  }
+
+  return Array.from(rows.values())
+    .filter((row) => row.cashExpense !== 0 || row.accrualExpense !== 0)
+    .sort((left, right) => right.accrualExpense - left.accrualExpense);
+}
+
+function monthKey(isoDate: string) {
+  return isoDate.slice(0, 7); // YYYY-MM
+}
+
+function addMonthsToMonthKey(monthKeyValue: string, delta: number) {
+  const [year, month] = monthKeyValue.split("-").map(Number);
+  const base = new Date(Date.UTC(year, (month - 1) + delta, 1));
+  return `${base.getUTCFullYear()}-${String(base.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Realized (posted) cash movement per calendar month within [from, to], for the
+ * monthly income-vs-expense-vs-net trend. Posted-only = the cash reality, matching
+ * the cash-flow tab. Empty months in the range are filled with zeros so the chart
+ * shows a continuous timeline.
+ */
+export function buildMonthlyTrend(
+  entries: FinancialEntry[],
+  options: { from?: string | null; to?: string | null } = {}
+): MonthlyTrendPoint[] {
+  const from = options.from || null;
+  const to = options.to || null;
+  const grouped = new Map<string, MonthlyTrendPoint>();
+
+  for (const entry of entries) {
+    if (entry.stage !== "posted") continue;
+    if (from && entry.flowDate < from) continue;
+    if (to && entry.flowDate > to) continue;
+
+    const key = monthKey(entry.flowDate);
+    let point = grouped.get(key);
+    if (!point) {
+      point = { month: key, inflow: 0, outflow: 0, net: 0 };
+      grouped.set(key, point);
+    }
+    if (entry.type === "inflow") point.inflow += entry.amount;
+    else point.outflow += entry.amount;
+    point.net = point.inflow - point.outflow;
+  }
+
+  // Fill gaps between the first and last observed month so the timeline is continuous.
+  const keys = [...grouped.keys()].sort();
+  if (keys.length === 0) return [];
+  const result: MonthlyTrendPoint[] = [];
+  for (let key = keys[0]; key <= keys[keys.length - 1]; key = addMonthsToMonthKey(key, 1)) {
+    result.push(grouped.get(key) ?? { month: key, inflow: 0, outflow: 0, net: 0 });
+  }
+  return result;
+}
+
+/**
+ * Expected net cash change for each of the next `months` calendar months, from
+ * not-yet-realized items (scheduled future income/expenses + pending checks/debts).
+ * Overdue pending items (flowDate before the current month) are folded into the
+ * first month so they aren't lost. The running projected balance is computed by
+ * the caller, starting from the current actual balance.
+ */
+export function buildForecastMonthly(
+  entries: FinancialEntry[],
+  options: { referenceDate: string; months?: number }
+): ForecastChangePoint[] {
+  const months = options.months ?? 6;
+  const currentMonth = monthKey(options.referenceDate);
+  const horizon: string[] = [];
+  for (let index = 0; index < months; index += 1) {
+    horizon.push(addMonthsToMonthKey(currentMonth, index));
+  }
+  const lastMonth = horizon[horizon.length - 1];
+  const changeByMonth = new Map<string, number>(horizon.map((month) => [month, 0]));
+
+  for (const entry of entries) {
+    if (entry.stage === "posted") continue; // only not-yet-realized money
+    const entryMonth = monthKey(entry.flowDate);
+    // Fold overdue/pending (before this month) into the current month; ignore
+    // anything beyond the horizon.
+    const bucket = entryMonth < currentMonth ? currentMonth : entryMonth;
+    if (bucket > lastMonth) continue;
+    changeByMonth.set(bucket, (changeByMonth.get(bucket) ?? 0) + entry.signedAmount);
+  }
+
+  return horizon.map((month) => ({ month, change: changeByMonth.get(month) ?? 0 }));
 }
 
 export function matchesEntryFilters(

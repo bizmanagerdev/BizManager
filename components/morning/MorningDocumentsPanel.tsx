@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import {
   Dialog,
   DialogContent,
@@ -64,11 +65,11 @@ function statusClass(value: string | null | undefined) {
     case "2":
     case "paid":
     case "closed":
-      return "bg-success text-success-foreground border-transparent";
+      return getStatusColorClasses("success");
     case "cancelled":
-      return "bg-destructive text-destructive-foreground border-transparent";
+      return getStatusColorClasses("danger");
     default:
-      return "border-border bg-background text-muted-foreground";
+      return getStatusColorClasses("neutral");
   }
 }
 

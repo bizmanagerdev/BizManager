@@ -54,6 +54,12 @@ export function addDaysToIso(isoDate: string, days: number) {
   return base.toISOString().slice(0, 10);
 }
 
+export function addMonthsToIso(isoDate: string, months: number) {
+  const base = new Date(`${isoDate}T00:00:00Z`);
+  base.setUTCMonth(base.getUTCMonth() + months);
+  return base.toISOString().slice(0, 10);
+}
+
 export function normalizePaymentMethod(method: string | null | undefined) {
   const raw = typeof method === "string" ? method.trim() : "";
   if (!raw) return "";

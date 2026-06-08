@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
@@ -21,11 +21,19 @@ const linkActive =
   "bg-secondary text-secondary-foreground font-medium shadow-md shadow-secondary/30 hover:ring-2 hover:ring-white/50 hover:ring-offset-2 hover:ring-offset-sidebar";
 const linkPending = "bg-white/10 opacity-70";
 
+// Routes that share one filter bar (Flow + Reports) — switching between them via
+// the sidebar carries the current filters (date/domain/…) so context isn't lost.
+const FILTER_SHARED_ROUTES = new Set(["/financial", "/financial/reports"]);
+
 function NavGroup({ item, collapsed }: { item: SidebarNavItem; collapsed: boolean }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const children = item.children ?? [];
   const childActive = children.some((c) => pathname === c.url || pathname.startsWith(`${c.url}/`));
   const [open, setOpen] = useState(false);
+  // Carry the live query string only between the filter-sharing financial routes.
+  const sharedQuery =
+    FILTER_SHARED_ROUTES.has(pathname) ? searchParams.toString() : "";
   // Auto-expand whenever a child route is active (no effect needed).
   const expanded = open || childActive;
 
@@ -65,7 +73,11 @@ function NavGroup({ item, collapsed }: { item: SidebarNavItem; collapsed: boolea
           {children.map((child) => (
             <NavLink
               key={child.url + child.title}
-              to={child.url}
+              to={
+                sharedQuery && FILTER_SHARED_ROUTES.has(child.url)
+                  ? { pathname: child.url, query: sharedQuery }
+                  : child.url
+              }
               end={child.url === "/financial"}
               className={cn(
                 "flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] text-sidebar-foreground/75 transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground",

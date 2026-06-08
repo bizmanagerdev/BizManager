@@ -124,40 +124,40 @@
        =========================================================== */
 
     /* === SEMANTIC STATUS TOKENS ===
-       BOLD style: solid colored bg + white text everywhere (yellow uses
-       dark navy text — only readable option). Soft tokens are aliased to
-       the solid versions so legacy soft-pill usages also render bold. */
+       SOLID style (--X / --X-foreground): solid colored bg + white text — for
+       buttons, banners and emphasis only (NOT status badges).
+       SOFT style (--X-soft / --X-soft-foreground): light tinted bg (-9) + colored
+       anchor text (-4); components add a -4 colored border. This is the standard
+       for ALL status badges/pills (per user preference). Warning text is navy —
+       orange text on a light bg is unreadable. */
 
-    /* Destructive — solid red (matches the rest of the bold badge family) */
+    /* Destructive — red */
     --destructive: var(--red-4);
     --destructive-foreground: var(--white);
-    --destructive-soft: var(--red-4);
-    --destructive-soft-foreground: var(--white);
+    --destructive-soft: var(--red-9);
+    --destructive-soft-foreground: var(--red-4);
     --destructive-strong: var(--red-4);
 
-    /* Success — solid green */
+    /* Success — green */
     --success: var(--green-4);
     --success-foreground: var(--white);
-    --success-soft: var(--green-4);
-    --success-soft-foreground: var(--white);
+    --success-soft: var(--green-9);
+    --success-soft-foreground: var(--green-4);
     --success-strong: var(--green-4);
 
-    /* Warning — solid yellow (#FFE62D) with WHITE text everywhere on the bg
-       for consistency with the other bold status badges. White on yellow is
-       very low contrast — accepted by user preference. */
+    /* Warning — warm orange (#FF9232). Soft text = the orange anchor so the text
+       always matches the outline color (per user preference), like the other colors. */
     --warning: var(--yellow-4);
     --warning-foreground: var(--white);
-    --warning-soft: var(--yellow-4);
-    --warning-soft-foreground: var(--white);
-    /* -strong is text-on-WHITE (e.g. currency labels). Pure yellow text on
-       white is unreadable, so this uses dark navy instead. */
+    --warning-soft: var(--yellow-9);
+    --warning-soft-foreground: var(--yellow-4);
     --warning-strong: var(--primary-3);
 
-    /* Info — solid blue */
+    /* Info — blue */
     --info: var(--blue-4);
     --info-foreground: var(--white);
-    --info-soft: var(--blue-4);
-    --info-soft-foreground: var(--white);
+    --info-soft: var(--blue-9);
+    --info-soft-foreground: var(--blue-4);
     --info-strong: var(--blue-4);
 
     --border: var(--secondary-9);

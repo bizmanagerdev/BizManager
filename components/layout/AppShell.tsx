@@ -43,7 +43,13 @@ export default function AppShell({
         <TopNavigationProgress />
       </Suspense>
       <PresenceTracker userName={userName} viewerRole={viewerRole} />
-      {sidebar.length > 0 && <AppSidebar items={sidebar} appName={appName} />}
+      {sidebar.length > 0 && (
+        // Suspense boundary required because AppSidebar reads useSearchParams
+        // (to carry financial filters between Flow/Reports links).
+        <Suspense fallback={null}>
+          <AppSidebar items={sidebar} appName={appName} />
+        </Suspense>
+      )}
       <div className="flex flex-1 flex-col min-w-0">
         <TopBar appName={appName} userName={userName} showSearch={showSearch} />
         <OfflineBanner />

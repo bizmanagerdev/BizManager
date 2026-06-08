@@ -30,6 +30,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
+import { getOrderStatusColor } from "@/lib/ui/status-colors";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { formatRelativeDateLabel } from "@/lib/date";
 import { formatOrderDate } from "@/lib/orders/format";
@@ -113,22 +115,7 @@ function normalizeOrderStatus(value: string | null) {
 }
 
 export function orderStatusClasses(status: string) {
-  switch (normalizeOrderStatus(status)) {
-    case "delivered":
-    case "completed":
-    case "closed":
-      return "bg-success text-success-foreground border-transparent";
-    case "draft":
-      return "bg-destructive text-destructive-foreground border-transparent";
-    case "confirmed":
-    case "processing":
-    case "out_for_delivery":
-      return "bg-warning text-warning-foreground border-transparent";
-    case "cancelled":
-      return "border-border bg-background text-muted-foreground";
-    default:
-      return "bg-warning text-warning-foreground border-transparent";
-  }
+  return getStatusColorClasses(getOrderStatusColor(status));
 }
 
 function SummaryMetric({ label, value, valueClassName = "" }: { label: string; value: string; valueClassName?: string }) {
@@ -151,12 +138,7 @@ function SummaryInfo({
   value: ReactNode;
   tone?: "sky" | "emerald" | "red";
 }) {
-  const toneClass =
-    tone === "red"
-      ? "bg-destructive text-destructive-foreground border-transparent"
-      : tone === "emerald"
-        ? "bg-success text-success-foreground border-transparent"
-        : "bg-info text-info-foreground border-transparent";
+  const toneClass = getStatusColorClasses(tone === "red" ? "danger" : tone === "emerald" ? "success" : "info");
 
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-border/60 bg-background/80 p-3">
@@ -189,7 +171,7 @@ function ExpandableSection({
       <summary className="cursor-pointer list-none">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border bg-info text-info-foreground border-transparent">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border border-info bg-info-soft text-info-soft-foreground">
               <Icon className="h-4 w-4" />
             </div>
             <div>

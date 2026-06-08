@@ -20,7 +20,12 @@ import {
   scanWorkerPaymentRows,
 } from "./db";
 import {
+  aggregateProfitLoss,
+  aggregateExpenseCategories,
   buildDomainGroups,
+  buildForecastMonthly,
+  buildMonthlyTrend,
+  isPersonalDomain,
   buildExpenseEntries,
   buildOrderReceivableEntries,
   buildPaymentEntries,
@@ -33,11 +38,13 @@ import {
   summarizeEntries,
 } from "./entries";
 import {
+  type FinancialEntry,
   type FinancialPageData,
   type FinancialPageFilters,
 } from "./types";
 import {
   addDaysToIso,
+  addMonthsToIso,
   domainToSourceKind,
   isFutureEntry,
   isPermissionDeniedError,
@@ -66,14 +73,31 @@ export type {
   FinancialSummary,
 } from "./types";
 
-export async function getFinancialPageData(
+// Per-domain profit & loss row (cash/accrual) — see aggregateProfitLoss in ./entries.ts.
+// Monthly trend + forecast points — see buildMonthlyTrend / buildForecastMonthly.
+export type {
+  ProfitLossDomainRow,
+  ProfitLossCategoryRow,
+  MonthlyTrendPoint,
+  ForecastChangePoint,
+} from "./types";
+
+/**
+ * Scans every money source and builds the full, sorted `FinancialEntry[]` for the
+ * business (all 6 origins). This is the heavy half of `getFinancialPageData`,
+ * extracted so other consumers (e.g. the P&L report) can reuse the exact same
+ * entry pipeline instead of re-querying. No filtering/pagination happens here —
+ * callers filter the returned entries themselves.
+ *
+ * `from` widens the scan window (when omitted, only the last 13 months are read).
+ */
+export async function loadFinancialEntries(
   supabase: SupabaseClient,
-  filters: FinancialPageFilters = {}
-): Promise<FinancialPageData> {
-  const customerId = normalizeCustomerId(filters.customerId);
+  options: { from?: string | null; customerId?: string | null } = {}
+): Promise<{ entries: FinancialEntry[]; referenceDate: string }> {
+  const customerId = normalizeCustomerId(options.customerId);
   const referenceDate = todayIso();
-  const from = normalizeDate(filters.from);
-  const to = normalizeDate(filters.to);
+  const from = normalizeDate(options.from);
   // Default scan window: when no explicit from-filter, only scan the last 13 months.
   // This avoids reading all-time data on every page load.
   const scanSince: string = from ?? (() => {
@@ -81,14 +105,6 @@ export async function getFinancialPageData(
     d.setMonth(d.getMonth() - 13);
     return d.toISOString().slice(0, 10);
   })();
-  const domain = normalizeDomain(filters.domain);
-  const sourceId = normalizeCustomerId(filters.sourceId);
-  const type = filters.type === "inflow" || filters.type === "outflow" ? filters.type : null;
-  const stage =
-    filters.stage === "actual" || filters.stage === "future" || filters.stage === "pending"
-      ? filters.stage
-      : null;
-  const query = normalizeText(filters.q);
   const customerProjectIds = await resolveCustomerProjectIds(supabase, customerId);
   const customerProjectSet = new Set(customerProjectIds);
 
@@ -246,6 +262,41 @@ export async function getFinancialPageData(
     ...orderReceivableEntries,
   ]);
 
+  return { entries, referenceDate };
+}
+
+export async function getFinancialPageData(
+  supabase: SupabaseClient,
+  filters: FinancialPageFilters = {}
+): Promise<FinancialPageData> {
+  const from = normalizeDate(filters.from);
+  const to = normalizeDate(filters.to);
+  // When an explicit period is selected, also cover the immediately-preceding
+  // equal-length period so the P&L can show a period-over-period comparison.
+  const previousPeriod =
+    from && to
+      ? (() => {
+          const lengthDays =
+            Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
+          return { from: addDaysToIso(from, -lengthDays), to: addDaysToIso(from, -1) };
+        })()
+      : null;
+  const { entries, referenceDate } = await loadFinancialEntries(supabase, {
+    from: previousPeriod ? previousPeriod.from : filters.from,
+    customerId: filters.customerId,
+  });
+  const domain = normalizeDomain(filters.domain);
+  const sourceId = normalizeCustomerId(filters.sourceId);
+  const type = filters.type === "inflow" || filters.type === "outflow" ? filters.type : null;
+  const stage =
+    filters.stage === "actual" || filters.stage === "future" || filters.stage === "pending"
+      ? filters.stage
+      : null;
+  const query = normalizeText(filters.q);
+  // Entries scoped by the domain filter only — used by the P&L / trend / forecast
+  // reports, which (unlike the ledger) must keep both inflow+outflow and all stages.
+  const domainEntries = domain ? entries.filter((entry) => entry.businessDomain === domain) : entries;
+
   const domainOptions = Array.from(
     new Set(entries.map((entry) => entry.businessDomain).filter((value): value is ExpenseBusinessDomain => Boolean(value)))
   ).sort((left, right) => getBusinessDomainLabel(left).localeCompare(getBusinessDomainLabel(right), "he"));
@@ -312,6 +363,24 @@ export async function getFinancialPageData(
     openLiabilitiesSummary: summarizeEntries(openLiabilityEntries),
     scheduledLiabilitiesSummary: summarizeEntries(scheduledLiabilityEntries),
     domainGroups: buildDomainGroups(filteredEntries, referenceDate),
+    // P&L, monthly trend and forecast are driven by date/domain only (they need both
+    // inflow+outflow and posted+pending), so they ignore the type/stage/source/q filters.
+    profitLoss: aggregateProfitLoss(domainEntries, { from, to }),
+    // Expense line items by category. When no explicit domain is chosen, exclude personal
+    // (home/charity) to match the P&L's business-only default; an explicit domain shows as-is.
+    profitLossExpenseCategories: aggregateExpenseCategories(
+      domain ? domainEntries : domainEntries.filter((entry) => !isPersonalDomain(entry.businessDomain)),
+      { from, to }
+    ),
+    profitLossPrevious: previousPeriod ? aggregateProfitLoss(domainEntries, previousPeriod) : [],
+    profitLossPreviousPeriod: previousPeriod,
+    // Historical monthly trend: posted-only, within [from..today] (default last 12 months).
+    monthlyTrend: buildMonthlyTrend(domainEntries, {
+      from: from ?? addMonthsToIso(referenceDate, -12),
+      to: to && to < referenceDate ? to : referenceDate,
+    }),
+    // Forward projection: next 6 months of scheduled/pending items (date filter N/A).
+    forecastMonthly: buildForecastMonthly(domainEntries, { referenceDate, months: 6 }),
     domainOptions,
     sourceKind,
     sourceOptions,

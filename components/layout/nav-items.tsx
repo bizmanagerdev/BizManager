@@ -36,6 +36,7 @@ import {
   Bell,
   Building2,
   CreditCard,
+  FileBarChart,
   FolderKanban,
   FolderOpen,
   HandCoins,
@@ -71,6 +72,7 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
     icon: Landmark,
     children: [
       { title: "תזרים", url: "/financial", icon: Landmark },
+      { title: "דוחות (רווח והפסד)", url: "/financial/reports", icon: FileBarChart },
       { title: "צ׳קים", url: "/checks", icon: Banknote },
       { title: "הלוואות והחזרים", url: "/financial/loans", icon: HandCoins },
       { title: "פירוטי אשראי", url: "/financial/statements", icon: CreditCard },
@@ -95,6 +97,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "משימות", url: "/tasks", icon: ListTodo },
   { title: "ניהול נכסים", url: "/properties", icon: Building2 },
   { title: "פיננסי", url: "/financial", icon: Landmark },
+  { title: "דוחות (רווח והפסד)", url: "/financial/reports", icon: FileBarChart },
   { title: "צ׳קים", url: "/checks", icon: Banknote },
   { title: "הלוואות והחזרים", url: "/financial/loans", icon: HandCoins },
   { title: "פירוטי אשראי", url: "/financial/statements", icon: CreditCard },
@@ -104,7 +107,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "הגדרות ניהול", url: "/settings", icon: Settings },
 ];
 
-const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans"]);
+const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports"]);
 const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/checks", "/financial/statements"]);
 
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean): SidebarNavItem[] {
