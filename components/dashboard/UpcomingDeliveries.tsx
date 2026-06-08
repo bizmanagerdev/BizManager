@@ -38,39 +38,43 @@ export default function UpcomingDeliveries({ deliveries }: { deliveries: Deliver
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <table className="w-full text-right text-sm">
-          <thead className="text-xs text-muted-foreground">
-            <tr className="border-b">
-              <th className="px-4 py-2 font-medium">הזמנה</th>
-              <th className="px-4 py-2 font-medium">לקוח</th>
-              <th className="px-4 py-2 font-medium">עיר</th>
-              <th className="px-4 py-2 font-medium">סטטוס</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((delivery) => (
-              <tr key={delivery.id} className="border-b last:border-0 transition-colors hover:bg-muted/40">
-                <td className="px-4 py-2.5">
-                  <Link href={`/sales/orders/${delivery.id}`} className="font-semibold hover:underline">
-                    {orderRef(delivery.id)}
-                  </Link>
-                </td>
-                <td className="px-4 py-2.5">
-                  <span className="flex items-center gap-2">
-                    <InitialsAvatar name={delivery.customerName} />
-                    <span className="truncate">{delivery.customerName}</span>
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 text-muted-foreground">{delivery.city}</td>
-                <td className="px-4 py-2.5">
-                  <Badge variant={COLOR_TO_VARIANT[getOrderStatusColor(delivery.status)]}>
-                    {getOrderStatusLabel(delivery.status)}
-                  </Badge>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ul className="divide-y">
+          {rows.map((delivery) => (
+            <li key={delivery.id}>
+              <Link
+                href={`/sales/orders/${delivery.id}`}
+                className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
+              >
+                <InitialsAvatar name={delivery.customerName} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-medium">{delivery.customerName}</span>
+                    {delivery.customerPhone ? (
+                      <span className="shrink-0 text-xs text-muted-foreground" dir="ltr">
+                        {delivery.customerPhone}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="font-mono">{orderRef(delivery.id)}</span>
+                    {delivery.city ? (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span className="truncate">{delivery.city}</span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+                <Badge
+                  variant={COLOR_TO_VARIANT[getOrderStatusColor(delivery.status)]}
+                  className="shrink-0"
+                >
+                  {getOrderStatusLabel(delivery.status)}
+                </Badge>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </CardContent>
     </Card>
   );

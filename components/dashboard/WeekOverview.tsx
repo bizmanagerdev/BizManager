@@ -37,6 +37,10 @@ export default function WeekOverview({ entries }: { entries: CalendarEntry[] }) 
     };
   }, [entries]);
 
+  // Match the other dashboard panels: a panel with nothing to show renders nothing,
+  // rather than leaving a near-empty card that reads as dead space (esp. on mobile).
+  if (items.length === 0 && general.length === 0) return null;
+
   return (
     <Card>
       <CardHeader className="pb-3">
