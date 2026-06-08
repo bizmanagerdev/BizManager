@@ -75,7 +75,11 @@ export async function loadTasksPage(
 
   if (scope === "mine") tasksQuery = tasksQuery.eq("assigned_user_id", userId);
 
-  if (status) {
+  if (status === "overdue") {
+    // "overdue" is a derived pseudo-status: due before today and not yet done.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    tasksQuery = tasksQuery.lt("due_date", todayIso).or("status.is.null,status.neq.done");
+  } else if (status) {
     tasksQuery = tasksQuery.eq("status", status);
   } else {
     // Default view (status filter = "הכל") hides completed tasks. They stay

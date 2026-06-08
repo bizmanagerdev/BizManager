@@ -1,29 +1,42 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
-import { AdaptiveGrid, PageStack, ResponsiveMetricValue } from "@/components/layout/page-layout";
+import { PageStack } from "@/components/layout/page-layout";
 import { requireProfile, type UserRole } from "@/lib/auth/requireProfile";
 import DashboardActions from "@/app/dashboard/DashboardActions";
-import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard";
-import DomainActivityChart from "@/components/charts/DomainActivityChart";
+import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
+import AlertCenter from "@/components/dashboard/AlertCenter";
+import WeekOverview from "@/components/dashboard/WeekOverview";
+import MyTasksPanel from "@/components/dashboard/MyTasksPanel";
+import ProjectStatusCards from "@/components/dashboard/ProjectStatusCards";
+import UpcomingDeliveries from "@/components/dashboard/UpcomingDeliveries";
+import TaskStatusDonut from "@/components/dashboard/TaskStatusDonut";
+import WorkforceOverview from "@/components/dashboard/WorkforceOverview";
+import InventoryHealth from "@/components/dashboard/InventoryHealth";
+import RemindersPanel from "@/components/dashboard/RemindersPanel";
+import RecentActivityFeed from "@/components/dashboard/RecentActivityFeed";
+import CompactFinanceStrip from "@/components/dashboard/CompactFinanceStrip";
 import { getAlertsData } from "@/lib/alerts";
 import { getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
-import { getScheduleEntries } from "@/lib/projectSchedule";
-import { getTodayInboxData } from "@/lib/today-inbox";
-import TodayInbox from "@/components/TodayInbox";
-import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
+import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
+import { getOpenReminders, type Reminder } from "@/lib/communications";
+import { getMyTasks, getTaskStatusCounts } from "@/lib/dashboard/tasks-overview";
+import { getProjectsOverview } from "@/lib/dashboard/projects-overview";
+import { getWorkforceOverview } from "@/lib/dashboard/workforce";
+import { getInventoryHealth } from "@/lib/dashboard/inventory-health";
+import { loadDeliveriesPage, type DeliveryItem } from "@/app/sales/loadDeliveries";
+import { getRecentAuditEvents, type AuditFeedItem } from "@/lib/audit";
+import { getCashFlowPageData } from "@/lib/cashflow";
+import DomainBarChart from "@/components/charts/DomainBarChart";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCashFlowPageData } from "@/lib/cashflow";
 import type { SalaryAgreementRow } from "@/lib/payroll";
 import { isPayrollWorkerType } from "@/lib/payroll-worker-type";
+import { cn } from "@/lib/utils";
 
 type Row = Record<string, unknown>;
 
 export const revalidate = 60;
-
-const numberFormatter = new Intl.NumberFormat("he-IL");
 
 function getString(row: Row | null | undefined, key: string) {
   const value = row?.[key];
@@ -48,58 +61,42 @@ function firstString(row: Row | null | undefined, keys: string[], fallback: stri
   return fallback;
 }
 
-function formatCount(value: number) {
-  return numberFormatter.format(value);
-}
-
-function badgeVariantForAlert(kind: "danger" | "warning" | "info") {
-  switch (kind) {
-    case "danger":
-      return "destructive" as const;
-    case "warning":
-      return "warning" as const;
-    default:
-      return "secondary" as const;
-  }
-}
-
-
 function isUserRole(value: string | null): value is UserRole {
   return value === "admin" || value === "office" || value === "worker" || value === "worker_no_access";
 }
 
 export default async function DashboardPage() {
   const { profile, supabase } = await requireProfile();
+  const isAdminOrOffice = profile.role === "admin" || profile.role === "office";
+  const isAdmin = profile.role === "admin";
 
-  if (profile.role === "admin" || profile.role === "office") {
+  if (isAdminOrOffice) {
     await ensureRecurringTasksForDate(supabase);
   }
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const recentCashFlowFrom = new Date(today);
-  recentCashFlowFrom.setMonth(recentCashFlowFrom.getMonth() - 5);
+  const todayIso = today.toISOString().slice(0, 10);
+  const forecastHorizon = new Date(today);
+  forecastHorizon.setUTCDate(forecastHorizon.getUTCDate() + 30);
+  const forecastHorizonIso = forecastHorizon.toISOString().slice(0, 10);
+  const monthStartIso = `${todayIso.slice(0, 7)}-01`;
 
+  // Always-on data: quick-action inputs + shared/personal panels (all roles).
   const [
-    { data: dashboardRow, error: dashboardError },
     { data: projectRows, error: projectError },
     { data: orderRows, error: orderError },
     { data: propertyRows, error: propertyError },
     { data: productRows, error: productError },
     { data: customerRows, error: customerError },
     { data: userRows, error: userError },
-    { data: salaryAgreementRows, error: salaryAgreementError },
-    { data: currentOpenSessionRow, error: currentOpenSessionError },
-    cashFlowOverviewResult,
+    { data: salaryAgreementRows },
+    { data: currentOpenSessionRow },
     alertsResult,
     scheduleEntriesResult,
-    todayInbox,
+    myTasks,
+    reminders,
   ] = await Promise.all([
-    supabase
-      .from("operations_dashboard_view")
-      .select("active_projects_count,open_tasks_count,overdue_tasks_count,low_inventory_count")
-      .limit(1)
-      .maybeSingle(),
     supabase
       .from("project_dashboard_view")
       .select("id,name,project_type,status,customer_id,customer_name,open_tasks,start_date,updated_at")
@@ -139,86 +136,71 @@ export default async function DashboardPage() {
       .order("clock_in", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    getCashFlowPageData(supabase, {
-      from: recentCashFlowFrom.toISOString().slice(0, 10),
-      to: today.toISOString().slice(0, 10),
-      pageSize: 1,
-    })
-      .then((data) => ({ data, error: null as string | null }))
-      .catch((error: { message?: string }) => ({
-        data: null,
-        error: error?.message ?? "שגיאה בטעינת נתוני תזרים",
-      })),
     getAlertsData(supabase, { viewerRole: profile.role }),
     getScheduleEntries(supabase, { scope: "mine", userId: profile.id })
       .then((data) => ({ data, error: null as string | null }))
       .catch((error: { message?: string }) => ({
-        data: [],
+        data: [] as CalendarEntry[],
         error: error?.message ?? "שגיאה בטעינת לוח הזמנים",
       })),
-    getTodayInboxData(supabase, profile),
+    getMyTasks(supabase, profile.id),
+    getOpenReminders(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as Reminder[]),
   ]);
 
-  const isAdminOrOffice = profile.role === "admin" || profile.role === "office";
+  // Back-office data: operational panels + finance counts (gated so workers never run these).
+  const [
+    taskStatusCounts,
+    projectsOverview,
+    deliveriesResult,
+    workforce,
+    inventoryHealth,
+    recentActivity,
+    unpaidBalanceResult,
+    workerOwedResult,
+    dueTodayResult,
+    forecastInResult,
+    forecastOutResult,
+    domainBreakdown,
+  ] = await Promise.all([
+    isAdminOrOffice ? getTaskStatusCounts(supabase) : Promise.resolve(null),
+    isAdminOrOffice ? getProjectsOverview(supabase) : Promise.resolve(null),
+    isAdminOrOffice
+      ? loadDeliveriesPage(supabase, { page: 1, filters: { customerId: null } }).then((r) => r.deliveries).catch(() => [] as DeliveryItem[])
+      : Promise.resolve([] as DeliveryItem[]),
+    isAdminOrOffice ? getWorkforceOverview(supabase) : Promise.resolve(null),
+    isAdminOrOffice ? getInventoryHealth(supabase) : Promise.resolve(null),
+    isAdmin ? getRecentAuditEvents(supabase, 8).then((r) => r.items).catch(() => [] as AuditFeedItem[]) : Promise.resolve([] as AuditFeedItem[]),
+    isAdminOrOffice
+      ? supabase.from("invoices").select("balance_due,payment_status").in("payment_status", ["unpaid", "partial", "overdue"]).range(0, 499)
+      : Promise.resolve({ data: null, error: null }),
+    isAdmin
+      ? supabase.from("worker_debt_items_view").select("owed_amount").eq("source_type", "payslip").gt("owed_amount", 0.009).range(0, 999)
+      : Promise.resolve({ data: null, error: null }),
+    isAdminOrOffice ? getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[]) : Promise.resolve([] as PaymentDueToday[]),
+    isAdminOrOffice
+      ? supabase.from("payments").select("amount_total").eq("payment_status", "pending").not("due_date", "is", null).gte("due_date", todayIso).lte("due_date", forecastHorizonIso).range(0, 999)
+      : Promise.resolve({ data: null, error: null }),
+    isAdminOrOffice
+      ? supabase.from("expenses").select("amount,paid_amount").in("payment_status", ["not_paid", "partial"]).gte("expense_date", todayIso).lte("expense_date", forecastHorizonIso).range(0, 999)
+      : Promise.resolve({ data: null, error: null }),
+    isAdminOrOffice
+      ? getCashFlowPageData(supabase, { from: monthStartIso, to: todayIso, pageSize: 1 })
+          .then((d) => d.domainBreakdown)
+          .catch(() => [] as { domainName: string; inflow: number; outflow: number }[])
+      : Promise.resolve([] as { domainName: string; inflow: number; outflow: number }[]),
+  ]);
 
-  const todayIso = today.toISOString().slice(0, 10);
-  const forecastHorizon = new Date(today);
-  forecastHorizon.setUTCDate(forecastHorizon.getUTCDate() + 30);
-  const forecastHorizonIso = forecastHorizon.toISOString().slice(0, 10);
-
-  const [unpaidBalanceResult, workerOwedResult, openOrdersCountResult, dueTodayResult, forecastInResult, forecastOutResult] =
-    await Promise.all([
-      isAdminOrOffice
-        ? supabase.from("invoices").select("balance_due,payment_status").in("payment_status", ["unpaid", "partial", "overdue"]).range(0, 499)
-        : Promise.resolve({ data: null, error: null }),
-      profile.role === "admin"
-        ? supabase.from("worker_debt_items_view").select("owed_amount").eq("source_type", "payslip").gt("owed_amount", 0.009).range(0, 999)
-        : Promise.resolve({ data: null, error: null }),
-      supabase
-        .from("order_overview_view")
-        .select("order_id", { count: "estimated", head: true })
-        .not("status", "in", '("completed","delivered","cancelled","canceled","closed","archived","done")'),
-      isAdminOrOffice
-        ? getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[])
-        : Promise.resolve([] as PaymentDueToday[]),
-      // Forecast (lightweight): expected incoming — pending/post-dated payments due ≤30d.
-      isAdminOrOffice
-        ? supabase.from("payments").select("amount_total").eq("payment_status", "pending").not("due_date", "is", null).gte("due_date", todayIso).lte("due_date", forecastHorizonIso).range(0, 999)
-        : Promise.resolve({ data: null, error: null }),
-      // Forecast (lightweight): upcoming outflow — unpaid/partial expenses dated ≤30d.
-      isAdminOrOffice
-        ? supabase.from("expenses").select("amount,paid_amount").in("payment_status", ["not_paid", "partial"]).gte("expense_date", todayIso).lte("expense_date", forecastHorizonIso).range(0, 999)
-        : Promise.resolve({ data: null, error: null }),
-    ]);
-
-  const dueTodayPayments = dueTodayResult as PaymentDueToday[];
-  const dueTodayCount = dueTodayPayments.length;
-
-  const activeProjectsCount =
-    getNumber((dashboardRow as Row | null) ?? undefined, "active_projects_count") ?? 0;
-  const openTasksCount =
-    getNumber((dashboardRow as Row | null) ?? undefined, "open_tasks_count") ?? 0;
-  const overdueTasksCount =
-    getNumber((dashboardRow as Row | null) ?? undefined, "overdue_tasks_count") ?? 0;
-  const openOrdersCount = typeof openOrdersCountResult.count === "number" ? openOrdersCountResult.count : 0;
-
+  // ── Finance counts (no ₪ totals surface — counts only) ─────────────────────
   const invoicesTableMissing = (unpaidBalanceResult as { error?: { message?: string } | null }).error?.message?.includes("Could not find") ?? false;
-  // Collections worklist — counts only (no ₪ totals on the dashboard).
   const unpaidInvoices = invoicesTableMissing ? [] : ((unpaidBalanceResult.data ?? []) as Row[]);
   const openCollectionsCount = unpaidInvoices.length;
-  const overdueCollectionsCount = unpaidInvoices.filter((r) => getString(r, "payment_status") === "overdue").length;
-  const workerOwedCount = ((workerOwedResult.data ?? []) as Row[]).length;
+  const dueTodayCount = dueTodayResult.length;
+  const workerOwedRows = (workerOwedResult.data ?? []) as Row[];
+  const workerOwedCount = workerOwedRows.length;
 
-  // Lightweight cash heads-up: do near-term outflows (payroll owed + upcoming unpaid
-  // expenses ≤30d) exceed the money expected to come in (pending payments due ≤30d)?
-  const expectedIncoming30 = ((forecastInResult.data ?? []) as Row[]).reduce(
-    (sum, r) => sum + (getNumber(r, "amount_total") ?? 0),
-    0
-  );
-  const workerOwedTotal = ((workerOwedResult.data ?? []) as Row[]).reduce(
-    (sum, r) => sum + (getNumber(r, "owed_amount") ?? 0),
-    0
-  );
+  // Lightweight cash heads-up: near-term outflows vs expected incoming (≤30d).
+  const expectedIncoming30 = ((forecastInResult.data ?? []) as Row[]).reduce((sum, r) => sum + (getNumber(r, "amount_total") ?? 0), 0);
+  const workerOwedTotal = workerOwedRows.reduce((sum, r) => sum + (getNumber(r, "owed_amount") ?? 0), 0);
   const upcomingExpensesOut = ((forecastOutResult.data ?? []) as Row[]).reduce(
     (sum, r) => sum + Math.max((getNumber(r, "amount") ?? 0) - (getNumber(r, "paid_amount") ?? 0), 0),
     0
@@ -226,18 +208,26 @@ export default async function DashboardPage() {
   const nearTermOutflow = workerOwedTotal + upcomingExpensesOut;
   const cashTighteningSoon = isAdminOrOffice && nearTermOutflow > 0 && nearTermOutflow > expectedIncoming30;
 
-  // Personalized header: time-of-day greeting in Israel time. Parse the hour via
-  // formatToParts in a neutral locale + hour12:false so we always get a clean 0–23
-  // number (he-IL / 12-hour formatting otherwise yields the wrong hour).
-  const israelHour =
-    Number(
-      new Intl.DateTimeFormat("en-US", { hour: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" })
-        .formatToParts(today)
-        .find((part) => part.type === "hour")?.value ?? "0"
-    ) % 24;
-  const greeting = israelHour < 12 ? "בוקר טוב" : israelHour < 18 ? "צהריים טובים" : "ערב טוב";
-  const firstName = profile.full_name?.trim().split(/\s+/)[0] ?? "";
+  // Income vs expenses per business domain (current month) — one diagram.
+  const domainBars = (domainBreakdown ?? [])
+    .map((d) => ({ name: d.domainName, inflow: d.inflow, outflow: d.outflow }))
+    .filter((d) => d.inflow > 0 || d.outflow > 0);
 
+  // Presence flags so a hidden panel never leaves an empty half in a 2-col row.
+  const hasTasks = myTasks.length > 0;
+  const hasDeliveries = isAdminOrOffice && deliveriesResult.length > 0;
+  const taskStatusTotal = taskStatusCounts
+    ? taskStatusCounts.todo + taskStatusCounts.in_progress + taskStatusCounts.blocked + taskStatusCounts.done
+    : 0;
+  const hasDonut = isAdminOrOffice && taskStatusTotal > 0;
+  const hasReminders = reminders.length > 0;
+  const hasActivity = isAdmin && recentActivity.length > 0;
+
+  const firstName = profile.full_name?.trim().split(/\s+/)[0] ?? "";
+  const currentHour = new Date().getHours();
+  const greeting = currentHour < 12 ? "בוקר טוב" : currentHour < 18 ? "צהריים טובים" : "ערב טוב";
+
+  // ── Data prep for DashboardActions (quick-action inputs) ───────────────────
   const activeProjectOptions = ((projectRows ?? []) as Row[])
     .map((row) => ({
       id: getString(row, "id") ?? "",
@@ -258,28 +248,22 @@ export default async function DashboardPage() {
     .filter((row) => row.id);
 
   const propertyOptions = ((propertyRows ?? []) as Row[])
-    .map((row) => ({
-      id: getString(row, "id") ?? "",
-      name: firstString(row, ["address"], "Property"),
-      subtitle: "",
-    }))
+    .map((row) => ({ id: getString(row, "id") ?? "", name: firstString(row, ["address"], "Property"), subtitle: "" }))
     .filter((row) => row.id);
 
   const activeUsers = ((userRows ?? []) as Row[])
     .map((row) => {
-      const id = getString(row, "id") ?? "";
       const fullName = getString(row, "full_name");
       const email = getString(row, "email");
       const role = getString(row, "role");
       const workerType = row.payroll_worker_type;
-      const payTrackingMode = getString(row, "pay_tracking_mode");
       return {
-        id,
+        id: getString(row, "id") ?? "",
         label: fullName && fullName.trim() ? fullName : email ?? "",
         role: isUserRole(role) ? role : undefined,
         active: row.active,
         payroll_worker_type: isPayrollWorkerType(workerType) ? workerType : null,
-        pay_tracking_mode: payTrackingMode,
+        pay_tracking_mode: getString(row, "pay_tracking_mode"),
       };
     })
     .filter((row) => row.id && row.label && row.active !== false)
@@ -287,13 +271,8 @@ export default async function DashboardPage() {
 
   const currentOpenSession =
     currentOpenSessionRow && typeof currentOpenSessionRow.clock_in === "string"
-      ? {
-          id: typeof currentOpenSessionRow.id === "string" ? currentOpenSessionRow.id : "",
-          clock_in: currentOpenSessionRow.clock_in,
-        }
+      ? { id: typeof currentOpenSessionRow.id === "string" ? currentOpenSessionRow.id : "", clock_in: currentOpenSessionRow.clock_in }
       : null;
-  void currentOpenSessionError;
-  void salaryAgreementError;
   const salaryAgreements = ((salaryAgreementRows ?? []) as SalaryAgreementRow[]) ?? [];
 
   const customerOptions = ((customerRows ?? []) as Row[])
@@ -306,22 +285,16 @@ export default async function DashboardPage() {
     }))
     .filter((row) => row.id);
 
-  const cashFlowDomainBreakdown = cashFlowOverviewResult.data?.domainBreakdown ?? [];
-  const alertItems = alertsResult.alerts.filter((alert) => alert.severity === "danger");
+  const scheduleEntries = scheduleEntriesResult.data ?? [];
 
   const dashboardErrors = [
-    dashboardError ? `דשבורד: ${dashboardError.message}` : null,
     projectError ? `פרויקטים: ${projectError.message}` : null,
     orderError ? `הזמנות: ${orderError.message}` : null,
     propertyError ? `נכסים: ${propertyError.message}` : null,
     productError ? `מוצרים: ${productError.message}` : null,
     customerError ? `לקוחות: ${customerError.message}` : null,
     userError ? `משתמשים: ${userError.message}` : null,
-    cashFlowOverviewResult.error ? `תזרים: ${cashFlowOverviewResult.error}` : null,
     alertsResult.errors.dashboard ? `התראות: ${alertsResult.errors.dashboard}` : null,
-    alertsResult.errors.projects ? `פרויקטים: ${alertsResult.errors.projects}` : null,
-    alertsResult.errors.invoices ? `התראות חשבוניות: ${alertsResult.errors.invoices}` : null,
-    alertsResult.errors.payroll ? `התראות שכר: ${alertsResult.errors.payroll}` : null,
     scheduleEntriesResult.error ? `לוח זמנים: ${scheduleEntriesResult.error}` : null,
   ].filter(Boolean) as string[];
 
@@ -334,13 +307,9 @@ export default async function DashboardPage() {
 
         {dashboardErrors.length > 0 ? (
           <Card className="border-destructive/40">
-            <CardContent className="p-4 text-sm text-destructive">
-              {dashboardErrors.join(" | ")}
-            </CardContent>
+            <CardContent className="p-4 text-sm text-destructive">{dashboardErrors.join(" | ")}</CardContent>
           </Card>
         ) : null}
-
-        <TodayInbox data={todayInbox} />
 
         <Card>
           <CardContent className="pt-6">
@@ -355,54 +324,21 @@ export default async function DashboardPage() {
               currentUserRole={profile.role}
               currentOpenSession={currentOpenSession}
               salaryAgreements={salaryAgreements}
-              scheduleEntries={scheduleEntriesResult.data ?? []}
+              scheduleEntries={scheduleEntries}
             />
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle className="text-lg">התראות</CardTitle>
-                <CardDescription>רק מה שדורש תשומת לב.</CardDescription>
-              </div>
-              <Button asChild variant="outline" size="sm">
-                <Link href="/alerts">לכל ההתראות</Link>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {alertItems.length > 0 ? (
-              alertItems.map((alert) => (
-                <Link
-                  key={alert.id}
-                  href="/alerts"
-                  className="flex items-center justify-between rounded-2xl border p-4 transition-colors hover:bg-muted/40"
-                >
-                  <div className="space-y-1">
-                    <div className="font-medium">{alert.title}</div>
-                    <div className="text-sm text-muted-foreground">{alert.description}</div>
-                  </div>
-                  <Badge variant={badgeVariantForAlert(alert.severity)}>{formatCount(alert.count)}</Badge>
-                </Link>
-              ))
-            ) : (
-              <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-                אין התראות אדומות כרגע.
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <WeekOverview entries={scheduleEntries} />
+
+        <AlertCenter alerts={alertsResult.alerts} />
 
         {cashTighteningSoon ? (
           <Card className="border-warning/50">
             <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
               <div className="space-y-0.5 text-right">
                 <div className="font-medium">תזרים להמשך החודש דורש תשומת לב</div>
-                <div className="text-muted-foreground">
-                  ההתחייבויות הצפויות ב-30 הימים הקרובים עשויות לעלות על התקבולים הצפויים.
-                </div>
+                <div className="text-muted-foreground">ההתחייבויות הצפויות ב-30 הימים הקרובים עשויות לעלות על התקבולים הצפויים.</div>
               </div>
               <Button asChild variant="outline" size="sm">
                 <Link href="/financial/reports">לתחזית התזרים</Link>
@@ -411,118 +347,50 @@ export default async function DashboardPage() {
           </Card>
         ) : null}
 
-        <AdaptiveGrid variant="dashboardMain">
-          <AdaptiveGrid variant="dashboardMetrics">
-            <MetricCard
-              title="פרויקטים פעילים"
-              value={formatCount(activeProjectsCount)}
-              subtitle={activeProjectsCount === 0 ? "אין פרויקטים פעילים" : `${formatCount(activeProjectsCount)} בביצוע`}
-              href="/projects"
-            />
-            <MetricCard
-              title="הזמנות פתוחות"
-              value={formatCount(openOrdersCount)}
-              subtitle={openOrdersCount === 0 ? "אין הזמנות פתוחות" : "ממתינות לטיפול"}
-              href="/sales"
-            />
-            <MetricCard
-              title="משימות באיחור"
-              value={formatCount(overdueTasksCount)}
-              subtitle={overdueTasksCount > 0 ? `${formatCount(openTasksCount)} פתוחות סה״כ` : "הכול בזמן"}
-              href="/tasks"
-              urgent={overdueTasksCount > 0}
-            />
-            {isAdminOrOffice ? (
-              <MetricCard
-                title="גביה פתוחה"
-                value={invoicesTableMissing ? "—" : formatCount(openCollectionsCount)}
-                subtitle={
-                  invoicesTableMissing
-                    ? "טבלת חשבוניות חסרה"
-                    : overdueCollectionsCount > 0
-                      ? `${formatCount(overdueCollectionsCount)} באיחור`
-                      : openCollectionsCount > 0
-                        ? "חשבוניות ממתינות לגבייה"
-                        : "הכול שולם"
-                }
-                href="/collections"
-                urgent={overdueCollectionsCount > 0}
-              />
-            ) : null}
-            {isAdminOrOffice ? (
-              <MetricCard
-                title="לפירעון היום"
-                value={formatCount(dueTodayCount)}
-                subtitle={dueTodayCount > 0 ? "צ׳קים/העברות לפירעון היום" : "אין תשלומים להיום"}
-                href="/collections"
-                urgent={dueTodayCount > 0}
-              />
-            ) : null}
-            {profile.role === "admin" ? (
-              <MetricCard
-                title="שכר לתשלום"
-                value={formatCount(workerOwedCount)}
-                subtitle={workerOwedCount > 0 ? "עובדים עם שכר שטרם שולם" : "אין חוב לעובדים"}
-                href="/payroll"
-                urgent={workerOwedCount > 0}
-              />
-            ) : null}
-          </AdaptiveGrid>
+        {isAdminOrOffice ? (
+          <CompactFinanceStrip
+            openCollections={invoicesTableMissing ? 0 : openCollectionsCount}
+            dueToday={dueTodayCount}
+            payrollOwed={isAdmin ? workerOwedCount : null}
+          />
+        ) : null}
 
-          <CashFlowOverviewCard rows={cashFlowDomainBreakdown} />
-        </AdaptiveGrid>
+        {hasTasks ? <MyTasksPanel tasks={myTasks} /> : null}
 
-        {cashFlowDomainBreakdown.length > 0 && (
+        {isAdminOrOffice && projectsOverview ? (
+          <ProjectStatusCards statusCounts={projectsOverview.statusCounts} />
+        ) : null}
+
+        {hasDeliveries || hasDonut ? (
+          <div className={cn("grid gap-4", hasDeliveries && hasDonut && "xl:grid-cols-2")}>
+            {hasDeliveries ? <UpcomingDeliveries deliveries={deliveriesResult} /> : null}
+            {hasDonut && taskStatusCounts ? <TaskStatusDonut counts={taskStatusCounts} /> : null}
+          </div>
+        ) : null}
+
+        {isAdminOrOffice && workforce ? <WorkforceOverview data={workforce} /> : null}
+
+        {isAdminOrOffice && inventoryHealth ? <InventoryHealth data={inventoryHealth} /> : null}
+
+        {isAdminOrOffice && domainBars.length > 0 ? (
           <Card>
             <CardHeader className="pb-3">
-              <div className="space-y-1 text-right">
-                <CardTitle className="text-lg">פעילות לפי תחום</CardTitle>
-                <CardDescription>
-                  איזה תחום הכי פעיל — לפי מספר תנועות. צבע ירוק = עודף הכנסות, אדום = עודף הוצאות.
-                </CardDescription>
-              </div>
+              <CardTitle className="text-lg">הכנסות והוצאות לפי תחום</CardTitle>
+              <CardDescription>החודש הנוכחי</CardDescription>
             </CardHeader>
             <CardContent>
-              <DomainActivityChart
-                data={cashFlowDomainBreakdown.map((r) => ({
-                  name: r.domainName,
-                  count: r.count,
-                  net: r.net,
-                }))}
-                height={Math.max(180, cashFlowDomainBreakdown.length * 48)}
-              />
+              <DomainBarChart data={domainBars} />
             </CardContent>
           </Card>
-        )}
+        ) : null}
+
+        {hasReminders || hasActivity ? (
+          <div className={cn("grid gap-4", hasReminders && hasActivity && "xl:grid-cols-2")}>
+            {hasReminders ? <RemindersPanel reminders={reminders} /> : null}
+            {hasActivity ? <RecentActivityFeed items={recentActivity} /> : null}
+          </div>
+        ) : null}
       </PageStack>
     </AppShell>
-  );
-}
-
-function MetricCard({
-  title,
-  value,
-  subtitle,
-  href,
-  urgent,
-}: {
-  title: string;
-  value: string;
-  subtitle: string;
-  href: string;
-  urgent?: boolean;
-}) {
-  return (
-    <Link href={href} className="block">
-      <Card className="h-full transition-colors hover:bg-muted/40">
-        <CardContent className="p-4">
-          <div className="text-sm text-muted-foreground">{title}</div>
-          <ResponsiveMetricValue className={urgent ? "text-destructive" : undefined}>
-            {value}
-          </ResponsiveMetricValue>
-          <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
-        </CardContent>
-      </Card>
-    </Link>
   );
 }

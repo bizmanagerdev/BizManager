@@ -188,6 +188,8 @@ export function getProjectStatusLabel(status: string) {
 
 export function getTaskStatusLabel(status: string) {
   switch (normalizeValue(status)) {
+    case "overdue":
+      return "באיחור";
     case "todo":
       return "לביצוע";
     case "in_progress":

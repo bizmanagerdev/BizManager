@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { computeSourceCollection, fetchOrderDueDates, fetchProjectDueDates, isOpenOrderStatus } from "@/lib/collections";
+import { addWorkingDays } from "@/lib/dashboard/week";
 
 type Row = Record<string, unknown>;
 
@@ -92,12 +93,17 @@ export async function getAlertsData(
   options?: { viewerRole?: string | null }
 ): Promise<AlertsResult> {
   const viewerRole = options?.viewerRole ?? null;
+  const nearDeadlineToday = new Date();
+  nearDeadlineToday.setHours(0, 0, 0, 0);
+  const nearDeadlineTodayIso = nearDeadlineToday.toISOString().slice(0, 10);
+  const nearDeadlineHorizonIso = addWorkingDays(nearDeadlineToday, 3).toISOString().slice(0, 10);
   const [
     { data: dashboardRow, error: dashboardError },
     { data: invoiceRows, error: invoiceError },
     payrollDebtResultRaw,
     inventoryProductsResult,
     inventoryRowsResult,
+    projectsNearDeadlineResult,
   ] = await Promise.all([
     supabase
       .from("operations_dashboard_view")
@@ -119,7 +125,20 @@ export async function getAlertsData(
       : Promise.resolve({ data: [], error: null } as { data: unknown[]; error: { message?: string } | null }),
     supabase.from("products").select("id,active,low_stock_threshold"),
     supabase.from("inventory").select("product_id,quantity_on_hand,quantity_reserved"),
+    supabase
+      .from("projects")
+      .select("id", { count: "estimated", head: true })
+      .in("status", ["active", "in_progress"])
+      .not("end_date", "is", null)
+      .gte("end_date", nearDeadlineTodayIso)
+      .lte("end_date", nearDeadlineHorizonIso)
+      .then((r) => r, () => ({ count: 0 })),
   ]);
+
+  const projectsNearDeadlineCount =
+    typeof (projectsNearDeadlineResult as { count?: number | null }).count === "number"
+      ? (projectsNearDeadlineResult as { count: number }).count
+      : 0;
 
   let payrollDebtResult = payrollDebtResultRaw;
 
@@ -222,12 +241,14 @@ export async function getAlertsData(
   let overdueCollectionsAmount = 0;
   let dueRemindersCount = 0;
   let unassignedStatementsCount = 0;
+  let unclassifiedExpensesCount = 0;
+  const overdueCustomerIds = new Set<string>();
   if (isBackOffice) {
     const [overdueRes, remindersRes] = await Promise.all([
       supabase
         .from("collections_view")
         .select(
-          "source_type,source_id,total_amount,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,reference_date"
+          "source_type,source_id,customer_id,total_amount,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,reference_date"
         )
         .range(0, 999)
         .then((r) => r, () => ({ data: [] as Row[], error: null })),
@@ -275,6 +296,8 @@ export async function getAlertsData(
       if (sm.late > 0.009) {
         overdueCollectionsCount += 1;
         overdueCollectionsAmount += sm.late;
+        const customerId = getString(row, "customer_id");
+        if (customerId) overdueCustomerIds.add(customerId);
       }
     }
     dueRemindersCount = ((remindersRes.data ?? []) as Row[]).length;
@@ -282,7 +305,7 @@ export async function getAlertsData(
     // Saved credit-card statements that still have rows to assign + create as expenses,
     // excluding any marked done. Best-effort: tables/columns may not be migrated yet
     // (errors resolve to empty → count 0, no false alerts).
-    const [statementsRes, pendingRowsRes] = await Promise.all([
+    const [statementsRes, pendingRowsRes, unclassifiedExpensesRes] = await Promise.all([
       supabase
         .from("card_statements")
         .select("id,marked_done")
@@ -295,7 +318,17 @@ export async function getAlertsData(
         .is("expense_id", null)
         .range(0, 9999)
         .then((r) => r, () => ({ data: [] as Row[], error: null })),
+      // Expenses still missing a category or business_domain → "ממתינות לסיווג".
+      supabase
+        .from("expenses")
+        .select("id", { count: "estimated", head: true })
+        .or("category.is.null,business_domain.is.null")
+        .then((r) => r, () => ({ count: 0 })),
     ]);
+    unclassifiedExpensesCount =
+      typeof (unclassifiedExpensesRes as { count?: number | null }).count === "number"
+        ? (unclassifiedExpensesRes as { count: number }).count
+        : 0;
     const doneStatementIds = new Set(
       ((statementsRes.data ?? []) as Row[])
         .filter((r) => getBoolean(r, "marked_done") === true)
@@ -318,7 +351,7 @@ export async function getAlertsData(
           overdueCollectionsCount > 0
             ? `${overdueCollectionsCount} חובות באיחור (${currencyFormatterHeIl().format(overdueCollectionsAmount)})`
             : "אין חובות באיחור",
-        href: "/collections",
+        href: "/collections?view=debtors&filter=overdue",
         count: overdueCollectionsCount,
         severity: overdueCollectionsCount > 0 ? "danger" : "info",
         countsAsActiveAlert: true,
@@ -331,22 +364,49 @@ export async function getAlertsData(
           id: "collection-reminders-due",
           title: "תזכורות גבייה",
           description: `${dueRemindersCount} תזכורות לטיפול`,
-          href: "/collections",
+          href: "/collections?view=reminders",
           count: dueRemindersCount,
           severity: "warning",
           countsAsActiveAlert: true,
         }
       : null;
 
-  const unassignedStatementsAlert: AlertItem | null =
-    isBackOffice && unassignedStatementsCount > 0
+  const unprocessedItemsCount = unassignedStatementsCount + unclassifiedExpensesCount;
+  const unprocessedItemsAlert: AlertItem | null =
+    isBackOffice && unprocessedItemsCount > 0
       ? {
-          id: "card-statements-unassigned",
-          title: "פירוטי אשראי לא משויכים",
-          description: `${unassignedStatementsCount} פירוטי אשראי ממתינים לשיוך ויצירת הוצאות`,
+          id: "unprocessed-items",
+          title: "הוצאות לא מעובדות",
+          description: "ממתינות לסיווג ואישור בארכיון",
           href: "/financial/statements",
-          count: unassignedStatementsCount,
+          count: unprocessedItemsCount,
           severity: "warning",
+          countsAsActiveAlert: true,
+        }
+      : null;
+
+  const projectsNearDeadlineAlert: AlertItem | null =
+    projectsNearDeadlineCount > 0
+      ? {
+          id: "projects-near-deadline",
+          title: "פרויקטים לקראת דדליין",
+          description: "צפויים להסתיים תוך 3 ימי עבודה",
+          href: "/projects",
+          count: projectsNearDeadlineCount,
+          severity: "warning",
+          countsAsActiveAlert: true,
+        }
+      : null;
+
+  const customersAwaitingFollowupAlert: AlertItem | null =
+    isBackOffice && overdueCustomerIds.size > 0
+      ? {
+          id: "customers-awaiting-followup",
+          title: "לקוחות ממתינים למעקב",
+          description: "לקוחות עם חוב באיחור שדורש יצירת קשר",
+          href: "/collections?view=debtors&filter=uncontacted",
+          count: overdueCustomerIds.size,
+          severity: "info",
           countsAsActiveAlert: true,
         }
       : null;
@@ -365,7 +425,9 @@ export async function getAlertsData(
       ...(moneyOwedToWorkersAlert ? [moneyOwedToWorkersAlert] : []),
       ...(overdueCollectionsAlert ? [overdueCollectionsAlert] : []),
       ...(dueRemindersAlert ? [dueRemindersAlert] : []),
-      ...(unassignedStatementsAlert ? [unassignedStatementsAlert] : []),
+      ...(projectsNearDeadlineAlert ? [projectsNearDeadlineAlert] : []),
+      ...(customersAwaitingFollowupAlert ? [customersAwaitingFollowupAlert] : []),
+      ...(unprocessedItemsAlert ? [unprocessedItemsAlert] : []),
       {
         id: "unpaid-invoices",
         title: "חשבוניות לא משולמות",
@@ -394,7 +456,7 @@ export async function getAlertsData(
         title: "משימות באיחור",
         description:
           overdueTasksCount > 0 ? `יש ${overdueTasksCount} משימות לטיפול` : "אין משימות באיחור",
-        href: "/tasks",
+        href: "/tasks?status=overdue&scope=mine",
         count: overdueTasksCount,
         severity: overdueTasksCount > 0 ? "danger" : "info",
         countsAsActiveAlert: true,

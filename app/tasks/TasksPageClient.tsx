@@ -336,6 +336,7 @@ export default function TasksPageClient(props: Props) {
                 onChange={(e) => handleStatusChange(e.target.value)}
               >
                 <option value="">הכל</option>
+                <option value="overdue">באיחור</option>
                 {STATUS_OPTIONS.map((status) => (
                   <option key={status} value={status}>
                     {getTaskStatusLabel(status)}

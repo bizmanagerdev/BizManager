@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Bell, ChevronDown, MessageCircle, Phone } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -133,6 +133,17 @@ export default function CollectionsClient({
   dueToday,
 }: Props) {
   const router = useRouter();
+  // Deep-link support: the dashboard alert center links here with ?view= & ?filter=
+  // (e.g. ?view=debtors&filter=uncontacted) so a click lands on the right tab/filter.
+  const searchParams = useSearchParams();
+  const initialView: View = ((): View => {
+    const v = searchParams?.get("view");
+    return v === "debtors" || v === "reminders" || v === "activity" ? v : "activity";
+  })();
+  const initialFilter: FilterKey = ((): FilterKey => {
+    const f = searchParams?.get("filter");
+    return f === "overdue" || f === "due_soon" || f === "uncontacted" || f === "all" ? f : "all";
+  })();
   // Reminders marked done/cancelled are hidden immediately so the action is
   // visible even before router.refresh() re-fetches (and regardless of caching).
   const [completedReminderIds, setCompletedReminderIds] = useState<Set<string>>(() => new Set());
@@ -146,8 +157,8 @@ export default function CollectionsClient({
     const source = reminderScope === "all" && canSeeAll ? remindersAll : remindersMine;
     return source.filter((r) => !completedReminderIds.has(r.id));
   }, [reminderScope, canSeeAll, remindersAll, remindersMine, completedReminderIds]);
-  const [view, setView] = useState<View>("activity");
-  const [filter, setFilter] = useState<FilterKey>("all");
+  const [view, setView] = useState<View>(initialView);
+  const [filter, setFilter] = useState<FilterKey>(initialFilter);
   const [search, setSearch] = useState("");
   const [domain, setDomain] = useState("all");
   const [sort, setSort] = useState<SortKey>("amount");
