@@ -375,7 +375,14 @@ export default function SalesInventoryClient({
                           <td className="px-3 py-2">{item.quantityOnHand}</td>
                           <td className="px-3 py-2">{item.quantityReserved}</td>
                           <td className={`px-3 py-2 font-medium ${isLow ? "text-destructive" : ""}`}>
-                            {item.available}
+                            <span className="inline-flex items-center gap-1.5">
+                              {item.available}
+                              {item.available < 0 ? (
+                                <span className="rounded border border-destructive/40 bg-destructive-soft px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+                                  חוסר
+                                </span>
+                              ) : null}
+                            </span>
                           </td>
                           <td className="px-3 py-2">{item.soldAmount}</td>
                           <td className="px-3 py-2">
@@ -433,6 +440,11 @@ export default function SalesInventoryClient({
                         </span>
                         <span className="text-muted-foreground">
                           זמין: <span className={`font-medium ${isLow ? "text-destructive" : "text-foreground"}`}>{item.available}</span>
+                          {item.available < 0 ? (
+                            <span className="ms-1 rounded border border-destructive/40 bg-destructive-soft px-1 py-0.5 text-[10px] font-medium text-destructive">
+                              חוסר
+                            </span>
+                          ) : null}
                         </span>
                         <span className="text-muted-foreground">
                           נמכר: <span className="font-medium text-foreground">{item.soldAmount}</span>

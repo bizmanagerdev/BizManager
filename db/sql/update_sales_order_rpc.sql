@@ -93,15 +93,10 @@ begin
       v_stock_reserved := 0;
     end if;
 
+    -- Backorders are allowed: an order may be placed for more than is in stock.
+    -- The reservation can exceed on-hand (available goes negative), which is how
+    -- we flag an order as containing out-of-stock items. No hard stock block.
     v_stock_available := greatest(v_stock_on_hand - v_stock_reserved, 0) + v_existing_movement_qty;
-
-    if v_stock_available < v_qty then
-      raise exception
-        'Insufficient available stock for product % (available %, requested %)',
-        v_product_id,
-        v_stock_available,
-        v_qty;
-    end if;
   end loop;
 
   delete from public.inventory_movements
@@ -130,12 +125,14 @@ begin
     v_line_discount := coalesce((v_item->>'discount_amount')::numeric, 0);
 
     v_quantity_delivered := case
-      when v_target_status in ('delivered', 'completed') then v_qty
+      when v_target_status in ('delivered', 'completed', 'closed') then v_qty
       else 0
     end;
 
+    -- Stock model: delivered/completed/closed consume stock (`out`); cancelled
+    -- holds nothing; every other open status reserves stock (`reserve`).
     v_inventory_movement_type := case
-      when v_target_status in ('delivered', 'completed') then 'out'
+      when v_target_status in ('delivered', 'completed', 'closed') then 'out'
       when v_target_status = 'cancelled' then null
       else 'reserve'
     end;

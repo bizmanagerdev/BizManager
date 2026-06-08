@@ -110,6 +110,34 @@ export async function GET(
     return NextResponse.json({ error: productsError.message }, { status: 400 });
   }
 
+  // Attach current stock availability so the order view can flag out-of-stock
+  // items. Backorders are allowed, so available (on_hand - reserved) can be < 0.
+  const { data: inventoryRows } =
+    productIds.length > 0
+      ? await supabase
+          .from("inventory")
+          .select("product_id,quantity_on_hand,quantity_reserved")
+          .in("product_id", productIds)
+      : { data: [] };
+  const availabilityByProduct = new Map<string, { onHand: number; reserved: number; available: number }>();
+  for (const row of (inventoryRows ?? []) as Row[]) {
+    const pid = getString(row, "product_id");
+    if (!pid) continue;
+    const onHand = getNumber(row, "quantity_on_hand") ?? 0;
+    const reserved = getNumber(row, "quantity_reserved") ?? 0;
+    availabilityByProduct.set(pid, { onHand, reserved, available: onHand - reserved });
+  }
+  const productsWithStock = ((products ?? []) as Row[]).map((product) => {
+    const pid = getString(product, "id");
+    const stock = pid ? availabilityByProduct.get(pid) : undefined;
+    return {
+      ...product,
+      quantity_on_hand: stock?.onHand ?? null,
+      quantity_reserved: stock?.reserved ?? null,
+      available: stock?.available ?? null,
+    };
+  });
+
   const derivedSubtotal = ((orderItems ?? []) as Row[]).reduce((sum, item) => {
     const quantity = getNumber(item, "quantity_ordered") ?? 0;
     const unitPrice = getNumber(item, "unit_price") ?? 0;
@@ -284,7 +312,7 @@ export async function GET(
     morningDocuments,
     deliveryImages: deliveryImages.filter((row): row is NonNullable<typeof row> => Boolean(row)),
     customer,
-    products: products ?? [],
+    products: productsWithStock,
     totalAmount,
     totalPaid,
     remainingBalance,

@@ -39,6 +39,58 @@ export type OrdersPageResult = {
 };
 
 /**
+ * For a set of (open) order ids, return those that contain at least one line item
+ * whose product is currently oversold — i.e. available (on_hand - reserved) < 0.
+ * Backorders are allowed, so a negative available is how we flag "this order
+ * contains out-of-stock items".
+ */
+async function computeOutOfStockOrderIds(
+  supabase: SupabaseClient,
+  openOrderIds: string[]
+): Promise<Set<string>> {
+  if (openOrderIds.length === 0) return new Set();
+
+  const { data: items } = await supabase
+    .from("order_items")
+    .select("order_id,product_id,quantity_ordered")
+    .in("order_id", openOrderIds);
+  const itemRows = (items ?? []) as Row[];
+
+  const productIds = Array.from(
+    new Set(
+      itemRows
+        .map((r) => (typeof r.product_id === "string" ? r.product_id : null))
+        .filter((v): v is string => Boolean(v))
+    )
+  );
+  if (productIds.length === 0) return new Set();
+
+  const { data: inv } = await supabase
+    .from("inventory")
+    .select("product_id,quantity_on_hand,quantity_reserved")
+    .in("product_id", productIds);
+
+  const availableByProduct = new Map<string, number>();
+  for (const r of (inv ?? []) as Row[]) {
+    const pid = typeof r.product_id === "string" ? r.product_id : null;
+    if (!pid) continue;
+    const onHand = Number(r.quantity_on_hand ?? 0) || 0;
+    const reserved = Number(r.quantity_reserved ?? 0) || 0;
+    availableByProduct.set(pid, onHand - reserved);
+  }
+
+  const oos = new Set<string>();
+  for (const it of itemRows) {
+    const pid = typeof it.product_id === "string" ? it.product_id : null;
+    const orderId = typeof it.order_id === "string" ? it.order_id : null;
+    if (!pid || !orderId) continue;
+    const avail = availableByProduct.get(pid);
+    if (avail !== undefined && avail < 0) oos.add(orderId);
+  }
+  return oos;
+}
+
+/**
  * Load one page of the orders list (open or closed), with each order's effective
  * due date attached for the late-status badge. Shared by the initial server
  * render (page 1) and the fetch-on-scroll server action (page >= 2).
@@ -114,9 +166,18 @@ export async function loadOrdersPage(
     supabase,
     rows.map((r) => (typeof r.order_id === "string" ? r.order_id : "")).filter(Boolean)
   );
+  // Flag orders that contain out-of-stock (oversold) items. Only open orders
+  // reserve stock, so closed/delivered/cancelled orders are never flagged.
+  const openOrderIds = rows
+    .filter((r) => !CLOSED_ORDER_STATUSES.includes(String(r.status ?? "").toLowerCase()))
+    .map((r) => (typeof r.order_id === "string" ? r.order_id : ""))
+    .filter(Boolean);
+  const outOfStockIds = await computeOutOfStockOrderIds(supabase, openOrderIds);
+
   const rowsWithDue = rows.map((r) => ({
     ...r,
     due_date: orderDueById.get(typeof r.order_id === "string" ? r.order_id : "")?.dueDate ?? null,
+    out_of_stock: outOfStockIds.has(typeof r.order_id === "string" ? r.order_id : ""),
   }));
 
   const totalCount = typeof count === "number" ? count : rows.length;

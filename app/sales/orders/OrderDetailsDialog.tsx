@@ -369,19 +369,36 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                     const quantity = getNumber(item, "quantity_ordered") ?? 0;
                     const unitPrice = getNumber(item, "unit_price") ?? 0;
                     const lineTotal = getNumber(item, "line_total") ?? quantity * unitPrice;
+                    const available = getNumber(product as Row, "available");
+                    const onHand = getNumber(product as Row, "quantity_on_hand");
+                    const isItemOutOfStock = isOpenOrder && available !== null && available < 0;
 
                     return (
                       <div
                         key={getString(item, "id") ?? `${productId}-${index}`}
-                        className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm"
+                        className={`rounded-xl border bg-background/70 p-3 text-sm ${
+                          isItemOutOfStock ? "border-destructive/50" : "border-border/70"
+                        }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium">{productName}</span>
+                          <span className="flex flex-wrap items-center gap-2 font-medium">
+                            {productName}
+                            {isItemOutOfStock ? (
+                              <span className="rounded border border-destructive/40 bg-destructive-soft px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+                                חוסר במלאי
+                              </span>
+                            ) : null}
+                          </span>
                           <span>{formatCurrency(lineTotal)}</span>
                         </div>
                         <div className="mt-1 text-muted-foreground">
                           כמות: {quantity} · מחיר יחידה: {formatCurrency(unitPrice)}
                         </div>
+                        {isItemOutOfStock ? (
+                          <div className="mt-1 text-xs font-medium text-destructive">
+                            מלאי זמין: {available} (במלאי {onHand ?? 0}) · חסר {Math.abs(available ?? 0)}
+                          </div>
+                        ) : null}
                         {(getNumber(item, "discount_amount") ?? 0) > 0 ? (
                           <div className="mt-1 text-success-soft-foreground">הנחת שורה: -{formatCurrency(getNumber(item, "discount_amount") ?? 0)}</div>
                         ) : null}

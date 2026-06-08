@@ -99,6 +99,7 @@ type OrderView = {
   needsInvoice: boolean | null;
   invoiceSentAt: string | null;
   deliveryConfirmedAt: string | null;
+  outOfStock: boolean;
 };
 
 type InvoiceState = "needs_unsent" | "needs_sent" | "no" | "undecided";
@@ -426,6 +427,7 @@ export default function SalesOrdersClient({
         needsInvoice: typeof row.needs_invoice === "boolean" ? row.needs_invoice : null,
         invoiceSentAt: getString(row, ["invoice_sent_at"]),
         deliveryConfirmedAt: getString(row, ["delivery_confirmed_at"]),
+        outOfStock: row.out_of_stock === true,
       };
     });
 
@@ -434,6 +436,10 @@ export default function SalesOrdersClient({
 
   // Server already filtered by the `q` and `payment_status` URL params across the full dataset.
   const filteredRows = orderRows;
+
+  // Only surface the stock column/badge when at least one shown order is short.
+  const anyOutOfStock = filteredRows.some((row) => row.outOfStock);
+  const outOfStockBadgeClasses = getStatusColorClasses("danger");
 
   return (
     <div className="space-y-4">
@@ -516,6 +522,7 @@ export default function SalesOrdersClient({
                     <th className="px-4 py-3 font-medium">לקוח</th>
                     <th className="px-4 py-3 font-medium">עיר ותאריך</th>
                     <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
+                    {anyOutOfStock ? <th className="px-4 py-3 font-medium">מלאי</th> : null}
                     <th className="px-4 py-3 font-medium">חשבונית</th>
                     <th className="px-4 py-3 font-medium">
                       {showPaymentStatusFilter ? (
@@ -598,6 +605,13 @@ export default function SalesOrdersClient({
                       <td className="px-4 py-4">
                         <StatusBadge value={row.status} type="order" className={orderStatusBadgeClasses(row.status)} />
                       </td>
+                      {anyOutOfStock ? (
+                        <td className="px-4 py-4">
+                          {row.outOfStock ? (
+                            <Badge className={outOfStockBadgeClasses}>חוסר במלאי</Badge>
+                          ) : null}
+                        </td>
+                      ) : null}
                       <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
                         <InvoiceQuickMenu row={row} />
                       </td>
@@ -655,6 +669,9 @@ export default function SalesOrdersClient({
                           <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-1.5 py-0 text-[10px]`}>
                             {orderCollectionStatusLabel(row.collectionStatus)}
                           </Badge>
+                          {row.outOfStock ? (
+                            <Badge className={`${outOfStockBadgeClasses} px-1.5 py-0 text-[10px]`}>חוסר במלאי</Badge>
+                          ) : null}
                         </div>
                         <div className="text-[10px] text-muted-foreground">#{row.id.slice(0, 8)}</div>
                       </div>
