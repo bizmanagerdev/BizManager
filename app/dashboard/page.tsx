@@ -7,12 +7,10 @@ import CashFlowOverviewCard from "@/app/dashboard/cashflow/CashFlowOverviewCard"
 import DomainActivityChart from "@/components/charts/DomainActivityChart";
 import { getAlertsData } from "@/lib/alerts";
 import { getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
-import { getOpenReminders, actionTypeLabel, type Reminder } from "@/lib/communications";
-import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
-import { formatShortDate } from "@/lib/date";
 import { getScheduleEntries } from "@/lib/projectSchedule";
 import { getTodayInboxData } from "@/lib/today-inbox";
 import TodayInbox from "@/components/TodayInbox";
+import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +24,6 @@ type Row = Record<string, unknown>;
 export const revalidate = 60;
 
 const numberFormatter = new Intl.NumberFormat("he-IL");
-const ilsFormatter = new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 });
 
 function getString(row: Row | null | undefined, key: string) {
   const value = row?.[key];
@@ -164,10 +161,15 @@ export default async function DashboardPage() {
 
   const isAdminOrOffice = profile.role === "admin" || profile.role === "office";
 
-  const [unpaidBalanceResult, workerOwedResult, openOrdersCountResult, dueTodayResult, remindersResult] =
+  const todayIso = today.toISOString().slice(0, 10);
+  const forecastHorizon = new Date(today);
+  forecastHorizon.setUTCDate(forecastHorizon.getUTCDate() + 30);
+  const forecastHorizonIso = forecastHorizon.toISOString().slice(0, 10);
+
+  const [unpaidBalanceResult, workerOwedResult, openOrdersCountResult, dueTodayResult, forecastInResult, forecastOutResult] =
     await Promise.all([
       isAdminOrOffice
-        ? supabase.from("invoices").select("balance_due").in("payment_status", ["unpaid", "partial", "overdue"]).range(0, 499)
+        ? supabase.from("invoices").select("balance_due,payment_status").in("payment_status", ["unpaid", "partial", "overdue"]).range(0, 499)
         : Promise.resolve({ data: null, error: null }),
       profile.role === "admin"
         ? supabase.from("worker_debt_items_view").select("owed_amount").eq("source_type", "payslip").gt("owed_amount", 0.009).range(0, 999)
@@ -179,20 +181,18 @@ export default async function DashboardPage() {
       isAdminOrOffice
         ? getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[])
         : Promise.resolve([] as PaymentDueToday[]),
+      // Forecast (lightweight): expected incoming — pending/post-dated payments due ≤30d.
       isAdminOrOffice
-        ? getOpenReminders(supabase).catch(() => [] as Reminder[])
-        : Promise.resolve([] as Reminder[]),
+        ? supabase.from("payments").select("amount_total").eq("payment_status", "pending").not("due_date", "is", null).gte("due_date", todayIso).lte("due_date", forecastHorizonIso).range(0, 999)
+        : Promise.resolve({ data: null, error: null }),
+      // Forecast (lightweight): upcoming outflow — unpaid/partial expenses dated ≤30d.
+      isAdminOrOffice
+        ? supabase.from("expenses").select("amount,paid_amount").in("payment_status", ["not_paid", "partial"]).gte("expense_date", todayIso).lte("expense_date", forecastHorizonIso).range(0, 999)
+        : Promise.resolve({ data: null, error: null }),
     ]);
 
   const dueTodayPayments = dueTodayResult as PaymentDueToday[];
   const dueTodayCount = dueTodayPayments.length;
-  const dueTodayTotal = dueTodayPayments.reduce((sum, p) => sum + p.amount, 0);
-
-  // Reminders due now (today or overdue) — "who do I need to call back".
-  const dashboardTodayIso = today.toISOString().slice(0, 10);
-  const dueReminders = (remindersResult as Reminder[])
-    .filter((r) => r.remind_at.slice(0, 10) <= dashboardTodayIso)
-    .slice(0, 8);
 
   const activeProjectsCount =
     getNumber((dashboardRow as Row | null) ?? undefined, "active_projects_count") ?? 0;
@@ -203,11 +203,40 @@ export default async function DashboardPage() {
   const openOrdersCount = typeof openOrdersCountResult.count === "number" ? openOrdersCountResult.count : 0;
 
   const invoicesTableMissing = (unpaidBalanceResult as { error?: { message?: string } | null }).error?.message?.includes("Could not find") ?? false;
-  const unpaidBalance = invoicesTableMissing
-    ? null
-    : ((unpaidBalanceResult.data ?? []) as Row[]).reduce((sum, r) => sum + (getNumber(r, "balance_due") ?? 0), 0);
-  const workerOwedTotal = ((workerOwedResult.data ?? []) as Row[])
-    .reduce((sum, r) => sum + (getNumber(r, "owed_amount") ?? 0), 0);
+  // Collections worklist — counts only (no ₪ totals on the dashboard).
+  const unpaidInvoices = invoicesTableMissing ? [] : ((unpaidBalanceResult.data ?? []) as Row[]);
+  const openCollectionsCount = unpaidInvoices.length;
+  const overdueCollectionsCount = unpaidInvoices.filter((r) => getString(r, "payment_status") === "overdue").length;
+  const workerOwedCount = ((workerOwedResult.data ?? []) as Row[]).length;
+
+  // Lightweight cash heads-up: do near-term outflows (payroll owed + upcoming unpaid
+  // expenses ≤30d) exceed the money expected to come in (pending payments due ≤30d)?
+  const expectedIncoming30 = ((forecastInResult.data ?? []) as Row[]).reduce(
+    (sum, r) => sum + (getNumber(r, "amount_total") ?? 0),
+    0
+  );
+  const workerOwedTotal = ((workerOwedResult.data ?? []) as Row[]).reduce(
+    (sum, r) => sum + (getNumber(r, "owed_amount") ?? 0),
+    0
+  );
+  const upcomingExpensesOut = ((forecastOutResult.data ?? []) as Row[]).reduce(
+    (sum, r) => sum + Math.max((getNumber(r, "amount") ?? 0) - (getNumber(r, "paid_amount") ?? 0), 0),
+    0
+  );
+  const nearTermOutflow = workerOwedTotal + upcomingExpensesOut;
+  const cashTighteningSoon = isAdminOrOffice && nearTermOutflow > 0 && nearTermOutflow > expectedIncoming30;
+
+  // Personalized header: time-of-day greeting in Israel time. Parse the hour via
+  // formatToParts in a neutral locale + hour12:false so we always get a clean 0–23
+  // number (he-IL / 12-hour formatting otherwise yields the wrong hour).
+  const israelHour =
+    Number(
+      new Intl.DateTimeFormat("en-US", { hour: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" })
+        .formatToParts(today)
+        .find((part) => part.type === "hour")?.value ?? "0"
+    ) % 24;
+  const greeting = israelHour < 12 ? "בוקר טוב" : israelHour < 18 ? "צהריים טובים" : "ערב טוב";
+  const firstName = profile.full_name?.trim().split(/\s+/)[0] ?? "";
 
   const activeProjectOptions = ((projectRows ?? []) as Row[])
     .map((row) => ({
@@ -299,10 +328,8 @@ export default async function DashboardPage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageStack>
-        <section className="flex items-center justify-start">
-          <Badge variant="outline" className="w-fit text-sm">
-            {new Intl.DateTimeFormat("he-IL", { month: "long", year: "numeric" }).format(today)}
-          </Badge>
+        <section className="text-right">
+          <DashboardGreeting name={firstName} initialGreeting={greeting} />
         </section>
 
         {dashboardErrors.length > 0 ? (
@@ -368,87 +395,18 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {isAdminOrOffice && dueTodayPayments.length > 0 ? (
-          <Card className="border-warning/40">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="text-lg">תשלומים לפירעון היום</CardTitle>
-                  <CardDescription>צ׳קים והעברות שמועד פירעונם היום — לגבייה/הפקדה.</CardDescription>
+        {cashTighteningSoon ? (
+          <Card className="border-warning/50">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
+              <div className="space-y-0.5 text-right">
+                <div className="font-medium">תזרים להמשך החודש דורש תשומת לב</div>
+                <div className="text-muted-foreground">
+                  ההתחייבויות הצפויות ב-30 הימים הקרובים עשויות לעלות על התקבולים הצפויים.
                 </div>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/collections">לפניות</Link>
-                </Button>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {dueTodayPayments.map((p) => (
-                <Link
-                  key={p.id}
-                  href="/collections"
-                  className="flex items-center justify-between gap-3 rounded-2xl border p-3 text-sm transition-colors hover:bg-muted/40"
-                >
-                  <div className="min-w-0">
-                    <div className="font-medium">
-                      {p.customer_name}
-                      {p.customer_phone ? ` · ${p.customer_phone}` : ""}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {p.payment_method === "check"
-                        ? `צ׳ק${p.check_number ? ` מס׳ ${p.check_number}` : ""} — להפקדה`
-                        : p.payment_method
-                          ? paymentMethodLabel(p.payment_method)
-                          : "תשלום"}
-                    </div>
-                  </div>
-                  <div className="font-semibold">{ilsFormatter.format(p.amount)}</div>
-                </Link>
-              ))}
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {isAdminOrOffice && dueReminders.length > 0 ? (
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="text-lg">תזכורות לטיפול</CardTitle>
-                  <CardDescription>אנשים להחזיר אליהם שיחה / לעקוב — היום ובאיחור.</CardDescription>
-                </div>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/collections">לכל התזכורות</Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {dueReminders.map((r) => {
-                const overdue = r.remind_at.slice(0, 10) < dashboardTodayIso;
-                return (
-                  <Link
-                    key={r.id}
-                    href="/collections"
-                    className="flex items-center justify-between gap-3 rounded-2xl border p-3 text-sm transition-colors hover:bg-muted/40"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium">
-                        {r.customer_name ?? "כללי"}
-                        {r.customer_phone ? ` · ${r.customer_phone}` : ""}
-                      </div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {actionTypeLabel(r.action_type)}
-                        {r.content ? ` · ${r.content}` : ""}
-                      </div>
-                    </div>
-                    <div
-                      className={`shrink-0 text-xs ${overdue ? "font-medium text-destructive" : "text-muted-foreground"}`}
-                    >
-                      {overdue ? "באיחור · " : ""}
-                      {formatShortDate(r.remind_at)}
-                    </div>
-                  </Link>
-                );
-              })}
+              <Button asChild variant="outline" size="sm">
+                <Link href="/financial/reports">לתחזית התזרים</Link>
+              </Button>
             </CardContent>
           </Card>
         ) : null}
@@ -477,17 +435,25 @@ export default async function DashboardPage() {
             {isAdminOrOffice ? (
               <MetricCard
                 title="גביה פתוחה"
-                value={unpaidBalance === null ? "—" : ilsFormatter.format(unpaidBalance)}
-                subtitle={unpaidBalance === null ? "טבלת חשבוניות חסרה" : unpaidBalance > 0 ? "חשבוניות שלא שולמו" : "הכול שולם"}
-                href="/financial"
-                urgent={(unpaidBalance ?? 0) > 0}
+                value={invoicesTableMissing ? "—" : formatCount(openCollectionsCount)}
+                subtitle={
+                  invoicesTableMissing
+                    ? "טבלת חשבוניות חסרה"
+                    : overdueCollectionsCount > 0
+                      ? `${formatCount(overdueCollectionsCount)} באיחור`
+                      : openCollectionsCount > 0
+                        ? "חשבוניות ממתינות לגבייה"
+                        : "הכול שולם"
+                }
+                href="/collections"
+                urgent={overdueCollectionsCount > 0}
               />
             ) : null}
             {isAdminOrOffice ? (
               <MetricCard
                 title="לפירעון היום"
-                value={ilsFormatter.format(dueTodayTotal)}
-                subtitle={dueTodayCount > 0 ? `${formatCount(dueTodayCount)} תשלומים לגבייה היום` : "אין תשלומים להיום"}
+                value={formatCount(dueTodayCount)}
+                subtitle={dueTodayCount > 0 ? "צ׳קים/העברות לפירעון היום" : "אין תשלומים להיום"}
                 href="/collections"
                 urgent={dueTodayCount > 0}
               />
@@ -495,10 +461,10 @@ export default async function DashboardPage() {
             {profile.role === "admin" ? (
               <MetricCard
                 title="שכר לתשלום"
-                value={ilsFormatter.format(workerOwedTotal)}
-                subtitle={workerOwedTotal > 0 ? "שכר שטרם שולם לעובדים" : "אין חוב לעובדים"}
+                value={formatCount(workerOwedCount)}
+                subtitle={workerOwedCount > 0 ? "עובדים עם שכר שטרם שולם" : "אין חוב לעובדים"}
                 href="/payroll"
-                urgent={workerOwedTotal > 0}
+                urgent={workerOwedCount > 0}
               />
             ) : null}
           </AdaptiveGrid>

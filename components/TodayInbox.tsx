@@ -76,7 +76,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">להיום ({total})</CardTitle>
+        <CardTitle className="text-base">היום ({total})</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         {/* My tasks due */}
