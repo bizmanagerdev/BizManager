@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { UserRole } from "@/lib/auth/requireProfile";
@@ -3238,7 +3239,7 @@ export default function SalaryCenterClient({
                           </Button>
                         </div>
                         <Field label="התאמה ידנית">
-                          <Input
+                          <CurrencyInput
                             inputMode="decimal"
                             value={payslipAdjustmentDrafts[payslip.id] ?? String(payslip.manual_adjustments ?? 0)}
                             onChange={(event) =>
@@ -3356,7 +3357,7 @@ export default function SalaryCenterClient({
                       </select>
                     </Field>
                     <Field label="סכום (שלילי = ניכוי)">
-                      <Input
+                      <CurrencyInput
                         inputMode="decimal"
                         placeholder="לדוגמה: 500 או -200"
                         value={payslipItemForm.amount}
@@ -4103,7 +4104,7 @@ export default function SalaryCenterClient({
             </Field>
             {agreementForm.salary_type === "hourly" ? (
               <Field label="תעריף שעתי">
-                <Input
+                <CurrencyInput
                   inputMode="decimal"
                   value={agreementForm.hourly_rate}
                   onChange={(event) =>
@@ -4113,7 +4114,7 @@ export default function SalaryCenterClient({
               </Field>
             ) : (
               <Field label="שכר חודשי">
-                <Input
+                <CurrencyInput
                   inputMode="decimal"
                   value={agreementForm.monthly_salary}
                   onChange={(event) =>
@@ -4123,7 +4124,7 @@ export default function SalaryCenterClient({
               </Field>
             )}
             <Field label="תעריף שעות נוספות">
-              <Input
+              <CurrencyInput
                 inputMode="decimal"
                 value={agreementForm.overtime_rate}
                 onChange={(event) =>
@@ -4204,7 +4205,7 @@ export default function SalaryCenterClient({
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="תעריף שעתי חריג (₪)">
-              <Input
+              <CurrencyInput
                 inputMode="decimal"
                 placeholder="לדוגמה: 60"
                 value={overrideForm.override_hourly_rate}
@@ -4429,7 +4430,7 @@ export default function SalaryCenterClient({
               />
             </Field>
             <Field label="סכום">
-              <Input
+              <CurrencyInput
                 inputMode="decimal"
                 value={workerPaymentForm.amount}
                 onChange={(event) => setWorkerPaymentAmount(event.target.value)}
@@ -4491,7 +4492,7 @@ export default function SalaryCenterClient({
                       </div>
                     </div>
                     <Field label="סכום להקצאה">
-                      <Input
+                      <CurrencyInput
                         inputMode="decimal"
                         value={allocation.amount}
                         onChange={(event) =>
@@ -4672,7 +4673,7 @@ export default function SalaryCenterClient({
             )}
             {shouldShowSessionPrice(sessionDialogWorkerType) ? (
               <Field label="מחיר">
-                <Input
+                <CurrencyInput
                   inputMode="decimal"
                   value={sessionForm.labor_cost}
                   onChange={(event) =>
@@ -4712,7 +4713,7 @@ export default function SalaryCenterClient({
             </Field>
             {sessionForm.is_billable_to_customer ? (
               <Field label="סכום לחיוב">
-                <Input
+                <CurrencyInput
                   inputMode="decimal"
                   value={sessionForm.bill_to_customer_amount}
                   onChange={(event) =>
@@ -4740,7 +4741,7 @@ export default function SalaryCenterClient({
                 </Field>
                 {sessionForm.mark_paid_now ? (
                   <Field label="כמה שולם">
-                    <Input
+                    <CurrencyInput
                       inputMode="decimal"
                       value={sessionForm.paid_amount_now}
                       onChange={(event) =>

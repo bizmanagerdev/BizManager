@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { getBusinessDomainLabel, WORK_SESSION_BUSINESS_DOMAINS } from "@/lib/expenses";
 import {
@@ -1158,7 +1159,7 @@ export default function PayrollAdminClient({
                         ) : null}
                       </Field>
                       <Field label="תעריף שעות נוספות">
-                        <Input
+                        <CurrencyInput
                           value={formState.overtime_rate}
                           onChange={(event) =>
                             setFormState((current) => ({ ...current, overtime_rate: event.target.value }))
@@ -1168,7 +1169,7 @@ export default function PayrollAdminClient({
                       </Field>
                       {formState.salary_type === "hourly" ? (
                         <Field label="תעריף שעתי">
-                          <Input
+                          <CurrencyInput
                             value={formState.hourly_rate}
                             onChange={(event) =>
                               setFormState((current) => ({ ...current, hourly_rate: event.target.value }))
@@ -1178,7 +1179,7 @@ export default function PayrollAdminClient({
                         </Field>
                       ) : (
                         <Field label="שכר חודשי">
-                          <Input
+                          <CurrencyInput
                             value={formState.monthly_salary}
                             onChange={(event) =>
                               setFormState((current) => ({ ...current, monthly_salary: event.target.value }))
@@ -1449,7 +1450,7 @@ export default function PayrollAdminClient({
             ) : null}
             {canViewSalary ? (
               <Field label="עלות לעובד">
-                <Input
+                <CurrencyInput
                   inputMode="decimal"
                   value={createSessionForm.labor_cost}
                   onChange={(event) =>

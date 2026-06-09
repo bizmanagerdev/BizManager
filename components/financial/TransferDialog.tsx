@@ -7,6 +7,7 @@ import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import {
@@ -342,7 +343,7 @@ export function TransferDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <div className="text-sm font-medium">סכום מלא *</div>
-              <Input
+              <CurrencyInput
                 type="number"
                 min="0"
                 step="0.01"
@@ -378,7 +379,7 @@ export function TransferDialog({
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <div className="text-sm font-medium">סכום הוצאה *</div>
-                <Input
+                <CurrencyInput
                   type="number"
                   min="0"
                   step="0.01"
@@ -388,7 +389,7 @@ export function TransferDialog({
               </div>
               <div className="space-y-1">
                 <div className="text-sm font-medium">סכום הכנסה *</div>
-                <Input
+                <CurrencyInput
                   type="number"
                   min="0"
                   step="0.01"

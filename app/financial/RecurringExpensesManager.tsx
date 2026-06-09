@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
@@ -521,7 +522,7 @@ export default function RecurringExpensesManager(props: Props) {
 
             <div className="space-y-1">
               <div className="text-sm font-medium">סכום *</div>
-              <Input
+              <CurrencyInput
                 type="number"
                 min={0}
                 step="0.01"

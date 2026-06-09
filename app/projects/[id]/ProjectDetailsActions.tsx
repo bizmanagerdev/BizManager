@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
 
@@ -370,8 +371,7 @@ export default function ProjectDetailsActions({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">מחיר בסיס מוסכם</label>
-              <Input
-                inputMode="decimal"
+              <CurrencyInput
                 value={editAgreedBasePrice}
                 onChange={(event) => setEditAgreedBasePrice(event.target.value)}
               />

@@ -7,6 +7,7 @@ import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
@@ -907,7 +908,7 @@ export default function StatementDetailClient({
                 <Input value={draft.description} onChange={(e) => patchDraft({ description: e.target.value })} className="h-9" />
               </Field>
               <Field label="סכום">
-                <Input
+                <CurrencyInput
                   type="number"
                   step="0.01"
                   value={Number.isFinite(draft.amount) ? draft.amount : 0}
@@ -1073,7 +1074,7 @@ export default function StatementDetailClient({
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="סכום *">
-                  <Input
+                  <CurrencyInput
                     type="number"
                     min="0"
                     step="0.01"

@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import LoadingDots from "@/app/sales/orders/LoadingDots";
 import {
@@ -455,7 +456,7 @@ export default function OrderConfirmDialog({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
                       <label className="text-sm font-medium">סכום תשלום</label>
-                      <Input
+                      <CurrencyInput
                         type="number"
                         min="0"
                         step="0.01"

@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dialog";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
@@ -1871,8 +1872,7 @@ export default function DashboardActions({
               {showManualSessionPriceField ? (
                 <label className="space-y-2 text-right text-sm">
                   <span className="font-medium">מחיר</span>
-                  <Input
-                    inputMode="decimal"
+                  <CurrencyInput
                     value={manualSessionLaborCost}
                     onChange={(e) => setManualSessionLaborCost(e.target.value)}
                     placeholder="אופציונלי"
@@ -1915,8 +1915,7 @@ export default function DashboardActions({
                   {manualSessionPaymentChoice !== "none" ? (
                     <label className="space-y-2 text-right text-sm">
                       <span className="font-medium">כמה שולם</span>
-                      <Input
-                        inputMode="decimal"
+                      <CurrencyInput
                         value={manualSessionPaidAmount}
                         onChange={(e) => setManualSessionPaidAmount(e.target.value)}
                         placeholder="אם ריק, יירשם מלוא סכום המשמרת"
@@ -2178,7 +2177,7 @@ export default function DashboardActions({
 
                   <label className="space-y-2 text-sm">
                     <span>{HEBREW.basePrice}</span>
-                    <Input
+                    <CurrencyInput
                       type="number"
                       min="0"
                       value={projectPrice}
@@ -2706,8 +2705,7 @@ export default function DashboardActions({
                   {showExpenseSessionPriceField ? (
                     <label className="space-y-2 text-sm block">
                       <span>עלות עבודה</span>
-                      <Input
-                        inputMode="decimal"
+                      <CurrencyInput
                         value={expenseLaborCost}
                         onChange={(e) => setExpenseLaborCost(e.target.value)}
                         placeholder="אופציונלי"
@@ -2743,8 +2741,7 @@ export default function DashboardActions({
                       {expenseBilledToCustomer ? (
                         <label className="space-y-2 text-sm block">
                           <span>סכום לחיוב לקוח</span>
-                          <Input
-                            inputMode="decimal"
+                          <CurrencyInput
                             value={expenseBillToCustomerAmount}
                             onChange={(e) => setExpenseBillToCustomerAmount(e.target.value)}
                             placeholder="למשל 650"
@@ -2772,8 +2769,7 @@ export default function DashboardActions({
                       {expenseWorkerPaymentChoice !== "none" ? (
                         <label className="space-y-2 text-sm block">
                           <span>כמה שולם</span>
-                          <Input
-                            inputMode="decimal"
+                          <CurrencyInput
                             value={expenseWorkerPaidAmount}
                             onChange={(e) => setExpenseWorkerPaidAmount(e.target.value)}
                             placeholder="אם ריק, יירשם מלוא סכום המשמרת"
@@ -2788,7 +2784,7 @@ export default function DashboardActions({
                   <AdaptiveGrid variant="formTwoLoose">
                     <label className="space-y-2 text-sm">
                       <span>{HEBREW.amount} *</span>
-                      <Input
+                      <CurrencyInput
                         type="number"
                         min="0"
                         step="0.01"
@@ -3090,7 +3086,7 @@ export default function DashboardActions({
                   <AdaptiveGrid variant="formTwoLoose">
                     <label className="space-y-2 text-sm">
                       <span>{HEBREW.amount} *</span>
-                      <Input
+                      <CurrencyInput
                         type="number"
                         min="0"
                         step="0.01"

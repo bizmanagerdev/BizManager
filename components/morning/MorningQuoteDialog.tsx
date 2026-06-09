@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
@@ -148,9 +149,8 @@ export default function MorningQuoteDialog({
                     value={line.quantity}
                     onChange={(event) => updateLine(index, { quantity: event.target.value })}
                   />
-                  <Input
+                  <CurrencyInput
                     type="number"
-                    inputMode="decimal"
                     placeholder="מחיר ליחידה"
                     value={line.unitPrice}
                     onChange={(event) => updateLine(index, { unitPrice: event.target.value })}

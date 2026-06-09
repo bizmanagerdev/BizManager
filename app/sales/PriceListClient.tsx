@@ -11,6 +11,7 @@ import jsPDF from "jspdf";
 import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -1115,10 +1116,10 @@ export default function PriceListClient({
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="מחיר מכירה">
-                <Input value={createPrice} onChange={(e) => setCreatePrice(e.target.value)} inputMode="decimal" />
+                <CurrencyInput value={createPrice} onChange={(e) => setCreatePrice(e.target.value)} />
               </Field>
               <Field label="עלות בסיס">
-                <Input value={createCost} onChange={(e) => setCreateCost(e.target.value)} inputMode="decimal" />
+                <CurrencyInput value={createCost} onChange={(e) => setCreateCost(e.target.value)} />
               </Field>
             </div>
             <Field label="כמות שנרכשה">
@@ -1227,10 +1228,10 @@ export default function PriceListClient({
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="מחיר מכירה">
-                <Input value={editPrice} onChange={(e) => setEditPrice(e.target.value)} inputMode="decimal" />
+                <CurrencyInput value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
               </Field>
               <Field label="עלות בסיס">
-                <Input value={editCost} onChange={(e) => setEditCost(e.target.value)} inputMode="decimal" />
+                <CurrencyInput value={editCost} onChange={(e) => setEditCost(e.target.value)} />
               </Field>
             </div>
             <Field label="כמות שנרכשה">

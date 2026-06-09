@@ -20,6 +20,7 @@ import {
 } from "@/components/layout/page-layout";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1432,8 +1433,7 @@ export default function ProjectsClient({
 
           <div className="space-y-2">
             <label className="text-sm font-medium">מחיר מוסכם *</label>
-            <Input
-              inputMode="decimal"
+            <CurrencyInput
               value={approveQuotePrice}
               onChange={(e) => setApproveQuotePrice(e.target.value)}
               placeholder="לדוגמה: 2300"
@@ -1643,8 +1643,7 @@ export default function ProjectsClient({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">מחיר בסיס מוסכם</label>
-              <Input
-                inputMode="decimal"
+              <CurrencyInput
                 value={createAgreedBasePrice}
                 onChange={(e) => setCreateAgreedBasePrice(e.target.value)}
                 placeholder="אופציונלי, ברירת מחדל 0"
@@ -1863,8 +1862,7 @@ export default function ProjectsClient({
 
             <div className="space-y-1">
               <label className="text-sm font-medium">מחיר בסיס מוסכם</label>
-              <Input
-                inputMode="decimal"
+              <CurrencyInput
                 value={editAgreedBasePrice}
                 onChange={(e) => setEditAgreedBasePrice(e.target.value)}
               />

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
@@ -1091,7 +1092,7 @@ export default function NewOrderClient({
                           <div className="grid gap-3 sm:grid-cols-2">
                             <div className="space-y-1">
                               <label className="text-xs text-muted-foreground">מחיר יחידה</label>
-                              <Input
+                              <CurrencyInput
                                 type="number"
                                 min="0"
                                 step="1"
@@ -1107,7 +1108,7 @@ export default function NewOrderClient({
                             </div>
                             <div className="space-y-1">
                               <label className="text-xs text-muted-foreground">הנחת שורה</label>
-                              <Input
+                              <CurrencyInput
                                 type="number"
                                 min="0"
                                 step="1"
@@ -1270,7 +1271,7 @@ export default function NewOrderClient({
 
                 <div className="space-y-0.5">
                   <label className="text-sm font-medium">הנחת הזמנה</label>
-                  <Input
+                  <CurrencyInput
                     type="number"
                     min="0"
                     step="1"
@@ -1357,7 +1358,7 @@ export default function NewOrderClient({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">סכום *</label>
-                      <Input
+                      <CurrencyInput
                         type="number"
                         min="0"
                         step="0.01"

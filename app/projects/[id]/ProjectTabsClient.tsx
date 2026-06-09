@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -2497,7 +2498,7 @@ export default function ProjectTabsClient({
 
           <div className="space-y-2">
             <div className="text-sm font-medium">מחיר בסיס *</div>
-            <Input
+            <CurrencyInput
               inputMode="numeric"
               value={updateBasePriceValue}
               onChange={(e) => setUpdateBasePriceValue(e.target.value)}
@@ -4758,7 +4759,7 @@ function AddExpenseDialog({
               <div className="text-sm font-medium">
                 {isSessionMode ? "עלות עבודה" : "\u05e1\u05db\u05d5\u05dd *"}
               </div>
-              <Input
+              <CurrencyInput
                 inputMode="numeric"
                 value={isSessionMode ? laborCost : amount}
                 onChange={(e) => {
@@ -4918,7 +4919,7 @@ function AddExpenseDialog({
                   {expensePaymentStatus === "partial" && (
                     <div className="space-y-1">
                       <div className="text-sm font-medium">סכום ששולם</div>
-                      <Input
+                      <CurrencyInput
                         type="number"
                         min="0"
                         step="0.01"
@@ -4959,7 +4960,7 @@ function AddExpenseDialog({
                 {sessionBillableToCustomer ? (
                   <div className="space-y-1">
                     <div className="text-sm font-medium">סכום לחיוב לקוח *</div>
-                    <Input
+                    <CurrencyInput
                       inputMode="numeric"
                       value={billToCustomerAmount}
                       onChange={(e) => {
@@ -5018,7 +5019,7 @@ function AddExpenseDialog({
                 {workerPaymentMode !== "none" ? (
                   <div className="space-y-1">
                     <div className="text-sm font-medium">סכום לתשלום לעובד *</div>
-                    <Input
+                    <CurrencyInput
                       inputMode="numeric"
                       value={workerPaymentAmount}
                       onChange={(e) => {
@@ -5075,7 +5076,7 @@ function AddExpenseDialog({
                 {billedToCustomer ? (
                   <div className="space-y-1">
                     <div className="text-sm font-medium">סכום לחיוב לקוח *</div>
-                    <Input
+                    <CurrencyInput
                       inputMode="numeric"
                       value={expenseBillToCustomerAmount}
                       onChange={(e) => setExpenseBillToCustomerAmount(e.target.value)}
@@ -5366,7 +5367,7 @@ function AddIncomeDialog({
           <AdaptiveGrid variant="formTwo">
             <div className="space-y-1">
               <div className="text-sm font-medium">{"\u05e1\u05db\u05d5\u05dd *"}</div>
-              <Input
+              <CurrencyInput
                 inputMode="numeric"
                 value={amount}
                 onChange={(e) => {
