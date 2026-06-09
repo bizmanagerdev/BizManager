@@ -289,7 +289,7 @@ export default function FinancialPageClient({
   // not trigger a server re-query, unlike the shared URL-driven filters.
   const [reportTab, setReportTab] = useState("summary");
   // Flow view: which table is shown (full ledger vs upcoming flow).
-  const [flowTab, setFlowTab] = useState<"ledger" | "upcoming">("ledger");
+  const [flowTab, setFlowTab] = useState<"ledger" | "upcoming" | "history">("history");
   // Filter panel is collapsed by default; opens automatically when filters arrive active.
   const [filtersOpen, setFiltersOpen] = useState(
     () =>
@@ -366,6 +366,11 @@ export default function FinancialPageClient({
   const ledgerScrollRef = useRef<HTMLDivElement>(null);
   const ledgerSentinelRef = useRef<HTMLDivElement>(null);
   const ledgerMobileSentinelRef = useRef<HTMLDivElement>(null);
+  const [historyVisible, setHistoryVisible] = useState(60);
+  const [historySearch, setHistorySearch] = useState("");
+  const historyScrollRef = useRef<HTMLDivElement>(null);
+  const historySentinelRef = useRef<HTMLDivElement>(null);
+  const historyMobileSentinelRef = useRef<HTMLDivElement>(null);
 
   const ledgerMonths = useMemo(() => {
     const set = new Set<string>();
@@ -400,6 +405,25 @@ export default function FinancialPageClient({
   }, [ledgerEntries, ledgerSearch, ledgerMonth, ledgerSort]);
 
   const filteredEntries = { length: displayLedger.length };
+
+  const displayHistory = useMemo(() => {
+    const q = historySearch.trim().toLowerCase();
+    let list = ledgerEntries.filter((e) => (e.flowDate ?? "") <= data.todayIso);
+    if (q) {
+      list = list.filter((e) =>
+        [e.description, e.domainName, e.sourceLabel, e.reference, e.recordedByName].some(
+          (v) => typeof v === "string" && v.toLowerCase().includes(q)
+        )
+      );
+    }
+    return [...list].sort((a, b) => {
+      const cmp = (b.flowDate ?? "").localeCompare(a.flowDate ?? "");
+      return cmp !== 0 ? cmp : b.id.localeCompare(a.id);
+    });
+  }, [ledgerEntries, historySearch, data.todayIso]);
+
+  const pagedHistoryEntries = displayHistory.slice(0, historyVisible);
+  const historyHasMore = pagedHistoryEntries.length < displayHistory.length;
   const pagedLedgerEntries = displayLedger.slice(0, ledgerVisible);
   const ledgerHasMore = pagedLedgerEntries.length < displayLedger.length;
 
@@ -439,27 +463,66 @@ export default function FinancialPageClient({
     URL.revokeObjectURL(url);
   }
 
-  // Infinite scroll: reveal more of the (filtered) ledger as the bottom sentinel
-  // comes into view — no page navigation, so the page never re-loads.
+  // Infinite scroll: reveal more of the (filtered) ledger as the user scrolls.
+  // Uses a scroll event rather than IntersectionObserver so it works correctly
+  // even when the container starts hidden (inactive Radix tab → display:none).
   useEffect(() => {
     if (ledgerVisible >= displayLedger.length) return;
     const loadMore = () => setLedgerVisible((v) => Math.min(v + 60, displayLedger.length));
-    const observers: IntersectionObserver[] = [];
-    const observe = (target: Element | null, root: Element | null) => {
-      if (!target) return;
+    const cleanups: (() => void)[] = [];
+
+    const container = ledgerScrollRef.current;
+    if (container) {
+      const onScroll = () => {
+        if (container.clientHeight === 0) return;
+        if (container.scrollHeight - container.scrollTop - container.clientHeight < 400) loadMore();
+      };
+      container.addEventListener("scroll", onScroll, { passive: true });
+      onScroll();
+      cleanups.push(() => container.removeEventListener("scroll", onScroll));
+    }
+
+    const mobileSentinel = ledgerMobileSentinelRef.current;
+    if (mobileSentinel) {
       const io = new IntersectionObserver(
-        (entries) => {
-          if (entries.some((e) => e.isIntersecting)) loadMore();
-        },
-        { root, rootMargin: "400px" }
+        (entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); },
+        { rootMargin: "400px" }
       );
-      io.observe(target);
-      observers.push(io);
-    };
-    observe(ledgerSentinelRef.current, ledgerScrollRef.current);
-    observe(ledgerMobileSentinelRef.current, null);
-    return () => observers.forEach((io) => io.disconnect());
+      io.observe(mobileSentinel);
+      cleanups.push(() => io.disconnect());
+    }
+
+    return () => cleanups.forEach((fn) => fn());
   }, [ledgerVisible, displayLedger]);
+
+  useEffect(() => {
+    if (historyVisible >= displayHistory.length) return;
+    const loadMore = () => setHistoryVisible((v) => Math.min(v + 60, displayHistory.length));
+    const cleanups: (() => void)[] = [];
+
+    const container = historyScrollRef.current;
+    if (container) {
+      const onScroll = () => {
+        if (container.clientHeight === 0) return;
+        if (container.scrollHeight - container.scrollTop - container.clientHeight < 400) loadMore();
+      };
+      container.addEventListener("scroll", onScroll, { passive: true });
+      onScroll();
+      cleanups.push(() => container.removeEventListener("scroll", onScroll));
+    }
+
+    const mobileSentinel = historyMobileSentinelRef.current;
+    if (mobileSentinel) {
+      const io = new IntersectionObserver(
+        (entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); },
+        { rootMargin: "400px" }
+      );
+      io.observe(mobileSentinel);
+      cleanups.push(() => io.disconnect());
+    }
+
+    return () => cleanups.forEach((fn) => fn());
+  }, [historyVisible, displayHistory]);
 
   const replaceSearch = (
     mutate: (params: URLSearchParams) => void,
@@ -1041,11 +1104,12 @@ export default function FinancialPageClient({
       ) : (
       <Tabs
         value={flowTab}
-        onValueChange={(value) => setFlowTab(value as "ledger" | "upcoming")}
+        onValueChange={(value) => setFlowTab(value as "ledger" | "upcoming" | "history")}
         dir="rtl"
         className="space-y-4"
       >
-        <TabsList className="grid w-full grid-cols-2 print:hidden">
+        <TabsList className="grid w-full grid-cols-3 print:hidden">
+          <TabsTrigger value="history">היסטוריה</TabsTrigger>
           <TabsTrigger value="ledger">יומן מלא</TabsTrigger>
           <TabsTrigger value="upcoming">
             תזרים עתידי
@@ -1056,6 +1120,211 @@ export default function FinancialPageClient({
             ) : null}
           </TabsTrigger>
         </TabsList>
+        <TabsContent value="history">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg text-right">היסטוריית תזרים</CardTitle>
+          <CardDescription className="text-right">
+            כל התנועות מהיום ואחורה — מה שכבר קרה ומה שממתין עד היום.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[12rem] flex-1">
+              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={historySearch}
+                onChange={(e) => {
+                  setHistoryVisible(60);
+                  setHistorySearch(e.target.value);
+                }}
+                placeholder="חיפוש (פירוט, מקור, תחום)"
+                className="h-9 pr-9"
+              />
+            </div>
+            {historySearch ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setHistoryVisible(60);
+                  setHistorySearch("");
+                }}
+              >
+                ניקוי
+              </Button>
+            ) : null}
+          </div>
+          {displayHistory.length === 0 ? (
+            <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+              לא נמצאו תנועות עבר בהתאם לסינון.
+            </div>
+          ) : (
+            <>
+              <div dir="rtl" className="grid gap-3 md:hidden">
+                {pagedHistoryEntries.map((entry) => {
+                  const editableExpense = isEditableExpenseEntry(entry) ? entry : null;
+                  const isToday = entry.flowDate === data.todayIso;
+                  return (
+                  <article
+                    key={entry.id}
+                    className={cn(
+                      "rounded-2xl border p-4 text-right",
+                      isToday ? "border-primary/30 bg-primary/5" : "",
+                      entry.sourceHref ? "cursor-pointer transition-colors hover:bg-muted/30" : ""
+                    )}
+                    onClick={() => navigateToEntry(entry)}
+                  >
+                    <div className="flex items-start justify-between gap-3 sm:flex-row-reverse">
+                      <div className="space-y-1">
+                        <div dir="ltr" className="text-sm font-medium tabular-nums">{formatShortDate(entry.flowDate)}</div>
+                        {isToday ? (
+                          <div className="text-xs font-semibold text-primary">היום</div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground">{formatRelativeDateLabel(entry.flowDate, "-", data.todayIso)}</div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={typeVariant(entry.type)}>{typeLabel(entry.type)}</Badge>
+                        <Badge variant={stageVariant(entry.stage)}>{stageLabel(entry.stage)}</Badge>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2 text-sm">
+                      <div className="font-medium">{entry.description}</div>
+                      <div className="text-muted-foreground">{entry.domainName}</div>
+                      <div className="text-muted-foreground">
+                        {entry.sourceHref ? (
+                          <Link href={entry.sourceHref} className="transition-colors hover:text-foreground" onClick={(event) => { event.stopPropagation(); emitNavigationStart(); }}>
+                            <span dir="auto">{entry.sourceLabel}</span>
+                          </Link>
+                        ) : (
+                          <span dir="auto">{entry.sourceLabel}</span>
+                        )}
+                      </div>
+                      <div dir="ltr" className={cn("font-semibold tabular-nums", typeAmountClass(entry.type))}>
+                        {entry.type === "inflow" ? "+" : "-"}
+                        {formatCurrency(entry.amount)}
+                      </div>
+                      {canManageExpenses && editableExpense ? (
+                        <div className="flex justify-end gap-2 pt-1">
+                          <Button type="button" variant="outline" size="sm" onClick={(event) => { event.stopPropagation(); openExpenseEditor(editableExpense); }}>
+                            <Pencil className="ml-1 h-4 w-4" />
+                            עריכה
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={(event) => { event.stopPropagation(); setDeletingExpense(editableExpense); }}>
+                            <Trash2 className="ml-1 h-4 w-4" />
+                            מחיקה
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </article>
+                  );
+                })}
+              </div>
+              <div ref={historyScrollRef} className="hidden max-h-[70vh] overflow-auto md:block">
+                <table className="w-full text-right text-sm">
+                  <thead className="sticky top-0 z-10 bg-muted text-right text-muted-foreground">
+                    <tr className="border-b">
+                      <th className="px-3 py-2 font-medium">תאריך תזרים</th>
+                      <th className="px-3 py-2 font-medium">סטטוס</th>
+                      <th className="px-3 py-2 font-medium">סוג</th>
+                      <th className="px-3 py-2 font-medium">תחום / מקור</th>
+                      <th className="px-3 py-2 font-medium">פירוט</th>
+                      <th className="px-3 py-2 font-medium">סכום</th>
+                      {canManageExpenses ? <th className="px-3 py-2 font-medium">פעולות</th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedHistoryEntries.map((entry) => {
+                      const editableExpense = isEditableExpenseEntry(entry) ? entry : null;
+                      const isToday = entry.flowDate === data.todayIso;
+                      return (
+                      <tr
+                        key={entry.id}
+                        className={cn(
+                          "border-b last:border-b-0",
+                          isToday ? "bg-primary/5" : "",
+                          entry.sourceHref ? "cursor-pointer transition-colors hover:bg-muted/30" : ""
+                        )}
+                        onClick={() => navigateToEntry(entry)}
+                      >
+                        <td className="px-3 py-2 align-top">
+                          <div dir="ltr" className="tabular-nums">{formatShortDate(entry.flowDate)}</div>
+                          {isToday ? (
+                            <div className="text-xs font-semibold text-primary">היום</div>
+                          ) : (
+                            <div className="text-xs text-muted-foreground">{formatRelativeDateLabel(entry.flowDate, "-", data.todayIso)}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <Badge variant={stageVariant(entry.stage)}>{stageLabel(entry.stage)}</Badge>
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <Badge variant={typeVariant(entry.type)}>{typeLabel(entry.type)}</Badge>
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <div>{entry.domainName}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {entry.sourceHref ? (
+                              <Link href={entry.sourceHref} className="transition-colors hover:text-foreground" onClick={(event) => { event.stopPropagation(); emitNavigationStart(); }}>
+                                <span dir="auto">{entry.sourceLabel}</span>
+                              </Link>
+                            ) : (
+                              <span dir="auto">{entry.sourceLabel}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <div>{entry.description}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {[
+                              entry.paymentMethodLabel,
+                              entry.reference,
+                              entry.recordedDate && entry.recordedDate !== entry.flowDate
+                                ? `נרשם: ${formatShortDate(entry.recordedDate)}`
+                                : null,
+                              entry.recordedByName ? `הוזן ע"י ${entry.recordedByName}` : null,
+                            ].filter(Boolean).join(" • ")}
+                          </div>
+                        </td>
+                        <td dir="ltr" className={cn("px-3 py-2 align-top text-left font-semibold tabular-nums", typeAmountClass(entry.type))}>
+                          {entry.type === "inflow" ? "+" : "-"}
+                          {formatCurrency(entry.amount)}
+                        </td>
+                        {canManageExpenses ? (
+                          <td className="px-3 py-2 align-top">
+                            {editableExpense ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={(event) => { event.stopPropagation(); openExpenseEditor(editableExpense); }}>
+                                  <Pencil className="h-4 w-4" />
+                                  <span className="sr-only">עריכת חיוב</span>
+                                </Button>
+                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={(event) => { event.stopPropagation(); setDeletingExpense(editableExpense); }}>
+                                  <Trash2 className="h-4 w-4" />
+                                  <span className="sr-only">מחיקת חיוב</span>
+                                </Button>
+                              </div>
+                            ) : null}
+                          </td>
+                        ) : null}
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {historyHasMore ? <div ref={historySentinelRef} className="h-1" /> : null}
+              </div>
+              {historyHasMore ? <div ref={historyMobileSentinelRef} className="h-1 md:hidden" /> : null}
+              <div className="pt-3 text-center text-xs text-muted-foreground">
+                מציג {pagedHistoryEntries.length} מתוך {displayHistory.length} תנועות
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+        </TabsContent>
         <TabsContent value="upcoming">
       <section dir="rtl" className="grid gap-4">
         <Card>
