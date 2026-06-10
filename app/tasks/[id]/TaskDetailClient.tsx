@@ -333,6 +333,8 @@ export default function TaskDetailClient(props: Props) {
                 disabled={uploading}
                 onFilesSelected={(files) => void uploadAttachments(files)}
                 chooseLabel={uploading ? "מעלה..." : "הוספת קבצים"}
+                showPreview={false}
+                notifyOnAdd={false}
               />
             </div>
           </div>

@@ -2889,13 +2889,6 @@ export default function DashboardActions({
                       </Button>
                     ) : null}
                   </div>
-                  {expenseAttachmentFiles.length > 0 ? (
-                    <div className="space-y-1 text-xs text-muted-foreground">
-                      {expenseAttachmentFiles.map((file) => (
-                        <div key={`${file.name}-${file.size}`}>{file.name}</div>
-                      ))}
-                    </div>
-                  ) : null}
                   {expenseExistingAttachments.length > 0 ? (
                     <div className="space-y-2">
                       <div className="text-xs text-muted-foreground">קבצים קיימים</div>
@@ -3195,13 +3188,6 @@ export default function DashboardActions({
                         </Button>
                       ) : null}
                     </div>
-                    {incomeAttachmentFiles.length > 0 ? (
-                      <div className="space-y-1 text-xs text-muted-foreground">
-                        {incomeAttachmentFiles.map((file) => (
-                          <div key={`${file.name}-${file.size}`}>{file.name}</div>
-                        ))}
-                      </div>
-                    ) : null}
                     {incomeExistingAttachments.length > 0 ? (
                       <div className="space-y-2">
                         <div className="text-xs text-muted-foreground">קבצים קיימים</div>

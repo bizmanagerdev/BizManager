@@ -58,11 +58,6 @@ export function CheckDetailsFields({
             </Button>
           ) : null}
         </div>
-        {photoFiles.length > 0 ? (
-          <div className="text-xs text-muted-foreground">
-            {photoFiles.map((file) => file.name).join(", ")}
-          </div>
-        ) : null}
       </div>
     </div>
   );

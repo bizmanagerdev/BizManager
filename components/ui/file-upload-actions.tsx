@@ -1,7 +1,16 @@
 "use client";
 
-import { Camera, RefreshCcw, Upload } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+/* eslint-disable @next/next/no-img-element */
+
+import { Camera, FileText, RefreshCcw, Upload, X } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { toast } from "sonner";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +35,27 @@ type FileUploadActionsProps = {
   takePhotoVariant?: ButtonProps["variant"];
   size?: ButtonProps["size"];
   className?: string;
+  /** Show thumbnails / file chips for the currently selected files. Default: true. */
+  showPreview?: boolean;
+  /** Show a toast when files are added (chosen or captured). Default: true. */
+  notifyOnAdd?: boolean;
 };
+
+type FilePreview = { file: File; url: string | null };
+
+function announceAdded(added: File[], fromCamera: boolean) {
+  if (added.length === 0) return;
+  if (fromCamera) {
+    toast.success("התמונה צולמה ונוספה");
+    return;
+  }
+  if (added.length === 1) {
+    const isImage = added[0].type.startsWith("image/");
+    toast.success(isImage ? "התמונה נוספה" : "הקובץ נוסף");
+    return;
+  }
+  toast.success(`${added.length} קבצים נוספו`);
+}
 
 export function FileUploadActions({
   files,
@@ -41,6 +70,8 @@ export function FileUploadActions({
   takePhotoVariant = "outline",
   size = "default",
   className,
+  showPreview = true,
+  notifyOnAdd = true,
 }: FileUploadActionsProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -50,17 +81,45 @@ export function FileUploadActions({
   const [cameraReady, setCameraReady] = useState(false);
   const [startingCamera, setStartingCamera] = useState(false);
   const [cameraSession, setCameraSession] = useState(0);
+  const [previews, setPreviews] = useState<FilePreview[]>([]);
 
   useEffect(() => {
     if (files.length > 0) return;
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [files]);
 
+  // Build (and clean up) object URLs so selected images can be previewed.
+  useEffect(() => {
+    const next: FilePreview[] = files.map((file) => ({
+      file,
+      url: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+    }));
+    setPreviews(next);
+
+    return () => {
+      next.forEach((preview) => {
+        if (preview.url) URL.revokeObjectURL(preview.url);
+      });
+    };
+  }, [files]);
+
+  // Attach the live stream to the <video> as soon as BOTH the element is
+  // mounted and the stream is ready — regardless of which happens first.
+  // (Radix portals the dialog content, so the element often mounts after the
+  // stream resolves; relying on a single read of videoRef caused a blank feed
+  // until the user pressed "refresh".)
+  const attachVideo = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    if (node && streamRef.current) {
+      node.srcObject = streamRef.current;
+      void node.play().catch(() => undefined);
+    }
+  }, []);
+
   useEffect(() => {
     if (!cameraOpen) return;
 
     let cancelled = false;
-    const videoElement = videoRef.current;
 
     async function startCamera() {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -89,9 +148,10 @@ export function FileUploadActions({
 
         streamRef.current = stream;
 
-        if (videoElement) {
-          videoElement.srcObject = stream;
-          await videoElement.play().catch(() => undefined);
+        const node = videoRef.current;
+        if (node) {
+          node.srcObject = stream;
+          await node.play().catch(() => undefined);
         }
       } catch (error) {
         const message =
@@ -110,9 +170,10 @@ export function FileUploadActions({
       cancelled = true;
       setCameraReady(false);
 
-      if (videoElement) {
-        videoElement.pause();
-        videoElement.srcObject = null;
+      const node = videoRef.current;
+      if (node) {
+        node.pause();
+        node.srcObject = null;
       }
 
       if (streamRef.current) {
@@ -121,6 +182,15 @@ export function FileUploadActions({
       }
     };
   }, [cameraOpen, cameraSession]);
+
+  function handleFilesChosen(chosen: File[]) {
+    onFilesSelected(chosen);
+    if (notifyOnAdd && chosen.length > 0) announceAdded(chosen, false);
+  }
+
+  function removeFile(index: number) {
+    onFilesSelected(files.filter((_, fileIndex) => fileIndex !== index));
+  }
 
   function handleCapture() {
     const video = videoRef.current;
@@ -152,6 +222,7 @@ export function FileUploadActions({
         });
 
         onFilesSelected(multiple ? [...files, capturedFile] : [capturedFile]);
+        if (notifyOnAdd) announceAdded([capturedFile], true);
         setCameraOpen(false);
       },
       "image/jpeg",
@@ -167,7 +238,7 @@ export function FileUploadActions({
         multiple={multiple}
         accept={accept}
         className="hidden"
-        onChange={(event) => onFilesSelected(Array.from(event.target.files ?? []))}
+        onChange={(event) => handleFilesChosen(Array.from(event.target.files ?? []))}
       />
       <div className={cn("flex flex-wrap items-center gap-2", className)}>
         <Button
@@ -193,6 +264,44 @@ export function FileUploadActions({
           </Button>
         ) : null}
       </div>
+      {showPreview && previews.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {previews.map((preview, index) => (
+            <div
+              key={`${preview.file.name}-${preview.file.size}-${index}`}
+              className="relative w-24"
+            >
+              <div className="relative h-24 w-24 overflow-hidden rounded-lg border bg-muted/40">
+                {preview.url ? (
+                  <img
+                    src={preview.url}
+                    alt={preview.file.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-center text-muted-foreground">
+                    <FileText className="h-7 w-7" />
+                    <span className="text-[10px]">קובץ</span>
+                  </div>
+                )}
+                {!disabled ? (
+                  <button
+                    type="button"
+                    onClick={() => removeFile(index)}
+                    aria-label="הסר קובץ"
+                    className="absolute left-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-foreground/70 text-background transition hover:bg-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-1 truncate text-[11px] text-muted-foreground" title={preview.file.name}>
+                {preview.file.name}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <Dialog open={cameraOpen} onOpenChange={setCameraOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -204,7 +313,7 @@ export function FileUploadActions({
           <div className="space-y-3">
             <div className="overflow-hidden rounded-xl border bg-primary-1">
               <video
-                ref={videoRef}
+                ref={attachVideo}
                 muted
                 playsInline
                 autoPlay

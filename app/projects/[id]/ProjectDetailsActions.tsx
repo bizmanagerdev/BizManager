@@ -499,15 +499,9 @@ export default function ProjectDetailsActions({
                   </Button>
                 ) : null}
               </div>
-              {attachmentFiles.length > 0 ? (
-                <div className="space-y-1 text-xs text-muted-foreground">
-                  {attachmentFiles.map((file) => (
-                    <div key={`${file.name}-${file.size}`}>{file.name}</div>
-                  ))}
-                </div>
-              ) : (
+              {attachmentFiles.length === 0 ? (
                 <div className="text-xs text-muted-foreground">אפשר להעלות קבצים או לצלם תמונה ישירות מהמכשיר.</div>
-              )}
+              ) : null}
             </div>
 
             {documentActionError ? <p className="text-sm text-destructive">{documentActionError}</p> : null}

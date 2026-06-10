@@ -5113,13 +5113,6 @@ function AddExpenseDialog({
                 </Button>
               ) : null}
             </div>
-            {attachmentFiles.length > 0 ? (
-              <div className="space-y-1 text-xs text-muted-foreground">
-                {attachmentFiles.map((file) => (
-                  <div key={`${file.name}-${file.size}`}>{file.name}</div>
-                ))}
-              </div>
-            ) : null}
             {existingAttachments.length > 0 ? (
               <div className="space-y-2">
                 <div className="text-xs text-muted-foreground">קבצים קיימים</div>
@@ -5522,13 +5515,6 @@ function AddIncomeDialog({
                 </Button>
               ) : null}
             </div>
-            {attachmentFiles.length > 0 ? (
-              <div className="space-y-1 text-xs text-muted-foreground">
-                {attachmentFiles.map((file) => (
-                  <div key={`${file.name}-${file.size}`}>{file.name}</div>
-                ))}
-              </div>
-            ) : null}
             {existingAttachments.length > 0 ? (
               <div className="space-y-2">
                 <div className="text-xs text-muted-foreground">קבצים קיימים</div>

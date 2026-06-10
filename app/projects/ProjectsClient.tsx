@@ -1763,17 +1763,11 @@ export default function ProjectsClient({
                   </Button>
                 ) : null}
               </div>
-              {createAttachmentFiles.length > 0 ? (
-                <div className="space-y-1 text-xs text-muted-foreground">
-                  {createAttachmentFiles.map((file) => (
-                    <div key={`${file.name}-${file.size}`}>{file.name}</div>
-                  ))}
-                </div>
-              ) : (
+              {createAttachmentFiles.length === 0 ? (
                 <div className="text-xs text-muted-foreground">
                   אפשר להעלות קבצים או לצלם תמונה ישירות מהמכשיר.
                 </div>
-              )}
+              ) : null}
             </div>
 
             {createError ? <p className="text-sm text-destructive">{createError}</p> : null}

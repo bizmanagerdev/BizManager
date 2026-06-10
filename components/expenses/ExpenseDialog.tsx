@@ -576,13 +576,6 @@ export function ExpenseDialog({
                   </Button>
                 )}
               </div>
-              {attachmentFiles.length > 0 && (
-                <div className="space-y-1 text-xs text-muted-foreground">
-                  {attachmentFiles.map((f) => (
-                    <div key={`${f.name}-${f.size}`}>{f.name}</div>
-                  ))}
-                </div>
-              )}
               {existingAttachments.length > 0 && (
                 <div className="space-y-1">
                   <div className="text-xs text-muted-foreground">קבצים קיימים</div>
