@@ -41,7 +41,7 @@ export function CheckDetailsFields({
             onFilesSelected={onPhotoFilesChange}
             accept="image/*"
             chooseLabel="העלאת צילום"
-            takePhotoLabel="צילום בעקבות"
+            takePhotoLabel="צילום"
             chooseVariant="outline"
             size="sm"
             disabled={disabled}

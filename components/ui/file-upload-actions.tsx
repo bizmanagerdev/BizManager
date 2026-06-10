@@ -169,7 +169,7 @@ export function FileUploadActions({
         className="hidden"
         onChange={(event) => onFilesSelected(Array.from(event.target.files ?? []))}
       />
-      <div className={cn("flex items-center gap-2", className)}>
+      <div className={cn("flex flex-wrap items-center gap-2", className)}>
         <Button
           type="button"
           variant={chooseVariant}

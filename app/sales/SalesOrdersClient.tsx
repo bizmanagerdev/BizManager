@@ -454,33 +454,6 @@ export default function SalesOrdersClient({
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className={`gap-1 ${invoiceFilter !== "all" ? "border-primary text-primary" : ""}`}
-              >
-                <span>חשבונית: {INVOICE_FILTER_OPTIONS.find((o) => o.value === invoiceFilter)?.label}</span>
-                <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuRadioGroup
-                value={invoiceFilter}
-                onValueChange={(value) => setInvoiceFilter(value as InvoiceFilter)}
-              >
-                {INVOICE_FILTER_OPTIONS.map((option) => (
-                  <DropdownMenuRadioItem key={option.value} value={option.value}>
-                    {option.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
       </div>
 
       <div className="text-sm text-muted-foreground">נמצאו {totalCount ?? filteredRows.length} הזמנות</div>
@@ -523,40 +496,65 @@ export default function SalesOrdersClient({
                     <th className="px-4 py-3 font-medium">עיר ותאריך</th>
                     <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
                     {anyOutOfStock ? <th className="px-4 py-3 font-medium">מלאי</th> : null}
-                    <th className="px-4 py-3 font-medium">חשבונית</th>
                     <th className="px-4 py-3 font-medium">
-                      {showPaymentStatusFilter ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground focus:outline-none"
-                            >
-                              <span>סטטוס תשלום</span>
-                              {paymentFilter !== "all" ? (
-                                <span className="text-xs text-primary">
-                                  ({PAYMENT_FILTER_OPTIONS.find((o) => o.value === paymentFilter)?.label})
-                                </span>
-                              ) : null}
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start">
-                            <DropdownMenuRadioGroup
-                              value={paymentFilter}
-                              onValueChange={(value) => setPaymentFilter(value as PaymentStatusFilter)}
-                            >
-                              {PAYMENT_FILTER_OPTIONS.map((option) => (
-                                <DropdownMenuRadioItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </DropdownMenuRadioItem>
-                              ))}
-                            </DropdownMenuRadioGroup>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : (
-                        "סטטוס תשלום"
-                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground focus:outline-none"
+                          >
+                            <span>חשבונית</span>
+                            {invoiceFilter !== "all" ? (
+                              <span className="text-xs text-primary">
+                                ({INVOICE_FILTER_OPTIONS.find((o) => o.value === invoiceFilter)?.label})
+                              </span>
+                            ) : null}
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuRadioGroup
+                            value={invoiceFilter}
+                            onValueChange={(value) => setInvoiceFilter(value as InvoiceFilter)}
+                          >
+                            {INVOICE_FILTER_OPTIONS.map((option) => (
+                              <DropdownMenuRadioItem key={option.value} value={option.value}>
+                                {option.label}
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </th>
+                    <th className="px-4 py-3 font-medium">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground focus:outline-none"
+                          >
+                            <span>סטטוס תשלום</span>
+                            {paymentFilter !== "all" ? (
+                              <span className="text-xs text-primary">
+                                ({PAYMENT_FILTER_OPTIONS.find((o) => o.value === paymentFilter)?.label})
+                              </span>
+                            ) : null}
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuRadioGroup
+                            value={paymentFilter}
+                            onValueChange={(value) => setPaymentFilter(value as PaymentStatusFilter)}
+                          >
+                            {PAYMENT_FILTER_OPTIONS.map((option) => (
+                              <DropdownMenuRadioItem key={option.value} value={option.value}>
+                                {option.label}
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </th>
                     <th className="px-4 py-3 font-medium">סכום</th>
                     <th className="px-4 py-3 font-medium">שולם</th>

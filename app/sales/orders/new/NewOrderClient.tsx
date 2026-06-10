@@ -269,7 +269,7 @@ function WizardStepper({
               </button>
               <div
                 className={cn(
-                  "max-w-[5.5rem] text-center text-[11px] font-medium leading-tight sm:text-xs",
+                  "w-14 text-center text-[10px] font-medium leading-tight",
                   active || done ? "text-foreground" : "text-muted-foreground"
                 )}
               >
@@ -973,7 +973,7 @@ export default function NewOrderClient({
     step === 1
       ? "המשך למוצרים"
       : step === 2
-        ? "המשך לתשלום ופרטים"
+        ? "המשך לתשלום"
         : step === 3
           ? "המשך לסקירה"
           : submitting
@@ -1195,7 +1195,7 @@ export default function NewOrderClient({
                             <p className="mt-0.5 text-sm text-muted-foreground">{selectedCustomer.email}</p>
                           ) : null}
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
                           <Badge variant="success">נבחר</Badge>
                           {selectedCustomer.requiresPrepayment ? (
                             <Badge variant="warning">תשלום מראש</Badge>
@@ -1312,11 +1312,11 @@ export default function NewOrderClient({
                             </span>
                             <span
                               className={cn(
-                                "inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium",
+                                "inline-flex items-center justify-center rounded-lg p-1.5",
                                 selected ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
                               )}
                             >
-                              <Plus className="h-3.5 w-3.5" /> הוספה
+                              <Plus className="h-3.5 w-3.5" />
                             </span>
                           </div>
                         </div>
@@ -1767,13 +1767,7 @@ export default function NewOrderClient({
                 </div>
               ))}
 
-              <div className="grid gap-3 rounded-xl bg-muted/30 p-3 text-sm sm:grid-cols-3">
-                <ValueField label="שולם עד עכשיו" value={formatCurrency(existingPaidTotal)} />
-                <ValueField label="תשלומים חדשים" value={formatCurrency(newPaidTotal)} />
-                <ValueField label="יתרה אחרי שמירה" value={formatCurrency(remainingBalance)} />
-              </div>
-
-              {selectedCustomer?.requiresPrepayment ? (
+{selectedCustomer?.requiresPrepayment ? (
                 <div className="rounded-xl border border-warning/40 bg-warning-soft p-3 text-sm text-warning-soft-foreground">
                   לקוח זה מסומן לתשלום מראש, ולכן אי אפשר לשמור את ההזמנה כל עוד נשארת יתרה פתוחה.
                 </div>
@@ -1926,7 +1920,7 @@ export default function NewOrderClient({
 
       {/* ---------------------------------------------------------------- FOOTER */}
       <div className="sticky bottom-0 z-10 mt-1 rounded-2xl border border-border/70 bg-background/95 px-3 py-3 shadow-lg backdrop-blur sm:px-4">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-2">
           {step === 1 ? (
             embedded ? (
               <Button type="button" variant="secondary" onClick={onCancel} disabled={actionLocked}>
@@ -1943,9 +1937,9 @@ export default function NewOrderClient({
             </Button>
           )}
 
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 items-center gap-2">
             {lines.length > 0 ? (
-              <div className="text-end leading-tight">
+              <div className="min-w-0 shrink text-end leading-tight">
                 <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   {effectiveOrderDiscount > 0 ? "סכום לתשלום" : "סכום ביניים"}
                 </div>
@@ -1954,7 +1948,7 @@ export default function NewOrderClient({
                 </div>
               </div>
             ) : null}
-            <Button type="button" onClick={goNext} disabled={nextDisabled}>
+            <Button type="button" onClick={goNext} disabled={nextDisabled} className="shrink-0">
               {step === 4 ? <Check className="h-4 w-4" /> : null}
               {nextLabel}
             </Button>
