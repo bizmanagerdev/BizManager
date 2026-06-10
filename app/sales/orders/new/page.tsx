@@ -47,13 +47,6 @@ export default async function NewSalesOrderPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold">הזמנה חדשה</h1>
-          <p className="text-sm text-muted-foreground">
-            בחירת לקוח, הוספת מוצרים ובדיקה לפני שליחה.
-          </p>
-        </div>
-
         <NewOrderClient
           customers={customerList}
           products={(products ?? []) as Row[]}

@@ -1,19 +1,32 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  Check,
+  CreditCard,
+  FileText,
+  Minus,
+  Pencil,
+  Plus,
+  Search,
+  ShoppingCart,
+  Trash2,
+  User,
+  UserPlus,
+} from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
-import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
-import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
-import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEditor";
-import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
+import { CustomerForm } from "@/components/customers/CustomerForm";
+import type { CustomerRecord } from "@/components/customers/CustomerForm";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
   derivePaymentStatus,
@@ -89,6 +102,8 @@ type PaymentDraft = {
   check_photo_files: File[];
   notes: string;
 };
+
+type Step = 1 | 2 | 3 | 4;
 
 function getString(row: Row, keys: string[]) {
   for (const key of keys) {
@@ -200,6 +215,91 @@ const ORDER_STATUS_OPTIONS = [
   { value: "cancelled", label: "בוטל" },
 ] as const;
 
+const WIZARD_STEPS: { n: Step; label: string }[] = [
+  { n: 1, label: "לקוח" },
+  { n: 2, label: "מוצרים" },
+  { n: 3, label: "תשלום ופרטים" },
+  { n: 4, label: "סקירה" },
+];
+
+const STEP_HEADINGS: Record<Step, { title: string; subtitle: string }> = {
+  1: { title: "למי ההזמנה?", subtitle: "חיפוש ברשימת הלקוחות הקיימים או הוספת לקוח חדש." },
+  2: { title: "בניית ההזמנה", subtitle: "הוספת מוצרים, עדכון כמות, מחיר והנחות בעגלה." },
+  3: { title: "תשלום ופרטים", subtitle: "חשבונית, תאריך, אופן התשלום והתשלומים בפועל." },
+  4: { title: "סקירה וסיכום", subtitle: "בדיקת הסכומים והפרטים לפני יצירת ההזמנה." },
+};
+
+function termsLabel(value: string) {
+  return PAYMENT_TERMS_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
+/** Top progress indicator: numbered steps with labels, connected by a track. RTL-aware. */
+function WizardStepper({
+  current,
+  canClick,
+  onStepClick,
+}: {
+  current: Step;
+  canClick: (n: Step) => boolean;
+  onStepClick: (n: Step) => void;
+}) {
+  return (
+    <div className="flex items-start">
+      {WIZARD_STEPS.map((s, i) => {
+        const done = s.n < current;
+        const active = s.n === current;
+        const clickable = canClick(s.n);
+        return (
+          <Fragment key={s.n}>
+            <div className="flex shrink-0 flex-col items-center gap-1">
+              <button
+                type="button"
+                aria-current={active ? "step" : undefined}
+                disabled={!clickable}
+                onClick={() => clickable && onStepClick(s.n)}
+                className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors",
+                  active && "border-primary text-primary",
+                  done && "border-primary bg-primary text-primary-foreground",
+                  !active && !done && "border-border text-muted-foreground",
+                  clickable && !active ? "cursor-pointer hover:border-primary/60" : "cursor-default"
+                )}
+              >
+                {done ? <Check className="h-3.5 w-3.5" /> : s.n}
+              </button>
+              <div
+                className={cn(
+                  "max-w-[5.5rem] text-center text-[11px] font-medium leading-tight sm:text-xs",
+                  active || done ? "text-foreground" : "text-muted-foreground"
+                )}
+              >
+                {s.label}
+              </div>
+            </div>
+            {i < WIZARD_STEPS.length - 1 ? (
+              <div
+                className={cn(
+                  "mx-1 mt-[14px] h-0.5 flex-1 rounded-full sm:mx-2",
+                  done ? "bg-primary" : "bg-border"
+                )}
+              />
+            ) : null}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-1.5 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-end font-medium text-foreground">{value}</span>
+    </div>
+  );
+}
+
 export default function NewOrderClient({
   customers,
   products,
@@ -234,24 +334,35 @@ export default function NewOrderClient({
   const isEditMode = mode === "edit" && initialOrder !== null;
   const cancelHref = isEditMode ? `/sales/orders/${initialOrder.id}` : "/sales";
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<Step>(1);
   const [customerId, setCustomerId] = useState(initialOrder?.customer_id ?? "");
   const [customerQuery, setCustomerQuery] = useState("");
+  const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  // The chosen customer is held independently of the search results, so searching to
+  // switch shows pure results (the previously-selected one is not pinned into the list).
+  const [pickedCustomer, setPickedCustomer] = useState<CustomerOption | null>(null);
   const [orderDate, setOrderDate] = useState(
     initialOrder?.order_date ?? new Date().toISOString().slice(0, 10)
   );
   const [orderStatus, setOrderStatus] = useState(
     initialStatusOverride ?? initialOrder?.status ?? "draft"
   );
-  const [paymentTerms, setPaymentTerms] = useState(initialOrder?.payment_terms ?? "immediate");
+  // New orders default to "שוטף" (eom); edits keep the stored term (null → immediate).
+  const initialPaymentTerms = initialOrder?.payment_terms ?? (initialOrder ? "immediate" : "eom");
+  const [paymentTerms, setPaymentTerms] = useState(initialPaymentTerms);
   const [dueDate, setDueDate] = useState(
     initialOrder?.due_date ??
-      computeDueDate(initialOrder?.order_date ?? new Date().toISOString().slice(0, 10), "immediate") ??
+      computeDueDate(initialOrder?.order_date ?? new Date().toISOString().slice(0, 10), initialPaymentTerms) ??
       ""
   );
   const [orderDiscount, setOrderDiscount] = useState(String(initialOrder?.discount_amount ?? 0));
-  const [needsInvoice, setNeedsInvoice] = useState<boolean | null>(initialOrder?.needs_invoice ?? null);
+  const [orderDiscountMode, setOrderDiscountMode] = useState<"amount" | "percent">("amount");
+  // Single toggle: on = needs invoice, off (default) = doesn't.
+  const [needsInvoice, setNeedsInvoice] = useState<boolean>(initialOrder?.needs_invoice ?? false);
   const [notes, setNotes] = useState(initialOrder?.notes ?? "");
+  // Per-line discount input mode (₪ vs %); the stored value is always an absolute amount.
+  const [lineDiscountModes, setLineDiscountModes] = useState<Record<string, "amount" | "percent">>({});
 
   // When the term or order date changes, refresh the suggested due date (still editable).
   function applyOrderDate(value: string) {
@@ -271,7 +382,6 @@ export default function NewOrderClient({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const actionLocked = submitting;
 
   useEffect(() => {
@@ -315,6 +425,7 @@ export default function NewOrderClient({
       if (matchedInitial) {
         setCustomerId(matchedInitial.id);
         setCustomerQuery(matchedInitial.name);
+        setPickedCustomer(matchedInitial);
         prefillHandled.current = true;
         return;
       }
@@ -332,6 +443,7 @@ export default function NewOrderClient({
     if (matched) {
       setCustomerId(matched.id);
       setCustomerQuery(matched.name);
+      setPickedCustomer(matched);
       setStep(2);
     }
 
@@ -391,12 +503,9 @@ export default function NewOrderClient({
             .map(mapCustomerSearchResult)
             .filter((row): row is CustomerOption => Boolean(row));
 
-          setCustomerOptions((prev) => {
-            const selected = prev.find((row) => row.id === customerId);
-            return Array.from(
-              new Map([selected, ...remoteCustomers].filter(Boolean).map((row) => [row!.id, row!])).values()
-            );
-          });
+          setCustomerOptions(
+            Array.from(new Map(remoteCustomers.map((row) => [row.id, row])).values())
+          );
         })
         .catch((error: unknown) => {
           if (error instanceof Error && error.name === "AbortError") return;
@@ -426,12 +535,9 @@ export default function NewOrderClient({
             .map(mapCustomerSearchResult)
             .filter((row): row is CustomerOption => Boolean(row));
 
-          setCustomerOptions((prev) => {
-            const selected = prev.find((row) => row.id === customerId);
-            return Array.from(
-              new Map([selected, ...remoteCustomers].filter(Boolean).map((row) => [row!.id, row!])).values()
-            );
-          });
+          setCustomerOptions(
+            Array.from(new Map(remoteCustomers.map((row) => [row.id, row])).values())
+          );
         })
         .catch((error: unknown) => {
           if (error instanceof Error && error.name === "AbortError") return;
@@ -445,7 +551,7 @@ export default function NewOrderClient({
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [customerId, customerQuery, initialCustomerOptions]);
+  }, [customerQuery, initialCustomerOptions]);
 
   useEffect(() => {
     const q = productQuery.trim();
@@ -536,11 +642,8 @@ export default function NewOrderClient({
       ),
     [lines]
   );
-  const totalUnits = useMemo(
-    () => lines.reduce((sum, line) => sum + line.quantity_ordered, 0),
-    [lines]
-  );
-
+  // Total units across all lines (2 bags + 1 broom = 3), used for the cart count.
+  const totalUnits = useMemo(() => lines.reduce((sum, line) => sum + line.quantity_ordered, 0), [lines]);
   const orderDiscountNumber = Number(orderDiscount || 0);
   const effectiveOrderDiscount = Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0;
   const totalAmount = subtotal - effectiveOrderDiscount;
@@ -560,7 +663,10 @@ export default function NewOrderClient({
   const remainingBalance = Math.max(totalAmount - combinedPaidTotal, 0);
   const paymentStatus = derivePaymentStatus(totalAmount, combinedPaidTotal);
 
-  const selectedCustomer = customerOptions.find((c) => c.id === customerId) ?? null;
+  const selectedCustomer =
+    pickedCustomer && pickedCustomer.id === customerId
+      ? pickedCustomer
+      : customerOptions.find((c) => c.id === customerId) ?? null;
 
   function addProduct(productId: string) {
     const product = productOptions.find((p) => p.id === productId);
@@ -627,6 +733,21 @@ export default function NewOrderClient({
     );
   }
 
+  // Apply a percentage discount to a line, storing the resulting absolute amount.
+  function setLineDiscountPercent(index: number, line: OrderLine, percent: number) {
+    const gross = line.quantity_ordered * line.unit_price;
+    const pct = Number.isFinite(percent) ? Math.min(Math.max(percent, 0), 100) : 0;
+    const amount = toNonNegativeInt(Math.min(gross, Math.round((gross * pct) / 100)));
+    updateLine(index, { discount_amount: amount });
+  }
+
+  // Apply a percentage discount to the whole order, storing the resulting absolute amount.
+  function setOrderDiscountPercent(percent: number) {
+    const pct = Number.isFinite(percent) ? Math.min(Math.max(percent, 0), 100) : 0;
+    const amount = toNonNegativeInt(Math.min(subtotal, Math.round((subtotal * pct) / 100)));
+    setOrderDiscount(String(amount));
+  }
+
   function addPaymentDraft() {
     setNewPayments((prev) => {
       const alreadyDrafted = prev.reduce((sum, draft) => {
@@ -675,10 +796,6 @@ export default function NewOrderClient({
       setSubmitError("יש להוסיף לפחות מוצר אחד.");
       return;
     }
-    if (!isEditMode && needsInvoice === null) {
-      setSubmitError("יש לבחור האם ההזמנה צריכה חשבונית.");
-      return;
-    }
 
     const invalidLine = lines.find(
       (line) =>
@@ -693,7 +810,10 @@ export default function NewOrderClient({
       return;
     }
 
-    const invalidPayment = newPayments.find((payment) => {
+    // "מיידי" (immediate) tracks no payment rows — ignore any drafts left from another term.
+    const paymentsToSubmit = paymentTerms === "immediate" ? [] : newPayments;
+
+    const invalidPayment = paymentsToSubmit.find((payment) => {
       const amount = Number(payment.amount_total || 0);
       return (
         !Number.isFinite(amount) ||
@@ -703,7 +823,7 @@ export default function NewOrderClient({
       );
     });
 
-    const checkWithoutDueDate = newPayments.find(
+    const checkWithoutDueDate = paymentsToSubmit.find(
       (payment) => payment.payment_method === "check" && !payment.due_date.trim()
     );
     if (checkWithoutDueDate) {
@@ -737,7 +857,7 @@ export default function NewOrderClient({
           discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
           needs_invoice: needsInvoice,
           notes: notes.trim() || null,
-          payments: newPayments.map((payment) => ({
+          payments: paymentsToSubmit.map((payment) => ({
             amount_total: Number(payment.amount_total || 0),
             payment_date: payment.payment_date,
             payment_method: payment.payment_method,
@@ -771,8 +891,8 @@ export default function NewOrderClient({
       }
 
       const insertedPaymentIds = Array.isArray(json.payment_ids) ? json.payment_ids : [];
-      for (let i = 0; i < newPayments.length; i++) {
-        const payment = newPayments[i];
+      for (let i = 0; i < paymentsToSubmit.length; i++) {
+        const payment = paymentsToSubmit[i];
         const paymentId = insertedPaymentIds[i];
         if (
           !paymentId ||
@@ -800,14 +920,99 @@ export default function NewOrderClient({
     }
   }
 
+  // ---- Step navigation / gating -------------------------------------------------
+
+  // While the inline create/edit customer form is open the user must save or cancel
+  // before they can advance — otherwise the in-progress customer edit would be abandoned.
+  const customerFormOpen = step === 1 && (editingCustomer || customerTab === "new");
+
+  // A step is "unlocked" only when every prerequisite up to it is satisfied.
+  function stepUnlocked(n: Step) {
+    if (n >= 2 && !customerId) return false;
+    if (n >= 3 && lines.length === 0) return false;
+    return true;
+  }
+  const canClickStep = (n: Step) => {
+    if (customerFormOpen && n > step) return false;
+    return n <= step || stepUnlocked(n);
+  };
+
+  function goToStep(n: Step) {
+    if (!stepUnlocked(n)) return;
+    setStep(n);
+    setEditingCustomer(false);
+  }
+  function goNext() {
+    if (step === 4) {
+      void submitOrder();
+      return;
+    }
+    goToStep((step + 1) as Step);
+  }
+  function goBack() {
+    if (step === 1) return;
+    setStep((step - 1) as Step);
+    setEditingCustomer(false);
+  }
+
+  const heading = STEP_HEADINGS[step];
+  const nextDisabled =
+    actionLocked || customerFormOpen || (step < 4 ? !stepUnlocked((step + 1) as Step) : submitting);
+  const nextLabel =
+    step === 1
+      ? "המשך למוצרים"
+      : step === 2
+        ? "המשך לתשלום ופרטים"
+        : step === 3
+          ? "המשך לסקירה"
+          : submitting
+            ? isEditMode
+              ? "שומר..."
+              : "יוצר..."
+            : isEditMode
+              ? "שמירת שינויים"
+              : "יצירת הזמנה";
+
+  // Add or update a customer in the local list and select it (used by the inline create/edit form).
+  function handleCustomerSaved(customer: CustomerRecord) {
+    const option: CustomerOption = {
+      id: customer.id,
+      name: customer.name,
+      nameForInvoice: customer.name_for_invoice ?? null,
+      phone: customer.phone,
+      whatsapp: customer.whatsapp,
+      email: customer.email,
+      address: customer.address,
+      city: extractCityFromAddress(customer.address),
+      requiresPrepayment: customer.requires_prepayment,
+    };
+    setCustomerOptions((prev) => {
+      if (prev.some((c) => c.id === option.id)) {
+        return prev.map((c) => (c.id === option.id ? { ...option, contacts: c.contacts } : c));
+      }
+      return [option, ...prev];
+    });
+    setPickedCustomer((prev) => (prev && prev.id === option.id ? { ...option, contacts: prev.contacts } : option));
+    setCustomerId(option.id);
+    setCustomerQuery(option.name);
+    setEditingCustomer(false);
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 text-sm">
-        <div className={step === 1 ? "font-semibold" : "text-muted-foreground"}>1. לקוח</div>
-        <div className="text-muted-foreground">/</div>
-        <div className={step === 2 ? "font-semibold" : "text-muted-foreground"}>2. מוצרים</div>
-        <div className="text-muted-foreground">/</div>
-        <div className={step === 3 ? "font-semibold" : "text-muted-foreground"}>3. סקירה</div>
+    <div className="flex flex-col gap-5">
+      <div
+        className={cn(
+          "sticky z-20 mb-1 rounded-2xl border border-border/70 bg-background px-3 py-2.5 shadow-lg sm:px-4",
+          // In the dialog there's no app bar above; on the standalone page sit just under the sticky TopBar (h-16).
+          embedded ? "top-0" : "top-16"
+        )}
+      >
+        <WizardStepper current={step} canClick={canClickStep} onStepClick={goToStep} />
+      </div>
+
+      <div>
+        <h2 className="text-xl font-semibold text-foreground">{heading.title}</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">{heading.subtitle}</p>
       </div>
 
       {customersError ? <p className="text-sm text-destructive">שגיאת לקוחות: {customersError}</p> : null}
@@ -815,163 +1020,248 @@ export default function NewOrderClient({
       {customerSearchError ? <p className="text-sm text-destructive">שגיאת חיפוש לקוחות: {customerSearchError}</p> : null}
       {productSearchError ? <p className="text-sm text-destructive">שגיאת חיפוש מוצרים: {productSearchError}</p> : null}
 
+      {/* ---------------------------------------------------------------- STEP 1 */}
       {step === 1 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>בחירת לקוח</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">חיפוש לקוח לפי שם / טלפון / אימייל / עיר *</label>
-              <Input
-                value={customerQuery}
-                onChange={(e) => setCustomerQuery(e.target.value)}
-                placeholder="לדוגמה: יוסי כהן, 0501234567 או תל אביב"
-              />
-              {customerSearchLoading ? (
-                <p className="text-xs text-muted-foreground">מחפש לקוחות...</p>
-              ) : null}
-            </div>
+        <div className="space-y-4">
+          <div className="inline-flex rounded-2xl border border-border/60 bg-background/70 p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setCustomerTab("existing")}
+              className={cn(
+                "rounded-xl px-4 py-2 text-sm font-medium transition-colors",
+                customerTab === "existing"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              לקוח קיים
+            </button>
+            <button
+              type="button"
+              onClick={() => setCustomerTab("new")}
+              className={cn(
+                "rounded-xl px-4 py-2 text-sm font-medium transition-colors",
+                customerTab === "new"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              לקוח חדש
+            </button>
+          </div>
 
-            {selectedCustomer ? (
-              <div className="space-y-3 rounded-md border bg-muted/30 p-3 text-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium">לקוח נבחר: {selectedCustomer.name}</p>
-                  {selectedCustomer.requiresPrepayment ? (
-                    <span className="rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-destructive-foreground">
-                      תשלום מראש
-                    </span>
-                  ) : null}
+          {customerTab === "new" ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <UserPlus className="h-5 w-5 text-primary" /> לקוח חדש
+                </CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">בסיום הלקוח ייבחר אוטומטית להזמנה.</p>
+              </CardHeader>
+              <CardContent>
+                <div className="mx-auto max-w-lg">
+                  <CustomerForm
+                    mode="create"
+                    onCancel={() => setCustomerTab("existing")}
+                    onSaved={({ customer }) => {
+                      handleCustomerSaved(customer);
+                      setCustomerTab("existing");
+                    }}
+                  />
                 </div>
-                <InlineCustomerEditor
-                  customerId={selectedCustomer.id}
-                  name={selectedCustomer.name}
-                  phone={selectedCustomer.phone}
-                  whatsapp={selectedCustomer.whatsapp}
-                  email={selectedCustomer.email}
-                  address={selectedCustomer.address}
-                  disabled={actionLocked}
-                  onUpdated={(updated: InlineCustomerUpdate) => {
-                    setCustomerOptions((prev) =>
-                      prev.map((c) =>
-                        c.id === updated.id
-                          ? {
-                              ...c,
-                              name: updated.name,
-                              phone: updated.phone,
-                              whatsapp: updated.whatsapp,
-                              email: updated.email,
-                              address: updated.address,
-                              city: extractCityFromAddress(updated.address),
-                            }
-                          : c
-                      )
-                    );
-                    setCustomerQuery((current) =>
-                      current === selectedCustomer.name ? updated.name : current
-                    );
-                  }}
-                />
-              </div>
-            ) : null}
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {/* Search + list */}
+              <Card>
+                <CardContent className="space-y-3 pt-5">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={customerQuery}
+                      onChange={(e) => setCustomerQuery(e.target.value)}
+                      placeholder="חיפוש..."
+                      aria-label="חיפוש לקוח"
+                      className="pe-9"
+                    />
+                  </div>
+                  {customerSearchLoading ? (
+                    <p className="text-xs text-muted-foreground">מחפש לקוחות...</p>
+                  ) : null}
 
-            <div className="max-h-64 space-y-2 overflow-auto rounded-md border p-2">
-              {filteredCustomers.map((customer) => (
-                <button
-                  key={customer.id}
-                  type="button"
-                  disabled={actionLocked}
-                  onClick={() => {
-                    setCustomerId(customer.id);
-                    setCustomerQuery(customer.name);
-                  }}
-                  className={`w-full rounded-xl border px-3 py-2 text-right text-sm transition-all duration-200 ${
-                    customer.id === customerId
-                      ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                      : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
-                  }`}
-                >
-                  <div className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="font-medium">{customer.name}</span>
-                    {(customer.phone || customer.city) ? (
-                      <span className={`text-xs ${customer.id === customerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                        · {[customer.phone, customer.city].filter(Boolean).join(" · ")}
-                      </span>
-                    ) : null}
-                    {customer.requiresPrepayment ? (
-                      <span className={`text-xs ${customer.id === customerId ? "text-primary-foreground/80" : "text-destructive"}`}>
-                        · תשלום מראש
-                      </span>
+                  <div className="max-h-[24rem] space-y-2 overflow-auto pe-1">
+                    {filteredCustomers.map((customer) => {
+                      const isSelected = customer.id === customerId;
+                      return (
+                        <button
+                          key={customer.id}
+                          type="button"
+                          disabled={actionLocked}
+                          onClick={() => {
+                            setCustomerId(customer.id);
+                            setPickedCustomer(customer);
+                            setCustomerQuery(customer.name);
+                            setEditingCustomer(false);
+                          }}
+                          className={cn(
+                            "flex w-full items-start gap-3 rounded-2xl border px-3 py-2.5 text-right transition-all duration-200",
+                            isSelected
+                              ? "border-primary bg-primary/5 shadow-sm"
+                              : "border-border bg-background hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2",
+                              isSelected ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                            )}
+                          >
+                            {isSelected ? <Check className="h-3 w-3" /> : null}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-baseline gap-x-2">
+                              <span className="font-medium text-foreground">{customer.name}</span>
+                              {customer.requiresPrepayment ? (
+                                <Badge variant="warning" className="px-1.5 py-0">תשלום מראש</Badge>
+                              ) : null}
+                            </span>
+                            {customer.phone || customer.city ? (
+                              <span className="mt-0.5 block text-xs text-muted-foreground">
+                                {[customer.phone, customer.city].filter(Boolean).join(" · ")}
+                              </span>
+                            ) : null}
+                            {customer.nameForInvoice && customer.nameForInvoice !== customer.name ? (
+                              <span className="mt-0.5 block text-xs text-muted-foreground">
+                                שם לחשבונית: {customer.nameForInvoice}
+                              </span>
+                            ) : null}
+                            {(customer.contacts ?? []).length > 0 ? (
+                              <span className="mt-0.5 block text-xs text-muted-foreground">
+                                איש קשר: {customer.contacts![0].full_name}
+                                {customer.contacts![0].phone ? ` · ${customer.contacts![0].phone}` : ""}
+                              </span>
+                            ) : null}
+                          </span>
+                        </button>
+                      );
+                    })}
+
+                    {filteredCustomers.length === 0 ? (
+                      <div className="space-y-2 rounded-xl border border-dashed p-4 text-sm">
+                        <p className="text-muted-foreground">לא נמצאו לקוחות לחיפוש הזה.</p>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setCustomerTab("new")}
+                          disabled={actionLocked}
+                        >
+                          <UserPlus className="h-4 w-4" /> הוספת לקוח חדש
+                        </Button>
+                      </div>
                     ) : null}
                   </div>
-                  {customer.nameForInvoice && customer.nameForInvoice !== customer.name ? (
-                    <div className={`mt-0.5 text-xs ${customer.id === customerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                      שם לחשבונית: {customer.nameForInvoice}
-                    </div>
-                  ) : null}
-                  {(customer.contacts ?? []).length > 0 ? (
-                    <div className={`mt-0.5 text-xs ${customer.id === customerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                      ← {customer.contacts![0].full_name}{customer.contacts![0].phone ? ` · ${customer.contacts![0].phone}` : ""}
-                    </div>
-                  ) : null}
-                </button>
-              ))}
+                </CardContent>
+              </Card>
 
-              {filteredCustomers.length === 0 ? (
-                <div className="space-y-2 p-2 text-sm">
-                  <p className="text-muted-foreground">לא נמצאו לקוחות לחיפוש הזה.</p>
-                  <Button type="button" variant="outline" onClick={() => setCreateCustomerOpen(true)} disabled={actionLocked}>
-                    הוספת לקוח חדש
-                  </Button>
-                </div>
-              ) : null}
-            </div>
+              {/* Selected customer detail */}
+              <Card>
+                <CardContent className="pt-5">
+                  {selectedCustomer ? (
+                    <div className="space-y-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-lg font-semibold text-foreground">
+                            {selectedCustomer.name}
+                          </h3>
+                          {selectedCustomer.contacts?.[0]?.full_name ? (
+                            <p className="mt-0.5 text-sm text-muted-foreground">
+                              {selectedCustomer.contacts[0].full_name}
+                              {selectedCustomer.email ? ` · ${selectedCustomer.email}` : ""}
+                            </p>
+                          ) : selectedCustomer.email ? (
+                            <p className="mt-0.5 text-sm text-muted-foreground">{selectedCustomer.email}</p>
+                          ) : null}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Badge variant="success">נבחר</Badge>
+                          {selectedCustomer.requiresPrepayment ? (
+                            <Badge variant="warning">תשלום מראש</Badge>
+                          ) : null}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setEditingCustomer((v) => !v)}
+                            disabled={actionLocked}
+                          >
+                            <Pencil className="h-3.5 w-3.5" /> {editingCustomer ? "סגירה" : "עריכה"}
+                          </Button>
+                        </div>
+                      </div>
 
-            <div className="flex items-center justify-between gap-2">
-              {embedded ? (
-                <Button type="button" variant="secondary" onClick={onCancel} disabled={actionLocked}>
-                  ביטול
-                </Button>
-              ) : (
-                <Button type="button" variant="secondary" asChild disabled={actionLocked}>
-                  <Link href={cancelHref}>ביטול</Link>
-                </Button>
-              )}
-              <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" onClick={() => setCreateCustomerOpen(true)} disabled={actionLocked}>
-                  לקוח חדש
-                </Button>
-                <Button type="button" onClick={() => setStep(2)} disabled={!customerId || actionLocked}>
-                  המשך למוצרים
-                </Button>
-              </div>
+                      {editingCustomer ? (
+                        <CustomerForm
+                          key={selectedCustomer.id}
+                          mode="edit"
+                          initial={{ id: selectedCustomer.id }}
+                          onCancel={() => setEditingCustomer(false)}
+                          onSaved={({ customer }) => handleCustomerSaved(customer)}
+                        />
+                      ) : (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <ValueField label="טלפון" value={selectedCustomer.phone || "-"} />
+                          <ValueField label="וואטסאפ" value={selectedCustomer.whatsapp || "-"} />
+                          <ValueField label="אימייל" value={selectedCustomer.email || "-"} />
+                          <ValueField label="עיר / כתובת" value={selectedCustomer.address || selectedCustomer.city || "-"} />
+                          {selectedCustomer.nameForInvoice ? (
+                            <ValueField label="שם לחשבונית" value={selectedCustomer.nameForInvoice} className="sm:col-span-2" />
+                          ) : null}
+                          <ValueField
+                            label="אופן תשלום"
+                            value={selectedCustomer.requiresPrepayment ? "תשלום מראש" : "רגיל"}
+                            className="sm:col-span-2"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex h-full min-h-[16rem] flex-col items-center justify-center gap-2 text-center">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                        <User className="h-6 w-6" />
+                      </span>
+                      <p className="text-sm font-medium text-foreground">בחרו לקוח מהרשימה</p>
+                      <p className="text-sm text-muted-foreground">פרטי הלקוח יוצגו כאן וניתן יהיה לערוך אותם.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
       ) : null}
 
+      {/* ---------------------------------------------------------------- STEP 2 */}
       {step === 2 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>הוספת מוצרים</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">חיפוש מוצר</label>
-              <Input
-                value={productQuery}
-                onChange={(e) => setProductQuery(e.target.value)}
-                placeholder="חיפוש לפי שם או מק״ט"
-              />
-              {productSearchLoading ? (
-                <p className="text-xs text-muted-foreground">מחפש מוצרים...</p>
-              ) : null}
-            </div>
+        <div className="grid gap-4 lg:grid-cols-[1fr_24rem]">
+          {/* Product picker */}
+          <Card>
+            <CardContent className="space-y-3 pt-5">
+              <div className="relative">
+                <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={productQuery}
+                  onChange={(e) => setProductQuery(e.target.value)}
+                  placeholder="חיפוש..."
+                  aria-label="חיפוש מוצר"
+                  className="pe-9"
+                />
+              </div>
+              {productSearchLoading ? <p className="text-xs text-muted-foreground">מחפש מוצרים...</p> : null}
 
-            <div className="space-y-2">
-              <div className="text-sm font-medium">בחירת מוצרים</div>
-              <div className="max-h-[26rem] overflow-auto rounded-xl border border-border/70 bg-muted/10 p-2.5">
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              <div className="max-h-[28rem] overflow-auto rounded-xl border border-border/70 bg-muted/10 p-2.5">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {filteredProducts.map((product) => {
                     const selected = selectedLineByProductId.get(product.id);
                     return (
@@ -980,11 +1270,13 @@ export default function NewOrderClient({
                         type="button"
                         disabled={actionLocked}
                         onClick={() => addProduct(product.id)}
-                        className={`group min-h-[7.5rem] rounded-xl border p-2.5 text-right transition-colors ${
+                        className={cn(
+                          "group min-h-[8rem] rounded-xl border p-2.5 text-right transition-colors",
                           selected
-                            ? "border-primary bg-primary/10 shadow-sm"
-                            : "border-border/70 bg-background active:bg-primary/5 md:hover:border-primary/40 md:hover:bg-primary/5"
-                        } ${actionLocked ? "cursor-not-allowed opacity-70" : ""}`}
+                            ? "border-primary bg-primary/5 shadow-sm"
+                            : "border-border/70 bg-background active:bg-primary/5 md:hover:border-primary/40 md:hover:bg-primary/5",
+                          actionLocked && "cursor-not-allowed opacity-70"
+                        )}
                       >
                         <div className="flex h-full flex-col justify-between gap-2">
                           <div className="flex items-start justify-between gap-2">
@@ -999,98 +1291,106 @@ export default function NewOrderClient({
                           </div>
 
                           <div className="space-y-0.5 text-xs text-muted-foreground">
-                            {product.code ? <div className="truncate">קוד: {product.code}</div> : null}
-                            <div className="truncate">מחיר: {formatCurrency(product.unitPrice)}</div>
+                            {product.code ? <div className="truncate">מק״ט: {product.code}</div> : null}
                             {product.stock !== null ? <div className="truncate">מלאי: {product.stock}</div> : null}
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-foreground">
+                              {formatCurrency(product.unitPrice)}
+                            </span>
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium",
+                                selected ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
+                              )}
+                            >
+                              <Plus className="h-3.5 w-3.5" /> הוספה
+                            </span>
                           </div>
                         </div>
                       </button>
                     );
                   })}
                 </div>
+                {filteredProducts.length === 0 ? (
+                  <p className="p-4 text-center text-sm text-muted-foreground">לא נמצאו מוצרים.</p>
+                ) : null}
               </div>
-              {filteredProducts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">לא נמצאו מוצרים.</p>
-              ) : null}
-            </div>
+            </CardContent>
+          </Card>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium">מוצרים שנבחרו ({lines.length})</p>
-              {lines.length === 0 ? <p className="text-sm text-muted-foreground">עדיין לא נוספו מוצרים.</p> : null}
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {lines.map((line, index) => {
-                  const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
-                  return (
-                    <div key={`${line.product_id}-${index}`} className="rounded-2xl border border-border/70 bg-background p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold">{line.product_name}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            מחיר יחידה: {formatCurrency(line.unit_price)}
-                          </p>
-                          <p className="text-xs text-muted-foreground">סה״כ: {formatCurrency(lineTotal)}</p>
+          {/* Order items cart — fills its grid cell so its height matches the product picker; the product column stays its natural size and the cart scrolls once it reaches that height */}
+          <div className={cn(lines.length > 0 && "lg:relative")}>
+            <div className={cn(lines.length > 0 && "lg:absolute lg:inset-0")}>
+            <Card
+              className={cn(
+                lines.length > 0 && "lg:flex lg:h-full lg:flex-col"
+              )}
+            >
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 lg:shrink-0">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ShoppingCart className="h-5 w-5 text-primary" /> פריטי הזמנה
+              </CardTitle>
+              <Badge variant="info">{totalUnits}</Badge>
+            </CardHeader>
+            <CardContent className={cn("space-y-3", lines.length > 0 && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col")}>
+              {lines.length === 0 ? (
+                <p className="rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+                  עדיין לא נוספו מוצרים. הקליקו על מוצר כדי להוסיף.
+                </p>
+              ) : (
+                <div className="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+                  {/* Items scroll on their own so the discount + totals stay visible */}
+                  <div className="-me-1 space-y-3 overflow-y-auto pe-1 lg:min-h-0 lg:flex-1">
+                  {lines.map((line, index) => {
+                    const gross = line.quantity_ordered * line.unit_price;
+                    const lineTotal = gross - line.discount_amount;
+                    const mode = lineDiscountModes[line.product_id] ?? "amount";
+                    const percentValue = gross > 0 ? Math.round((line.discount_amount / gross) * 100) : 0;
+                    return (
+                      <div key={`${line.product_id}-${index}`} className="space-y-2 border-b border-border/60 pb-3 last:border-0 last:pb-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="min-w-0 truncate text-sm font-medium text-foreground">{line.product_name}</p>
+                          <span className="shrink-0 text-sm font-semibold text-foreground">{formatCurrency(lineTotal)}</span>
                         </div>
-                        <button
-                          type="button"
-                          className="flex h-8 w-8 items-center justify-center rounded-full border border-border/70 text-sm font-semibold transition hover:bg-muted"
-                          onClick={() => removeLine(index)}
-                          disabled={actionLocked}
-                          aria-label={`הסרת ${line.product_name}`}
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      <div className="mt-4 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 text-lg font-semibold transition hover:bg-muted"
-                            onClick={() => decrementLine(index)}
-                            disabled={actionLocked || line.quantity_ordered <= 1}
-                            aria-label={`הפחתת כמות של ${line.product_name}`}
-                          >
-                            -
-                          </button>
-                          <div className="min-w-12 rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-center text-sm font-semibold">
-                            {line.quantity_ordered}
-                          </div>
-                          <button
-                            type="button"
-                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 text-lg font-semibold transition hover:bg-muted"
-                            onClick={() => incrementLine(index)}
-                            disabled={actionLocked}
-                            aria-label={`הגדלת כמות של ${line.product_name}`}
-                          >
-                            +
-                          </button>
-                        </div>
-
-                      </div>
-
-                      <details className="mt-4 rounded-xl border border-dashed p-3" open={Boolean(line.discount_amount || line.notes)}>
-                        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                          פרטי שורה נוספים
-                        </summary>
-                        <div className="mt-3 space-y-3">
-                          <div className="space-y-1">
-                            <label className="text-xs text-muted-foreground">כמות</label>
-                            <Input
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={line.quantity_ordered}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border/70 transition hover:bg-muted disabled:opacity-50"
+                              onClick={() => decrementLine(index)}
+                              disabled={actionLocked || line.quantity_ordered <= 1}
+                              aria-label={`הפחתת כמות של ${line.product_name}`}
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </button>
+                            <span className="min-w-8 text-center text-sm font-semibold">{line.quantity_ordered}</span>
+                            <button
+                              type="button"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border/70 transition hover:bg-muted"
+                              onClick={() => incrementLine(index)}
                               disabled={actionLocked}
-                              onChange={(e) =>
-                                updateLine(index, {
-                                  quantity_ordered: toPositiveInt(Number(e.target.value || 1)),
-                                })
-                              }
-                              placeholder="כמות"
-                            />
+                              aria-label={`הגדלת כמות של ${line.product_name}`}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
                           </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="space-y-1">
+                          <button
+                            type="button"
+                            className="text-muted-foreground transition hover:text-destructive"
+                            onClick={() => removeLine(index)}
+                            disabled={actionLocked}
+                            aria-label={`הסרת ${line.product_name}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        <details open={Boolean(line.discount_amount || line.notes)}>
+                          <summary className="cursor-pointer text-xs font-medium text-muted-foreground">פרטים נוספים</summary>
+                          <div className="mt-2 space-y-2">
+                            <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1.5">
                               <label className="text-xs text-muted-foreground">מחיר יחידה</label>
                               <CurrencyInput
                                 type="number"
@@ -1099,212 +1399,229 @@ export default function NewOrderClient({
                                 value={line.unit_price}
                                 disabled={actionLocked}
                                 onChange={(e) =>
-                                  updateLine(index, {
-                                    unit_price: toNonNegativeInt(Number(e.target.value || 0)),
-                                  })
+                                  updateLine(index, { unit_price: toNonNegativeInt(Number(e.target.value || 0)) })
                                 }
-                                placeholder="מחיר יחידה"
+                                className="h-8"
+                                placeholder="מחיר"
                               />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-xs text-muted-foreground">הנחת שורה</label>
-                              <CurrencyInput
-                                type="number"
-                                min="0"
-                                step="1"
-                                value={line.discount_amount}
+                              <label className="text-xs text-muted-foreground">הנחה</label>
+                              <div className="flex items-stretch gap-1.5">
+                                <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-input">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLineDiscountModes((prev) => ({ ...prev, [line.product_id]: "percent" }))}
+                                    className={cn(
+                                      "px-2 text-xs font-medium transition-colors",
+                                      mode === "percent" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+                                    )}
+                                  >
+                                    %
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLineDiscountModes((prev) => ({ ...prev, [line.product_id]: "amount" }))}
+                                    className={cn(
+                                      "px-2 text-xs font-medium transition-colors",
+                                      mode === "amount" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+                                    )}
+                                  >
+                                    ₪
+                                  </button>
+                                </div>
+                                {mode === "percent" ? (
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="1"
+                                    value={percentValue || ""}
+                                    disabled={actionLocked}
+                                    onChange={(e) => setLineDiscountPercent(index, line, Number(e.target.value || 0))}
+                                    className="h-8"
+                                    placeholder="0"
+                                  />
+                                ) : (
+                                  <CurrencyInput
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={line.discount_amount}
+                                    disabled={actionLocked}
+                                    onChange={(e) =>
+                                      updateLine(index, { discount_amount: toNonNegativeInt(Number(e.target.value || 0)) })
+                                    }
+                                    className="h-8"
+                                    placeholder="0"
+                                  />
+                                )}
+                              </div>
+                              <label className="text-xs text-muted-foreground">הערה</label>
+                              <Input
+                                value={line.notes}
                                 disabled={actionLocked}
-                                onChange={(e) =>
-                                  updateLine(index, {
-                                    discount_amount: toNonNegativeInt(Number(e.target.value || 0)),
-                                  })
-                                }
-                                placeholder="הנחת שורה"
+                                onChange={(e) => updateLine(index, { notes: e.target.value })}
+                                placeholder="אופציונלי"
+                                className="h-8"
                               />
                             </div>
                           </div>
-                          <div className="space-y-1">
-                            <label className="text-xs text-muted-foreground">הערה לשורה</label>
-                            <Input
-                              value={line.notes}
-                              disabled={actionLocked}
-                              onChange={(e) => updateLine(index, { notes: e.target.value })}
-                              placeholder="הערה לשורה (אופציונלי)"
-                            />
-                          </div>
-                        </div>
-                      </details>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+                        </details>
+                      </div>
+                    );
+                  })}
+                  </div>
 
-            <div className="flex items-center justify-between gap-2">
-              <Button type="button" variant="secondary" onClick={() => setStep(1)} disabled={actionLocked}>
-                חזרה
-              </Button>
-              <Button type="button" onClick={() => setStep(3)} disabled={lines.length === 0 || actionLocked}>
-                המשך לסקירה
-              </Button>
+                  {/* Whole-order discount */}
+                  <div className="space-y-1.5 border-t border-border/70 pt-3 lg:shrink-0">
+                    <label className="text-xs font-medium text-muted-foreground">הנחת הזמנה</label>
+                    <div className="flex items-stretch gap-1.5">
+                      <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-input">
+                        <button
+                          type="button"
+                          onClick={() => setOrderDiscountMode("percent")}
+                          className={cn(
+                            "px-2.5 text-xs font-medium transition-colors",
+                            orderDiscountMode === "percent" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          %
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOrderDiscountMode("amount")}
+                          className={cn(
+                            "px-2.5 text-xs font-medium transition-colors",
+                            orderDiscountMode === "amount" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          ₪
+                        </button>
+                      </div>
+                      {orderDiscountMode === "percent" ? (
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={subtotal > 0 ? Math.round((effectiveOrderDiscount / subtotal) * 100) || "" : ""}
+                          disabled={actionLocked}
+                          onChange={(e) => setOrderDiscountPercent(Number(e.target.value || 0))}
+                          className="h-8"
+                          placeholder="0"
+                        />
+                      ) : (
+                        <CurrencyInput
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={orderDiscount}
+                          disabled={actionLocked}
+                          onChange={(e) => setOrderDiscount(String(toNonNegativeInt(Number(e.target.value || 0))))}
+                          className="h-8"
+                          placeholder="0"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="space-y-1 border-t border-border/70 pt-3 lg:shrink-0">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">סכום ביניים</span>
+                      <span className="font-medium text-foreground">{formatCurrency(subtotal)}</span>
+                    </div>
+                    {effectiveOrderDiscount > 0 ? (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">הנחת הזמנה</span>
+                        <span className="font-medium text-foreground">-{formatCurrency(effectiveOrderDiscount)}</span>
+                      </div>
+                    ) : null}
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-sm font-semibold text-foreground">סה״כ</span>
+                      <span className="text-lg font-bold text-foreground">{formatCurrency(totalAmount)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+            </Card>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : null}
 
+      {/* ---------------------------------------------------------------- STEP 3 */}
       {step === 3 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>סקירת הזמנה</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
-              <ValueField label="לקוח" value={selectedCustomer?.name || "-"} />
-              <ValueField
-                label="כתובת לקוח"
-                value={selectedCustomer?.address || selectedCustomer?.city || "-"}
-              />
-              <ValueField label="אופן תשלום" value={selectedCustomer?.requiresPrepayment ? "תשלום מראש" : "רגיל"} />
-              <div className="space-y-0.5">
-                <label className="text-sm font-medium">תאריך הזמנה *</label>
-                <DateInput
-                  value={orderDate}
-                  onChange={(e) => applyOrderDate(e.target.value)}
-                  placeholder="בחר תאריך הזמנה"
-                />
-              </div>
-              <div className="space-y-0.5">
-                <label className="text-sm font-medium">סטטוס הזמנה</label>
-                <select
-                  value={orderStatus}
-                  onChange={(e) => setOrderStatus(e.target.value)}
-                  disabled={actionLocked}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {ORDER_STATUS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-0.5">
-                <label className="text-sm font-medium">צורת תשלום</label>
-                <select
-                  value={paymentTerms}
-                  onChange={(e) => applyPaymentTerms(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {PAYMENT_TERMS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-0.5">
-                <label className="text-sm font-medium">תאריך פירעון</label>
-                <DateInput
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  placeholder="מחושב אוטומטית מצורת התשלום"
-                />
-              </div>
-              <ValueField label="סטטוס תשלום" value={paymentStatusLabel(paymentStatus)} />
-              <ValueField label="פריטים" value={String(totalUnits)} />
-              <ValueField label="סכום ביניים" value={formatCurrency(subtotal)} />
-              {effectiveOrderDiscount > 0 ? (
-                <ValueField
-                  label="הנחת הזמנה"
-                  value={`-${formatCurrency(effectiveOrderDiscount)}`}
-                  valueClassName="text-success-soft-foreground"
-                />
-              ) : null}
-              <ValueField label="סכום סופי" value={formatCurrency(totalAmount)} valueClassName="text-base font-semibold" />
-            </div>
-
-            <div className="space-y-2 rounded-md border p-3">
-              <label className="text-sm font-medium">
-                חשבונית <span className="text-destructive">*</span>
-              </label>
-              <div className="flex gap-2">
+        <div className="space-y-4">
+          {/* Payment — invoice, terms, due date and the payments themselves */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CreditCard className="h-5 w-5 text-primary" /> תשלום
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">חשבונית, אופן התשלום והתשלומים בפועל.</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Invoice toggle + payment terms — one compact row */}
+              <div className="flex flex-wrap items-end gap-3">
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={needsInvoice}
                   disabled={actionLocked}
-                  onClick={() => setNeedsInvoice(true)}
-                  className={`h-10 flex-1 rounded-md border px-3 text-sm transition-colors disabled:opacity-50 ${
-                    needsInvoice === true
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-input bg-background hover:bg-muted/40"
-                  }`}
+                  onClick={() => setNeedsInvoice((v) => !v)}
+                  className="inline-flex h-10 items-center gap-2.5 rounded-xl border border-input bg-background px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted/40 disabled:opacity-50"
                 >
-                  צריך חשבונית
+                  <span
+                    className={cn(
+                      "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+                      needsInvoice ? "bg-primary" : "bg-muted-foreground/30"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute left-0.5 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-transform",
+                        needsInvoice ? "translate-x-0" : "translate-x-4"
+                      )}
+                    />
+                  </span>
+                  <span>{needsInvoice ? "צריך חשבונית" : "לא צריך חשבונית"}</span>
                 </button>
-                <button
-                  type="button"
-                  disabled={actionLocked}
-                  onClick={() => setNeedsInvoice(false)}
-                  className={`h-10 flex-1 rounded-md border px-3 text-sm transition-colors disabled:opacity-50 ${
-                    needsInvoice === false
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-input bg-background hover:bg-muted/40"
-                  }`}
-                >
-                  לא צריך חשבונית
-                </button>
-              </div>
-              {needsInvoice === null ? (
-                <p className="text-xs text-muted-foreground">חובה לבחור אם ההזמנה צריכה חשבונית.</p>
-              ) : null}
-            </div>
 
-            <details className="rounded-md border border-dashed p-3" open={Boolean(effectiveOrderDiscount || notes)}>
-              <summary className="cursor-pointer text-sm font-medium">פרטים נוספים להזמנה</summary>
-              <div className="mt-3 space-y-2.5">
-                <div className="space-y-0.5">
-                  <label className="text-sm font-medium">סטטוס תשלום</label>
-                  <Input value={paymentStatusLabel(paymentStatus)} readOnly />
-                  <p className="text-xs text-muted-foreground">
-                    הסטטוס מחושב אוטומטית לפי סכום ההזמנה מול התשלומים בפועל.
-                  </p>
-                </div>
-
-                <div className="space-y-0.5">
-                  <label className="text-sm font-medium">הנחת הזמנה</label>
-                  <CurrencyInput
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={orderDiscount}
+                <div className="w-full space-y-1 sm:w-44">
+                  <label className="text-xs font-medium text-muted-foreground">צורת תשלום</label>
+                  <select
+                    value={paymentTerms}
+                    onChange={(e) => applyPaymentTerms(e.target.value)}
                     disabled={actionLocked}
-                    onChange={(e) => setOrderDiscount(String(toNonNegativeInt(Number(e.target.value || 0))))}
-                    placeholder="הזן סכום הנחה"
-                  />
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    {PAYMENT_TERMS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <div className="space-y-0.5">
-                  <label className="text-sm font-medium">הערות</label>
-                  <Textarea
-                    value={notes}
-                    disabled={actionLocked}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                    placeholder="הערות להזמנה (אופציונלי)"
-                  />
-                </div>
+                {paymentTerms !== "immediate" ? (
+                  <div className="w-full space-y-1 sm:w-44">
+                    <label className="text-xs font-medium text-muted-foreground">תאריך פירעון</label>
+                    <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} placeholder="מחושב מצורת התשלום" />
+                  </div>
+                ) : null}
               </div>
-            </details>
 
-            <div className="space-y-3 rounded-md border p-3">
-              <div className="flex items-center justify-between gap-2">
+              {/* Payments only when not paying immediately */}
+              {paymentTerms !== "immediate" ? (
+                <>
+              <div className="flex items-center justify-between gap-2 border-t border-border/70 pt-4">
                 <div>
-                  <p className="text-sm font-medium">תשלומים להזמנה</p>
-                  <p className="text-xs text-muted-foreground">
-                    אפשר לפצל את ההזמנה לכמה תשלומים ובכמה אמצעים שונים.
-                  </p>
+                  <p className="text-sm font-medium text-foreground">תשלומים</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">אפשר לפצל לכמה תשלומים ובכמה אמצעים שונים.</p>
                 </div>
-                <Button type="button" variant="outline" onClick={addPaymentDraft} disabled={actionLocked}>
-                  הוסף תשלום
+                <Button type="button" variant="secondary" size="sm" onClick={addPaymentDraft} disabled={actionLocked}>
+                  <Plus className="h-4 w-4" /> תשלום
                 </Button>
               </div>
 
@@ -1312,7 +1629,7 @@ export default function NewOrderClient({
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">תשלומים קיימים</p>
                   {initialPayments.map((payment) => (
-                    <div key={payment.id} className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-4">
+                    <div key={payment.id} className="grid gap-2 rounded-xl border bg-muted/20 p-3 text-sm sm:grid-cols-4">
                       <div>
                         <div className="text-xs text-muted-foreground">תאריך</div>
                         <div>{payment.payment_date || "-"}</div>
@@ -1335,22 +1652,16 @@ export default function NewOrderClient({
               ) : null}
 
               {newPayments.length === 0 ? (
-                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed p-3 text-sm text-muted-foreground">
                   עדיין לא הוזנו תשלומים חדשים.
                 </div>
               ) : null}
 
               {newPayments.map((payment, index) => (
-                <div key={index} className="space-y-3 rounded-md border p-3">
+                <div key={index} className="space-y-3 rounded-xl border p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium">תשלום חדש #{index + 1}</p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => removePaymentDraft(index)}
-                      disabled={actionLocked}
-                    >
+                    <Button type="button" size="sm" variant="secondary" onClick={() => removePaymentDraft(index)} disabled={actionLocked}>
                       הסר
                     </Button>
                   </div>
@@ -1397,9 +1708,7 @@ export default function NewOrderClient({
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">
-                        {payment.payment_method === "check"
-                          ? "תאריך פירעון *"
-                          : "תאריך פירעון צפוי (אופציונלי)"}
+                        {payment.payment_method === "check" ? "תאריך פירעון *" : "תאריך פירעון צפוי (אופציונלי)"}
                       </label>
                       <DateInput
                         value={payment.due_date}
@@ -1424,10 +1733,8 @@ export default function NewOrderClient({
                     />
                   ) : null}
 
-                  <details className="rounded-md border border-dashed p-3" open={Boolean(payment.reference_number || payment.notes)}>
-                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                      פרטי תשלום נוספים
-                    </summary>
+                  <details className="rounded-xl border border-dashed p-3" open={Boolean(payment.reference_number || payment.notes)}>
+                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground">פרטי תשלום נוספים</summary>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <div className="space-y-1">
                         <label className="text-xs text-muted-foreground">מספר אסמכתא</label>
@@ -1452,67 +1759,202 @@ export default function NewOrderClient({
                 </div>
               ))}
 
-              <div className="grid gap-3 rounded-md bg-muted/30 p-3 text-sm sm:grid-cols-3">
+              <div className="grid gap-3 rounded-xl bg-muted/30 p-3 text-sm sm:grid-cols-3">
                 <ValueField label="שולם עד עכשיו" value={formatCurrency(existingPaidTotal)} />
                 <ValueField label="תשלומים חדשים" value={formatCurrency(newPaidTotal)} />
                 <ValueField label="יתרה אחרי שמירה" value={formatCurrency(remainingBalance)} />
               </div>
 
               {selectedCustomer?.requiresPrepayment ? (
-                <div className="rounded-md border border-destructive bg-destructive p-3 text-sm text-destructive-foreground">
+                <div className="rounded-xl border border-warning/40 bg-warning-soft p-3 text-sm text-warning-soft-foreground">
                   לקוח זה מסומן לתשלום מראש, ולכן אי אפשר לשמור את ההזמנה כל עוד נשארת יתרה פתוחה.
                 </div>
               ) : null}
-            </div>
-
-            <div className="rounded-md border bg-muted/30 p-3 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span>סכום סופי</span>
-                <span className="text-base font-semibold">{formatCurrency(totalAmount)}</span>
-              </div>
-            </div>
-
-            {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
-
-            <div className="flex items-center justify-between gap-2">
-              <Button type="button" variant="secondary" onClick={() => setStep(2)} disabled={actionLocked}>
-                חזרה
-              </Button>
-              <Button type="button" onClick={() => void submitOrder()} disabled={submitting}>
-                 {submitting ? "שולח..." : isEditMode ? "שמירת שינויים" : "יצירת הזמנה"}
-               </Button>
-             </div>
-             {submitting ? (
-               <p className="text-xs text-muted-foreground">
-                 {isEditMode ? "ההזמנה מתעדכנת כעת, נא להמתין..." : "ההזמנה נוצרת כעת, נא להמתין..."}
-               </p>
-             ) : null}
-          </CardContent>
-        </Card>
+                </>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
       ) : null}
 
-      <CreateCustomerDialog
-        open={createCustomerOpen}
-        onOpenChange={setCreateCustomerOpen}
-        description="הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון ועיר."
-        onCreated={(customer: CreatedCustomer) => {
-          const newCustomer: CustomerOption = {
-            id: customer.id,
-            name: customer.name,
-            nameForInvoice: customer.name_for_invoice ?? null,
-            phone: customer.phone,
-            whatsapp: customer.whatsapp,
-            email: customer.email,
-            address: customer.address,
-            city: extractCityFromAddress(customer.address),
-            requiresPrepayment: customer.requires_prepayment,
-          };
-          setCustomerOptions((prev) => [newCustomer, ...prev]);
-          setCustomerId(newCustomer.id);
-          setCustomerQuery(newCustomer.name);
-        }}
-      />
+      {/* ---------------------------------------------------------------- STEP 4 */}
+      {step === 4 ? (
+        <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Customer */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <User className="h-5 w-5 text-primary" /> לקוח
+                </CardTitle>
+                <Button type="button" size="sm" variant="secondary" onClick={() => goToStep(1)} disabled={actionLocked}>
+                  <Pencil className="h-3.5 w-3.5" /> עריכה
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <SummaryRow label="שם" value={selectedCustomer?.name || "-"} />
+                {selectedCustomer?.contacts?.[0]?.full_name ? (
+                  <SummaryRow label="איש קשר" value={selectedCustomer.contacts[0].full_name} />
+                ) : null}
+                <SummaryRow label="טלפון" value={selectedCustomer?.phone || "-"} />
+                {selectedCustomer?.email ? <SummaryRow label="אימייל" value={selectedCustomer.email} /> : null}
+                <SummaryRow label="כתובת" value={selectedCustomer?.address || selectedCustomer?.city || "-"} />
+                {selectedCustomer?.requiresPrepayment ? (
+                  <div className="pt-1">
+                    <Badge variant="warning">תשלום מראש</Badge>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
 
+            {/* Items */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ShoppingCart className="h-5 w-5 text-primary" /> פריטים ({lines.length})
+                </CardTitle>
+                <Button type="button" size="sm" variant="secondary" onClick={() => goToStep(2)} disabled={actionLocked}>
+                  <Pencil className="h-3.5 w-3.5" /> עריכה
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                {lines.map((line, index) => {
+                  const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
+                  return (
+                    <SummaryRow
+                      key={`${line.product_id}-${index}`}
+                      label={`${line.quantity_ordered}× ${line.product_name}`}
+                      value={formatCurrency(lineTotal)}
+                    />
+                  );
+                })}
+                <div className="mt-2 space-y-1 border-t border-border/70 pt-2">
+                  <SummaryRow label="סכום ביניים" value={formatCurrency(subtotal)} />
+                  {effectiveOrderDiscount > 0 ? (
+                    <SummaryRow label="הנחת הזמנה" value={`-${formatCurrency(effectiveOrderDiscount)}`} />
+                  ) : null}
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-sm font-semibold text-foreground">סה״כ</span>
+                    <span className="text-lg font-bold text-foreground">{formatCurrency(totalAmount)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Order details — editable inline here, sensible defaults */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <FileText className="h-5 w-5 text-primary" /> פרטי הזמנה
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">תאריך הזמנה *</label>
+                    <DateInput value={orderDate} onChange={(e) => applyOrderDate(e.target.value)} placeholder="בחר תאריך הזמנה" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">סטטוס הזמנה</label>
+                    <select
+                      value={orderStatus}
+                      onChange={(e) => setOrderStatus(e.target.value)}
+                      disabled={actionLocked}
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      {ORDER_STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">הערות להזמנה</label>
+                  <Textarea
+                    value={notes}
+                    disabled={actionLocked}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    placeholder="הערות להזמנה (אופציונלי)"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Payment summary — read-only; edit jumps back to the payment step */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <CreditCard className="h-5 w-5 text-primary" /> תשלום
+                </CardTitle>
+                <Button type="button" size="sm" variant="secondary" onClick={() => goToStep(3)} disabled={actionLocked}>
+                  <Pencil className="h-3.5 w-3.5" /> עריכה
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <SummaryRow label="חשבונית" value={needsInvoice ? "צריך חשבונית" : "לא צריך חשבונית"} />
+                <SummaryRow label="צורת תשלום" value={termsLabel(paymentTerms)} />
+                {paymentTerms !== "immediate" ? <SummaryRow label="תאריך פירעון" value={dueDate || "-"} /> : null}
+                <SummaryRow label="סטטוס תשלום" value={paymentStatusLabel(paymentStatus)} />
+                <SummaryRow label="שולם / יוזן" value={formatCurrency(combinedPaidTotal)} />
+                <SummaryRow label="יתרה אחרי שמירה" value={formatCurrency(remainingBalance)} />
+              </CardContent>
+            </Card>
+          </div>
+
+          {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
+          {submitting ? (
+            <p className="text-xs text-muted-foreground">
+              {isEditMode ? "ההזמנה מתעדכנת כעת, נא להמתין..." : "ההזמנה נוצרת כעת, נא להמתין..."}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Inline submit error for steps before review */}
+      {submitError && step !== 4 ? <p className="text-sm text-destructive">{submitError}</p> : null}
+
+      {/* ---------------------------------------------------------------- FOOTER */}
+      <div className="sticky bottom-0 z-10 mt-1 rounded-2xl border border-border/70 bg-background/95 px-3 py-3 shadow-lg backdrop-blur sm:px-4">
+        <div className="flex items-center justify-between gap-3">
+          {step === 1 ? (
+            embedded ? (
+              <Button type="button" variant="secondary" onClick={onCancel} disabled={actionLocked}>
+                ביטול
+              </Button>
+            ) : (
+              <Button type="button" variant="secondary" asChild disabled={actionLocked}>
+                <Link href={cancelHref}>ביטול</Link>
+              </Button>
+            )
+          ) : (
+            <Button type="button" variant="secondary" onClick={goBack} disabled={actionLocked}>
+              חזרה
+            </Button>
+          )}
+
+          <div className="flex items-center gap-4">
+            {lines.length > 0 ? (
+              <div className="text-end leading-tight">
+                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {effectiveOrderDiscount > 0 ? "סכום לתשלום" : "סכום ביניים"}
+                </div>
+                <div className="text-lg font-bold text-foreground">
+                  {formatCurrency(totalAmount)}
+                </div>
+              </div>
+            ) : null}
+            <Button type="button" onClick={goNext} disabled={nextDisabled}>
+              {step === 4 ? <Check className="h-4 w-4" /> : null}
+              {nextLabel}
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
