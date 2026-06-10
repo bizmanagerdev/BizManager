@@ -1612,9 +1612,6 @@ export default function NewOrderClient({
                 ) : null}
               </div>
 
-              {/* Payments only when not paying immediately */}
-              {paymentTerms !== "immediate" ? (
-                <>
               <div className="flex items-center justify-between gap-2 border-t border-border/70 pt-4">
                 <div>
                   <p className="text-sm font-medium text-foreground">תשלומים</p>
@@ -1769,8 +1766,6 @@ export default function NewOrderClient({
                 <div className="rounded-xl border border-warning/40 bg-warning-soft p-3 text-sm text-warning-soft-foreground">
                   לקוח זה מסומן לתשלום מראש, ולכן אי אפשר לשמור את ההזמנה כל עוד נשארת יתרה פתוחה.
                 </div>
-              ) : null}
-                </>
               ) : null}
             </CardContent>
           </Card>
