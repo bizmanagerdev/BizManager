@@ -335,6 +335,17 @@ export default function NewOrderClient({
   const cancelHref = isEditMode ? `/sales/orders/${initialOrder.id}` : "/sales";
 
   const [step, setStep] = useState<Step>(1);
+  const topRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = topRef.current;
+    if (!el) return;
+    const scrollable = el.closest<HTMLElement>('[role="dialog"]') ?? null;
+    if (scrollable) {
+      scrollable.scrollTo({ top: 0 });
+    } else {
+      window.scrollTo({ top: 0 });
+    }
+  }, [step]);
   const [customerId, setCustomerId] = useState(initialOrder?.customer_id ?? "");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
@@ -999,7 +1010,7 @@ export default function NewOrderClient({
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <div ref={topRef} className="flex flex-col gap-5">
       <div
         className={cn(
           "sticky z-20 mb-1 rounded-2xl border border-border/70 bg-background px-3 py-2.5 shadow-lg sm:px-4",
