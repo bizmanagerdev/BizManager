@@ -23,7 +23,7 @@ export function BackButton() {
       aria-label="חזרה"
       title="חזרה"
     >
-      <ArrowRight className="h-7 w-7 transition-transform group-hover:translate-x-0.5" strokeWidth={3} />
+      <ArrowRight className="h-11 w-11 transition-transform group-hover:translate-x-0.5" strokeWidth={3} />
     </Button>
   );
 }

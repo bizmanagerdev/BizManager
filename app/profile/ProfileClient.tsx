@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -85,6 +85,24 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
   const [sessionEditClockOut, setSessionEditClockOut] = useState("");
   const [splitParts, setSplitParts] = useState<SplitPartDraft[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(monthlySummaries[0]?.key ?? monthKeyFromDate(new Date()));
+
+  const FONT_SIZES = [
+    { label: "קטן", px: 15 },
+    { label: "רגיל", px: 17 },
+    { label: "בינוני", px: 18 },
+    { label: "גדול", px: 19 },
+    { label: "ענק", px: 20 },
+  ] as const;
+  const [fontSize, setFontSize] = useState<number>(() => {
+    if (typeof window === "undefined") return 17;
+    const saved = localStorage.getItem("biz-font-size");
+    const parsed = saved ? Number(saved) : NaN;
+    return Number.isFinite(parsed) ? parsed : 17;
+  });
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${fontSize}px`;
+    try { localStorage.setItem("biz-font-size", String(fontSize)); } catch (_) {}
+  }, [fontSize]);
 
   const openSession = useMemo(() => sessions.find((session) => !session.clock_out) ?? null, [sessions]);
   const currentAgreement = useMemo(() => getCurrentSalaryAgreement(agreements), [agreements]);
@@ -441,6 +459,29 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
             <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm">{`זמן פתיחה: ${formatDateTime(openSession.clock_in)}`}</div>
           </div> : null}
           {actionError ? <div className="text-sm text-destructive">{actionError}</div> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="py-5">
+          <div className="mb-3 text-sm font-semibold">גודל טקסט</div>
+          <div className="flex flex-wrap gap-2">
+            {FONT_SIZES.map((option) => (
+              <button
+                key={option.px}
+                type="button"
+                onClick={() => setFontSize(option.px)}
+                className={`flex flex-col items-center gap-1 rounded-2xl border px-4 py-3 transition-all ${
+                  fontSize === option.px
+                    ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                    : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-primary/5"
+                }`}
+              >
+                <span style={{ fontSize: `${option.px}px`, lineHeight: 1 }}>א</span>
+                <span className="text-xs font-medium">{option.label}</span>
+              </button>
+            ))}
+          </div>
         </CardContent>
       </Card>
 

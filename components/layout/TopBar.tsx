@@ -56,7 +56,6 @@ export function TopBar({
 
       <div className="flex items-center gap-2 lg:hidden">
         {logo ?? <BrandMark size="md" />}
-        <span className="text-base font-bold tracking-[0.2em] text-primary">{appName}</span>
       </div>
 
       <div className="flex-1 lg:flex-none" />

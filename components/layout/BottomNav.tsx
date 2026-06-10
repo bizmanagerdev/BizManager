@@ -30,7 +30,7 @@ export function BottomNav({ items, moreItems = [] }: Props) {
               key={item.title}
               to={item.url}
               end={item.url === "/"}
-              className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl py-2 text-muted-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground"
+              className="flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl py-2 text-muted-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground"
               activeClassName="bg-primary text-primary-foreground shadow-md shadow-primary/25 hover:ring-2 hover:ring-secondary hover:ring-offset-2 hover:ring-offset-background"
               pendingClassName="bg-primary/10 opacity-70"
             >
@@ -44,7 +44,7 @@ export function BottomNav({ items, moreItems = [] }: Props) {
               fallback={
                 <button
                   type="button"
-                  className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-secondary shadow-sm transition-all duration-200"
+                  className="flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-secondary shadow-sm transition-all duration-200"
                 >
                   <MoreHorizontal className="h-6 w-6" />
                   <span className="text-xs font-medium">עוד</span>
@@ -55,7 +55,7 @@ export function BottomNav({ items, moreItems = [] }: Props) {
               <SheetTrigger asChild>
                 <button
                   type="button"
-                  className="flex min-w-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-secondary/15"
+                  className="flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-secondary/15"
                 >
                   <MoreHorizontal className="h-6 w-6" />
                   <span className="text-xs font-medium">עוד</span>

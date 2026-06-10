@@ -35,6 +35,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="he" dir="rtl">
+      <head>
+        {/* eslint-disable-next-line react/no-danger */}
+        <script dangerouslySetInnerHTML={{ __html: `try{var s=localStorage.getItem('biz-font-size');if(s){document.documentElement.style.fontSize=s+'px';}}catch(e){}` }} />
+      </head>
       <body className="antialiased">
         <PwaRegistration />
         {children}
