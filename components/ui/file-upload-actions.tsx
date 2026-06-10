@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
+import { compressImageFiles } from "@/lib/images";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,6 +40,8 @@ type FileUploadActionsProps = {
   showPreview?: boolean;
   /** Show a toast when files are added (chosen or captured). Default: true. */
   notifyOnAdd?: boolean;
+  /** Downscale large images before handing them back, so uploads stay fast. Default: true. */
+  compressImages?: boolean;
 };
 
 type FilePreview = { file: File; url: string | null };
@@ -72,6 +75,7 @@ export function FileUploadActions({
   className,
   showPreview = true,
   notifyOnAdd = true,
+  compressImages = true,
 }: FileUploadActionsProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -183,9 +187,10 @@ export function FileUploadActions({
     };
   }, [cameraOpen, cameraSession]);
 
-  function handleFilesChosen(chosen: File[]) {
-    onFilesSelected(chosen);
-    if (notifyOnAdd && chosen.length > 0) announceAdded(chosen, false);
+  async function handleFilesChosen(chosen: File[]) {
+    const prepared = compressImages && chosen.length > 0 ? await compressImageFiles(chosen) : chosen;
+    onFilesSelected(prepared);
+    if (notifyOnAdd && prepared.length > 0) announceAdded(prepared, false);
   }
 
   function removeFile(index: number) {
@@ -226,7 +231,7 @@ export function FileUploadActions({
         setCameraOpen(false);
       },
       "image/jpeg",
-      0.95
+      0.85
     );
   }
 
@@ -238,7 +243,7 @@ export function FileUploadActions({
         multiple={multiple}
         accept={accept}
         className="hidden"
-        onChange={(event) => handleFilesChosen(Array.from(event.target.files ?? []))}
+        onChange={(event) => void handleFilesChosen(Array.from(event.target.files ?? []))}
       />
       <div className={cn("flex flex-wrap items-center gap-2", className)}>
         <Button

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildPaymentInsert } from "@/lib/payments";
@@ -197,26 +197,23 @@ export async function POST(req: Request) {
     );
     const totalAmount = subtotal - discountAmount;
 
-    const { data: existingPayments, error: existingPaymentsError } = await supabase
-      .from("payments")
-      .select("amount_total")
-      .eq("order_id", orderId);
+    const [
+      { data: existingPayments, error: existingPaymentsError },
+      { data: customer, error: customerError },
+    ] = await Promise.all([
+      supabase.from("payments").select("amount_total").eq("order_id", orderId),
+      supabase.from("customers").select("requires_prepayment").eq("id", customerId).maybeSingle(),
+    ]);
 
     if (existingPaymentsError) {
       return NextResponse.json({ error: existingPaymentsError.message }, { status: 400 });
     }
-
-    const totalPaidAfterSave =
-      sumPayments(existingPayments ?? []) + sumPayments(payments) - sumPayments(refunds);
-    const { data: customer, error: customerError } = await supabase
-      .from("customers")
-      .select("requires_prepayment")
-      .eq("id", customerId)
-      .maybeSingle();
-
     if (customerError) {
       return NextResponse.json({ error: customerError.message }, { status: 400 });
     }
+
+    const totalPaidAfterSave =
+      sumPayments(existingPayments ?? []) + sumPayments(payments) - sumPayments(refunds);
     if (customer?.requires_prepayment === true && totalPaidAfterSave + 0.009 < totalAmount) {
       return NextResponse.json(
         { error: "Customer requires prepayment. Collect full payment before saving the order." },
@@ -227,54 +224,73 @@ export async function POST(req: Request) {
     const paymentStatus = derivePaymentStatus(totalAmount, totalPaidAfterSave);
 
     if (deliveryImages.length > 0) {
-      for (const deliveryImage of deliveryImages) {
+      const prepared = deliveryImages.map((deliveryImage) => {
         const documentId = crypto.randomUUID();
-        const displayName = (deliveryImage.name.split(/[/\\]/).pop() ?? "delivery-image").trim() || "delivery-image";
+        const displayName =
+          (deliveryImage.name.split(/[/\\]/).pop() ?? "delivery-image").trim() || "delivery-image";
         const ext = safeExtensionFromFilename(displayName);
         const storagePath = ext ? `orders/${orderId}/${documentId}.${ext}` : `orders/${orderId}/${documentId}`;
-        const uploadedAt = new Date().toISOString();
+        return { file: deliveryImage, documentId, displayName, storagePath };
+      });
+      const allPaths = prepared.map((entry) => entry.storagePath);
 
-        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, deliveryImage, {
-          contentType: deliveryImage.type || undefined,
-          upsert: false,
-        });
-        if (uploadError) {
-          await cleanupUploadedDocument(supabase, uploadedDocuments);
-          return NextResponse.json({ error: uploadError.message }, { status: 400 });
+      const uploadResults = await Promise.all(
+        prepared.map((entry) =>
+          supabase.storage.from(BUCKET).upload(entry.storagePath, entry.file, {
+            contentType: entry.file.type || undefined,
+            upsert: false,
+          })
+        )
+      );
+
+      const failedUpload = uploadResults.find((result) => result.error);
+      if (failedUpload?.error) {
+        const succeededPaths = allPaths.filter((_, index) => !uploadResults[index].error);
+        if (succeededPaths.length > 0) {
+          await supabase.storage.from(BUCKET).remove(succeededPaths);
         }
+        return NextResponse.json({ error: failedUpload.error.message }, { status: 400 });
+      }
 
-        const { error: docError } = await supabase.from("documents").insert({
-          id: documentId,
+      const uploadedAt = new Date().toISOString();
+      const { error: docError } = await supabase.from("documents").insert(
+        prepared.map((entry) => ({
+          id: entry.documentId,
           document_type: "order_delivery_image",
-          title: displayName,
-          file_name: displayName,
-          storage_key: storagePath,
+          title: entry.displayName,
+          file_name: entry.displayName,
+          storage_key: entry.storagePath,
           uploaded_by: user.id,
           uploaded_at: uploadedAt,
           notes: null,
-        });
+        }))
+      );
 
-        if (docError) {
-          await supabase.storage.from(BUCKET).remove([storagePath]);
-          await cleanupUploadedDocument(supabase, uploadedDocuments);
-          return NextResponse.json({ error: docError.message }, { status: 400 });
-        }
+      if (docError) {
+        await supabase.storage.from(BUCKET).remove(allPaths);
+        return NextResponse.json({ error: docError.message }, { status: 400 });
+      }
 
-        const { error: linkError } = await supabase.from("document_links").insert({
-          document_id: documentId,
+      const { error: linkError } = await supabase.from("document_links").insert(
+        prepared.map((entry) => ({
+          document_id: entry.documentId,
           entity_type: "order",
           entity_id: orderId,
-        });
+        }))
+      );
 
-        if (linkError) {
-          await supabase.from("documents").delete().eq("id", documentId);
-          await supabase.storage.from(BUCKET).remove([storagePath]);
-          await cleanupUploadedDocument(supabase, uploadedDocuments);
-          return NextResponse.json({ error: linkError.message }, { status: 400 });
-        }
-
-        uploadedDocuments.push({ documentId, storagePath });
+      if (linkError) {
+        await supabase
+          .from("documents")
+          .delete()
+          .in("id", prepared.map((entry) => entry.documentId));
+        await supabase.storage.from(BUCKET).remove(allPaths);
+        return NextResponse.json({ error: linkError.message }, { status: 400 });
       }
+
+      uploadedDocuments.push(
+        ...prepared.map((entry) => ({ documentId: entry.documentId, storagePath: entry.storagePath }))
+      );
     }
 
     const { data, error } = await supabase.rpc("update_sales_order", {
@@ -392,46 +408,29 @@ export async function POST(req: Request) {
 
     // Best-effort Morning auto-issue: invoice when order is completed, receipt for each
     // new payment row. Failures are logged via audit and never abort the order save.
+    // Runs after the response is sent so the external Morning API never delays the save.
     const actor = { profileId: profile.id, authUserId: user.id, role: profile.role };
-    const invoiceOutcome = await tryAutoIssueInvoiceForOrder(supabase, {
-      orderId: updatedOrderId,
-      newStatus: status,
-      trigger: "status-change",
-      actor,
-    });
-
-    const receiptOutcomes: Array<{ skipped: boolean; reason: string | null; morningDocumentId: string | null }> = [];
-    if (payments.length > 0) {
-      const { data: newPaymentRows } = await supabase
-        .from("payments")
-        .select("id,created_at")
-        .eq("order_id", updatedOrderId)
-        .order("created_at", { ascending: false })
-        .limit(payments.length);
-      const newPaymentIds = ((newPaymentRows ?? []) as Array<{ id?: string }>)
-        .map((row) => (typeof row?.id === "string" ? row.id : null))
-        .filter((value): value is string => Boolean(value));
-      for (const newPaymentId of newPaymentIds) {
-        const outcome = await tryAutoIssueReceiptForPayment(supabase, { paymentId: newPaymentId, actor });
-        receiptOutcomes.push({
-          skipped: outcome.skipped,
-          reason: outcome.ok ? outcome.reason : outcome.reason,
-          morningDocumentId: outcome.morningDocumentId,
+    after(async () => {
+      try {
+        await tryAutoIssueInvoiceForOrder(supabase, {
+          orderId: updatedOrderId,
+          newStatus: status,
+          trigger: "status-change",
+          actor,
         });
+        for (const paymentId of insertedPaymentIds) {
+          await tryAutoIssueReceiptForPayment(supabase, { paymentId, actor });
+        }
+      } catch (morningError) {
+        console.error("Morning auto-issue failed after order update", morningError);
       }
-    }
+    });
 
     return NextResponse.json({
       order_id: updatedOrderId,
       payment_status: derivedPaymentStatus,
       total_paid: totalPaidAfterSave,
       payment_ids: insertedPaymentIds,
-      morning_auto_invoice: {
-        skipped: invoiceOutcome.skipped,
-        reason: invoiceOutcome.ok ? invoiceOutcome.reason : invoiceOutcome.reason,
-        morning_document_id: invoiceOutcome.morningDocumentId,
-      },
-      morning_auto_receipts: receiptOutcomes,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
