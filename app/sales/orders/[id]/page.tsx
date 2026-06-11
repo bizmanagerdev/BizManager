@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import {
   ChevronLeft,
+  Copy,
   ExternalLink,
   FileText,
   HandCoins,
@@ -552,6 +553,15 @@ export default async function SalesOrderPage({
           </div>
           {order ? (
             <div className="flex shrink-0 gap-1.5">
+              <Button asChild size="sm" variant="outline" className="h-9 w-9 p-0">
+                <Link
+                  href={`/sales/orders/new?duplicate=${id}`}
+                  title="שכפול הזמנה"
+                  aria-label="שכפול הזמנה"
+                >
+                  <Copy className="h-4 w-4" />
+                </Link>
+              </Button>
               <OrderEditDialog
                 orderId={id}
                 buttonLabel={<PencilLine className="h-4 w-4" />}
