@@ -49,13 +49,15 @@ type EditPayload = {
 export default function OrderEditDialog({
   orderId,
   buttonLabel = "עריכה",
+  buttonClassName,
   title = "עריכת הזמנה",
   description = "עדכון לקוח, פריטים ותשלומים בלי לעזוב את רשימת ההזמנות.",
   initialStatusOverride,
   allowOrderStatusEdit = false,
 }: {
   orderId: string;
-  buttonLabel?: string;
+  buttonLabel?: React.ReactNode;
+  buttonClassName?: string;
   title?: string;
   description?: string;
   initialStatusOverride?: string;
@@ -113,7 +115,14 @@ export default function OrderEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button type="button" size="sm" variant="outline" className="w-full sm:w-auto" onClick={() => setOpen(true)}>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className={buttonClassName ?? "w-full sm:w-auto"}
+        title={typeof title === "string" ? title : undefined}
+        onClick={() => setOpen(true)}
+      >
         {buttonLabel}
       </Button>
       <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-5xl overflow-y-auto p-4 sm:p-6">

@@ -7,8 +7,6 @@ import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatShortDate } from "@/lib/date";
-import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { DELIVERY_REGIONS, getCityRegion } from "@/lib/ui/cities";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreDeliveries } from "@/app/sales/actions";
@@ -191,69 +189,76 @@ export default function SalesDeliveriesQueue({
 
               {/* Cities in region */}
               {cities.map(([city, customerGroups]) => (
-                <Card key={city} className="overflow-hidden">
+                <Card key={city} className="overflow-hidden border-2 border-primary/60">
                   <CardContent className="space-y-3 p-3 sm:p-4">
-                    <div className="flex flex-col gap-2 border-b border-border/60 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-2">
                       <div className="flex items-center gap-2">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-info/30 bg-info-soft text-info-soft-foreground">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-info/30 bg-info-soft text-info-soft-foreground">
                           <Truck className="h-4 w-4" />
                         </div>
-                        <div>
-                          <h3 className="text-base font-semibold">{city}</h3>
-                          <div className="text-xs text-muted-foreground">מסך חלוקה לפי לקוח והזמנה</div>
-                        </div>
+                        <h3 className="text-base font-bold">{city}</h3>
                       </div>
-                      <span className="w-fit rounded-full border border-border/70 bg-background px-2.5 py-1 text-xs text-muted-foreground">
+                      <span className="shrink-0 rounded-full border border-info/40 bg-info-soft/50 px-2.5 py-1 text-xs font-medium text-info-soft-foreground">
                         {customerGroups.length} לקוחות •{" "}
                         {customerGroups.reduce((sum, [, group]) => sum + group.orders.length, 0)} משלוחים
                       </span>
                     </div>
 
-                    <div className="space-y-2">
+                    <ul className="space-y-2">
                       {customerGroups.map(([customerKey, group]) => {
                         const customerPhoneHref = phoneHref(group.customerPhone);
 
+                        const hasMultipleOrders = group.orders.length > 1;
+
                         return (
-                          <div
-                            key={customerKey}
-                            className="rounded-lg border border-border/70 bg-background/80 px-2 py-1.5"
-                          >
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
-                              <span className="text-sm font-semibold">{group.customerName}</span>
+                          <li key={customerKey}>
+                            <div className="rounded-lg border-2 border-secondary/40 bg-background/80 px-2.5 py-2">
+                            <div className="flex items-center gap-x-2 text-xs">
+                              <span className="truncate text-sm font-semibold">{group.customerName}</span>
                               {group.customerPhone ? (
                                 customerPhoneHref ? (
                                   <a
                                     href={customerPhoneHref}
-                                    className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground"
+                                    className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground hover:text-foreground"
                                   >
                                     <Phone className="h-3 w-3" />
                                     <span dir="ltr">{group.customerPhone}</span>
                                   </a>
                                 ) : (
-                                  <span className="inline-flex items-center gap-0.5 text-muted-foreground">
+                                  <span className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground">
                                     <Phone className="h-3 w-3" />
                                     <span dir="ltr">{group.customerPhone}</span>
                                   </span>
                                 )
                               ) : null}
-                              <span className="inline-flex items-center gap-0.5 text-muted-foreground">
-                                <MapPin className="h-3 w-3" />
-                                {group.address}
-                              </span>
-                              <span className="mr-auto text-muted-foreground">{group.orders.length} משלוחים</span>
+                              {hasMultipleOrders ? (
+                                <span className="mr-auto shrink-0 text-muted-foreground">{group.orders.length} משלוחים</span>
+                              ) : null}
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-0.5 text-xs text-muted-foreground">
+                              <MapPin className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{group.address}</span>
                             </div>
 
-                            <div className="mt-1 divide-y divide-border/50">
+                            <ul
+                              className={
+                                hasMultipleOrders
+                                  ? "me-[3px] mt-1.5 space-y-0.5 border-e-2 border-info/30 pe-3"
+                                  : "mt-0.5"
+                              }
+                            >
                               {group.orders.map((delivery) => (
-                                <div
+                                <li
                                   key={delivery.id}
                                   title={delivery.notes ?? undefined}
                                   className="flex items-center gap-2 py-1 text-xs hover:bg-muted/20"
                                 >
-                                  <span className="font-medium">#{delivery.id.slice(0, 6)}</span>
-                                  <span className="text-muted-foreground">{formatShortDate(delivery.orderDate, "-")}</span>
                                   <span className="font-medium">{formatCurrency(delivery.totalAmount)}</span>
-                                  <span className="truncate text-muted-foreground">{getOrderStatusLabel(delivery.status)}</span>
+                                  {delivery.collectOnDelivery ? (
+                                    <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                      גבייה ע&quot;י הנהג
+                                    </span>
+                                  ) : null}
                                   <div className="mr-auto flex shrink-0 gap-1">
                                     <OrderConfirmDialog
                                       orderId={delivery.id}
@@ -271,13 +276,14 @@ export default function SalesDeliveriesQueue({
                                       <Link href={`/sales/orders/${delivery.id}`}>פרטים</Link>
                                     </Button>
                                   </div>
-                                </div>
+                                </li>
                               ))}
+                            </ul>
                             </div>
-                          </div>
+                          </li>
                         );
                       })}
-                    </div>
+                    </ul>
                   </CardContent>
                 </Card>
               ))}

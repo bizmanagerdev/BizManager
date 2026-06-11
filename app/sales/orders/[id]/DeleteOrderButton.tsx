@@ -2,10 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
 
-export default function DeleteOrderButton({ orderId }: { orderId: string }) {
+export default function DeleteOrderButton({
+  orderId,
+  iconOnly = false,
+}: {
+  orderId: string;
+  iconOnly?: boolean;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,8 +52,17 @@ export default function DeleteOrderButton({ orderId }: { orderId: string }) {
 
   return (
     <div className="space-y-1">
-      <Button type="button" variant="destructive" size="sm" onClick={() => void onDelete()} disabled={loading}>
-        {loading ? "מוחק..." : "מחיקת הזמנה"}
+      <Button
+        type="button"
+        variant="destructive"
+        size="sm"
+        className={iconOnly ? "h-9 w-9 p-0" : undefined}
+        aria-label="מחיקת הזמנה"
+        title="מחיקת הזמנה"
+        onClick={() => void onDelete()}
+        disabled={loading}
+      >
+        {iconOnly ? <Trash2 className="h-4 w-4" /> : loading ? "מוחק..." : "מחיקת הזמנה"}
       </Button>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>

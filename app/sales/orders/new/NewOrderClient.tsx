@@ -79,6 +79,7 @@ type InitialOrder = {
   due_date?: string | null;
   discount_amount: number;
   needs_invoice?: boolean | null;
+  collect_payment_on_delivery?: boolean | null;
   notes: string;
   items: OrderLine[];
 };
@@ -371,6 +372,9 @@ export default function NewOrderClient({
   const [orderDiscountMode, setOrderDiscountMode] = useState<"amount" | "percent">("amount");
   // Single toggle: on = needs invoice, off (default) = doesn't.
   const [needsInvoice, setNeedsInvoice] = useState<boolean>(initialOrder?.needs_invoice ?? false);
+  const [collectOnDelivery, setCollectOnDelivery] = useState<boolean>(
+    initialOrder?.collect_payment_on_delivery ?? false
+  );
   const [notes, setNotes] = useState(initialOrder?.notes ?? "");
   // Per-line discount input mode (₪ vs %); the stored value is always an absolute amount.
   const [lineDiscountModes, setLineDiscountModes] = useState<Record<string, "amount" | "percent">>({});
@@ -864,6 +868,7 @@ export default function NewOrderClient({
           status: orderStatus,
           payment_status: paymentStatus,
           payment_terms: paymentTerms,
+          collect_payment_on_delivery: collectOnDelivery,
           due_date: dueDate || null,
           discount_amount: Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0,
           needs_invoice: needsInvoice,
@@ -1598,6 +1603,38 @@ export default function NewOrderClient({
                   <span>{needsInvoice ? "צריך חשבונית" : "לא צריך חשבונית"}</span>
                 </button>
 
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">גבייה</label>
+                  <div className="flex h-10 overflow-hidden rounded-xl border border-input shadow-sm">
+                    <button
+                      type="button"
+                      disabled={actionLocked}
+                      onClick={() => setCollectOnDelivery(false)}
+                      className={cn(
+                        "px-3 text-sm font-medium transition-colors disabled:opacity-50",
+                        !collectOnDelivery
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-background text-foreground hover:bg-muted/40"
+                      )}
+                    >
+                      תשלום למשרד
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actionLocked}
+                      onClick={() => setCollectOnDelivery(true)}
+                      className={cn(
+                        "border-r border-input px-3 text-sm font-medium transition-colors disabled:opacity-50",
+                        collectOnDelivery
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-background text-foreground hover:bg-muted/40"
+                      )}
+                    >
+                      הנהג גובה תשלום
+                    </button>
+                  </div>
+                </div>
+
                 <div className="w-full space-y-1 sm:w-44">
                   <label className="text-xs font-medium text-muted-foreground">צורת תשלום</label>
                   <select
@@ -1896,6 +1933,7 @@ export default function NewOrderClient({
               </CardHeader>
               <CardContent className="space-y-1">
                 <SummaryRow label="חשבונית" value={needsInvoice ? "צריך חשבונית" : "לא צריך חשבונית"} />
+                <SummaryRow label="גבייה" value={collectOnDelivery ? "הנהג גובה תשלום במסירה" : "תשלום למשרד"} />
                 <SummaryRow label="צורת תשלום" value={termsLabel(paymentTerms)} />
                 {paymentTerms !== "immediate" ? <SummaryRow label="תאריך פירעון" value={dueDate || "-"} /> : null}
                 <SummaryRow label="סטטוס תשלום" value={paymentStatusLabel(paymentStatus)} />

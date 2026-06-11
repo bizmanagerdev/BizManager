@@ -34,9 +34,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="he" dir="rtl">
+    // suppressHydrationWarning: the head script below intentionally sets a
+    // font-size style on <html> from localStorage BEFORE hydration (no-FOUC),
+    // so the server-rendered attribute can never match the client.
+    <html lang="he" dir="rtl" suppressHydrationWarning>
       <head>
-        {/* eslint-disable-next-line react/no-danger */}
         <script dangerouslySetInnerHTML={{ __html: `try{var s=localStorage.getItem('biz-font-size');if(s){document.documentElement.style.fontSize=s+'px';}}catch(e){}` }} />
       </head>
       <body className="antialiased">

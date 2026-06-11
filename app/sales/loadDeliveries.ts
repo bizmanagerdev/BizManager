@@ -21,6 +21,8 @@ export type DeliveryItem = {
   orderDate: string | null;
   status: string;
   totalAmount: number | null;
+  /** Driver collects the payment on delivery (orders.collect_payment_on_delivery). */
+  collectOnDelivery: boolean;
   notes: string | null;
   customerName: string;
   customerPhone: string | null;
@@ -85,6 +87,7 @@ export async function loadDeliveriesPage(
       orderDate: getString(row, "order_date") ?? getString(row, "created_at"),
       status: getString(row, "status") ?? "-",
       totalAmount: getNumber(row, "total_amount"),
+      collectOnDelivery: false,
       notes: getString(row, "notes"),
       customerName: getString(row, "customer_name") ?? "לקוח",
       customerPhone: getString(row, "customer_phone"),
@@ -92,6 +95,24 @@ export async function loadDeliveriesPage(
       address: getString(row, "customer_address") ?? "-",
     }))
     .filter((row) => row.id);
+
+  // Best-effort flag read straight from orders (the column only exists after
+  // db/sql/add_collect_payment_on_delivery.sql; on error everything stays false).
+  if (deliveries.length > 0) {
+    const { data: collectRows } = await supabase
+      .from("orders")
+      .select("id,collect_payment_on_delivery")
+      .in("id", deliveries.map((delivery) => delivery.id))
+      .eq("collect_payment_on_delivery", true);
+    const collectIds = new Set(
+      ((collectRows ?? []) as Row[])
+        .map((row) => (typeof row.id === "string" ? row.id : ""))
+        .filter(Boolean)
+    );
+    for (const delivery of deliveries) {
+      delivery.collectOnDelivery = collectIds.has(delivery.id);
+    }
+  }
 
   const totalCount = typeof count === "number" ? count : deliveries.length;
   // Drive "has more" off page fullness, not the estimated count.

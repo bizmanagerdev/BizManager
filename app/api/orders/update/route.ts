@@ -36,6 +36,7 @@ type UpdateOrderPayload = {
   due_date?: string | null;
   delivery_date?: string | null;
   discount_amount?: number | string;
+  collect_payment_on_delivery?: boolean | null;
   notes?: string | null;
   payments?: {
     amount_total?: number | string;
@@ -402,6 +403,14 @@ export async function POST(req: Request) {
     if (updateError) {
       await cleanupUploadedDocument(supabase, uploadedDocuments);
       return NextResponse.json({ error: updateError.message }, { status: 400 });
+    }
+
+    // Best-effort: the column only exists after db/sql/add_collect_payment_on_delivery.sql.
+    if (typeof body.collect_payment_on_delivery === "boolean") {
+      await supabase
+        .from("orders")
+        .update({ collect_payment_on_delivery: body.collect_payment_on_delivery })
+        .eq("id", orderId);
     }
 
     const updatedOrderId = typeof data === "string" ? data : orderId;

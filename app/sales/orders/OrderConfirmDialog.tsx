@@ -125,7 +125,7 @@ export default function OrderConfirmDialog({
   defaultStatus = "delivered",
 }: {
   orderId: string;
-  buttonLabel?: string;
+  buttonLabel?: React.ReactNode;
   buttonClassName?: string;
   title?: string;
   description?: string;

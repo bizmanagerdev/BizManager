@@ -141,9 +141,18 @@ export async function GET(
     if (typeof row?.id === "string") productsById.set(row.id, row as Row);
   });
 
+  // Separate best-effort read: the column only exists after running
+  // db/sql/add_collect_payment_on_delivery.sql — never break edit before that.
+  const { data: collectRow } = await supabase
+    .from("orders")
+    .select("collect_payment_on_delivery")
+    .eq("id", id)
+    .maybeSingle();
+
   const initialOrder = {
     id,
     customer_id: getString(order as Row, ["customer_id"]) ?? "",
+    collect_payment_on_delivery: (collectRow as Row | null)?.collect_payment_on_delivery === true,
     order_date: (getString(order as Row, ["order_date"]) ?? "").slice(0, 10),
     status: getString(order as Row, ["status"]) ?? "draft",
     payment_status: getString(order as Row, ["payment_status"]) ?? "unpaid",

@@ -9,6 +9,7 @@ import { loadMoreOrders } from "@/app/sales/actions";
 import type { OrdersFilters } from "@/app/sales/loadOrders";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
+import InvoiceQuickMenu from "@/app/sales/orders/InvoiceQuickMenu";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,10 +17,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -102,27 +101,6 @@ type OrderView = {
   outOfStock: boolean;
 };
 
-type InvoiceState = "needs_unsent" | "needs_sent" | "no" | "undecided";
-
-function invoiceState(row: { needsInvoice: boolean | null; invoiceSentAt: string | null }): InvoiceState {
-  if (row.needsInvoice === false) return "no";
-  if (row.needsInvoice === true) return row.invoiceSentAt ? "needs_sent" : "needs_unsent";
-  return "undecided";
-}
-
-function invoiceBadge(state: InvoiceState): { label: string; className: string } {
-  switch (state) {
-    case "needs_sent":
-      return { label: "הונפקה", className: getStatusColorClasses("success") };
-    case "needs_unsent":
-      return { label: "טרם הונפקה", className: getStatusColorClasses("warning") };
-    case "no":
-      return { label: "לא צריך חשבונית", className: getStatusColorClasses("neutral") };
-    default:
-      return { label: "חשבונית לא הוגדרה", className: getStatusColorClasses("neutral") };
-  }
-}
-
 function getString(row: Row, keys: string[]) {
   for (const key of keys) {
     const value = row[key];
@@ -194,59 +172,6 @@ function isActiveOrder(status: string) {
 
 function shouldShowPaymentAction(row: OrderView) {
   return row.remainingBalance > 0.009 || row.totalPaid > row.totalAmount + 0.009;
-}
-
-function InvoiceQuickMenu({ row }: { row: OrderView }) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const state = invoiceState(row);
-  const badge = invoiceBadge(state);
-
-  async function apply(update: Record<string, unknown>) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/orders/invoice-status", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ order_id: row.id, ...update }),
-      });
-      if (res.ok) router.refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="space-y-1">
-      <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={busy}
-          className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-medium ${badge.className} disabled:opacity-50`}
-        >
-          <span>{badge.label}</span>
-          <ChevronDown className="h-3 w-3 shrink-0" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuItem onSelect={() => void apply({ needs_invoice: true })}>צריך חשבונית</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void apply({ needs_invoice: false })}>לא צריך חשבונית</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={Boolean(row.invoiceSentAt)} onSelect={() => void apply({ invoice_sent: true })}>
-          סמן כהונפקה
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={!row.invoiceSentAt} onSelect={() => void apply({ invoice_sent: false })}>
-          בטל סימון הנפקה
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-      </DropdownMenu>
-      {state === "needs_sent" && row.invoiceSentAt ? (
-        <div className="text-[11px] text-muted-foreground">{formatOrderDate(row.invoiceSentAt)}</div>
-      ) : null}
-    </div>
-  );
 }
 
 export default function SalesOrdersClient({
@@ -449,7 +374,7 @@ export default function SalesOrdersClient({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="חיפוש לפי לקוח, טלפון, אימייל, עיר או מספר הזמנה"
+            placeholder="חיפוש לפי לקוח, טלפון, אימייל או עיר"
             className="h-11 pr-10"
           />
         </div>
@@ -491,7 +416,6 @@ export default function SalesOrdersClient({
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
                   <tr className="border-b border-border/70 text-right">
-                    <th className="px-4 py-3 font-medium">הזמנה</th>
                     <th className="px-4 py-3 font-medium">לקוח</th>
                     <th className="px-4 py-3 font-medium">עיר ותאריך</th>
                     <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
@@ -583,9 +507,6 @@ export default function SalesOrdersClient({
                       }}
                     >
                       <td className="px-4 py-4">
-                        <div className="font-medium">הזמנה #{row.id.slice(0, 8)}</div>
-                      </td>
-                      <td className="px-4 py-4">
                         <div>
                           <div className="font-medium">{row.customerName}</div>
                           {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
@@ -611,7 +532,7 @@ export default function SalesOrdersClient({
                         </td>
                       ) : null}
                       <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
-                        <InvoiceQuickMenu row={row} />
+                        <InvoiceQuickMenu orderId={row.id} needsInvoice={row.needsInvoice} invoiceSentAt={row.invoiceSentAt} />
                       </td>
                       <td className="px-4 py-4">
                         <Badge className={collectionStatusClasses(row.collectionStatus)}>
@@ -671,7 +592,6 @@ export default function SalesOrdersClient({
                             <Badge className={`${outOfStockBadgeClasses} px-1.5 py-0 text-[10px]`}>חוסר במלאי</Badge>
                           ) : null}
                         </div>
-                        <div className="text-[10px] text-muted-foreground">#{row.id.slice(0, 8)}</div>
                       </div>
                     </div>
 
@@ -697,7 +617,7 @@ export default function SalesOrdersClient({
                     </div>
 
                     <div className="flex items-center justify-between gap-2">
-                      <InvoiceQuickMenu row={row} />
+                      <InvoiceQuickMenu orderId={row.id} needsInvoice={row.needsInvoice} invoiceSentAt={row.invoiceSentAt} />
                     </div>
 
                     <div className={`grid gap-2 ${hasAction ? "grid-cols-2" : "grid-cols-1"}`}>

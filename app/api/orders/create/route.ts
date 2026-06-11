@@ -30,6 +30,7 @@ type CreateOrderPayload = {
   due_date?: string | null;
   discount_amount?: number | string;
   needs_invoice?: boolean | null;
+  collect_payment_on_delivery?: boolean | null;
   notes?: string | null;
   payments?: {
     amount_total?: number | string;
@@ -210,6 +211,14 @@ export async function POST(req: Request) {
         needs_invoice: needsInvoice,
       })
       .eq("id", orderId);
+
+    // Best-effort: the column only exists after db/sql/add_collect_payment_on_delivery.sql.
+    if (typeof body.collect_payment_on_delivery === "boolean") {
+      await supabase
+        .from("orders")
+        .update({ collect_payment_on_delivery: body.collect_payment_on_delivery })
+        .eq("id", orderId);
+    }
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 400 });

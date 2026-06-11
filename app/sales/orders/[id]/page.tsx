@@ -1,19 +1,35 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
+import {
+  ChevronLeft,
+  ExternalLink,
+  FileText,
+  HandCoins,
+  Mail,
+  MapPin,
+  MessageSquareText,
+  PencilLine,
+  Phone,
+  ReceiptText,
+  ShoppingCart,
+  Truck,
+  UserRound,
+} from "lucide-react";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/sales/orders/[id]/DeleteOrderButton";
 import OrderPaymentDialog from "@/app/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/sales/orders/OrderEditDialog";
-import OrderInvoicePanel from "@/app/sales/orders/[id]/OrderInvoicePanel";
+import InvoiceQuickMenu from "@/app/sales/orders/InvoiceQuickMenu";
+import OrderNotesEditor from "@/app/sales/orders/[id]/OrderNotesEditor";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { OrderPaymentActionsClient } from "@/app/sales/orders/OrderPaymentActionsClient";
 import type { PaymentItem } from "@/app/sales/orders/OrderPaymentActionsClient";
-import { splitPaymentAmounts, orderCollectionStatusLabel, collectionStatusClasses, paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { splitPaymentAmounts, orderCollectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { computeSourceCollection, isOpenOrderStatus } from "@/lib/collections";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { formatRelativeDateLabel, formatShortDate, formatShortDateTime } from "@/lib/date";
@@ -78,35 +94,117 @@ function paymentInsertedByLabel(
 }
 
 
-function extractCityFromAddress(address: string | null) {
-  if (!address) return null;
-  const normalized = address.trim();
-  if (!normalized) return null;
-  const first = normalized.split("|")[0]?.trim() ?? "";
-  return first || null;
+/** Text-only color for the collection status (no badge pill, per user request). */
+function collectionStatusTextClass(status: string) {
+  switch (status) {
+    case "collected":
+      return "text-success-soft-foreground";
+    case "partial":
+      return "text-info-soft-foreground";
+    case "awaiting":
+      return "text-primary";
+    default:
+      return "text-destructive";
+  }
 }
 
-function DetailSection({
+function formatAddressForDisplay(address: string | null) {
+  if (!address) return null;
+  const parts = address
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+/** Full-width solid-fill override for dialog trigger buttons whose default variant is outline. */
+const FULL_PRIMARY_TRIGGER_CLASSES =
+  "border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground w-full";
+
+/**
+ * Reference-style stat card: icon, small label, big colored value, sub-lines,
+ * and an optional full-width action button pinned to the bottom.
+ */
+function StatActionCard({
+  icon,
+  label,
+  value,
+  valueClassName,
+  badges,
+  subtitles,
+  details,
+  action,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+  valueClassName?: string;
+  badges?: React.ReactNode;
+  subtitles?: (string | null)[];
+  details?: { label: string; value: string }[];
+  action?: React.ReactNode;
+}) {
+  const subs = (subtitles ?? []).filter((line): line is string => Boolean(line));
+  return (
+    <div className="flex flex-col gap-3 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-muted-foreground">{label}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            {typeof value === "string" ? (
+              <div className={`text-lg font-bold leading-snug ${valueClassName ?? ""}`}>{value}</div>
+            ) : (
+              value
+            )}
+            {badges}
+          </div>
+          {subs.map((line) => (
+            <div key={line} className="text-xs text-muted-foreground">
+              {line}
+            </div>
+          ))}
+        </div>
+      </div>
+      {details && details.length > 0 ? (
+        <div className="space-y-1 border-t border-border/50 pt-2">
+          {details.map((row) => (
+            <div key={row.label} className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-muted-foreground">{row.label}</span>
+              <span className="font-medium">{row.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {action ? <div className="mt-auto">{action}</div> : null}
+    </div>
+  );
+}
+
+function SectionCard({
+  icon,
   title,
-  subtitle,
-  defaultOpen = true,
+  aside,
   children,
 }: {
+  icon: React.ReactNode;
   title: string;
-  subtitle?: string;
-  defaultOpen?: boolean;
+  aside?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <details className="rounded-2xl border border-border/70 bg-card/70 p-4" open={defaultOpen}>
-      <summary className="cursor-pointer list-none">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm font-semibold">{title}</div>
-          {subtitle ? <div className="text-xs text-muted-foreground">{subtitle}</div> : null}
+    <section className="space-y-3 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-primary">{icon}</span>
+          <h2 className="text-sm font-semibold">{title}</h2>
         </div>
-      </summary>
-      <div className="mt-4">{children}</div>
-    </details>
+        {aside}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -124,10 +222,11 @@ export default async function SalesOrderPage({
     { data: payments, error: paymentsError },
     { data: financials, error: financialsError },
     { data: deliveryLinks, error: deliveryLinksError },
+    { data: collectRow },
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at")
+      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes,needs_invoice,invoice_sent_at,delivery_confirmed_at,created_by")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -149,7 +248,12 @@ export default async function SalesOrderPage({
       .select("document_id,created_at")
       .eq("entity_type", "order")
       .eq("entity_id", id),
+    // Separate best-effort read: the column only exists after running
+    // db/sql/add_collect_payment_on_delivery.sql — never break the page before that.
+    supabase.from("orders").select("collect_payment_on_delivery").eq("id", id).maybeSingle(),
   ]);
+
+  const collectOnDelivery = (collectRow as Row | null)?.collect_payment_on_delivery === true;
 
   const customerId =
     order && typeof (order as Row).customer_id === "string"
@@ -203,13 +307,18 @@ export default async function SalesOrderPage({
     )
   );
 
+  const orderCreatedBy = getString((order as Row) ?? {}, "created_by");
   const [paymentAuditResult, paymentRecordedByNameByValue] = await Promise.all([
     getLatestAuditByRecordIds(supabase, {
       tableName: "payments",
       recordIds: paymentIds,
     }),
-    resolveUserDisplayNamesForValues(supabase, paymentRecordedByValues),
+    resolveUserDisplayNamesForValues(
+      supabase,
+      Array.from(new Set([...paymentRecordedByValues, ...(orderCreatedBy ? [orderCreatedBy] : [])]))
+    ),
   ]);
+  const orderCreatedByName = orderCreatedBy ? paymentRecordedByNameByValue[orderCreatedBy] ?? null : null;
 
   const [
     { data: orderMorningDocuments, error: orderMorningDocumentsError },
@@ -303,8 +412,7 @@ export default async function SalesOrderPage({
   const customerRegistrationNumber = getString((customer as Row) ?? {}, "registration_number");
   const customerPhone = getString((customer as Row) ?? {}, "phone");
   const customerEmail = getString((customer as Row) ?? {}, "email");
-  const fullAddress = getString((customer as Row) ?? {}, "address");
-  const customerCity = extractCityFromAddress(fullAddress) ?? "-";
+  const fullAddress = formatAddressForDisplay(getString((customer as Row) ?? {}, "address"));
   const orderNotes = getString((order as Row) ?? {}, "notes");
   const orderDate = getString((order as Row) ?? {}, "order_date");
   const orderNeedsInvoice =
@@ -397,25 +505,61 @@ export default async function SalesOrderPage({
     };
   });
 
-  const itemsSubtitleParts = [
-    `${(orderItems ?? []).length} פריטים`,
-    `סכום ביניים ${formatCurrency(subtotal)}`,
-    totalDiscount > 0 ? `הנחה ${formatCurrency(totalDiscount)}` : null,
-  ].filter(Boolean) as string[];
+  // "מה צריך לעשות" — pending actions for this order.
+  const orderIsActive = Boolean(order) && isOpenOrderStatus(getString((order as Row) ?? {}, "status"));
+  const needsDeliveryAction = orderIsActive;
+  const needsPaymentAction = Boolean(order) && remainingBalance > 0.009;
+  // An order whose total is 0 but has items is mispriced — surface it instead of
+  // letting a "remaining = 0" hide the payment action on an unpaid order.
+  const needsPricingAction =
+    Boolean(order) && totalAmount <= 0.009 && (orderItems ?? []).length > 0;
+  const totalUnits = (orderItems ?? []).reduce(
+    (sum, item) => sum + (getNumber(item as Row, "quantity_ordered") ?? 0),
+    0
+  );
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">הזמנה #{id.slice(0, 8)}</h1>
-            <p className="text-sm text-muted-foreground">מרכז הזמנה עם פעולות מהירות ופרטים לפי צורך.</p>
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 space-y-1">
+            <nav className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-label="ניווט">
+              <Link href="/sales" className="hover:text-foreground hover:underline">
+                מכירות
+              </Link>
+              <ChevronLeft className="h-3.5 w-3.5" />
+              <h1 className="text-lg font-bold text-foreground">הזמנה #{id.slice(0, 8)}</h1>
+            </nav>
+            <p className="text-xs text-muted-foreground">
+              {customerId ? (
+                <Link
+                  href={`/customers/${customerId}`}
+                  className="font-semibold text-foreground hover:underline"
+                >
+                  {customerName}
+                </Link>
+              ) : (
+                <span className="font-semibold text-foreground">{customerName}</span>
+              )}
+              {" · "}הוזמן <span className="font-medium text-foreground">{formatDate(orderDate)}</span>
+              {formatRelativeDateLabel(orderDate) ? ` (${formatRelativeDateLabel(orderDate)})` : ""}
+              {orderCreatedByName ? (
+                <>
+                  {" · "}הוזן ע&quot;י <span className="font-medium text-foreground">{orderCreatedByName}</span>
+                </>
+              ) : null}
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild size="sm">
-              <Link href="/sales/orders/new">הזמנה חדשה</Link>
-            </Button>
-          </div>
+          {order ? (
+            <div className="flex shrink-0 gap-1.5">
+              <OrderEditDialog
+                orderId={id}
+                buttonLabel={<PencilLine className="h-4 w-4" />}
+                buttonClassName="h-9 w-9 p-0"
+              />
+              <DeleteOrderButton orderId={id} iconOnly />
+            </div>
+          ) : null}
         </div>
 
         {orderError ? <p className="text-sm text-destructive">שגיאת הזמנה: {orderError.message}</p> : null}
@@ -435,241 +579,384 @@ export default async function SalesOrderPage({
         ) : null}
 
         {order ? (
-          <section className="space-y-4 rounded-3xl border border-border/70 bg-card/80 p-5 shadow-sm">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="space-y-2">
-                <div className="text-xs font-medium text-muted-foreground">הזמנה #{id.slice(0, 8)}</div>
-                <div className="text-2xl font-semibold">{customerName}</div>
-                {customerNameForInvoice || customerRegistrationNumber ? (
-                  <div className="text-sm text-muted-foreground">
-                    {[
-                      customerNameForInvoice ? `שם לחשבונית: ${customerNameForInvoice}` : null,
-                      customerRegistrationNumber ? `ח.פ / ת.ז: ${customerRegistrationNumber}` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" • ")}
-                  </div>
+          <section className="space-y-3">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <StatActionCard
+                icon={<Truck className="h-5 w-5" />}
+                label="סטטוס הזמנה"
+                value={getOrderStatusLabel(getString(order as Row, "status") ?? "")}
+                valueClassName={
+                  orderIsActive
+                    ? "text-primary"
+                    : (getString(order as Row, "status") ?? "").toLowerCase() === "cancelled"
+                      ? "text-muted-foreground"
+                      : "text-success-soft-foreground"
+                }
+                details={[
+                  { label: "תאריך הזמנה", value: formatDate(orderDate) },
+                  { label: "פריטים", value: `${(orderItems ?? []).length} (${totalUnits} יחידות)` },
+                  ...(orderDeliveryConfirmedAt
+                    ? [{ label: "אספקה אושרה", value: formatDate(orderDeliveryConfirmedAt) }]
+                    : []),
+                ]}
+                action={
+                  needsDeliveryAction ? (
+                    <OrderConfirmDialog
+                      orderId={id}
+                      buttonLabel="אישור אספקה"
+                      buttonClassName={FULL_PRIMARY_TRIGGER_CLASSES}
+                    />
+                  ) : null
+                }
+              />
+
+              <StatActionCard
+                icon={<HandCoins className="h-5 w-5" />}
+                label="תשלום"
+                value={
+                  needsPricingAction
+                    ? "לא נקבע סכום"
+                    : remainingBalance > 0.009
+                      ? formatCurrency(remainingBalance)
+                      : "שולם"
+                }
+                valueClassName={
+                  needsPricingAction || remainingBalance > 0.009
+                    ? "text-primary"
+                    : "text-success-soft-foreground"
+                }
+                badges={
+                  <>
+                    {needsPricingAction || remainingBalance > 0.009 ? (
+                      <span className={`text-xs font-semibold ${collectionStatusTextClass(collectionStatus)}`}>
+                        {orderCollectionStatusLabel(collectionStatus)}
+                      </span>
+                    ) : null}
+                    <span
+                      className={`text-xs font-semibold ${
+                        collectOnDelivery ? "text-primary" : "text-muted-foreground"
+                      }`}
+                    >
+                      {collectOnDelivery ? "גבייה ע”י הנהג" : "גבייה במשרד"}
+                    </span>
+                  </>
+                }
+                subtitles={
+                  needsPricingAction
+                    ? ["להזמנה יש פריטים אבל לא נקבע סכום — עדכן מחירים"]
+                    : undefined
+                }
+                details={
+                  needsPricingAction
+                    ? undefined
+                    : [
+                        {
+                          label: "נגבה",
+                          value: `${formatCurrency(totalPaid)} מתוך ${formatCurrency(totalAmount)}`,
+                        },
+                        { label: "תשלומים", value: String(paymentCount) },
+                        ...(expectedAmount > 0.009
+                          ? [
+                              {
+                                label: "צפוי לגבייה",
+                                value: `${formatCurrency(expectedAmount)}${
+                                  overdueExpectedAmount > 0.009
+                                    ? ` (${formatCurrency(overdueExpectedAmount)} באיחור)`
+                                    : ""
+                                }`,
+                              },
+                            ]
+                          : []),
+                        {
+                          label: "תנאי תשלום",
+                          value: `${paymentTermsLabel(orderPaymentTerms)}${
+                            orderDueDate ? ` · פירעון ${formatDate(orderDueDate)}` : ""
+                          }`,
+                        },
+                        ...(orderPendingMethods.length > 0
+                          ? [{ label: "אמצעי תשלום", value: orderPendingMethods.join(", ") }]
+                          : []),
+                      ]
+                }
+                action={
+                  needsPricingAction ? (
+                    <OrderEditDialog orderId={id} buttonLabel="עריכת מחירים" />
+                  ) : needsPaymentAction ? (
+                    <OrderPaymentDialog
+                      orderId={id}
+                      totalAmount={totalAmount}
+                      paidAmount={totalPaid}
+                      buttonClassName={FULL_PRIMARY_TRIGGER_CLASSES}
+                    />
+                  ) : null
+                }
+              />
+
+              <StatActionCard
+                icon={<FileText className="h-5 w-5" />}
+                label="חשבונית"
+                value={
+                  <InvoiceQuickMenu
+                    orderId={id}
+                    needsInvoice={orderNeedsInvoice}
+                    invoiceSentAt={orderInvoiceSentAt}
+                    showSentDate={false}
+                    variant="text"
+                  />
+                }
+                details={
+                  orderInvoiceSentAt
+                    ? [{ label: "תאריך הנפקה", value: formatDate(orderInvoiceSentAt) }]
+                    : undefined
+                }
+              />
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-3 lg:items-start">
+              <div className="space-y-3 lg:order-2">
+            <div className="space-y-2 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <UserRound className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-semibold">לקוח</h2>
+                </div>
+                {customerId ? (
+                  <Button asChild size="sm" variant="secondary" className="h-8 w-8 p-0">
+                    <Link
+                      href={`/customers/${customerId}`}
+                      title="צפייה בלקוח"
+                      aria-label="צפייה בלקוח"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </Link>
+                  </Button>
                 ) : null}
-                <div className="text-sm text-muted-foreground">
-                  {[customerPhone, customerEmail].filter(Boolean).join(" • ") || "-"}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {customerCity} • {fullAddress ?? "-"}
-                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <StatusBadge value={getString(order as Row, "status") ?? ""} type="order" />
-                <span className={`rounded-full border px-2.5 py-1 text-xs ${collectionStatusClasses(collectionStatus)}`}>
-                  {orderCollectionStatusLabel(collectionStatus)}
-                </span>
+              <div className="text-sm font-semibold">{customerName}</div>
+              {customerNameForInvoice || customerRegistrationNumber ? (
+                <div className="text-xs text-muted-foreground">
+                  {[
+                    customerNameForInvoice ? `שם לחשבונית: ${customerNameForInvoice}` : null,
+                    customerRegistrationNumber ? `ח.פ / ת.ז: ${customerRegistrationNumber}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+              ) : null}
+              <div className="space-y-1.5 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  {customerPhone ? (
+                    <a href={`tel:${customerPhone}`} dir="ltr" className="font-medium hover:underline">
+                      {customerPhone}
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  {customerEmail ? (
+                    <span className="truncate font-medium">{customerEmail}</span>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate font-medium">{fullAddress ?? "-"}</span>
+                </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-              <div className="grid gap-4 lg:grid-cols-[1.2fr_2fr]">
-                <div className="space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    תאריך הזמנה
-                  </div>
-                  <div className="text-2xl font-semibold text-foreground">
-                    {formatDate(orderDate)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {formatRelativeDateLabel(orderDate)}
-                  </div>
-                  <div className="mt-2 text-sm">
-                    <span className="text-muted-foreground">צורת תשלום: </span>
-                    <span className="font-medium">{paymentTermsLabel(orderPaymentTerms)}</span>
-                    {orderDueDate ? (
-                      <>
-                        <span className="text-muted-foreground"> · תאריך פירעון: </span>
-                        <span className="font-medium">{formatDate(orderDueDate)}</span>
-                      </>
-                    ) : null}
-                    {orderPendingMethods.length > 0 ? (
-                      <>
-                        <span className="text-muted-foreground"> · אמצעי: </span>
-                        <span className="font-medium">{orderPendingMethods.join(", ")}</span>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
-                    <div className="text-xs text-muted-foreground">סה&quot;כ</div>
-                    <div className="mt-1 text-sm font-medium">{formatCurrency(totalAmount)}</div>
-                  </div>
-                  <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
-                    <div className="text-xs text-muted-foreground">נגבה</div>
-                    <div className="mt-1 text-sm font-medium">{formatCurrency(totalPaid)}</div>
-                  </div>
-                  {expectedAmount > 0.009 ? (
-                    <div className="rounded-2xl border border-warning-soft bg-warning-soft/40 px-3 py-2">
-                      <div className="text-xs text-muted-foreground">צפוי לגבייה</div>
-                      <div className="mt-1 text-sm font-medium text-warning-soft-foreground">
-                        {formatCurrency(expectedAmount)}
-                        {overdueExpectedAmount > 0.009 ? (
-                          <span className="ms-1 text-xs text-destructive">
-                            ({formatCurrency(overdueExpectedAmount)} באיחור)
-                          </span>
-                        ) : null}
+            <SectionCard
+              icon={<Truck className="h-4 w-4" />}
+              title="אספקה"
+              aside={
+                deliveryImagesResolved.length > 0 ? (
+                  <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                    {deliveryImagesResolved.length} תמונות
+                  </span>
+                ) : null
+              }
+            >
+              <div className="text-xs text-muted-foreground">
+                {orderDeliveryConfirmedAt
+                  ? `אספקה אושרה בתאריך ${formatDate(orderDeliveryConfirmedAt)}`
+                  : "האספקה טרם אושרה."}
+              </div>
+              {deliveryImagesResolved.length === 0 ? (
+                <p className="text-xs text-muted-foreground">עדיין לא הועלתה תמונת אספקה.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {deliveryImagesResolved.map((image) => (
+                    <a
+                      key={image.id}
+                      href={image.url ?? "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="overflow-hidden rounded-xl border border-border/70 bg-background/70"
+                    >
+                      {image.url ? (
+                        <img
+                          src={image.url}
+                          alt={image.file_name ?? "Delivery image"}
+                          className="h-28 w-full object-cover"
+                        />
+                      ) : null}
+                      <div className="px-2 py-1 text-[10px] text-muted-foreground">
+                        {formatDate(image.uploaded_at)}
                       </div>
-                    </div>
-                  ) : null}
-                  <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
-                    <div className="text-xs text-muted-foreground">יתרה</div>
-                    <div className={`mt-1 text-sm font-medium ${remainingBalance > 0 ? "text-warning-soft-foreground" : ""}`}>
-                      {formatCurrency(remainingBalance)}
+                    </a>
+                  ))}
+                </div>
+              )}
+              {!needsDeliveryAction ? (
+                <OrderConfirmDialog
+                  orderId={id}
+                  buttonLabel="אספקת הזמנה"
+                  buttonClassName={FULL_PRIMARY_TRIGGER_CLASSES}
+                />
+              ) : null}
+            </SectionCard>
+          </div>
+
+          <div className="space-y-3 lg:order-1 lg:col-span-2">
+            <SectionCard
+              icon={<ShoppingCart className="h-4 w-4" />}
+              title="פריטים"
+              aside={
+                <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                  {(orderItems ?? []).length} פריטים
+                </span>
+              }
+            >
+              {(orderItems ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">לא נמצאו פריטים להזמנה זו.</p>
+              ) : (
+                <>
+                  <div className="divide-y divide-border/60">
+                    {(orderItems ?? []).map((item, index) => {
+                      const productId = getString(item as Row, "product_id") ?? "";
+                      const product = productMap.get(productId);
+                      const productName =
+                        getString((product ?? {}) as Row, "name") ??
+                        getString((product ?? {}) as Row, "product_name") ??
+                        productId;
+                      const quantity = getNumber(item as Row, "quantity_ordered") ?? 0;
+                      const unitPrice = getNumber(item as Row, "unit_price") ?? 0;
+                      const lineTotal = getNumber(item as Row, "line_total") ?? quantity * unitPrice;
+                      const lineDiscountAmount = getNumber(item as Row, "discount_amount") ?? 0;
+                      const lineNotes = getString(item as Row, "notes");
+
+                      return (
+                        <div
+                          key={getString(item as Row, "id") ?? `${productId}-${index}`}
+                          className="flex items-center justify-between gap-3 py-2.5 text-sm"
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/30 text-xs font-semibold">
+                              ×{quantity}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">{productName}</div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                מחיר יחידה {formatCurrency(unitPrice)}
+                                {lineDiscountAmount > 0
+                                  ? ` · הנחה -${formatCurrency(lineDiscountAmount)}`
+                                  : ""}
+                              </div>
+                              {lineNotes ? (
+                                <div className="mt-0.5 flex items-start gap-1 text-xs text-primary">
+                                  <MessageSquareText className="mt-0.5 h-3 w-3 shrink-0" />
+                                  <span>{lineNotes}</span>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="shrink-0 font-semibold">{formatCurrency(lineTotal)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="space-y-1 rounded-xl bg-muted/30 p-3 text-sm">
+                    {totalDiscount > 0 ? (
+                      <>
+                        <div className="flex items-center justify-between gap-2 text-muted-foreground">
+                          <span>סכום ביניים · {totalUnits} יחידות</span>
+                          <span>{formatCurrency(subtotal)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-success-soft-foreground">
+                          <span>הנחה</span>
+                          <span>-{formatCurrency(totalDiscount)}</span>
+                        </div>
+                      </>
+                    ) : null}
+                    <div className="flex items-center justify-between gap-2 font-semibold">
+                      <span>
+                        סה&quot;כ הזמנה
+                        {totalDiscount > 0 ? "" : ` · ${totalUnits} יחידות`}
+                      </span>
+                      <span>{formatCurrency(totalAmount)}</span>
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-2">
-                    <div className="text-xs text-muted-foreground">תשלומים</div>
-                    <div className="mt-1 text-sm font-medium">{paymentCount}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+                </>
+              )}
+            </SectionCard>
 
-            <OrderInvoicePanel
-              orderId={id}
-              needsInvoice={orderNeedsInvoice}
-              invoiceSentAt={orderInvoiceSentAt}
-              deliveryConfirmedAt={orderDeliveryConfirmedAt}
-            />
+            <SectionCard
+              icon={<HandCoins className="h-4 w-4" />}
+              title="תשלומים"
+              aside={
+                canManagePayments && !needsPaymentAction && !needsPricingAction ? (
+                  <OrderPaymentDialog orderId={id} totalAmount={totalAmount} paidAmount={totalPaid} />
+                ) : (
+                  <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                    {(payments ?? []).length} רשומות
+                  </span>
+                )
+              }
+            >
+              <OrderPaymentActionsClient
+                orderId={id}
+                customerId={customerId}
+                totalAmount={totalAmount}
+                payments={paymentsWithMeta}
+                canManage={canManagePayments}
+              />
+            </SectionCard>
 
-            {false ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
-                <div className="text-xs text-muted-foreground">טלפון לקוח</div>
-                <div className="mt-1 text-sm font-medium">{customerPhone ?? "-"}</div>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
-                <div className="text-xs text-muted-foreground">עיר</div>
-                <div className="mt-1 text-sm font-medium">{customerCity}</div>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
-                <div className="text-xs text-muted-foreground">סכום ביניים</div>
-                <div className="mt-1 text-sm font-medium">{formatCurrency(subtotal)}</div>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
-                <div className="text-xs text-muted-foreground">הנחה</div>
-                <div className={`mt-1 text-sm font-medium ${totalDiscount > 0 ? "text-success-soft-foreground" : ""}`}>
-                  {totalDiscount > 0 ? `-${formatCurrency(totalDiscount)}` : "-"}
-                </div>
-              </div>
-            </div> : null}
+            <SectionCard
+              icon={<ReceiptText className="h-4 w-4" />}
+              title="מסמכים"
+              aside={
+                orderLevelMorningDocuments.length > 0 ? (
+                  <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                    {orderLevelMorningDocuments.length} מסמכים
+                  </span>
+                ) : null
+              }
+            >
+              {customerId ? (
+                <MorningDocumentsPanel
+                  customerId={customerId}
+                  orderId={id}
+                  documents={orderLevelMorningDocuments}
+                  allowQuote
+                  allowInvoice
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">לא נמצא לקוח מקושר למסמכי Morning.</p>
+              )}
+            </SectionCard>
 
-            <div className="flex flex-wrap gap-2 border-t pt-4">
-              <OrderPaymentDialog orderId={id} totalAmount={totalAmount} paidAmount={totalPaid} />
-              <OrderConfirmDialog orderId={id} buttonLabel="אישור אספקה" />
-              <OrderEditDialog orderId={id} buttonLabel="עריכת הזמנה" />
-              <DeleteOrderButton orderId={id} />
-            </div>
+            <SectionCard icon={<PencilLine className="h-4 w-4" />} title="הערות">
+              <OrderNotesEditor orderId={id} initialNotes={orderNotes} />
+            </SectionCard>
+          </div>
+        </div>
           </section>
         ) : null}
-
-        <DetailSection title="פריטים" subtitle={`${(orderItems ?? []).length} פריטים`}>
-          <div className="mb-3 text-xs text-muted-foreground">{itemsSubtitleParts.join(" • ")}</div>
-          {(orderItems ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">לא נמצאו פריטים להזמנה זו.</p>
-          ) : (
-            <div className="space-y-2">
-              {(orderItems ?? []).map((item, index) => {
-                const productId = getString(item as Row, "product_id") ?? "";
-                const product = productMap.get(productId);
-                const productName =
-                  getString((product ?? {}) as Row, "name") ??
-                  getString((product ?? {}) as Row, "product_name") ??
-                  productId;
-                const quantity = getNumber(item as Row, "quantity_ordered") ?? 0;
-                const unitPrice = getNumber(item as Row, "unit_price") ?? 0;
-                const lineTotal = getNumber(item as Row, "line_total") ?? quantity * unitPrice;
-                const lineDiscountAmount = getNumber(item as Row, "discount_amount") ?? 0;
-                const lineNotes = getString(item as Row, "notes");
-
-                return (
-                  <div
-                    key={getString(item as Row, "id") ?? `${productId}-${index}`}
-                    className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">{productName}</span>
-                      <span>{formatCurrency(lineTotal)}</span>
-                    </div>
-                    <div className="mt-1 text-muted-foreground">
-                      כמות: {quantity} • מחיר יחידה: {formatCurrency(unitPrice)}
-                    </div>
-                    {lineDiscountAmount > 0 ? (
-                      <div className="mt-1 text-success-soft-foreground">הנחת שורה: -{formatCurrency(lineDiscountAmount)}</div>
-                    ) : null}
-                    {lineNotes ? <div className="mt-1 text-muted-foreground">הערות: {lineNotes}</div> : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </DetailSection>
-
-        <DetailSection title="תשלומים, החזרים ופעילות" subtitle={`${(payments ?? []).length} רשומות`}>
-          <OrderPaymentActionsClient
-            orderId={id}
-            customerId={customerId}
-            totalAmount={totalAmount}
-            payments={paymentsWithMeta}
-            canManage={canManagePayments}
-          />
-        </DetailSection>
-
-        <DetailSection title="הוכחת אספקה" subtitle={`${deliveryImagesResolved.length} תמונות`}>
-          {deliveryImagesResolved.length === 0 ? (
-            <p className="text-sm text-muted-foreground">עדיין לא הועלתה תמונת אספקה להזמנה זו.</p>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {deliveryImagesResolved.map((image) => (
-                <a
-                  key={image.id}
-                  href={image.url ?? "#"}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm"
-                >
-                  {image.url ? (
-                    <img
-                      src={image.url}
-                      alt={image.file_name ?? "Delivery image"}
-                      className="mb-3 h-48 w-full rounded-lg object-cover"
-                    />
-                  ) : null}
-                  <div className="font-medium">{image.file_name ?? "תמונה"}</div>
-                  <div className="text-xs text-muted-foreground">{formatDate(image.uploaded_at)}</div>
-                </a>
-              ))}
-            </div>
-          )}
-        </DetailSection>
-
-        <DetailSection title="מסמכים ו-Morning" subtitle={`${orderLevelMorningDocuments.length} מסמכים`}>
-          {customerId ? (
-            <MorningDocumentsPanel
-              customerId={customerId}
-              orderId={id}
-              documents={orderLevelMorningDocuments}
-              allowQuote
-              allowInvoice
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">לא נמצא לקוח מקושר למסמכי Morning.</p>
-          )}
-        </DetailSection>
-
-        <DetailSection title="הערות" subtitle={orderNotes ? "קיימות הערות להזמנה" : "ללא הערות"} defaultOpen={false}>
-          {orderNotes ? (
-            <div className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm leading-6">
-              {orderNotes}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">לא נוספו הערות להזמנה זו.</p>
-          )}
-        </DetailSection>
       </div>
     </AppShell>
   );
