@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { PackagePlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -389,10 +390,12 @@ export default function SalesInventoryClient({
                             <Button
                               type="button"
                               size="sm"
-                              variant="outline"
+                              className="h-8 w-8 p-0"
+                              title="עדכון מלאי"
+                              aria-label="עדכון מלאי"
                               onClick={() => openAdjustmentDialog(item.productId)}
                             >
-                              עדכון
+                              <PackagePlus className="h-4 w-4" />
                             </Button>
                           </td>
                         </tr>
@@ -423,11 +426,12 @@ export default function SalesInventoryClient({
                         <Button
                           type="button"
                           size="sm"
-                          variant="outline"
-                          className="h-8 shrink-0 rounded-lg px-2.5"
+                          className="h-8 w-8 shrink-0 rounded-lg p-0"
+                          title="עדכון מלאי"
+                          aria-label="עדכון מלאי"
                           onClick={() => openAdjustmentDialog(item.productId)}
                         >
-                          עדכון
+                          <PackagePlus className="h-4 w-4" />
                         </Button>
                       </div>
 
@@ -534,7 +538,7 @@ export default function SalesInventoryClient({
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
             <div className="mt-4 flex justify-end gap-2">
-              <Button type="button" variant="outline" disabled={submitting} onClick={() => setAdjustmentOpen(false)}>
+              <Button type="button" variant="secondary" disabled={submitting} onClick={() => setAdjustmentOpen(false)}>
                 ביטול
               </Button>
               <Button type="button" disabled={submitting} onClick={() => void adjustInventory()}>

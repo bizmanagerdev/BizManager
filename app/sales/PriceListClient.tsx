@@ -8,7 +8,7 @@ import { loadMorePriceList } from "@/app/sales/actions";
 import type { ProductsFilters } from "@/app/sales/loadProducts";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -969,17 +969,32 @@ export default function PriceListClient({
                     <td className="px-3 py-2">{product.active === false ? "לא פעיל" : "פעיל"}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
-                        <Button type="button" size="sm" variant="outline" onClick={() => openEdit(product)}>
-                          עריכה
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 w-8 p-0"
+                          title="עריכה"
+                          aria-label="עריכה"
+                          onClick={() => openEdit(product)}
+                        >
+                          <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
                           type="button"
                           size="sm"
                           variant="destructive"
+                          className="h-8 w-8 p-0"
+                          title="מחיקה"
+                          aria-label="מחיקה"
                           disabled={deleteLoadingId === product.id}
                           onClick={() => openDeleteDialog(product)}
                         >
-                          {deleteLoadingId === product.id ? "מוחק..." : "מחיקה"}
+                          {deleteLoadingId === product.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </Button>
                       </div>
                     </td>
@@ -1022,19 +1037,33 @@ export default function PriceListClient({
                   </span>
                 </div>
 
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <Button type="button" size="sm" variant="outline" className="h-9 rounded-lg" onClick={() => openEdit(product)}>
-                    עריכה
+                <div className="mt-2 flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9 w-9 rounded-lg p-0"
+                    title="עריכה"
+                    aria-label="עריכה"
+                    onClick={() => openEdit(product)}
+                  >
+                    <Pencil className="h-4 w-4" />
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant="destructive"
-                    className="h-9 rounded-lg"
+                    className="h-9 w-9 rounded-lg p-0"
+                    title="מחיקה"
+                    aria-label="מחיקה"
                     disabled={deleteLoadingId === product.id}
                     onClick={() => openDeleteDialog(product)}
                   >
-                    {deleteLoadingId === product.id ? "מוחק..." : "מחיקה"}
+                    {deleteLoadingId === product.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
                   </Button>
                 </div>
               </div>
