@@ -39,6 +39,7 @@ type ProductRow = {
   lowStockThreshold: number | null;
   code: string | null;
   unitPrice: number | null;
+  baseCost: number | null;
   stock: number | null;
   purchasedAmount: number;
   soldAmount: number;
@@ -568,6 +569,8 @@ export default function PriceListClient({
           (createCode.trim() || null),
         unitPrice:
           (typeof json.product.base_price === "number" ? json.product.base_price : null) ?? unitPrice,
+        baseCost:
+          (typeof json.product.base_cost === "number" ? json.product.base_cost : null) ?? baseCost,
         stock:
           (typeof json.product.stock === "number" ? json.product.stock : null) ??
           (typeof json.product.quantity === "number" ? json.product.quantity : null) ??
@@ -612,7 +615,7 @@ export default function PriceListClient({
     setEditName(row.name);
     setEditCode(row.code ?? "");
     setEditPrice(row.unitPrice !== null ? String(row.unitPrice) : "");
-    setEditCost("");
+    setEditCost(row.baseCost !== null ? String(row.baseCost) : "");
     setEditCategoryId(row.categoryId ?? "");
     setEditNewCategoryName("");
     setEditPurchasedAmount("");
@@ -712,6 +715,8 @@ export default function PriceListClient({
           (editCode.trim() || null),
         unitPrice:
           (typeof json.product.base_price === "number" ? json.product.base_price : null) ?? unitPrice,
+        baseCost:
+          (typeof json.product.base_cost === "number" ? json.product.base_cost : null) ?? baseCost,
         stock:
           (typeof json.product.stock === "number" ? json.product.stock : null) ??
           (typeof json.product.quantity === "number" ? json.product.quantity : null) ??
@@ -945,6 +950,7 @@ export default function PriceListClient({
                   <th className="px-3 py-2 text-right font-medium">מוצר</th>
                   <th className="px-3 py-2 text-right font-medium">קוד</th>
                   <th className="px-3 py-2 text-right font-medium">מחיר</th>
+                  <th className="px-3 py-2 text-right font-medium">עלות בסיס</th>
                   <th className="px-3 py-2 text-right font-medium">מלאי נוכחי</th>
                   <th className="px-3 py-2 text-right font-medium">כמות שנרכשה</th>
                   <th className="px-3 py-2 text-right font-medium">כמות שנמכרה</th>
@@ -963,6 +969,9 @@ export default function PriceListClient({
                     </td>
                     <td className="px-3 py-2">{product.code ?? "-"}</td>
                     <td className="px-3 py-2">{formatCurrency(product.unitPrice)}</td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {product.baseCost !== null ? formatCurrency(product.baseCost) : "-"}
+                    </td>
                     <td className="px-3 py-2">{product.stock ?? "-"}</td>
                     <td className="px-3 py-2">{product.purchasedAmount}</td>
                     <td className="px-3 py-2">{product.soldAmount}</td>
@@ -1026,6 +1035,12 @@ export default function PriceListClient({
                 </div>
 
                 <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                  <span className="text-muted-foreground">
+                    עלות:{" "}
+                    <span className="font-medium text-foreground">
+                      {product.baseCost !== null ? formatCurrency(product.baseCost) : "-"}
+                    </span>
+                  </span>
                   <span className="text-muted-foreground">
                     מלאי: <span className="font-medium text-foreground">{product.stock ?? "-"}</span>
                   </span>

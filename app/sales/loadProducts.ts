@@ -176,6 +176,7 @@ export type PriceListProduct = {
   lowStockThreshold: number;
   code: string | null;
   unitPrice: number | null;
+  baseCost: number | null;
   stock: number | null;
   purchasedAmount: number;
   soldAmount: number;
@@ -257,6 +258,7 @@ export async function loadPriceListPage(
       lowStockThreshold: thresholdById.get(getString(row, "id") ?? "") ?? 5,
       code: productCode(row),
       unitPrice: productUnitPrice(row),
+      baseCost: getNumber(row, "base_cost"),
       stock: inventoryByProductId.get(getString(row, "id") ?? "") ?? null,
       purchasedAmount: purchasedByProductId.get(getString(row, "id") ?? "") ?? 0,
       soldAmount: soldByProductId.get(getString(row, "id") ?? "") ?? 0,
