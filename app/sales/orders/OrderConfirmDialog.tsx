@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
@@ -50,6 +51,13 @@ type DeliveryImage = {
   file_name: string | null;
   uploaded_at: string | null;
   url: string | null;
+};
+
+type ProductSearchResult = {
+  id: string;
+  name: string;
+  sku: string | null;
+  base_price: number | null;
 };
 
 type EditPayload = {
@@ -151,6 +159,35 @@ export default function OrderConfirmDialog({
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [deliveryDate, setDeliveryDate] = useState(getTodayDate());
   const [deliveryImages, setDeliveryImages] = useState<File[]>([]);
+  const [productQuery, setProductQuery] = useState("");
+  const [productResults, setProductResults] = useState<ProductSearchResult[]>([]);
+  const [productSearching, setProductSearching] = useState(false);
+
+  // Debounced product search so products can be added (not just quantities edited).
+  useEffect(() => {
+    if (!open) return;
+    const query = productQuery.trim();
+    if (!query) {
+      setProductResults([]);
+      setProductSearching(false);
+      return;
+    }
+    setProductSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/products/search?q=${encodeURIComponent(query)}&limit=20`, {
+          cache: "no-store",
+        });
+        const json = (await res.json().catch(() => ({}))) as { products?: ProductSearchResult[] };
+        setProductResults(Array.isArray(json.products) ? json.products : []);
+      } catch {
+        setProductResults([]);
+      } finally {
+        setProductSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [open, productQuery]);
 
   useEffect(() => {
     if (!open) return;
@@ -196,6 +233,8 @@ export default function OrderConfirmDialog({
     setDeliveryNotes(data.initialOrder.notes ?? "");
     setDeliveryDate(getTodayDate());
     setDeliveryImages([]);
+    setProductQuery("");
+    setProductResults([]);
     setError(null);
   }, [data]);
 
@@ -232,6 +271,36 @@ export default function OrderConfirmDialog({
         lineIndex === index ? { ...line, quantity_ordered: normalizeQty(nextValue) } : line
       )
     );
+  }
+
+  function removeLine(index: number) {
+    setLines((prev) => prev.filter((_, lineIndex) => lineIndex !== index));
+  }
+
+  function addProduct(product: ProductSearchResult) {
+    setLines((prev) => {
+      const existingIndex = prev.findIndex((line) => line.product_id === product.id);
+      if (existingIndex >= 0) {
+        return prev.map((line, lineIndex) =>
+          lineIndex === existingIndex
+            ? { ...line, quantity_ordered: line.quantity_ordered + 1 }
+            : line
+        );
+      }
+      return [
+        ...prev,
+        {
+          product_id: product.id,
+          product_name: product.name,
+          quantity_ordered: 1,
+          unit_price: product.base_price ?? 0,
+          discount_amount: 0,
+          notes: "",
+        },
+      ];
+    });
+    setProductQuery("");
+    setProductResults([]);
   }
 
   async function submit() {
@@ -398,14 +467,21 @@ export default function OrderConfirmDialog({
                 </div>
               </section>
 
-              <Section step="1" title="כמויות סופיות" description="עדכן את הכמות שנמסרה בפועל לכל פריט.">
+              <Section
+                step="1"
+                title="פריטים סופיים"
+                description="עדכן כמויות, הסר מוצרים או הוסף מוצרים שנמסרו בפועל."
+              >
                 <div className="space-y-2">
+                  {lines.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">אין פריטים — הוסף מוצר כדי לאשר אספקה.</p>
+                  ) : null}
                   {lines.map((line, index) => {
                     const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
                     return (
                       <div
                         key={`${line.product_id}-${index}`}
-                        className="grid gap-3 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-[1fr_120px_140px]"
+                        className="grid gap-3 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-[1fr_120px_140px_40px]"
                       >
                         <div>
                           <div className="font-medium">{line.product_name}</div>
@@ -426,9 +502,59 @@ export default function OrderConfirmDialog({
                           <div className="text-xs font-medium">סה״כ שורה</div>
                           <div className="h-10 rounded-md border bg-muted/20 px-3 py-2 text-sm">{formatCurrency(lineTotal)}</div>
                         </div>
+                        <div className="flex items-end justify-end sm:pb-0.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            className="h-9 w-9 p-0"
+                            title="הסרת מוצר"
+                            aria-label="הסרת מוצר"
+                            onClick={() => removeLine(index)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     );
                   })}
+
+                  <div className="space-y-2 border-t border-border/60 pt-3">
+                    <label className="text-sm font-medium">הוספת מוצר</label>
+                    <Input
+                      value={productQuery}
+                      onChange={(e) => setProductQuery(e.target.value)}
+                      placeholder="חיפוש מוצר לפי שם, מק״ט או ברקוד..."
+                    />
+                    {productSearching ? (
+                      <p className="text-xs text-muted-foreground">מחפש...</p>
+                    ) : null}
+                    {!productSearching && productQuery.trim() && productResults.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">לא נמצאו מוצרים.</p>
+                    ) : null}
+                    {productResults.length > 0 ? (
+                      <div className="max-h-48 divide-y divide-border/60 overflow-y-auto rounded-xl border border-border/70 bg-background/70">
+                        {productResults.map((product) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-right text-sm hover:bg-muted/40"
+                            onClick={() => addProduct(product)}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium">{product.name}</span>
+                              {product.sku ? (
+                                <span className="block text-xs text-muted-foreground">מק״ט: {product.sku}</span>
+                              ) : null}
+                            </span>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {formatCurrency(product.base_price ?? 0)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </Section>
 
