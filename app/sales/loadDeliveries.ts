@@ -15,6 +15,12 @@ const CLOSED_ORDER_STATUSES = [
   "בוטלה",
 ];
 
+export type DeliveryOrderItem = {
+  name: string;
+  quantity: number;
+  notes: string | null;
+};
+
 export type DeliveryItem = {
   id: string;
   customerId: string;
@@ -28,6 +34,8 @@ export type DeliveryItem = {
   customerPhone: string | null;
   city: string;
   address: string;
+  /** The order's products, so the driver sees what to load/deliver. */
+  items: DeliveryOrderItem[];
 };
 
 export type DeliveriesFilters = { customerId: string | null };
@@ -93,8 +101,53 @@ export async function loadDeliveriesPage(
       customerPhone: getString(row, "customer_phone"),
       city: getString(row, "customer_city") ?? "ללא עיר",
       address: getString(row, "customer_address") ?? "-",
+      items: [] as DeliveryOrderItem[],
     }))
     .filter((row) => row.id);
+
+  // Attach each order's products so the driver sees what to load/deliver.
+  if (deliveries.length > 0) {
+    const orderIds = deliveries.map((delivery) => delivery.id);
+    const { data: itemRows } = await supabase
+      .from("order_items")
+      .select("order_id,product_id,quantity_ordered,notes")
+      .in("order_id", orderIds);
+
+    const productIds = Array.from(
+      new Set(
+        ((itemRows ?? []) as Row[])
+          .map((row) => getString(row, "product_id"))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+    const { data: productRows } =
+      productIds.length > 0
+        ? await supabase.from("products").select("id,name,sku").in("id", productIds)
+        : { data: [] as Row[] };
+    const productNameById = new Map(
+      ((productRows ?? []) as Row[]).map((row) => [
+        getString(row, "id") ?? "",
+        getString(row, "name") ?? getString(row, "sku") ?? "מוצר",
+      ])
+    );
+
+    const itemsByOrder = new Map<string, DeliveryOrderItem[]>();
+    for (const row of (itemRows ?? []) as Row[]) {
+      const orderId = getString(row, "order_id");
+      if (!orderId) continue;
+      const productId = getString(row, "product_id") ?? "";
+      const list = itemsByOrder.get(orderId) ?? [];
+      list.push({
+        name: productNameById.get(productId) || "מוצר",
+        quantity: getNumber(row, "quantity_ordered") ?? 0,
+        notes: getString(row, "notes"),
+      });
+      itemsByOrder.set(orderId, list);
+    }
+    for (const delivery of deliveries) {
+      delivery.items = itemsByOrder.get(delivery.id) ?? [];
+    }
+  }
 
   // Best-effort flag read straight from orders (the column only exists after
   // db/sql/add_collect_payment_on_delivery.sql; on error everything stays false).

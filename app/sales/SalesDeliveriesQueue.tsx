@@ -251,31 +251,43 @@ export default function SalesDeliveriesQueue({
                                 <li
                                   key={delivery.id}
                                   title={delivery.notes ?? undefined}
-                                  className="flex items-center gap-2 py-1 text-xs hover:bg-muted/20"
+                                  className="py-1 text-xs hover:bg-muted/20"
                                 >
-                                  <span className="font-medium">{formatCurrency(delivery.totalAmount)}</span>
-                                  {delivery.collectOnDelivery ? (
-                                    <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
-                                      גבייה ע&quot;י הנהג
-                                    </span>
-                                  ) : null}
-                                  <div className="mr-auto flex shrink-0 gap-1">
-                                    <OrderConfirmDialog
-                                      orderId={delivery.id}
-                                      buttonLabel="אספקה"
-                                      buttonClassName="h-6 px-2 text-xs"
-                                    />
-                                    <Button
-                                      asChild
-                                      type="button"
-                                      variant="secondary"
-                                      size="sm"
-                                      className="h-6 px-2 text-xs"
-                                      onClick={() => emitNavigationStart()}
-                                    >
-                                      <Link href={`/sales/orders/${delivery.id}`}>פרטים</Link>
-                                    </Button>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">{formatCurrency(delivery.totalAmount)}</span>
+                                    {delivery.collectOnDelivery ? (
+                                      <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                        גבייה ע&quot;י הנהג
+                                      </span>
+                                    ) : null}
+                                    <div className="mr-auto flex shrink-0 gap-1">
+                                      <OrderConfirmDialog
+                                        orderId={delivery.id}
+                                        buttonLabel="אספקה"
+                                        buttonClassName="h-6 px-2 text-xs"
+                                      />
+                                      <Button
+                                        asChild
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        className="h-6 px-2 text-xs"
+                                        onClick={() => emitNavigationStart()}
+                                      >
+                                        <Link href={`/sales/orders/${delivery.id}`}>פרטים</Link>
+                                      </Button>
+                                    </div>
                                   </div>
+                                  {delivery.items.length > 0 ? (
+                                    <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                                      {delivery.items.map((item, itemIndex) => (
+                                        <span key={`${delivery.id}-${itemIndex}`}>
+                                          ×{item.quantity} {item.name}
+                                          {item.notes ? ` (${item.notes})` : ""}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : null}
                                 </li>
                               ))}
                             </ul>
