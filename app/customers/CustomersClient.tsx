@@ -487,11 +487,7 @@ export default function CustomersClient({
                     <span className="text-muted-foreground">פרויקטים:</span>
                     <span className="font-medium">{projectsCount}</span>
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-muted-foreground">מכירות:</span>
-                    <span className="font-medium">{ils(n(row, "total_sales"))}</span>
-                  </div>
-                  <div className="flex items-baseline gap-1">
+                  <div className="flex items-baseline gap-1 col-span-2">
                     <span className="text-muted-foreground">יתרה:</span>
                     <span className={`font-medium ${openBalance > 0 ? "text-destructive" : ""}`}>{ils(openBalance)}</span>
                   </div>
@@ -607,9 +603,6 @@ export default function CustomersClient({
                     <div className={`truncate font-medium ${openBalance > 0 ? "text-destructive" : ""}`}>
                       {ils(openBalance)}
                     </div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      מכירות {ils(n(row, "total_sales"))}
-                    </div>
                   </td>
                   <td className="px-2 py-3">
                     <div className="flex flex-wrap gap-1">
@@ -628,14 +621,14 @@ export default function CustomersClient({
                   </td>
                   <td className="px-2 py-3">
                     <div className="flex flex-wrap gap-1">
-                      <Button asChild size="sm" variant="outline" className="h-8 px-2 text-xs">
-                        <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>
-                          + פרויקט
-                        </Link>
-                      </Button>
                       <Button asChild size="sm" className="h-8 px-2 text-xs">
                         <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>
                           + הזמנה
+                        </Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline" className="h-8 px-2 text-xs">
+                        <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>
+                          + פרויקט
                         </Link>
                       </Button>
                     </div>
