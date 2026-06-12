@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   AdaptiveDialog,
   AdaptiveGrid,
@@ -298,6 +299,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
         }
       }
 
+      toast.success("פרטי הלקוח נשמרו");
       onSaved({ customer: json.customer, contacts: savedContacts.filter((c) => c.active !== false) });
       onOpenChange(false);
     } catch (e: unknown) {

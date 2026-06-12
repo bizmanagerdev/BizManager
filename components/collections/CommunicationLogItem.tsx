@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  Mail,
+  MessageCircle,
+  MessageSquareText,
+  Pencil,
+  PhoneIncoming,
+  PhoneOutgoing,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +26,26 @@ type LogItem = CommunicationLog & {
   customer_name?: string | null;
   customer_phone?: string | null;
 };
+
+/** Channel icon; phone calls also show direction (incoming vs outgoing). */
+function ChannelIcon({ channel, direction }: { channel: string; direction: string }) {
+  switch (channel) {
+    case "whatsapp":
+      return <MessageCircle className="h-4 w-4" />;
+    case "email":
+      return <Mail className="h-4 w-4" />;
+    case "sms":
+      return <MessageSquareText className="h-4 w-4" />;
+    case "meeting":
+      return <Users className="h-4 w-4" />;
+    default:
+      return direction === "incoming" ? (
+        <PhoneIncoming className="h-4 w-4" />
+      ) : (
+        <PhoneOutgoing className="h-4 w-4" />
+      );
+  }
+}
 
 function formatDateTime(value: string | null) {
   if (!value) return "—";
@@ -61,8 +91,12 @@ export default function CommunicationLogItem({
         body: JSON.stringify({ id: log.id, channel, direction, content: content.trim() || null }),
       });
       if (res.ok) {
+        toast.success("השיחה עודכנה");
         setEditing(false);
         onChanged();
+      } else {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error("עדכון השיחה נכשל", { description: json.error ?? "" });
       }
     } finally {
       setBusy(false);
@@ -78,7 +112,13 @@ export default function CommunicationLogItem({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: log.id }),
       });
-      if (res.ok) onChanged();
+      if (res.ok) {
+        toast.success("השיחה נמחקה");
+        onChanged();
+      } else {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error("מחיקת השיחה נכשלה", { description: json.error ?? "" });
+      }
     } finally {
       setBusy(false);
       setConfirmDelete(false);
@@ -148,34 +188,44 @@ export default function CommunicationLogItem({
   }
 
   return (
-    <div className="rounded-lg border border-border/60 bg-background/50 p-2 text-sm">
+    <div className="rounded-xl border border-border/60 bg-background/50 p-3 text-sm">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          {showCustomer ? (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              {log.customer_id ? (
-                <NavLink to={`/customers/${log.customer_id}`} className="font-medium hover:underline">
-                  {log.customer_name ?? "לקוח"}
-                </NavLink>
-              ) : (
-                <span className="font-medium">{log.customer_name ?? "כללי"}</span>
-              )}
-              {log.customer_phone ? (
-                <a href={`tel:${log.customer_phone}`} className="text-xs text-muted-foreground hover:underline">
-                  ☎ {log.customer_phone}
-                </a>
+        <div className="flex min-w-0 items-start gap-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/60 bg-background text-muted-foreground">
+            <ChannelIcon channel={log.channel} direction={log.direction} />
+          </span>
+          <div className="min-w-0">
+            {showCustomer ? (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {log.customer_id ? (
+                  <NavLink to={`/customers/${log.customer_id}`} className="font-medium hover:underline">
+                    {log.customer_name ?? "לקוח"}
+                  </NavLink>
+                ) : (
+                  <span className="font-medium">{log.customer_name ?? "כללי"}</span>
+                )}
+                {log.customer_phone ? (
+                  <a href={`tel:${log.customer_phone}`} className="text-xs text-muted-foreground hover:underline">
+                    ☎ <span dir="ltr">{log.customer_phone}</span>
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
+            <div
+              className={`flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground ${showCustomer ? "mt-1" : ""}`}
+            >
+              {log.created_by_name ? (
+                <>
+                  <span className="font-semibold text-foreground">{log.created_by_name}</span>
+                  <span>·</span>
+                </>
               ) : null}
+              <span>{formatDateTime(log.created_at)}</span>
+              <span>· {directionLabel(log.direction)}</span>
+              <span>· {channelLabel(log.channel)}</span>
             </div>
-          ) : null}
-          <div
-            className={`flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground ${showCustomer ? "mt-1" : ""}`}
-          >
-            <span>{channelLabel(log.channel)}</span>
-            <span>· {directionLabel(log.direction)}</span>
-            <span>· {formatDateTime(log.created_at)}</span>
-            {log.created_by_name ? <span>· {log.created_by_name}</span> : null}
+            {log.content ? <div className="mt-1 leading-5">{log.content}</div> : null}
           </div>
-          {log.content ? <div className="mt-1">{log.content}</div> : null}
         </div>
         <div className="flex shrink-0 gap-1">
           {confirmDelete ? (
@@ -207,7 +257,7 @@ export default function CommunicationLogItem({
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="h-7 w-7"
+                className="h-8 w-8 rounded-full border border-border/60 bg-background"
                 title="עריכה"
                 onClick={() => setEditing(true)}
               >
@@ -217,7 +267,7 @@ export default function CommunicationLogItem({
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="h-7 w-7 text-destructive hover:text-destructive"
+                className="h-8 w-8 rounded-full border border-border/60 bg-background text-destructive hover:text-destructive"
                 title="מחיקה"
                 onClick={() => setConfirmDelete(true)}
               >

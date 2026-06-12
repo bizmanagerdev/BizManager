@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { BellRing, Check, Pencil, X } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
@@ -20,11 +22,13 @@ import {
   type Reminder,
 } from "@/lib/communications";
 
+// Same format as the customer page: no trailing ".00", decimals only when real.
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
     currency: "ILS",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
@@ -34,6 +38,12 @@ type Props = {
   customerPhone?: string | null;
   /** Called after any successful mutation, so a parent list can refresh. */
   onChanged?: () => void;
+  /**
+   * Start the log-call / add-reminder forms collapsed behind "+" buttons and
+   * collapse them again after a save (used when the panel is embedded inline
+   * on the customer page rather than opened in a dedicated dialog).
+   */
+  collapsibleForms?: boolean;
 };
 
 function todayIso() {
@@ -49,7 +59,10 @@ export default function CollectionTrackingPanel({
   customerName,
   customerPhone,
   onChanged,
+  collapsibleForms = false,
 }: Props) {
+  const [showCallForm, setShowCallForm] = useState(!collapsibleForms);
+  const [showReminderForm, setShowReminderForm] = useState(!collapsibleForms);
   const [logs, setLogs] = useState<CommunicationLog[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [receivables, setReceivables] = useState<CustomerReceivable[]>([]);
@@ -146,11 +159,13 @@ export default function CollectionTrackingPanel({
         setError(json.error ?? "שמירה נכשלה");
         return;
       }
+      toast.success(withFollowUp ? "השיחה תועדה ותזכורת המשך נקבעה" : "השיחה תועדה");
       setContent("");
       setWithFollowUp(false);
       setFollowUpDate("");
       setFollowUpContent("");
       setFollowUpAssignee(currentUserId ?? "");
+      if (collapsibleForms) setShowCallForm(false);
       await load();
       onChanged?.();
     } finally {
@@ -184,9 +199,11 @@ export default function CollectionTrackingPanel({
         setError(json.error ?? "שמירת התזכורת נכשלה");
         return;
       }
+      toast.success("התזכורת נוספה");
       setReminderDate("");
       setReminderNote("");
       setReminderAssignee(currentUserId ?? "");
+      if (collapsibleForms) setShowReminderForm(false);
       await load();
       onChanged?.();
     } finally {
@@ -201,8 +218,12 @@ export default function CollectionTrackingPanel({
       body: JSON.stringify({ id, status }),
     });
     if (res.ok) {
+      toast.success(status === "done" ? "התזכורת סומנה כבוצעה" : "התזכורת בוטלה");
       await load();
       onChanged?.();
+    } else {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      toast.error("עדכון התזכורת נכשל", { description: json.error ?? "" });
     }
   }
 
@@ -215,8 +236,12 @@ export default function CollectionTrackingPanel({
         body: JSON.stringify({ id: paymentId, collected: true }),
       });
       if (res.ok) {
+        toast.success("התשלום סומן כנגבה");
         await load();
         onChanged?.();
+      } else {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error("סימון התשלום נכשל", { description: json.error ?? "" });
       }
     } finally {
       setCollectingId(null);
@@ -227,19 +252,143 @@ export default function CollectionTrackingPanel({
 
   const openReminders = reminders.filter((r) => r.status === "pending");
 
+  // The two entry forms — placed near the top in dialog mode, near the footer
+  // action bar in the inline (collapsible) mode so they open where the buttons are.
+  const callFormBlock = showCallForm ? (
+    <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+      <div className="mb-2 text-sm font-semibold">תיעוד שיחה</div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <select
+          value={channel}
+          onChange={(e) => setChannel(e.target.value)}
+          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          {COMMUNICATION_CHANNELS.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <select
+          value={direction}
+          onChange={(e) => setDirection(e.target.value)}
+          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+        >
+          <option value="outgoing">שיחה יוצאת</option>
+          <option value="incoming">שיחה נכנסת</option>
+        </select>
+      </div>
+      <Textarea
+        className="mt-2"
+        rows={2}
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder="מה סוכם? מה הלקוח אמר?"
+      />
+
+      <label className="mt-2 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={withFollowUp}
+          onChange={(e) => setWithFollowUp(e.target.checked)}
+        />
+        קבע תזכורת המשך
+      </label>
+      {withFollowUp ? (
+        <div className="mt-2 space-y-2">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <DateInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
+            <input
+              value={followUpContent}
+              onChange={(e) => setFollowUpContent(e.target.value)}
+              placeholder="להתקשר שוב..."
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">אחראי לתזכורת</div>
+            <AssigneeSelect value={followUpAssignee} onChange={setFollowUpAssignee} includeMeDefault />
+          </div>
+        </div>
+      ) : null}
+
+      {error ? <div className="mt-2 text-sm text-destructive">{error}</div> : null}
+
+      <div className="mt-3 flex justify-end gap-2">
+        {collapsibleForms ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => setShowCallForm(false)}
+            disabled={submitting}
+          >
+            סגירה
+          </Button>
+        ) : null}
+        <Button type="button" size="sm" onClick={() => void logCall()} disabled={submitting}>
+          {submitting ? "שומר..." : "שמירה"}
+        </Button>
+      </div>
+    </div>
+  ) : null;
+
+  const reminderFormBlock = showReminderForm ? (
+    <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+      <div className="mb-2 text-sm font-semibold">קביעת תזכורת</div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <DateInput value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
+        <input
+          value={reminderNote}
+          onChange={(e) => setReminderNote(e.target.value)}
+          placeholder="על מה להזכיר? (אופציונלי)"
+          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+        />
+      </div>
+      <div className="mt-2 space-y-1">
+        <div className="text-xs text-muted-foreground">אחראי</div>
+        <AssigneeSelect value={reminderAssignee} onChange={setReminderAssignee} includeMeDefault />
+      </div>
+      {error ? <div className="mt-2 text-sm text-destructive">{error}</div> : null}
+      <div className="mt-3 flex justify-end gap-2">
+        {collapsibleForms ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => setShowReminderForm(false)}
+            disabled={submitting}
+          >
+            סגירה
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void addReminder()}
+          disabled={submitting}
+        >
+          {submitting ? "שומר..." : "הוספת תזכורת"}
+        </Button>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="space-y-4 text-right" dir="rtl">
-      <div className="text-sm text-muted-foreground">
-        {customerName}
-        {customerPhone ? (
-          <>
-            {" · "}
-            <a href={`tel:${customerPhone}`} className="hover:underline">
-              ☎ {customerPhone}
-            </a>
-          </>
-        ) : null}
-      </div>
+      {!collapsibleForms ? (
+        <div className="text-sm text-muted-foreground">
+          {customerName}
+          {customerPhone ? (
+            <>
+              {" · "}
+              <a href={`tel:${customerPhone}`} className="hover:underline">
+                ☎ {customerPhone}
+              </a>
+            </>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* What the customer owes — collected vs expected, with mark-collected */}
       {receivables.length > 0 ? (
@@ -309,163 +458,92 @@ export default function CollectionTrackingPanel({
         </div>
       ) : null}
 
-      {/* Log a call */}
-      <div className="rounded-xl border border-border/70 bg-background/60 p-3">
-        <div className="mb-2 text-sm font-semibold">תיעוד שיחה</div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <select
-            value={channel}
-            onChange={(e) => setChannel(e.target.value)}
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            {COMMUNICATION_CHANNELS.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={direction}
-            onChange={(e) => setDirection(e.target.value)}
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="outgoing">שיחה יוצאת</option>
-            <option value="incoming">שיחה נכנסת</option>
-          </select>
-        </div>
-        <Textarea
-          className="mt-2"
-          rows={2}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="מה סוכם? מה הלקוח אמר?"
-        />
-
-        <label className="mt-2 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={withFollowUp}
-            onChange={(e) => setWithFollowUp(e.target.checked)}
-          />
-          קבע תזכורת המשך
-        </label>
-        {withFollowUp ? (
-          <div className="mt-2 space-y-2">
-            <div className="grid gap-2 sm:grid-cols-2">
-              <DateInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
-              <input
-                value={followUpContent}
-                onChange={(e) => setFollowUpContent(e.target.value)}
-                placeholder="להתקשר שוב..."
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">אחראי לתזכורת</div>
-              <AssigneeSelect value={followUpAssignee} onChange={setFollowUpAssignee} includeMeDefault />
-            </div>
-          </div>
-        ) : null}
-
-        {error ? <div className="mt-2 text-sm text-destructive">{error}</div> : null}
-
-        <div className="mt-3 flex justify-end">
-          <Button type="button" size="sm" onClick={() => void logCall()} disabled={submitting}>
-            {submitting ? "שומר..." : "שמירה"}
-          </Button>
-        </div>
-      </div>
-
-      {/* Set a reminder without logging a call */}
-      <div className="rounded-xl border border-border/70 bg-background/60 p-3">
-        <div className="mb-2 text-sm font-semibold">קביעת תזכורת</div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <DateInput value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
-          <input
-            value={reminderNote}
-            onChange={(e) => setReminderNote(e.target.value)}
-            placeholder="על מה להזכיר? (אופציונלי)"
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          />
-        </div>
-        <div className="mt-2 space-y-1">
-          <div className="text-xs text-muted-foreground">אחראי</div>
-          <AssigneeSelect value={reminderAssignee} onChange={setReminderAssignee} includeMeDefault />
-        </div>
-        <div className="mt-3 flex justify-end">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => void addReminder()}
-            disabled={submitting}
-          >
-            {submitting ? "שומר..." : "הוספת תזכורת"}
-          </Button>
-        </div>
-      </div>
+      {/* Dialog mode: forms live at the top, always open */}
+      {!collapsibleForms ? callFormBlock : null}
+      {!collapsibleForms ? reminderFormBlock : null}
 
       {/* Open reminders */}
       <div>
-        <div className="mb-2 text-sm font-semibold">תזכורות פתוחות ({openReminders.length})</div>
+        <div className="mb-2 text-xs font-semibold text-muted-foreground">
+          תזכורות פתוחות ({openReminders.length})
+        </div>
         {openReminders.length === 0 ? (
           <p className="text-sm text-muted-foreground">אין תזכורות פתוחות.</p>
         ) : (
           <div className="space-y-2">
-            {openReminders.map((r) => (
-              <div
-                key={r.id}
-                className={`rounded-lg border p-2 text-sm ${
-                  isOverdue(r.remind_at) ? "border-destructive/40 bg-destructive-soft/40" : "border-border/70"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">
-                    {actionTypeLabel(r.action_type)} · {formatShortDate(r.remind_at)}
-                    {isOverdue(r.remind_at) ? (
-                      <span className="ms-1 text-xs text-destructive">(באיחור)</span>
-                    ) : null}
-                  </span>
-                  <div className="flex gap-1">
+            {openReminders.map((r) => {
+              const overdue = isOverdue(r.remind_at);
+              return (
+                <div
+                  key={r.id}
+                  className={`flex flex-wrap items-start justify-between gap-2 rounded-xl border p-3 text-sm ${
+                    overdue ? "border-destructive/40 bg-destructive-soft/40" : "border-border/70 bg-background/60"
+                  }`}
+                >
+                  <div className="flex min-w-0 items-start gap-2.5">
+                    <span
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                        overdue
+                          ? "bg-destructive-soft text-destructive"
+                          : "bg-warning-soft text-warning-soft-foreground"
+                      }`}
+                    >
+                      <BellRing className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-semibold">{r.content || actionTypeLabel(r.action_type)}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {actionTypeLabel(r.action_type)} · מתוזמן ל-{formatShortDate(r.remind_at)}
+                        {overdue ? <span className="text-destructive"> (באיחור)</span> : null}
+                        {r.assigned_to_name ? ` · ${r.assigned_to_name}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="h-7 text-xs"
+                      className="h-8 rounded-full px-3 text-xs"
+                      title="סימון כבוצע"
                       onClick={() => void updateReminder(r.id, "done")}
                     >
+                      <Check className="h-3.5 w-3.5" />
                       בוצע
                     </Button>
                     <Button
                       type="button"
-                      size="sm"
+                      size="icon"
                       variant="ghost"
-                      className="h-7 text-xs"
+                      className="h-8 w-8 rounded-full border border-border/60 bg-background"
+                      title="עריכת תזכורת"
+                      aria-label="עריכת תזכורת"
                       onClick={() => setEditingReminder(r)}
                     >
-                      ערוך
+                      <Pencil className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       type="button"
-                      size="sm"
+                      size="icon"
                       variant="ghost"
-                      className="h-7 text-xs"
+                      className="h-8 w-8 rounded-full border border-border/60 bg-background text-muted-foreground"
+                      title="ביטול תזכורת"
+                      aria-label="ביטול תזכורת"
                       onClick={() => void updateReminder(r.id, "cancelled")}
                     >
-                      בטל
+                      <X className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
-                {r.content ? <div className="mt-1 text-muted-foreground">{r.content}</div> : null}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* Communication timeline */}
       <div>
-        <div className="mb-2 text-sm font-semibold">היסטוריית שיחות</div>
+        <div className="mb-2 text-xs font-semibold text-muted-foreground">היסטוריית שיחות</div>
         {loading ? (
           <p className="text-sm text-muted-foreground">טוען...</p>
         ) : logs.length === 0 ? (
@@ -485,6 +563,36 @@ export default function CollectionTrackingPanel({
           </div>
         )}
       </div>
+
+      {/* Inline mode: forms open next to the footer action bar */}
+      {collapsibleForms ? callFormBlock : null}
+      {collapsibleForms ? reminderFormBlock : null}
+      {collapsibleForms && (!showCallForm || !showReminderForm) ? (
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border/50 pt-3">
+          {!showReminderForm ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="border border-primary/20 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+              onClick={() => setShowReminderForm(true)}
+            >
+              + תזכורת
+            </Button>
+          ) : null}
+          {!showCallForm ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="border border-primary/20 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+              onClick={() => setShowCallForm(true)}
+            >
+              + תיעוד שיחה
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       <EditReminderDialog
         reminder={editingReminder}

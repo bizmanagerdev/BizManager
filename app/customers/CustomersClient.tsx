@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
-import { loadMoreCustomers } from "@/app/customers/actions";
+import { loadCustomerRowsByIds, loadMoreCustomers } from "@/app/customers/actions";
 import type { CustomersFilters } from "@/app/customers/loadCustomers";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
@@ -169,23 +169,32 @@ export default function CustomersClient({
   useEffect(() => {
     const q = query.trim();
     if (!q) { setApiSearchRows(null); return; }
+    let cancelled = false;
     const timer = setTimeout(async () => {
       try {
         const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
         if (!res.ok) return;
         const json = await res.json() as { customers?: Array<{ id: string; name: string; phone?: string | null; email?: string | null; address?: string | null; requires_prepayment?: boolean; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
+        const matched = json.customers ?? [];
+        const fallbackRows = matched.map((c) => ({
+          customer_id: c.id, customer_name: c.name, name: c.name,
+          phone: c.phone ?? null, email: c.email ?? null, address: c.address ?? null,
+          requires_prepayment: c.requires_prepayment ?? false,
+          contacts: c.contacts ?? [],
+          orders_count: 0, projects_count: 0, total_sales: 0, total_paid: 0, open_balance: 0,
+        }));
+        if (cancelled) return;
+        setApiSearchRows(fallbackRows);
+        // Second pass: swap in the enriched rows (real counts/totals) once loaded.
+        const { rows: enriched } = await loadCustomerRowsByIds(matched.map((c) => c.id));
+        if (cancelled || enriched.length === 0) return;
+        const enrichedById = new Map(enriched.map((row) => [s(row, "customer_id"), row]));
         setApiSearchRows(
-          (json.customers ?? []).map((c) => ({
-            customer_id: c.id, customer_name: c.name, name: c.name,
-            phone: c.phone ?? null, email: c.email ?? null, address: c.address ?? null,
-            requires_prepayment: c.requires_prepayment ?? false,
-            contacts: c.contacts ?? [],
-            orders_count: 0, projects_count: 0, total_sales: 0, total_paid: 0, open_balance: 0,
-          }))
+          fallbackRows.map((row) => enrichedById.get(row.customer_id) ?? row)
         );
       } catch { /* ignore */ }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [query]);
 
   const filtered = useMemo(() => {
@@ -478,7 +487,11 @@ export default function CustomersClient({
                     <span className="text-muted-foreground">פרויקטים:</span>
                     <span className="font-medium">{projectsCount}</span>
                   </div>
-                  <div className="flex items-baseline gap-1 col-span-2">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-muted-foreground">מכירות:</span>
+                    <span className="font-medium">{ils(n(row, "total_sales"))}</span>
+                  </div>
+                  <div className="flex items-baseline gap-1">
                     <span className="text-muted-foreground">יתרה:</span>
                     <span className={`font-medium ${openBalance > 0 ? "text-destructive" : ""}`}>{ils(openBalance)}</span>
                   </div>
@@ -590,7 +603,14 @@ export default function CustomersClient({
                   </td>
                   <td className="px-2 py-3">{n(row, "orders_count")}</td>
                   <td className="px-2 py-3">{n(row, "projects_count")}</td>
-                  <td className="truncate px-2 py-3 font-medium">{ils(openBalance)}</td>
+                  <td className="px-2 py-3">
+                    <div className={`truncate font-medium ${openBalance > 0 ? "text-destructive" : ""}`}>
+                      {ils(openBalance)}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      מכירות {ils(n(row, "total_sales"))}
+                    </div>
+                  </td>
                   <td className="px-2 py-3">
                     <div className="flex flex-wrap gap-1">
                       {row.requires_prepayment === true ? (

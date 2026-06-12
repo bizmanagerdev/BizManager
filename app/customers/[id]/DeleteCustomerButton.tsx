@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,6 +63,7 @@ export default function DeleteCustomerButton({
         return;
       }
 
+      toast.success("הלקוח נמחק");
       emitNavigationStart();
       setOpen(false);
       router.push(returnHref);

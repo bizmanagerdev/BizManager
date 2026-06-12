@@ -26,16 +26,21 @@ export async function POST(req: Request) {
     const businessDomain = String(form.get("business_domain") ?? "").trim() || "logistics_projects";
     const projectId = String(form.get("project_id") ?? "").trim();
     const propertyId = String(form.get("property_id") ?? "").trim();
+    const customerId = String(form.get("customer_id") ?? "").trim();
     const category = String(form.get("category") ?? form.get("tag") ?? "").trim();
 
-    if (businessDomain === "logistics_projects" && !projectId) {
-      return NextResponse.json({ error: "Missing project_id" }, { status: 400 });
-    }
-    if (businessDomain === "property_management" && !propertyId) {
-      return NextResponse.json({ error: "Missing property_id" }, { status: 400 });
-    }
-    if (!["logistics_projects", "property_management"].includes(businessDomain)) {
-      return NextResponse.json({ error: "Unsupported business_domain" }, { status: 400 });
+    // customer_id is a standalone target (customer page uploads); the
+    // business_domain/project/property rules only apply without it.
+    if (!customerId) {
+      if (businessDomain === "logistics_projects" && !projectId) {
+        return NextResponse.json({ error: "Missing project_id" }, { status: 400 });
+      }
+      if (businessDomain === "property_management" && !propertyId) {
+        return NextResponse.json({ error: "Missing property_id" }, { status: 400 });
+      }
+      if (!["logistics_projects", "property_management"].includes(businessDomain)) {
+        return NextResponse.json({ error: "Unsupported business_domain" }, { status: 400 });
+      }
     }
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
@@ -50,9 +55,17 @@ export async function POST(req: Request) {
     const documentId = crypto.randomUUID();
     const displayName = (file.name.split(/[/\\]/).pop() ?? "file").trim() || "file";
     const ext = safeExtensionFromFilename(displayName);
-    const linkedEntityType = businessDomain === "property_management" ? "property" : "project";
-    const linkedEntityId = businessDomain === "property_management" ? propertyId : projectId;
-    const storageFolder = businessDomain === "property_management" ? "properties" : "projects";
+    const linkedEntityType = customerId
+      ? "customer"
+      : businessDomain === "property_management"
+        ? "property"
+        : "project";
+    const linkedEntityId = customerId || (businessDomain === "property_management" ? propertyId : projectId);
+    const storageFolder = customerId
+      ? "customers"
+      : businessDomain === "property_management"
+        ? "properties"
+        : "projects";
     const storagePath = ext
       ? `${storageFolder}/${linkedEntityId}/${documentId}.${ext}`
       : `${storageFolder}/${linkedEntityId}/${documentId}`;
