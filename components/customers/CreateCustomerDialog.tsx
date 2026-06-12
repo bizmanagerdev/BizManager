@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Check, ChevronLeft, ChevronRight, Info, Plus, Sparkles, UserRound, Users } from "lucide-react";
 import {
   AdaptiveDialog,
   AdaptiveGrid,
@@ -11,10 +12,10 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 export type CreatedCustomer = {
   id: string;
@@ -54,6 +55,15 @@ import { CITY_OPTIONS } from "@/lib/ui/cities";
 
 export const CREATE_CUSTOMER_CITY_OPTIONS = CITY_OPTIONS;
 
+type WizardStep = 1 | 2 | 3 | 4;
+
+const WIZARD_STEPS: { n: WizardStep; label: string }[] = [
+  { n: 1, label: "פרטים בסיסיים" },
+  { n: 2, label: "חיוב וכתובת" },
+  { n: 3, label: "אנשי קשר" },
+  { n: 4, label: "סיכום" },
+];
+
 function makeEmptyContact(): ContactDraft {
   return {
     full_name: "",
@@ -80,6 +90,7 @@ export function CreateCustomerDialog({
   onCreated,
   description = "שדות חובה: שם, טלפון ועיר.",
 }: CreateCustomerDialogProps) {
+  const [step, setStep] = useState<WizardStep>(1);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -181,6 +192,7 @@ export function CreateCustomerDialog({
   }
 
   function reset() {
+    setStep(1);
     setName("");
     setPhone("");
     setWhatsapp("");
@@ -234,17 +246,77 @@ export function CreateCustomerDialog({
     });
   }
 
+  const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
+
+  function stepError(n: WizardStep): string | null {
+    if (n === 1) {
+      if (!name.trim()) return "יש להזין שם לקוח.";
+      if (!phone.trim()) return "יש להזין מספר טלפון.";
+      if (!finalCity) return "יש לבחור עיר.";
+      return null;
+    }
+    if (n === 3) {
+      const badIdx = contacts.findIndex(
+        (c) =>
+          !c.full_name.trim() &&
+          (c.role.trim() || c.phone.trim() || c.email.trim() || c.whatsapp.trim() || c.notes.trim())
+      );
+      if (badIdx >= 0) return `איש קשר ${badIdx + 1} חייב לכלול שם מלא.`;
+      return null;
+    }
+    return null;
+  }
+
+  function canClickStep(n: WizardStep): boolean {
+    if (submitting) return false;
+    if (n <= step) return true;
+    for (const s of WIZARD_STEPS) {
+      if (s.n >= n) break;
+      if (stepError(s.n)) return false;
+    }
+    return true;
+  }
+
+  function goToStep(n: WizardStep) {
+    if (!canClickStep(n)) return;
+    setError(null);
+    setStep(n);
+  }
+
+  function goBack() {
+    if (step > 1) {
+      setError(null);
+      setStep((step - 1) as WizardStep);
+    }
+  }
+
+  function goNext() {
+    if (step === 4) {
+      void submit();
+      return;
+    }
+    const validation = stepError(step);
+    if (validation) {
+      setError(validation);
+      return;
+    }
+    setError(null);
+    setStep((step + 1) as WizardStep);
+  }
+
   async function submit() {
     if (submitting) return;
     setError(null);
 
     const trimName = name.trim();
     const trimPhone = phone.trim();
-    const finalCity = city === "אחר" ? cityOther.trim() : city.trim();
 
-    if (!trimName) { setError("יש להזין שם לקוח."); return; }
-    if (!trimPhone) { setError("יש להזין מספר טלפון."); return; }
-    if (!finalCity) { setError("יש לבחור עיר."); return; }
+    const firstInvalid = WIZARD_STEPS.map((s) => ({ n: s.n, error: stepError(s.n) })).find((s) => s.error);
+    if (firstInvalid?.error) {
+      setStep(firstInvalid.n);
+      setError(firstInvalid.error);
+      return;
+    }
 
     const prepared = contacts
       .map((c) => ({
@@ -258,9 +330,6 @@ export function CreateCustomerDialog({
         active: c.active,
       }))
       .filter((c) => c.full_name || c.role || c.phone || c.email || c.whatsapp || c.notes);
-
-    const badIdx = prepared.findIndex((c) => !c.full_name);
-    if (badIdx >= 0) { setError(`איש קשר ${badIdx + 1} חייב לכלול שם מלא.`); return; }
 
     const hasPrimary = prepared.some((c) => c.is_primary);
     const normalized = prepared.map((c, i) => ({
@@ -345,13 +414,18 @@ export function CreateCustomerDialog({
     }
   }
 
+  const visibleContactsCount = contacts.length;
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <AdaptiveDialog size="formLg">
         <DialogHeader>
+          <div className="text-xs font-medium text-muted-foreground">לקוחות</div>
           <DialogTitle>הוספת לקוח חדש</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogDescription className="sr-only">{description}</DialogDescription>
         </DialogHeader>
+
+        <CustomerWizardStepper current={step} canClick={canClickStep} onStepClick={goToStep} />
 
         {!similarDismissed && similar.length > 0 ? (
           <div className="sticky top-0 z-10 -mx-6 bg-background px-6 pb-2 pt-1">
@@ -449,210 +523,398 @@ export function CreateCustomerDialog({
         ) : null}
 
         <form
-          className="space-y-3"
+          className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            void submit();
+            goNext();
           }}
         >
           <fieldset disabled={submitting} className="space-y-3">
-            <Field label="שם לקוח *">
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </Field>
-
-            <AdaptiveGrid variant="formTwo">
-              <Field label="טלפון *">
-                <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </Field>
-              <Field label="וואטסאפ">
-                <Input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
-              </Field>
-            </AdaptiveGrid>
-
-            <Field label="אימייל">
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </Field>
-
-            <Field label="שם לחשבונית">
-              <Input
-                value={nameForInvoice}
-                onChange={(e) => setNameForInvoice(e.target.value)}
-                placeholder="אם שונה משם הלקוח"
-              />
-            </Field>
-
-            <Field label="ח.פ / ת.ז">
-              <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} />
-            </Field>
-
-            <Field label="עיר *">
-              <select
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">בחר עיר...</option>
-                {CREATE_CUSTOMER_CITY_OPTIONS.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </Field>
-
-            {city === "אחר" ? (
-              <Field label="עיר (הקלדה חופשית) *">
-                <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
-              </Field>
-            ) : null}
-
-            <Field label="כתובת">
-              <Input value={address} onChange={(e) => setAddress(e.target.value)} />
-            </Field>
-
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={requiresPrepayment}
-                onChange={(e) => setRequiresPrepayment(e.target.checked)}
-              />
-              <span>לקוח ברשימת תשלום מראש</span>
-            </label>
-
-            <details
-              className="rounded-md border border-dashed p-3"
-              open={Boolean(notes || contacts.length > 0)}
-            >
-              <summary className="cursor-pointer text-sm font-medium">פרטים נוספים</summary>
-              <div className="mt-3 space-y-3">
-                <Field label="הערות">
-                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+            {step === 1 ? (
+              <div className="space-y-3">
+                <Field label="שם לקוח" required>
+                  <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
                 </Field>
 
-                <div className="space-y-3 rounded-md border p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-medium">אנשי קשר</div>
-                      <div className="text-xs text-muted-foreground">
-                        אפשר להוסיף אנשי קשר כבר ביצירת הלקוח.
-                      </div>
-                    </div>
-                    <Button type="button" variant="outline" size="sm" onClick={addContact}>
-                      הוספת איש קשר
-                    </Button>
+                <AdaptiveGrid variant="formTwo">
+                  <Field label="טלפון" required>
+                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
+                  </Field>
+                  <Field label="וואטסאפ" hint="רשות">
+                    <Input
+                      value={whatsapp}
+                      onChange={(e) => setWhatsapp(e.target.value)}
+                      inputMode="tel"
+                      placeholder="אם שונה מהטלפון"
+                    />
+                  </Field>
+                </AdaptiveGrid>
+
+                <Field label="אימייל" hint="רשות">
+                  <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                </Field>
+
+                <Field label="עיר" required>
+                  <select
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">בחר עיר...</option>
+                    {CREATE_CUSTOMER_CITY_OPTIONS.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </Field>
+
+                {city === "אחר" ? (
+                  <Field label="עיר (הקלדה חופשית)" required>
+                    <Input value={cityOther} onChange={(e) => setCityOther(e.target.value)} />
+                  </Field>
+                ) : null}
+              </div>
+            ) : null}
+
+            {step === 2 ? (
+              <div className="space-y-3">
+                <Field label="שם לחשבונית" hint="אם שונה משם הלקוח">
+                  <Input value={nameForInvoice} onChange={(e) => setNameForInvoice(e.target.value)} />
+                </Field>
+
+                <Field label="ח.פ / ת.ז" hint="רשות">
+                  <Input value={regNumber} onChange={(e) => setRegNumber(e.target.value)} inputMode="numeric" />
+                </Field>
+
+                <Field label="כתובת" hint="רשות">
+                  <Input
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="רחוב, מספר, שכונה"
+                  />
+                </Field>
+
+                <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/70 bg-background/70 px-4 py-3">
+                  <div>
+                    <div className="text-sm font-medium">לקוח ברשימת תשלום מראש</div>
+                    <div className="text-xs text-muted-foreground">חיוב מתבצע לפני אספקה</div>
                   </div>
-                  {contacts.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">עדיין לא נוספו אנשי קשר.</p>
-                  ) : null}
-                  {contacts.map((contact, index) => (
-                    <div
-                      key={`new-contact-${index}`}
-                      className="space-y-3 rounded-md border bg-background p-3"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-sm font-medium">איש קשר {index + 1}</div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeContact(index)}
-                        >
-                          הסרה
-                        </Button>
-                      </div>
-                      <Field label="שם מלא *">
-                        <Input
-                          value={contact.full_name}
-                          onChange={(e) => updateContact(index, { full_name: e.target.value })}
-                        />
-                      </Field>
-                      <Field label="תפקיד">
-                        <Input
-                          value={contact.role}
-                          onChange={(e) => updateContact(index, { role: e.target.value })}
-                        />
-                      </Field>
-                      <AdaptiveGrid variant="formTwo">
-                        <Field label="טלפון">
-                          <Input
-                            value={contact.phone}
-                            onChange={(e) => updateContact(index, { phone: e.target.value })}
-                          />
-                        </Field>
-                        <Field label="וואטסאפ">
-                          <Input
-                            value={contact.whatsapp}
-                            onChange={(e) => updateContact(index, { whatsapp: e.target.value })}
-                          />
-                        </Field>
-                      </AdaptiveGrid>
-                      <Field label="אימייל">
-                        <Input
-                          value={contact.email}
-                          onChange={(e) => updateContact(index, { email: e.target.value })}
-                        />
-                      </Field>
-                      <Field label="הערות">
-                        <Textarea
-                          value={contact.notes}
-                          onChange={(e) => updateContact(index, { notes: e.target.value })}
-                          rows={2}
-                        />
-                      </Field>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={contact.is_primary}
-                          onChange={(e) =>
-                            updateContact(index, {
-                              is_primary: e.target.checked,
-                              active: e.target.checked ? true : contact.active,
-                            })
-                          }
-                        />
-                        <span>איש קשר ראשי</span>
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={contact.active}
-                          onChange={(e) => updateContact(index, { active: e.target.checked })}
-                        />
-                        <span>פעיל</span>
-                      </label>
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 shrink-0"
+                    checked={requiresPrepayment}
+                    onChange={(e) => setRequiresPrepayment(e.target.checked)}
+                  />
+                </label>
+
+                <Field label="הערות" hint="רשות">
+                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+                </Field>
+              </div>
+            ) : null}
+
+            {step === 3 ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-sm text-secondary-foreground">
+                  <Info className="h-4 w-4 shrink-0" />
+                  <span>אפשר להוסיף אנשי קשר כבר עכשיו, או לדלג ולהוסיף מאוחר יותר.</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  אנשי קשר
+                </div>
+
+                {contacts.length === 0 ? (
+                  <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    עדיין לא נוספו אנשי קשר.
+                  </div>
+                ) : null}
+
+                {contacts.map((contact, index) => (
+                  <div
+                    key={`new-contact-${index}`}
+                    className="space-y-3 rounded-md border bg-background p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-medium">איש קשר {index + 1}</div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => removeContact(index)}
+                      >
+                        הסרה
+                      </Button>
                     </div>
-                  ))}
+                    <Field label="שם מלא" required>
+                      <Input
+                        value={contact.full_name}
+                        onChange={(e) => updateContact(index, { full_name: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="תפקיד" hint="רשות">
+                      <Input
+                        value={contact.role}
+                        onChange={(e) => updateContact(index, { role: e.target.value })}
+                      />
+                    </Field>
+                    <AdaptiveGrid variant="formTwo">
+                      <Field label="טלפון" hint="רשות">
+                        <Input
+                          value={contact.phone}
+                          onChange={(e) => updateContact(index, { phone: e.target.value })}
+                          inputMode="tel"
+                        />
+                      </Field>
+                      <Field label="וואטסאפ" hint="רשות">
+                        <Input
+                          value={contact.whatsapp}
+                          onChange={(e) => updateContact(index, { whatsapp: e.target.value })}
+                          inputMode="tel"
+                        />
+                      </Field>
+                    </AdaptiveGrid>
+                    <Field label="אימייל" hint="רשות">
+                      <Input
+                        value={contact.email}
+                        onChange={(e) => updateContact(index, { email: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="הערות" hint="רשות">
+                      <Textarea
+                        value={contact.notes}
+                        onChange={(e) => updateContact(index, { notes: e.target.value })}
+                        rows={2}
+                      />
+                    </Field>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={contact.is_primary}
+                        onChange={(e) =>
+                          updateContact(index, {
+                            is_primary: e.target.checked,
+                            active: e.target.checked ? true : contact.active,
+                          })
+                        }
+                      />
+                      <span>איש קשר ראשי</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={contact.active}
+                        onChange={(e) => updateContact(index, { active: e.target.checked })}
+                      />
+                      <span>פעיל</span>
+                    </label>
+                  </div>
+                ))}
+
+                <div className="flex justify-end">
+                  <Button type="button" variant="secondary" size="sm" onClick={addContact}>
+                    <Plus className="h-4 w-4" />
+                    הוספת איש קשר
+                  </Button>
                 </div>
               </div>
-            </details>
+            ) : null}
+
+            {step === 4 ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-sm text-secondary-foreground">
+                  <Sparkles className="h-4 w-4 shrink-0" />
+                  <span>
+                    בדקו שהכל תקין ולחצו <span className="font-semibold">יצירת לקוח</span>.
+                  </span>
+                </div>
+
+                <SummarySection icon={<UserRound className="h-4 w-4" />} title="פרטי הלקוח">
+                  <SummaryRow label="שם לקוח" value={name.trim()} />
+                  <SummaryRow label="טלפון" value={phone.trim()} />
+                  <SummaryRow label="וואטסאפ" value={whatsapp.trim()} />
+                  <SummaryRow label="אימייל" value={email.trim()} />
+                  <SummaryRow label="עיר" value={finalCity} />
+                </SummarySection>
+
+                <SummarySection title="חיוב וכתובת">
+                  <SummaryRow label="שם לחשבונית" value={nameForInvoice.trim()} />
+                  <SummaryRow label="ח.פ / ת.ז" value={regNumber.trim()} />
+                  <SummaryRow label="כתובת" value={address.trim()} />
+                  <SummaryRow
+                    label="תשלום מראש"
+                    value={requiresPrepayment ? "כן — חיוב לפני אספקה" : "לא"}
+                  />
+                  {notes.trim() ? <SummaryRow label="הערות" value={notes.trim()} /> : null}
+                </SummarySection>
+
+                <SummarySection icon={<Users className="h-4 w-4" />} title="אנשי קשר">
+                  {visibleContactsCount === 0 ? (
+                    <div className="px-3 py-2.5 text-sm text-muted-foreground">לא נוספו אנשי קשר.</div>
+                  ) : (
+                    contacts.map((c, i) => (
+                      <SummaryRow
+                        key={`summary-contact-${i}`}
+                        label={c.is_primary ? "איש קשר ראשי" : `איש קשר ${i + 1}`}
+                        value={[c.full_name.trim(), c.phone.trim()].filter(Boolean).join(" · ")}
+                      />
+                    ))
+                  )}
+                </SummarySection>
+              </div>
+            ) : null}
           </fieldset>
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => handleOpenChange(false)}
-              disabled={submitting}
-            >
-              ביטול
-            </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "יוצר..." : "יצירת לקוח"}
-            </Button>
-          </DialogFooter>
           {submitting ? (
             <p className="text-xs text-muted-foreground">יוצר לקוח חדש, נא להמתין...</p>
           ) : null}
+
+          <div className="flex items-center justify-between gap-2 border-t pt-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">שלב {step} מתוך 4</span>
+              {step > 1 ? (
+                <Button type="button" variant="secondary" size="sm" onClick={goBack} disabled={submitting}>
+                  <ChevronRight className="h-4 w-4" />
+                  חזרה
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => handleOpenChange(false)}
+                disabled={submitting}
+              >
+                ביטול
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {step === 4 ? (
+                  <>
+                    <Check className="h-4 w-4" />
+                    {submitting ? "יוצר..." : "יצירת לקוח"}
+                  </>
+                ) : (
+                  <>
+                    הבא
+                    <ChevronLeft className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         </form>
       </AdaptiveDialog>
     </Dialog>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/** Top progress indicator: numbered steps with labels, connected by a track. RTL-aware. */
+function CustomerWizardStepper({
+  current,
+  canClick,
+  onStepClick,
+}: {
+  current: WizardStep;
+  canClick: (n: WizardStep) => boolean;
+  onStepClick: (n: WizardStep) => void;
+}) {
+  return (
+    <div className="flex items-start px-1 pb-1">
+      {WIZARD_STEPS.map((s, i) => {
+        const done = s.n < current;
+        const active = s.n === current;
+        const clickable = canClick(s.n);
+        return (
+          <Fragment key={s.n}>
+            <div className="flex shrink-0 flex-col items-center gap-1">
+              <button
+                type="button"
+                aria-current={active ? "step" : undefined}
+                disabled={!clickable}
+                onClick={() => clickable && onStepClick(s.n)}
+                className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors",
+                  active && "border-primary bg-primary text-primary-foreground",
+                  done && "border-success bg-success text-success-foreground",
+                  !active && !done && "border-border text-muted-foreground",
+                  clickable && !active ? "cursor-pointer hover:border-primary/60" : "cursor-default"
+                )}
+              >
+                {done ? <Check className="h-3.5 w-3.5" /> : s.n}
+              </button>
+              <div
+                className={cn(
+                  "w-16 text-center text-[10px] font-medium leading-tight",
+                  active || done ? "text-foreground" : "text-muted-foreground"
+                )}
+              >
+                {s.label}
+              </div>
+            </div>
+            {i < WIZARD_STEPS.length - 1 ? (
+              <div
+                className={cn(
+                  "mx-1 mt-[14px] h-0.5 flex-1 rounded-full sm:mx-2",
+                  done ? "bg-success" : "bg-border"
+                )}
+              />
+            ) : null}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function SummarySection({
+  icon,
+  title,
+  children,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        {icon ? <span className="text-muted-foreground">{icon}</span> : null}
+        {title}
+      </div>
+      <div className="divide-y rounded-xl border">{children}</div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 px-3 py-2.5 text-sm">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="text-end font-medium text-foreground">{value || "—"}</span>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  hint,
+  required = false,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
+      <label className="text-sm font-medium">
+        {label}
+        {required ? <span className="text-destructive"> *</span> : null}
+        {hint ? <span className="font-normal text-muted-foreground"> · {hint}</span> : null}
+      </label>
       {children}
     </div>
   );

@@ -526,27 +526,27 @@ export default function CustomersClient({
         <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
         <table className="w-full table-fixed text-sm">
           <colgroup>
-            <col className="w-[18%]" />
+            <col className="w-[17%]" />
+            <col className="w-[15%]" />
+            <col className="w-[14%]" />
+            <col className="w-[6%]" />
+            <col className="w-[6%]" />
+            <col className="w-[6%]" />
+            <col className="w-[9%]" />
+            <col className="w-[11%]" />
             <col className="w-[16%]" />
-            <col className="w-[18%]" />
-            <col className="w-[8%]" />
-            <col className="w-[6%]" />
-            <col className="w-[6%]" />
-            <col className="w-[10%]" />
-            <col className="w-[10%]" />
-            <col className="w-[8%]" />
           </colgroup>
           <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
             <tr className="border-b border-border/70 text-right">
-              <th className="px-2 py-3 font-medium">לקוח</th>
-              <th className="px-2 py-3 font-medium">טלפון ואימייל</th>
-              <th className="px-2 py-3 font-medium">כתובת</th>
-              <th className="px-2 py-3 font-medium">Morning</th>
-              <th className="px-2 py-3 font-medium">הזמנות</th>
-              <th className="px-2 py-3 font-medium">פרויקטים</th>
-              <th className="px-2 py-3 font-medium">יתרה פתוחה</th>
-              <th className="px-2 py-3 font-medium">סטטוס</th>
-              <th className="px-2 py-3 font-medium">פעולות</th>
+              <th className="px-2 py-2 font-medium">לקוח</th>
+              <th className="px-2 py-2 font-medium">טלפון ואימייל</th>
+              <th className="px-2 py-2 font-medium">כתובת</th>
+              <th className="px-2 py-2 font-medium">Morning</th>
+              <th className="px-2 py-2 font-medium">הזמנות</th>
+              <th className="px-2 py-2 font-medium">פרויקטים</th>
+              <th className="px-2 py-2 font-medium">יתרה פתוחה</th>
+              <th className="px-2 py-2 font-medium">סטטוס</th>
+              <th className="px-2 py-2 font-medium">פעולות</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/70">
@@ -559,7 +559,7 @@ export default function CustomersClient({
               return (
                 <tr
                   key={`${id || customerName}-desktop`}
-                  className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
+                  className="cursor-pointer align-middle hover:bg-muted/20 focus-visible:bg-muted/20"
                   tabIndex={0}
                   role="link"
                   onClick={(event) => {
@@ -573,60 +573,62 @@ export default function CustomersClient({
                     openCustomerDetails(id);
                   }}
                 >
-                  <td className="px-2 py-3">
-                    <div className="truncate text-right font-medium">{customerName}</div>
+                  <td className="px-2 py-1.5">
+                    <div className="truncate text-right font-medium leading-tight">{customerName}</div>
                     {s(row, "name_for_invoice") && s(row, "name_for_invoice") !== customerName ? (
-                      <div className="truncate text-right text-xs text-muted-foreground">
+                      <div className="truncate text-right text-xs leading-tight text-muted-foreground">
                         שם לחשבונית: {s(row, "name_for_invoice")}
                       </div>
                     ) : null}
                   </td>
-                  <td className="px-2 py-3">
-                    <div className="truncate">{s(row, "phone") || "-"}</div>
-                    <div className="truncate text-xs text-muted-foreground">{s(row, "email") || "-"}</div>
+                  <td className="px-2 py-1.5">
+                    <div className="truncate leading-tight">{s(row, "phone") || "-"}</div>
+                    {s(row, "email") ? (
+                      <div className="truncate text-xs leading-tight text-muted-foreground">{s(row, "email")}</div>
+                    ) : null}
                   </td>
-                  <td className="px-2 py-3">
+                  <td className="px-2 py-1.5">
                     <div className="truncate text-muted-foreground">{s(row, "address") || "-"}</div>
                   </td>
-                  <td className="px-2 py-3">
+                  <td className="px-2 py-1.5">
                     {linkedMorningClientId ? (
                       <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
-                        <Badge className={customerFlagBadgeClass("success")}>Morning</Badge>
+                        <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>Morning</Badge>
                       </a>
                     ) : (
-                      <Badge className={customerFlagBadgeClass("neutral")}>ללא</Badge>
+                      <Badge className={`${customerFlagBadgeClass("neutral")} px-1.5 py-0 text-[10px]`}>ללא</Badge>
                     )}
                   </td>
-                  <td className="px-2 py-3">{n(row, "orders_count")}</td>
-                  <td className="px-2 py-3">{n(row, "projects_count")}</td>
-                  <td className="px-2 py-3">
+                  <td className="px-2 py-1.5">{n(row, "orders_count")}</td>
+                  <td className="px-2 py-1.5">{n(row, "projects_count")}</td>
+                  <td className="px-2 py-1.5">
                     <div className={`truncate font-medium ${openBalance > 0 ? "text-destructive" : ""}`}>
                       {ils(openBalance)}
                     </div>
                   </td>
-                  <td className="px-2 py-3">
+                  <td className="px-2 py-1.5">
                     <div className="flex flex-wrap gap-1">
                       {row.requires_prepayment === true ? (
-                        <Badge className={customerFlagBadgeClass("danger")}>תשלום מראש</Badge>
+                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
                       ) : null}
                       {openBalance > 0 ? (
-                        <Badge className={customerFlagBadgeClass("danger")}>חוב פתוח</Badge>
+                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>חוב פתוח</Badge>
                       ) : null}
                       {row.active === false ? (
-                        <Badge className={customerFlagBadgeClass("danger")}>לא פעיל</Badge>
+                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>לא פעיל</Badge>
                       ) : (
-                        <Badge className={customerFlagBadgeClass("success")}>פעיל</Badge>
+                        <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>פעיל</Badge>
                       )}
                     </div>
                   </td>
-                  <td className="px-2 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      <Button asChild size="sm" className="h-8 px-2 text-xs">
+                  <td className="px-2 py-1.5">
+                    <div className="flex flex-nowrap gap-1">
+                      <Button asChild size="sm" className="h-7 px-2 text-xs">
                         <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>
                           + הזמנה
                         </Link>
                       </Button>
-                      <Button asChild size="sm" variant="outline" className="h-8 px-2 text-xs">
+                      <Button asChild size="sm" variant="secondary" className="h-7 px-2 text-xs">
                         <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>
                           + פרויקט
                         </Link>
