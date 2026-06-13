@@ -59,7 +59,7 @@ export default function DeleteCustomerButton({
       const json = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
 
       if (!res.ok || !json.ok) {
-        setError(json.error ?? "מחיקת לקוח נכשלה.");
+        setError(json.error || "מחיקת לקוח נכשלה.");
         return;
       }
 
