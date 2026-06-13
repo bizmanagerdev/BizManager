@@ -1484,7 +1484,7 @@ export default function DashboardActions({
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setWeekOverviewOpen(true)}
         >
-          <FolderKanban className="h-7 w-7" strokeWidth={2.2} />
+          <FolderKanban className="!h-9 !w-9" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.thisWeek}</span>
         </Button>
 
@@ -1497,7 +1497,7 @@ export default function DashboardActions({
             router.push("/sales?tab=deliveries");
           }}
         >
-          <ShoppingCart className="h-7 w-7" strokeWidth={2.2} />
+          <ShoppingCart className="!h-9 !w-9" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.ordersByCity}</span>
         </Button>
 
@@ -1507,7 +1507,7 @@ export default function DashboardActions({
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setProjectOpen(true)}
         >
-          <FolderKanban className="h-7 w-7" strokeWidth={2.2} />
+          <FolderKanban className="!h-9 !w-9" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.projectNew}</span>
         </Button>
 
@@ -1520,7 +1520,7 @@ export default function DashboardActions({
             setOrderOpen(true);
           }}
         >
-          <ShoppingCart className="h-7 w-7" strokeWidth={2.2} />
+          <ShoppingCart className="!h-9 !w-9" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.orderNew}</span>
         </Button>
 
@@ -1530,7 +1530,7 @@ export default function DashboardActions({
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setExpenseOpen(true)}
         >
-          <ArrowUpCircle className="h-7 w-7 text-destructive" strokeWidth={2.4} />
+          <ArrowUpCircle className="!h-9 !w-9 text-destructive" strokeWidth={2.4} />
           <span className="font-semibold">{HEBREW.expenseNew}</span>
         </Button>
 
@@ -1540,7 +1540,7 @@ export default function DashboardActions({
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setIncomeOpen(true)}
         >
-          <ArrowDownCircle className="h-7 w-7 text-success" strokeWidth={2.4} />
+          <ArrowDownCircle className="!h-9 !w-9 text-success" strokeWidth={2.4} />
           <span className="font-semibold">{HEBREW.incomeNew}</span>
         </Button>
 
@@ -1550,7 +1550,7 @@ export default function DashboardActions({
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setTransferOpen(true)}
         >
-          <ArrowLeftRight className="h-7 w-7" strokeWidth={2.2} />
+          <ArrowLeftRight className="!h-9 !w-9" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.transferNew}</span>
         </Button>
 
@@ -1563,7 +1563,7 @@ export default function DashboardActions({
             setProjectCreateCustomerOpen(true);
           }}
         >
-          <UserPlus className="h-7 w-7" strokeWidth={2.2} />
+          <UserPlus className="!h-9 !w-9" strokeWidth={2.2} />
           <span className="font-semibold">לקוח חדש</span>
         </Button>
 
@@ -1573,7 +1573,7 @@ export default function DashboardActions({
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setTaskOpen(true)}
         >
-          <ListTodo className="h-7 w-7" strokeWidth={2.2} />
+          <ListTodo className="!h-9 !w-9" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.taskNew}</span>
         </Button>
 
@@ -1585,7 +1585,7 @@ export default function DashboardActions({
             onClick={() => void startOwnSession()}
             disabled={Boolean(currentOpenSession) || selfSessionSubmitting}
           >
-            <PlayCircle className="h-7 w-7" strokeWidth={2.2} />
+            <PlayCircle className="!h-9 !w-9" strokeWidth={2.2} />
             <span className="font-semibold">{HEBREW.selfSessionStart}</span>
           </Button>
         ) : null}
@@ -1599,7 +1599,7 @@ export default function DashboardActions({
             setManualSessionOpen(true);
           }}
         >
-          <Clock3 className="h-7 w-7" strokeWidth={2.2} />
+          <Clock3 className="!h-9 !w-9" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.manualSessionNew}</span>
         </Button>
       </AdaptiveGrid>
