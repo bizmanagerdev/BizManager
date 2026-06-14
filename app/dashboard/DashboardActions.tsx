@@ -122,6 +122,15 @@ function nextMonth(dateString: string) {
   return date.toISOString().slice(0, 10);
 }
 
+// Moving projects keep a free-text "items to move" list: one item per line.
+function textToItemsToMove(value: string) {
+  const items = value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : null;
+}
+
 function normalizeDateOnly(value: string | null | undefined) {
   if (!value) return "";
   const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
@@ -424,6 +433,7 @@ export default function DashboardActions({
   const [projectStartDate, setProjectStartDate] = useState(getTodayDate());
   const [projectEndDate, setProjectEndDate] = useState(nextMonth(getTodayDate()));
   const [projectNotes, setProjectNotes] = useState("");
+  const [projectItemsToMove, setProjectItemsToMove] = useState("");
   const [projectCreateCustomerOpen, setProjectCreateCustomerOpen] = useState(false);
   const [projectCreateCustomerReturnToProject, setProjectCreateCustomerReturnToProject] = useState(false);
 
@@ -728,6 +738,7 @@ export default function DashboardActions({
     setProjectStartDate(getTodayDate());
     setProjectEndDate(nextMonth(getTodayDate()));
     setProjectNotes("");
+    setProjectItemsToMove("");
     resetProjectCustomerCreateForm();
   }
 
@@ -838,6 +849,7 @@ export default function DashboardActions({
           start_date: projectStartDate || null,
           end_date: projectEndDate || null,
           notes: projectNotes.trim() || null,
+          items_to_move: projectType === "moving" ? textToItemsToMove(projectItemsToMove) : null,
         }),
       });
 
@@ -2221,6 +2233,21 @@ export default function DashboardActions({
                     <span>{HEBREW.notes}</span>
                     <Textarea value={projectNotes} onChange={(e) => setProjectNotes(e.target.value)} />
                   </label>
+
+                  {projectType === "moving" ? (
+                    <label className="space-y-2 text-sm col-span-full">
+                      <span>פריטים להעברה</span>
+                      <Textarea
+                        value={projectItemsToMove}
+                        onChange={(e) => setProjectItemsToMove(e.target.value)}
+                        rows={5}
+                        placeholder="כל פריט בשורה נפרדת"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.
+                      </p>
+                    </label>
+                  ) : null}
                 </AdaptiveGrid>
               </div>
             )}
