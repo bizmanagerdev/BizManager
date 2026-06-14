@@ -32,19 +32,20 @@
   }
 
   /* Hard guarantee: nothing can make the PAGE scroll sideways, at any screen
-     size or text size. `clip` (not `hidden`) keeps the sticky top bar and
-     sticky table headers working; set on both html and body so whichever is the
-     scroll container is covered. Wide tables still scroll inside their own
-     overflow-x-auto containers. */
-  html,
-  body {
-    overflow-x: clip;
+     size or text size. `overflow-x: hidden` on the ROOT element reliably
+     propagates to the viewport scroller (unlike `clip`, which several engines
+     don't propagate). It's set on html ONLY — NOT body — so body never becomes
+     its own scroll container and the sticky top bar keeps working. Wide tables
+     still scroll inside their own overflow-x-auto containers. */
+  html {
+    overflow-x: hidden;
     max-width: 100%;
   }
 
   /* Long unbreakable strings (URLs, IBANs, long numbers) wrap instead of pushing
      the layout wider than the screen. */
   body {
+    max-width: 100%;
     overflow-wrap: break-word;
   }
 
