@@ -1936,7 +1936,7 @@ export default function SalaryCenterClient({
     });
     const showHourlyColumns = workRowData.some((row) => row.isHourly);
     const showNotesColumn = workRowData.some((row) => row.notes && row.notes.trim().length > 0);
-    const workRows = workRowData
+    const workRowsHtml = workRowData
       .map((row) => {
         const hourlyCells = showHourlyColumns
           ? `
@@ -1959,8 +1959,7 @@ export default function SalaryCenterClient({
             ${notesCell}
           </tr>
         `;
-      })
-      .join("");
+      });
     const notesHeader = showNotesColumn ? "<th>הערות</th>" : "";
     const workTableHeaders = showHourlyColumns
       ? `
@@ -1979,7 +1978,7 @@ export default function SalaryCenterClient({
         <th>עלות עבודה</th>
         ${notesHeader}
       `;
-    const paymentRows = selectedWorkerPrintPayments
+    const paymentRowsHtml = selectedWorkerPrintPayments
       .map(({ payment, scopedAmount }) => {
         const details = [formatWorkerPaymentMethodLabel(payment.payment_method), payment.reference_number]
           .filter(Boolean)
@@ -1992,11 +1991,67 @@ export default function SalaryCenterClient({
             <td>${escapePrintHtml(payment.notes || "-")}</td>
           </tr>
         `;
-      })
-      .join("");
+      });
+    const paymentTableHeaders = `<th>תאריך תשלום</th><th>סכום</th><th>איך שולם</th><th>הערות</th>`;
 
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
+
+    const headerHtml = `
+      <table class="hero-table">
+        <thead>
+          <tr>
+            <th>סיכום עבודה ותשלומים לעובד</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="worker-name">${escapePrintHtml(workerName)}</div>
+              <div class="worker-phone">טלפון: ${escapePrintHtml(selectedWorker.phone ?? "-")}</div>
+              <p class="subtle">פרויקט: ${escapePrintHtml(selectedProjectLabel)} • חודש: ${escapePrintHtml(selectedMonthLabel)}</p>
+              <p class="subtle">הופק בתאריך ${escapePrintHtml(generatedLabel)}</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="summary">
+        <div class="card">
+          <div class="label">סה"כ שנצבר לתקופה</div>
+          <div class="value">${escapePrintHtml(formatCurrency(selectedWorkerPrintSummary.earned))}</div>
+        </div>
+        <div class="card">
+          <div class="label">סה"כ שולם לתקופה</div>
+          <div class="value">${escapePrintHtml(formatCurrency(selectedWorkerPrintSummary.paid))}</div>
+        </div>
+        <div class="card">
+          <div class="label">יתרה לתשלום לתקופה</div>
+          <div class="value">${escapePrintHtml(formatCurrency(selectedWorkerPrintSummary.owed))}</div>
+        </div>
+      </div>
+    `;
+
+    // Each table prints on its own page set; every page repeats the header +
+    // summary and shows "עמוד X מתוך Y". The paginator (script below) measures
+    // the rendered rows and breaks pages so nothing is clipped.
+    const printData = {
+      headerHtml,
+      tables: [
+        {
+          title: "פירוט עבודה",
+          headers: workTableHeaders,
+          rows: workRowsHtml,
+          empty: "אין משמרות להצגה למסננים שנבחרו.",
+        },
+        {
+          title: "פירוט תשלומים",
+          headers: paymentTableHeaders,
+          rows: paymentRowsHtml,
+          empty: "אין תשלומים שמורים למסננים שנבחרו.",
+        },
+      ],
+    };
+    const printDataJson = JSON.stringify(printData).replace(/</g, "\\u003c");
 
     const printHtml = `<!doctype html>
 <html lang="he" dir="rtl">
@@ -2004,162 +2059,140 @@ export default function SalaryCenterClient({
     <meta charset="utf-8" />
     <title>${escapePrintHtml(`סיכום עובד - ${workerName}`)}</title>
     <style>
+      @page { size: A4; margin: 10mm; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
       body {
         font-family: Arial, sans-serif;
-        margin: 24px;
         color: #1D2848;
         direction: rtl;
       }
+      .page {
+        position: relative;
+        height: 277mm;
+        overflow: hidden;
+        page-break-after: always;
+        break-after: page;
+      }
+      .page:last-child { page-break-after: avoid; break-after: avoid; }
+      .page-content { height: calc(277mm - 14mm); overflow: hidden; }
+      .page-footer {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 14mm;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-top: 1px solid #BAE6FD;
+        color: #0369A1;
+        font-size: 12px;
+        font-weight: 700;
+      }
       h1, h2, h3, p { margin: 0; }
-      .hero-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 20px;
-      }
-      .hero-table th,
-      .hero-table td {
-        border: 1px solid #BAE6FD;
-        padding: 14px 16px;
-        text-align: right;
-      }
-      .hero-table th {
-        background: #E0F2FE;
-        font-size: 24px;
-        font-weight: 800;
-      }
-      .hero-table td {
-        background: #ffffff;
-      }
-      .worker-name {
-        font-size: 26px;
-        font-weight: 800;
-      }
-      .worker-phone {
-        margin-top: 6px;
-        font-size: 20px;
-        font-weight: 700;
-      }
-      .subtle {
-        color: #0369A1;
-        font-size: 12px;
-        margin-top: 6px;
-      }
-      .summary {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 12px;
-        margin: 18px 0 24px;
-      }
-      .card {
-        border: 1px solid #BAE6FD;
-        border-radius: 12px;
-        padding: 12px;
-      }
-      .label {
-        color: #0369A1;
-        font-size: 12px;
-        margin-bottom: 8px;
-      }
-      .value {
-        font-size: 18px;
-        font-weight: 700;
-      }
-      .section {
-        margin-top: 24px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 12px;
-        font-size: 13px;
-      }
-      th, td {
-        border: 1px solid #BAE6FD;
-        padding: 8px 10px;
-        text-align: right;
-        vertical-align: top;
-      }
-      th {
-        background: #E0F2FE;
-      }
-      .empty {
-        margin-top: 12px;
-        border: 1px dashed #BAE6FD;
-        border-radius: 12px;
-        padding: 12px;
-        color: #0369A1;
-      }
-      @media print {
-        body { margin: 12px; }
-      }
+      .hero-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+      .hero-table th, .hero-table td { border: 1px solid #BAE6FD; padding: 12px 14px; text-align: right; }
+      .hero-table th { background: #E0F2FE; font-size: 22px; font-weight: 800; }
+      .hero-table td { background: #ffffff; }
+      .worker-name { font-size: 24px; font-weight: 800; }
+      .worker-phone { margin-top: 6px; font-size: 18px; font-weight: 700; }
+      .subtle { color: #0369A1; font-size: 12px; margin-top: 6px; }
+      .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0 18px; }
+      .card { border: 1px solid #BAE6FD; border-radius: 12px; padding: 12px; }
+      .label { color: #0369A1; font-size: 12px; margin-bottom: 8px; }
+      .value { font-size: 18px; font-weight: 700; }
+      .section-title { margin: 6px 0 0; font-size: 16px; }
+      table.data { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+      table.data th, table.data td { border: 1px solid #BAE6FD; padding: 8px 10px; text-align: right; vertical-align: top; }
+      table.data th { background: #E0F2FE; }
+      .empty { margin-top: 12px; border: 1px dashed #BAE6FD; border-radius: 12px; padding: 12px; color: #0369A1; }
     </style>
   </head>
   <body>
-    <table class="hero-table">
-      <thead>
-        <tr>
-          <th>סיכום עבודה ותשלומים לעובד</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>
-            <div class="worker-name">${escapePrintHtml(workerName)}</div>
-            <div class="worker-phone">טלפון: ${escapePrintHtml(selectedWorker.phone ?? "-")}</div>
-            <p class="subtle">פרויקט: ${escapePrintHtml(selectedProjectLabel)} • חודש: ${escapePrintHtml(selectedMonthLabel)}</p>
-            <p class="subtle">הופק בתאריך ${escapePrintHtml(generatedLabel)}</p>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div id="pages"></div>
+    <script>window.__PRINT_DATA__ = ${printDataJson};</script>
+    <script>
+      (function () {
+        var data = window.__PRINT_DATA__;
+        var root = document.getElementById("pages");
+        var pages = [];
 
-    <div class="summary">
-      <div class="card">
-        <div class="label">סה"כ שנצבר לתקופה</div>
-        <div class="value">${escapePrintHtml(formatCurrency(selectedWorkerPrintSummary.earned))}</div>
-      </div>
-      <div class="card">
-        <div class="label">סה"כ שולם לתקופה</div>
-        <div class="value">${escapePrintHtml(formatCurrency(selectedWorkerPrintSummary.paid))}</div>
-      </div>
-      <div class="card">
-        <div class="label">יתרה לתשלום לתקופה</div>
-        <div class="value">${escapePrintHtml(formatCurrency(selectedWorkerPrintSummary.owed))}</div>
-      </div>
-    </div>
+        function makePage() {
+          var page = document.createElement("div");
+          page.className = "page";
+          var content = document.createElement("div");
+          content.className = "page-content";
+          var footer = document.createElement("div");
+          footer.className = "page-footer";
+          footer.innerHTML = 'עמוד <span class="pnum"></span> מתוך <span class="ptot"></span>';
+          page.appendChild(content);
+          page.appendChild(footer);
+          root.appendChild(page);
+          pages.push(page);
+          return content;
+        }
 
-    <div class="section">
-      <h2>פירוט עבודה</h2>
-      ${
-        workRows
-          ? `<table>
-              <thead>
-                <tr>${workTableHeaders}</tr>
-              </thead>
-              <tbody>${workRows}</tbody>
-            </table>`
-          : '<div class="empty">אין משמרות להצגה למסננים שנבחרו.</div>'
-      }
-    </div>
+        function addHeader(content) {
+          var wrap = document.createElement("div");
+          wrap.innerHTML = data.headerHtml;
+          content.appendChild(wrap);
+        }
 
-    <div class="section">
-      <h2>פירוט תשלומים</h2>
-      ${
-        paymentRows
-          ? `<table>
-              <thead>
-                <tr>
-                  <th>תאריך תשלום</th>
-                  <th>סכום</th>
-                  <th>איך שולם</th>
-                  <th>הערות</th>
-                </tr>
-              </thead>
-              <tbody>${paymentRows}</tbody>
-            </table>`
-          : '<div class="empty">אין תשלומים שמורים למסננים שנבחרו.</div>'
-      }
-    </div>
+        function addTitle(content, text) {
+          var heading = document.createElement("h2");
+          heading.className = "section-title";
+          heading.textContent = text;
+          content.appendChild(heading);
+        }
+
+        function makeTable(content, headers) {
+          var table = document.createElement("table");
+          table.className = "data";
+          table.innerHTML = "<thead><tr>" + headers + "</tr></thead><tbody></tbody>";
+          content.appendChild(table);
+          return table.querySelector("tbody");
+        }
+
+        function overflowing(content) {
+          return content.scrollHeight > content.clientHeight;
+        }
+
+        data.tables.forEach(function (table) {
+          var content = makePage();
+          addHeader(content);
+          addTitle(content, table.title);
+
+          if (!table.rows.length) {
+            var empty = document.createElement("div");
+            empty.className = "empty";
+            empty.textContent = table.empty;
+            content.appendChild(empty);
+            return;
+          }
+
+          var tbody = makeTable(content, table.headers);
+
+          table.rows.forEach(function (rowHtml) {
+            tbody.insertAdjacentHTML("beforeend", rowHtml);
+            if (overflowing(content) && tbody.children.length > 1) {
+              tbody.removeChild(tbody.lastElementChild);
+              content = makePage();
+              addHeader(content);
+              addTitle(content, table.title + " (המשך)");
+              tbody = makeTable(content, table.headers);
+              tbody.insertAdjacentHTML("beforeend", rowHtml);
+            }
+          });
+        });
+
+        var total = pages.length;
+        pages.forEach(function (page, index) {
+          page.querySelector(".pnum").textContent = String(index + 1);
+          page.querySelector(".ptot").textContent = String(total);
+        });
+      })();
+    </script>
   </body>
 </html>`;
 
@@ -2170,7 +2203,7 @@ export default function SalaryCenterClient({
     printWindow.onload = () => {
       printWindow.setTimeout(() => {
         printWindow.print();
-      }, 150);
+      }, 250);
     };
   }
   const sessionDialogWorker = useMemo(
