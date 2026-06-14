@@ -1,5 +1,14 @@
 ﻿-- Run in Supabase SQL Editor
 -- Deletes a sales order and its related records atomically.
+--
+-- ⚠️ DO NOT DEPLOY THIS AS-IS. It is INCOMPLETE: it only removes
+-- inventory_movements, financial_records, order_items and the order. It does
+-- NOT remove payments, morning_documents, document_links, documents or storage
+-- files, so deleting an order that has any of those will FK-fail or orphan rows.
+-- The app currently (and deliberately) deletes orders via the comprehensive JS
+-- path in app/api/orders/delete/route.ts. Stock release is handled by
+-- release_order_inventory (db/sql/release_order_inventory_rpc.sql). Only deploy
+-- this function after extending it to mirror that JS cleanup.
 
 create or replace function public.delete_sales_order(
   p_order_id uuid,

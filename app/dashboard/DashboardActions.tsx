@@ -131,6 +131,24 @@ function textToItemsToMove(value: string) {
   return items.length > 0 ? items : null;
 }
 
+// Attach a photo/document to a freshly-created project (same endpoint the
+// /projects create dialog uses).
+async function uploadProjectDocument(projectId: string, file: File) {
+  const form = new FormData();
+  form.set("project_id", projectId);
+  form.set("file", file);
+  form.set("category", file.type.startsWith("image/") ? "project_photo" : "project_document");
+
+  const res = await fetch("/api/projects/documents/upload", {
+    method: "POST",
+    body: form,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof json?.error === "string" ? json.error : "העלאת הקובץ נכשלה.");
+  }
+}
+
 function normalizeDateOnly(value: string | null | undefined) {
   if (!value) return "";
   const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
@@ -434,6 +452,7 @@ export default function DashboardActions({
   const [projectEndDate, setProjectEndDate] = useState(nextMonth(getTodayDate()));
   const [projectNotes, setProjectNotes] = useState("");
   const [projectItemsToMove, setProjectItemsToMove] = useState("");
+  const [projectAttachmentFiles, setProjectAttachmentFiles] = useState<File[]>([]);
   const [projectCreateCustomerOpen, setProjectCreateCustomerOpen] = useState(false);
   const [projectCreateCustomerReturnToProject, setProjectCreateCustomerReturnToProject] = useState(false);
 
@@ -739,6 +758,7 @@ export default function DashboardActions({
     setProjectEndDate(nextMonth(getTodayDate()));
     setProjectNotes("");
     setProjectItemsToMove("");
+    setProjectAttachmentFiles([]);
     resetProjectCustomerCreateForm();
   }
 
@@ -857,6 +877,19 @@ export default function DashboardActions({
       if (!res.ok || !json.project) {
         setProjectError(json.error ?? HEBREW.projectCreateFailed);
         return;
+      }
+
+      // Project exists now — upload any attached photos/documents. A failure
+      // here shouldn't undo the project, so surface it as a toast and move on.
+      const createdProjectId = getString(json.project, "id");
+      if (createdProjectId && projectAttachmentFiles.length > 0) {
+        try {
+          for (const file of projectAttachmentFiles) {
+            await uploadProjectDocument(createdProjectId, file);
+          }
+        } catch (error: unknown) {
+          toast.error(error instanceof Error ? error.message : "העלאת הקבצים נכשלה.");
+        }
       }
 
       setProjectOpen(false);
@@ -2248,6 +2281,35 @@ export default function DashboardActions({
                       </p>
                     </label>
                   ) : null}
+
+                  <div className="space-y-2 text-sm col-span-full">
+                    <span>תמונות / מסמכים</span>
+                    <div className="flex items-center gap-2">
+                      <FileUploadActions
+                        files={projectAttachmentFiles}
+                        multiple
+                        onFilesSelected={setProjectAttachmentFiles}
+                        chooseLabel={projectAttachmentFiles.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
+                        chooseVariant="outline"
+                        size="sm"
+                      />
+                      {projectAttachmentFiles.length > 0 ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setProjectAttachmentFiles([])}
+                        >
+                          נקה בחירה
+                        </Button>
+                      ) : null}
+                    </div>
+                    {projectAttachmentFiles.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">
+                        אפשר להעלות קבצים או לצלם תמונה ישירות מהמכשיר.
+                      </div>
+                    ) : null}
+                  </div>
                 </AdaptiveGrid>
               </div>
             )}

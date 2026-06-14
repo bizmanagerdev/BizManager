@@ -108,14 +108,33 @@ async function deleteOrderDirectly(
     return { ok: false as const, error: paymentsDeleteError.message };
   }
 
-  const { error: inventoryMovementsDeleteError } = await supabase
-    .from("inventory_movements")
-    .delete()
-    .eq("source_type", "order")
-    .eq("source_id", orderId);
+  // Release the order's reserved/consumed stock first. We delete the order's
+  // inventory_movements rows; the sync trigger then reverts each one (reserved
+  // drops, so the product moves from שמור back to זמין). Prefer the privileged
+  // RPC so this works for every role regardless of inventory_movements RLS; if
+  // it isn't deployed yet, fall back to a direct delete (works when RLS allows).
+  const { error: releaseRpcError } = await supabase.rpc("release_order_inventory", {
+    p_order_id: orderId,
+  });
 
-  if (inventoryMovementsDeleteError) {
-    return { ok: false as const, error: inventoryMovementsDeleteError.message };
+  if (releaseRpcError) {
+    const missingReleaseRpc =
+      releaseRpcError.message.includes("release_order_inventory") ||
+      releaseRpcError.message.includes("function");
+
+    if (!missingReleaseRpc) {
+      return { ok: false as const, error: releaseRpcError.message };
+    }
+
+    const { error: inventoryMovementsDeleteError } = await supabase
+      .from("inventory_movements")
+      .delete()
+      .eq("source_type", "order")
+      .eq("source_id", orderId);
+
+    if (inventoryMovementsDeleteError) {
+      return { ok: false as const, error: inventoryMovementsDeleteError.message };
+    }
   }
 
   const { error: orderDocumentLinksDeleteError } = await supabase
