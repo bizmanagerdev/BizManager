@@ -116,12 +116,6 @@ function getTodayDate() {
   return `${year}-${month}-${day}`;
 }
 
-function nextMonth(dateString: string) {
-  const date = new Date(`${dateString}T00:00:00`);
-  date.setMonth(date.getMonth() + 1);
-  return date.toISOString().slice(0, 10);
-}
-
 // Moving projects keep a free-text "items to move" list: one item per line.
 function textToItemsToMove(value: string) {
   const items = value
@@ -265,13 +259,14 @@ const fieldClass =
 
 const DASHBOARD_EXPENSE_CATEGORY_OPTIONS = [
   "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3",
-  "\u05e8\u05db\u05e9",
-  "\u05ea\u05d7\u05d1\u05d5\u05e8\u05d4",
+  "\u05e8\u05db\u05d9\u05e9\u05d4",
   "\u05d0\u05d5\u05db\u05dc",
+  "\u05e8\u05db\u05d1\u05d9\u05dd",
   "\u05d0\u05d7\u05e8",
 ] as const;
 const OTHER_EXPENSE_CATEGORY = "\u05d0\u05d7\u05e8";
 const EMPLOYEE_WAGE_CATEGORY = "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3";
+const DEFAULT_EXPENSE_CATEGORY = "\u05e8\u05db\u05d9\u05e9\u05d4";
 const HEBREW = {
   saveErrorUnknown: "\u05e9\u05d2\u05d9\u05d0\u05d4 \u05dc\u05d0 \u05d9\u05d3\u05d5\u05e2\u05d4",
   cancel: "\u05d1\u05d9\u05d8\u05d5\u05dc",
@@ -449,7 +444,8 @@ export default function DashboardActions({
   const defaultProjectManagerId = users.find((u) => u.label.replace(/[^א-ת]/g, "").includes("הלר"))?.id ?? "";
   const [projectManagerId, setProjectManagerId] = useState(defaultProjectManagerId);
   const [projectStartDate, setProjectStartDate] = useState(getTodayDate());
-  const [projectEndDate, setProjectEndDate] = useState(nextMonth(getTodayDate()));
+  // End date defaults to the start date (same-day) for every project type.
+  const [projectEndDate, setProjectEndDate] = useState(getTodayDate());
   const [projectNotes, setProjectNotes] = useState("");
   const [projectItemsToMove, setProjectItemsToMove] = useState("");
   const [projectAttachmentFiles, setProjectAttachmentFiles] = useState<File[]>([]);
@@ -475,7 +471,7 @@ export default function DashboardActions({
   const [expenseOrderId, setExpenseOrderId] = useState("");
   const [expensePropertyId, setExpensePropertyId] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
-  const [expenseCategory, setExpenseCategory] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState(DEFAULT_EXPENSE_CATEGORY);
   const [expenseCategoryOther, setExpenseCategoryOther] = useState("");
   const [expenseDate, setExpenseDate] = useState(getTodayDate());
   const [expenseDescription, setExpenseDescription] = useState("");
@@ -755,7 +751,7 @@ export default function DashboardActions({
     setProjectPrice("");
     setProjectManagerId(defaultProjectManagerId);
     setProjectStartDate(getTodayDate());
-    setProjectEndDate(nextMonth(getTodayDate()));
+    setProjectEndDate(getTodayDate());
     setProjectNotes("");
     setProjectItemsToMove("");
     setProjectAttachmentFiles([]);
@@ -787,7 +783,7 @@ export default function DashboardActions({
     setExpenseOrderId("");
     setExpensePropertyId("");
     setExpenseAmount("");
-    setExpenseCategory("");
+    setExpenseCategory(DEFAULT_EXPENSE_CATEGORY);
     setExpenseCategoryOther("");
     setExpenseDate(getTodayDate());
     setExpenseDescription("");
@@ -2634,7 +2630,6 @@ export default function DashboardActions({
                       value={expenseCategory}
                       onChange={(e) => setExpenseCategory(e.target.value)}
                     >
-                      <option value="">{HEBREW.selectCategory}</option>
                       {DASHBOARD_EXPENSE_CATEGORY_OPTIONS.map((option) => (
                         <option key={option} value={option}>
                           {option}

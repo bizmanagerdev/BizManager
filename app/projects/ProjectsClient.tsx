@@ -271,19 +271,8 @@ function currentMonthIso() {
   return new Date().toISOString().slice(0, 7);
 }
 
-function oneMonthFrom(dateIso: string) {
-  const d = new Date(`${dateIso}T00:00:00`);
-  d.setMonth(d.getMonth() + 1);
-  return d.toISOString().slice(0, 10);
-}
-
 function defaultSortForTab(tab: ProjectsView): SortMode {
   return tab === "closed" ? "start_date_desc" : "start_date";
-}
-
-function defaultEndDateForProjectType(projectType: string, startDate: string) {
-  if (isMovingProjectType(projectType)) return startDate;
-  return oneMonthFrom(startDate);
 }
 
 
@@ -412,9 +401,8 @@ export default function ProjectsClient({
   const [createExpensesSeparately, setCreateExpensesSeparately] = useState(false);
   const [createProjectManagerId, setCreateProjectManagerId] = useState(defaultProjectManagerId ?? "");
   const [createStartDate, setCreateStartDate] = useState(todayIso());
-  const [createEndDate, setCreateEndDate] = useState(
-    defaultEndDateForProjectType(defaultProjectTypeOptions[0] ?? "", todayIso())
-  );
+  // End date defaults to the start date (same-day) for every project type.
+  const [createEndDate, setCreateEndDate] = useState(todayIso());
   const [createPaymentTerms, setCreatePaymentTerms] = useState("immediate");
   const [createDueDate, setCreateDueDate] = useState(() => computeDueDate(todayIso(), "immediate") ?? "");
   const [createNotes, setCreateNotes] = useState("");
@@ -702,9 +690,7 @@ export default function ProjectsClient({
       setCreateProjectManagerId(defaultProjectManagerId ?? currentUserId ?? "");
       const now = todayIso();
       setCreateStartDate(now);
-      setCreateEndDate(
-        defaultEndDateForProjectType(projectTypeOptions[0] ?? defaultProjectTypeOptions[0] ?? "", now)
-      );
+      setCreateEndDate(now);
       setCreateNotes("");
       setCreateItemsToMove("");
       setCreateAttachmentFiles([]);
@@ -1609,13 +1595,7 @@ export default function ProjectsClient({
                 <label className="text-sm font-medium">סוג פרויקט *</label>
                 <select
                   value={createProjectType}
-                  onChange={(e) => {
-                    const nextProjectType = e.target.value;
-                    setCreateProjectType(nextProjectType);
-                    if (isMovingProjectType(nextProjectType)) {
-                      setCreateEndDate(createStartDate);
-                    }
-                  }}
+                  onChange={(e) => setCreateProjectType(e.target.value)}
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   {projectTypeOptions.map((v) => (
@@ -1658,9 +1638,6 @@ export default function ProjectsClient({
                   onChange={(e) => {
                     const nextStartDate = e.target.value;
                     setCreateStartDate(nextStartDate);
-                    if (isMovingProjectType(createProjectType)) {
-                      setCreateEndDate(nextStartDate);
-                    }
                     const computed = computeDueDate(nextStartDate, createPaymentTerms);
                     if (computed) setCreateDueDate(computed);
                   }}
