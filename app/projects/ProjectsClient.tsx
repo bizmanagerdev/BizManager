@@ -283,6 +283,7 @@ export default function ProjectsClient({
   customerOptions,
   managerOptions,
   currentUserId,
+  viewerRole,
   defaultProjectManagerId,
   tabCounts,
   initialFilters,
@@ -293,11 +294,14 @@ export default function ProjectsClient({
   customerOptions: Option[];
   managerOptions: Option[];
   currentUserId?: string;
+  viewerRole?: string;
   defaultProjectManagerId?: string;
   tabCounts?: { projects: number; quotes: number; closed: number };
   initialFilters?: { view: ProjectsView; status: string; customerId: string | null; sort: SortMode; q: string };
 }) {
   const router = useRouter();
+  // In projects, office sees status only — all money (price, profit, monthly totals) is admin-only.
+  const canSeeMoney = viewerRole === "admin";
   const searchParams = useSearchParams();
   const prefillHandled = useRef(false);
 
@@ -336,7 +340,9 @@ export default function ProjectsClient({
   const activeTab: ProjectsView = normalizeProjectsView(searchParams.get("view"));
   const [query, setQuery] = useState(initialFilters?.q ?? "");
   const status = searchParams.get("status") ?? "all";
-  const sort: SortMode = (["recent", "start_date", "start_date_desc", "profit_desc"].includes(searchParams.get("sort") ?? "") ? searchParams.get("sort") : defaultSortForTab(activeTab)) as SortMode;
+  const rawSort: SortMode = (["recent", "start_date", "start_date_desc", "profit_desc"].includes(searchParams.get("sort") ?? "") ? searchParams.get("sort") : defaultSortForTab(activeTab)) as SortMode;
+  // Non-admins can't sort by (or see) profit, even via a hand-crafted URL.
+  const sort: SortMode = !canSeeMoney && rawSort === "profit_desc" ? defaultSortForTab(activeTab) : rawSort;
 
   // Push filter changes to URL — server re-fetches with the new filters applied
   // across the full dataset, then we get a fresh paginated slice back.
@@ -982,7 +988,7 @@ export default function ProjectsClient({
               <option value="recent">אחרונים</option>
               <option value="start_date">תאריך התחלה - ישן לחדש</option>
               <option value="start_date_desc">תאריך התחלה - חדש לישן</option>
-              <option value="profit_desc">רווח (גבוה לנמוך)</option>
+              {canSeeMoney ? <option value="profit_desc">רווח (גבוה לנמוך)</option> : null}
             </select>
           </div>
 
@@ -1045,7 +1051,7 @@ export default function ProjectsClient({
               <option value="recent">אחרונים</option>
               <option value="start_date">תאריך התחלה - ישן לחדש</option>
               <option value="start_date_desc">תאריך התחלה - חדש לישן</option>
-              <option value="profit_desc">רווח (גבוה לנמוך)</option>
+              {canSeeMoney ? <option value="profit_desc">רווח (גבוה לנמוך)</option> : null}
             </select>
           </div>
 
@@ -1089,7 +1095,9 @@ export default function ProjectsClient({
                 <th className="px-4 py-3 font-medium">תאריך התחלה</th>
                 <th className="px-4 py-3 font-medium">תשלום</th>
                 <th className="px-4 py-3 font-medium">לקוח</th>
-                <th className="px-4 py-3 font-medium">{activeTab === "quotes" ? "מחיר" : "מחיר / רווח"}</th>
+                {canSeeMoney ? (
+                  <th className="px-4 py-3 font-medium">{activeTab === "quotes" ? "מחיר" : "מחיר / רווח"}</th>
+                ) : null}
                 <th className="px-4 py-3 font-medium">משימות פתוחות</th>
                 <th className="px-4 py-3 font-medium">{activeTab === "quotes" ? "אישור הצעה" : "מסמכים"}</th>
                 <th className="px-4 py-3 font-medium">פעולות</th>
@@ -1148,20 +1156,22 @@ export default function ProjectsClient({
                       )}
                     </td>
                     <td className="px-4 py-4">{clientDisplayName(row)}</td>
-                    <td className="px-4 py-4">
-                      {currentStatus === "quote" ? (
-                        actualPrice === null ? "-" : formatIls(actualPrice)
-                      ) : (
-                        <div className="space-y-0.5">
-                          <div className="text-xs text-muted-foreground">
-                            מחיר: {actualPrice === null ? "-" : formatIls(actualPrice)}
+                    {canSeeMoney ? (
+                      <td className="px-4 py-4">
+                        {currentStatus === "quote" ? (
+                          actualPrice === null ? "-" : formatIls(actualPrice)
+                        ) : (
+                          <div className="space-y-0.5">
+                            <div className="text-xs text-muted-foreground">
+                              מחיר: {actualPrice === null ? "-" : formatIls(actualPrice)}
+                            </div>
+                            <div className={profit !== null && profit < 0 ? "text-destructive" : ""}>
+                              רווח: {profit === null ? "-" : formatIls(profit)}
+                            </div>
                           </div>
-                          <div className={profit !== null && profit < 0 ? "text-destructive" : ""}>
-                            רווח: {profit === null ? "-" : formatIls(profit)}
-                          </div>
-                        </div>
-                      )}
-                    </td>
+                        )}
+                      </td>
+                    ) : null}
                     <td className="px-4 py-4">{openTasks === null ? "-" : openTasks}</td>
                     <td className="px-4 py-4">
                       {currentStatus === "quote" ? (
@@ -1254,6 +1264,8 @@ export default function ProjectsClient({
           const actualPrice = actualPriceValue(row);
           const currentStatus = statusValue(row);
           const openTasks = getNumber(row, "open_tasks");
+          const paymentStatus = paymentStatusValue(row);
+          const collectionStatus = getString(row, "collection_status") ?? paymentStatus;
           const startDate = formatDate(getString(row, "start_date"));
           const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
@@ -1279,24 +1291,43 @@ export default function ProjectsClient({
                         <div className="text-xs text-muted-foreground">משימות פתוחות</div>
                         <div className="mt-1 font-medium">{openTasks === null ? "-" : openTasks}</div>
                       </div>
-                      <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
-                        <div className="text-xs text-muted-foreground">מחיר</div>
-                        <div className="mt-1 font-medium">
-                          {actualPrice === null ? "-" : formatIls(actualPrice)}
+                      {canSeeMoney ? (
+                        <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
+                          <div className="text-xs text-muted-foreground">מחיר</div>
+                          <div className="mt-1 font-medium">
+                            {actualPrice === null ? "-" : formatIls(actualPrice)}
+                          </div>
                         </div>
-                      </div>
-                      <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
-                        <div className="text-xs text-muted-foreground">
-                          {currentStatus === "quote" ? "סטטוס הצעה" : "רווח"}
+                      ) : null}
+                      {currentStatus === "quote" || canSeeMoney ? (
+                        <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
+                          <div className="text-xs text-muted-foreground">
+                            {currentStatus === "quote" ? "סטטוס הצעה" : "רווח"}
+                          </div>
+                          <div className={`mt-1 font-medium ${profit !== null && profit < 0 ? "text-destructive" : ""}`}>
+                            {currentStatus === "quote"
+                              ? statusLabel(currentStatus)
+                              : profit === null
+                                ? "-"
+                                : formatIls(profit)}
+                          </div>
                         </div>
-                        <div className={`mt-1 font-medium ${profit !== null && profit < 0 ? "text-destructive" : ""}`}>
-                          {currentStatus === "quote"
-                            ? statusLabel(currentStatus)
-                            : profit === null
-                              ? "-"
-                              : formatIls(profit)}
+                      ) : (
+                        <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
+                          <div className="text-xs text-muted-foreground">תשלום</div>
+                          <div className="mt-1">
+                            {paymentStatus === "unpriced" ? (
+                              <Badge className={paymentStatusBadgeClasses("unpriced")}>
+                                {paymentStatusLabel("unpriced")}
+                              </Badge>
+                            ) : (
+                              <Badge className={collectionStatusClasses(collectionStatus)}>
+                                {collectionStatusLabel(collectionStatus)}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
 
@@ -2000,15 +2031,19 @@ export default function ProjectsClient({
               <div className="space-y-4">
                 <AdaptiveGrid variant="customerStats">
                   <Stat label="פרויקטים בפועל" value={`${monthlySummary.totalProjects}`} />
-                  <Stat label='סה"כ לחיוב' value={formatIls(monthlySummary.totals.charged)} />
-                  <Stat label='סה"כ הוצאות' value={formatIls(monthlySummary.totals.expenses)} />
-                  <Stat label="רווח גולמי" value={formatIls(monthlySummary.totals.profit)} />
-                  <Stat label='סה"כ שולם' value={formatIls(monthlySummary.totals.paid)} />
-                  <Stat label='סה"כ חייב לעובדים' value={formatIls(monthlySummary.totals.workerOwed)} />
-                  <Stat
-                    label="יתרה פתוחה"
-                    value={formatIls(monthlySummary.totals.charged - monthlySummary.totals.paid)}
-                  />
+                  {canSeeMoney ? (
+                    <>
+                      <Stat label='סה"כ לחיוב' value={formatIls(monthlySummary.totals.charged)} />
+                      <Stat label='סה"כ הוצאות' value={formatIls(monthlySummary.totals.expenses)} />
+                      <Stat label="רווח גולמי" value={formatIls(monthlySummary.totals.profit)} />
+                      <Stat label='סה"כ שולם' value={formatIls(monthlySummary.totals.paid)} />
+                      <Stat label='סה"כ חייב לעובדים' value={formatIls(monthlySummary.totals.workerOwed)} />
+                      <Stat
+                        label="יתרה פתוחה"
+                        value={formatIls(monthlySummary.totals.charged - monthlySummary.totals.paid)}
+                      />
+                    </>
+                  ) : null}
                 </AdaptiveGrid>
 
                 <AdaptiveGrid variant="formTwo">

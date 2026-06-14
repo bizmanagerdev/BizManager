@@ -10,19 +10,49 @@
 
 @layer base {
   html {
-    font-size: 17px;
+    /* Root font-size = 17px base × the user's chosen text-size multiplier.
+       Because the entire UI is rem-based, scaling the root scales text, spacing,
+       paddings and widths together. --font-scale is set from the profile page
+       (persisted in localStorage, applied pre-paint in app/layout.tsx); it
+       defaults to 1 below. */
+    font-size: calc(17px * var(--font-scale, 1));
   }
 
   @media (max-width: 767px) {
     html {
-      font-size: 19px;
+      /* On phones the viewport width is fixed, so a very large multiplier would
+         blow the layout past the screen. Cap the effective root size to a share
+         of the viewport width (6vw): the chosen size is honoured up to what the
+         screen can actually lay out, keeping everything readable AND on-screen. */
+      font-size: min(calc(17px * var(--font-scale, 1)), 6vw);
     }
     body {
       font-weight: 500;
     }
   }
 
+  /* Hard guarantee: nothing can make the PAGE scroll sideways, at any screen
+     size or text size. `clip` (not `hidden`) keeps the sticky top bar and
+     sticky table headers working; set on both html and body so whichever is the
+     scroll container is covered. Wide tables still scroll inside their own
+     overflow-x-auto containers. */
+  html,
+  body {
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
+  /* Long unbreakable strings (URLs, IBANs, long numbers) wrap instead of pushing
+     the layout wider than the screen. */
+  body {
+    overflow-wrap: break-word;
+  }
+
   :root {
+    /* User-selectable global text-size multiplier (overridden from the profile
+       page). 1 = default; the chooser offers 0.9 … 1.5. */
+    --font-scale: 1;
+
     /* === PRIMITIVE TOKENS (raw palette as "R G B" triplets) === */
 
     /* Primary — navy */

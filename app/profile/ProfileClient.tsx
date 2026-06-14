@@ -34,6 +34,7 @@ import {
 
 type Props = {
   profile: UserProfile;
+  initialFontScale: number | null;
   sessions: WorkSessionRow[];
   agreements: SalaryAgreementRow[];
   payslips: PayslipRow[];
@@ -68,7 +69,7 @@ function toLocalDateTimeValue(date: Date) {
   return adjusted.toISOString().slice(0, 16);
 }
 
-export default function ProfileClient({ profile, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions }: Props) {
+export default function ProfileClient({ profile, initialFontScale, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions }: Props) {
   const router = useRouter();
   const splitPartIdRef = useRef(0);
   const [isPending, startTransition] = useTransition();
@@ -86,23 +87,49 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
   const [splitParts, setSplitParts] = useState<SplitPartDraft[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(monthlySummaries[0]?.key ?? monthKeyFromDate(new Date()));
 
-  const FONT_SIZES = [
-    { label: "קטן", px: 15 },
-    { label: "רגיל", px: 17 },
-    { label: "בינוני", px: 18 },
-    { label: "גדול", px: 19 },
-    { label: "ענק", px: 20 },
+  // Global text-size multiplier. The whole UI is rem-based, so this scales
+  // text, spacing and widths together (no squashing) — see app/globals.css.
+  const FONT_SCALES = [
+    { label: "קטן", scale: 0.9 },
+    { label: "רגיל", scale: 1 },
+    { label: "גדול", scale: 1.15 },
+    { label: "גדול מאוד", scale: 1.3 },
+    { label: "ענק", scale: 1.5 },
   ] as const;
-  const [fontSize, setFontSize] = useState<number>(() => {
-    if (typeof window === "undefined") return 17;
-    const saved = localStorage.getItem("biz-font-size");
-    const parsed = saved ? Number(saved) : NaN;
-    return Number.isFinite(parsed) ? parsed : 17;
+  const snapToScale = (value: number) =>
+    FONT_SCALES.reduce(
+      (best, option) =>
+        Math.abs(option.scale - value) < Math.abs(best - value) ? option.scale : best,
+      1 as number,
+    );
+  const [fontScale, setFontScale] = useState<number>(() => {
+    // The account value (synced across devices) wins when set.
+    if (initialFontScale && initialFontScale > 0) return snapToScale(initialFontScale);
+    if (typeof window === "undefined") return 1;
+    const saved = Number(localStorage.getItem("biz-font-scale"));
+    if (Number.isFinite(saved) && saved > 0) return snapToScale(saved);
+    // Migrate the legacy absolute-px preference (base was 17px).
+    const oldPx = Number(localStorage.getItem("biz-font-size"));
+    return Number.isFinite(oldPx) && oldPx > 0 ? snapToScale(oldPx / 17) : 1;
   });
   useEffect(() => {
-    document.documentElement.style.fontSize = `${fontSize}px`;
-    try { localStorage.setItem("biz-font-size", String(fontSize)); } catch (_) {}
-  }, [fontSize]);
+    const root = document.documentElement;
+    // Older builds set an absolute inline font-size here; clear it so the CSS
+    // calc(17px * var(--font-scale)) governs the size again.
+    root.style.removeProperty("font-size");
+    root.style.setProperty("--font-scale", String(fontScale));
+    try { localStorage.setItem("biz-font-scale", String(fontScale)); } catch (_) {}
+  }, [fontScale]);
+  function selectFontScale(scale: number) {
+    setFontScale(scale);
+    // Persist to the account so the choice follows the user across devices.
+    // Fire-and-forget: the local apply above already took effect.
+    void fetch("/api/profile/font-scale", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scale }),
+    }).catch(() => {});
+  }
 
   const openSession = useMemo(() => sessions.find((session) => !session.clock_out) ?? null, [sessions]);
   const currentAgreement = useMemo(() => getCurrentSalaryAgreement(agreements), [agreements]);
@@ -464,23 +491,29 @@ export default function ProfileClient({ profile, sessions, agreements, payslips,
 
       <Card>
         <CardContent className="py-5">
-          <div className="mb-3 text-sm font-semibold">גודל טקסט</div>
+          <div className="mb-1 text-sm font-semibold">גודל טקסט</div>
+          <div className="mb-3 text-xs text-muted-foreground">
+            הבחירה משנה את גודל הטקסט בכל המערכת ונשמרת בחשבון שלך — בכל מכשיר שתתחבר ממנו.
+          </div>
           <div className="flex flex-wrap gap-2">
-            {FONT_SIZES.map((option) => (
-              <button
-                key={option.px}
-                type="button"
-                onClick={() => setFontSize(option.px)}
-                className={`flex flex-col items-center gap-1 rounded-2xl border px-4 py-3 transition-all ${
-                  fontSize === option.px
-                    ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                    : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-primary/5"
-                }`}
-              >
-                <span style={{ fontSize: `${option.px}px`, lineHeight: 1 }}>א</span>
-                <span className="text-xs font-medium">{option.label}</span>
-              </button>
-            ))}
+            {FONT_SCALES.map((option) => {
+              const isActive = Math.abs(fontScale - option.scale) < 0.01;
+              return (
+                <button
+                  key={option.scale}
+                  type="button"
+                  onClick={() => selectFontScale(option.scale)}
+                  className={`flex flex-col items-center gap-1 rounded-2xl border px-4 py-3 transition-all ${
+                    isActive
+                      ? "border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                      : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-primary/5"
+                  }`}
+                >
+                  <span style={{ fontSize: `${17 * option.scale}px`, lineHeight: 1 }}>א</span>
+                  <span className="text-xs font-medium">{option.label}</span>
+                </button>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

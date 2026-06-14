@@ -958,7 +958,7 @@ export default async function ProjectPage({
                     <div className="font-medium">{formatDate(projectDueDate)}</div>
                   </div>
                 ) : null}
-                {expectedTotal > 0.009 ? (
+                {profile.role === "admin" && expectedTotal > 0.009 ? (
                   <div className="min-w-0 space-y-1">
                     <div className="text-xs font-medium text-muted-foreground">צפוי לגבייה:</div>
                     <div className="font-medium text-warning-soft-foreground">
@@ -975,10 +975,12 @@ export default async function ProjectPage({
                   <div className="text-xs font-medium text-muted-foreground">סטטוס:</div>
                   <div className="font-medium">{status ? projectStatusLabel(status) : "—"}</div>
                 </div>
-                <div className="min-w-0 space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">רווח:</div>
-                  <div className="font-medium">{formatIls(grossProfit)}</div>
-                </div>
+                {profile.role === "admin" ? (
+                  <div className="min-w-0 space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">רווח:</div>
+                    <div className="font-medium">{formatIls(grossProfit)}</div>
+                  </div>
+                ) : null}
                 <div className="min-w-0 space-y-1">
                   <div className="text-xs font-medium text-muted-foreground">משימות פתוחות:</div>
                   <div className="font-medium">{openTasks}</div>

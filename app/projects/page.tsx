@@ -176,6 +176,7 @@ export default async function ProjectsPage({
             customerOptions={customerOptionsFinal}
             managerOptions={managerOptions}
             currentUserId={profile.id}
+            viewerRole={profile.role}
             defaultProjectManagerId={defaultProjectManagerId ?? undefined}
             tabCounts={tabCounts}
             initialFilters={{ view, status: statusFilter, customerId, sort, q: searchQuery }}

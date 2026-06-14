@@ -85,6 +85,17 @@ export default async function ProfilePage() {
         .range(0, 199),
     ]);
 
+  // Per-user text-size multiplier. Tolerant of the column not existing yet
+  // (before db/sql/add_user_font_scale.sql is run) — falls back to null so the
+  // client uses its localStorage value.
+  const { data: fontScaleRow } = await supabase
+    .from("users")
+    .select("font_scale")
+    .eq("id", profile.id)
+    .maybeSingle();
+  const rawFontScale = (fontScaleRow as { font_scale?: unknown } | null)?.font_scale;
+  const initialFontScale = typeof rawFontScale === "number" && rawFontScale > 0 ? rawFontScale : null;
+
   const loadError =
     sessionsError?.message ??
     agreementsError?.message ??
@@ -131,6 +142,7 @@ export default async function ProfilePage() {
         ) : (
           <ProfileClient
             profile={profile}
+            initialFontScale={initialFontScale}
             sessions={sessions}
             agreements={agreements}
             payslips={payslips}

@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { TopNavigationProgress } from "@/components/layout/TopNavigationProgress";
 import OfflineBanner from "@/components/layout/OfflineBanner";
 import PresenceTracker from "@/components/layout/PresenceTracker";
+import FontScaleSync from "@/components/layout/FontScaleSync";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 import { useNavItems } from "@/components/layout/nav-items";
 
@@ -43,6 +44,7 @@ export default function AppShell({
         <TopNavigationProgress />
       </Suspense>
       <PresenceTracker userName={userName} viewerRole={viewerRole} />
+      <FontScaleSync />
       {sidebar.length > 0 && (
         // Suspense boundary required because AppSidebar reads useSearchParams
         // (to carry financial filters between Flow/Reports links).

@@ -206,7 +206,8 @@ export default async function DashboardPage() {
     0
   );
   const nearTermOutflow = workerOwedTotal + upcomingExpensesOut;
-  const cashTighteningSoon = isAdminOrOffice && nearTermOutflow > 0 && nearTermOutflow > expectedIncoming30;
+  // Cash-position signal is admin-only — office sees operational totals, not cash heads-up.
+  const cashTighteningSoon = isAdmin && nearTermOutflow > 0 && nearTermOutflow > expectedIncoming30;
 
   // Income vs expenses per business domain (current month) — one diagram.
   const domainBars = (domainBreakdown ?? [])

@@ -34,12 +34,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // suppressHydrationWarning: the head script below intentionally sets a
-    // font-size style on <html> from localStorage BEFORE hydration (no-FOUC),
+    // suppressHydrationWarning: the head script below intentionally sets the
+    // --font-scale style on <html> from localStorage BEFORE hydration (no-FOUC),
     // so the server-rendered attribute can never match the client.
     <html lang="he" dir="rtl" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: `try{var s=localStorage.getItem('biz-font-size');if(s){document.documentElement.style.fontSize=s+'px';}}catch(e){}` }} />
+        {/* Apply the saved global text-size multiplier before first paint.
+            Migrates the legacy absolute-px key (biz-font-size) to a scale. */}
+        <script dangerouslySetInnerHTML={{ __html: `try{var s=localStorage.getItem('biz-font-scale');if(!s){var px=parseFloat(localStorage.getItem('biz-font-size'));if(px>0){s=String(px/17);localStorage.setItem('biz-font-scale',s);}}if(s){document.documentElement.style.setProperty('--font-scale',s);}}catch(e){}` }} />
       </head>
       <body className="antialiased">
         <PwaRegistration />

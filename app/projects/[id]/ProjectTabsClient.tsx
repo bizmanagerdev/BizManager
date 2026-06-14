@@ -571,16 +571,19 @@ export default function ProjectTabsClient({
     return projectDocuments.filter((d) => d.document_type === docsFilterCategory);
   }, [projectDocuments, docsFilterCategory]);
 
-  const allowedTabs = new Set(["overview", "tasks", "documents"]);
+  // Office/workers don't see the financial (כספים) tab at all — in projects they see status, not numbers.
+  const canSeeFinances = viewerRole === "admin";
+  const allowedTabs = new Set(canSeeFinances ? ["overview", "tasks", "documents"] : ["tasks", "documents"]);
+  const defaultTab = canSeeFinances ? "overview" : "tasks";
   const rawTabFromUrl = searchParams.get("tab");
   const tabFromUrl = rawTabFromUrl === "financial" ? "overview" : rawTabFromUrl;
   const [tabValue, setTabValue] = useState(
-    tabFromUrl && allowedTabs.has(tabFromUrl) ? tabFromUrl : "overview"
+    tabFromUrl && allowedTabs.has(tabFromUrl) ? tabFromUrl : defaultTab
   );
 
   useEffect(() => {
     // Sync state when the URL changes via navigation/back/forward.
-    setTabValue(tabFromUrl && allowedTabs.has(tabFromUrl) ? tabFromUrl : "overview");
+    setTabValue(tabFromUrl && allowedTabs.has(tabFromUrl) ? tabFromUrl : defaultTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabFromUrl]);
 
@@ -1514,11 +1517,13 @@ export default function ProjectTabsClient({
       fallback={<div className="text-muted-foreground text-base">טוען…</div>}
     >
       <Tabs value={tabValue} onValueChange={setTab} dir="rtl">
-        <TabsList className="sticky top-2 z-10 grid h-auto w-full grid-cols-3 gap-2 overflow-visible border-b-0 bg-transparent p-0 shadow-none sm:top-4 sm:mx-auto sm:max-w-3xl [&>*]:min-w-0 [&>*]:rounded-2xl [&>*]:border [&>*]:border-foreground/20 [&>*]:bg-card/95 [&>*]:px-3 [&>*]:py-3 [&>*]:text-sm [&>*]:font-semibold [&>*]:text-foreground [&>*]:shadow-sm [&>*]:backdrop-blur [&>*]:transition-colors [&>*]:hover:border-foreground/35 [&>*]:hover:bg-card [&>*]:data-[state=active]:border-foreground [&>*]:data-[state=active]:bg-foreground [&>*]:data-[state=active]:text-background sm:[&>*]:text-base">
-          <TabsTrigger value="overview" className="flex-col gap-1">
-            <span>כספים</span>
-            <span className="text-[11px] opacity-80">מצב כספי</span>
-          </TabsTrigger>
+        <TabsList className={`sticky top-2 z-10 grid h-auto w-full ${canSeeFinances ? "grid-cols-3" : "grid-cols-2"} gap-2 overflow-visible border-b-0 bg-transparent p-0 shadow-none sm:top-4 sm:mx-auto sm:max-w-3xl [&>*]:min-w-0 [&>*]:rounded-2xl [&>*]:border [&>*]:border-foreground/20 [&>*]:bg-card/95 [&>*]:px-3 [&>*]:py-3 [&>*]:text-sm [&>*]:font-semibold [&>*]:text-foreground [&>*]:shadow-sm [&>*]:backdrop-blur [&>*]:transition-colors [&>*]:hover:border-foreground/35 [&>*]:hover:bg-card [&>*]:data-[state=active]:border-foreground [&>*]:data-[state=active]:bg-foreground [&>*]:data-[state=active]:text-background sm:[&>*]:text-base`}>
+          {canSeeFinances ? (
+            <TabsTrigger value="overview" className="flex-col gap-1">
+              <span>כספים</span>
+              <span className="text-[11px] opacity-80">מצב כספי</span>
+            </TabsTrigger>
+          ) : null}
           <TabsTrigger value="tasks" className="flex-col gap-1">
             <span>משימות</span>
             <Badge variant="secondary" className="rounded-full px-2 py-0 text-[11px]">
@@ -1568,12 +1573,14 @@ export default function ProjectTabsClient({
                   <LtrInline>{formatIls(totalExpenses)}</LtrInline>
                 </div>
               </div>
-              <div className="rounded-xl border bg-background/60 p-3">
-                <div className="text-xs text-muted-foreground">רווח גולמי</div>
-                <div className={("mt-2 text-lg font-semibold " + (grossProfit !== null && grossProfit < 0 ? "text-destructive" : "")).trim()}>
-                  <LtrInline>{formatIls(grossProfit)}</LtrInline>
+              {viewerRole === "admin" ? (
+                <div className="rounded-xl border bg-background/60 p-3">
+                  <div className="text-xs text-muted-foreground">רווח גולמי</div>
+                  <div className={("mt-2 text-lg font-semibold " + (grossProfit !== null && grossProfit < 0 ? "text-destructive" : "")).trim()}>
+                    <LtrInline>{formatIls(grossProfit)}</LtrInline>
+                  </div>
                 </div>
-              </div>
+              ) : null}
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">יתרה לעובדי משמרות</div>
                 <div className="mt-2 text-lg font-semibold">
