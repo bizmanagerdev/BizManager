@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
+import { offlineFetch } from "@/lib/offline-queue";
 
 export type InlineCustomerUpdate = {
   id: string;
@@ -113,24 +114,34 @@ export function InlineCustomerEditor({
     setSavingField(field);
     setError(null);
     try {
-      const res = await fetch("/api/customers/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: customerId, [field]: next || null }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        customer?: {
-          id: string;
-          name: string;
-          phone: string | null;
-          whatsapp: string | null;
-          email: string | null;
-          address: string | null;
-        };
-      };
-      if (!res.ok || !json.customer) {
-        setError(json.error ?? "עדכון לקוח נכשל.");
+      const result = await offlineFetch(
+        "/api/customers/update",
+        { id: customerId, [field]: next || null },
+        "עדכון לקוח"
+      );
+      if (result.queued) {
+        // Saved on the device; reflect it locally so the field shows "saved".
+        savedRef.current = { ...savedRef.current, [field]: next };
+        setSavedField(field);
+        setTimeout(() => {
+          setSavedField((current) => (current === field ? null : current));
+        }, 1500);
+        return;
+      }
+      const json = result.ok
+        ? (result.data as {
+            customer?: {
+              id: string;
+              name: string;
+              phone: string | null;
+              whatsapp: string | null;
+              email: string | null;
+              address: string | null;
+            };
+          } | null)
+        : null;
+      if (!result.ok || !json?.customer) {
+        setError((result.ok ? "עדכון לקוח נכשל." : result.error) || "עדכון לקוח נכשל.");
         setValues((current) => ({ ...current, [field]: prev }));
         return;
       }

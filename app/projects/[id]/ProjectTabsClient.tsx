@@ -47,6 +47,7 @@ import {
 } from "@/lib/orders/paymentStatus";
 import { computeSourceCollection } from "@/lib/collections";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
+import { offlineFetch } from "@/lib/offline-queue";
 import {
   type PaymentRow,
   type FinancialAttachment,
@@ -1079,19 +1080,13 @@ export default function ProjectTabsClient({
 
     setDeletingExpenseId(expenseId);
     try {
-      const res = await fetch("/api/expenses/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: expenseId,
-          project_id: overview.id,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקת ההוצאה", {
-          description: typeof json?.error === "string" ? json.error : "",
-        });
+      const result = await offlineFetch(
+        "/api/expenses/delete",
+        { id: expenseId, project_id: overview.id },
+        "מחיקת חיוב"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה במחיקת ההוצאה", { description: result.error || "" });
         return;
       }
       setExpensesUi((prev) =>
@@ -1100,7 +1095,7 @@ export default function ProjectTabsClient({
           return rowId !== expenseId;
         })
       );
-      toast.success("ההוצאה נמחקה");
+      if (!result.queued) toast.success("ההוצאה נמחקה");
       startTransition(() => router.refresh());
     } catch (e: unknown) {
       toast.error("שגיאה במחיקת ההוצאה", {
@@ -1118,30 +1113,20 @@ export default function ProjectTabsClient({
     setDeletingSessionId(sessionId);
     try {
       const isAdminViewer = viewerRole === "admin";
-      const res = await fetch(isAdminViewer ? "/api/payroll/sessions/delete" : "/api/profile/session/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          isAdminViewer
-            ? { session_id: sessionId }
-            : {
-                session_id: sessionId,
-                project_id: overview.id,
-              }
-        ),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקת המשמרת", {
-          description: typeof json?.error === "string" ? json.error : "",
-        });
+      const result = await offlineFetch(
+        isAdminViewer ? "/api/payroll/sessions/delete" : "/api/profile/session/delete",
+        isAdminViewer ? { session_id: sessionId } : { session_id: sessionId, project_id: overview.id },
+        "מחיקת משמרת"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה במחיקת המשמרת", { description: result.error || "" });
         return;
       }
 
       setExpensesUi((prev) =>
         prev.filter((row) => !(row.source_type === "session" && row.session?.id === sessionId))
       );
-      toast.success("המשמרת נמחקה");
+      if (!result.queued) toast.success("המשמרת נמחקה");
       startTransition(() => router.refresh());
     } catch (e: unknown) {
       toast.error("שגיאה במחיקת המשמרת", {
@@ -1157,23 +1142,17 @@ export default function ProjectTabsClient({
 
     setDeletingPaymentId(payment.id);
     try {
-      const res = await fetch("/api/payments/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: payment.id,
-          project_id: overview.id,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקת ההכנסה", {
-          description: typeof json?.error === "string" ? json.error : "",
-        });
+      const result = await offlineFetch(
+        "/api/payments/delete",
+        { id: payment.id, project_id: overview.id },
+        "מחיקת הכנסה"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה במחיקת ההכנסה", { description: result.error || "" });
         return;
       }
       setPaymentsUi((prev) => prev.filter((row) => row.id !== payment.id));
-      toast.success("ההכנסה נמחקה");
+      if (!result.queued) toast.success("ההכנסה נמחקה");
       startTransition(() => router.refresh());
     } catch (e: unknown) {
       toast.error("שגיאה במחיקת ההכנסה", {
@@ -1275,27 +1254,25 @@ export default function ProjectTabsClient({
     const toastId = "update-base-price";
     toast.loading("מעדכן מחיר בסיס...", { id: toastId });
     try {
-      const res = await fetch("/api/projects/update-agreed-base-price", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          project_id: overview.id,
-          agreed_base_price: next,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה בעדכון מחיר בסיס", { id: toastId, description: json?.error ?? "" });
+      const result = await offlineFetch(
+        "/api/projects/update-agreed-base-price",
+        { project_id: overview.id, agreed_base_price: next },
+        "עדכון מחיר בסיס"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה בעדכון מחיר בסיס", { id: toastId, description: result.error || "" });
         return;
       }
-
+      const json = result.queued ? null : (result.data as { project?: { agreed_base_price?: unknown } } | null);
       const updatedBasePrice =
         json?.project && typeof json.project.agreed_base_price !== "undefined"
           ? toNumber(json.project.agreed_base_price)
-          : null;
+          : result.queued
+            ? next
+            : null;
 
       setAgreedBasePriceUi(updatedBasePrice);
-      toast.success("מחיר בסיס עודכן", { id: toastId });
+      if (!result.queued) toast.success("מחיר בסיס עודכן", { id: toastId });
       setUpdateBasePriceOpen(false);
       startTransition(() => router.refresh());
     } catch (e: unknown) {
@@ -2846,17 +2823,16 @@ function ProjectTasksTab({
     setUpdatingId(id);
     emitProgressActivityStart();
     try {
-      const res = await fetch("/api/tasks/update-status", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, status }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        toast.error("שגיאה בעדכון סטטוס", { description: json?.error ?? "" });
+      const result = await offlineFetch(
+        "/api/tasks/update-status",
+        { id, status },
+        "עדכון סטטוס משימה"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה בעדכון סטטוס", { description: result.error || "" });
         return false;
       }
-      toast.success("הסטטוס עודכן");
+      if (!result.queued) toast.success("הסטטוס עודכן");
       setLocalTasks((prev) =>
         prev.map((row) => {
           const rowId = getFirstString(row, ["task_id", "id"]);
@@ -2880,17 +2856,16 @@ function ProjectTasksTab({
     setUpdatingId(id);
     emitProgressActivityStart();
     try {
-      const res = await fetch("/api/tasks/update-priority", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, priority }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        toast.error("שגיאה בעדכון עדיפות", { description: json?.error ?? "" });
+      const result = await offlineFetch(
+        "/api/tasks/update-priority",
+        { id, priority },
+        "עדכון עדיפות משימה"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה בעדכון עדיפות", { description: result.error || "" });
         return false;
       }
-      toast.success("העדיפות עודכנה");
+      if (!result.queued) toast.success("העדיפות עודכנה");
       setLocalTasks((prev) =>
         prev.map((row) => {
           const rowId = getFirstString(row, ["task_id", "id"]);
@@ -2968,18 +2943,13 @@ function ProjectTasksTab({
     setDeletingTaskId(id);
     emitProgressActivityStart();
     try {
-      const res = await fetch("/api/tasks/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקת משימה", { description: json?.error ?? "" });
+      const result = await offlineFetch("/api/tasks/delete", { id }, "מחיקת משימה");
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה במחיקת משימה", { description: result.error || "" });
         return;
       }
 
-      toast.success("המשימה נמחקה");
+      if (!result.queued) toast.success("המשימה נמחקה");
       setLocalTasks((prev) =>
         prev.filter((row) => (getFirstString(row, ["task_id", "id"]) ?? "") !== id)
       );

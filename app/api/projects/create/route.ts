@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
 
 type CreateProjectPayload = {
@@ -40,6 +41,11 @@ function sanitizeStringArray(value: unknown) {
 
 export async function POST(req: Request) {
   try {
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user, profile } = access.value;
+
+    return await withIdempotency(req, supabase, user.id, "projects/create", async () => {
     const body = (await req.json()) as CreateProjectPayload;
 
     const customerId = typeof body.customer_id === "string" ? body.customer_id : "";
@@ -80,10 +86,6 @@ export async function POST(req: Request) {
     if (!Number.isFinite(agreedBasePrice) || agreedBasePrice < 0 || !Number.isFinite(actualPrice)) {
       return NextResponse.json({ error: "Invalid prices" }, { status: 400 });
     }
-
-    const access = await requireRouteAccess();
-    if (!access.ok) return access.response;
-    const { supabase, profile } = access.value;
 
     const { data: created, error: insertError } = await supabase
       .from("projects")
@@ -131,6 +133,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ project: dashboardRow ?? created });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -39,6 +39,7 @@ import {
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
 import { PAYMENT_METHOD_OPTIONS, type FinancialAttachment } from "@/lib/payments";
+import { offlineFetch } from "@/lib/offline-queue";
 import type { CalendarEntry } from "@/lib/projectSchedule";
 import { Button } from "@/components/ui/button";
 import {
@@ -851,10 +852,9 @@ export default function DashboardActions({
 
     setProjectSubmitting(true);
     try {
-      const res = await fetch("/api/projects/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/projects/create",
+        {
           customer_id: projectCustomerId,
           name: projectName.trim(),
           project_type: projectType,
@@ -866,12 +866,24 @@ export default function DashboardActions({
           end_date: projectEndDate || null,
           notes: projectNotes.trim() || null,
           items_to_move: projectType === "moving" ? textToItemsToMove(projectItemsToMove) : null,
-        }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as { error?: string; project?: Row };
-      if (!res.ok || !json.project) {
-        setProjectError(json.error ?? HEBREW.projectCreateFailed);
+        },
+        HEBREW.projectNew,
+        { idempotent: true }
+      );
+      if (result.queued) {
+        // Saved on the device; will sync on reconnect. Any attached files can't
+        // be uploaded offline and would need re-attaching after sync.
+        setProjectOpen(false);
+        resetProjectForm();
+        return;
+      }
+      if (!result.ok) {
+        setProjectError(result.error || HEBREW.projectCreateFailed);
+        return;
+      }
+      const json = result.data as { project?: Row };
+      if (!json.project) {
+        setProjectError(HEBREW.projectCreateFailed);
         return;
       }
 
@@ -955,10 +967,9 @@ export default function DashboardActions({
 
     setTaskSubmitting(true);
     try {
-      const res = await fetch("/api/tasks/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/tasks/create",
+        {
           business_domain: taskBusinessDomain,
           project_id: needsProject ? taskProjectId : null,
           property_id: needsProperty ? taskPropertyId : null,
@@ -968,12 +979,22 @@ export default function DashboardActions({
           assigned_user_id: taskAssignedUserId,
           priority: taskPriority,
           status: taskStatus,
-        }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as { error?: string; task?: Row };
-      if (!res.ok || !json.task) {
-        setTaskError(json.error ?? HEBREW.taskCreateFailed);
+        },
+        HEBREW.taskNew,
+        { idempotent: true }
+      );
+      if (result.queued) {
+        setTaskOpen(false);
+        resetTaskForm();
+        return;
+      }
+      if (!result.ok) {
+        setTaskError(result.error || HEBREW.taskCreateFailed);
+        return;
+      }
+      const json = result.data as { task?: Row };
+      if (!json.task) {
+        setTaskError(HEBREW.taskCreateFailed);
         return;
       }
 
@@ -1158,10 +1179,9 @@ export default function DashboardActions({
 
     setExpenseSubmitting(true);
     try {
-      const res = await fetch("/api/expenses/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/expenses/create",
+        {
           business_domain: expenseBusinessDomain,
           project_id: linkedProjectId || null,
           order_id: linkedOrderId || null,
@@ -1178,12 +1198,22 @@ export default function DashboardActions({
             expensePaymentStatus === "paid" || expensePaymentStatus === "partial"
               ? expensePaymentMethod || null
               : null,
-        }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as { error?: string; expense?: Row };
-      if (!res.ok || !json.expense) {
-        setExpenseError(json.error ?? HEBREW.expenseCreateFailed);
+        },
+        HEBREW.expenseNew,
+        { idempotent: true }
+      );
+      if (result.queued) {
+        setExpenseOpen(false);
+        resetExpenseForm();
+        return;
+      }
+      if (!result.ok) {
+        setExpenseError(result.error || HEBREW.expenseCreateFailed);
+        return;
+      }
+      const json = result.data as { expense?: Row };
+      if (!json.expense) {
+        setExpenseError(HEBREW.expenseCreateFailed);
         return;
       }
 
@@ -1297,10 +1327,9 @@ export default function DashboardActions({
 
     setIncomeSubmitting(true);
     try {
-      const res = await fetch("/api/payments/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/payments/create",
+        {
           business_domain:
             incomeBusinessDomain === "logistics_projects"
               ? mapProjectTypeToExpenseDomain(projectById.get(linkedProjectId)?.type ?? null)
@@ -1317,12 +1346,22 @@ export default function DashboardActions({
           check_number:
             incomeMethod === "check" && incomeCheckNumber.trim() ? incomeCheckNumber.trim() : null,
           notes: incomeNotes.trim() || null,
-        }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as { error?: string; payment?: Row };
-      if (!res.ok || !json.payment) {
-        setIncomeError(json.error ?? HEBREW.incomeCreateFailed);
+        },
+        HEBREW.incomeNew,
+        { idempotent: true }
+      );
+      if (result.queued) {
+        setIncomeOpen(false);
+        resetIncomeForm();
+        return;
+      }
+      if (!result.ok) {
+        setIncomeError(result.error || HEBREW.incomeCreateFailed);
+        return;
+      }
+      const json = result.data as { payment?: Row };
+      if (!json.payment) {
+        setIncomeError(HEBREW.incomeCreateFailed);
         return;
       }
 

@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
+import { offlineFetch } from "@/lib/offline-queue";
 import {
   Dialog,
   DialogContent,
@@ -44,20 +45,16 @@ export default function DeleteProjectButton({
     setLoading(true);
 
     try {
-      const res = await fetch("/api/projects/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: projectId }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        ok?: boolean;
-        warning?: string;
-      };
-
-      if (!res.ok || !json.ok) {
-        setError(json.error ?? "מחיקת פרויקט נכשלה.");
+      const result = await offlineFetch("/api/projects/delete", { id: projectId }, "מחיקת פרויקט");
+      if (!result.queued && !result.ok) {
+        setError(result.error || "מחיקת פרויקט נכשלה.");
+        return;
+      }
+      const json = result.queued
+        ? null
+        : (result.data as { ok?: boolean; warning?: string } | null);
+      if (json && !json.ok) {
+        setError("מחיקת פרויקט נכשלה.");
         return;
       }
 
@@ -71,7 +68,7 @@ export default function DeleteProjectButton({
 
       router.refresh();
 
-      if (json.warning) {
+      if (json?.warning) {
         setError(json.warning);
       }
     } catch (e: unknown) {

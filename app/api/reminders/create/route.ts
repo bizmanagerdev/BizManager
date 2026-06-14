@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 
 // Create a follow-up reminder (תזכורת).
 export async function POST(req: Request) {
   try {
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    if (!access.ok) return access.response;
+    const { supabase, user, profile } = access.value;
+
+    return await withIdempotency(req, supabase, user.id, "reminders/create", async () => {
     const body = (await req.json()) as {
       customer_id?: string | null;
       remind_at?: string;
@@ -21,10 +27,6 @@ export async function POST(req: Request) {
     if (!remindAt) {
       return NextResponse.json({ error: "Missing remind_at" }, { status: 400 });
     }
-
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
-    if (!access.ok) return access.response;
-    const { supabase, profile } = access.value;
 
     const nullable = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
@@ -49,6 +51,7 @@ export async function POST(req: Request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ ok: true, id: reminder?.id ?? null });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

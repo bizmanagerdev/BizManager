@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 
 type CreateCustomerPayload = {
   name?: string;
@@ -16,6 +17,11 @@ type CreateCustomerPayload = {
 
 export async function POST(req: Request) {
   try {
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user } = access.value;
+
+    return await withIdempotency(req, supabase, user.id, "customers/create", async () => {
     const body = (await req.json()) as CreateCustomerPayload;
 
     const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -41,10 +47,6 @@ export async function POST(req: Request) {
     if (!city) {
       return NextResponse.json({ error: "עיר היא שדה חובה לתיאום משלוחים." }, { status: 400 });
     }
-    const access = await requireRouteAccess();
-    if (!access.ok) return access.response;
-    const { supabase } = access.value;
-
     const fullAddress = address ? `${city} | ${address}` : city;
 
     const { data, error } = await supabase
@@ -72,6 +74,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ customer: data });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "שגיאה לא ידועה";
     return NextResponse.json({ error: message }, { status: 500 });

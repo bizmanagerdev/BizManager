@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { offlineFetch } from "@/lib/offline-queue";
 import { loadCustomerRowsByIds, loadMoreCustomers } from "@/app/customers/actions";
 import type { CustomersFilters } from "@/app/customers/loadCustomers";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
@@ -283,10 +284,9 @@ export default function CustomersClient({
     if (!contactName.trim()) return setContactErr("יש למלא שם איש קשר.");
     setContactLoading(true);
     try {
-      const res = await fetch("/api/customer-contacts/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/customer-contacts/create",
+        {
           customer_id: targetCustomerId,
           full_name: contactName.trim(),
           role: contactRole.trim() || null,
@@ -296,10 +296,19 @@ export default function CustomersClient({
           is_primary: contactPrimary,
           active: contactActive,
           notes: contactNotes.trim() || null,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string; contact?: Row };
-      if (!res.ok || !json.contact) return setContactErr(json.error ?? "יצירת איש קשר נכשלה.");
+        },
+        "איש קשר חדש",
+        { idempotent: true }
+      );
+      if (result.queued) {
+        // Will appear in the list after it syncs and the page refreshes.
+        setContactOpen(false);
+        return;
+      }
+      const json = result.ok ? (result.data as { contact?: Row } | null) : null;
+      if (!result.ok || !json?.contact) {
+        return setContactErr((result.ok ? "יצירת איש קשר נכשלה." : result.error) || "יצירת איש קשר נכשלה.");
+      }
       setRows((prev) =>
         prev.map((row) => {
           if (s(row, "customer_id") !== targetCustomerId) return row;

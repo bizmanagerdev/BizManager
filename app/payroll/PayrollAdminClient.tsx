@@ -446,12 +446,12 @@ export default function PayrollAdminClient({
             clock_out: clockOut,
             labor_cost: canViewSalary && laborCost ? laborCost : null,
           },
-          "משמרת חדשה"
+          "משמרת חדשה",
+          { idempotent: true }
         );
         if (result.queued) {
           setCreateSessionOpen(false);
           resetCreateSessionForm();
-          setSaveMessage("אין חיבור לאינטרנט — המשמרת תישמר כשיחזור החיבור.");
           return;
         }
         if (!result.ok) {

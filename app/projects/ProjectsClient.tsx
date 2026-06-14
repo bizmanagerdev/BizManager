@@ -657,12 +657,11 @@ export default function ProjectsClient({
         due_date: createDueDate || null,
         notes: createNotes.trim() || null,
         items_to_move: textToItemsToMove(createItemsToMove),
-      }, "פרויקט חדש");
+      }, "פרויקט חדש", { idempotent: true });
 
       if (result.queued) {
         clearDraft("project-create");
         setCreateOpen(false);
-        if (typeof window !== "undefined") window.alert("אין חיבור — הפרויקט ייווצר כשיחזור החיבור.");
         return;
       }
       if (!result.ok) {
@@ -779,10 +778,9 @@ export default function ProjectsClient({
 
     setEditSubmitting(true);
     try {
-      const res = await fetch("/api/projects/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/projects/update",
+        {
           id: editId,
           customer_id: editCustomerId,
           name: editName.trim(),
@@ -798,25 +796,28 @@ export default function ProjectsClient({
           due_date: editDueDate || null,
           notes: editNotes.trim() || null,
           items_to_move: textToItemsToMove(editItemsToMove),
-        }),
-      });
+        },
+        "עדכון פרויקט"
+      );
 
-      const json = (await res.json().catch(() => ({}))) as Partial<{
-        error: string;
-        project: ProjectRow;
-      }>;
-
-      if (!res.ok || !json.project) {
-        setEditError(json.error ?? "עדכון פרויקט נכשל.");
+      if (!result.queued && !result.ok) {
+        setEditError(result.error || "עדכון פרויקט נכשל.");
+        return;
+      }
+      const json = result.queued ? null : (result.data as Partial<{ project: ProjectRow }>);
+      if (json && !json.project) {
+        setEditError("עדכון פרויקט נכשל.");
         return;
       }
 
-      setProjects((prev) =>
-        prev.map((row) => {
-          const id = getString(row, "id") ?? "";
-          return id === editId ? (json.project as ProjectRow) : row;
-        })
-      );
+      if (json?.project) {
+        setProjects((prev) =>
+          prev.map((row) => {
+            const id = getString(row, "id") ?? "";
+            return id === editId ? (json.project as ProjectRow) : row;
+          })
+        );
+      }
       setEditOpen(false);
     } catch (e: unknown) {
       setEditError(e instanceof Error ? e.message : "שגיאה לא ידועה");

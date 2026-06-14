@@ -21,6 +21,7 @@ import {
   directionLabel,
   type CommunicationLog,
 } from "@/lib/communications";
+import { offlineFetch } from "@/lib/offline-queue";
 
 type LogItem = CommunicationLog & {
   customer_name?: string | null;
@@ -85,18 +86,22 @@ export default function CommunicationLogItem({
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/communications/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: log.id, channel, direction, content: content.trim() || null }),
-      });
-      if (res.ok) {
+      const result = await offlineFetch(
+        "/api/communications/update",
+        { id: log.id, channel, direction, content: content.trim() || null },
+        "עדכון שיחה"
+      );
+      if (result.queued) {
+        setEditing(false);
+        onChanged();
+        return;
+      }
+      if (result.ok) {
         toast.success("השיחה עודכנה");
         setEditing(false);
         onChanged();
       } else {
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error("עדכון השיחה נכשל", { description: json.error ?? "" });
+        toast.error("עדכון השיחה נכשל", { description: result.error || "" });
       }
     } finally {
       setBusy(false);
@@ -107,17 +112,16 @@ export default function CommunicationLogItem({
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/communications/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: log.id }),
-      });
-      if (res.ok) {
+      const result = await offlineFetch("/api/communications/delete", { id: log.id }, "מחיקת שיחה");
+      if (result.queued) {
+        onChanged();
+        return;
+      }
+      if (result.ok) {
         toast.success("השיחה נמחקה");
         onChanged();
       } else {
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error("מחיקת השיחה נכשלה", { description: json.error ?? "" });
+        toast.error("מחיקת השיחה נכשלה", { description: result.error || "" });
       }
     } finally {
       setBusy(false);

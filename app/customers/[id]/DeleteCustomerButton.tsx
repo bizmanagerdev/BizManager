@@ -6,6 +6,7 @@ import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
+import { offlineFetch } from "@/lib/offline-queue";
 import {
   Dialog,
   DialogContent,
@@ -50,20 +51,18 @@ export default function DeleteCustomerButton({
     setLoading(true);
 
     try {
-      const res = await fetch("/api/customers/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: customerId }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
-
-      if (!res.ok || !json.ok) {
-        setError(json.error || "מחיקת לקוח נכשלה.");
+      const result = await offlineFetch("/api/customers/delete", { id: customerId }, "מחיקת לקוח");
+      if (!result.queued && !result.ok) {
+        setError(result.error || "מחיקת לקוח נכשלה.");
+        return;
+      }
+      const json = result.queued ? null : (result.data as { ok?: boolean } | null);
+      if (json && !json.ok) {
+        setError("מחיקת לקוח נכשלה.");
         return;
       }
 
-      toast.success("הלקוח נמחק");
+      if (!result.queued) toast.success("הלקוח נמחק");
       emitNavigationStart();
       setOpen(false);
       router.push(returnHref);

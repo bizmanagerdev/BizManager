@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 
 function validateTaskLinkArgs(args: {
@@ -29,6 +30,11 @@ function normalizeTaskWriteError(message: string) {
 
 export async function POST(req: Request) {
   try {
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user, profile } = access.value;
+
+    return await withIdempotency(req, supabase, user.id, "tasks/create", async () => {
     const body = (await req.json()) as {
       project_id?: string;
       property_id?: string;
@@ -63,10 +69,6 @@ export async function POST(req: Request) {
       );
     }
 
-    const access = await requireRouteAccess();
-    if (!access.ok) return access.response;
-    const { supabase, profile } = access.value;
-
     const { data, error } = await supabase
       .from("tasks")
       .insert({
@@ -100,6 +102,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ task: data });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

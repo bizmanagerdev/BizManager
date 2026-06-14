@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatShortDate } from "@/lib/date";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
+import { offlineFetch } from "@/lib/offline-queue";
 import type { DashboardTask } from "@/lib/dashboard/tasks-overview";
 
 type TabKey = "all" | "today" | "overdue" | "in_progress";
@@ -76,14 +77,17 @@ export default function MyTasksPanel({ tasks: initialTasks }: { tasks: Dashboard
     if (busyId) return;
     setBusyId(id);
     try {
-      const res = await fetch("/api/tasks/update-status", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, status: "done" }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        toast.error(json.error ?? "הפעולה נכשלה.");
+      const result = await offlineFetch(
+        "/api/tasks/update-status",
+        { id, status: "done" },
+        "סימון משימה כבוצעה"
+      );
+      if (result.queued) {
+        setDoneIds((prev) => new Set(prev).add(id));
+        return;
+      }
+      if (!result.ok) {
+        toast.error(result.error || "הפעולה נכשלה.");
         return;
       }
       setDoneIds((prev) => new Set(prev).add(id));

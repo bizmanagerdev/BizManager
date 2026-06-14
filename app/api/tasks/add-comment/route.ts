@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 
 export async function POST(req: Request) {
   try {
@@ -7,6 +8,7 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
 
+    return await withIdempotency(req, supabase, user.id, "tasks/add-comment", async () => {
     const body = (await req.json()) as { task_id?: string; message?: string };
     const taskId = typeof body.task_id === "string" ? body.task_id : "";
     const message = typeof body.message === "string" ? body.message.trim() : "";
@@ -34,6 +36,7 @@ export async function POST(req: Request) {
     if (updateError) return NextResponse.json({ error: updateError.message }, { status: 400 });
 
     return NextResponse.json({ ok: true });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

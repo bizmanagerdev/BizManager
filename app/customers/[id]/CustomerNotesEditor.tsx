@@ -6,6 +6,7 @@ import { PencilLine } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { offlineFetch } from "@/lib/offline-queue";
 
 /** Customer comments with inline editing (the הערות section on the customer page). */
 export default function CustomerNotesEditor({
@@ -24,17 +25,16 @@ export default function CustomerNotesEditor({
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/customers/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: customerId, notes: draft }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error("שמירת ההערות נכשלה", { description: data.error ?? "" });
+      const result = await offlineFetch(
+        "/api/customers/update",
+        { id: customerId, notes: draft },
+        "עדכון הערות לקוח"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שמירת ההערות נכשלה", { description: result.error || "" });
         return;
       }
-      toast.success("ההערות נשמרו");
+      if (!result.queued) toast.success("ההערות נשמרו");
       setEditing(false);
       router.refresh();
     } catch {

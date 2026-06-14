@@ -274,10 +274,9 @@ export function TaskUpsertDialog(props: Props) {
           assigned_user_id: assignedUserId,
           priority,
           status,
-        }, "משימה חדשה");
+        }, "משימה חדשה", { idempotent: true });
 
         if (result.queued) {
-          toast.info("אין חיבור — המשימה תישמר ותישלח כשיחזור החיבור");
           clearDraft("task-create");
           props.onSaved?.();
           props.onOpenChange(false);
@@ -290,34 +289,29 @@ export function TaskUpsertDialog(props: Props) {
         clearDraft("task-create");
         toast.success("המשימה נוצרה");
       } else {
-        const res = await fetch("/api/tasks/update", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            id: props.taskId,
-            business_domain: effectiveDomain,
-            project_id:
-              (effectiveTarget?.type ?? derivedTargetType) === "project"
-                ? effectiveTarget?.id ?? projectId
-                : null,
-            property_id:
-              (effectiveTarget?.type ?? derivedTargetType) === "property"
-                ? effectiveTarget?.id ?? propertyId
-                : null,
-            subject: subject.trim(),
-            description: description.trim() ? description.trim() : null,
-            due_date: dueDate,
-            assigned_user_id: assignedUserId,
-            priority,
-            status,
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          toast.error("שגיאה בעדכון משימה", { description: json?.error ?? "" });
+        const result = await offlineFetch("/api/tasks/update", {
+          id: props.taskId,
+          business_domain: effectiveDomain,
+          project_id:
+            (effectiveTarget?.type ?? derivedTargetType) === "project"
+              ? effectiveTarget?.id ?? projectId
+              : null,
+          property_id:
+            (effectiveTarget?.type ?? derivedTargetType) === "property"
+              ? effectiveTarget?.id ?? propertyId
+              : null,
+          subject: subject.trim(),
+          description: description.trim() ? description.trim() : null,
+          due_date: dueDate,
+          assigned_user_id: assignedUserId,
+          priority,
+          status,
+        }, "עדכון משימה");
+        if (!result.queued && !result.ok) {
+          toast.error("שגיאה בעדכון משימה", { description: result.error || "" });
           return;
         }
-        toast.success("המשימה עודכנה");
+        if (!result.queued) toast.success("המשימה עודכנה");
       }
 
       props.onSaved?.();

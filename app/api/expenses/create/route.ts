@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 
 
 export async function POST(req: Request) {
   try {
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user, profile } = access.value;
+
+    return await withIdempotency(req, supabase, user.id, "expenses/create", async () => {
     const body = (await req.json()) as {
       project_id?: string | null;
       order_id?: string | null;
@@ -56,10 +62,6 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-
-    const access = await requireRouteAccess();
-    if (!access.ok) return access.response;
-    const { supabase, user, profile } = access.value;
 
     let businessDomain = businessDomainInput;
 
@@ -195,6 +197,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ expense, projectExpense });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "שגיאה לא צפויה בעת יצירת ההוצאה.";
     return NextResponse.json({ error: message }, { status: 500 });

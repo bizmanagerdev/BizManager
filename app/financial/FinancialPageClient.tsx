@@ -672,24 +672,22 @@ export default function FinancialPageClient({
 
     setIsDeletingExpense(true);
     try {
-      const res = await fetch("/api/expenses/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/expenses/delete",
+        {
           id: deletingExpense.expenseId,
           project_id: deletingExpense.expenseProjectId,
           order_id: deletingExpense.expenseOrderId,
           property_id: deletingExpense.expensePropertyId,
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-
-      if (!res.ok) {
-        toast.error("שגיאה במחיקת החיוב", { description: json?.error ?? "" });
+        },
+        "מחיקת חיוב"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה במחיקת החיוב", { description: result.error || "" });
         return;
       }
 
-      toast.success("החיוב נמחק");
+      if (!result.queued) toast.success("החיוב נמחק");
       setDeletingExpense(null);
       router.refresh();
     } catch (error) {
@@ -740,10 +738,9 @@ export default function FinancialPageClient({
             ? incomeCreateForm.checkNumber.trim()
             : null,
         notes: incomeCreateForm.notes.trim() || null,
-      }, "הכנסה חדשה");
+      }, "הכנסה חדשה", { idempotent: true });
 
       if (result.queued) {
-        toast.info("אין חיבור — ההכנסה תישמר ותישלח כשיחזור החיבור");
         setIncomeCreateOpen(false);
         clearDraft("income-create");
         setIncomeCreateForm(createIncomeFormState());

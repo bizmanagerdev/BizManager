@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { logAuditEvent } from "@/lib/audit";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { recalculateUserSessionCostsFromRules, regenerateEditablePayslipsForUsers } from "@/lib/payroll-center";
@@ -51,7 +52,9 @@ export async function POST(req: Request) {
   try {
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
+    const { supabase, user, profile } = access.value;
 
+    return await withIdempotency(req, supabase, user.id, "payroll/sessions/create", async () => {
     const body = (await req.json().catch(() => ({}))) as CreatePayrollSessionPayload;
     const businessDomain = isExpenseBusinessDomain(body.business_domain) ? body.business_domain : null;
     const selectedUserId = typeof body.user_id === "string" ? body.user_id.trim() : "";
@@ -87,8 +90,6 @@ export async function POST(req: Request) {
     ) {
       return NextResponse.json({ error: "שעת הסיום חייבת להיות אחרי שעת ההתחלה." }, { status: 400 });
     }
-
-    const { supabase, profile } = access.value;
 
     const { data: selectedUser, error: selectedUserError } = await supabase
       .from("users")
@@ -240,6 +241,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ session: data });
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "שגיאה לא צפויה בעת יצירת המשמרת.";
     return NextResponse.json({ error: message }, { status: 500 });

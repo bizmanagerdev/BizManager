@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import {
@@ -32,6 +33,11 @@ function toNumber(value: unknown) {
 
 export async function POST(req: Request) {
   try {
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user, profile } = access.value;
+
+    return await withIdempotency(req, supabase, user.id, "payments/create", async () => {
     const body = (await req.json()) as CreatePaymentPayload;
     const paymentDate = typeof body.payment_date === "string" ? body.payment_date : null;
     const dueDate = typeof body.due_date === "string" ? body.due_date : null;
@@ -65,10 +71,6 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-
-    const access = await requireRouteAccess();
-    if (!access.ok) return access.response;
-    const { supabase, user, profile } = access.value;
 
     let businessDomain: ExpenseBusinessDomain | null = isExpenseBusinessDomain(body.business_domain)
       ? body.business_domain
@@ -171,6 +173,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ payment: data, morning_auto_receipt: morningAutoReceipt });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

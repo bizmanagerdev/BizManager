@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { offlineFetch } from "@/lib/offline-queue";
 import { loadMoreTasks } from "@/app/tasks/actions";
 import type { TasksFilters } from "@/app/tasks/loadTasks";
 import { toast } from "sonner";
@@ -216,14 +217,13 @@ export default function TasksPageClient(props: Props) {
     setUpdatingStatusId(taskId);
     emitProgressActivityStart();
     try {
-      const res = await fetch("/api/tasks/update-status", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: taskId, status }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה בעדכון סטטוס", { description: json?.error ?? "" });
+      const result = await offlineFetch(
+        "/api/tasks/update-status",
+        { id: taskId, status },
+        "עדכון סטטוס משימה"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה בעדכון סטטוס", { description: result.error || "" });
         return;
       }
 
@@ -236,7 +236,8 @@ export default function TasksPageClient(props: Props) {
         }
         return prev.map((task) => (task.id === taskId ? { ...task, status } : task));
       });
-      toast.success("הסטטוס עודכן");
+      // When queued offline the global connection toast already informs the user.
+      if (!result.queued) toast.success("הסטטוס עודכן");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "";
       toast.error("שגיאה בעדכון סטטוס", { description: message });
@@ -253,19 +254,14 @@ export default function TasksPageClient(props: Props) {
     setDeletingId(taskId);
     emitProgressActivityStart();
     try {
-      const res = await fetch("/api/tasks/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: taskId }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקת משימה", { description: json?.error ?? "" });
+      const result = await offlineFetch("/api/tasks/delete", { id: taskId }, "מחיקת משימה");
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה במחיקת משימה", { description: result.error || "" });
         return;
       }
 
       setLocalTasks((prev) => prev.filter((task) => task.id !== taskId));
-      toast.success("המשימה נמחקה");
+      if (!result.queued) toast.success("המשימה נמחקה");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "";
       toast.error("שגיאה במחיקת משימה", { description: message });

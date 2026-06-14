@@ -21,6 +21,7 @@ import {
   type CommunicationLog,
   type Reminder,
 } from "@/lib/communications";
+import { offlineFetch } from "@/lib/offline-queue";
 
 // Same format as the customer page: no trailing ".00", decimals only when real.
 function formatCurrency(value: number) {
@@ -134,13 +135,21 @@ export default function CollectionTrackingPanel({
       setError("יש לבחור תאריך לתזכורת ההמשך.");
       return;
     }
+    function resetCallForm() {
+      setContent("");
+      setWithFollowUp(false);
+      setFollowUpDate("");
+      setFollowUpContent("");
+      setFollowUpAssignee(currentUserId ?? "");
+      if (collapsibleForms) setShowCallForm(false);
+    }
+
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/communications/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/communications/create",
+        {
           customer_id: customerId,
           channel,
           direction,
@@ -152,20 +161,21 @@ export default function CollectionTrackingPanel({
                 assigned_to: followUpAssignee || undefined,
               }
             : undefined,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(json.error ?? "שמירה נכשלה");
+        },
+        "תיעוד שיחה",
+        { idempotent: true }
+      );
+      if (result.queued) {
+        resetCallForm();
+        onChanged?.();
+        return;
+      }
+      if (!result.ok) {
+        setError(result.error || "שמירה נכשלה");
         return;
       }
       toast.success(withFollowUp ? "השיחה תועדה ותזכורת המשך נקבעה" : "השיחה תועדה");
-      setContent("");
-      setWithFollowUp(false);
-      setFollowUpDate("");
-      setFollowUpContent("");
-      setFollowUpAssignee(currentUserId ?? "");
-      if (collapsibleForms) setShowCallForm(false);
+      resetCallForm();
       await load();
       onChanged?.();
     } finally {
@@ -179,31 +189,40 @@ export default function CollectionTrackingPanel({
       setError("יש לבחור תאריך לתזכורת.");
       return;
     }
+    function resetReminderForm() {
+      setReminderDate("");
+      setReminderNote("");
+      setReminderAssignee(currentUserId ?? "");
+      if (collapsibleForms) setShowReminderForm(false);
+    }
+
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/reminders/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/reminders/create",
+        {
           customer_id: customerId,
           remind_at: reminderDate,
           content: reminderNote.trim() || undefined,
           action_type: "call",
           category: "collection",
           assigned_to: reminderAssignee || undefined,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(json.error ?? "שמירת התזכורת נכשלה");
+        },
+        "תזכורת חדשה",
+        { idempotent: true }
+      );
+      if (result.queued) {
+        resetReminderForm();
+        onChanged?.();
+        return;
+      }
+      if (!result.ok) {
+        setError(result.error || "שמירת התזכורת נכשלה");
         return;
       }
       toast.success("התזכורת נוספה");
-      setReminderDate("");
-      setReminderNote("");
-      setReminderAssignee(currentUserId ?? "");
-      if (collapsibleForms) setShowReminderForm(false);
+      resetReminderForm();
       await load();
       onChanged?.();
     } finally {
@@ -212,36 +231,41 @@ export default function CollectionTrackingPanel({
   }
 
   async function updateReminder(id: string, status: "done" | "cancelled") {
-    const res = await fetch("/api/reminders/update", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, status }),
-    });
-    if (res.ok) {
+    const result = await offlineFetch(
+      "/api/reminders/update",
+      { id, status },
+      status === "done" ? "סימון תזכורת כבוצעה" : "ביטול תזכורת"
+    );
+    if (result.queued) {
+      onChanged?.();
+      return;
+    }
+    if (result.ok) {
       toast.success(status === "done" ? "התזכורת סומנה כבוצעה" : "התזכורת בוטלה");
       await load();
       onChanged?.();
     } else {
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error("עדכון התזכורת נכשל", { description: json.error ?? "" });
+      toast.error("עדכון התזכורת נכשל", { description: result.error || "" });
     }
   }
 
   async function markCollected(paymentId: string) {
     setCollectingId(paymentId);
     try {
-      const res = await fetch("/api/payments/mark-collected", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: paymentId, collected: true }),
-      });
-      if (res.ok) {
+      const result = await offlineFetch(
+        "/api/payments/mark-collected",
+        { id: paymentId, collected: true },
+        "סימון תשלום כנגבה"
+      );
+      if (result.queued) {
+        return;
+      }
+      if (result.ok) {
         toast.success("התשלום סומן כנגבה");
         await load();
         onChanged?.();
       } else {
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error("סימון התשלום נכשל", { description: json.error ?? "" });
+        toast.error("סימון התשלום נכשל", { description: result.error || "" });
       }
     } finally {
       setCollectingId(null);

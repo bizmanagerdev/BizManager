@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import {
@@ -22,6 +23,11 @@ type CreateOrderPaymentPayload = {
 
 export async function POST(req: Request) {
   try {
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user, profile } = access.value;
+
+    return await withIdempotency(req, supabase, user.id, "orders/payments/create", async () => {
     const body = (await req.json()) as CreateOrderPaymentPayload;
     const orderId = typeof body.order_id === "string" ? body.order_id : "";
     const [payment] = normalizePaymentEntries([body]);
@@ -46,10 +52,6 @@ export async function POST(req: Request) {
     if (payment.payment_method === "check" && !dueDate) {
       return NextResponse.json({ error: "יש להזין תאריך פירעון לצ'ק" }, { status: 400 });
     }
-
-    const access = await requireRouteAccess();
-    if (!access.ok) return access.response;
-    const { supabase, user, profile } = access.value;
 
     const { data: order, error: orderError } = await supabase
       .from("orders")
@@ -142,6 +144,7 @@ export async function POST(req: Request) {
       total_paid: totalPaid,
       remaining_balance: Math.max(totalAmount - totalPaid, 0),
       morning_auto_receipt: morningAutoReceipt,
+    });
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

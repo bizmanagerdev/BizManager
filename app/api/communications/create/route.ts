@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 
 // Log a contact with a customer (תיעוד פניות). Optionally create a linked
 // follow-up reminder in the same step.
 export async function POST(req: Request) {
   try {
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    if (!access.ok) return access.response;
+    const { supabase, user, profile } = access.value;
+
+    return await withIdempotency(req, supabase, user.id, "communications/create", async () => {
     const body = (await req.json()) as {
       customer_id?: string;
       channel?: string;
@@ -22,10 +28,6 @@ export async function POST(req: Request) {
     if (!customerId) {
       return NextResponse.json({ error: "Missing customer_id" }, { status: 400 });
     }
-
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
-    if (!access.ok) return access.response;
-    const { supabase, profile } = access.value;
 
     const nullable = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 
@@ -77,6 +79,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true, id: log?.id ?? null, reminder_id: reminderId });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

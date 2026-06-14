@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatShortDate } from "@/lib/date";
 import { actionTypeLabel, type Reminder } from "@/lib/communications";
+import { offlineFetch } from "@/lib/offline-queue";
 
 const ACTION_ICON: Record<string, LucideIcon> = {
   call: Phone,
@@ -67,14 +68,17 @@ export default function RemindersPanel({ reminders: initial }: { reminders: Remi
     if (busyId) return;
     setBusyId(id);
     try {
-      const res = await fetch("/api/reminders/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, status: "done" }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        toast.error(json.error ?? "הפעולה נכשלה.");
+      const result = await offlineFetch(
+        "/api/reminders/update",
+        { id, status: "done" },
+        "סימון תזכורת כבוצעה"
+      );
+      if (result.queued) {
+        setDoneIds((prev) => new Set(prev).add(id));
+        return;
+      }
+      if (!result.ok) {
+        toast.error(result.error || "הפעולה נכשלה.");
         return;
       }
       setDoneIds((prev) => new Set(prev).add(id));

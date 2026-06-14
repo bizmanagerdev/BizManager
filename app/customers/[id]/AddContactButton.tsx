@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { offlineFetch } from "@/lib/offline-queue";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import {
   Dialog,
@@ -65,10 +66,9 @@ export default function AddContactButton({
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/customer-contacts/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/customer-contacts/create",
+        {
           customer_id: customerId,
           full_name: name.trim(),
           role: role.trim() || null,
@@ -78,14 +78,15 @@ export default function AddContactButton({
           notes: notes.trim() || null,
           is_primary: isPrimary,
           active: true,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(json.error ?? "יצירת איש קשר נכשלה.");
+        },
+        "איש קשר חדש",
+        { idempotent: true }
+      );
+      if (!result.queued && !result.ok) {
+        setError(result.error || "יצירת איש קשר נכשלה.");
         return;
       }
-      toast.success("איש הקשר נוסף");
+      if (!result.queued) toast.success("איש הקשר נוסף");
       setOpen(false);
       router.refresh();
     } catch (e: unknown) {

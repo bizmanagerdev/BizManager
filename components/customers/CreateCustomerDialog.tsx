@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { offlineFetch } from "@/lib/offline-queue";
 
 export type CreatedCustomer = {
   id: string;
@@ -339,10 +340,9 @@ export function CreateCustomerDialog({
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/customers/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/customers/create",
+        {
           name: trimName,
           name_for_invoice: nameForInvoice.trim() || null,
           registration_number: regNumber.trim() || null,
@@ -353,16 +353,27 @@ export function CreateCustomerDialog({
           address: address.trim() || null,
           notes: notes.trim() || null,
           requires_prepayment: requiresPrepayment,
-        }),
-      });
+        },
+        "לקוח חדש",
+        { idempotent: true }
+      );
 
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        customer?: Record<string, unknown>;
-      };
-
-      if (!res.ok || !json.customer) {
-        setError(json.error ?? "יצירת לקוח נכשלה.");
+      if (result.queued) {
+        // The customer is queued for creation on reconnect. We can't create its
+        // contacts now (they need the new customer's id) or hand a real id to the
+        // parent, so just close — the global toast tells the user it's saved and
+        // it will appear in the list after sync.
+        reset();
+        onOpenChange(false);
+        return;
+      }
+      if (!result.ok) {
+        setError(result.error || "יצירת לקוח נכשלה.");
+        return;
+      }
+      const json = result.data as { customer?: Record<string, unknown> } | null;
+      if (!json?.customer) {
+        setError("יצירת לקוח נכשלה.");
         return;
       }
 
@@ -371,19 +382,23 @@ export function CreateCustomerDialog({
 
       const createdContacts: Record<string, unknown>[] = [];
       for (const [idx, contact] of normalized.entries()) {
-        const contactRes = await fetch("/api/customer-contacts/create", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ customer_id: customerId, ...contact }),
-        });
-        const contactJson = (await contactRes.json().catch(() => ({}))) as {
-          error?: string;
-          contact?: Record<string, unknown>;
-        };
-        if (!contactRes.ok || !contactJson.contact) {
+        const contactResult = await offlineFetch(
+          "/api/customer-contacts/create",
+          { customer_id: customerId, ...contact },
+          "איש קשר חדש",
+          { idempotent: true }
+        );
+        if (contactResult.queued) continue;
+        const contactJson = contactResult.ok
+          ? (contactResult.data as { contact?: Record<string, unknown> } | null)
+          : null;
+        if (!contactResult.ok || !contactJson?.contact) {
           const detail = contact.full_name || `#${idx + 1}`;
           if (typeof window !== "undefined") {
-            window.alert(contactJson.error ?? `הלקוח נוצר, אבל איש הקשר ${detail} לא נוצר בהצלחה.`);
+            window.alert(
+              (contactResult.ok ? undefined : contactResult.error) ??
+                `הלקוח נוצר, אבל איש הקשר ${detail} לא נוצר בהצלחה.`
+            );
           }
           break;
         }

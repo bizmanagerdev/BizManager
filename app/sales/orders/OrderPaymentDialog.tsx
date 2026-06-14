@@ -22,6 +22,7 @@ import {
 } from "@/lib/orders/paymentStatus";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
+import { offlineFetch } from "@/lib/offline-queue";
 
 type CreatedPayment = {
   id?: string;
@@ -116,47 +117,7 @@ export default function OrderPaymentDialog({
       return;
     }
 
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/orders/payments/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          order_id: orderId,
-          entry_type: entryType,
-          amount_total: amountNumber,
-          payment_date: paymentDate,
-          payment_method: paymentMethod,
-          due_date: dueDate.trim() || undefined,
-          reference_number: referenceNumber.trim() || undefined,
-          check_number: paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
-          notes: notes.trim() || undefined,
-        }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        payment?: CreatedPayment | null;
-        payment_status?: string;
-        total_paid?: number;
-      };
-
-      if (!res.ok) {
-        setError(json.error ?? (entryType === "refund" ? "רישום ההחזר נכשל." : "עדכון התשלום נכשל."));
-        return;
-      }
-
-      const createdPaymentId = json.payment?.id ?? "";
-      if (paymentMethod === "check" && createdPaymentId && checkPhotoFiles.length > 0) {
-        await uploadCheckPhotos(createdPaymentId, checkPhotoFiles);
-      }
-
-      onCreated?.({
-        payment: json.payment ?? null,
-        paymentStatus: json.payment_status ?? preview.nextStatus,
-        totalPaid: typeof json.total_paid === "number" ? json.total_paid : preview.nextPaid,
-      });
-
+    function resetForm() {
       setAmount("");
       setEntryType(preview.nextRefund > 0 ? "refund" : "payment");
       setPaymentDate(getTodayDate());
@@ -167,6 +128,63 @@ export default function OrderPaymentDialog({
       setCheckPhotoFiles([]);
       setNotes("");
       setOpen(false);
+    }
+
+    setSubmitting(true);
+    try {
+      const result = await offlineFetch(
+        "/api/orders/payments/create",
+        {
+          order_id: orderId,
+          entry_type: entryType,
+          amount_total: amountNumber,
+          payment_date: paymentDate,
+          payment_method: paymentMethod,
+          due_date: dueDate.trim() || undefined,
+          reference_number: referenceNumber.trim() || undefined,
+          check_number: paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
+          notes: notes.trim() || undefined,
+        },
+        entryType === "refund" ? "החזר להזמנה" : "תשלום להזמנה",
+        { idempotent: true }
+      );
+
+      if (result.queued) {
+        // Saved on the device; it will sync when the connection returns. Reflect
+        // it optimistically so the order total updates now. (A check photo, if
+        // any, can't be uploaded offline and will need re-attaching later.)
+        onCreated?.({
+          payment: null,
+          paymentStatus: preview.nextStatus,
+          totalPaid: preview.nextPaid,
+        });
+        resetForm();
+        return;
+      }
+
+      if (!result.ok) {
+        setError(result.error ?? (entryType === "refund" ? "רישום ההחזר נכשל." : "עדכון התשלום נכשל."));
+        return;
+      }
+
+      const json = result.data as {
+        payment?: CreatedPayment | null;
+        payment_status?: string;
+        total_paid?: number;
+      } | null;
+
+      const createdPaymentId = json?.payment?.id ?? "";
+      if (paymentMethod === "check" && createdPaymentId && checkPhotoFiles.length > 0) {
+        await uploadCheckPhotos(createdPaymentId, checkPhotoFiles);
+      }
+
+      onCreated?.({
+        payment: json?.payment ?? null,
+        paymentStatus: json?.payment_status ?? preview.nextStatus,
+        totalPaid: typeof json?.total_paid === "number" ? json.total_paid : preview.nextPaid,
+      });
+
+      resetForm();
       router.refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "שגיאה לא ידועה");

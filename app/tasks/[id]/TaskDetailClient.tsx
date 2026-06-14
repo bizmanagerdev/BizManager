@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { offlineFetch } from "@/lib/offline-queue";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
 import {
@@ -133,15 +134,19 @@ export default function TaskDetailClient(props: Props) {
     setSubmitting(true);
     emitProgressActivityStart();
     try {
-      const res = await fetch("/api/tasks/add-comment", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ task_id: props.taskId, message }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      const result = await offlineFetch(
+        "/api/tasks/add-comment",
+        { task_id: props.taskId, message },
+        "תגובה למשימה",
+        { idempotent: true }
+      );
+      if (result.queued) {
+        setMessage("");
+        return;
+      }
+      if (!result.ok) {
         toast.error("שגיאה בהוספת תגובה", {
-          description: json?.error ?? "",
+          description: result.error || "",
         });
         return;
       }
@@ -204,17 +209,16 @@ export default function TaskDetailClient(props: Props) {
     setDeleting(true);
     emitProgressActivityStart();
     try {
-      const res = await fetch("/api/documents/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ document_id: deleteId }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקה", { description: json?.error ?? "" });
+      const result = await offlineFetch(
+        "/api/documents/delete",
+        { document_id: deleteId },
+        "מחיקת קובץ"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה במחיקה", { description: result.error || "" });
         return;
       }
-      toast.success("הקובץ נמחק");
+      if (!result.queued) toast.success("הקובץ נמחק");
       setDeleteOpen(false);
       setDeleteId(null);
       setDeleteName("");
@@ -234,17 +238,12 @@ export default function TaskDetailClient(props: Props) {
     setTaskDeleting(true);
     emitProgressActivityStart();
     try {
-      const res = await fetch("/api/tasks/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: props.taskId }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה במחיקת משימה", { description: json?.error ?? "" });
+      const result = await offlineFetch("/api/tasks/delete", { id: props.taskId }, "מחיקת משימה");
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה במחיקת משימה", { description: result.error || "" });
         return;
       }
-      toast.success("המשימה נמחקה");
+      if (!result.queued) toast.success("המשימה נמחקה");
       router.push(props.returnTo ?? "/tasks");
       router.refresh();
     } catch (error: unknown) {

@@ -17,6 +17,7 @@ import {
   type CommunicationLogWithCustomer,
   type Reminder,
 } from "@/lib/communications";
+import { offlineFetch } from "@/lib/offline-queue";
 import CustomerCollectionButton from "@/components/collections/CustomerCollectionButton";
 import CommunicationLogItem from "@/components/collections/CommunicationLogItem";
 import BulkActions from "@/components/collections/BulkActions";
@@ -223,19 +224,20 @@ export default function CollectionsClient({
 
   async function updateReminder(id: string, status: "done" | "cancelled") {
     try {
-      const res = await fetch("/api/reminders/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, status }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        toast.error(json.error ?? "עדכון התזכורת נכשל.");
+      const result = await offlineFetch(
+        "/api/reminders/update",
+        { id, status },
+        status === "done" ? "סימון תזכורת כבוצעה" : "ביטול תזכורת"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error(result.error || "עדכון התזכורת נכשל.");
         return;
       }
       setCompletedReminderIds((prev) => new Set(prev).add(id));
-      toast.success(status === "done" ? "התזכורת סומנה כבוצעה." : "התזכורת בוטלה.");
-      router.refresh();
+      if (!result.queued) {
+        toast.success(status === "done" ? "התזכורת סומנה כבוצעה." : "התזכורת בוטלה.");
+        router.refresh();
+      }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "עדכון התזכורת נכשל.");
     }
@@ -244,12 +246,12 @@ export default function CollectionsClient({
   async function markCollected(paymentId: string) {
     setCollectingId(paymentId);
     try {
-      const res = await fetch("/api/payments/mark-collected", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: paymentId, collected: true }),
-      });
-      if (res.ok) router.refresh();
+      const result = await offlineFetch(
+        "/api/payments/mark-collected",
+        { id: paymentId, collected: true },
+        "סימון תשלום כנגבה"
+      );
+      if (!result.queued && result.ok) router.refresh();
     } finally {
       setCollectingId(null);
     }

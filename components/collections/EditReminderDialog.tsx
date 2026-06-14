@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import type { Reminder } from "@/lib/communications";
+import { offlineFetch } from "@/lib/offline-queue";
 
 // Reusable "edit reminder" — reschedule, edit content, and reassign (אחראי).
 // Used wherever reminders are managed (collections list, per-customer panel).
@@ -52,19 +53,23 @@ export default function EditReminderDialog({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/reminders/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/reminders/update",
+        {
           id: reminder.id,
           remind_at: remindAt,
           content: content.trim() || null,
           assigned_to: assignee || null,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(json.error ?? "עדכון התזכורת נכשל.");
+        },
+        "עדכון תזכורת"
+      );
+      if (result.queued) {
+        onSaved();
+        onOpenChange(false);
+        return;
+      }
+      if (!result.ok) {
+        setError(result.error || "עדכון התזכורת נכשל.");
         return;
       }
       toast.success("התזכורת עודכנה.");

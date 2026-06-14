@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { resolveExistingCategoryId } from "@/lib/products/resolveCategoryId";
 
 type CreateProductPayload = {
@@ -37,6 +38,11 @@ function isMissingColumnError(error: unknown, columnName: string) {
 
 export async function POST(req: Request) {
   try {
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user } = access.value;
+
+    return await withIdempotency(req, supabase, user.id, "products/create", async () => {
     const body = (await req.json()) as CreateProductPayload;
 
     const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -84,9 +90,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "סף מלאי נמוך אינו תקין." }, { status: 400 });
     }
 
-    const access = await requireRouteAccess();
-    if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
     const categoryResult = await resolveExistingCategoryId(supabase, categoryId);
     if (categoryResult.categoryId === null) {
       return NextResponse.json(
@@ -175,6 +178,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ product: { ...data, category_name: categoryName }, warning });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "שגיאה לא ידועה";
     return NextResponse.json({ error: message }, { status: 500 });

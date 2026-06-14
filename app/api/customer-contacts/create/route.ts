@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 
 type CreateCustomerContactPayload = {
   customer_id?: string;
@@ -15,6 +16,11 @@ type CreateCustomerContactPayload = {
 
 export async function POST(req: Request) {
   try {
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user } = access.value;
+
+    return await withIdempotency(req, supabase, user.id, "customer-contacts/create", async () => {
     const body = (await req.json()) as CreateCustomerContactPayload;
 
     const customerId =
@@ -36,10 +42,6 @@ export async function POST(req: Request) {
     if (!fullName) {
       return NextResponse.json({ error: "Missing full_name" }, { status: 400 });
     }
-
-    const access = await requireRouteAccess();
-    if (!access.ok) return access.response;
-    const { supabase } = access.value;
 
     const { data: customer, error: customerError } = await supabase
       .from("customers")
@@ -92,6 +94,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ contact: data });
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, Pencil, Trash2 } from "lucide-react";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import { offlineFetch } from "@/lib/offline-queue";
 import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import {
@@ -232,10 +233,9 @@ export default function ProjectDetailsActions({
 
     setEditSubmitting(true);
     try {
-      const res = await fetch("/api/projects/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/projects/update",
+        {
           id: project.id,
           customer_id: editCustomerId,
           name: editName.trim(),
@@ -249,17 +249,20 @@ export default function ProjectDetailsActions({
           end_date: editEndDate || null,
           notes: editNotes.trim() || null,
           items_to_move: textToItemsToMove(editItemsToMove),
-        }),
-      });
+        },
+        "עדכון פרויקט"
+      );
 
-      const json = (await res.json().catch(() => ({}))) as { error?: string; project?: unknown };
-      if (!res.ok || !json.project) {
-        setEditError(json.error ?? "עדכון פרויקט נכשל.");
-        return;
-      }
-
-      for (const file of attachmentFiles) {
-        await uploadProjectDocument(project.id, file);
+      if (!result.queued) {
+        const json = result.ok ? (result.data as { project?: unknown } | null) : null;
+        if (!result.ok || !json?.project) {
+          setEditError((result.ok ? "עדכון פרויקט נכשל." : result.error) || "עדכון פרויקט נכשל.");
+          return;
+        }
+        // Uploads need a live connection; only attempt them when actually online.
+        for (const file of attachmentFiles) {
+          await uploadProjectDocument(project.id, file);
+        }
       }
 
       setEditOpen(false);

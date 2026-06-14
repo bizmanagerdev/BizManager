@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Button } from "@/components/ui/button";
+import { offlineFetch } from "@/lib/offline-queue";
 
 export default function DeleteOrderButton({
   orderId,
@@ -27,17 +28,16 @@ export default function DeleteOrderButton({
     setLoading(true);
 
     try {
-      const res = await fetch("/api/orders/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ order_id: orderId }),
-      });
-
-      const json = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
-
-      if (!res.ok || !json.ok) {
-        setError(json.error ?? "מחיקת הזמנה נכשלה.");
-        return;
+      const result = await offlineFetch("/api/orders/delete", { order_id: orderId }, "מחיקת הזמנה");
+      if (!result.queued) {
+        if (!result.ok) {
+          setError(result.error || "מחיקת הזמנה נכשלה.");
+          return;
+        }
+        if (!(result.data as { ok?: boolean })?.ok) {
+          setError("מחיקת הזמנה נכשלה.");
+          return;
+        }
       }
 
       emitNavigationStart();

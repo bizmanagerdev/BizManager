@@ -26,6 +26,7 @@ import {
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
+import { offlineFetch } from "@/lib/offline-queue";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
 export type PaymentItem = {
@@ -139,10 +140,9 @@ function EditPaymentDialog({
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/orders/payments/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      const result = await offlineFetch(
+        "/api/orders/payments/update",
+        {
           id: payment.id,
           order_id: orderId,
           amount_total: signedAmount,
@@ -153,11 +153,15 @@ function EditPaymentDialog({
           check_number:
             paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
           notes: notes.trim() || undefined,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(json.error ?? "עדכון נכשל.");
+        },
+        "עדכון תשלום"
+      );
+      if (result.queued) {
+        await onSaved();
+        return;
+      }
+      if (!result.ok) {
+        setError(result.error || "עדכון נכשל.");
         return;
       }
       if (paymentMethod === "check" && checkPhotoFiles.length > 0) {
@@ -340,14 +344,13 @@ export function OrderPaymentActionsClient({
     setDeleteSubmitting(true);
     setDeleteError(null);
     try {
-      const res = await fetch("/api/orders/payments/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: paymentId, order_id: orderId }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setDeleteError(json.error ?? "מחיקה נכשלה.");
+      const result = await offlineFetch(
+        "/api/orders/payments/delete",
+        { id: paymentId, order_id: orderId },
+        "מחיקת תשלום"
+      );
+      if (!result.queued && !result.ok) {
+        setDeleteError(result.error || "מחיקה נכשלה.");
         return;
       }
       setDeletingId(null);
@@ -362,12 +365,12 @@ export function OrderPaymentActionsClient({
   async function markCollected(paymentId: string, collected: boolean) {
     setCollectingId(paymentId);
     try {
-      const res = await fetch("/api/payments/mark-collected", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: paymentId, collected }),
-      });
-      if (res.ok) {
+      const result = await offlineFetch(
+        "/api/payments/mark-collected",
+        { id: paymentId, collected },
+        collected ? "סימון תשלום כנגבה" : "ביטול גבייה"
+      );
+      if (result.queued || result.ok) {
         await refreshAndWait();
       }
     } finally {

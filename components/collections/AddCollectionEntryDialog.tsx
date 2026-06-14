@@ -17,6 +17,7 @@ import {
 import { COMMUNICATION_CHANNELS } from "@/lib/communications";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
+import { offlineFetch } from "@/lib/offline-queue";
 
 type Mode = "reminder" | "call";
 type CustomerHit = { id: string; name: string; phone: string | null };
@@ -127,24 +128,24 @@ export default function AddCollectionEntryDialog({
 
     setSubmitting(true);
     try {
-      const res =
+      const result =
         mode === "reminder"
-          ? await fetch("/api/reminders/create", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
+          ? await offlineFetch(
+              "/api/reminders/create",
+              {
                 customer_id: customer?.id ?? null,
                 remind_at: reminderDate,
                 content: reminderNote.trim() || undefined,
                 action_type: "call",
                 category: "collection",
                 assigned_to: assignee || undefined,
-              }),
-            })
-          : await fetch("/api/communications/create", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
+              },
+              "תזכורת חדשה",
+              { idempotent: true }
+            )
+          : await offlineFetch(
+              "/api/communications/create",
+              {
                 customer_id: customer!.id,
                 channel,
                 direction,
@@ -157,12 +158,18 @@ export default function AddCollectionEntryDialog({
                       assigned_to: assignee || undefined,
                     }
                   : undefined,
-              }),
-            });
+              },
+              "תיעוד שיחה",
+              { idempotent: true }
+            );
 
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(json.error ?? "שמירה נכשלה.");
+      if (result.queued) {
+        onSaved();
+        onOpenChange(false);
+        return;
+      }
+      if (!result.ok) {
+        setError(result.error || "שמירה נכשלה.");
         return;
       }
       toast.success(mode === "reminder" ? "התזכורת נוספה." : "השיחה תועדה.");

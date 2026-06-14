@@ -252,30 +252,30 @@ export function ExpenseDialog({
       let projectExpenseData: Record<string, unknown> | null = null;
 
       if (isEditing && editingExpense) {
-        const res = await fetch("/api/expenses/update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingExpense.id, ...payload }),
-        });
-        const json = (await res.json().catch(() => null)) as {
-          error?: string;
-          expense?: Record<string, unknown>;
-          projectExpense?: Record<string, unknown>;
-        } | null;
-        if (!res.ok) {
-          const hebrewMessage = toHebrewError(json?.error, "עדכון ההוצאה נכשל.");
+        const result = await offlineFetch(
+          "/api/expenses/update",
+          { id: editingExpense.id, ...payload },
+          "עדכון הוצאה"
+        );
+        if (!result.queued && !result.ok) {
+          const hebrewMessage = toHebrewError(result.error, "עדכון ההוצאה נכשל.");
           setErrorMessage(hebrewMessage);
           toast.error("שגיאה בעדכון ההוצאה", { description: hebrewMessage });
           return;
         }
-        expenseData = json?.expense ?? {};
+        const json = result.queued
+          ? null
+          : (result.data as {
+              expense?: Record<string, unknown>;
+              projectExpense?: Record<string, unknown>;
+            } | null);
+        expenseData = json?.expense ?? { id: editingExpense.id };
         expenseId = (expenseData.id as string) ?? editingExpense.id;
         projectExpenseData = json?.projectExpense ?? null;
-        toast.success("ההוצאה עודכנה");
+        if (!result.queued) toast.success("ההוצאה עודכנה");
       } else {
-        const result = await offlineFetch("/api/expenses/create", payload, "הוצאה חדשה");
+        const result = await offlineFetch("/api/expenses/create", payload, "הוצאה חדשה", { idempotent: true });
         if (result.queued) {
-          toast.info("אין חיבור — ההוצאה תישמר ותישלח כשיחזור החיבור");
           onOpenChange(false);
           onSaved({ expenseId: "", expense: {}, projectExpense: null, attachments: [] });
           return;
