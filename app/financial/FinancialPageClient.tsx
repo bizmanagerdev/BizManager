@@ -812,7 +812,7 @@ export default function FinancialPageClient({
         {activeFilterCount > 0 ? (
           <Button type="button" variant="ghost" onClick={resetFilters}>
             <TimerReset className="ml-1 h-4 w-4" />
-            איפוס
+            איפוס סינון
           </Button>
         ) : null}
       </div>

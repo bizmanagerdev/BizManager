@@ -679,7 +679,7 @@ export default function DocumentsArchiveClient({
                   : `נטענו ${totalDocuments} מסמכים לארכיון.`}
               </div>
               <Button variant="outline" onClick={resetFilters}>
-                איפוס סינונים
+                איפוס סינון
               </Button>
             </div>
           </AdaptiveGrid>

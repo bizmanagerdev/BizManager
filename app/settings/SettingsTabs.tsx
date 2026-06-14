@@ -11,6 +11,7 @@ import RecurringExpensesManager from "@/app/financial/RecurringExpensesManager";
 import type { RecurringExpenseTemplateItem } from "@/app/financial/RecurringExpensesManager";
 import type { TaskPriority, TaskStatus } from "@/components/tasks/TaskUpsertDialog";
 import MorningAutoIssueForm from "@/app/settings/integrations/morning/MorningAutoIssueForm";
+import BackupCard from "@/app/settings/BackupCard";
 import type { MorningSettings } from "@/lib/morning/settings";
 
 type UserOption = { id: string; label: string };
@@ -56,6 +57,7 @@ const ALL_TABS = [
   { key: "recurring-tasks", label: "משימות קבועות", adminOnly: false },
   { key: "recurring-expenses", label: "הוצאות קבועות", adminOnly: false },
   { key: "morning", label: "Morning", adminOnly: true },
+  { key: "backup", label: "גיבוי", adminOnly: true },
 ] as const;
 
 type TabKey = (typeof ALL_TABS)[number]["key"];
@@ -156,6 +158,9 @@ export default function SettingsTabs(props: Props) {
           </Card>
         </div>
       )}
+
+      {/* Backup tab (admin only) */}
+      {activeTab === "backup" && props.isAdmin && <BackupCard />}
     </div>
   );
 }
