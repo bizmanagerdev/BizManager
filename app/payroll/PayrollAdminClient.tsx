@@ -91,6 +91,8 @@ type CreateSessionFormState = {
   clock_in: string;
   clock_out: string;
   labor_cost: string;
+  is_billable_to_customer: boolean;
+  bill_to_customer_amount: string;
 };
 
 type PendingAdminDeletion = {
@@ -124,6 +126,8 @@ const DEFAULT_CREATE_SESSION_FORM: CreateSessionFormState = {
   clock_in: new Date(new Date().setSeconds(0, 0)).toISOString().slice(0, 16),
   clock_out: new Date(new Date(Date.now() + 60 * 60 * 1000).setSeconds(0, 0)).toISOString().slice(0, 16),
   labor_cost: "",
+  is_billable_to_customer: false,
+  bill_to_customer_amount: "",
 };
 
 export default function PayrollAdminClient({
@@ -159,11 +163,13 @@ export default function PayrollAdminClient({
   const [createSessionOpen, setCreateSessionOpen] = useState(false);
   const [createSessionForm, setCreateSessionForm] = useState<CreateSessionFormState>(() => {
     const draft = loadDraft<CreateSessionFormState>("session-create");
-    return draft ?? {
-      ...DEFAULT_CREATE_SESSION_FORM,
-      clock_in: toDateTimeLocalValue(new Date(Date.now() - 60 * 60 * 1000)),
-      clock_out: toDateTimeLocalValue(new Date()),
-    };
+    return draft
+      ? { ...DEFAULT_CREATE_SESSION_FORM, ...draft }
+      : {
+          ...DEFAULT_CREATE_SESSION_FORM,
+          clock_in: toDateTimeLocalValue(new Date(Date.now() - 60 * 60 * 1000)),
+          clock_out: toDateTimeLocalValue(new Date()),
+        };
   });
   const [createSessionError, setCreateSessionError] = useState("");
   const [sessionLaborCostDrafts, setSessionLaborCostDrafts] = useState<Record<string, string>>({});
@@ -432,6 +438,17 @@ export default function PayrollAdminClient({
       return;
     }
 
+    const billToCustomer = businessDomain === "logistics_projects" && createSessionForm.is_billable_to_customer;
+    const billAmountInput = createSessionForm.bill_to_customer_amount.trim();
+    const billAmountNumber = billToCustomer && billAmountInput ? Number(billAmountInput) : null;
+    if (
+      billToCustomer &&
+      (!Number.isFinite(billAmountNumber) || billAmountNumber === null || billAmountNumber <= 0)
+    ) {
+      setCreateSessionError("יש להזין סכום לחיוב לקוח.");
+      return;
+    }
+
     startTransition(async () => {
       try {
         const result = await offlineFetch(
@@ -445,6 +462,9 @@ export default function PayrollAdminClient({
             clock_in: clockIn,
             clock_out: clockOut,
             labor_cost: canViewSalary && laborCost ? laborCost : null,
+            is_billable_to_customer: billToCustomer,
+            bill_to_customer_amount: billToCustomer ? billAmountNumber : null,
+            billing_status: billToCustomer ? "billable" : "not_billable",
           },
           "משמרת חדשה",
           { idempotent: true }
@@ -1464,6 +1484,37 @@ export default function PayrollAdminClient({
                     : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
                 </div>
               </Field>
+            ) : null}
+            {createSessionForm.business_domain === "logistics_projects" ? (
+              <div className="md:col-span-2 space-y-3 rounded-xl border bg-muted/30 p-4">
+                <div className="text-sm font-semibold">חיוב הלקוח</div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={createSessionForm.is_billable_to_customer}
+                    onChange={(event) =>
+                      setCreateSessionForm((current) => ({
+                        ...current,
+                        is_billable_to_customer: event.target.checked,
+                        bill_to_customer_amount: event.target.checked ? current.bill_to_customer_amount : "",
+                      }))
+                    }
+                  />
+                  <span>לחיוב לקוח</span>
+                </label>
+                {createSessionForm.is_billable_to_customer ? (
+                  <Field label="סכום לחיוב לקוח">
+                    <CurrencyInput
+                      inputMode="decimal"
+                      value={createSessionForm.bill_to_customer_amount}
+                      onChange={(event) =>
+                        setCreateSessionForm((current) => ({ ...current, bill_to_customer_amount: event.target.value }))
+                      }
+                      placeholder="למשל 650"
+                    />
+                  </Field>
+                ) : null}
+              </div>
             ) : null}
             <div className="md:col-span-2">
               <Field label="הערות">

@@ -533,6 +533,8 @@ export default function DashboardActions({
   const [manualSessionLaborCost, setManualSessionLaborCost] = useState("");
   const [manualSessionPaymentChoice, setManualSessionPaymentChoice] = useState<PaymentChoice>("none");
   const [manualSessionPaidAmount, setManualSessionPaidAmount] = useState("");
+  const [manualSessionBilledToCustomer, setManualSessionBilledToCustomer] = useState(false);
+  const [manualSessionBillToCustomerAmount, setManualSessionBillToCustomerAmount] = useState("");
 
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
@@ -841,6 +843,8 @@ export default function DashboardActions({
     setManualSessionLaborCost("");
     setManualSessionPaymentChoice("none");
     setManualSessionPaidAmount("");
+    setManualSessionBilledToCustomer(false);
+    setManualSessionBillToCustomerAmount("");
   }
 
   async function createProject() {
@@ -1480,6 +1484,20 @@ export default function DashboardActions({
       setManualSessionError("יש להזין סכום ששולם לעובד.");
       return;
     }
+    const billToCustomer = manualSessionDomain === "logistics_projects" && manualSessionBilledToCustomer;
+    const billToCustomerAmountNumber =
+      !billToCustomer || !manualSessionBillToCustomerAmount.trim()
+        ? null
+        : Number(manualSessionBillToCustomerAmount);
+    if (
+      billToCustomer &&
+      (!Number.isFinite(billToCustomerAmountNumber) ||
+        billToCustomerAmountNumber === null ||
+        billToCustomerAmountNumber <= 0)
+    ) {
+      setManualSessionError("יש להזין סכום לחיוב לקוח.");
+      return;
+    }
 
     setManualSessionSubmitting(true);
     try {
@@ -1496,6 +1514,9 @@ export default function DashboardActions({
           clock_in: clockInIso,
           clock_out: clockOutIso,
           labor_cost: laborCostNumber,
+          is_billable_to_customer: billToCustomer,
+          bill_to_customer_amount: billToCustomer ? billToCustomerAmountNumber : null,
+          billing_status: billToCustomer ? "billable" : "not_billable",
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string; session?: { id?: string; user_id?: string; clock_in?: string; clock_out?: string; labor_cost?: number | string | null } };
@@ -2003,6 +2024,33 @@ export default function DashboardActions({
                     </label>
                   ) : null}
                 </>
+              ) : null}
+
+              {manualSessionDomain === "logistics_projects" ? (
+                <section className="space-y-3 rounded-xl border bg-muted/30 p-4 md:col-span-2">
+                  <h4 className="text-sm font-semibold">חיוב הלקוח</h4>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={manualSessionBilledToCustomer}
+                      onChange={(e) => {
+                        setManualSessionBilledToCustomer(e.target.checked);
+                        if (!e.target.checked) setManualSessionBillToCustomerAmount("");
+                      }}
+                    />
+                    <span>{HEBREW.billedToCustomer}</span>
+                  </label>
+                  {manualSessionBilledToCustomer ? (
+                    <label className="space-y-2 text-sm block">
+                      <span>סכום לחיוב לקוח</span>
+                      <CurrencyInput
+                        value={manualSessionBillToCustomerAmount}
+                        onChange={(e) => setManualSessionBillToCustomerAmount(e.target.value)}
+                        placeholder="למשל 650"
+                      />
+                    </label>
+                  ) : null}
+                </section>
               ) : null}
 
               <label className="space-y-2 text-right text-sm md:col-span-2">

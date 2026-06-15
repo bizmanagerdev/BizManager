@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import { EXPENSE_BUSINESS_DOMAINS, WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
@@ -84,6 +85,8 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
   const [sessionEditNotes, setSessionEditNotes] = useState("");
   const [sessionEditClockIn, setSessionEditClockIn] = useState("");
   const [sessionEditClockOut, setSessionEditClockOut] = useState("");
+  const [sessionEditBilledToCustomer, setSessionEditBilledToCustomer] = useState(false);
+  const [sessionEditBillToCustomerAmount, setSessionEditBillToCustomerAmount] = useState("");
   const [splitParts, setSplitParts] = useState<SplitPartDraft[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(monthlySummaries[0]?.key ?? monthKeyFromDate(new Date()));
 
@@ -158,6 +161,8 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
     setSessionEditNotes("");
     setSessionEditClockIn("");
     setSessionEditClockOut("");
+    setSessionEditBilledToCustomer(false);
+    setSessionEditBillToCustomerAmount("");
     setSplitParts([]);
   }
   function setEditorDomain(next: ExpenseBusinessDomain) {
@@ -175,6 +180,13 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
     if (clockOutIso && new Date(clockOutIso) <= new Date(clockInIso)) return "שעת הסיום חייבת להיות אחרי שעת ההתחלה.";
     if (sessionEditDomain === "logistics_projects" && !sessionEditProjectId) return "יש לבחור פרויקט.";
     if (sessionEditDomain === "property_management" && !sessionEditPropertyId) return "יש לבחור נכס.";
+    if (
+      sessionEditDomain === "logistics_projects" &&
+      sessionEditBilledToCustomer &&
+      !(Number(sessionEditBillToCustomerAmount) > 0)
+    ) {
+      return "יש להזין סכום לחיוב לקוח.";
+    }
     return "";
   }
   function editedDuration() {
@@ -228,6 +240,12 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
     setSessionEditNotes(session.notes ?? "");
     setSessionEditClockIn(toLocalValue(session.clock_in));
     setSessionEditClockOut(toLocalValue(session.clock_out));
+    setSessionEditBilledToCustomer(session.is_billable_to_customer === true);
+    setSessionEditBillToCustomerAmount(
+      session.is_billable_to_customer && session.bill_to_customer_amount != null
+        ? String(session.bill_to_customer_amount)
+        : ""
+    );
     setSplitParts(session.clock_out ? [createSplitPart(currentDomain, { minutes: String(Math.max(1, Math.floor(totalMinutes / 2))), projectId: session.project_id ?? "", propertyId: session.property_id ?? "" }), createSplitPart(currentDomain, { projectId: session.project_id ?? "", propertyId: session.property_id ?? "" })] : []);
     setActionError("");
   }
@@ -241,6 +259,8 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
     setSessionEditNotes("");
     setSessionEditClockIn(nowLocal(-60));
     setSessionEditClockOut(nowLocal());
+    setSessionEditBilledToCustomer(false);
+    setSessionEditBillToCustomerAmount("");
     setSplitParts([]);
   }
   function closeEditor() {
@@ -254,7 +274,8 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
     setActionError("");
     startTransition(async () => {
       try {
-        const response = await fetch("/api/profile/session/update", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sessionId, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: sessionEditClockOut ? toIso(sessionEditClockOut) : null }) });
+        const billToCustomer = sessionEditDomain === "logistics_projects" && sessionEditBilledToCustomer;
+        const response = await fetch("/api/profile/session/update", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sessionId, user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: sessionEditClockOut ? toIso(sessionEditClockOut) : null, is_billable_to_customer: billToCustomer, bill_to_customer_amount: billToCustomer && sessionEditBillToCustomerAmount.trim() ? Number(sessionEditBillToCustomerAmount) : null, billing_status: billToCustomer ? "billable" : "not_billable" }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) return setActionError(json.error ?? "עדכון המשמרת נכשל.");
         closeEditor();
@@ -270,7 +291,8 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
     setActionError("");
     startTransition(async () => {
       try {
-        const response = await fetch("/api/profile/session/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: toIso(sessionEditClockOut) }) });
+        const billToCustomer = sessionEditDomain === "logistics_projects" && sessionEditBilledToCustomer;
+        const response = await fetch("/api/profile/session/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: toIso(sessionEditClockOut), is_billable_to_customer: billToCustomer, bill_to_customer_amount: billToCustomer && sessionEditBillToCustomerAmount.trim() ? Number(sessionEditBillToCustomerAmount) : null, billing_status: billToCustomer ? "billable" : "not_billable" }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) return setActionError(json.error ?? "יצירת המשמרת נכשלה.");
         closeEditor();
@@ -430,6 +452,32 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
           {sessionEditDomain === "logistics_projects" ? linkField("פרויקט", sessionEditProjectId, setSessionEditProjectId, projectOptions) : sessionEditDomain === "property_management" ? linkField("נכס", sessionEditPropertyId, setSessionEditPropertyId, propertyOptions) : <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">אין צורך בבחירה נוספת.</div>}
           <label className="space-y-1"><span className="block text-xs text-muted-foreground">הערות</span><textarea className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-right text-sm outline-none" value={sessionEditNotes} onChange={(event) => setSessionEditNotes(event.target.value)} /></label>
         </div>
+        {sessionEditDomain === "logistics_projects" ? (
+          <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+            <div className="text-sm font-semibold">חיוב הלקוח</div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={sessionEditBilledToCustomer}
+                onChange={(event) => {
+                  setSessionEditBilledToCustomer(event.target.checked);
+                  if (!event.target.checked) setSessionEditBillToCustomerAmount("");
+                }}
+              />
+              <span>לחיוב לקוח</span>
+            </label>
+            {sessionEditBilledToCustomer ? (
+              <label className="space-y-1 block">
+                <span className="block text-xs text-muted-foreground">סכום לחיוב לקוח</span>
+                <CurrencyInput
+                  value={sessionEditBillToCustomerAmount}
+                  onChange={(event) => setSessionEditBillToCustomerAmount(event.target.value)}
+                  placeholder="למשל 650"
+                />
+              </label>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex flex-row-reverse flex-wrap gap-3 text-xs text-muted-foreground">{duration ? <div className="rounded-full border px-3 py-1">משך: {duration}</div> : null}{session?.clock_out ? <div className="rounded-full border px-3 py-1">משך מקורי: {formatMinutes(sessionWorkedMinutes(session))}</div> : null}{suggestedAmount !== null ? <div className="rounded-full border px-3 py-1">{`מגיע לפי המשמרת: ${formatCurrency(suggestedAmount)}`}</div> : null}</div>
         {saveError ? <div className="text-sm text-destructive">{saveError}</div> : null}
         {session?.clock_out ? <div className="space-y-3 border-t pt-4">

@@ -25,6 +25,9 @@ type CreatePayrollSessionPayload = {
   clock_in?: string | null;
   clock_out?: string | null;
   labor_cost?: number | string | null;
+  is_billable_to_customer?: boolean | null;
+  bill_to_customer_amount?: number | string | null;
+  billing_status?: string | null;
 };
 
 function toOptionalNonNegativeNumber(value: unknown) {
@@ -64,6 +67,14 @@ export async function POST(req: Request) {
     const clockIn = typeof body.clock_in === "string" ? body.clock_in.trim() : "";
     const clockOut = typeof body.clock_out === "string" ? body.clock_out.trim() : "";
     const requestedLaborCost = toOptionalNonNegativeNumber(body.labor_cost);
+    const isBillableToCustomer = body.is_billable_to_customer === true;
+    const billToCustomerAmount = toOptionalNonNegativeNumber(body.bill_to_customer_amount);
+    const billingStatus =
+      typeof body.billing_status === "string" && body.billing_status.trim()
+        ? body.billing_status.trim()
+        : isBillableToCustomer
+          ? "billable"
+          : "not_billable";
 
     if (!businessDomain) {
       return NextResponse.json({ error: "יש לבחור תחום עסקי." }, { status: 400 });
@@ -79,6 +90,9 @@ export async function POST(req: Request) {
     }
     if (businessDomain === "property_management" && !propertyId) {
       return NextResponse.json({ error: "יש לבחור נכס." }, { status: 400 });
+    }
+    if (isBillableToCustomer && (billToCustomerAmount === null || billToCustomerAmount <= 0)) {
+      return NextResponse.json({ error: "יש להזין סכום חיוב ללקוח תקין." }, { status: 400 });
     }
 
     const parsedClockIn = new Date(clockIn);
@@ -178,6 +192,9 @@ export async function POST(req: Request) {
         clock_out: clockOut,
         worked_minutes: workedMinutes,
         labor_cost: requestedLaborCost,
+        is_billable_to_customer: isBillableToCustomer,
+        bill_to_customer_amount: isBillableToCustomer ? billToCustomerAmount : null,
+        billing_status: billingStatus,
         notes: notes || null,
         business_domain: businessDomain,
         project_id: businessDomain === "logistics_projects" ? projectId : null,
