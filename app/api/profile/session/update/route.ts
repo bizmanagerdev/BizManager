@@ -86,7 +86,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing user_id" }, { status: 400 });
     }
     if (selectedUserId !== profile.id && profile.role !== "admin" && profile.role !== "office") {
-      return NextResponse.json({ error: "Cannot update a session for another worker." }, { status: 403 });
+      return NextResponse.json({ error: "לא ניתן לעדכן משמרת לעובד אחר." }, { status: 403 });
     }
     if (!clockIn) {
       return NextResponse.json({ error: "יש להזין שעת התחלה." }, { status: 400 });
@@ -126,10 +126,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: sessionError.message }, { status: 400 });
     }
     if (!session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return NextResponse.json({ error: "המשמרת לא נמצאה." }, { status: 404 });
     }
     if (projectId && session.project_id !== projectId) {
-      return NextResponse.json({ error: "Session not found for project" }, { status: 404 });
+      return NextResponse.json({ error: "המשמרת לא משויכת לפרויקט שנבחר." }, { status: 404 });
     }
 
     const { data: selectedUser, error: selectedUserError } = await supabase
@@ -142,11 +142,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: selectedUserError.message }, { status: 400 });
     }
     if (!selectedUser?.id) {
-      return NextResponse.json({ error: "Selected user not found" }, { status: 404 });
+      return NextResponse.json({ error: "העובד שנבחר לא נמצא." }, { status: 404 });
     }
     const workerType = normalizePayrollWorkerType(selectedUser.payroll_worker_type, selectedUser.pay_tracking_mode);
     if (!payrollWorkerTypeAllowsSessions(workerType)) {
-      return NextResponse.json({ error: "Worker type does not use sessions." }, { status: 409 });
+      return NextResponse.json({ error: "סוג העובד הזה אינו מתעד משמרות." }, { status: 409 });
     }
 
     if (businessDomain === "logistics_projects") {

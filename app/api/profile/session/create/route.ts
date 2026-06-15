@@ -77,8 +77,11 @@ export async function POST(req: Request) {
     if (!selectedUserId) {
       return NextResponse.json({ error: "יש לבחור עובד." }, { status: 400 });
     }
-    if (selectedUserId !== profile.id) {
-      return NextResponse.json({ error: "Cannot create a session for another worker." }, { status: 403 });
+    // Workers may only log their own shifts; admin/office can log a shift for any
+    // worker (e.g. the "add employee wage" flow on the project page). This mirrors
+    // the same gate in profile/session/update.
+    if (selectedUserId !== profile.id && profile.role !== "admin" && profile.role !== "office") {
+      return NextResponse.json({ error: "לא ניתן להוסיף משמרת לעובד אחר." }, { status: 403 });
     }
     if (!clockIn || !clockOut) {
       return NextResponse.json({ error: "יש להזין שעת התחלה ושעת סיום." }, { status: 400 });
@@ -118,11 +121,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: selectedUserError.message }, { status: 400 });
     }
     if (!selectedUser?.id) {
-      return NextResponse.json({ error: "Selected user not found" }, { status: 404 });
+      return NextResponse.json({ error: "העובד שנבחר לא נמצא." }, { status: 404 });
     }
     const workerType = normalizePayrollWorkerType(selectedUser.payroll_worker_type, selectedUser.pay_tracking_mode);
     if (!payrollWorkerTypeAllowsSessions(workerType)) {
-      return NextResponse.json({ error: "Worker type does not use sessions." }, { status: 409 });
+      return NextResponse.json({ error: "סוג העובד הזה אינו מתעד משמרות." }, { status: 409 });
     }
 
     if (businessDomain === "logistics_projects") {
