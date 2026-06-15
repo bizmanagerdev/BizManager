@@ -8,6 +8,7 @@ import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { toHebrewError } from "@/lib/error-messages";
 
 function getHashParams() {
   const hash = typeof window !== "undefined" ? window.location.hash : "";
@@ -41,7 +42,7 @@ export default function ResetPasswordClient() {
       const code = searchParams.get("code");
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (!cancelled && error) setErr(error.message);
+        if (!cancelled && error) setErr(toHebrewError(error.message));
         if (!cancelled) setReady(true);
         return;
       }
@@ -55,13 +56,13 @@ export default function ResetPasswordClient() {
           access_token,
           refresh_token,
         });
-        if (!cancelled && error) setErr(error.message);
+        if (!cancelled && error) setErr(toHebrewError(error.message));
         if (!cancelled) setReady(true);
         return;
       }
 
       if (!cancelled) {
-        setErr("Invalid or expired reset link. Please request a new one.");
+        setErr("קישור האיפוס אינו תקין או שפג תוקפו. יש לבקש קישור חדש.");
         setReady(true);
       }
     }
@@ -87,22 +88,22 @@ export default function ResetPasswordClient() {
 
     try {
       if (!password || !confirm) {
-        setErr("Please enter and confirm your new password.");
+        setErr("יש להזין ולאשר סיסמה חדשה.");
         return;
       }
 
       if (password !== confirm) {
-        setErr("Passwords do not match.");
+        setErr("הסיסמאות אינן תואמות.");
         return;
       }
 
       const { error } = await supabase.auth.updateUser({ password });
       if (error) {
-        setErr(error.message);
+        setErr(toHebrewError(error.message));
         return;
       }
 
-      setInfo("Password updated. Please sign in with your new password.");
+      setInfo("הסיסמה עודכנה. יש להתחבר עם הסיסמה החדשה.");
       await supabase.auth.signOut();
       emitNavigationStart();
       router.replace("/login");
@@ -118,7 +119,7 @@ export default function ResetPasswordClient() {
         title="איפוס סיסמה"
         description="מאמתים את קישור האיפוס המאובטח."
       >
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <p className="text-sm text-muted-foreground">טוען...</p>
       </AuthScreen>
     );
   }

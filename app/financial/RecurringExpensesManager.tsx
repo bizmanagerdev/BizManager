@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { CalendarPlus2 } from "lucide-react";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
 import {
@@ -259,7 +260,7 @@ export default function RecurringExpensesManager(props: Props) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("שגיאה בשמירת הוצאה קבועה", { description: json?.error ?? "" });
+        toast.error("שגיאה בשמירת הוצאה קבועה", { description: toHebrewError(json?.error, "") });
         return;
       }
       setOpen(false);
@@ -281,7 +282,7 @@ export default function RecurringExpensesManager(props: Props) {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      toast.error("שגיאה במחיקת הוצאה קבועה", { description: json?.error ?? "" });
+      toast.error("שגיאה במחיקת הוצאה קבועה", { description: toHebrewError(json?.error, "") });
       return;
     }
     router.refresh();
@@ -296,7 +297,7 @@ export default function RecurringExpensesManager(props: Props) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("שגיאה ביצירת הוצאות קבועות", { description: json?.error ?? "" });
+        toast.error("שגיאה ביצירת הוצאות קבועות", { description: toHebrewError(json?.error, "") });
         return;
       }
       router.refresh();

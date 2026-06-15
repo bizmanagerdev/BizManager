@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
+import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -361,7 +362,7 @@ export default function CardImportClient({
       const res = await fetch("/api/expenses/parse-statement-pdf", { method: "POST", body: fd });
       const data = (await res.json().catch(() => ({}))) as { transactions?: ParsedTxn[]; error?: string };
       if (!res.ok) {
-        setPdfNotice(data.error ?? "החילוץ החכם נכשל.");
+        setPdfNotice(toHebrewError(data.error, "החילוץ החכם נכשל."));
         return;
       }
       const txns = data.transactions ?? [];
@@ -525,7 +526,7 @@ export default function CardImportClient({
       });
       const data = (await res.json().catch(() => ({}))) as { statement_id?: string; error?: string };
       if (!res.ok || !data.statement_id) {
-        setSaveError(data.error ?? "שמירת הדף נכשלה.");
+        setSaveError(toHebrewError(data.error, "שמירת הדף נכשלה."));
         setSaving(false);
         return;
       }

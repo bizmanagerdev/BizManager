@@ -7,6 +7,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toHebrewError } from "@/lib/error-messages";
 
 export default function LoginClient() {
   const router = useRouter();
@@ -35,7 +36,7 @@ export default function LoginClient() {
     const trimmedEmail = email.trim();
 
     if (!trimmedEmail || !password) {
-      setErr("Email and password are required.");
+      setErr("יש להזין אימייל וסיסמה.");
       setLoading(false);
       return;
     }
@@ -49,7 +50,7 @@ export default function LoginClient() {
 
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as Partial<{ error: string }>;
-        setErr(data.error ?? "Sign in failed.");
+        setErr(toHebrewError(data.error, "ההתחברות נכשלה."));
         setLoading(false);
         return;
       }
@@ -58,7 +59,7 @@ export default function LoginClient() {
       router.replace("/dashboard");
       router.refresh();
     } catch {
-      setErr("Sign in failed.");
+      setErr("ההתחברות נכשלה.");
       setLoading(false);
     }
   }

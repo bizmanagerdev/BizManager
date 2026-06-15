@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
@@ -331,7 +332,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
           }),
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: CustomerRecord };
-        if (!res.ok || !json.customer) return setError(json.error ?? "עדכון לקוח נכשל.");
+        if (!res.ok || !json.customer) return setError(toHebrewError(json.error, "עדכון לקוח נכשל."));
         savedCustomer = json.customer;
         customerId = json.customer.id;
       } else {
@@ -352,7 +353,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
           }),
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: CustomerRecord };
-        if (!res.ok || !json.customer) return setError(json.error ?? "יצירת לקוח נכשלה.");
+        if (!res.ok || !json.customer) return setError(toHebrewError(json.error, "יצירת לקוח נכשלה."));
         savedCustomer = json.customer;
         customerId = json.customer.id;
       }

@@ -9,6 +9,7 @@ import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { toHebrewError } from "@/lib/error-messages";
 
 export default function RegisterClient() {
   const router = useRouter();
@@ -59,7 +60,7 @@ export default function RegisterClient() {
     const trimmedNotes = notes.trim();
 
     if (!trimmedEmail || !password) {
-      setErr("Email and password are required.");
+      setErr("יש להזין אימייל וסיסמה.");
       setLoading(false);
       return;
     }
@@ -85,21 +86,19 @@ export default function RegisterClient() {
       if (!res.ok) {
         const msg = data.error?.toLowerCase() ?? "";
         if (msg.includes("already registered") || msg.includes("already exists")) {
-          setInfo("That email already has an account. Please sign in.");
+          setInfo("האימייל כבר רשום במערכת. יש להתחבר.");
           emitNavigationStart();
           router.replace(`/login?email=${encodeURIComponent(trimmedEmail)}`);
           return;
         }
 
-        setErr(data.error ?? "Registration failed.");
+        setErr(toHebrewError(data.error, "ההרשמה נכשלה."));
         setLoading(false);
         return;
       }
 
       if (data.needsEmailConfirmation) {
-        setInfo(
-          "Account created. Check your email to confirm your account, then sign in."
-        );
+        setInfo("החשבון נוצר. יש לאשר את כתובת האימייל ואז להתחבר.");
         emitNavigationStart();
         router.replace(`/login?email=${encodeURIComponent(trimmedEmail)}`);
         return;
@@ -109,7 +108,7 @@ export default function RegisterClient() {
       router.replace("/dashboard");
       router.refresh();
     } catch {
-      setErr("Registration failed.");
+      setErr("ההרשמה נכשלה.");
       setLoading(false);
     }
   }

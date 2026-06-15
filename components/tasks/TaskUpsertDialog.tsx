@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
+import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
@@ -144,7 +145,7 @@ export function TaskUpsertDialog(props: Props) {
         body: JSON.stringify({ id: taskId }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error ?? "Failed to load task");
+      if (!res.ok) throw new Error(toHebrewError(json?.error, "טעינת המשימה נכשלה."));
       const task = (json?.task ?? null) as Record<string, unknown> | null;
       if (!task) throw new Error("Task not found");
 

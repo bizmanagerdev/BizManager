@@ -419,7 +419,7 @@ export default function SalaryCenterClient({
       const response = await fetch("/api/payroll/center/protected", { cache: "no-store" });
       const json = (await response.json().catch(() => ({}))) as SalaryCenterProtectedPayload & { error?: string };
       if (!response.ok) {
-        setProtectedError(json.error ?? "Protected salary data could not be loaded.");
+        setProtectedError(toHebrewError(json.error, "לא ניתן לטעון את נתוני השכר המוגנים."));
         setProtectedData(null);
         return;
       }

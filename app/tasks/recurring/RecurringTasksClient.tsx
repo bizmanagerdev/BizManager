@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
 import {
@@ -187,7 +188,7 @@ export default function RecurringTasksClient(props: Props) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("שגיאה בשמירת משימה קבועה", { description: json?.error ?? "" });
+        toast.error("שגיאה בשמירת משימה קבועה", { description: toHebrewError(json?.error, "") });
         return;
       }
       setOpen(false);
@@ -209,7 +210,7 @@ export default function RecurringTasksClient(props: Props) {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      toast.error("שגיאה במחיקת משימה קבועה", { description: json?.error ?? "" });
+      toast.error("שגיאה במחיקת משימה קבועה", { description: toHebrewError(json?.error, "") });
       return;
     }
     router.refresh();

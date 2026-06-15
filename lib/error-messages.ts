@@ -30,6 +30,31 @@ const EXACT_MATCH: Record<string, string> = {
   "Not Found": "המשאב לא נמצא.",
   "Internal Server Error": "שגיאת שרת. נסו שוב מאוחר יותר.",
   "Bad Request": "הבקשה לא תקינה.",
+  // Auth / access (requireRouteAccess)
+  "No access": "אין לך הרשאת גישה.",
+  "No user profile access": "אין הרשאת גישה למשתמש.",
+  "Insufficient role": "אין לך הרשאה לפעולה זו.",
+  // Common validation / lookup errors returned by API routes
+  "Missing required fields": "יש למלא את כל שדות החובה.",
+  "Missing order_id": "חסר מזהה הזמנה.",
+  "Missing customer_id": "חסר מזהה לקוח.",
+  "Missing full_name": "יש להזין שם מלא.",
+  "Missing remind_at": "יש לבחור תאריך לתזכורת.",
+  "Missing task_id or message": "חסר תוכן להוספה.",
+  "Missing payment_date or payment_method": "יש להזין תאריך ואמצעי תשלום.",
+  "Missing due_date for check payment": "יש להזין תאריך פירעון לצ'ק.",
+  "Missing payment amount, date, or method": "יש להזין סכום, תאריך ואמצעי תשלום.",
+  "Order not found": "ההזמנה לא נמצאה.",
+  "Project not found": "הפרויקט לא נמצא.",
+  "Property not found": "הנכס לא נמצא.",
+  "Invalid customer_id": "הלקוח שנבחר אינו תקין.",
+  "Invalid project_type": "סוג הפרויקט אינו תקין.",
+  "Invalid prices": "המחירים שהוזנו אינם תקינים.",
+  "Invalid linked target for selected business_domain":
+    "השיוך אינו תואם לתחום העסקי שנבחר.",
+  "Contact was not created": "יצירת איש הקשר נכשלה.",
+  "Project was not created": "יצירת הפרויקט נכשלה.",
+  "offline": "אין חיבור לאינטרנט. הפעולה תישלח כשיחזור החיבור.",
 };
 
 const PATTERN_RULES: Array<{ test: RegExp; hebrew: string }> = [
@@ -76,6 +101,22 @@ const PATTERN_RULES: Array<{ test: RegExp; hebrew: string }> = [
   {
     test: /Missing or invalid/i,
     hebrew: "אחד השדות חסר או לא תקין.",
+  },
+  {
+    test: /^Authentication error/i,
+    hebrew: "שגיאת אימות. יש להתחבר מחדש.",
+  },
+  {
+    test: /^Missing /i,
+    hebrew: "חסר אחד משדות החובה.",
+  },
+  {
+    test: /not found$/i,
+    hebrew: "הפריט המבוקש לא נמצא.",
+  },
+  {
+    test: /^Invalid /i,
+    hebrew: "אחד הערכים שהוזנו אינו תקין.",
   },
 ];
 

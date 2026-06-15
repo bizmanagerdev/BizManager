@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Button } from "@/components/ui/button";
+import { toHebrewError } from "@/lib/error-messages";
 import { DateInput } from "@/components/ui/date-input";
 import {
   Dialog,
@@ -200,7 +201,7 @@ export default function OrderConfirmDialog({
       try {
         const res = await fetch(`/api/orders/${orderId}/edit-data`, { cache: "no-store" });
         const json = (await res.json().catch(() => ({}))) as EditPayload & { error?: string };
-        if (!res.ok) throw new Error(json.error ?? "טעינת נתוני האישור נכשלה.");
+        if (!res.ok) throw new Error(toHebrewError(json.error, "טעינת נתוני האישור נכשלה."));
         if (!cancelled) setData(json);
       } catch (err: unknown) {
         if (!cancelled) {
@@ -403,7 +404,7 @@ export default function OrderConfirmDialog({
 
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setError(json.error ?? "אישור ההזמנה נכשל.");
+        setError(toHebrewError(json.error, "אישור ההזמנה נכשל."));
         return;
       }
 

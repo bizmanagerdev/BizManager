@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -232,7 +233,7 @@ export default function StatementDetailClient({
       });
       const data = (await res.json().catch(() => ({}))) as { payment_id?: string; error?: string };
       if (!res.ok || !data.payment_id) {
-        setIncomeError(data.error ?? "יצירת ההכנסה נכשלה.");
+        setIncomeError(toHebrewError(data.error, "יצירת ההכנסה נכשלה."));
         return;
       }
       // Optimistic: mark the linked rows as income, then refresh from the server.
@@ -344,7 +345,7 @@ export default function StatementDetailClient({
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         setRows(prev);
-        setRowError(data.error ?? "העדכון נכשל.");
+        setRowError(toHebrewError(data.error, "העדכון נכשל."));
       }
     } catch {
       setRows(prev);
@@ -438,7 +439,7 @@ export default function StatementDetailClient({
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         setRows(prev);
-        setRowError(data.error ?? "הקישור נכשל.");
+        setRowError(toHebrewError(data.error, "הקישור נכשל."));
         return;
       }
       router.refresh();
@@ -479,7 +480,7 @@ export default function StatementDetailClient({
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setCreateError(data.error ?? "עדכון הסטטוס נכשל.");
+        setCreateError(toHebrewError(data.error, "עדכון הסטטוס נכשל."));
         return;
       }
       setMarkedDone(next);
@@ -510,7 +511,7 @@ export default function StatementDetailClient({
         error?: string;
       };
       if (!res.ok) {
-        setCreateError(data.error ?? "יצירת ההוצאות נכשלה.");
+        setCreateError(toHebrewError(data.error, "יצירת ההוצאות נכשלה."));
         return;
       }
       const parts = [`נוצרו ${data.created ?? 0} הוצאות`];
@@ -575,7 +576,7 @@ export default function StatementDetailClient({
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setError(data.error ?? "העדכון נכשל.");
+        setError(toHebrewError(data.error, "העדכון נכשל."));
         return;
       }
       const normalized: StatementRowView = {

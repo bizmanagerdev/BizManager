@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { toHebrewError } from "@/lib/error-messages";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import {
   Dialog,
@@ -55,7 +56,7 @@ export default function AddCustomerDocumentButton({
         const res = await fetch("/api/documents/upload", { method: "POST", body: form });
         if (!res.ok) {
           const json = (await res.json().catch(() => ({}))) as { error?: string };
-          setError(json.error ?? `העלאת ${file.name} נכשלה.`);
+          setError(toHebrewError(json.error, `העלאת ${file.name} נכשלה.`));
           break;
         }
         uploaded += 1;

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { cn } from "@/lib/utils";
+import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -512,7 +513,7 @@ export default function NewOrderClient({
             error?: string;
             customers?: Array<Record<string, unknown>>;
           };
-          if (!res.ok) throw new Error(json.error ?? "Customer search failed");
+          if (!res.ok) throw new Error(toHebrewError(json.error, "שגיאת חיפוש לקוחות"));
 
           const remoteCustomers = (json.customers ?? [])
             .map(mapCustomerSearchResult)
@@ -544,7 +545,7 @@ export default function NewOrderClient({
             error?: string;
             customers?: Array<Record<string, unknown>>;
           };
-          if (!res.ok) throw new Error(json.error ?? "Customer search failed");
+          if (!res.ok) throw new Error(toHebrewError(json.error, "שגיאת חיפוש לקוחות"));
 
           const remoteCustomers = (json.customers ?? [])
             .map(mapCustomerSearchResult)
@@ -591,7 +592,7 @@ export default function NewOrderClient({
             error?: string;
             products?: Row[];
           };
-          if (!res.ok) throw new Error(json.error ?? "Product search failed");
+          if (!res.ok) throw new Error(toHebrewError(json.error, "שגיאת חיפוש מוצרים"));
 
           const remoteProducts = (json.products ?? [])
             .map((row): ProductOption => {

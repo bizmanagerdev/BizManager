@@ -10,6 +10,7 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -443,7 +444,7 @@ export default function PriceListClient({
       };
 
       if (!res.ok || !json.category) {
-        const message = json.error ?? "יצירת קטגוריה נכשלה.";
+        const message = toHebrewError(json.error, "יצירת קטגוריה נכשלה.");
         if (isCreate) setCreateCategoryError(message);
         else setEditCategoryError(message);
         return;
@@ -542,7 +543,7 @@ export default function PriceListClient({
         product?: Record<string, unknown>;
       };
       if (!res.ok || !json.product) {
-        setCreateError(json.error ?? "יצירת מוצר נכשלה.");
+        setCreateError(toHebrewError(json.error, "יצירת מוצר נכשלה."));
         return;
       }
 
@@ -687,7 +688,7 @@ export default function PriceListClient({
         product?: Record<string, unknown>;
       };
       if (!res.ok || !json.product) {
-        setEditError(json.error ?? "עדכון מוצר נכשל.");
+        setEditError(toHebrewError(json.error, "עדכון מוצר נכשל."));
         return;
       }
 
@@ -778,7 +779,7 @@ export default function PriceListClient({
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setTableError(json.error ?? "מחיקת מוצר נכשלה.");
+        setTableError(toHebrewError(json.error, "מחיקת מוצר נכשלה."));
         return;
       }
       const nextRows = rows.filter((item) => item.id !== pendingDelete.id);

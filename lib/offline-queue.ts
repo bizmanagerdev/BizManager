@@ -1,3 +1,5 @@
+import { toHebrewError } from "@/lib/error-messages";
+
 const QUEUE_KEY = "biz_offline_queue";
 const FAILED_KEY = "biz_offline_failed";
 const DRAFT_PREFIX = "biz_draft:";
@@ -223,7 +225,8 @@ export async function offlineFetch(
         const json = JSON.parse(text) as { error?: string };
         if (json.error) error = json.error;
       } catch {}
-      return { queued: false, ok: false, status: response.status, error };
+      // Always hand the caller a Hebrew message — never a raw English server error.
+      return { queued: false, ok: false, status: response.status, error: toHebrewError(error) };
     }
 
     const data = await response.json().catch(() => null);
@@ -277,9 +280,10 @@ export async function processQueue(): Promise<ProcessResult> {
         const json = JSON.parse(text) as { error?: string };
         if (json.error) error = json.error;
       } catch {}
+      const hebrewError = toHebrewError(error);
 
       if (isPermanentFailure(response.status)) {
-        failEntry(entry, error || `HTTP ${response.status}`);
+        failEntry(entry, hebrewError);
         failed++;
         continue;
       }
@@ -287,7 +291,7 @@ export async function processQueue(): Promise<ProcessResult> {
       // Transient server error (5xx/408/429) — bump attempts, park if exhausted.
       const attempts = entry.attempts + 1;
       if (attempts >= MAX_ATTEMPTS) {
-        failEntry(entry, error || `HTTP ${response.status}`);
+        failEntry(entry, hebrewError);
         failed++;
       } else {
         writeQueue(readQueue().map((e) => (e.id === entry.id ? { ...e, attempts } : e)));

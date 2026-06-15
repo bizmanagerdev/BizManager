@@ -7,6 +7,7 @@ import {
   AdaptiveGrid,
 } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -244,7 +245,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: Row };
       if (!res.ok || !json.customer) {
-        return setErr(json.error ?? "עדכון לקוח נכשל.");
+        return setErr(toHebrewError(json.error, "עדכון לקוח נכשל."));
       }
 
       const savedContacts: Row[] = [];
@@ -258,7 +259,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           });
           if (!delRes.ok) {
             const delJson = (await delRes.json().catch(() => ({}))) as { error?: string };
-            return setErr(delJson.error ?? `הסרת איש קשר נכשלה (${contact.full_name || contact.id}).`);
+            return setErr(toHebrewError(delJson.error, `הסרת איש קשר נכשלה (${contact.full_name || contact.id}).`));
           }
           continue;
         }
@@ -282,7 +283,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           });
           const upJson = (await upRes.json().catch(() => ({}))) as { error?: string; contact?: Row };
           if (!upRes.ok || !upJson.contact) {
-            return setErr(upJson.error ?? `עדכון איש קשר נכשל (${payload.full_name}).`);
+            return setErr(toHebrewError(upJson.error, `עדכון איש קשר נכשל (${payload.full_name}).`));
           }
           savedContacts.push(upJson.contact);
         } else {
@@ -293,7 +294,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           });
           const crJson = (await crRes.json().catch(() => ({}))) as { error?: string; contact?: Row };
           if (!crRes.ok || !crJson.contact) {
-            return setErr(crJson.error ?? `יצירת איש קשר נכשלה (${payload.full_name}).`);
+            return setErr(toHebrewError(crJson.error, `יצירת איש קשר נכשלה (${payload.full_name}).`));
           }
           savedContacts.push(crJson.contact);
         }
@@ -303,7 +304,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
       onSaved({ customer: json.customer, contacts: savedContacts.filter((c) => c.active !== false) });
       onOpenChange(false);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setErr(toHebrewError(e));
     } finally {
       setLoading(false);
     }

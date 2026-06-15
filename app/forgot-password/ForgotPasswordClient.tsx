@@ -8,6 +8,7 @@ import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { toHebrewError } from "@/lib/error-messages";
 
 export default function ForgotPasswordClient() {
   const supabase = createSupabaseBrowserClient();
@@ -34,7 +35,7 @@ export default function ForgotPasswordClient() {
     try {
       const trimmedEmail = email.trim();
       if (!trimmedEmail) {
-        setErr("Email is required.");
+        setErr("יש להזין כתובת אימייל.");
         return;
       }
 
@@ -45,11 +46,11 @@ export default function ForgotPasswordClient() {
       });
 
       if (error) {
-        setErr(error.message);
+        setErr(toHebrewError(error.message));
         return;
       }
 
-      setInfo("If an account exists for that email, a reset link was sent.");
+      setInfo("אם קיים חשבון לכתובת זו, נשלח אליה קישור לאיפוס.");
     } finally {
       setLoading(false);
     }

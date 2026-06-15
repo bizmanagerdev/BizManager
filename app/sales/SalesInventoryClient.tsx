@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { PackagePlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatShortDateTime } from "@/lib/date";
@@ -261,7 +262,7 @@ export default function SalesInventoryClient({
         inventory?: Row;
       };
       if (!res.ok || !json.inventory) {
-        setError(json.error ?? "עדכון מלאי נכשל.");
+        setError(toHebrewError(json.error, "עדכון מלאי נכשל."));
         return;
       }
 

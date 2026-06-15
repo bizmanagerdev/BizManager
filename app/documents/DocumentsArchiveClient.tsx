@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { toHebrewError } from "@/lib/error-messages";
 import {
   Card,
   CardContent,
@@ -457,7 +458,7 @@ export default function DocumentsArchiveClient({
         if (!response.ok) {
           toast.error("שגיאה בהעלאת קובץ", {
             id: toastId,
-            description: json?.error ?? "",
+            description: toHebrewError(json?.error, ""),
           });
           return;
         }
@@ -468,7 +469,7 @@ export default function DocumentsArchiveClient({
       resetUploadForm();
       router.refresh();
     } catch (errorValue: unknown) {
-      const description = errorValue instanceof Error ? errorValue.message : "Unknown error";
+      const description = toHebrewError(errorValue);
       toast.error("שגיאה בהעלאת קובץ", { id: toastId, description });
     } finally {
       setUploading(false);
@@ -495,7 +496,7 @@ export default function DocumentsArchiveClient({
         });
         const json = await response.json().catch(() => ({}));
         if (!response.ok) {
-          toast.error("שגיאה בעדכון הקטגוריה", { description: json?.error ?? "" });
+          toast.error("שגיאה בעדכון הקטגוריה", { description: toHebrewError(json?.error, "") });
           return;
         }
         toast.success("הקטגוריה עודכנה");
@@ -503,7 +504,7 @@ export default function DocumentsArchiveClient({
         setEditTagValue("");
         router.refresh();
       } catch (errorValue: unknown) {
-        const description = errorValue instanceof Error ? errorValue.message : "Unknown error";
+        const description = toHebrewError(errorValue);
         toast.error("שגיאה בעדכון הקטגוריה", { description });
       }
     });
@@ -521,14 +522,14 @@ export default function DocumentsArchiveClient({
         });
         const json = await response.json().catch(() => ({}));
         if (!response.ok) {
-          toast.error("שגיאה במחיקת המסמך", { description: json?.error ?? "" });
+          toast.error("שגיאה במחיקת המסמך", { description: toHebrewError(json?.error, "") });
           return;
         }
         toast.success("המסמך נמחק");
         setDeleteDialogDoc(null);
         router.refresh();
       } catch (errorValue: unknown) {
-        const description = errorValue instanceof Error ? errorValue.message : "Unknown error";
+        const description = toHebrewError(errorValue);
         toast.error("שגיאה במחיקת המסמך", { description });
       }
     });

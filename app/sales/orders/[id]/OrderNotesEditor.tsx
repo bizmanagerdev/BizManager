@@ -6,6 +6,7 @@ import { PencilLine } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { toHebrewError } from "@/lib/error-messages";
 
 /** Order comments with inline editing (the הערות section on the order page). */
 export default function OrderNotesEditor({
@@ -31,7 +32,7 @@ export default function OrderNotesEditor({
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error("שמירת ההערות נכשלה", { description: data.error ?? "" });
+        toast.error("שמירת ההערות נכשלה", { description: toHebrewError(data.error, "") });
         return;
       }
       toast.success("ההערות נשמרו");
