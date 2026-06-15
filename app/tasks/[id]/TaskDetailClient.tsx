@@ -4,15 +4,19 @@ import Image from "next/image";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Bell } from "lucide-react";
 import {
   emitProgressActivityEnd,
   emitProgressActivityStart,
 } from "@/components/layout/TopNavigationProgress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { DateTimeInput } from "@/components/ui/date-input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { offlineFetch } from "@/lib/offline-queue";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
@@ -61,6 +65,23 @@ type NoteEntry = {
   message: string | null;
 };
 
+type TaskMember = { id: string; name: string };
+type StructuredComment = {
+  id: string;
+  author_id: string | null;
+  author_name: string | null;
+  body: string;
+  created_at: string;
+};
+type TaskReminder = {
+  id: string;
+  remind_at: string;
+  content: string | null;
+  status: string;
+  assigned_to: string | null;
+  assigned_to_name: string | null;
+};
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "";
 }
@@ -71,11 +92,17 @@ type Props = {
   status: string;
   priority: string | null;
   dueDate: string | null;
+  dueTime?: string | null;
+  city?: string | null;
+  address?: string | null;
   assignedUserName: string | null;
+  members?: TaskMember[];
   projectName: string | null;
   customerName: string | null;
   description: string | null;
   notes: string | null;
+  comments?: StructuredComment[];
+  reminders?: TaskReminder[];
   attachments: TaskAttachment[];
   userOptions: Array<{ id: string; label: string }>;
   fixedTarget: { type: "project" | "property"; id: string } | null;
@@ -101,6 +128,11 @@ export default function TaskDetailClient(props: Props) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [comments, setComments] = useState<StructuredComment[]>(props.comments ?? []);
+  const [reminders, setReminders] = useState<TaskReminder[]>(props.reminders ?? []);
+  const [reminderAt, setReminderAt] = useState("");
+  const [reminderNote, setReminderNote] = useState("");
+  const [addingReminder, setAddingReminder] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -150,9 +182,13 @@ export default function TaskDetailClient(props: Props) {
         });
         return;
       }
+      const comment =
+        result.data && typeof result.data === "object" && "comment" in result.data
+          ? ((result.data as { comment?: StructuredComment | null }).comment ?? null)
+          : null;
+      if (comment) setComments((prev) => [...prev, comment]);
       toast.success("התגובה נוספה");
       setMessage("");
-      router.refresh();
     } catch (error: unknown) {
       toast.error("שגיאה בהוספת תגובה", {
         description: getErrorMessage(error),
@@ -160,6 +196,69 @@ export default function TaskDetailClient(props: Props) {
     } finally {
       emitProgressActivityEnd();
       setSubmitting(false);
+    }
+  }
+
+  async function addReminder() {
+    if (!reminderAt) return;
+    setAddingReminder(true);
+    emitProgressActivityStart();
+    try {
+      const remindIso = new Date(reminderAt).toISOString();
+      const result = await offlineFetch(
+        "/api/tasks/reminders/create",
+        { task_id: props.taskId, remind_at: remindIso, content: reminderNote.trim() || null },
+        "תזכורת למשימה",
+        { idempotent: true }
+      );
+      if (result.queued) {
+        setReminderAt("");
+        setReminderNote("");
+        return;
+      }
+      if (!result.ok) {
+        toast.error("שגיאה בהוספת תזכורת", { description: result.error || "" });
+        return;
+      }
+      const reminder =
+        result.data && typeof result.data === "object" && "reminder" in result.data
+          ? ((result.data as { reminder?: Partial<TaskReminder> | null }).reminder ?? null)
+          : null;
+      setReminders((prev) => [
+        ...prev,
+        {
+          id: reminder?.id ?? crypto.randomUUID(),
+          remind_at: reminder?.remind_at ?? remindIso,
+          content: reminder?.content ?? (reminderNote.trim() || null),
+          status: "pending",
+          assigned_to: reminder?.assigned_to ?? null,
+          assigned_to_name: null,
+        },
+      ]);
+      setReminderAt("");
+      setReminderNote("");
+      toast.success("התזכורת נוספה");
+    } catch (error: unknown) {
+      toast.error("שגיאה בהוספת תזכורת", { description: getErrorMessage(error) });
+    } finally {
+      emitProgressActivityEnd();
+      setAddingReminder(false);
+    }
+  }
+
+  async function setReminderStatus(id: string, nextStatus: "done" | "cancelled") {
+    setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, status: nextStatus } : r)));
+    try {
+      const result = await offlineFetch(
+        "/api/tasks/reminders/update",
+        { id, status: nextStatus },
+        nextStatus === "done" ? "סימון תזכורת כבוצעה" : "ביטול תזכורת"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה בעדכון תזכורת", { description: result.error || "" });
+      }
+    } catch (error: unknown) {
+      toast.error("שגיאה בעדכון תזכורת", { description: getErrorMessage(error) });
     }
   }
 
@@ -272,7 +371,7 @@ export default function TaskDetailClient(props: Props) {
                 type="button"
                 variant="secondary"
                 size="sm"
-                disabled={!props.fixedTarget?.id || props.userOptions.length === 0}
+                disabled={props.userOptions.length === 0}
                 onClick={() => setEditOpen(true)}
               >
                 עריכה
@@ -292,11 +391,31 @@ export default function TaskDetailClient(props: Props) {
 
         <CardContent className="space-y-3 pt-0 text-sm">
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-            <DetailItem label="תאריך יעד" value={formatDate(props.dueDate)} />
-            <DetailItem label="משויך" value={props.assignedUserName} />
+            <DetailItem
+              label="תאריך יעד"
+              value={props.dueTime ? `${formatDate(props.dueDate)} · ${props.dueTime}` : formatDate(props.dueDate)}
+            />
+            <DetailItem label="אחראי" value={props.assignedUserName} />
             <DetailItem label="פרויקט" value={props.projectName} />
             <DetailItem label="לקוח" value={props.customerName} />
+            {props.city || props.address ? (
+              <DetailItem label="מיקום" value={[props.city, props.address].filter(Boolean).join(", ") || null} />
+            ) : null}
           </div>
+
+          {props.members && props.members.length > 0 ? (
+            <div className="rounded-md border bg-muted/20 px-3 py-2">
+              <div className="text-[11px] text-muted-foreground">חברים</div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {props.members.map((member) => (
+                  <span key={member.id} className="inline-flex items-center gap-1.5 text-sm">
+                    <InitialsAvatar name={member.name} size="sm" />
+                    {member.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="rounded-md border bg-muted/10 px-3 py-2">
             <div className="text-[11px] text-muted-foreground">תיאור</div>
@@ -316,6 +435,65 @@ export default function TaskDetailClient(props: Props) {
         fixedTarget={props.fixedTarget}
         onSaved={() => router.refresh()}
       />
+
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-1.5">
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">תזכורות</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0 text-sm">
+          {reminders.filter((r) => r.status === "pending").length === 0 ? (
+            <div className="text-muted-foreground">אין תזכורות פעילות.</div>
+          ) : (
+            <div className="space-y-2">
+              {reminders
+                .filter((r) => r.status === "pending")
+                .map((reminder) => (
+                  <div
+                    key={reminder.id}
+                    className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium">{formatShortDateTime(reminder.remind_at)}</div>
+                      {reminder.content ? (
+                        <div className="truncate text-xs text-muted-foreground">{reminder.content}</div>
+                      ) : null}
+                      {reminder.assigned_to_name ? (
+                        <div className="text-[11px] text-muted-foreground">אחראי: {reminder.assigned_to_name}</div>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void setReminderStatus(reminder.id, "done")}>
+                        בוצע
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" onClick={() => void setReminderStatus(reminder.id, "cancelled")}>
+                        ביטול
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          <div className="grid gap-2 border-t pt-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <div className="text-[11px] text-muted-foreground">מועד התזכורת</div>
+              <DateTimeInput value={reminderAt} onChange={(e) => setReminderAt(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <div className="text-[11px] text-muted-foreground">הערה (אופציונלי)</div>
+              <Input value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button type="button" size="sm" disabled={!reminderAt || addingReminder} onClick={() => void addReminder()}>
+              {addingReminder ? "מוסיף..." : "הוספת תזכורת"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-2">
@@ -463,12 +641,13 @@ export default function TaskDetailClient(props: Props) {
         </CardHeader>
 
         <CardContent className="space-y-3 pt-0 text-sm">
-          {entries.length === 0 ? (
+          {entries.length === 0 && comments.length === 0 ? (
             <div className="text-muted-foreground">אין תגובות להצגה.</div>
           ) : (
             <div className="space-y-2">
+              {/* Legacy comments that were stored in tasks.notes (read-only history). */}
               {entries.map((entry, index) => (
-                <div key={index} className="rounded-md border px-3 py-2">
+                <div key={`legacy-${index}`} className="rounded-md border px-3 py-2">
                   {entry.stamp && entry.author ? (
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <span className="text-[11px] text-muted-foreground">
@@ -478,6 +657,20 @@ export default function TaskDetailClient(props: Props) {
                     </div>
                   ) : null}
                   <div className="mt-1 whitespace-pre-wrap">{entry.message ?? entry.raw}</div>
+                </div>
+              ))}
+              {comments.map((comment) => (
+                <div key={comment.id} className="flex gap-2">
+                  <InitialsAvatar name={comment.author_name} size="sm" />
+                  <div className="min-w-0 flex-1 rounded-md border bg-muted/20 px-3 py-2">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <span className="text-sm font-medium">{comment.author_name ?? "משתמש"}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {formatIsoStamp(comment.created_at)}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 whitespace-pre-wrap">{comment.body}</div>
+                  </div>
                 </div>
               ))}
             </div>

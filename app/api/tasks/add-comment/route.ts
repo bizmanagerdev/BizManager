@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 
@@ -6,7 +6,7 @@ export async function POST(req: Request) {
   try {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase, user } = access.value;
+    const { supabase, user, profile } = access.value;
 
     return await withIdempotency(req, supabase, user.id, "tasks/add-comment", async () => {
     const body = (await req.json()) as { task_id?: string; message?: string };
@@ -17,25 +17,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing task_id or message" }, { status: 400 });
     }
 
-    const author = user.email ?? "user";
-    const stamp = new Date().toISOString();
-    const entry = `[${stamp}] ${author}: ${message}`;
-
-    const { data: current, error: readError } = await supabase
-      .from("tasks")
-      .select("id,notes")
-      .eq("id", taskId)
+    const { data, error } = await supabase
+      .from("task_comments")
+      .insert({ task_id: taskId, author_id: profile.id, body: message })
+      .select("id,author_id,body,created_at")
       .maybeSingle();
 
-    if (readError) return NextResponse.json({ error: readError.message }, { status: 400 });
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-    const existing = typeof current?.notes === "string" ? current.notes : null;
-    const nextNotes = existing && existing.trim() ? `${existing}\n\n${entry}` : entry;
-
-    const { error: updateError } = await supabase.from("tasks").update({ notes: nextNotes }).eq("id", taskId);
-    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 400 });
-
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      comment: data
+        ? {
+            id: data.id,
+            author_id: data.author_id,
+            author_name: profile.full_name ?? profile.email ?? null,
+            body: data.body,
+            created_at: data.created_at,
+          }
+        : null,
+    });
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

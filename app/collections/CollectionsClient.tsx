@@ -435,7 +435,11 @@ function TodayOverview({
                   className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-background/60 p-2 text-sm"
                 >
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    {r.customer_id ? (
+                    {r.task_subject ? (
+                      <NavLink to={`/tasks/${r.task_id}`} className="font-medium hover:underline">
+                        {r.task_subject}
+                      </NavLink>
+                    ) : r.customer_id ? (
                       <NavLink to={`/customers/${r.customer_id}`} className="font-medium hover:underline">
                         {r.customer_name ?? "לקוח"}
                       </NavLink>
@@ -447,7 +451,7 @@ function TodayOverview({
                         ☎ {r.customer_phone}
                       </a>
                     ) : null}
-                    <span className="text-muted-foreground">{actionTypeLabel(r.action_type)}</span>
+                    <span className="text-muted-foreground">{r.task_subject ? "משימה" : actionTypeLabel(r.action_type)}</span>
                     {r.content ? <span className="text-muted-foreground">· {r.content}</span> : null}
                     <span className={overdue ? "font-medium text-destructive" : "text-muted-foreground"}>
                       {overdue ? "באיחור · " : ""}
@@ -1238,7 +1242,11 @@ function ReminderGroup({
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                {r.customer_id ? (
+                {r.task_subject ? (
+                  <NavLink to={`/tasks/${r.task_id}`} className="font-medium hover:underline">
+                    {r.task_subject}
+                  </NavLink>
+                ) : r.customer_id ? (
                   <NavLink to={`/customers/${r.customer_id}`} className="font-medium hover:underline">
                     {r.customer_name ?? "לקוח"}
                   </NavLink>
@@ -1246,7 +1254,7 @@ function ReminderGroup({
                   <span className="font-medium">{r.customer_name ?? "כללי"}</span>
                 )}
                 <span className="text-xs text-muted-foreground">
-                  {actionTypeLabel(r.action_type)} · {formatShortDate(r.remind_at)}
+                  {r.task_subject ? "משימה" : actionTypeLabel(r.action_type)} · {formatShortDate(r.remind_at)}
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 text-muted-foreground">

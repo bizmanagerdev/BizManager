@@ -1,63 +1,49 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
-import { offlineFetch } from "@/lib/offline-queue";
-import { loadMoreTasks } from "@/app/tasks/actions";
-import type { TasksFilters } from "@/app/tasks/loadTasks";
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { Bell, CheckCircle2, Circle, GripVertical, MapPin, MessageSquare, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { offlineFetch } from "@/lib/offline-queue";
+import { BOARD_STATUSES, type TaskBoardItem } from "@/app/tasks/loadTasks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { formatShortDate } from "@/lib/date";
-import TasksRealtimeBadge from "@/app/tasks/TasksRealtimeBadge";
-import {
-  TaskUpsertDialog,
-  type TaskOption,
-  type UserOption,
-} from "@/components/tasks/TaskUpsertDialog";
-import {
-  emitNavigationStart,
-  emitProgressActivityEnd,
-  emitProgressActivityStart,
-} from "@/components/layout/TopNavigationProgress";
-import {
-  EXPENSE_BUSINESS_DOMAINS,
-  getBusinessDomainLabel,
-  isExpenseBusinessDomain,
-} from "@/lib/expenses";
 import { Card, CardContent } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
+import { formatShortDate } from "@/lib/date";
+import { TaskUpsertDialog, type TaskOption, type TaskStatus, type UserOption } from "@/components/tasks/TaskUpsertDialog";
+import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
+import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 
-export type TaskListItem = {
-  id: string;
-  subject: string;
-  status: string | null;
-  priority: string | null;
-  due_date: string | null;
-  business_domain: string | null;
-  project_id: string | null;
-  property_id: string | null;
-  project_name: string | null;
-  property_name: string | null;
-  assigned_user_id: string | null;
-  assigned_user_name: string | null;
-  is_overdue?: boolean | null;
-};
-
 type Props = {
-  tasks: TaskListItem[];
-  initialHasMore?: boolean;
-  totalCount: number;
+  tasks: TaskBoardItem[];
   projects: TaskOption[];
   properties: TaskOption[];
   users: UserOption[];
   canSeeAll?: boolean;
+  currentUserId: string;
   initialFilters?: {
     q: string;
-    status: string;
     priority: string;
     domain: string;
     linkedId: string;
@@ -65,114 +51,333 @@ type Props = {
   };
 };
 
-const STATUS_OPTIONS = ["todo", "in_progress", "blocked", "done", "cancelled"] as const;
 const PRIORITY_OPTIONS = ["low", "medium", "high", "urgent"] as const;
+const COLUMN_PREFIX = "column:";
 
-function domainLabel(domain: string | null) {
-  if (!domain) return "—";
-  return isExpenseBusinessDomain(domain) ? getBusinessDomainLabel(domain) : domain;
-}
-
-type TaskUrlFilters = {
+type UrlFilters = {
   q: string;
-  status: string;
   priority: string;
   domain: string;
   linkedId: string;
   scope: "mine" | "all";
 };
 
-function buildTasksUrl(filters: TaskUrlFilters) {
+function buildTasksUrl(filters: UrlFilters) {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
-  if (filters.status) params.set("status", filters.status);
   if (filters.priority) params.set("priority", filters.priority);
   if (filters.domain) params.set("domain", filters.domain);
   if (filters.linkedId) params.set("linked_id", filters.linkedId);
-  if (filters.scope === "all") params.set("scope", "all");
+  // "all" is the default for admin/office, so only persist the opt-in "mine".
+  if (filters.scope === "mine") params.set("scope", "mine");
   const qs = params.toString();
   return qs ? `/tasks?${qs}` : "/tasks";
 }
 
-function handleNavigationStart() {
-  emitNavigationStart();
+function columnSortableId(status: string) {
+  return `${COLUMN_PREFIX}${status}`;
+}
+
+// ─── Card ──────────────────────────────────────────────────────────────────────
+function TaskCard({
+  task,
+  onOpen,
+  onToggleDone,
+  onContextMenu,
+}: {
+  task: TaskBoardItem;
+  onOpen: (id: string) => void;
+  onToggleDone: (id: string, done: boolean) => void;
+  onContextMenu: (id: string, x: number, y: number) => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
+  const extraMembers = task.members.length > 3 ? task.members.length - 3 : 0;
+  const isDone = task.status === "done";
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onClick={() => onOpen(task.id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(task.id, e.clientX, e.clientY);
+      }}
+      className={`cursor-pointer select-none rounded-lg border bg-muted/30 p-2.5 text-sm shadow-sm transition hover:border-primary/40 ${
+        isDragging ? "opacity-40" : ""
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        {/* Complete circle — click to move to/from done (Trello-style). */}
+        <button
+          type="button"
+          aria-label={isDone ? "החזרה ללביצוע" : "סימון כבוצע"}
+          title={isDone ? "החזרה ל'לביצוע'" : "סימון כבוצע — העברה ל'בוצע'"}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleDone(task.id, !isDone);
+          }}
+          className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-success"
+        >
+          {isDone ? <CheckCircle2 className="h-4 w-4 text-success" /> : <Circle className="h-4 w-4" />}
+        </button>
+        <div className={`min-w-0 flex-1 font-medium leading-snug ${isDone ? "text-muted-foreground line-through" : ""}`}>
+          {task.subject}
+        </div>
+        {task.priority ? <StatusBadge value={task.priority} type="priority" className="shrink-0 text-[10px]" /> : null}
+      </div>
+
+      {/* Date (start/right) + assignees/indicators (end/left), one row. */}
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+          {task.due_date ? (
+            <span className={task.is_overdue ? "font-medium text-destructive" : ""}>
+              {formatShortDate(task.due_date)}
+              {task.due_time ? ` ${task.due_time}` : ""}
+            </span>
+          ) : null}
+          {task.city ? (
+            <span className="inline-flex items-center gap-0.5">
+              <MapPin className="h-3 w-3" />
+              {task.city}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {task.has_open_reminder ? <Bell className="h-3.5 w-3.5 text-warning-strong" /> : null}
+          {task.comment_count > 0 ? (
+            <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
+              <MessageSquare className="h-3.5 w-3.5" />
+              {task.comment_count}
+            </span>
+          ) : null}
+          {task.members.length > 0 ? (
+            <div className="flex -space-x-2">
+              {task.members.slice(0, 3).map((member) => (
+                <InitialsAvatar key={member.id} name={member.name} size="sm" className="ring-2 ring-background" />
+              ))}
+              {extraMembers > 0 ? (
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[11px] font-medium ring-2 ring-background">
+                  +{extraMembers}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Column ─────────────────────────────────────────────────────────────────────
+function BoardColumn({
+  status,
+  tasks,
+  onOpen,
+  onToggleDone,
+  onContextMenu,
+  onQuickAdd,
+}: {
+  status: string;
+  tasks: TaskBoardItem[];
+  onOpen: (id: string) => void;
+  onToggleDone: (id: string, done: boolean) => void;
+  onContextMenu: (id: string, x: number, y: number) => void;
+  onQuickAdd: (status: string, title: string) => Promise<void>;
+}) {
+  const {
+    setNodeRef,
+    setActivatorNodeRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: columnSortableId(status) });
+  const [adding, setAdding] = useState<null | "top" | "bottom">(null);
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const style = { transform: CSS.Translate.toString(transform), transition };
+
+  async function submitQuickAdd() {
+    const trimmed = title.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    try {
+      await onQuickAdd(status, trimmed);
+      setTitle("");
+      setAdding(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const addBox = (
+    <div className="space-y-1.5 rounded-lg border bg-card p-2">
+      <Input
+        autoFocus
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="כותרת המשימה"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void submitQuickAdd();
+          }
+          if (e.key === "Escape") {
+            setAdding(null);
+            setTitle("");
+          }
+        }}
+      />
+      <div className="flex gap-1.5">
+        <Button type="button" size="sm" disabled={!title.trim() || busy} onClick={() => void submitQuickAdd()}>
+          {busy ? "מוסיף..." : "הוספה"}
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={() => { setAdding(null); setTitle(""); }}>
+          ביטול
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex min-w-[78vw] snap-start flex-col rounded-xl bg-muted/70 lg:min-w-0 ${
+        isDragging ? "z-10 opacity-70" : ""
+      }`}
+    >
+      <div className="flex items-center justify-between px-3 py-2.5">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <button
+            type="button"
+            ref={setActivatorNodeRef}
+            {...attributes}
+            {...listeners}
+            aria-label="גרירת רשימה"
+            className="cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+          {getTaskStatusLabel(status)}
+          <span className="rounded-full bg-background px-1.5 text-xs font-normal text-muted-foreground">
+            {tasks.length}
+          </span>
+        </div>
+        {/* Always-visible add at the top of the list. */}
+        <button
+          type="button"
+          onClick={() => setAdding("top")}
+          aria-label="הוספת כרטיס"
+          className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 space-y-2 px-2 pb-2">
+        {adding === "top" ? addBox : null}
+
+        {tasks.map((task) => (
+          <TaskCard
+            key={task.id}
+            task={task}
+            onOpen={onOpen}
+            onToggleDone={onToggleDone}
+            onContextMenu={onContextMenu}
+          />
+        ))}
+
+        {adding === "bottom" ? (
+          addBox
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding("bottom")}
+            className="flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-start text-sm text-muted-foreground transition-colors hover:bg-background"
+          >
+            <Plus className="h-4 w-4" />
+            הוספת כרטיס
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function TasksPageClient(props: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const canSeeAll = props.canSeeAll ?? false;
 
   const urlQ = searchParams.get("q") ?? "";
-  const urlStatus = searchParams.get("status") ?? "";
   const urlPriority = searchParams.get("priority") ?? "";
   const urlDomain = searchParams.get("domain") ?? "";
   const urlLinkedId = searchParams.get("linked_id") ?? "";
-  const canSeeAll = props.canSeeAll ?? false;
-  const urlScope: "mine" | "all" = canSeeAll && searchParams.get("scope") === "all" ? "all" : "mine";
+  const urlScope: "mine" | "all" = !canSeeAll ? "mine" : searchParams.get("scope") === "mine" ? "mine" : "all";
+
+  const [tasks, setTasks] = useState<TaskBoardItem[]>(props.tasks);
+  // Re-sync when the server re-renders (e.g. after a save → router.refresh()).
+  useEffect(() => setTasks(props.tasks), [props.tasks]);
+
+  // Per-user column order, drag-reorderable, persisted per device in localStorage.
+  const storageKey = `tasks-board-order:${props.currentUserId}`;
+  const [columnOrder, setColumnOrder] = useState<string[]>([...BOARD_STATUSES]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      const valid = parsed.filter(
+        (s): s is string => typeof s === "string" && (BOARD_STATUSES as readonly string[]).includes(s)
+      );
+      const missing = BOARD_STATUSES.filter((s) => !valid.includes(s));
+      if (valid.length > 0) setColumnOrder([...valid, ...missing]);
+    } catch {
+      // ignore malformed storage
+    }
+  }, [storageKey]);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
+  const [createSubject, setCreateSubject] = useState("");
+  const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
   const [editId, setEditId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const justDraggedRef = useRef(false);
 
-  // Fetch-from-DB-as-you-scroll: accumulate task pages and pull the next one from
-  // the server when the bottom comes into view (no "next page" button).
-  const fetchFilters = useMemo<TasksFilters>(
-    () => ({
-      q: props.initialFilters?.q ?? "",
-      status: props.initialFilters?.status ?? "",
-      priority: props.initialFilters?.priority ?? "",
-      domain: props.initialFilters?.domain ?? "",
-      linkedId: props.initialFilters?.linkedId ?? "",
-      scope: props.initialFilters?.scope ?? "mine",
-    }),
-    [props.initialFilters]
-  );
-  const fetchPage = useCallback(
-    (page: number) => loadMoreTasks(page, fetchFilters),
-    [fetchFilters]
-  );
-  const getRowId = useCallback((task: TaskListItem) => task.id, []);
-  const {
-    rows: localTasks,
-    setRows: setLocalTasks,
-    hasMore,
-    loading: loadingMore,
-    sentinelRef,
-    mobileSentinelRef,
-    scrollRef,
-  } = useInfiniteScroll<TaskListItem>({
-    initialRows: props.tasks,
-    initialHasMore: props.initialHasMore ?? false,
-    fetchPage,
-    getId: getRowId,
-  });
-
-  // qInput is local state for immediate feedback while debouncing URL push
   const [qInput, setQInput] = useState(urlQ);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => setQInput(urlQ), [urlQ]);
 
-  // Sync qInput when URL q changes externally (e.g. browser back/forward)
-  useEffect(() => {
-    setQInput(urlQ);
-  }, [urlQ]);
+  // Mouse for desktop (drag after 8px so plain clicks open the card); touch with a
+  // short press-delay for mobile so a tap opens the card and the board still scrolls.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } })
+  );
 
-  const linkedFilterTarget =
-    urlDomain === "logistics_projects"
-      ? ("project" as const)
-      : urlDomain === "property_management"
-        ? ("property" as const)
-        : ("" as const);
+  const tasksByStatus = useMemo(() => {
+    const map = new Map<string, TaskBoardItem[]>();
+    for (const status of BOARD_STATUSES) map.set(status, []);
+    for (const task of tasks) {
+      const status = task.status && map.has(task.status) ? task.status : "todo";
+      map.get(status)!.push(task);
+    }
+    return map;
+  }, [tasks]);
 
-  const linkedFilterOptions =
-    linkedFilterTarget === "project"
-      ? props.projects
-      : linkedFilterTarget === "property"
-        ? props.properties
-        : [];
+  const isColumnDrag = activeDragId?.startsWith(COLUMN_PREFIX) ?? false;
+  const activeColumnStatus = isColumnDrag && activeDragId ? activeDragId.slice(COLUMN_PREFIX.length) : null;
+  const activeTask = activeDragId && !isColumnDrag ? tasks.find((t) => t.id === activeDragId) ?? null : null;
 
-  function pushFilters(filters: TaskUrlFilters) {
+  function pushFilters(filters: UrlFilters) {
     emitNavigationStart();
     router.push(buildTasksUrl(filters));
   }
@@ -181,217 +386,195 @@ export default function TasksPageClient(props: Props) {
     setQInput(value);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     searchDebounceRef.current = setTimeout(() => {
-      pushFilters({
-        q: value,
-        status: urlStatus,
-        priority: urlPriority,
-        domain: urlDomain,
-        linkedId: urlLinkedId,
-        scope: urlScope,
-      });
+      pushFilters({ q: value, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope });
     }, 400);
   }
 
-  function handleStatusChange(value: string) {
-    pushFilters({ q: urlQ, status: value, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope });
-  }
+  const linkedTarget =
+    urlDomain === "logistics_projects" ? "project" : urlDomain === "property_management" ? "property" : "";
+  const linkedOptions = linkedTarget === "project" ? props.projects : linkedTarget === "property" ? props.properties : [];
 
-  function handlePriorityChange(value: string) {
-    pushFilters({ q: urlQ, status: urlStatus, priority: value, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope });
-  }
-
-  function handleDomainChange(value: string) {
-    pushFilters({ q: urlQ, status: urlStatus, priority: urlPriority, domain: value, linkedId: "", scope: urlScope });
-  }
-
-  function handleLinkedIdChange(value: string) {
-    pushFilters({ q: urlQ, status: urlStatus, priority: urlPriority, domain: urlDomain, linkedId: value, scope: urlScope });
-  }
-
-  function handleScopeChange(value: "mine" | "all") {
-    if (value === urlScope) return;
-    pushFilters({ q: urlQ, status: urlStatus, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: value });
-  }
-
-  async function updateTaskStatus(taskId: string, status: string) {
-    setUpdatingStatusId(taskId);
-    emitProgressActivityStart();
-    try {
-      const result = await offlineFetch(
-        "/api/tasks/update-status",
-        { id: taskId, status },
-        "עדכון סטטוס משימה"
+  const moveTask = useCallback(
+    async (taskId: string, targetStatus: string) => {
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task || (task.status ?? "todo") === targetStatus) return;
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, status: targetStatus, is_overdue: targetStatus === "done" ? false : t.is_overdue }
+            : t
+        )
       );
-      if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון סטטוס", { description: result.error || "" });
-        return;
-      }
-
-      setLocalTasks((prev) => {
-        // Marking a task done removes it from the open view (default + any
-        // non-"done" status filter), so drop it instead of leaving a stale row.
-        // When the user is explicitly viewing "done", keep it in place.
-        if (status === "done" && urlStatus !== "done") {
-          return prev.filter((task) => task.id !== taskId);
+      emitProgressActivityStart();
+      try {
+        const result = await offlineFetch(
+          "/api/tasks/update-status",
+          { id: taskId, status: targetStatus },
+          "עדכון סטטוס משימה"
+        );
+        if (!result.queued && !result.ok) {
+          toast.error("שגיאה בעדכון סטטוס", { description: result.error || "" });
+          setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
+          return;
         }
-        return prev.map((task) => (task.id === taskId ? { ...task, status } : task));
-      });
-      // When queued offline the global connection toast already informs the user.
-      if (!result.queued) toast.success("הסטטוס עודכן");
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "";
-      toast.error("שגיאה בעדכון סטטוס", { description: message });
-    } finally {
-      emitProgressActivityEnd();
-      setUpdatingStatusId(null);
-    }
+        if (!result.queued) toast.success("הסטטוס עודכן");
+      } catch (error: unknown) {
+        toast.error("שגיאה בעדכון סטטוס", { description: error instanceof Error ? error.message : "" });
+        setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
+      } finally {
+        emitProgressActivityEnd();
+      }
+    },
+    [tasks]
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragId(String(event.active.id));
   }
 
-  async function deleteTask(taskId: string, subject: string) {
-    const ok = window.confirm(`למחוק את המשימה "${subject}"?`);
-    if (!ok) return;
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveDragId(null);
+    justDraggedRef.current = true;
+    // Allow the synthetic click after a drag to be ignored, then re-enable opening.
+    setTimeout(() => {
+      justDraggedRef.current = false;
+    }, 0);
+    const activeId = String(event.active.id);
+    const overId = event.over?.id ? String(event.over.id) : "";
+    if (!overId) return;
 
-    setDeletingId(taskId);
+    // Column reorder (persisted per user).
+    if (activeId.startsWith(COLUMN_PREFIX)) {
+      if (!overId.startsWith(COLUMN_PREFIX) || activeId === overId) return;
+      setColumnOrder((prev) => {
+        const from = prev.indexOf(activeId.slice(COLUMN_PREFIX.length));
+        const to = prev.indexOf(overId.slice(COLUMN_PREFIX.length));
+        if (from === -1 || to === -1) return prev;
+        const next = arrayMove(prev, from, to);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+      return;
+    }
+
+    // Card moved to another column.
+    if (!overId.startsWith(COLUMN_PREFIX)) return;
+    void moveTask(activeId, overId.slice(COLUMN_PREFIX.length));
+  }
+
+  function openCard(id: string) {
+    if (justDraggedRef.current) return;
+    setEditId(id);
+  }
+
+  function toggleDone(id: string, done: boolean) {
+    void moveTask(id, done ? "done" : "todo");
+  }
+
+  function openMenu(id: string, x: number, y: number) {
+    setMenu({ id, x, y });
+  }
+
+  async function deleteTask(id: string) {
+    const task = tasks.find((t) => t.id === id);
+    if (!window.confirm(`למחוק את המשימה "${task?.subject ?? ""}"?`)) return;
+    const previous = tasks;
+    setTasks((prev) => prev.filter((t) => t.id !== id));
     emitProgressActivityStart();
     try {
-      const result = await offlineFetch("/api/tasks/delete", { id: taskId }, "מחיקת משימה");
+      const result = await offlineFetch("/api/tasks/delete", { id }, "מחיקת משימה");
       if (!result.queued && !result.ok) {
         toast.error("שגיאה במחיקת משימה", { description: result.error || "" });
+        setTasks(previous);
         return;
       }
-
-      setLocalTasks((prev) => prev.filter((task) => task.id !== taskId));
       if (!result.queued) toast.success("המשימה נמחקה");
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "";
-      toast.error("שגיאה במחיקת משימה", { description: message });
+      toast.error("שגיאה במחיקת משימה", { description: error instanceof Error ? error.message : "" });
+      setTasks(previous);
     } finally {
       emitProgressActivityEnd();
-      setDeletingId(null);
     }
+  }
+
+  // Quick-add opens the guided create stepper prefilled with the typed title +
+  // the column's status (the task is created only when the user saves).
+  async function quickAdd(status: string, title: string) {
+    setCreateSubject(title);
+    setCreateStatus(status as TaskStatus);
+    setCreateOpen(true);
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">משימות</h1>
-        <TasksRealtimeBadge />
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {canSeeAll ? (
-          <div className="flex rounded-xl border bg-secondary/40 p-0.5 text-sm">
-            <button
-              type="button"
-              onClick={() => handleScopeChange("mine")}
-              className={`rounded-lg px-3 py-1 transition-colors ${
-                urlScope === "mine"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-secondary/10"
-              }`}
-            >
-              המשימות שלי
-            </button>
-            <button
-              type="button"
-              onClick={() => handleScopeChange("all")}
-              className={`rounded-lg px-3 py-1 transition-colors ${
-                urlScope === "all"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-secondary/10"
-              }`}
-            >
-              כל המשימות
-            </button>
-          </div>
-        ) : (
-          <span />
-        )}
-        <Button type="button" onClick={() => setCreateOpen(true)}>
-          הוספת משימה
-        </Button>
-      </div>
-
       <Card>
-        <CardContent className="pt-4 text-sm">
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="min-w-[220px] flex-1 space-y-1">
-              <div className="text-[11px] text-muted-foreground">חיפוש</div>
-              <Input
-                value={qInput}
-                onChange={(e) => handleQChange(e.target.value)}
-                placeholder="חיפוש..."
-              />
-            </div>
-
-            <div className="w-[120px] space-y-1">
-              <div className="text-[11px] text-muted-foreground">סטטוס</div>
-              <select
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={urlStatus}
-                onChange={(e) => handleStatusChange(e.target.value)}
-              >
-                <option value="">הכל</option>
-                <option value="overdue">באיחור</option>
-                {STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>
-                    {getTaskStatusLabel(status)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="w-[120px] space-y-1">
-              <div className="text-[11px] text-muted-foreground">עדיפות</div>
-              <select
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={urlPriority}
-                onChange={(e) => handlePriorityChange(e.target.value)}
-              >
-                <option value="">הכל</option>
-                {PRIORITY_OPTIONS.map((priority) => (
-                  <option key={priority} value={priority}>
-                    {getTaskPriorityLabel(priority)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="w-[160px] space-y-1">
-              <div className="text-[11px] text-muted-foreground">דומיין</div>
-              <select
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={urlDomain}
-                onChange={(e) => handleDomainChange(e.target.value)}
-              >
-                <option value="">הכל</option>
-                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                  <option key={domain} value={domain}>
-                    {getBusinessDomainLabel(domain)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="text-[11px] whitespace-nowrap text-muted-foreground">
-              מוצגות {props.totalCount} משימות
-            </div>
+        <CardContent className="flex flex-wrap items-end gap-2 pt-4 text-sm">
+          <div className="min-w-[220px] space-y-1">
+            <div className="text-[11px] text-muted-foreground">חיפוש</div>
+            <Input value={qInput} onChange={(e) => handleQChange(e.target.value)} placeholder="חיפוש..." />
           </div>
-
-          {linkedFilterTarget ? (
-            <div className="mt-3 min-w-0 space-y-1 border-t pt-3">
-              <div className="text-[11px] text-muted-foreground">
-                {linkedFilterTarget === "project" ? "בחירת פרויקט" : "בחירת נכס"}
-              </div>
-              <select
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm sm:max-w-md"
-                value={urlLinkedId}
-                onChange={(e) => handleLinkedIdChange(e.target.value)}
+          {canSeeAll ? (
+            <div className="flex rounded-xl border bg-secondary/40 p-0.5 text-sm">
+              <button
+                type="button"
+                onClick={() => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: "mine" })}
+                className={`rounded-lg px-3 py-1.5 transition-colors ${urlScope === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
               >
-                <option value="">
-                  {linkedFilterTarget === "project" ? "כל הפרויקטים" : "כל הנכסים"}
+                שלי
+              </button>
+              <button
+                type="button"
+                onClick={() => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: urlLinkedId, scope: "all" })}
+                className={`rounded-lg px-3 py-1.5 transition-colors ${urlScope === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              >
+                הכל
+              </button>
+            </div>
+          ) : null}
+          <div className="w-[120px] space-y-1">
+            <div className="text-[11px] text-muted-foreground">עדיפות</div>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={urlPriority}
+              onChange={(e) => pushFilters({ q: urlQ, priority: e.target.value, domain: urlDomain, linkedId: urlLinkedId, scope: urlScope })}
+            >
+              <option value="">הכל</option>
+              {PRIORITY_OPTIONS.map((priority) => (
+                <option key={priority} value={priority}>
+                  {getTaskPriorityLabel(priority)}
                 </option>
-                {linkedFilterOptions.map((option) => (
+              ))}
+            </select>
+          </div>
+          <div className="w-[160px] space-y-1">
+            <div className="text-[11px] text-muted-foreground">דומיין</div>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={urlDomain}
+              onChange={(e) => pushFilters({ q: urlQ, priority: urlPriority, domain: e.target.value, linkedId: "", scope: urlScope })}
+            >
+              <option value="">הכל</option>
+              {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                <option key={domain} value={domain}>
+                  {getBusinessDomainLabel(domain)}
+                </option>
+              ))}
+            </select>
+          </div>
+          {linkedTarget ? (
+            <div className="w-[200px] space-y-1">
+              <div className="text-[11px] text-muted-foreground">{linkedTarget === "project" ? "פרויקט" : "נכס"}</div>
+              <select
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={urlLinkedId}
+                onChange={(e) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: e.target.value, scope: urlScope })}
+              >
+                <option value="">{linkedTarget === "project" ? "כל הפרויקטים" : "כל הנכסים"}</option>
+                {linkedOptions.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.label}
                   </option>
@@ -399,187 +582,112 @@ export default function TasksPageClient(props: Props) {
               </select>
             </div>
           ) : null}
+          <Button
+            type="button"
+            className="ms-auto"
+            onClick={() => {
+              setCreateSubject("");
+              setCreateStatus("todo");
+              setCreateOpen(true);
+            }}
+          >
+            <Plus className="ms-1 h-4 w-4" />
+            משימה
+          </Button>
         </CardContent>
       </Card>
 
-      {localTasks.length === 0 ? (
-        <div className="text-muted-foreground">אין משימות להצגה.</div>
-      ) : (
-        <>
-          <div className="space-y-2 md:hidden">
-            {localTasks.map((task) => {
-              const where = task.project_name ?? task.property_name ?? "—";
-              return (
-                <Card key={task.id} className="overflow-hidden">
-                  <CardContent className="space-y-2 p-3 text-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="font-medium">{task.subject || "משימה"}</div>
-                      <div className="flex gap-2">
-                        <Button asChild type="button" variant="outline" size="sm">
-                          <Link href={`/tasks/${encodeURIComponent(task.id)}`} onClick={handleNavigationStart}>פרטים</Link>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={deletingId === task.id || updatingStatusId === task.id}
-                          onClick={() => {
-                            setEditId(task.id);
-                            setEditOpen(true);
-                          }}
-                        >
-                          עריכה
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          disabled={deletingId === task.id || updatingStatusId === task.id}
-                          onClick={() => void deleteTask(task.id, task.subject || "משימה")}
-                        >
-                          {deletingId === task.id ? "מוחק..." : "מחיקה"}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      {task.priority ? <StatusBadge value={task.priority} type="priority" /> : null}
-                      <select
-                        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                        value={task.status ?? "todo"}
-                        disabled={updatingStatusId === task.id || deletingId === task.id}
-                        onChange={(e) => void updateTaskStatus(task.id, e.target.value)}
-                      >
-                        {STATUS_OPTIONS.map((status) => (
-                          <option key={status} value={status}>
-                            {getTaskStatusLabel(status)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-1 text-xs text-muted-foreground">
-                      <div>
-                        יעד: <span className="text-foreground">{formatShortDate(task.due_date)}</span>
-                      </div>
-                      <div>
-                        מקושר ל: <span className="text-foreground">{where}</span>
-                      </div>
-                      <div>
-                        משויך: <span className="text-foreground">{task.assigned_user_name ?? "—"}</span>
-                      </div>
-                      <div>
-                        דומיין: <span className="text-foreground">{domainLabel(task.business_domain)}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <SortableContext items={columnOrder.map(columnSortableId)} strategy={horizontalListSortingStrategy}>
+          <div className="flex snap-x gap-3 overflow-x-auto pb-2 lg:grid lg:grid-cols-4 lg:overflow-visible">
+            {columnOrder.map((status) => (
+              <BoardColumn
+                key={status}
+                status={status}
+                tasks={tasksByStatus.get(status) ?? []}
+                onOpen={openCard}
+                onToggleDone={toggleDone}
+                onContextMenu={openMenu}
+                onQuickAdd={quickAdd}
+              />
+            ))}
           </div>
-          {hasMore ? <div ref={mobileSentinelRef} className="h-1 md:hidden" /> : null}
+        </SortableContext>
 
-          <Card className="hidden overflow-hidden border-border/70 shadow-sm md:block">
-            <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
-                <tr className="border-b border-border/70">
-                  <th className="px-4 py-3 text-right font-medium">משימה</th>
-                  <th className="px-4 py-3 text-right font-medium">מקושר ל</th>
-                  <th className="px-4 py-3 text-right font-medium">דומיין</th>
-                  <th className="px-4 py-3 text-right font-medium">תאריך יעד</th>
-                  <th className="px-4 py-3 text-right font-medium">משויך</th>
-                  <th className="px-4 py-3 text-right font-medium">עדיפות</th>
-                  <th className="px-4 py-3 text-right font-medium">סטטוס</th>
-                  <th className="px-4 py-3 text-right font-medium">פעולות</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-border/70">
-                {localTasks.map((task) => {
-                  const where = task.project_name ?? task.property_name ?? "—";
-                  return (
-                    <tr key={task.id} className="align-top hover:bg-muted/20">
-                      <td className="px-4 py-4">
-                        <span className="font-medium">{task.subject || "משימה"}</span>
-                      </td>
-                      <td className="px-4 py-4">{where}</td>
-                      <td className="px-4 py-4">{domainLabel(task.business_domain)}</td>
-                      <td className="px-4 py-4 whitespace-nowrap">{formatShortDate(task.due_date)}</td>
-                      <td className="px-4 py-4">{task.assigned_user_name ?? "—"}</td>
-                      <td className="px-4 py-4">
-                        {task.priority ? <StatusBadge value={task.priority} type="priority" /> : "—"}
-                      </td>
-                      <td className="px-4 py-4">
-                        <select
-                          className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                          value={task.status ?? "todo"}
-                          disabled={updatingStatusId === task.id || deletingId === task.id}
-                          onChange={(e) => void updateTaskStatus(task.id, e.target.value)}
-                        >
-                          {STATUS_OPTIONS.map((status) => (
-                            <option key={status} value={status}>
-                              {getTaskStatusLabel(status)}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          <Button asChild type="button" variant="outline" size="sm">
-                            <Link href={`/tasks/${encodeURIComponent(task.id)}`} onClick={handleNavigationStart}>פרטים</Link>
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={deletingId === task.id || updatingStatusId === task.id}
-                            onClick={() => {
-                              setEditId(task.id);
-                              setEditOpen(true);
-                            }}
-                          >
-                            עריכה
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            disabled={deletingId === task.id || updatingStatusId === task.id}
-                            onClick={() => void deleteTask(task.id, task.subject || "משימה")}
-                          >
-                            {deletingId === task.id ? "מוחק..." : "מחיקה"}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
+        <DragOverlay>
+          {activeColumnStatus ? (
+            <div className="rounded-xl bg-muted px-3 py-2.5 text-sm font-semibold shadow-lg">
+              {getTaskStatusLabel(activeColumnStatus)}
             </div>
-          </Card>
+          ) : activeTask ? (
+            <div className="rounded-lg border bg-card p-2.5 text-sm shadow-lg">
+              <div className="font-medium leading-snug">{activeTask.subject}</div>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
-          <div className="border-t pt-4 text-center text-xs text-muted-foreground">
-            {loadingMore ? "טוען…" : `מציג ${localTasks.length} מתוך ${props.totalCount} משימות`}
+      {/* Right-click card menu */}
+      {menu ? (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <div
+            className="fixed z-50 min-w-36 overflow-hidden rounded-md border bg-popover py-1 text-sm shadow-md"
+            style={{ top: menu.y, left: menu.x }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                const id = menu.id;
+                setMenu(null);
+                setEditId(id);
+              }}
+              className="block w-full px-3 py-1.5 text-start hover:bg-muted/50"
+            >
+              פתיחה
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const id = menu.id;
+                setMenu(null);
+                void deleteTask(id);
+              }}
+              className="block w-full px-3 py-1.5 text-start text-destructive hover:bg-destructive/10"
+            >
+              מחיקה
+            </button>
           </div>
         </>
-      )}
+      ) : null}
 
       <TaskUpsertDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) setCreateSubject("");
+        }}
         mode="create"
         users={props.users}
         projects={props.projects}
         properties={props.properties}
+        currentUserId={props.currentUserId}
+        wizard
+        defaultSubject={createSubject}
+        defaultStatus={createStatus}
+        onSaved={() => router.refresh()}
       />
 
       <TaskUpsertDialog
-        open={editOpen}
+        open={editId !== null}
         onOpenChange={(open) => {
-          setEditOpen(open);
           if (!open) setEditId(null);
         }}
         mode="edit"
@@ -587,6 +695,8 @@ export default function TasksPageClient(props: Props) {
         users={props.users}
         projects={props.projects}
         properties={props.properties}
+        currentUserId={props.currentUserId}
+        onSaved={() => router.refresh()}
       />
     </div>
   );

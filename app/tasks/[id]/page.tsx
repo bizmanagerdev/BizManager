@@ -22,6 +22,9 @@ type TaskRow = {
   id: string;
   description: string | null;
   notes: string | null;
+  due_time: string | null;
+  city: string | null;
+  address: string | null;
   project_id: string | null;
   property_id: string | null;
   business_domain: string | null;
@@ -122,9 +125,56 @@ export default async function TaskPage({
 
   const { data: taskRow, error: taskError } = await supabase
     .from("tasks")
-    .select("id,description,notes,project_id,property_id,business_domain")
+    .select("id,description,notes,due_time,city,address,project_id,property_id,business_domain")
     .eq("id", id)
     .maybeSingle<TaskRow>();
+
+  // Members, structured comments and task reminders (Trello card data).
+  const [membersResult, commentsResult, remindersResult] = await Promise.all([
+    supabase.from("task_members").select("user_id").eq("task_id", id),
+    supabase
+      .from("task_comments")
+      .select("id,author_id,body,created_at")
+      .eq("task_id", id)
+      .order("created_at", { ascending: true })
+      .range(0, 199),
+    supabase
+      .from("reminders")
+      .select("id,remind_at,content,status,assigned_to")
+      .eq("task_id", id)
+      .order("remind_at", { ascending: true })
+      .range(0, 99),
+  ]);
+
+  const memberUserIds = ((membersResult.data ?? []) as Array<{ user_id: string | null }>)
+    .map((r) => (typeof r.user_id === "string" ? r.user_id : null))
+    .filter((v): v is string => Boolean(v));
+  const commentRows = (commentsResult.data ?? []) as Array<Record<string, unknown>>;
+  const reminderRows = (remindersResult.data ?? []) as Array<Record<string, unknown>>;
+
+  const nameValues = [
+    ...memberUserIds,
+    ...commentRows.map((r) => (typeof r.author_id === "string" ? r.author_id : null)),
+    ...reminderRows.map((r) => (typeof r.assigned_to === "string" ? r.assigned_to : null)),
+  ].filter((v): v is string => Boolean(v));
+  const nameMap = await resolveUserDisplayNamesForValues(supabase, nameValues);
+
+  const members = memberUserIds.map((userId) => ({ id: userId, name: nameMap[userId] ?? "" }));
+  const comments = commentRows.map((r) => ({
+    id: typeof r.id === "string" ? r.id : "",
+    author_id: typeof r.author_id === "string" ? r.author_id : null,
+    author_name: typeof r.author_id === "string" ? nameMap[r.author_id] ?? null : null,
+    body: typeof r.body === "string" ? r.body : "",
+    created_at: typeof r.created_at === "string" ? r.created_at : "",
+  }));
+  const reminders = reminderRows.map((r) => ({
+    id: typeof r.id === "string" ? r.id : "",
+    remind_at: typeof r.remind_at === "string" ? r.remind_at : "",
+    content: typeof r.content === "string" ? r.content : null,
+    status: typeof r.status === "string" ? r.status : "pending",
+    assigned_to: typeof r.assigned_to === "string" ? r.assigned_to : null,
+    assigned_to_name: typeof r.assigned_to === "string" ? nameMap[r.assigned_to] ?? null : null,
+  }));
 
   let attachments: Attachment[] = [];
 
@@ -239,11 +289,17 @@ export default async function TaskPage({
             status={overview.status ?? "todo"}
             priority={overview.priority ?? null}
             dueDate={overview.due_date ?? null}
+            dueTime={taskRow?.due_time ?? null}
+            city={taskRow?.city ?? null}
+            address={taskRow?.address ?? null}
             assignedUserName={overview.assigned_user_name ?? null}
+            members={members}
             projectName={projectOverview?.name ?? overview.project_name ?? null}
             customerName={projectOverview?.customer_name ?? null}
             description={taskRow?.description ?? null}
             notes={taskRow?.notes ?? null}
+            comments={comments}
+            reminders={reminders}
             attachments={attachments}
             userOptions={userOptions}
             fixedTarget={fixedTarget}

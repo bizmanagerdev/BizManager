@@ -2,7 +2,7 @@ import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import TasksPageClient from "./TasksPageClient";
-import { loadTasksPage } from "./loadTasks";
+import { loadTasksBoard } from "./loadTasks";
 
 export const revalidate = 30;
 
@@ -16,24 +16,23 @@ function getString(row: Row, key: string) {
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ q?: string; status?: string; priority?: string; domain?: string; linked_id?: string; scope?: string }>;
+  searchParams?: Promise<{ q?: string; priority?: string; domain?: string; linked_id?: string; scope?: string }>;
 }) {
   const params = (await searchParams) ?? {};
 
   const q = typeof params.q === "string" ? params.q.trim() : "";
-  const filterStatus = typeof params.status === "string" ? params.status.trim() : "";
   const filterPriority = typeof params.priority === "string" ? params.priority.trim() : "";
   const filterDomain = typeof params.domain === "string" ? params.domain.trim() : "";
   const filterLinkedId = typeof params.linked_id === "string" ? params.linked_id.trim() : "";
 
   const { profile, supabase } = await requireProfile();
   const canSeeAll = profile.role === "admin" || profile.role === "office";
-  // Default to "mine"; only admin/office may opt into "all".
-  const filterScope: "mine" | "all" = canSeeAll && params.scope === "all" ? "all" : "mine";
+  // Admin/office default to "all"; they can opt into "mine". Workers are always
+  // restricted to their own tasks (enforced again in the loader).
+  const filterScope: "mine" | "all" = !canSeeAll ? "mine" : params.scope === "mine" ? "mine" : "all";
 
   const filters = {
     q,
-    status: filterStatus,
     priority: filterPriority,
     domain: filterDomain,
     linkedId: filterLinkedId,
@@ -44,13 +43,8 @@ export default async function TasksPage({
     await ensureRecurringTasksForDate(supabase);
   }
 
-  const [
-    tasksResult,
-    projectsResult,
-    propertiesResult,
-    usersResult,
-  ] = await Promise.all([
-    loadTasksPage(supabase, { page: 1, filters, userId: profile.id, canSeeAll }),
+  const [boardResult, projectsResult, propertiesResult, usersResult] = await Promise.all([
+    loadTasksBoard(supabase, { filters, userId: profile.id, canSeeAll }),
     supabase
       .from("project_dashboard_view")
       .select("id,name,customer_name")
@@ -68,10 +62,6 @@ export default async function TasksPage({
       .range(0, 499),
   ]);
 
-  const tasksError = tasksResult.error;
-  const tasks = tasksResult.tasks;
-  const totalCount = tasksResult.totalCount;
-  const hasMore = tasksResult.hasMore;
   const projectRows = (projectsResult.data ?? []) as Row[];
   const propertyRows = (propertiesResult.data ?? []) as Row[];
   const userRows = (usersResult.data ?? []) as Row[];
@@ -101,18 +91,17 @@ export default async function TasksPage({
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      {tasksError ? (
-        <div className="text-destructive text-sm">שגיאה: {tasksError}</div>
+      {boardResult.error ? (
+        <div className="text-destructive text-sm">שגיאה: {boardResult.error}</div>
       ) : (
         <TasksPageClient
-          tasks={tasks}
-          initialHasMore={hasMore}
-          totalCount={totalCount}
+          tasks={boardResult.items}
           projects={projectOptions}
           properties={propertyOptions}
           users={userOptions}
           canSeeAll={canSeeAll}
-          initialFilters={{ q, status: filterStatus, priority: filterPriority, domain: filterDomain, linkedId: filterLinkedId, scope: filterScope }}
+          currentUserId={profile.id}
+          initialFilters={{ q, priority: filterPriority, domain: filterDomain, linkedId: filterLinkedId, scope: filterScope }}
         />
       )}
     </AppShell>

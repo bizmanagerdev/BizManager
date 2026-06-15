@@ -58,6 +58,7 @@ import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEdito
 import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
 import { ProjectPicker, type ProjectPickerOption } from "@/components/projects/ProjectPicker";
 import { TransferDialog } from "@/components/financial/TransferDialog";
+import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
 
 type Row = Record<string, unknown>;
 
@@ -453,18 +454,6 @@ export default function DashboardActions({
   const [projectCreateCustomerOpen, setProjectCreateCustomerOpen] = useState(false);
   const [projectCreateCustomerReturnToProject, setProjectCreateCustomerReturnToProject] = useState(false);
 
-  const [taskSubmitting, setTaskSubmitting] = useState(false);
-  const [taskError, setTaskError] = useState<string | null>(null);
-  const [taskBusinessDomain, setTaskBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
-  const [taskProjectId, setTaskProjectId] = useState("");
-  const [taskPropertyId, setTaskPropertyId] = useState("");
-  const [taskSubject, setTaskSubject] = useState("");
-  const [taskDescription, setTaskDescription] = useState("");
-  const [taskDueDate, setTaskDueDate] = useState(getTodayDate());
-  const [taskAssignedUserId, setTaskAssignedUserId] = useState(currentUserId ?? "");
-  const [taskPriority, setTaskPriority] = useState("medium");
-  const [taskStatus, setTaskStatus] = useState("todo");
-
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [expenseError, setExpenseError] = useState<string | null>(null);
   const [expenseBusinessDomain, setExpenseBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
@@ -766,19 +755,6 @@ export default function DashboardActions({
     setProjectCreateCustomerReturnToProject(false);
   }
 
-  function resetTaskForm() {
-    setTaskError(null);
-    setTaskBusinessDomain("");
-    setTaskProjectId("");
-    setTaskPropertyId("");
-    setTaskSubject("");
-    setTaskDescription("");
-    setTaskDueDate(getTodayDate());
-    setTaskAssignedUserId(currentUserId ?? "");
-    setTaskPriority("medium");
-    setTaskStatus("todo");
-  }
-
   function resetExpenseForm() {
     setExpenseError(null);
     setExpenseBusinessDomain("");
@@ -954,64 +930,6 @@ export default function DashboardActions({
       })
       .slice(0, 50);
   }, [projectCustomerOptions, projectCustomerQuery, projectCustomerSearchResults]);
-
-  async function createTask() {
-    setTaskError(null);
-    const needsProject = taskBusinessDomain === "logistics_projects";
-    const needsProperty = taskBusinessDomain === "property_management";
-    if (
-      !taskBusinessDomain ||
-      !taskSubject.trim() || !taskAssignedUserId || !taskDueDate ||
-      (needsProject && !taskProjectId) ||
-      (needsProperty && !taskPropertyId)
-    ) {
-      setTaskError(HEBREW.taskRequired);
-      return;
-    }
-
-    setTaskSubmitting(true);
-    try {
-      const result = await offlineFetch(
-        "/api/tasks/create",
-        {
-          business_domain: taskBusinessDomain,
-          project_id: needsProject ? taskProjectId : null,
-          property_id: needsProperty ? taskPropertyId : null,
-          subject: taskSubject.trim(),
-          description: taskDescription.trim() || null,
-          due_date: taskDueDate,
-          assigned_user_id: taskAssignedUserId,
-          priority: taskPriority,
-          status: taskStatus,
-        },
-        HEBREW.taskNew,
-        { idempotent: true }
-      );
-      if (result.queued) {
-        setTaskOpen(false);
-        resetTaskForm();
-        return;
-      }
-      if (!result.ok) {
-        setTaskError(result.error || HEBREW.taskCreateFailed);
-        return;
-      }
-      const json = result.data as { task?: Row };
-      if (!json.task) {
-        setTaskError(HEBREW.taskCreateFailed);
-        return;
-      }
-
-      setTaskOpen(false);
-      resetTaskForm();
-      router.refresh();
-      toast.success(HEBREW.taskSaved);
-    } catch (error: unknown) {
-      setTaskError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
-    } finally {
-      setTaskSubmitting(false);
-    }
-  }
 
   async function createExpense() {
     setExpenseError(null);
@@ -2488,122 +2406,20 @@ export default function DashboardActions({
         }}
       />
 
-      <Dialog
+      <TaskUpsertDialog
         open={taskOpen}
-        onOpenChange={(open) => {
-          if (!open && taskSubmitting) return;
-          setTaskOpen(open);
-          if (!open) resetTaskForm();
-        }}
-      >
-        <AdaptiveDialog size="formXl">
-          <DialogHeader>
-            <DialogTitle>{HEBREW.taskNew}</DialogTitle>
-            <DialogDescription>{HEBREW.taskDialogDescription}</DialogDescription>
-          </DialogHeader>
-
-          <fieldset disabled={taskSubmitting} className="contents">
-            <div className="grid gap-4">
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.domain} *</span>
-                <select
-                  className={fieldClass}
-                  value={taskBusinessDomain}
-                  onChange={(e) => {
-                    const next = e.target.value as ExpenseBusinessDomain | "";
-                    setTaskBusinessDomain(next);
-                    if (next !== "logistics_projects") setTaskProjectId("");
-                    if (next !== "property_management") setTaskPropertyId("");
-                  }}
-                >
-                  <option value="">בחרו תחום</option>
-                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                    <option key={domain} value={domain}>
-                      {getBusinessDomainLabel(domain)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {taskBusinessDomain === "logistics_projects" ? (
-                <div className="space-y-2 text-sm">
-                  <span>{HEBREW.project} *</span>
-                  <ProjectPicker
-                    projects={projectPickerOptions}
-                    value={taskProjectId}
-                    onChange={setTaskProjectId}
-                    allowClear={false}
-                  />
-                </div>
-              ) : null}
-
-              {taskBusinessDomain === "property_management" ? (
-                <label className="space-y-2 text-sm">
-                  <span>נכס *</span>
-                  <select
-                    className={fieldClass}
-                    value={taskPropertyId}
-                    onChange={(e) => setTaskPropertyId(e.target.value)}
-                  >
-                    <option value="">בחרו נכס</option>
-                    {properties.map((property) => (
-                      <option key={property.id} value={property.id}>
-                        {property.name}{property.subtitle ? ` | ${property.subtitle}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
-              {taskBusinessDomain ? (
-                <>
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.subject} *</span>
-                    <Input value={taskSubject} onChange={(e) => setTaskSubject(e.target.value)} />
-                  </label>
-
-                  <AdaptiveGrid variant="formTwoLoose">
-                    <label className="space-y-2 text-sm">
-                      <span>{HEBREW.dueDate} *</span>
-                      <DateInput
-                        value={taskDueDate}
-                        onChange={(e) => setTaskDueDate(e.target.value)}
-                      />
-                    </label>
-
-                    <label className="space-y-2 text-sm">
-                      <span>{HEBREW.assignee} *</span>
-                      <select
-                        className={fieldClass}
-                        value={taskAssignedUserId}
-                        onChange={(e) => setTaskAssignedUserId(e.target.value)}
-                      >
-                        <option value="">{HEBREW.selectAssignee}</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </AdaptiveGrid>
-                </>
-              ) : null}
-            </div>
-          </fieldset>
-
-          {taskError ? <p className="text-sm text-destructive">{taskError}</p> : null}
-
-          <div className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setTaskOpen(false)} disabled={taskSubmitting}>
-              {HEBREW.cancel}
-            </Button>
-            <Button type="button" onClick={() => void createTask()} disabled={taskSubmitting}>
-              {taskSubmitting ? HEBREW.saving : HEBREW.saveTask}
-            </Button>
-          </div>
-        </AdaptiveDialog>
-      </Dialog>
+        onOpenChange={setTaskOpen}
+        mode="create"
+        wizard
+        currentUserId={currentUserId}
+        users={users}
+        projects={projectPickerOptions}
+        properties={properties.map((property) => ({
+          id: property.id,
+          label: property.subtitle ? `${property.name} | ${property.subtitle}` : property.name,
+        }))}
+        onSaved={() => router.refresh()}
+      />
 
       <Dialog
         open={expenseOpen}

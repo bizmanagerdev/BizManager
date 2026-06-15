@@ -136,7 +136,11 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
                 <Badge variant="info" className="gap-1 text-[10px]">
                   <Bell className="h-3 w-3" /> תזכורת
                 </Badge>
-                {r.customer_id ? (
+                {r.task_subject ? (
+                  <Link href={`/tasks/${r.task_id}`} className="font-medium hover:underline">
+                    {r.task_subject}
+                  </Link>
+                ) : r.customer_id ? (
                   <Link href={`/customers/${r.customer_id}`} className="font-medium hover:underline">
                     {r.customer_name ?? "לקוח"}
                   </Link>
@@ -148,7 +152,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
                     ☎ {r.customer_phone}
                   </a>
                 ) : null}
-                <span className="text-muted-foreground">{actionTypeLabel(r.action_type)}</span>
+                <span className="text-muted-foreground">{r.task_subject ? "משימה" : actionTypeLabel(r.action_type)}</span>
                 {r.content ? <span className="text-muted-foreground">· {r.content}</span> : null}
                 <span className={overdue ? "font-medium text-destructive" : "text-muted-foreground"}>
                   {overdue ? "באיחור · " : ""}

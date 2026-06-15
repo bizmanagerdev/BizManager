@@ -1,7 +1,60 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { TaskListItem } from "./TasksPageClient";
 
 type Row = Record<string, unknown>;
+
+export type TaskMember = { id: string; name: string };
+
+export type TaskBoardItem = {
+  id: string;
+  subject: string;
+  status: string | null;
+  priority: string | null;
+  due_date: string | null;
+  due_time: string | null;
+  city: string | null;
+  business_domain: string | null;
+  project_id: string | null;
+  property_id: string | null;
+  project_name: string | null;
+  property_name: string | null;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+  members: TaskMember[];
+  comment_count: number;
+  has_open_reminder: boolean;
+  is_overdue: boolean;
+};
+
+export type TasksFilters = {
+  q: string;
+  priority: string;
+  domain: string;
+  linkedId: string;
+  // "mine" = assigned to me OR a member; "all" = everyone (back-office only).
+  scope: "mine" | "all";
+};
+
+// Columns shown on the board (default order — each user can drag to reorder).
+// `cancelled` is intentionally excluded (reachable via filters/detail); null
+// status is treated as `todo`.
+export const BOARD_STATUSES = ["todo", "in_progress", "done", "blocked"] as const;
+export type BoardStatus = (typeof BOARD_STATUSES)[number];
+
+// Keep the done column light — only recently-touched done cards.
+const DONE_LIMIT = 60;
+const OPEN_LIMIT = 1000;
+
+const TASK_SELECT =
+  "id,subject,status,priority,due_date,due_time,city,business_domain,project_id,property_id,assigned_user_id";
+
+function getString(row: Row, key: string) {
+  const value = row[key];
+  return typeof value === "string" ? value : null;
+}
+
+function uniqueIds(rows: Row[], key: string) {
+  return [...new Set(rows.map((row) => getString(row, key)).filter((v): v is string => Boolean(v)))];
+}
 
 type TaskRow = {
   id: string;
@@ -9,156 +62,192 @@ type TaskRow = {
   status: string | null;
   priority: string | null;
   due_date: string | null;
+  due_time: string | null;
+  city: string | null;
   business_domain: string | null;
   project_id: string | null;
   property_id: string | null;
   assigned_user_id: string | null;
 };
 
-export type TasksFilters = {
-  q: string;
-  status: string;
-  priority: string;
-  domain: string;
-  linkedId: string;
-  // "mine" = assigned to me; "all" = everyone (back-office only, enforced server-side).
-  scope: "mine" | "all";
-};
-
-export const TASKS_PAGE_SIZE = 50;
-
-function getString(row: Row, key: string) {
-  const value = row[key];
-  return typeof value === "string" ? value : null;
-}
-
-function uniqueIds(rows: TaskRow[], key: "project_id" | "property_id" | "assigned_user_id") {
-  return [...new Set(rows.map((row) => (typeof row[key] === "string" ? (row[key] as string) : "")).filter(Boolean))];
-}
-
-export type TasksPageResult = {
-  tasks: TaskListItem[];
-  totalCount: number;
-  hasMore: boolean;
+export type TasksBoardResult = {
+  items: TaskBoardItem[];
   error: string | null;
 };
 
 /**
- * Load one page of tasks, with project / property / assignee names resolved for
- * just the rows on this page. Shared by the initial server render (page 1) and
- * the fetch-on-scroll server action (page >= 2).
+ * Load the full board (all non-cancelled tasks for the scope/filters), with
+ * members, project/property names, comment counts and open-reminder flags
+ * resolved for the cards. Open columns are loaded in full (capped); the done
+ * column is limited to recently-updated cards.
  */
-export async function loadTasksPage(
+export async function loadTasksBoard(
   supabase: SupabaseClient,
   {
-    page,
     filters,
     userId,
     canSeeAll,
-  }: { page: number; filters: TasksFilters; userId: string; canSeeAll: boolean }
-): Promise<TasksPageResult> {
-  const { q, status, priority, domain, linkedId } = filters;
-  // Non back-office users can only ever see their own tasks, regardless of the
-  // requested scope (defence in depth — never trust a client-supplied scope).
+  }: { filters: TasksFilters; userId: string; canSeeAll: boolean }
+): Promise<TasksBoardResult> {
+  const { q, priority, domain, linkedId } = filters;
   const scope = canSeeAll ? filters.scope : "mine";
-  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
-  const from = (safePage - 1) * TASKS_PAGE_SIZE;
-  const to = safePage * TASKS_PAGE_SIZE - 1;
 
-  let tasksQuery = supabase
-    .from("tasks")
-    .select(
-      "id,subject,status,priority,due_date,business_domain,project_id,property_id,assigned_user_id",
-      { count: "estimated" }
-    )
-    .order("due_date", { ascending: true });
-
-  if (scope === "mine") tasksQuery = tasksQuery.eq("assigned_user_id", userId);
-
-  if (status === "overdue") {
-    // "overdue" is a derived pseudo-status: due before today and not yet done.
-    const todayIso = new Date().toISOString().slice(0, 10);
-    tasksQuery = tasksQuery.lt("due_date", todayIso).or("status.is.null,status.neq.done");
-  } else if (status) {
-    tasksQuery = tasksQuery.eq("status", status);
-  } else {
-    // Default view (status filter = "הכל") hides completed tasks. They stay
-    // reachable by explicitly picking "done" in the status filter. Keep
-    // null-status rows (treated as "todo") visible.
-    tasksQuery = tasksQuery.or("status.is.null,status.neq.done");
+  // Tasks I'm a member of (for the "mine" scope union with assigned_user_id).
+  let memberTaskIds: string[] = [];
+  if (scope === "mine") {
+    const { data } = await supabase
+      .from("task_members")
+      .select("task_id")
+      .eq("user_id", userId)
+      .range(0, 999);
+    memberTaskIds = uniqueIds((data ?? []) as Row[], "task_id");
   }
-  if (priority) tasksQuery = tasksQuery.eq("priority", priority);
-  if (domain) tasksQuery = tasksQuery.eq("business_domain", domain);
-  if (linkedId) {
-    if (domain === "logistics_projects") {
-      tasksQuery = tasksQuery.eq("project_id", linkedId);
-    } else if (domain === "property_management") {
-      tasksQuery = tasksQuery.eq("property_id", linkedId);
+
+  // Apply the shared filters while still on the filter builder (filters must come
+  // before order/range, which return a transform builder without filter methods).
+  let openFilter = supabase
+    .from("tasks")
+    .select(TASK_SELECT)
+    .or("status.is.null,status.in.(todo,in_progress,blocked)");
+  let doneFilter = supabase.from("tasks").select(TASK_SELECT).eq("status", "done");
+
+  if (scope === "mine") {
+    if (memberTaskIds.length > 0) {
+      const mineOr = `assigned_user_id.eq.${userId},id.in.(${memberTaskIds.join(",")})`;
+      openFilter = openFilter.or(mineOr);
+      doneFilter = doneFilter.or(mineOr);
+    } else {
+      openFilter = openFilter.eq("assigned_user_id", userId);
+      doneFilter = doneFilter.eq("assigned_user_id", userId);
     }
   }
+  if (priority) {
+    openFilter = openFilter.eq("priority", priority);
+    doneFilter = doneFilter.eq("priority", priority);
+  }
+  if (domain) {
+    openFilter = openFilter.eq("business_domain", domain);
+    doneFilter = doneFilter.eq("business_domain", domain);
+  }
+  if (linkedId && (domain === "logistics_projects" || domain === "property_management")) {
+    const linkCol = domain === "logistics_projects" ? "project_id" : "property_id";
+    openFilter = openFilter.eq(linkCol, linkedId);
+    doneFilter = doneFilter.eq(linkCol, linkedId);
+  }
   if (q) {
-    const escaped = q.replace(/[%,]/g, " ");
-    tasksQuery = tasksQuery.ilike("subject", `%${escaped}%`);
+    const escaped = `%${q.replace(/[%,]/g, " ")}%`;
+    openFilter = openFilter.ilike("subject", escaped);
+    doneFilter = doneFilter.ilike("subject", escaped);
   }
 
-  const { data, error, count } = await tasksQuery.range(from, to);
-  const taskRows = (data ?? []) as TaskRow[];
+  const openQuery = openFilter
+    .order("due_date", { ascending: true, nullsFirst: false })
+    .range(0, OPEN_LIMIT - 1);
+  const doneQuery = doneFilter.order("updated_at", { ascending: false }).range(0, DONE_LIMIT - 1);
 
-  const projectIds = uniqueIds(taskRows, "project_id");
-  const propertyIds = uniqueIds(taskRows, "property_id");
-  const userIds = uniqueIds(taskRows, "assigned_user_id");
+  const [openRes, doneRes] = await Promise.all([openQuery, doneQuery]);
+  const error = openRes.error?.message ?? doneRes.error?.message ?? null;
+  const taskRows = [...((openRes.data ?? []) as TaskRow[]), ...((doneRes.data ?? []) as TaskRow[])];
 
-  const [projectsResult, propertiesResult, usersResult] = await Promise.all([
+  if (taskRows.length === 0) return { items: [], error };
+
+  const taskIds = taskRows.map((t) => t.id);
+  const projectIds = uniqueIds(taskRows as unknown as Row[], "project_id");
+  const propertyIds = uniqueIds(taskRows as unknown as Row[], "property_id");
+
+  const [projectsRes, propertiesRes, membersRes, commentsRes, remindersRes] = await Promise.all([
     projectIds.length
       ? supabase.from("project_dashboard_view").select("id,name").in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
     propertyIds.length
       ? supabase.from("properties").select("id,address").in("id", propertyIds)
       : Promise.resolve({ data: [] as Row[] }),
-    userIds.length
-      ? supabase.from("users").select("id,full_name,email").in("id", userIds)
-      : Promise.resolve({ data: [] as Row[] }),
+    supabase.from("task_members").select("task_id,user_id").in("task_id", taskIds),
+    supabase.from("task_comments").select("task_id").in("task_id", taskIds).range(0, 9999),
+    supabase
+      .from("reminders")
+      .select("task_id")
+      .in("task_id", taskIds)
+      .eq("status", "pending")
+      .range(0, 9999),
   ]);
 
-  const projectsById = new Map(
-    ((projectsResult.data ?? []) as Row[])
-      .map((row) => [getString(row, "id"), getString(row, "name")] as const)
-      .filter((entry): entry is readonly [string, string | null] => Boolean(entry[0]))
+  const memberRows = (membersRes.data ?? []) as Row[];
+  const assigneeIds = uniqueIds(taskRows as unknown as Row[], "assigned_user_id");
+  const memberUserIds = uniqueIds(memberRows, "user_id");
+  const allUserIds = [...new Set([...assigneeIds, ...memberUserIds])];
+
+  const usersRes = allUserIds.length
+    ? await supabase.from("users").select("id,full_name,email").in("id", allUserIds)
+    : { data: [] as Row[] };
+
+  const projectNameById = new Map(
+    ((projectsRes.data ?? []) as Row[]).map((r) => [getString(r, "id"), getString(r, "name")] as const)
   );
-  const propertiesById = new Map(
-    ((propertiesResult.data ?? []) as Row[])
-      .map((row) => [getString(row, "id"), getString(row, "address")] as const)
-      .filter((entry): entry is readonly [string, string | null] => Boolean(entry[0]))
+  const propertyNameById = new Map(
+    ((propertiesRes.data ?? []) as Row[]).map((r) => [getString(r, "id"), getString(r, "address")] as const)
   );
-  const usersById = new Map(
-    ((usersResult.data ?? []) as Row[])
-      .map((row) => [getString(row, "id"), getString(row, "full_name") ?? getString(row, "email")] as const)
-      .filter((entry): entry is readonly [string, string | null] => Boolean(entry[0]))
+  const userNameById = new Map(
+    ((usersRes.data ?? []) as Row[]).map(
+      (r) => [getString(r, "id"), getString(r, "full_name") ?? getString(r, "email") ?? ""] as const
+    )
   );
 
-  const tasks: TaskListItem[] = taskRows.map((row) => {
-    const projectId = typeof row.project_id === "string" ? row.project_id : null;
-    const propertyId = typeof row.property_id === "string" ? row.property_id : null;
-    const userId = typeof row.assigned_user_id === "string" ? row.assigned_user_id : null;
+  const membersByTask = new Map<string, TaskMember[]>();
+  for (const row of memberRows) {
+    const taskId = getString(row, "task_id");
+    const memberId = getString(row, "user_id");
+    if (!taskId || !memberId) continue;
+    const list = membersByTask.get(taskId) ?? [];
+    list.push({ id: memberId, name: userNameById.get(memberId) ?? "" });
+    membersByTask.set(taskId, list);
+  }
+
+  const commentCountByTask = new Map<string, number>();
+  for (const row of (commentsRes.data ?? []) as Row[]) {
+    const taskId = getString(row, "task_id");
+    if (!taskId) continue;
+    commentCountByTask.set(taskId, (commentCountByTask.get(taskId) ?? 0) + 1);
+  }
+
+  const reminderTaskIds = new Set(
+    ((remindersRes.data ?? []) as Row[]).map((r) => getString(r, "task_id")).filter(Boolean) as string[]
+  );
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  const items: TaskBoardItem[] = taskRows.map((row) => {
+    const assigneeId = row.assigned_user_id;
+    const assigneeName = assigneeId ? userNameById.get(assigneeId) ?? null : null;
+    const extraMembers = membersByTask.get(row.id) ?? [];
+    // Avatars: primary assignee first, then extra members.
+    const members: TaskMember[] = [
+      ...(assigneeId ? [{ id: assigneeId, name: assigneeName ?? "" }] : []),
+      ...extraMembers.filter((m) => m.id !== assigneeId),
+    ];
+    const status = row.status;
+    const isOpen = status !== "done" && status !== "cancelled";
     return {
       id: row.id,
       subject: row.subject ?? "משימה",
-      status: row.status,
+      status,
       priority: row.priority,
       due_date: row.due_date,
+      due_time: row.due_time,
+      city: row.city,
       business_domain: row.business_domain,
       project_id: row.project_id,
       property_id: row.property_id,
-      project_name: projectId ? projectsById.get(projectId) ?? null : null,
-      property_name: propertyId ? propertiesById.get(propertyId) ?? null : null,
-      assigned_user_id: row.assigned_user_id,
-      assigned_user_name: userId ? usersById.get(userId) ?? null : null,
+      project_name: row.project_id ? projectNameById.get(row.project_id) ?? null : null,
+      property_name: row.property_id ? propertyNameById.get(row.property_id) ?? null : null,
+      assigned_user_id: assigneeId,
+      assigned_user_name: assigneeName,
+      members,
+      comment_count: commentCountByTask.get(row.id) ?? 0,
+      has_open_reminder: reminderTaskIds.has(row.id),
+      is_overdue: isOpen && row.due_date !== null && row.due_date.slice(0, 10) < todayIso,
     };
   });
 
-  const totalCount = typeof count === "number" ? count : taskRows.length;
-  // Drive "has more" off page fullness, not the estimated count.
-  const hasMore = taskRows.length === TASKS_PAGE_SIZE;
-
-  return { tasks, totalCount, hasMore, error: error?.message ?? null };
+  return { items, error };
 }

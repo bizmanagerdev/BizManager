@@ -45,7 +45,11 @@ export async function POST(req: Request) {
       subject?: string | null;
       description?: string | null;
       due_date?: string | null;
+      due_time?: string | null;
+      city?: string | null;
+      address?: string | null;
       assigned_user_id?: string | null;
+      member_ids?: string[] | null;
       priority?: string | null;
       status?: string | null;
     };
@@ -84,6 +88,20 @@ export async function POST(req: Request) {
         typeof body.due_date === "string" ? body.due_date : body.due_date ?? null;
       if (!dueDate) return NextResponse.json({ error: "Missing due_date" }, { status: 400 });
       update.due_date = dueDate;
+    }
+
+    if ("due_time" in body) {
+      update.due_time =
+        typeof body.due_time === "string" && body.due_time.trim() ? body.due_time.trim() : null;
+    }
+
+    if ("city" in body) {
+      update.city = typeof body.city === "string" && body.city.trim() ? body.city.trim() : null;
+    }
+
+    if ("address" in body) {
+      update.address =
+        typeof body.address === "string" && body.address.trim() ? body.address.trim() : null;
     }
 
     if ("assigned_user_id" in body) {
@@ -152,27 +170,60 @@ export async function POST(req: Request) {
       update.property_id = nextPropertyId;
     }
 
-    if (Object.keys(update).length === 0) {
+    const membersProvided = "member_ids" in body && Array.isArray(body.member_ids);
+
+    if (Object.keys(update).length === 0 && !membersProvided) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
-    const { data, error } = await supabase
-      .from("tasks")
-      .update(update)
-      .eq("id", id)
-      .select(
-        "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,priority,status,created_at,updated_at"
-      )
-      .maybeSingle();
-
-    if (error) {
-      return NextResponse.json({ error: normalizeTaskWriteError(error.message) }, { status: 400 });
+    let data: Record<string, unknown> | null = null;
+    if (Object.keys(update).length > 0) {
+      const result = await supabase
+        .from("tasks")
+        .update(update)
+        .eq("id", id)
+        .select(
+          "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at"
+        )
+        .maybeSingle();
+      if (result.error) {
+        return NextResponse.json({ error: normalizeTaskWriteError(result.error.message) }, { status: 400 });
+      }
+      data = result.data as Record<string, unknown> | null;
     }
-    if (data?.id) {
+
+    // Sync members (delete-all / re-insert), excluding the primary assignee so it's
+    // never duplicated as a collaborator row.
+    if (membersProvided) {
+      const { data: taskRow } = data
+        ? { data }
+        : await supabase.from("tasks").select("assigned_user_id").eq("id", id).maybeSingle<Record<string, unknown>>();
+      const assignedUserId =
+        typeof taskRow?.assigned_user_id === "string" ? taskRow.assigned_user_id : null;
+      const memberIds = [
+        ...new Set(
+          (body.member_ids ?? []).filter(
+            (memberId): memberId is string => typeof memberId === "string" && Boolean(memberId.trim())
+          )
+        ),
+      ].filter((memberId) => memberId !== assignedUserId);
+
+      await supabase.from("task_members").delete().eq("task_id", id);
+      if (memberIds.length > 0) {
+        const { error: membersError } = await supabase
+          .from("task_members")
+          .insert(memberIds.map((userId) => ({ task_id: id, user_id: userId })));
+        if (membersError) {
+          return NextResponse.json({ error: membersError.message }, { status: 400 });
+        }
+      }
+    }
+
+    if (id) {
       await logAuditEvent({
         supabase,
         tableName: "tasks",
-        recordId: data.id,
+        recordId: id,
         action: "update",
         changedBy: profile.id,
         userRole: profile.role,

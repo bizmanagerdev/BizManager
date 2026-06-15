@@ -123,14 +123,20 @@ export default function RemindersPanel({ reminders: initial }: { reminders: Remi
                     <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-x-2 text-sm">
-                        {r.customer_id ? (
+                        {r.task_subject ? (
+                          <Link href={`/tasks/${r.task_id}`} className="font-medium hover:underline">
+                            {r.task_subject}
+                          </Link>
+                        ) : r.customer_id ? (
                           <Link href={`/customers/${r.customer_id}`} className="font-medium hover:underline">
                             {r.customer_name ?? "לקוח"}
                           </Link>
                         ) : (
                           <span className="font-medium">{r.customer_name ?? "כללי"}</span>
                         )}
-                        <span className="text-muted-foreground">{actionTypeLabel(r.action_type)}</span>
+                        <span className="text-muted-foreground">
+                          {r.task_subject ? "משימה" : actionTypeLabel(r.action_type)}
+                        </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                         {r.content ? <span className="truncate">{r.content}</span> : null}

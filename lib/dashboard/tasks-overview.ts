@@ -37,13 +37,30 @@ export async function getMyTasks(
 ): Promise<DashboardTask[]> {
   const today = new Date().toISOString().slice(0, 10);
 
-  const { data, error } = await supabase
+  // Tasks I own (assigned_user_id) or that I was added to as a member.
+  const { data: memberRows } = await supabase
+    .from("task_members")
+    .select("task_id")
+    .eq("user_id", userId)
+    .range(0, 999);
+  const memberTaskIds = [
+    ...new Set(
+      ((memberRows ?? []) as Row[]).map((r) => getString(r, "task_id")).filter((v): v is string => Boolean(v))
+    ),
+  ];
+
+  let tasksQuery = supabase
     .from("tasks")
     .select("id,subject,due_date,priority,status,project_id")
-    .eq("assigned_user_id", userId)
     .in("status", OPEN_TASK_STATUSES)
     .order("due_date", { ascending: true, nullsFirst: false })
     .range(0, 299);
+  tasksQuery =
+    memberTaskIds.length > 0
+      ? tasksQuery.or(`assigned_user_id.eq.${userId},id.in.(${memberTaskIds.join(",")})`)
+      : tasksQuery.eq("assigned_user_id", userId);
+
+  const { data, error } = await tasksQuery;
 
   if (error || !data) return [];
   const rows = data as Row[];

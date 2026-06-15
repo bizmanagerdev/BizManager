@@ -34,12 +34,14 @@ export type Reminder = {
   property_id: string | null;
   payment_id: string | null;
   communication_log_id: string | null;
+  task_id: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
   assigned_to_name: string | null;
   customer_name: string | null;
   customer_phone: string | null;
+  task_subject: string | null;
 };
 
 export type CustomerActivity = {
@@ -111,7 +113,7 @@ async function resolveUserNames(supabase: SupabaseClient, ids: string[]) {
 const LOG_SELECT =
   "id,customer_id,user_id,channel,direction,content,category,order_id,project_id,property_id,payment_id,created_by,created_at";
 const REMINDER_SELECT =
-  "id,customer_id,project_id,assigned_to,remind_at,content,action_type,status,category,order_id,property_id,payment_id,communication_log_id,created_by,created_at,updated_at";
+  "id,customer_id,project_id,assigned_to,remind_at,content,action_type,status,category,order_id,property_id,payment_id,communication_log_id,task_id,created_by,created_at,updated_at";
 
 /** Logs + reminders for a single customer (newest first). Used by the tracking panel. */
 export async function getCustomerActivity(
@@ -174,12 +176,14 @@ export async function getCustomerActivity(
     property_id: str(r, "property_id"),
     payment_id: str(r, "payment_id"),
     communication_log_id: str(r, "communication_log_id"),
+    task_id: str(r, "task_id"),
     created_by: str(r, "created_by"),
     created_at: str(r, "created_at") ?? "",
     updated_at: str(r, "updated_at") ?? "",
     assigned_to_name: names.get(str(r, "assigned_to") ?? "") ?? null,
     customer_name: null,
     customer_phone: null,
+    task_subject: null,
   }));
 
   return { logs, reminders };
@@ -210,11 +214,15 @@ export async function getOpenReminders(
 
   const customerIds = rows.map((r) => str(r, "customer_id")).filter((v): v is string => Boolean(v));
   const assigneeIds = rows.map((r) => str(r, "assigned_to")).filter((v): v is string => Boolean(v));
+  const taskIds = rows.map((r) => str(r, "task_id")).filter((v): v is string => Boolean(v));
 
-  const [names, customersRes] = await Promise.all([
+  const [names, customersRes, tasksRes] = await Promise.all([
     resolveUserNames(supabase, assigneeIds),
     customerIds.length > 0
       ? supabase.from("customers").select("id,name,phone").in("id", Array.from(new Set(customerIds)))
+      : Promise.resolve({ data: [] as Row[] }),
+    taskIds.length > 0
+      ? supabase.from("tasks").select("id,subject").in("id", Array.from(new Set(taskIds)))
       : Promise.resolve({ data: [] as Row[] }),
   ]);
 
@@ -222,6 +230,11 @@ export async function getOpenReminders(
   for (const row of (customersRes.data ?? []) as Row[]) {
     const id = str(row, "id");
     if (id) customerById.set(id, { name: str(row, "name"), phone: str(row, "phone") });
+  }
+  const taskById = new Map<string, string>();
+  for (const row of (tasksRes.data ?? []) as Row[]) {
+    const id = str(row, "id");
+    if (id) taskById.set(id, str(row, "subject") ?? "משימה");
   }
 
   return rows.map((r) => {
@@ -240,12 +253,14 @@ export async function getOpenReminders(
       property_id: str(r, "property_id"),
       payment_id: str(r, "payment_id"),
       communication_log_id: str(r, "communication_log_id"),
+      task_id: str(r, "task_id"),
       created_by: str(r, "created_by"),
       created_at: str(r, "created_at") ?? "",
       updated_at: str(r, "updated_at") ?? "",
       assigned_to_name: names.get(str(r, "assigned_to") ?? "") ?? null,
       customer_name: cust?.name ?? null,
       customer_phone: cust?.phone ?? null,
+      task_subject: taskById.get(str(r, "task_id") ?? "") ?? null,
     };
   });
 }
