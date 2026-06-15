@@ -20,18 +20,16 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase } = access.value;
 
-    const { data: task, error } = await supabase
-      .from("tasks")
-      .select(
-        "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at,notes"
-      )
-      .eq("id", id)
-      .maybeSingle();
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    if (!task) return NextResponse.json({ task: null });
-
-    const [membersRes, commentsRes, remindersRes] = await Promise.all([
+    // Fetch the task alongside its members/comments/reminders in one round-trip —
+    // none of the sub-queries depend on the task row (they all key off the id).
+    const [taskRes, membersRes, commentsRes, remindersRes] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select(
+          "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at,notes"
+        )
+        .eq("id", id)
+        .maybeSingle(),
       supabase.from("task_members").select("user_id").eq("task_id", id),
       supabase
         .from("task_comments")
@@ -46,6 +44,10 @@ export async function POST(req: Request) {
         .order("remind_at", { ascending: true })
         .range(0, 99),
     ]);
+
+    const task = taskRes.data;
+    if (taskRes.error) return NextResponse.json({ error: taskRes.error.message }, { status: 400 });
+    if (!task) return NextResponse.json({ task: null });
 
     const memberIds = ((membersRes.data ?? []) as Row[])
       .map((r) => str(r, "user_id"))

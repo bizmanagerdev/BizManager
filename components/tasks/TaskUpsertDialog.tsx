@@ -15,6 +15,7 @@ import {
   Circle,
   Clock,
   ExternalLink,
+  Loader2,
   MapPin,
   MessageSquare,
   Plus,
@@ -626,8 +627,9 @@ export function TaskUpsertDialog(props: Props) {
                 type="button"
                 aria-label={status === "done" ? "החזרה ללביצוע" : "סימון כבוצע"}
                 title={status === "done" ? "החזרה ל'לביצוע'" : "סימון כבוצע"}
+                disabled={loading}
                 onClick={() => setStatus(status === "done" ? "todo" : "done")}
-                className="shrink-0 text-muted-foreground transition-colors hover:text-success"
+                className="shrink-0 text-muted-foreground transition-colors hover:text-success disabled:opacity-40"
               >
                 {status === "done" ? (
                   <CheckCircle2 className="h-5 w-5 text-success" />
@@ -640,6 +642,7 @@ export function TaskUpsertDialog(props: Props) {
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="שם המשימה"
+              disabled={loading}
               className="border-transparent bg-transparent px-1 text-lg font-semibold shadow-none focus-visible:border-input"
             />
             {targetTaskId ? (
@@ -651,11 +654,15 @@ export function TaskUpsertDialog(props: Props) {
               </Button>
             ) : null}
           </div>
-          <DialogDescription className={loading ? undefined : "sr-only"}>
-            {loading ? "טוען נתוני משימה..." : "פרטי המשימה"}
-          </DialogDescription>
+          <DialogDescription className="sr-only">פרטי המשימה</DialogDescription>
         </DialogHeader>
 
+        {loading ? (
+          <div className="mt-6 flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            טוען נתוני משימה...
+          </div>
+        ) : (
         <div className={isEditing && targetTaskId ? "mt-4 grid gap-5 lg:grid-cols-[1.5fr_1fr]" : "mt-4"}>
         <form
           className="space-y-3"
@@ -1039,6 +1046,7 @@ export function TaskUpsertDialog(props: Props) {
           </div>
         ) : null}
         </div>
+        )}
       </AdaptiveDialog>
     </Dialog>
   );
