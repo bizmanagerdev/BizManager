@@ -38,7 +38,7 @@ type Props = {
 };
 
 type View = "debtors" | "reminders" | "activity";
-type FilterKey = "all" | "overdue" | "due_soon" | "uncontacted";
+type FilterKey = "all" | "overdue" | "due_soon" | "expected" | "uncontacted";
 type SortKey = "amount" | "oldest" | "name" | "due";
 
 function formatCurrency(value: number) {
@@ -143,7 +143,9 @@ export default function CollectionsClient({
   })();
   const initialFilter: FilterKey = ((): FilterKey => {
     const f = searchParams?.get("filter");
-    return f === "overdue" || f === "due_soon" || f === "uncontacted" || f === "all" ? f : "all";
+    return f === "overdue" || f === "due_soon" || f === "expected" || f === "uncontacted" || f === "all"
+      ? f
+      : "all";
   })();
   // Reminders marked done/cancelled are hidden immediately so the action is
   // visible even before router.refresh() re-fetches (and regardless of caching).
@@ -193,6 +195,7 @@ export default function CollectionsClient({
       if (filter === "due_soon" && !(isDueSoon(c.next_due_date) || c.overdue_amount > 0.009)) {
         return false;
       }
+      if (filter === "expected" && !(c.pending_amount > 0.009)) return false;
       if (filter === "uncontacted" && c.last_contact_at) return false;
       if (domain !== "all" && !c.sources.some((s) => s.business_domain === domain)) return false;
       if (q) {
@@ -834,6 +837,7 @@ function DebtorsTable({
     { key: "all", label: "הכל" },
     { key: "overdue", label: "באיחור" },
     { key: "due_soon", label: "לגבייה בקרוב" },
+    { key: "expected", label: "תשלום צפוי" },
     { key: "uncontacted", label: "טרם נוצר קשר" },
   ];
 
