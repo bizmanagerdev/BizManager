@@ -40,7 +40,7 @@ function buildTabHref(nextTab: SalesTab, searchParams: SalesTabsSearchParams) {
 }
 
 function getCountSuffix(tab: { id: SalesTab }, counts: Record<SalesTab, number>) {
-  if (tab.id === "inventory" || tab.id === "price-list" || tab.id === "closed") return "";
+  if (tab.id === "inventory" || tab.id === "price-list") return "";
   return ` (${counts[tab.id] ?? 0})`;
 }
 

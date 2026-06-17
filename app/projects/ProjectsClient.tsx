@@ -457,6 +457,7 @@ export default function ProjectsClient({
 
   const projectCount = tabCounts?.projects ?? 0;
   const quoteCount = tabCounts?.quotes ?? 0;
+  const closedCount = tabCounts?.closed ?? 0;
 
   const statusOptions = useMemo(() => {
     const set = new Set<string>();
@@ -891,7 +892,7 @@ export default function ProjectsClient({
               פרויקטים ({projectCount})
             </TabsTrigger>
             <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="closed">
-              סגורים
+              סגורים ({closedCount})
             </TabsTrigger>
           </TabsList>
         </div>
@@ -904,7 +905,7 @@ export default function ProjectsClient({
             פרויקטים ({projectCount})
           </TabsTrigger>
           <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="closed">
-            סגורים
+            סגורים ({closedCount})
           </TabsTrigger>
         </TabsList>
       </Tabs>
