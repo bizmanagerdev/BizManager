@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { AlertTriangle, LockKeyhole, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, LockKeyhole, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,7 @@ import {
   type SalaryCenterProjectOption,
   type SalaryCenterProtectedPayload,
   type SalaryCenterUserRow,
+  type SessionEffectivePaymentRow,
   type SessionPublicRow,
   type WorkerPaymentAllocationRow,
   type WorkerDebtItemRow,
@@ -342,6 +343,7 @@ export default function SalaryCenterClient({
     dateFrom: "",
     dateTo: "",
   });
+  const [attendanceFiltersOpen, setAttendanceFiltersOpen] = useState(false);
   const [selectedWorkerId, setSelectedWorkerId] = useState(defaultWorkerId ?? "");
   const [workerAccessDialogOpen, setWorkerAccessDialogOpen] = useState(false);
   const [agreementDialogOpen, setAgreementDialogOpen] = useState(false);
@@ -530,6 +532,15 @@ export default function SalaryCenterClient({
     });
     return next;
   }, [protectedData]);
+  // Effective per-session paid status (folds in payslip coverage), from the central
+  // session_effective_payment_view. See db/sql/create_session_effective_payment_view.sql.
+  const sessionEffectivePaymentBySessionId = useMemo(() => {
+    const next = new Map<string, SessionEffectivePaymentRow>();
+    (protectedData?.sessionEffectivePayments ?? []).forEach((row) => {
+      if (row.session_id) next.set(row.session_id, row);
+    });
+    return next;
+  }, [protectedData]);
   const effectiveWorkerBalancesByUserId = useMemo(() => {
     const next = new Map(workerBalancesByUserId);
 
@@ -612,10 +623,15 @@ export default function SalaryCenterClient({
     return next;
   }, [protectedData]);
   const currentMonthPayrollStatsByUserId = useMemo(() => {
-    const next = new Map<string, { totalMinutes: number; totalAmount: number }>();
+    const next = new Map<string, { totalMinutes: number; totalAmount: number; sessionCount: number }>();
 
     publicUsers.forEach((user) => {
       const workerType = normalizePayrollWorkerType(user.payroll_worker_type, user.pay_tracking_mode);
+      // Session count is wanted on the card for session/contract workers regardless of
+      // how their pay is tracked, so compute it for everyone.
+      const monthSessionCount = visibleSessions.filter(
+        (session) => session.user_id === user.id && monthKeyFromDate(session.clock_in) === selectedPayrollMonthKey
+      ).length;
       const currentMonthPayslip =
         (payslipsByUserId.get(user.id) ?? []).find(
           (payslip) => periodsById.get(payslip.payroll_period_id)?.period_month === selectedPayrollMonthKey
@@ -627,6 +643,7 @@ export default function SalaryCenterClient({
           new Date(`${selectedPayrollMonthKey}-01T12:00:00`)
         );
         next.set(user.id, {
+          sessionCount: monthSessionCount,
           totalMinutes: toNumber(currentMonthPayslip?.total_work_minutes),
           totalAmount:
             currentMonthPayslip
@@ -640,6 +657,7 @@ export default function SalaryCenterClient({
 
       if (workerType === "hourly_payslip" && currentMonthPayslip) {
         next.set(user.id, {
+          sessionCount: monthSessionCount,
           totalMinutes: toNumber(currentMonthPayslip.total_work_minutes),
           totalAmount: toNumber(currentMonthPayslip.gross_salary) || toNumber(currentMonthPayslip.calculated_base_salary),
         });
@@ -651,6 +669,7 @@ export default function SalaryCenterClient({
       );
 
       next.set(user.id, {
+        sessionCount: currentMonthSessions.length,
         totalMinutes: currentMonthSessions.reduce((sum, session) => sum + sessionWorkedMinutes(session), 0),
         totalAmount: currentMonthSessions.reduce(
           (sum, session) => sum + (workerDebtItemsBySourceKey.get(`session:${session.id}`)?.earned_amount != null
@@ -809,7 +828,7 @@ export default function SalaryCenterClient({
     const breakdown = payrollUsers.reduce(
       (totals, user) => {
         const workerType = normalizePayrollWorkerType(user.payroll_worker_type, user.pay_tracking_mode);
-        const stats = currentMonthPayrollStatsByUserId.get(user.id) ?? { totalMinutes: 0, totalAmount: 0 };
+        const stats = currentMonthPayrollStatsByUserId.get(user.id) ?? { totalMinutes: 0, totalAmount: 0, sessionCount: 0 };
 
         if (workerType === "monthly_payslip") {
           totals.monthlyPayslipWorkers += 1;
@@ -1563,12 +1582,11 @@ export default function SalaryCenterClient({
       setWorkerPaymentError("יש לבחור תאריך תשלום.");
       return;
     }
-    if (activeAllocations.length === 0) {
-      setWorkerPaymentError("יש להקצות את התשלום לפחות לפריט חוב אחד.");
-      return;
-    }
-    if (Math.abs(allocationTotal - amount) > 0.01) {
-      setWorkerPaymentError("סכום ההקצאות חייב להיות שווה לסכום התשלום.");
+    // Allocations are optional: a payment can be recorded even when the worker has
+    // no open debt (an advance / general payment). Only block allocating MORE than
+    // was actually paid; an unallocated remainder is allowed.
+    if (allocationTotal - amount > 0.01) {
+      setWorkerPaymentError("סכום ההקצאות לא יכול לעלות על סכום התשלום.");
       return;
     }
 
@@ -1844,40 +1862,59 @@ export default function SalaryCenterClient({
     [selectedWorkerPrintSessions]
   );
   const selectedWorkerPrintPayments = useMemo(() => {
+    const matchesPrintPeriod = (dateValue: string | null | undefined) => {
+      if (!workerPrintFilters.month && !workerPrintFilters.year) return true;
+      if (!dateValue) return false;
+      const date = new Date(dateValue);
+      if (Number.isNaN(date.getTime())) return false;
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const year = String(date.getFullYear());
+      if (workerPrintFilters.month && month !== workerPrintFilters.month) return false;
+      if (workerPrintFilters.year && year !== workerPrintFilters.year) return false;
+      return true;
+    };
+    // Show ALL of the worker's payments in the period — not only the ones allocated to
+    // a session in the printed set. Payslip-mode workers are paid against payslips, so
+    // the old session-only match always came up empty for them ("no payments").
     return selectedWorkerPayments
+      .filter((payment) => matchesPrintPeriod(payment.payment_date))
       .map((payment) => {
-        const matchingAllocations = (workerPaymentAllocationsByPaymentId.get(payment.id) ?? []).filter(
-          (allocation) =>
-            allocation.source_type === "session" &&
-            allocation.attendance_session_id &&
-            selectedWorkerPrintSessionIds.has(allocation.attendance_session_id)
+        const sessionAllocations = (workerPaymentAllocationsByPaymentId.get(payment.id) ?? []).filter(
+          (allocation) => allocation.source_type === "session" && allocation.attendance_session_id
         );
-        const scopedAmount = matchingAllocations.reduce((sum, allocation) => sum + toNumber(allocation.amount), 0);
-        if (scopedAmount <= 0.009) return null;
-        return {
-          payment,
-          scopedAmount,
-        };
+        // When printing a single project, scope a session-allocated payment to the
+        // sessions in that project. Payslip / unallocated payments aren't tied to a
+        // project, so they're shown in full.
+        if (workerPrintFilters.projectId && sessionAllocations.length > 0) {
+          const scopedAmount = sessionAllocations
+            .filter((allocation) => selectedWorkerPrintSessionIds.has(allocation.attendance_session_id ?? ""))
+            .reduce((sum, allocation) => sum + toNumber(allocation.amount), 0);
+          if (scopedAmount <= 0.009) return null;
+          return { payment, scopedAmount };
+        }
+        return { payment, scopedAmount: toNumber(payment.amount) };
       })
       .filter(
         (item): item is { payment: WorkerPaymentRow; scopedAmount: number } =>
           Boolean(item)
       );
-  }, [selectedWorkerPayments, workerPaymentAllocationsByPaymentId, selectedWorkerPrintSessionIds]);
+  }, [
+    selectedWorkerPayments,
+    workerPaymentAllocationsByPaymentId,
+    selectedWorkerPrintSessionIds,
+    workerPrintFilters,
+  ]);
   const selectedWorkerPrintSummary = useMemo(() => {
-    return selectedWorkerPrintSessions.reduce(
-      (totals, session) => {
-        const debtItem = workerDebtItemsBySourceKey.get(`session:${session.id}`) ?? null;
-        totals.earned += debtItem ? toNumber(debtItem.earned_amount) : sessionCostsById.get(session.id) ?? 0;
-        totals.paid += debtItem ? toNumber(debtItem.paid_amount) : 0;
-        totals.owed += debtItem
-          ? toNumber(debtItem.owed_amount)
-          : Math.max(0, (sessionCostsById.get(session.id) ?? 0) - 0);
-        return totals;
-      },
-      { earned: 0, paid: 0, owed: 0 }
-    );
-  }, [selectedWorkerPrintSessions, workerDebtItemsBySourceKey, sessionCostsById]);
+    // Earned = work done in the printed period (session based). Paid = the actual
+    // payments listed below (so the print reconciles with what was really paid out,
+    // whether the worker is session- or payslip-tracked). Owed = the difference.
+    const earned = selectedWorkerPrintSessions.reduce((sum, session) => {
+      const debtItem = workerDebtItemsBySourceKey.get(`session:${session.id}`) ?? null;
+      return sum + (debtItem ? toNumber(debtItem.earned_amount) : sessionCostsById.get(session.id) ?? 0);
+    }, 0);
+    const paid = selectedWorkerPrintPayments.reduce((sum, item) => sum + item.scopedAmount, 0);
+    return { earned, paid, owed: earned - paid };
+  }, [selectedWorkerPrintSessions, selectedWorkerPrintPayments, workerDebtItemsBySourceKey, sessionCostsById]);
   function printSelectedWorkerSummary() {
     if (!selectedWorker) return;
 
@@ -2376,9 +2413,7 @@ export default function SalaryCenterClient({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="חודש שכר" value={monthLabelFromKey(summary.currentPayrollMonth)} />
-        <SummaryCard title="שעות משמרות החודש" value={formatMinutes(summary.totalWorkMinutes)} />
+      <div className="grid gap-3 sm:grid-cols-2">
         <SalaryProtected
           unlocked={salaryUnlocked}
           hasPasswordConfigured={hasPasswordConfigured}
@@ -2428,8 +2463,8 @@ export default function SalaryCenterClient({
         </Card>
       </SalaryProtected>
 
-      <div className="flex flex-wrap-reverse items-center justify-between gap-3">
-        <div className="flex flex-wrap justify-end gap-2">
+      <div className="flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap-reverse sm:items-center sm:justify-between">
+        <div className="flex flex-wrap justify-center gap-2">
           {canCreateUsers ? (
             <Button variant="outline" onClick={() => setCreateUserOpen(true)}>
               <Plus className="ms-2 h-4 w-4" />
@@ -2458,11 +2493,11 @@ export default function SalaryCenterClient({
           autoComplete="off"
           spellCheck={false}
           data-lpignore="true"
-          className="max-w-sm text-right"
+          className="w-full max-w-sm text-right"
         />
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
         <TabsList>
           <TabsTrigger value="employees">{"עובדים"}</TabsTrigger>
           <TabsTrigger value="labor">{"פועלים"}</TabsTrigger>
@@ -2474,7 +2509,102 @@ export default function SalaryCenterClient({
         <TabsContent value="employees" className="space-y-3">
           <Card>
             <CardContent className="py-4">
-              <div className="max-h-[70vh] overflow-auto">
+              {/* Narrow screens / large font: stacked cards instead of the 11-column
+                  table (which overflows sideways and squashes the email char-by-char).
+                  Plain block flow (not `grid`) so a card can never be stretched wider
+                  than the viewport by its own nowrap content (email / amounts). */}
+              <div className="space-y-3 lg:hidden">
+                {employeeWorkers.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+                    {"אין עובדים להצגה."}
+                  </div>
+                ) : (
+                  employeeWorkers.map((worker) => {
+                    const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
+                    const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? { totalMinutes: 0, totalAmount: 0, sessionCount: 0 };
+                    const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
+                    return (
+                      <div
+                        key={worker.id}
+                        role="button"
+                        tabIndex={0}
+                        className="cursor-pointer rounded-2xl border bg-background p-4 text-right shadow-sm transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                        onClick={(event) => {
+                          if (shouldIgnoreRowNavigation(event.target)) return;
+                          emitNavigationStart();
+                          router.push(`/payroll/workers/${worker.id}`);
+                        }}
+                        onKeyDown={(event) => {
+                          if (shouldIgnoreRowNavigation(event.target)) return;
+                          if (event.key !== "Enter" && event.key !== " ") return;
+                          event.preventDefault();
+                          emitNavigationStart();
+                          router.push(`/payroll/workers/${worker.id}`);
+                        }}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
+                            {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
+                            {worker.email ? <div className="truncate text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
+                            {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
+                          </div>
+                          <StatusPill tone={worker.active === false ? "muted" : "success"}>
+                            {worker.active === false ? "לא פעיל" : "פעיל"}
+                          </StatusPill>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap justify-center gap-2">
+                          <WorkerTypeBadge workerType={workerType} />
+                          <RoleBadge role={worker.role} />
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <SalaryProtected
+                            unlocked={salaryUnlocked}
+                            hasPasswordConfigured={hasPasswordConfigured}
+                            canUnlock={canViewSalary}
+                            onUnlockSuccess={loadProtectedData}
+                            fallback={<MiniStat label="יתרה כוללת" value="מוגן" />}
+                          >
+                            <MiniStat label="יתרה כוללת" value={formatCurrency(balance?.owed_amount ?? 0)} />
+                          </SalaryProtected>
+                          {workerType === "session_only" ? (
+                            <MiniStat label="משמרות החודש" value={String(monthStats.sessionCount)} />
+                          ) : (
+                            <MiniStat label="שעות החודש" value={formatMinutes(monthStats.totalMinutes)} />
+                          )}
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <SalaryProtected
+                            unlocked={salaryUnlocked}
+                            hasPasswordConfigured={hasPasswordConfigured}
+                            canUnlock={canViewSalary}
+                            onUnlockSuccess={loadProtectedData}
+                            fallback={<span />}
+                          >
+                            <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
+                          </SalaryProtected>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              emitNavigationStart();
+                              router.push(`/payroll/workers/${worker.id}`);
+                            }}
+                          >
+                            {"פרטים"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Wide screens: full detail table */}
+              <div className="hidden max-h-[70vh] overflow-auto lg:block">
                 <table className="w-full text-right text-xs">
                   <thead className="sticky top-0 z-10 bg-muted">
                     <tr className="border-b text-muted-foreground">
@@ -2504,6 +2634,7 @@ export default function SalaryCenterClient({
                         const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? {
                           totalMinutes: 0,
                           totalAmount: 0,
+                          sessionCount: 0,
                         };
                         const currentAgreement = getCurrentSalaryAgreement(agreementsByUserId.get(worker.id) ?? []);
                         const latestPayslip = [...(payslipsByUserId.get(worker.id) ?? [])].sort((a, b) =>
@@ -2638,7 +2769,101 @@ export default function SalaryCenterClient({
         <TabsContent value="labor" className="space-y-3">
           <Card>
             <CardContent className="py-4">
-              <div className="max-h-[70vh] overflow-auto">
+              {/* Narrow screens / large font: stacked cards instead of the wide table.
+                  Plain block flow (not `grid`) so a card can never be stretched wider
+                  than the viewport by its own nowrap content (email / amounts). */}
+              <div className="space-y-3 lg:hidden">
+                {laborWorkers.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+                    {"אין פועלים להצגה."}
+                  </div>
+                ) : (
+                  laborWorkers.map((worker) => {
+                    const workerType = normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode);
+                    const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? { totalMinutes: 0, totalAmount: 0, sessionCount: 0 };
+                    const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
+                    return (
+                      <div
+                        key={worker.id}
+                        role="button"
+                        tabIndex={0}
+                        className="cursor-pointer rounded-2xl border bg-background p-4 text-right shadow-sm transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                        onClick={(event) => {
+                          if (shouldIgnoreRowNavigation(event.target)) return;
+                          emitNavigationStart();
+                          router.push(`/payroll/workers/${worker.id}`);
+                        }}
+                        onKeyDown={(event) => {
+                          if (shouldIgnoreRowNavigation(event.target)) return;
+                          if (event.key !== "Enter" && event.key !== " ") return;
+                          event.preventDefault();
+                          emitNavigationStart();
+                          router.push(`/payroll/workers/${worker.id}`);
+                        }}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-semibold">{worker.full_name ?? worker.email ?? "פועל"}</div>
+                            {worker.phone ? <div className="text-sm text-muted-foreground" dir="ltr">{worker.phone}</div> : null}
+                            {worker.email ? <div className="truncate text-xs text-muted-foreground" dir="ltr">{worker.email}</div> : null}
+                            {!worker.email && !worker.phone ? <div className="text-xs text-muted-foreground">{"ללא פרטי קשר"}</div> : null}
+                          </div>
+                          <StatusPill tone={worker.active === false ? "muted" : "success"}>
+                            {worker.active === false ? "לא פעיל" : "פעיל"}
+                          </StatusPill>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap justify-center gap-2">
+                          <WorkerTypeBadge workerType={workerType} />
+                          <StatusPill tone="info">{"פועל"}</StatusPill>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <SalaryProtected
+                            unlocked={salaryUnlocked}
+                            hasPasswordConfigured={hasPasswordConfigured}
+                            canUnlock={canViewSalary}
+                            onUnlockSuccess={loadProtectedData}
+                            fallback={<MiniStat label="יתרה כוללת" value="מוגן" />}
+                          >
+                            <MiniStat label="יתרה כוללת" value={formatCurrency(balance?.owed_amount ?? 0)} />
+                          </SalaryProtected>
+                          {workerType === "session_only" ? (
+                            <MiniStat label="משמרות החודש" value={String(monthStats.sessionCount)} />
+                          ) : (
+                            <MiniStat label="שעות החודש" value={formatMinutes(monthStats.totalMinutes)} />
+                          )}
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <SalaryProtected
+                            unlocked={salaryUnlocked}
+                            hasPasswordConfigured={hasPasswordConfigured}
+                            canUnlock={canViewSalary}
+                            onUnlockSuccess={loadProtectedData}
+                            fallback={<span />}
+                          >
+                            <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
+                          </SalaryProtected>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              emitNavigationStart();
+                              router.push(`/payroll/workers/${worker.id}`);
+                            }}
+                          >
+                            {"פרטים"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Wide screens: full detail table */}
+              <div className="hidden max-h-[70vh] overflow-auto lg:block">
                 <table className="w-full text-right text-xs">
                   <thead className="sticky top-0 z-10 bg-muted">
                     <tr className="border-b text-muted-foreground">
@@ -2665,6 +2890,7 @@ export default function SalaryCenterClient({
                         const monthStats = currentMonthPayrollStatsByUserId.get(worker.id) ?? {
                           totalMinutes: 0,
                           totalAmount: 0,
+                          sessionCount: 0,
                         };
                         const balance = effectiveWorkerBalancesByUserId.get(worker.id) ?? null;
                         const rowClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
@@ -2763,6 +2989,21 @@ export default function SalaryCenterClient({
         </TabsContent>
 
         <TabsContent value="attendance" className="space-y-3">
+          <div className="flex justify-start">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAttendanceFiltersOpen((value) => !value)}
+            >
+              <SlidersHorizontal className="ms-2 h-4 w-4" />
+              {attendanceFiltersOpen ? "הסתרת סינון" : "סינון"}
+              {(() => {
+                const activeCount = Object.values(attendanceFilters).filter(Boolean).length;
+                return activeCount > 0 ? ` (${activeCount})` : "";
+              })()}
+            </Button>
+          </div>
+          {attendanceFiltersOpen ? (
           <Card>
             <CardContent
               className="grid gap-3 py-5 md:grid-cols-3 xl:grid-cols-6"
@@ -2855,10 +3096,129 @@ export default function SalaryCenterClient({
               </Field>
             </CardContent>
           </Card>
+          ) : null}
 
           <Card>
             <CardContent className="py-4">
-              <div className="max-h-[70vh] overflow-auto">
+              {/* Narrow screens / large font: stacked session cards instead of the wide table. */}
+              <div className="space-y-3 lg:hidden">
+                {filteredSessions.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+                    {"אין משמרות להצגה."}
+                  </div>
+                ) : (
+                  filteredSessions.map((session) => {
+                    const worker = usersById.get(session.user_id);
+                    const linkLabel = getSessionLinkLabel(session, projectLabelsById, propertyLabelsById);
+                    const rowWorkerType = worker
+                      ? normalizePayrollWorkerType(worker.payroll_worker_type, worker.pay_tracking_mode)
+                      : null;
+                    const rowShowHours = shouldShowSessionHours(rowWorkerType);
+                    const rowShowPrice = shouldShowSessionPrice(rowWorkerType);
+                    return (
+                      <div key={session.id} className="rounded-2xl border bg-background p-4 text-right shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-semibold">{worker?.full_name ?? worker?.email ?? "עובד"}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {rowShowHours ? formatSessionRange(session.clock_in, session.clock_out) : formatDate(session.clock_in)}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            <StatusPill tone={session.clock_out ? "success" : "warning"}>
+                              {session.clock_out ? "סגור" : "פתוח"}
+                            </StatusPill>
+                            <StatusPill tone={session.locked ? "danger" : "muted"}>
+                              {session.locked ? "נעול" : "ניתן לעריכה"}
+                            </StatusPill>
+                            {session.billing_status && session.is_billable_to_customer ? (
+                              <StatusPill tone={session.billing_status === "paid" ? "success" : "muted"}>
+                                {getBillingStatusLabel(session.billing_status)}
+                              </StatusPill>
+                            ) : null}
+                          </div>
+                        </div>
+                        {session.notes ? <div className="mt-2 text-xs text-muted-foreground">{session.notes}</div> : null}
+                        {/* Compact label/value rows (boxes made the session card far too tall). */}
+                        <div className="mt-3 space-y-1 text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-muted-foreground">{"משך"}</span>
+                            <span className="font-medium">{rowShowHours ? formatMinutes(sessionWorkedMinutes(session)) : "—"}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-muted-foreground">{"עלות עבודה"}</span>
+                            <span className="font-medium">
+                              {rowShowPrice ? (
+                                <SalaryProtected
+                                  unlocked={salaryUnlocked}
+                                  hasPasswordConfigured={hasPasswordConfigured}
+                                  canUnlock={canViewSalary}
+                                  onUnlockSuccess={loadProtectedData}
+                                  fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                                >
+                                  {formatCurrency(sessionCostsById.get(session.id) ?? 0)}
+                                </SalaryProtected>
+                              ) : (
+                                "אוטומטי"
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="shrink-0 text-muted-foreground">{"קישור"}</span>
+                            <span className="min-w-0 truncate font-medium">{linkLabel || "—"}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-muted-foreground">{"תחום"}</span>
+                            <span className="font-medium">{getBusinessDomainLabel(session.business_domain)}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-muted-foreground">{"חיוב לקוח"}</span>
+                            <span className="font-medium">
+                              {session.is_billable_to_customer ? formatCurrency(session.bill_to_customer_amount) : "לא לחיוב"}
+                            </span>
+                          </div>
+                        </div>
+                        {canManageAttendance ? (
+                          <div className="mt-3 flex flex-wrap justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => openEditSession(session)}
+                              aria-label="עריכה"
+                              className={SOLID_EDIT_BUTTON_CLASS}
+                              disabled={session.locked || isPending}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            {!session.clock_out ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => closeOpenSession(session.id)}
+                                disabled={session.locked || isPending}
+                              >
+                                {"סגירה"}
+                              </Button>
+                            ) : null}
+                            <Button
+                              variant="destructive"
+                              size="icon"
+                              onClick={() => deleteSession(session.id)}
+                              aria-label="מחיקה"
+                              disabled={session.locked || isPending}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Wide screens: full session table */}
+              <div className="hidden max-h-[70vh] overflow-auto lg:block">
                 <table className="w-full text-right text-sm">
                   <thead className="sticky top-0 z-10 bg-muted">
                     <tr className="border-b text-muted-foreground">
@@ -3003,7 +3363,66 @@ export default function SalaryCenterClient({
                     {"הוספת משכורת"}
                   </Button>
                 </div>
-                <div className="max-h-[70vh] overflow-auto">
+                {/* Narrow screens / large font: one card per worker, listing agreements. */}
+                <div className="space-y-3 lg:hidden">
+                  {agreementUsersWithAgreements.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed p-4 text-center text-sm text-muted-foreground">
+                      {"אין משכורות להצגה."}
+                    </div>
+                  ) : (
+                    agreementUsersWithAgreements.map((worker) => {
+                      const workerAgreements = agreementsByUserId.get(worker.id) ?? [];
+                      const current = getCurrentSalaryAgreement(workerAgreements);
+                      return (
+                        <div key={worker.id} className="rounded-2xl border bg-background p-4 text-right shadow-sm">
+                          <div className="font-semibold">{worker.full_name ?? worker.email ?? "עובד"}</div>
+                          <div className="mt-3 space-y-2">
+                            {workerAgreements.map((agreement) => (
+                              <div key={agreement.id} className="rounded-xl border px-3 py-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="font-semibold">
+                                      {agreement.salary_type === "hourly"
+                                        ? `${formatCurrency(agreement.hourly_rate)} / שעה`
+                                        : formatCurrency(agreement.monthly_salary)}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">{getSalaryTypeLabel(agreement.salary_type)}</div>
+                                    <div className="mt-1 text-xs text-muted-foreground">
+                                      {`מ־${formatDate(agreement.valid_from)} עד ${formatDate(agreement.valid_to)}`}
+                                    </div>
+                                  </div>
+                                  {current?.id === agreement.id ? <Tag>{"נוכחי"}</Tag> : null}
+                                </div>
+                                <div className="mt-2 flex justify-end gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => openEditAgreementDialog(agreement)}
+                                    aria-label="עריכה"
+                                    className={SOLID_EDIT_BUTTON_CLASS}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="icon"
+                                    onClick={() => deleteAgreement(agreement)}
+                                    aria-label="מחיקה"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Wide screens: full agreements table */}
+                <div className="hidden max-h-[70vh] overflow-auto lg:block">
                   <table className="w-full text-right text-sm">
                     <thead className="sticky top-0 z-10 bg-muted">
                       <tr className="border-b text-muted-foreground">
@@ -3245,8 +3664,8 @@ export default function SalaryCenterClient({
                         </div>
                       </div>
 
-                      <div className="grid gap-3 md:grid-cols-[auto_1fr]">
-                        <div className="flex items-end justify-end gap-2 md:order-1">
+                      <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div className="flex flex-wrap gap-2">
                           <Button
                             variant="secondary"
                             onClick={() => openPayslipPaymentDialog(payslip)}
@@ -3271,19 +3690,22 @@ export default function SalaryCenterClient({
                             {"+ רכיב שכר"}
                           </Button>
                         </div>
-                        <Field label="התאמה ידנית">
-                          <CurrencyInput
-                            inputMode="decimal"
-                            value={payslipAdjustmentDrafts[payslip.id] ?? String(payslip.manual_adjustments ?? 0)}
-                            onChange={(event) =>
-                              setPayslipAdjustmentDrafts((current) => ({
-                                ...current,
-                                [payslip.id]: event.target.value,
-                              }))
-                            }
-                            disabled={!isEditable}
-                          />
-                        </Field>
+                        {/* Fixed-width input — a full-width `1fr` cell rendered as a big empty box on mobile. */}
+                        <div className="w-40 max-w-full">
+                          <Field label="התאמה ידנית">
+                            <CurrencyInput
+                              inputMode="decimal"
+                              value={payslipAdjustmentDrafts[payslip.id] ?? String(payslip.manual_adjustments ?? 0)}
+                              onChange={(event) =>
+                                setPayslipAdjustmentDrafts((current) => ({
+                                  ...current,
+                                  [payslip.id]: event.target.value,
+                                }))
+                              }
+                              disabled={!isEditable}
+                            />
+                          </Field>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -3445,9 +3867,9 @@ export default function SalaryCenterClient({
                           <span className="font-medium">{selectedWorker.full_name ?? "—"}</span>
                         </div>
                         {selectedWorker.system_access !== false ? (
-                          <div className="flex items-center gap-2 rounded-lg border bg-muted/10 px-3 py-1.5">
-                            <span className="text-muted-foreground">אימייל</span>
-                            <span className="font-medium">{selectedWorker.email ?? "—"}</span>
+                          <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/10 px-3 py-1.5">
+                            <span className="shrink-0 text-muted-foreground">אימייל</span>
+                            <span className="min-w-0 break-all font-medium" dir="ltr">{selectedWorker.email ?? "—"}</span>
                           </div>
                         ) : null}
                         <div className="flex items-center gap-2 rounded-lg border bg-muted/10 px-3 py-1.5">
@@ -3574,7 +3996,7 @@ export default function SalaryCenterClient({
                     <CardContent className="space-y-4 py-5">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="text-lg font-semibold">כספים</div>
-                        <Button onClick={() => openWorkerPaymentDialog()} disabled={isPending || selectedWorkerOpenDebtItems.length === 0}>
+                        <Button onClick={() => openWorkerPaymentDialog()} disabled={isPending}>
                           הוספת תשלום
                         </Button>
                       </div>
@@ -3652,6 +4074,12 @@ export default function SalaryCenterClient({
                           {(() => {
                             const payrollPeriod = getSessionPayrollPeriod(session);
                             const debtItem = workerDebtItemsBySourceKey.get(`session:${session.id}`) ?? null;
+                            // No per-session debt (payslip-mode worker) → the central
+                            // session_effective_payment_view already gives the effective status,
+                            // derived from that month's covering payslip.
+                            const coveringPayslipDebtItem = debtItem
+                              ? null
+                              : sessionEffectivePaymentBySessionId.get(session.id) ?? null;
                             return (
                               <>
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3664,6 +4092,11 @@ export default function SalaryCenterClient({
                                   status={debtItem.payment_status}
                                   owedAmount={debtItem.owed_amount}
                                 />
+                              ) : coveringPayslipDebtItem?.payment_status ? (
+                                <span className="flex items-center gap-1">
+                                  <StatusBadge value={coveringPayslipDebtItem.payment_status} type="payment" />
+                                  <Tag>{"לפי תלוש"}</Tag>
+                                </span>
                               ) : null}
                             </div>
                             <div className="text-right">{`${formatDateTime(session.clock_in)}${session.clock_out ? ` - ${formatDateTime(session.clock_out)}` : ""}`}</div>
@@ -4445,7 +4878,7 @@ export default function SalaryCenterClient({
           setWorkerPaymentDialogOpen(open);
         }}
       >
-        <DialogContent dir="rtl" className="max-w-3xl">
+        <DialogContent dir="rtl" className="w-[calc(100vw-2rem)] max-w-3xl">
           <DialogHeader className="text-right">
             <DialogTitle>{workerPaymentForm.payment_id ? "עדכון תשלום לעובד" : "הוספת תשלום לעובד"}</DialogTitle>
             <DialogDescription>
@@ -4508,7 +4941,7 @@ export default function SalaryCenterClient({
             </div>
             {workerPaymentForm.allocations.length === 0 ? (
               <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
-                {"אין פריטי חוב פתוחים לעובד הזה."}
+                {"אין פריטי חוב פתוחים לעובד הזה — אפשר לרשום את התשלום ללא שיוך (תשלום כללי / מקדמה)."}
               </div>
             ) : (
               <div className="space-y-2">
@@ -4546,7 +4979,7 @@ export default function SalaryCenterClient({
             </Button>
             <Button
               onClick={() => saveWorkerPayment()}
-              disabled={isPending || workerPaymentForm.allocations.length === 0}
+              disabled={isPending}
             >
               {workerPaymentForm.payment_id ? "שמירת עדכון" : "שמירת תשלום"}
             </Button>
@@ -5049,23 +5482,25 @@ function SummaryCard({
 }) {
   return (
     <Card>
-      <CardContent className="space-y-2 py-5">
+      <CardContent className="space-y-1 py-4 text-center">
         <div className="text-sm text-muted-foreground">{title}</div>
-        <div className={`text-2xl font-semibold ${protectedValue ? "tracking-tight" : ""}`}>{value}</div>
+        <div className={`text-xl font-semibold ${protectedValue ? "tracking-tight" : ""}`}>{value}</div>
       </CardContent>
     </Card>
   );
 }
 
 function WorkerTypeBadge({ workerType }: { workerType: PayrollWorkerType }) {
-  return <Tag>{getPayrollWorkerTypeLabel(workerType)}</Tag>;
+  // Worker descriptor badges are all blue (info) so they read as one group and never
+  // get confused with the green/orange/red payment-status badge.
+  return <StatusPill tone="info">{getPayrollWorkerTypeLabel(workerType)}</StatusPill>;
 }
 
 function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border bg-muted/10 p-3">
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 font-semibold">{value}</div>
+    <div className="rounded-xl border bg-muted/10 p-2.5 text-center">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-0.5 font-semibold">{value}</div>
     </div>
   );
 }
@@ -5088,7 +5523,7 @@ function StatusPill({
   tone,
 }: {
   children: React.ReactNode;
-  tone: "muted" | "success" | "warning" | "danger";
+  tone: "muted" | "success" | "warning" | "danger" | "info";
 }) {
   const className = getStatusColorClasses(tone === "muted" ? "neutral" : tone);
 
@@ -5156,13 +5591,9 @@ function escapePrintHtml(value: string) {
 }
 
 function RoleBadge({ role }: { role: string | null | undefined }) {
-  if (role === "worker_no_access") {
-    return <StatusPill tone="warning">{"עובד ללא גישה"}</StatusPill>;
-  }
-  if (role === "worker") {
-    return <StatusPill tone="success">{"עובד"}</StatusPill>;
-  }
-  return <StatusPill tone="muted">{getRoleLabel(role)}</StatusPill>;
+  // All role badges (עובד / פועל / מנהל / משרד …) share the same blue (info) tone so
+  // they group visually and don't clash with the payment-status colours.
+  return <StatusPill tone="info">{getRoleLabel(role)}</StatusPill>;
 }
 
 function AccessBadge({ hasAccess }: { hasAccess: boolean }) {

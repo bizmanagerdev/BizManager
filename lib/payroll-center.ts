@@ -74,6 +74,7 @@ export type SalaryCenterProtectedPayload = {
   workerPayments: WorkerPaymentRow[];
   workerPaymentAllocations: WorkerPaymentAllocationRow[];
   workerDebtItems: WorkerDebtItemRow[];
+  sessionEffectivePayments: SessionEffectivePaymentRow[];
   workerBalances: WorkerBalanceRow[];
   workerPaymentRecordedByNameById: Record<string, string>;
   sessionRecordedByNameById: Record<string, string>;
@@ -122,6 +123,18 @@ export type WorkerDebtItemRow = {
   owed_amount: number | string | null;
   payment_status: string | null;
   last_payment_date: string | null;
+};
+
+// Per-session effective paid status from session_effective_payment_view (the single
+// source that folds in "a paid payslip covers all that month's sessions").
+export type SessionEffectivePaymentRow = {
+  session_id: string;
+  user_id: string;
+  payment_status: string | null;
+  paid_amount: number | string | null;
+  owed_amount: number | string | null;
+  last_payment_date: string | null;
+  is_payslip_covered: boolean | null;
 };
 
 export type WorkerBalanceRow = {
@@ -435,6 +448,7 @@ export async function fetchSalaryCenterProtectedPayload(
     workerPayments: [],
     workerPaymentAllocations: [],
     workerDebtItems: [],
+    sessionEffectivePayments: [],
     workerBalances: [],
     workerPaymentRecordedByNameById: {},
     sessionRecordedByNameById: {},
@@ -507,6 +521,17 @@ export async function fetchSalaryCenterProtectedPayload(
       .in("user_id", safeUserIds)
       .range(0, 4999);
   }
+
+  // Single source for per-session paid status (folds in payslip coverage). Tolerant:
+  // until create_session_effective_payment_view.sql is deployed the view won't exist,
+  // so on error we degrade to empty (sessions then fall back to their own status).
+  const sessionEffectivePaymentsResult = await query(supabase.from("session_effective_payment_view"))
+    .select("session_id,user_id,payment_status,paid_amount,owed_amount,last_payment_date,is_payslip_covered")
+    .in("user_id", safeUserIds)
+    .range(0, 4999);
+  const sessionEffectivePayments = sessionEffectivePaymentsResult.error
+    ? []
+    : ((sessionEffectivePaymentsResult.data ?? []) as SessionEffectivePaymentRow[]).filter((row) => row.session_id);
 
   if (agreementsResult.error) throw new Error(agreementsResult.error.message);
   if (periodsResult.error) throw new Error(periodsResult.error.message);
@@ -627,6 +652,7 @@ export async function fetchSalaryCenterProtectedPayload(
     workerDebtItems: ((workerDebtItemsResult.data ?? []) as WorkerDebtItemRow[]).filter(
       (row) => row.user_id && row.source_id
     ),
+    sessionEffectivePayments,
     workerBalances,
     workerPaymentRecordedByNameById,
     sessionRecordedByNameById,

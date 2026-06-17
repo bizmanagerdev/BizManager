@@ -419,18 +419,37 @@ export default async function ProjectPage({
     )
   );
 
-  const { data: sessionDebtItems } =
-    attendanceSessionIds.length > 0
-      ? await supabase
-          .from("worker_debt_items_view")
-          .select("source_id,paid_amount,owed_amount,payment_status,last_payment_date")
-          .eq("source_type", "session")
-          .in("source_id", attendanceSessionIds)
-      : { data: [] as Array<Record<string, unknown>> };
+  // Effective per-session paid status comes from ONE source of truth — the
+  // session_effective_payment_view — which already folds in the rule that a paid
+  // monthly payslip covers all of that month's sessions (so payslip-mode workers'
+  // sessions aren't shown as unpaid). See db/sql/create_session_effective_payment_view.sql.
+  // Tolerant: until that view is deployed, fall back to the raw session debt rows
+  // (same behaviour as before — session workers keep their status).
+  let sessionPaymentRows: Array<Record<string, unknown>> = [];
+  if (attendanceSessionIds.length > 0) {
+    const effectiveResult = await supabase
+      .from("session_effective_payment_view")
+      .select("session_id,paid_amount,owed_amount,payment_status,last_payment_date")
+      .in("session_id", attendanceSessionIds);
+    if (effectiveResult.error) {
+      const fallback = await supabase
+        .from("worker_debt_items_view")
+        .select("source_id,paid_amount,owed_amount,payment_status,last_payment_date")
+        .eq("source_type", "session")
+        .in("source_id", attendanceSessionIds);
+      sessionPaymentRows = ((fallback.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+        ...row,
+        session_id: row.source_id,
+      }));
+    } else {
+      sessionPaymentRows = (effectiveResult.data ?? []) as Array<Record<string, unknown>>;
+    }
+  }
 
   const sessionDebtById = new Map<string, Record<string, unknown>>();
-  (sessionDebtItems ?? []).forEach((row) => {
-    if (typeof row.source_id === "string") sessionDebtById.set(row.source_id, row);
+  sessionPaymentRows.forEach((row) => {
+    const sessionId = getFirstString(row as UnknownRow, ["session_id"]);
+    if (sessionId) sessionDebtById.set(sessionId, row as Record<string, unknown>);
   });
 
   const { data: sessionLinks } =
@@ -492,9 +511,9 @@ export default async function ProjectPage({
     ...expenseList,
     ...((attendanceSessions ?? []) as AttendanceSessionRow[]).map(
       (session): ExpenseListItem => {
-        const debtItem = sessionDebtById.get(session.id) ?? null;
-        const paidAmount = debtItem?.paid_amount;
-        const owedAmount = debtItem?.owed_amount;
+        const effective = sessionDebtById.get(session.id) ?? null;
+        const paidAmount = effective?.paid_amount;
+        const owedAmount = effective?.owed_amount;
         return {
           source_type: "session",
           project_expense: null,
@@ -505,9 +524,9 @@ export default async function ProjectPage({
               typeof paidAmount === "number" || typeof paidAmount === "string" ? paidAmount : null,
             owed_amount:
               typeof owedAmount === "number" || typeof owedAmount === "string" ? owedAmount : null,
-            payment_status: typeof debtItem?.payment_status === "string" ? debtItem.payment_status : null,
+            payment_status: typeof effective?.payment_status === "string" ? effective.payment_status : null,
             last_payment_date:
-              typeof debtItem?.last_payment_date === "string" ? debtItem.last_payment_date : null,
+              typeof effective?.last_payment_date === "string" ? effective.last_payment_date : null,
             attachments: sessionAttachmentByEntityId.get(session.id) ?? [],
           },
         };

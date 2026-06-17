@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, type ReactNode } from "react";
+import { useMemo } from "react";
 import { Bell, ChevronDown, LogOut, User } from "lucide-react";
 import { BackButton } from "@/components/layout/BackButton";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import PwaInstallButton from "@/components/pwa/PwaInstallButton";
-import { BrandMark } from "@/components/ui/brand-mark";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,14 +19,12 @@ import { useAlerts } from "@/lib/ui/alerts-store";
 
 type Props = {
   appName?: string;
-  logo?: ReactNode;
   userName?: string;
   showSearch?: boolean;
 };
 
 export function TopBar({
   appName = "BizH",
-  logo,
   userName,
   showSearch = true,
 }: Props) {
@@ -54,9 +51,8 @@ export function TopBar({
     <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-3 border-b border-border/70 bg-gradient-to-r from-primary/[0.04] via-background/95 to-secondary/[0.05] px-4 backdrop-blur-xl">
       <BackButton />
 
-      <div className="flex items-center gap-2 lg:hidden">
-        {logo ?? <BrandMark size="md" />}
-      </div>
+      {/* Brand mark intentionally omitted on mobile (the sidebar carries the brand
+          on desktop); keeps the compact top bar uncluttered at large text sizes. */}
 
       <div className="flex-1 lg:flex-none" />
 

@@ -76,9 +76,8 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
   if (!Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: "Valid amount is required." }, { status: 400 });
   }
-  if (allocations.length === 0) {
-    return NextResponse.json({ error: "At least one allocation is required." }, { status: 400 });
-  }
+  // Allocations are optional: a payment may be recorded with no debt to apply it to
+  // (an advance / general payment). When present they're validated below.
 
   const workerResult = await supabase
     .from("users")
@@ -111,9 +110,6 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     })
     .filter((allocation) => allocation.source_id && Number.isFinite(allocation.amount) && allocation.amount > 0);
 
-  if (normalizedAllocations.length === 0) {
-    return NextResponse.json({ error: "No valid allocations were provided." }, { status: 400 });
-  }
   if (normalizedAllocations.some((allocation) => allocation.source_type !== expectedSourceType)) {
     return NextResponse.json(
       { error: `Worker payments for this worker must be allocated by ${expectedSourceType}.` },
@@ -121,9 +117,11 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     );
   }
 
+  // Allocations may total less than the payment (an unallocated remainder / advance),
+  // but never more than what was actually paid.
   const allocationTotal = normalizedAllocations.reduce((sum, allocation) => sum + allocation.amount, 0);
-  if (Math.abs(allocationTotal - amount) > 0.01) {
-    return NextResponse.json({ error: "Allocation total must match payment amount exactly." }, { status: 400 });
+  if (allocationTotal - amount > 0.01) {
+    return NextResponse.json({ error: "Allocation total cannot exceed payment amount." }, { status: 400 });
   }
 
   let existingPaymentId = paymentId;
@@ -171,20 +169,25 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
   });
 
   const sourceIdsToValidate = Array.from(new Set([...mergedBySourceId.keys(), ...existingAllocationBySourceId.keys()]));
-  const debtItemsResult = await supabase
-    .from("worker_debt_items_view")
-    .select("source_type,source_id,user_id,owed_amount")
-    .eq("user_id", userId)
-    .eq("source_type", expectedSourceType)
-    .in("source_id", sourceIdsToValidate);
+  // Only hit the debt view when there's something to validate — an unallocated
+  // payment has no source ids and must not be blocked by this check.
+  let debtItems: DebtItemRow[] = [];
+  if (sourceIdsToValidate.length > 0) {
+    const debtItemsResult = await supabase
+      .from("worker_debt_items_view")
+      .select("source_type,source_id,user_id,owed_amount")
+      .eq("user_id", userId)
+      .eq("source_type", expectedSourceType)
+      .in("source_id", sourceIdsToValidate);
 
-  if (debtItemsResult.error) {
-    return NextResponse.json({ error: debtItemsResult.error.message }, { status: 400 });
-  }
+    if (debtItemsResult.error) {
+      return NextResponse.json({ error: debtItemsResult.error.message }, { status: 400 });
+    }
 
-  const debtItems = (debtItemsResult.data ?? []) as DebtItemRow[];
-  if (debtItems.length !== sourceIdsToValidate.length) {
-    return NextResponse.json({ error: "One or more allocations do not belong to this worker." }, { status: 400 });
+    debtItems = (debtItemsResult.data ?? []) as DebtItemRow[];
+    if (debtItems.length !== sourceIdsToValidate.length) {
+      return NextResponse.json({ error: "One or more allocations do not belong to this worker." }, { status: 400 });
+    }
   }
 
   for (const item of debtItems) {
@@ -263,16 +266,21 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     amount: allocation.amount,
   }));
 
-  const allocationInsert = await supabase
-    .from("worker_payment_allocations")
-    .insert(allocationRows)
-    .select("id,worker_payment_id,source_type,attendance_session_id,payslip_id,amount,created_at");
+  // An unallocated payment has no rows to insert — skip the insert entirely.
+  let insertedAllocations: unknown[] = [];
+  if (allocationRows.length > 0) {
+    const allocationInsert = await supabase
+      .from("worker_payment_allocations")
+      .insert(allocationRows)
+      .select("id,worker_payment_id,source_type,attendance_session_id,payslip_id,amount,created_at");
 
-  if (allocationInsert.error) {
-    if (mode === "create") {
-      await supabase.from("worker_payments").delete().eq("id", existingPaymentId);
+    if (allocationInsert.error) {
+      if (mode === "create") {
+        await supabase.from("worker_payments").delete().eq("id", existingPaymentId);
+      }
+      return NextResponse.json({ error: allocationInsert.error.message }, { status: 400 });
     }
-    return NextResponse.json({ error: allocationInsert.error.message }, { status: 400 });
+    insertedAllocations = allocationInsert.data ?? [];
   }
 
   const paymentResult = await supabase
@@ -296,7 +304,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
 
   return NextResponse.json({
     payment: paymentResult.data,
-    allocations: allocationInsert.data ?? [],
+    allocations: insertedAllocations,
   });
 }
 
