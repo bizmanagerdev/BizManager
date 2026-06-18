@@ -83,13 +83,18 @@ export function buildExpenseFlowMeta(row: ExpenseRow, referenceDate: string) {
   const expenseDate = normalizeDate(row.expense_date);
   if (!expenseDate) return null;
   const paymentStatus = normalizePaymentStatus(row.payment_status);
-  const isPast = expenseDate <= referenceDate;
+  const paidDate = normalizeDate(row.paid_date);
+  // A confirmed (paid) expense flows on the day the money actually left (paid_date)
+  // when we have it — so paying early/late lands the cash-out on the real day —
+  // while the original scheduled expense_date stays as the recorded date.
+  const flowDate = paymentStatus === "paid" && paidDate ? paidDate : expenseDate;
+  const isPast = flowDate <= referenceDate;
   const stage: FinancialEntryStage = !isPast
     ? "scheduled"
     : paymentStatus === "not_paid" || paymentStatus === "partial"
       ? "pending"
       : "posted";
-  return { flowDate: expenseDate, recordedDate: expenseDate, stage };
+  return { flowDate, recordedDate: expenseDate, stage };
 }
 
 export function buildWorkerPaymentFlowMeta(paymentDateValue: string | null | undefined, referenceDate: string) {
@@ -739,6 +744,7 @@ export function buildExpenseEntries(args: {
       expensePropertyId: row.property_id,
       expensePaidAmount: row.paid_amount != null ? Math.abs(toNumber(row.paid_amount)) : null,
       expensePaymentMethod: typeof row.payment_method === "string" ? row.payment_method.trim() || null : null,
+      expensePaidDate: normalizeDate(row.paid_date),
     }];
   });
 }

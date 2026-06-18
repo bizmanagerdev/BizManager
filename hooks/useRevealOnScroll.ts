@@ -9,6 +9,13 @@ type Options = {
   step?: number;
   /** How early to start revealing (for the mobile/viewport sentinel). Default "400px". */
   rootMargin?: string;
+  /**
+   * Optional value mixed into the observer effect's deps. Change it to force the
+   * listener to re-attach and re-fire its initial fill — needed when the scroll
+   * container starts with zero height (e.g. an inactive Radix tab is display:none)
+   * and only gets real layout once it becomes visible.
+   */
+  watch?: unknown;
 };
 
 /**
@@ -26,6 +33,7 @@ export function useRevealOnScroll<T>(items: T[], options: Options = {}) {
   const initial = options.initial ?? 30;
   const step = options.step ?? 30;
   const rootMargin = options.rootMargin ?? "400px";
+  const watch = options.watch;
 
   const [visibleCount, setVisibleCount] = useState(initial);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -80,7 +88,7 @@ export function useRevealOnScroll<T>(items: T[], options: Options = {}) {
     }
 
     return () => cleanups.forEach((fn) => fn());
-  }, [hasMore, step, total, rootMargin, visibleCount]);
+  }, [hasMore, step, total, rootMargin, visibleCount, watch]);
 
   return {
     visibleItems: items.slice(0, visibleCount),

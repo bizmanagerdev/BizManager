@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Pencil, Search, SlidersHorizontal, TimerReset, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2, Pencil, Search, SlidersHorizontal, TimerReset, Trash2 } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,7 @@ import { useRevealOnScroll } from "@/hooks/useRevealOnScroll";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -353,7 +354,7 @@ export default function FinancialPageClient({
   const upcomingEntries = data.upcomingEntries;
   const ledgerEntries = data.ledgerEntries;
   // Scroll-to-load the upcoming list instead of paging it (same feel as the ledger).
-  const upcomingReveal = useRevealOnScroll(upcomingEntries, { initial: 15, step: 15 });
+  const upcomingReveal = useRevealOnScroll(upcomingEntries, { initial: 15, step: 15, watch: flowTab });
   const pagedUpcomingEntries = upcomingReveal.visibleItems;
 
   // ── Ledger-only client controls (instant, no route reload) ──────────────────
@@ -494,7 +495,9 @@ export default function FinancialPageClient({
     }
 
     return () => cleanups.forEach((fn) => fn());
-  }, [ledgerVisible, displayLedger]);
+    // flowTab is a dep so the listener re-attaches (and auto-fills) when this tab
+    // becomes visible — its container has zero height while the tab is hidden.
+  }, [ledgerVisible, displayLedger, flowTab]);
 
   useEffect(() => {
     if (historyVisible >= displayHistory.length) return;
@@ -523,7 +526,9 @@ export default function FinancialPageClient({
     }
 
     return () => cleanups.forEach((fn) => fn());
-  }, [historyVisible, displayHistory]);
+    // flowTab is a dep so the listener re-attaches (and auto-fills) when this tab
+    // becomes visible — its container has zero height while the tab is hidden.
+  }, [historyVisible, displayHistory, flowTab]);
 
   const replaceSearch = (
     mutate: (params: URLSearchParams) => void,
@@ -601,6 +606,10 @@ export default function FinancialPageClient({
   const [editingExpense, setEditingExpense] = useState<EditableExpenseEntry | null>(null);
   const [deletingExpense, setDeletingExpense] = useState<EditableExpenseEntry | null>(null);
   const [isDeletingExpense, setIsDeletingExpense] = useState(false);
+  const [markPaidExpense, setMarkPaidExpense] = useState<EditableExpenseEntry | null>(null);
+  const [markPaidMethod, setMarkPaidMethod] = useState<string>("");
+  const [markPaidDate, setMarkPaidDate] = useState<string>(todayIsoDate());
+  const [isMarkingPaid, setIsMarkingPaid] = useState(false);
   const [expenseCreateOpen, setExpenseCreateOpen] = useState(false);
   const [incomeCreateOpen, setIncomeCreateOpen] = useState(false);
   const [transferCreateOpen, setTransferCreateOpen] = useState(false);
@@ -665,6 +674,47 @@ export default function FinancialPageClient({
   const openExpenseEditor = (entry: FinancialEntry) => {
     if (!isEditableExpenseEntry(entry)) return;
     setEditingExpense(entry);
+  };
+
+  const openMarkPaid = (entry: FinancialEntry) => {
+    if (!isEditableExpenseEntry(entry)) return;
+    setMarkPaidMethod(entry.expensePaymentMethod ?? "");
+    // Default the pay date to the scheduled date if it's already due, else today.
+    const scheduled = entry.recordedDate;
+    setMarkPaidDate(scheduled && scheduled <= data.todayIso ? scheduled : todayIsoDate());
+    setMarkPaidExpense(entry);
+  };
+
+  const confirmMarkPaid = async () => {
+    if (!markPaidExpense) return;
+    setIsMarkingPaid(true);
+    try {
+      const res = await fetch("/api/expenses/mark-paid", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: markPaidExpense.expenseId,
+          payment_method: markPaidMethod || null,
+          paid_date: markPaidDate || null,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error("שגיאה בסימון ההוצאה כשולמה", {
+          description: typeof json?.error === "string" ? json.error : "",
+        });
+        return;
+      }
+      setMarkPaidExpense(null);
+      toast.success("ההוצאה סומנה כשולמה");
+      router.refresh();
+    } catch (error) {
+      toast.error("שגיאה בסימון ההוצאה כשולמה", {
+        description: error instanceof Error ? error.message : "",
+      });
+    } finally {
+      setIsMarkingPaid(false);
+    }
   };
 
   const confirmExpenseDelete = async () => {
@@ -1118,7 +1168,7 @@ export default function FinancialPageClient({
             ) : null}
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="history">
+        <TabsContent value="history" forceMount className="data-[state=inactive]:hidden">
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg text-right">היסטוריית תזרים</CardTitle>
@@ -1323,7 +1373,7 @@ export default function FinancialPageClient({
         </CardContent>
       </Card>
         </TabsContent>
-        <TabsContent value="upcoming">
+        <TabsContent value="upcoming" forceMount className="data-[state=inactive]:hidden">
       <section dir="rtl" className="grid gap-4">
         <Card>
           <CardHeader className="pb-3">
@@ -1464,6 +1514,21 @@ export default function FinancialPageClient({
                           <td className="px-2 py-2 align-top">
                             {editableExpense ? (
                               <div className="flex items-center justify-end gap-1">
+                                {(editableExpense.paymentStatus ?? "not_paid") !== "paid" ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-success hover:text-success"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openMarkPaid(editableExpense);
+                                    }}
+                                  >
+                                    <CheckCircle2 className="h-4 w-4" />
+                                    <span className="sr-only">סמן כשולם</span>
+                                  </Button>
+                                ) : null}
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -1511,7 +1576,7 @@ export default function FinancialPageClient({
         </Card>
       </section>
         </TabsContent>
-        <TabsContent value="ledger">
+        <TabsContent value="ledger" forceMount className="data-[state=inactive]:hidden">
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg text-right">יומן תזרים מלא</CardTitle>
@@ -1798,6 +1863,21 @@ export default function FinancialPageClient({
                           <td className="px-3 py-2 align-top">
                             {editableExpense ? (
                               <div className="flex items-center justify-end gap-1">
+                                {(editableExpense.paymentStatus ?? "not_paid") !== "paid" ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-success hover:text-success"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openMarkPaid(editableExpense);
+                                    }}
+                                  >
+                                    <CheckCircle2 className="h-4 w-4" />
+                                    <span className="sr-only">סמן כשולם</span>
+                                  </Button>
+                                ) : null}
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -2126,7 +2206,7 @@ export default function FinancialPageClient({
           category: editingExpense.expenseCategory,
           description: editingExpense.expenseDescriptionRaw,
           notes: editingExpense.expenseNotes,
-          expense_date: editingExpense.flowDate,
+          expense_date: editingExpense.recordedDate ?? editingExpense.flowDate,
           business_domain: editingExpense.businessDomain,
           payment_status: editingExpense.paymentStatus,
           paid_amount: editingExpense.expensePaidAmount ?? null,
@@ -2188,6 +2268,77 @@ export default function FinancialPageClient({
                     </>
                   ) : (
                     "מחיקה"
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
+        </AdaptiveDialog>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(markPaidExpense)}
+        onOpenChange={(open) => {
+          if (!open && !isMarkingPaid) setMarkPaidExpense(null);
+        }}
+      >
+        <AdaptiveDialog size="formMd">
+          <DialogHeader>
+            <DialogTitle>סימון כשולם</DialogTitle>
+            <DialogDescription>
+              אישור שההוצאה אכן שולמה. היא תעבור לתזרים בפועל בתאריך התשלום.
+            </DialogDescription>
+          </DialogHeader>
+
+          {markPaidExpense ? (
+            <div className="mt-4 space-y-3" dir="rtl">
+              <div className="rounded-xl border bg-muted/20 px-3 py-3 text-sm">
+                <div className="font-medium">{markPaidExpense.description}</div>
+                <div className="mt-1 text-muted-foreground">{markPaidExpense.sourceLabel}</div>
+                <div dir="ltr" className="mt-2 text-left font-semibold tabular-nums">
+                  -{formatCurrency(markPaidExpense.amount)}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">אמצעי תשלום</div>
+                  <select
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={markPaidMethod}
+                    onChange={(event) => setMarkPaidMethod(event.target.value)}
+                  >
+                    <option value="">בחר אמצעי</option>
+                    {PAYMENT_METHOD_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">תאריך תשלום</div>
+                  <DateInput value={markPaidDate} onChange={(event) => setMarkPaidDate(event.target.value)} />
+                </div>
+              </div>
+
+              <DialogFooter className="mt-6">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setMarkPaidExpense(null)}
+                  disabled={isMarkingPaid}
+                >
+                  ביטול
+                </Button>
+                <Button type="button" onClick={() => void confirmMarkPaid()} disabled={isMarkingPaid}>
+                  {isMarkingPaid ? (
+                    <>
+                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                      מסמן...
+                    </>
+                  ) : (
+                    "אישור תשלום"
                   )}
                 </Button>
               </DialogFooter>
