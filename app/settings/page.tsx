@@ -175,6 +175,18 @@ export default async function SettingsPage() {
   // ── VAT rate (admin only) ────────────────────────────────────────────────
   const vatRate = isAdmin ? await getCurrentVatRate(supabase) : 0.18;
 
+  // ── Audit-logging switch (admin only) ────────────────────────────────────
+  let auditLoggingEnabled = true;
+  if (isAdmin) {
+    const { data: auditCfg } = await supabase
+      .from("business_settings")
+      .select("audit_logging_enabled")
+      .eq("id", true)
+      .maybeSingle();
+    auditLoggingEnabled =
+      (auditCfg as { audit_logging_enabled?: boolean } | null)?.audit_logging_enabled ?? true;
+  }
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <SettingsTabs
@@ -191,6 +203,7 @@ export default async function SettingsPage() {
         expenseMissingSchema={expenseMissingSchema}
         morningSettings={morningSettings}
         vatRate={vatRate}
+        auditLoggingEnabled={auditLoggingEnabled}
       />
     </AppShell>
   );

@@ -13,6 +13,7 @@ import type { TaskPriority, TaskStatus } from "@/components/tasks/TaskUpsertDial
 import MorningAutoIssueForm from "@/app/settings/integrations/morning/MorningAutoIssueForm";
 import BackupCard from "@/app/settings/BackupCard";
 import VatRateCard from "@/app/settings/VatRateCard";
+import AuditLoggingCard from "@/app/settings/AuditLoggingCard";
 import type { MorningSettings } from "@/lib/morning/settings";
 
 type UserOption = { id: string; label: string };
@@ -53,6 +54,8 @@ type Props = {
   morningSettings: MorningSettings | null;
   // Current VAT rate (fraction, e.g. 0.18) — admin only
   vatRate: number;
+  // Global audit-logging switch — admin only
+  auditLoggingEnabled: boolean;
 };
 
 const ALL_TABS = [
@@ -62,6 +65,7 @@ const ALL_TABS = [
   { key: "finance", label: "כספים", adminOnly: true },
   { key: "morning", label: "Morning", adminOnly: true },
   { key: "backup", label: "גיבוי", adminOnly: true },
+  { key: "system", label: "מערכת", adminOnly: true },
 ] as const;
 
 type TabKey = (typeof ALL_TABS)[number]["key"];
@@ -172,6 +176,13 @@ export default function SettingsTabs(props: Props) {
 
       {/* Backup tab (admin only) */}
       {activeTab === "backup" && props.isAdmin && <BackupCard />}
+
+      {/* System tab (admin only) */}
+      {activeTab === "system" && props.isAdmin && (
+        <div className="space-y-4">
+          <AuditLoggingCard initialEnabled={props.auditLoggingEnabled} />
+        </div>
+      )}
     </div>
   );
 }

@@ -421,6 +421,30 @@ const TRIGGER_HANDLED_ACTIONS = new Set([
   "upload",
 ]);
 
+// Global audit on/off flag (mirrors business_settings.audit_logging_enabled,
+// flipped from Settings → System). Cached briefly so we never pay a read per
+// write on a warm server instance.
+let auditFlagCache: { value: boolean; at: number } | null = null;
+const AUDIT_FLAG_TTL_MS = 60_000;
+
+export function invalidateAuditFlagCache() {
+  auditFlagCache = null;
+}
+
+async function isAuditLoggingEnabled(supabase: SupabaseClient): Promise<boolean> {
+  const now = Date.now();
+  if (auditFlagCache && now - auditFlagCache.at < AUDIT_FLAG_TTL_MS) return auditFlagCache.value;
+  const { data } = await supabase
+    .from("business_settings")
+    .select("audit_logging_enabled")
+    .eq("id", true)
+    .maybeSingle();
+  // Default ON if the column/row isn't present yet.
+  const value = (data as { audit_logging_enabled?: boolean } | null)?.audit_logging_enabled ?? true;
+  auditFlagCache = { value, at: now };
+  return value;
+}
+
 export async function logAuditEvent({
   supabase,
   tableName,
@@ -432,6 +456,9 @@ export async function logAuditEvent({
   newData,
 }: LogAuditParams) {
   if (!tableName || !recordId || !action) return;
+
+  // Respect the global audit switch (Settings → System).
+  if (!(await isAuditLoggingEnabled(supabase))) return;
 
   // The DB trigger already records plain CRUD for these tables — skip to avoid
   // duplicate rows, but keep distinct semantic events (morning_*, login, etc.).
