@@ -186,13 +186,14 @@ function profitValue(row: ProjectRow) {
 }
 
 function actualPriceValue(row: ProjectRow) {
-  // customer_total_price from project_financials_view is the effective price:
-  // GREATEST(agreed base + billed add-ons, amount received). Fall back to the raw
-  // project columns only when the view value is missing.
+  // Show the actual price (מחיר בפועל) — the project_financials_view effective
+  // price, same as the project details page. Fall back to the raw actual/agreed
+  // price (and the derived total) only when the view value is missing.
   return (
-    getNumber(row, "customer_total_price") ??
+    getNumber(row, "effective_customer_price") ??
     getNumber(row, "actual_price") ??
-    getNumber(row, "agreed_base_price")
+    getNumber(row, "agreed_base_price") ??
+    getNumber(row, "customer_total_price")
   );
 }
 

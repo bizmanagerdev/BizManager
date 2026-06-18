@@ -154,6 +154,10 @@ export async function loadProjectsPage(
       total_expenses: totalExpenses,
       gross_profit: grossProfit,
       customer_total_price: customerTotalPrice,
+      // The view's effective price (מחיר בפועל = GREATEST(base+billed add-ons, received)),
+      // matching what the project details page shows. Used for the list's price column;
+      // the derived customer_total_price above stays the base for payment/collection math.
+      effective_customer_price: toNumber(financialRow?.customer_total_price),
       expenses_billed_separately: expensesBilledSeparately,
       paid_total: paidTotal,
       amount_due: amountDue,
