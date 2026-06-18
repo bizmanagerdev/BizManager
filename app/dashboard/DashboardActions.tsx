@@ -16,6 +16,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import NewOrderClient from "@/app/sales/orders/new/NewOrderClient";
+import NewProjectClient, { mapProjectCustomer, type ProjectCustomerOption } from "@/app/projects/NewProjectClient";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -53,9 +54,6 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
-import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
-import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEditor";
-import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
 import { ProjectPicker, type ProjectPickerOption } from "@/components/projects/ProjectPicker";
 import { TransferDialog } from "@/components/financial/TransferDialog";
 import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
@@ -91,23 +89,10 @@ type OpenSessionInfo = {
 };
 
 type PaymentChoice = "none" | "paid" | "partial";
-type ProjectDialogStep = "customer" | "details";
 
 function getString(row: Row, key: string) {
   const value = row[key];
   return typeof value === "string" ? value : "";
-}
-
-function getFirstString(row: Row, keys: string[]) {
-  for (const key of keys) {
-    const value = getString(row, key).trim();
-    if (value) return value;
-  }
-  return "";
-}
-
-function normalizePhone(value: string) {
-  return value.replace(/[^\d+]/g, "");
 }
 
 function getTodayDate() {
@@ -116,33 +101,6 @@ function getTodayDate() {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-// Moving projects keep a free-text "items to move" list: one item per line.
-function textToItemsToMove(value: string) {
-  const items = value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return items.length > 0 ? items : null;
-}
-
-// Attach a photo/document to a freshly-created project (same endpoint the
-// /projects create dialog uses).
-async function uploadProjectDocument(projectId: string, file: File) {
-  const form = new FormData();
-  form.set("project_id", projectId);
-  form.set("file", file);
-  form.set("category", file.type.startsWith("image/") ? "project_photo" : "project_document");
-
-  const res = await fetch("/api/projects/documents/upload", {
-    method: "POST",
-    body: form,
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(typeof json?.error === "string" ? json.error : "העלאת הקובץ נכשלה.");
-  }
 }
 
 function normalizeDateOnly(value: string | null | undefined) {
@@ -425,6 +383,7 @@ export default function DashboardActions({
   const [weekOverviewOpen, setWeekOverviewOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
+  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [incomeOpen, setIncomeOpen] = useState(false);
@@ -432,27 +391,22 @@ export default function DashboardActions({
   const [manualSessionOpen, setManualSessionOpen] = useState(false);
   const [availableUsers, setAvailableUsers] = useState(users);
 
+  // The project create flow now runs through the shared <NewProjectClient/> wizard.
   const [projectSubmitting, setProjectSubmitting] = useState(false);
-  const [projectError, setProjectError] = useState<string | null>(null);
-  const [projectStep, setProjectStep] = useState<ProjectDialogStep>("customer");
-  const [projectName, setProjectName] = useState("");
-  const [projectCustomerId, setProjectCustomerId] = useState("");
-  const [projectCustomerQuery, setProjectCustomerQuery] = useState("");
-  const [projectCustomerOptions, setProjectCustomerOptions] = useState<Row[]>(customers);
-  const [projectCustomerSearchResults, setProjectCustomerSearchResults] = useState<Row[] | null>(null);
-  const [projectType, setProjectType] = useState("logistics");
-  const [projectStatus, setProjectStatus] = useState("planned");
-  const [projectPrice, setProjectPrice] = useState("");
+  // Manager defaulting: prefer the configured PM ("הלר") if present in the users list.
   const defaultProjectManagerId = users.find((u) => u.label.replace(/[^א-ת]/g, "").includes("הלר"))?.id ?? "";
-  const [projectManagerId, setProjectManagerId] = useState(defaultProjectManagerId);
-  const [projectStartDate, setProjectStartDate] = useState(getTodayDate());
-  // End date defaults to the start date (same-day) for every project type.
-  const [projectEndDate, setProjectEndDate] = useState(getTodayDate());
-  const [projectNotes, setProjectNotes] = useState("");
-  const [projectItemsToMove, setProjectItemsToMove] = useState("");
-  const [projectAttachmentFiles, setProjectAttachmentFiles] = useState<File[]>([]);
-  const [projectCreateCustomerOpen, setProjectCreateCustomerOpen] = useState(false);
-  const [projectCreateCustomerReturnToProject, setProjectCreateCustomerReturnToProject] = useState(false);
+
+  const wizardProjectCustomers = useMemo<ProjectCustomerOption[]>(
+    () =>
+      customers
+        .map((row) => mapProjectCustomer(row))
+        .filter((row): row is ProjectCustomerOption => row !== null),
+    [customers]
+  );
+  const wizardProjectManagers = useMemo(
+    () => users.map((u) => ({ id: u.id, label: u.label })),
+    [users]
+  );
 
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [expenseError, setExpenseError] = useState<string | null>(null);
@@ -704,10 +658,6 @@ export default function DashboardActions({
   }, [activeExpenseSessionAgreement, expenseIsWorkerPayment, expenseLaborCost, expenseWorkedMinutes]);
 
   useEffect(() => {
-    setProjectCustomerOptions(customers);
-  }, [customers]);
-
-  useEffect(() => {
     setAvailableUsers(users);
   }, [users]);
 
@@ -729,31 +679,6 @@ export default function DashboardActions({
     expenseWorkerPaymentChoice,
     suggestedExpenseWorkerAmount,
   ]);
-
-  function resetProjectForm() {
-    setProjectError(null);
-    setProjectStep("customer");
-    setProjectName("");
-    setProjectCustomerId("");
-    setProjectCustomerQuery("");
-    setProjectCustomerSearchResults(null);
-    setProjectCustomerOptions(customers);
-    setProjectType("logistics");
-    setProjectStatus("planned");
-    setProjectPrice("");
-    setProjectManagerId(defaultProjectManagerId);
-    setProjectStartDate(getTodayDate());
-    setProjectEndDate(getTodayDate());
-    setProjectNotes("");
-    setProjectItemsToMove("");
-    setProjectAttachmentFiles([]);
-    resetProjectCustomerCreateForm();
-  }
-
-  function resetProjectCustomerCreateForm() {
-    setProjectCreateCustomerOpen(false);
-    setProjectCreateCustomerReturnToProject(false);
-  }
 
   function resetExpenseForm() {
     setExpenseError(null);
@@ -822,114 +747,6 @@ export default function DashboardActions({
     setManualSessionBilledToCustomer(false);
     setManualSessionBillToCustomerAmount("");
   }
-
-  async function createProject() {
-    setProjectError(null);
-    if (!projectName.trim() || !projectCustomerId) {
-      setProjectError(HEBREW.projectRequired);
-      return;
-    }
-
-    setProjectSubmitting(true);
-    try {
-      const result = await offlineFetch(
-        "/api/projects/create",
-        {
-          customer_id: projectCustomerId,
-          name: projectName.trim(),
-          project_type: projectType,
-          status: projectStatus,
-          agreed_base_price: projectPrice.trim() ? Number(projectPrice) : 0,
-          actual_price: projectPrice.trim() ? Number(projectPrice) : 0,
-          project_manager_id: projectManagerId || null,
-          start_date: projectStartDate || null,
-          end_date: projectEndDate || null,
-          notes: projectNotes.trim() || null,
-          items_to_move: projectType === "moving" ? textToItemsToMove(projectItemsToMove) : null,
-        },
-        HEBREW.projectNew,
-        { idempotent: true }
-      );
-      if (result.queued) {
-        // Saved on the device; will sync on reconnect. Any attached files can't
-        // be uploaded offline and would need re-attaching after sync.
-        setProjectOpen(false);
-        resetProjectForm();
-        return;
-      }
-      if (!result.ok) {
-        setProjectError(result.error || HEBREW.projectCreateFailed);
-        return;
-      }
-      const json = result.data as { project?: Row };
-      if (!json.project) {
-        setProjectError(HEBREW.projectCreateFailed);
-        return;
-      }
-
-      // Project exists now — upload any attached photos/documents. A failure
-      // here shouldn't undo the project, so surface it as a toast and move on.
-      const createdProjectId = getString(json.project, "id");
-      if (createdProjectId && projectAttachmentFiles.length > 0) {
-        try {
-          for (const file of projectAttachmentFiles) {
-            await uploadProjectDocument(createdProjectId, file);
-          }
-        } catch (error: unknown) {
-          toast.error(error instanceof Error ? error.message : "העלאת הקבצים נכשלה.");
-        }
-      }
-
-      setProjectOpen(false);
-      resetProjectForm();
-      router.refresh();
-      toast.success(HEBREW.projectSaved);
-    } catch (error: unknown) {
-      setProjectError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
-    } finally {
-      setProjectSubmitting(false);
-    }
-  }
-
-  const selectedProjectCustomer =
-    projectCustomerOptions.find((customer) => getString(customer, "id") === projectCustomerId) ??
-    (projectCustomerSearchResults ?? []).find((customer) => getString(customer, "id") === projectCustomerId) ??
-    null;
-
-  useEffect(() => {
-    const q = projectCustomerQuery.trim();
-    if (!q) { setProjectCustomerSearchResults(null); return; }
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
-        if (!res.ok) return;
-        const json = await res.json() as { customers?: Array<{ id: string; name: string; name_for_invoice?: string | null; phone?: string | null; whatsapp?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
-        setProjectCustomerSearchResults(
-          (json.customers ?? []).map((c) => ({ id: c.id, name: c.name, name_for_invoice: c.name_for_invoice ?? null, phone: c.phone ?? null, whatsapp: c.whatsapp ?? null, email: c.email ?? null, contacts: c.contacts ?? [] } as Row))
-        );
-      } catch { /* ignore */ }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [projectCustomerQuery]);
-
-  const filteredProjectCustomers = useMemo(() => {
-    if (projectCustomerSearchResults !== null) return projectCustomerSearchResults.slice(0, 50);
-    const q = projectCustomerQuery.trim().toLowerCase();
-    const qPhone = normalizePhone(projectCustomerQuery);
-
-    return projectCustomerOptions
-      .filter((customer) => {
-        const name = getFirstString(customer, ["name", "name_for_invoice"]).toLowerCase();
-        const email = getFirstString(customer, ["email"]).toLowerCase();
-        const phone = normalizePhone(getFirstString(customer, ["phone", "mobile", "tel"]));
-        const city = getFirstString(customer, ["city"]).toLowerCase();
-        const address = getFirstString(customer, ["address"]).toLowerCase();
-
-        if (!q && !qPhone) return true;
-        return name.includes(q) || email.includes(q) || city.includes(q) || address.includes(q) || (qPhone ? phone.includes(qPhone) : false);
-      })
-      .slice(0, 50);
-  }, [projectCustomerOptions, projectCustomerQuery, projectCustomerSearchResults]);
 
   async function createExpense() {
     setExpenseError(null);
@@ -1577,10 +1394,7 @@ export default function DashboardActions({
           type="button"
           variant="outline"
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
-          onClick={() => {
-            setProjectCreateCustomerReturnToProject(false);
-            setProjectCreateCustomerOpen(true);
-          }}
+          onClick={() => setCreateCustomerOpen(true)}
         >
           <UserPlus className="!h-9 !w-9" strokeWidth={2.2} />
           <span className="font-semibold">לקוח חדש</span>
@@ -2036,373 +1850,42 @@ export default function DashboardActions({
         onOpenChange={(open) => {
           if (!open && projectSubmitting) return;
           setProjectOpen(open);
-          if (!open) resetProjectForm();
         }}
       >
-        <AdaptiveDialog size="form2xl">
-          <DialogHeader>
+        <AdaptiveDialog size="newOrder" hideClose className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0">
+          {/* Title/description kept for screen readers only — the wizard renders its
+              own visible per-step heading, so showing them here would duplicate it. */}
+          <DialogHeader className="sr-only">
             <DialogTitle>{HEBREW.projectNew}</DialogTitle>
-            <DialogDescription>
-              {projectStep === "customer"
-                ? "שלב 1 מתוך 2: בוחרים או מוסיפים לקוח לפרויקט."
-                : "שלב 2 מתוך 2: משלימים את פרטי הפרויקט."}
-            </DialogDescription>
+            <DialogDescription>{HEBREW.projectDialogDescription}</DialogDescription>
           </DialogHeader>
 
-          <fieldset disabled={projectSubmitting} className="contents">
-            {projectStep === "customer" ? (
-              <div className="grid gap-4">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">חיפוש לקוח לפי שם / טלפון / אימייל / עיר *</label>
-                  <Input
-                    value={projectCustomerQuery}
-                    onChange={(e) => setProjectCustomerQuery(e.target.value)}
-                    placeholder="לדוגמה: יוסי כהן, 0501234567 או תל אביב"
-                  />
-                </div>
-
-                <div className="max-h-64 space-y-1.5 overflow-auto rounded-md border p-2">
-                  {filteredProjectCustomers.map((customer) => {
-                    const id = getString(customer, "id");
-                    const name = getFirstString(customer, ["name", "name_for_invoice"]) || HEBREW.customerFallback;
-                    const nameForInvoice = getFirstString(customer, ["name_for_invoice"]);
-                    const phone = getFirstString(customer, ["phone", "mobile", "tel"]);
-                    const city = getFirstString(customer, ["city"]);
-                    const matchedContacts = Array.isArray(customer.contacts) ? (customer.contacts as Array<{ full_name: string; phone?: string | null }>) : [];
-
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        disabled={projectSubmitting}
-                        onClick={() => {
-                          setProjectCustomerId(id);
-                          setProjectCustomerQuery(name);
-                          setProjectError(null);
-                        }}
-                        className={`w-full rounded-xl border px-3 py-2 text-right text-sm transition-all duration-200 ${
-                          id === projectCustomerId
-                            ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                            : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-baseline gap-x-2">
-                          <span className="font-medium">{name}</span>
-                          {(phone || city) ? (
-                            <span className={`text-xs ${id === projectCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                              · {[phone, city].filter(Boolean).join(" · ")}
-                            </span>
-                          ) : null}
-                        </div>
-                        {nameForInvoice && nameForInvoice !== name ? (
-                          <div className={`mt-0.5 text-xs ${id === projectCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                            שם לחשבונית: {nameForInvoice}
-                          </div>
-                        ) : null}
-                        {matchedContacts.length > 0 ? (
-                          <div className={`mt-0.5 text-xs ${id === projectCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                            ← {matchedContacts[0].full_name}{matchedContacts[0].phone ? ` · ${matchedContacts[0].phone}` : ""}
-                          </div>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-
-                  {filteredProjectCustomers.length === 0 ? (
-                    <div className="space-y-2 p-2 text-sm">
-                      <p className="text-muted-foreground">לא נמצאו לקוחות לחיפוש הזה.</p>
-                      <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setProjectCreateCustomerReturnToProject(true);
-                      setProjectCreateCustomerOpen(true);
-                    }}
-                        disabled={projectSubmitting}
-                      >
-                        הוספת לקוח חדש
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm">
-                  <div className="text-xs text-muted-foreground">לקוח נבחר</div>
-                  <div className="mt-1 font-medium">
-                    {selectedProjectCustomer
-                      ? getString(selectedProjectCustomer, "name") ||
-                        getString(selectedProjectCustomer, "name_for_invoice") ||
-                        HEBREW.customerFallback
-                      : HEBREW.customerFallback}
-                  </div>
-                </div>
-
-                {selectedProjectCustomer && projectCustomerId ? (
-                  <InlineCustomerEditor
-                    customerId={projectCustomerId}
-                    name={getString(selectedProjectCustomer, "name")}
-                    phone={getString(selectedProjectCustomer, "phone") || null}
-                    whatsapp={getString(selectedProjectCustomer, "whatsapp") || null}
-                    email={getString(selectedProjectCustomer, "email") || null}
-                    address={getString(selectedProjectCustomer, "address") || null}
-                    disabled={projectSubmitting}
-                    onUpdated={(updated: InlineCustomerUpdate) => {
-                      setProjectCustomerOptions((prev) =>
-                        prev.map((c) =>
-                          getString(c, "id") === updated.id
-                            ? {
-                                ...c,
-                                name: updated.name,
-                                phone: updated.phone,
-                                whatsapp: updated.whatsapp,
-                                email: updated.email,
-                                address: updated.address,
-                              }
-                            : c
-                        )
-                      );
-                      setProjectCustomerSearchResults((prev) =>
-                        prev === null
-                          ? prev
-                          : prev.map((c) =>
-                              getString(c, "id") === updated.id
-                                ? {
-                                    ...c,
-                                    name: updated.name,
-                                    phone: updated.phone,
-                                    whatsapp: updated.whatsapp,
-                                    email: updated.email,
-                                    address: updated.address,
-                                  }
-                                : c
-                            )
-                      );
-                      setProjectCustomerQuery((current) =>
-                        current === getString(selectedProjectCustomer, "name") ? updated.name : current
-                      );
-                    }}
-                  />
-                ) : null}
-
-                <AdaptiveGrid variant="formTwoLoose">
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.projectName}</span>
-                    <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
-                  </label>
-
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.projectType}</span>
-                    <select
-                      className={fieldClass}
-                      value={projectType}
-                      onChange={(e) => setProjectType(e.target.value)}
-                    >
-                      <option value="logistics">{HEBREW.logistics}</option>
-                      <option value="moving">{HEBREW.moving}</option>
-                      <option value="construction">{HEBREW.construction}</option>
-                    </select>
-                  </label>
-
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.status}</span>
-                    <select
-                      className={fieldClass}
-                      value={projectStatus}
-                      onChange={(e) => setProjectStatus(e.target.value)}
-                    >
-                      <option value="quote">{HEBREW.statusQuote}</option>
-                      <option value="planned">{HEBREW.statusPlanned}</option>
-                      <option value="active">{HEBREW.statusActive}</option>
-                      <option value="on_hold">{HEBREW.statusOnHold}</option>
-                      <option value="completed">{HEBREW.statusCompleted}</option>
-                      <option value="cancelled">{HEBREW.statusCancelled}</option>
-                    </select>
-                  </label>
-
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.basePrice}</span>
-                    <CurrencyInput
-                      type="number"
-                      min="0"
-                      value={projectPrice}
-                      onChange={(e) => setProjectPrice(e.target.value)}
-                    />
-                  </label>
-
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.projectManager}</span>
-                    <select
-                      className={fieldClass}
-                      value={projectManagerId}
-                      onChange={(e) => setProjectManagerId(e.target.value)}
-                    >
-                      <option value="">{HEBREW.unassigned}</option>
-                      {users.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.startDate}</span>
-                    <DateInput
-                      value={projectStartDate}
-                      onChange={(e) => setProjectStartDate(e.target.value)}
-                    />
-                  </label>
-
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.endDate}</span>
-                    <DateInput
-                      value={projectEndDate}
-                      onChange={(e) => setProjectEndDate(e.target.value)}
-                    />
-                  </label>
-
-                  <label className="space-y-2 text-sm col-span-full">
-                    <span>{HEBREW.notes}</span>
-                    <Textarea value={projectNotes} onChange={(e) => setProjectNotes(e.target.value)} />
-                  </label>
-
-                  {projectType === "moving" ? (
-                    <label className="space-y-2 text-sm col-span-full">
-                      <span>פריטים להעברה</span>
-                      <Textarea
-                        value={projectItemsToMove}
-                        onChange={(e) => setProjectItemsToMove(e.target.value)}
-                        rows={5}
-                        placeholder="כל פריט בשורה נפרדת"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.
-                      </p>
-                    </label>
-                  ) : null}
-
-                  <div className="space-y-2 text-sm col-span-full">
-                    <span>תמונות / מסמכים</span>
-                    <div className="flex items-center gap-2">
-                      <FileUploadActions
-                        files={projectAttachmentFiles}
-                        multiple
-                        onFilesSelected={setProjectAttachmentFiles}
-                        chooseLabel={projectAttachmentFiles.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
-                        chooseVariant="outline"
-                        size="sm"
-                      />
-                      {projectAttachmentFiles.length > 0 ? (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setProjectAttachmentFiles([])}
-                        >
-                          נקה בחירה
-                        </Button>
-                      ) : null}
-                    </div>
-                    {projectAttachmentFiles.length === 0 ? (
-                      <div className="text-xs text-muted-foreground">
-                        אפשר להעלות קבצים או לצלם תמונה ישירות מהמכשיר.
-                      </div>
-                    ) : null}
-                  </div>
-                </AdaptiveGrid>
-              </div>
-            )}
-          </fieldset>
-
-          {projectError ? <p className="text-sm text-destructive">{projectError}</p> : null}
-
-          <div className="mt-4 flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setProjectOpen(false)}
-              disabled={projectSubmitting}
-            >
-              {HEBREW.cancel}
-            </Button>
-            {projectStep === "details" ? (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setProjectStep("customer")}
-                disabled={projectSubmitting}
-              >
-                חזרה ללקוח
-              </Button>
-            ) : null}
-            {projectStep === "customer" ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setProjectCreateCustomerReturnToProject(true);
-                    setProjectCreateCustomerOpen(true);
-                  }}
-                disabled={projectSubmitting}
-              >
-                לקוח חדש
-              </Button>
-            ) : null}
-            {projectStep === "customer" ? (
-              <Button
-                type="button"
-                onClick={() => {
-                  if (!projectCustomerId) {
-                    setProjectError(HEBREW.projectRequired);
-                    return;
-                  }
-                  setProjectError(null);
-                  setProjectStep("details");
-                }}
-                disabled={projectSubmitting}
-              >
-                המשך לפרטי פרויקט
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                onClick={() => void createProject()}
-                disabled={projectSubmitting}
-              >
-                {projectSubmitting ? HEBREW.saving : HEBREW.saveProject}
-              </Button>
-            )}
-          </div>
+          {projectOpen ? (
+            <NewProjectClient
+              customers={wizardProjectCustomers}
+              managers={wizardProjectManagers}
+              currentUserId={currentUserId}
+              defaultProjectManagerId={defaultProjectManagerId}
+              draftKey="project-create"
+              onActionLockedChange={setProjectSubmitting}
+              onCancel={() => setProjectOpen(false)}
+              onSubmitted={() => {
+                setProjectOpen(false);
+                router.refresh();
+                toast.success(HEBREW.projectSaved);
+              }}
+            />
+          ) : null}
         </AdaptiveDialog>
       </Dialog>
 
       <CreateCustomerDialog
-        open={projectCreateCustomerOpen}
-        onOpenChange={setProjectCreateCustomerOpen}
-        description={
-          projectCreateCustomerReturnToProject
-            ? "הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון ועיר."
-            : "יוצרים לקוח חדש ישירות מהדשבורד. שדות חובה: שם, טלפון ועיר."
-        }
-        onCreated={(customer: CreatedCustomer) => {
-          const customerAsRow: Row = { ...customer };
-          setProjectCustomerOptions((prev) => [
-            customerAsRow,
-            ...prev.filter((row) => getString(row, "id") !== customer.id),
-          ]);
-          if (projectCreateCustomerReturnToProject) {
-            setProjectCustomerId(customer.id);
-            setProjectCustomerQuery(customer.name);
-            setProjectStep("details");
-            setProjectCreateCustomerReturnToProject(false);
-            toast.success("הלקוח נוצר ונבחר לפרויקט.");
-          } else {
-            setProjectCreateCustomerReturnToProject(false);
-            router.refresh();
-            toast.success("הלקוח נשמר.");
-          }
+        open={createCustomerOpen}
+        onOpenChange={setCreateCustomerOpen}
+        description="יוצרים לקוח חדש ישירות מהדשבורד. שדות חובה: שם, טלפון ועיר."
+        onCreated={() => {
+          router.refresh();
+          toast.success("הלקוח נשמר.");
         }}
       />
 

@@ -15,6 +15,7 @@ import {
   Trash2,
   User,
   UserPlus,
+  X,
 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { cn } from "@/lib/utils";
@@ -1093,7 +1094,18 @@ export default function NewOrderClient({
               <Card>
                 <CardContent className="space-y-3 pt-5">
                   <div className="relative">
-                    <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    {customerQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setCustomerQuery("")}
+                        aria-label="ניקוי חיפוש"
+                        className="absolute end-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    ) : (
+                      <Search className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    )}
                     <Input
                       value={customerQuery}
                       onChange={(e) => setCustomerQuery(e.target.value)}

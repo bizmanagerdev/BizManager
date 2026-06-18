@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreProjects } from "@/app/projects/actions";
 import type { ProjectsFilters } from "@/app/projects/loadProjects";
-import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { FileText, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
-import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import {
   AdaptiveDialog,
@@ -18,15 +17,12 @@ import {
   AdaptiveStack,
   PageStack,
 } from "@/components/layout/page-layout";
-import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -37,10 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import DeleteProjectButton from "@/app/projects/DeleteProjectButton";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
-import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
-import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
-import { InlineCustomerEditor } from "@/components/customers/InlineCustomerEditor";
-import type { InlineCustomerUpdate } from "@/components/customers/InlineCustomerEditor";
+import NewProjectClient, { type ProjectCustomerOption, type InitialProject } from "@/app/projects/NewProjectClient";
 
 type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; whatsapp?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
@@ -95,36 +88,25 @@ function getStringArray(row: ProjectRow, key: string) {
     .filter(Boolean);
 }
 
-function isMovingProjectType(value: string) {
-  return value === "moving";
-}
-
-function itemsToMoveToText(items: string[] | null | undefined) {
-  return (items ?? []).join("\n");
-}
-
-function textToItemsToMove(value: string) {
-  const items = value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return items.length > 0 ? items : null;
-}
-
-async function uploadProjectDocument(projectId: string, file: File) {
-  const form = new FormData();
-  form.set("project_id", projectId);
-  form.set("file", file);
-  form.set("category", file.type.startsWith("image/") ? "project_photo" : "project_document");
-
-  const res = await fetch("/api/projects/documents/upload", {
-    method: "POST",
-    body: form,
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(typeof json?.error === "string" ? json.error : "העלאת הקובץ נכשלה.");
-  }
+/** Map a project list row into the wizard's edit prefill shape. */
+function toInitialProject(row: ProjectRow): InitialProject {
+  return {
+    id: getString(row, "id") ?? "",
+    customer_id: getString(row, "customer_id") ?? "",
+    name: getString(row, "name") ?? "",
+    project_type: getString(row, "project_type") ?? defaultProjectTypeOptions[0],
+    status: getString(row, "status") ?? defaultStatusOptions[0],
+    agreed_base_price: getNumber(row, "agreed_base_price") ?? 0,
+    price_includes_vat: row["price_includes_vat"] === true,
+    expenses_billed_separately: row["expenses_billed_separately"] === true,
+    project_manager_id: getString(row, "project_manager_id"),
+    start_date: getString(row, "start_date"),
+    end_date: getString(row, "end_date"),
+    payment_terms: getString(row, "payment_terms"),
+    due_date: getString(row, "due_date"),
+    notes: getString(row, "notes"),
+    items_to_move: getStringArray(row, "items_to_move"),
+  };
 }
 
 function formatIls(amount: number) {
@@ -260,14 +242,6 @@ function paymentStatusBadgeClasses(status: "paid" | "partial" | "unpaid" | "unpr
   }
 }
 
-function normalizePhone(value: string) {
-  return value.replace(/[^\d+]/g, "");
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function currentMonthIso() {
   return new Date().toISOString().slice(0, 7);
 }
@@ -395,50 +369,34 @@ export default function ProjectsClient({
   const [monthlySummaryError, setMonthlySummaryError] = useState<string | null>(null);
   const [monthlySummary, setMonthlySummary] = useState<ProjectMonthlySummary | null>(null);
 
+  // Project create/edit now run through the shared <NewProjectClient/> wizard, so
+  // this component only tracks dialog open/submit state — the wizard owns the form.
   const [createOpen, setCreateOpen] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createName, setCreateName] = useState("");
-  const [createCustomerId, setCreateCustomerId] = useState("");
-  const [createCustomerQuery, setCreateCustomerQuery] = useState("");
-  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
-  const [createProjectType, setCreateProjectType] = useState(defaultProjectTypeOptions[0]);
   const [createStatus, setCreateStatus] = useState(defaultStatusOptions[0]);
-  const [createAgreedBasePrice, setCreateAgreedBasePrice] = useState("");
-  const [createPriceIncludesVat, setCreatePriceIncludesVat] = useState(false);
-  const [createExpensesSeparately, setCreateExpensesSeparately] = useState(false);
-  const [createProjectManagerId, setCreateProjectManagerId] = useState(defaultProjectManagerId ?? "");
-  const [createStartDate, setCreateStartDate] = useState(todayIso());
-  // End date defaults to the start date (same-day) for every project type.
-  const [createEndDate, setCreateEndDate] = useState(todayIso());
-  const [createPaymentTerms, setCreatePaymentTerms] = useState("immediate");
-  const [createDueDate, setCreateDueDate] = useState(() => computeDueDate(todayIso(), "immediate") ?? "");
-  const [createNotes, setCreateNotes] = useState("");
-  const [createItemsToMove, setCreateItemsToMove] = useState("");
-  const [createAttachmentFiles, setCreateAttachmentFiles] = useState<File[]>([]);
-
-  const [customerOptionsState, setCustomerOptionsState] = useState<Option[]>(customerOptions);
-  const [customerSearchResults, setCustomerSearchResults] = useState<Option[] | null>(null);
-  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
+  const [createPrefillCustomerId, setCreatePrefillCustomerId] = useState<string | undefined>(undefined);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editSubmitting, setEditSubmitting] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [editId, setEditId] = useState("");
-  const [editName, setEditName] = useState("");
-  const [editCustomerId, setEditCustomerId] = useState("");
-  const [editProjectType, setEditProjectType] = useState(defaultProjectTypeOptions[0]);
-  const [editStatus, setEditStatus] = useState(defaultStatusOptions[0]);
-  const [editAgreedBasePrice, setEditAgreedBasePrice] = useState("");
-  const [editExpensesSeparately, setEditExpensesSeparately] = useState(false);
-  const [editPriceIncludesVat, setEditPriceIncludesVat] = useState(false);
-  const [editProjectManagerId, setEditProjectManagerId] = useState("");
-  const [editStartDate, setEditStartDate] = useState("");
-  const [editEndDate, setEditEndDate] = useState("");
-  const [editPaymentTerms, setEditPaymentTerms] = useState("immediate");
-  const [editDueDate, setEditDueDate] = useState("");
-  const [editNotes, setEditNotes] = useState("");
-  const [editItemsToMove, setEditItemsToMove] = useState("");
+  const [editProject, setEditProject] = useState<ProjectRow | null>(null);
+
+  // Customers mapped into the shape the project wizard renders.
+  const wizardCustomers = useMemo<ProjectCustomerOption[]>(
+    () =>
+      customerOptions.map((c) => ({
+        id: c.id,
+        name: c.label,
+        nameForInvoice: c.name_for_invoice ?? null,
+        phone: c.phone ?? null,
+        whatsapp: c.whatsapp ?? null,
+        email: c.email ?? null,
+        city: null,
+        address: null,
+        contacts: c.contacts,
+      })),
+    [customerOptions]
+  );
+
   const [approveQuoteOpen, setApproveQuoteOpen] = useState(false);
   const [approveQuoteSubmitting, setApproveQuoteSubmitting] = useState(false);
   const [approveQuoteError, setApproveQuoteError] = useState<string | null>(null);
@@ -509,42 +467,6 @@ export default function ProjectsClient({
     return defaultProjectTypeOptions;
   }, []);
 
-  useEffect(() => {
-    const q = createCustomerQuery.trim();
-    if (!q) { setCustomerSearchResults(null); return; }
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
-        if (!res.ok) return;
-        const json = await res.json() as { customers?: Array<{ id: string; name: string; name_for_invoice?: string | null; phone?: string | null; whatsapp?: string | null; email?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
-        setCustomerSearchResults(
-          (json.customers ?? []).map((c) => ({ id: c.id, label: c.name, phone: c.phone ?? null, whatsapp: c.whatsapp ?? null, email: c.email ?? null, name_for_invoice: c.name_for_invoice ?? null, contacts: c.contacts ?? [] }))
-        );
-      } catch { /* ignore */ }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [createCustomerQuery]);
-
-  const filteredCustomerOptions = useMemo(() => {
-    if (customerSearchResults !== null) return customerSearchResults.slice(0, 50);
-    const q = createCustomerQuery.trim().toLowerCase();
-    const qPhone = normalizePhone(createCustomerQuery);
-    if (!q && !qPhone) return customerOptionsState.slice(0, 50);
-    return customerOptionsState
-      .filter((customer) => {
-        const byName = customer.label.toLowerCase().includes(q);
-        const byEmail = (customer.email ?? "").toLowerCase().includes(q);
-        const byPhone = (customer.phone ? normalizePhone(customer.phone) : "").includes(qPhone);
-        return byName || byEmail || (qPhone ? byPhone : false);
-      })
-      .slice(0, 50);
-  }, [createCustomerQuery, customerOptionsState, customerSearchResults]);
-
-  const selectedCustomer =
-    customerOptionsState.find((row) => row.id === createCustomerId) ??
-    (customerSearchResults ?? []).find((row) => row.id === createCustomerId) ??
-    null;
-
   const handleTabChange = useCallback(
     (value: string) => {
       const nextTab = normalizeProjectsView(value);
@@ -564,7 +486,6 @@ export default function ProjectsClient({
   }
 
   const openCreateDialog = useCallback((nextTab: ProjectsView = activeTab) => {
-    setCreateError(null);
     setCreateStatus(defaultCreateStatusForTab(nextTab));
     setCreateOpen(true);
   }, [activeTab]);
@@ -575,162 +496,16 @@ export default function ProjectsClient({
     const prefillCustomerId = (searchParams.get("customer_id") ?? "").trim();
     const shouldOpenCreate = (searchParams.get("create") ?? "").trim() === "1";
 
-    if (prefillCustomerId && shouldOpenCreate) {
-      const matched = customerOptionsState.find((row) => row.id === prefillCustomerId) ?? null;
-      setCreateCustomerId(prefillCustomerId);
-      setCreateCustomerQuery(matched?.label ?? "");
-      openCreateDialog(activeTab);
-    } else if (shouldOpenCreate) {
+    if (shouldOpenCreate) {
+      setCreatePrefillCustomerId(prefillCustomerId || undefined);
       openCreateDialog(activeTab);
     }
 
     prefillHandled.current = true;
-  }, [activeTab, customerOptionsState, openCreateDialog, searchParams]);
-
-  // Restore project create draft on mount (survives tab kills on mobile)
-  useEffect(() => {
-    const draft = loadDraft<{
-      createName: string; createProjectType: string; createStatus: string;
-      createAgreedBasePrice: string; createExpensesSeparately: boolean;
-      createStartDate: string; createEndDate: string; createNotes: string;
-      createItemsToMove: string; createProjectManagerId: string;
-    }>("project-create");
-    if (!draft) return;
-    if (draft.createName) setCreateName(draft.createName);
-    if (draft.createProjectType) setCreateProjectType(draft.createProjectType);
-    if (draft.createStatus) setCreateStatus(draft.createStatus);
-    if (draft.createAgreedBasePrice) setCreateAgreedBasePrice(draft.createAgreedBasePrice);
-    if (draft.createExpensesSeparately !== undefined) setCreateExpensesSeparately(draft.createExpensesSeparately);
-    if (draft.createStartDate) setCreateStartDate(draft.createStartDate);
-    if (draft.createEndDate) setCreateEndDate(draft.createEndDate);
-    if (draft.createNotes) setCreateNotes(draft.createNotes);
-    if (draft.createItemsToMove) setCreateItemsToMove(draft.createItemsToMove);
-    // When a configured default exists, always use it — don't let old drafts override
-    if (draft.createProjectManagerId && !defaultProjectManagerId) {
-      setCreateProjectManagerId(draft.createProjectManagerId);
-    }
-  }, []);
-
-  // Auto-save project create draft while dialog is open
-  useEffect(() => {
-    if (!createOpen) return;
-    saveDraft("project-create", {
-      createName, createProjectType, createStatus, createAgreedBasePrice,
-      createExpensesSeparately, createStartDate, createEndDate, createNotes,
-      createItemsToMove, createProjectManagerId,
-    });
-  }, [createOpen, createName, createProjectType, createStatus, createAgreedBasePrice,
-      createExpensesSeparately, createStartDate, createEndDate, createNotes,
-      createItemsToMove, createProjectManagerId]);
-
-  async function createProject() {
-    if (createSubmitting) return;
-    setCreateError(null);
-
-    const trimmedName = createName.trim();
-    const agreed = createAgreedBasePrice.trim() ? Number(createAgreedBasePrice) : 0;
-    const actual = agreed;
-
-    if (!trimmedName) {
-      setCreateError("שם פרויקט הוא שדה חובה.");
-      return;
-    }
-    if (!createCustomerId) {
-      setCreateError("לקוח הוא שדה חובה.");
-      return;
-    }
-    if (!Number.isFinite(agreed) || agreed < 0 || !Number.isFinite(actual)) {
-      setCreateError("המחירים חייבים להיות מספרים תקינים.");
-      return;
-    }
-
-    setCreateSubmitting(true);
-    try {
-      const result = await offlineFetch("/api/projects/create", {
-        customer_id: createCustomerId,
-        name: trimmedName,
-        project_type: createProjectType,
-        status: createStatus,
-        agreed_base_price: agreed,
-        actual_price: actual,
-        price_includes_vat: createPriceIncludesVat,
-        expenses_billed_separately: createExpensesSeparately,
-        project_manager_id: createProjectManagerId || null,
-        start_date: createStartDate || null,
-        end_date: createEndDate || null,
-        payment_terms: createPaymentTerms,
-        due_date: createDueDate || null,
-        notes: createNotes.trim() || null,
-        items_to_move: textToItemsToMove(createItemsToMove),
-      }, "פרויקט חדש", { idempotent: true });
-
-      if (result.queued) {
-        clearDraft("project-create");
-        setCreateOpen(false);
-        return;
-      }
-      if (!result.ok) {
-        setCreateError(result.error ?? "יצירת הפרויקט נכשלה.");
-        return;
-      }
-      const json = result.data as Partial<{ error: string; project: ProjectRow }>;
-
-      if (json.project) {
-        const createdProject = json.project as ProjectRow;
-        const createdProjectId = getString(createdProject, "id");
-        if (createdProjectId) {
-          for (const file of createAttachmentFiles) {
-            await uploadProjectDocument(createdProjectId, file);
-          }
-        }
-        setProjects((prev) => [createdProject, ...prev]);
-      }
-
-      clearDraft("project-create");
-      setCreateOpen(false);
-      setCreateName("");
-      setCreateCustomerId("");
-      setCreateCustomerQuery("");
-      setCustomerSearchResults(null);
-      setCustomerPickerOpen(false);
-      setCreateProjectType(projectTypeOptions[0] ?? defaultProjectTypeOptions[0]);
-      setCreateStatus(defaultCreateStatusForTab(activeTab));
-      setCreateAgreedBasePrice("");
-      setCreatePriceIncludesVat(false);
-      setCreateExpensesSeparately(false);
-      setCreateProjectManagerId(defaultProjectManagerId ?? currentUserId ?? "");
-      const now = todayIso();
-      setCreateStartDate(now);
-      setCreateEndDate(now);
-      setCreateNotes("");
-      setCreateItemsToMove("");
-      setCreateAttachmentFiles([]);
-      router.refresh();
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "שגיאה לא ידועה";
-      setCreateError(message);
-    } finally {
-      setCreateSubmitting(false);
-    }
-  }
+  }, [activeTab, openCreateDialog, searchParams]);
 
   function openEditProject(row: ProjectRow) {
-    setEditError(null);
-    setEditId(getString(row, "id") ?? "");
-    setEditName(getString(row, "name") ?? "");
-    setEditCustomerId(getString(row, "customer_id") ?? "");
-    setEditProjectType(getString(row, "project_type") ?? defaultProjectTypeOptions[0]);
-    setEditStatus(getString(row, "status") ?? defaultStatusOptions[0]);
-    setEditAgreedBasePrice(String(getNumber(row, "agreed_base_price") ?? 0));
-    setEditExpensesSeparately(row["expenses_billed_separately"] === true);
-    setEditPriceIncludesVat(row["price_includes_vat"] === true);
-    setEditProjectManagerId(getString(row, "project_manager_id") ?? "");
-    setEditStartDate(getString(row, "start_date") ?? "");
-    setEditEndDate(getString(row, "end_date") ?? "");
-    setEditPaymentTerms(getString(row, "payment_terms") ?? "immediate");
-    setEditDueDate((getString(row, "due_date") ?? "").slice(0, 10));
-    setEditNotes(getString(row, "notes") ?? "");
-    setEditItemsToMove(itemsToMoveToText(getStringArray(row, "items_to_move")));
+    setEditProject(row);
     setEditOpen(true);
   }
 
@@ -768,71 +543,6 @@ export default function ProjectsClient({
     }
   }
 
-  async function saveProjectEdit() {
-    if (editSubmitting) return;
-    setEditError(null);
-
-    if (!editId || !editName.trim() || !editCustomerId) {
-      setEditError("יש למלא שדות חובה.");
-      return;
-    }
-
-    const agreed = editAgreedBasePrice.trim() ? Number(editAgreedBasePrice) : 0;
-    if (!Number.isFinite(agreed) || agreed < 0) {
-      setEditError("מחיר בסיס אינו תקין.");
-      return;
-    }
-
-    setEditSubmitting(true);
-    try {
-      const result = await offlineFetch(
-        "/api/projects/update",
-        {
-          id: editId,
-          customer_id: editCustomerId,
-          name: editName.trim(),
-          project_type: editProjectType,
-          status: editStatus,
-          agreed_base_price: agreed,
-          actual_price: agreed,
-          price_includes_vat: editPriceIncludesVat,
-          expenses_billed_separately: editExpensesSeparately,
-          project_manager_id: editProjectManagerId || null,
-          start_date: editStartDate || null,
-          end_date: editEndDate || null,
-          payment_terms: editPaymentTerms,
-          due_date: editDueDate || null,
-          notes: editNotes.trim() || null,
-          items_to_move: textToItemsToMove(editItemsToMove),
-        },
-        "עדכון פרויקט"
-      );
-
-      if (!result.queued && !result.ok) {
-        setEditError(result.error || "עדכון פרויקט נכשל.");
-        return;
-      }
-      const json = result.queued ? null : (result.data as Partial<{ project: ProjectRow }>);
-      if (json && !json.project) {
-        setEditError("עדכון פרויקט נכשל.");
-        return;
-      }
-
-      if (json?.project) {
-        setProjects((prev) =>
-          prev.map((row) => {
-            const id = getString(row, "id") ?? "";
-            return id === editId ? (json.project as ProjectRow) : row;
-          })
-        );
-      }
-      setEditOpen(false);
-    } catch (e: unknown) {
-      setEditError(e instanceof Error ? e.message : "שגיאה לא ידועה");
-    } finally {
-      setEditSubmitting(false);
-    }
-  }
 
   async function approveQuote() {
     if (approveQuoteSubmitting) return;
@@ -1492,530 +1202,93 @@ export default function ProjectsClient({
       <Dialog
         open={createOpen}
         onOpenChange={(open) => {
-          if (!open && !createSubmitting) {
-            setCreateAttachmentFiles([]);
-          }
+          if (!open && createSubmitting) return;
           setCreateOpen(open);
         }}
       >
-        <AdaptiveDialog size="form2xl">
-          <DialogHeader>
+        <AdaptiveDialog size="newOrder" hideClose className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0">
+          {/* Title/description kept for screen readers only — the wizard renders its
+              own visible per-step heading, so showing them here would duplicate it. */}
+          <DialogHeader className="sr-only">
             <DialogTitle>{createStatus === "quote" ? "הצעת מחיר חדשה" : "הוספת פרויקט חדש"}</DialogTitle>
             <DialogDescription>
               {createStatus === "quote"
-                ? "מלאו את פרטי הצעת המחיר. בהמשך תוכלו לאשר אותה ולהעביר למתוכנן."
-                : "מלאו את השדות הנדרשים ליצירת פרויקט."}
+                ? "בוחרים לקוח וממלאים את פרטי הצעת המחיר."
+                : "בוחרים לקוח וממלאים את פרטי הפרויקט."}
             </DialogDescription>
           </DialogHeader>
 
-          <form
-            className="grid gap-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void createProject();
-            }}
-          >
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">שם פרויקט *</label>
-                <Input value={createName} onChange={(e) => setCreateName(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">לקוח *</label>
-                <div className="flex items-center justify-between rounded-md border p-2">
-                  <p className="text-xs text-muted-foreground">
-                    {selectedCustomer ? `נבחר: ${selectedCustomer.label}` : "לא נבחר לקוח"}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCustomerPickerOpen((prev) => !prev)}
-                  >
-                    {customerPickerOpen ? "סגירת בחירה" : "בחירת לקוח"}
-                  </Button>
-                </div>
-
-                {selectedCustomer ? (
-                  <InlineCustomerEditor
-                    customerId={selectedCustomer.id}
-                    name={selectedCustomer.label}
-                    phone={selectedCustomer.phone ?? null}
-                    whatsapp={selectedCustomer.whatsapp ?? null}
-                    email={selectedCustomer.email ?? null}
-                    onUpdated={(updated: InlineCustomerUpdate) => {
-                      setCustomerOptionsState((prev) =>
-                        prev.map((o) =>
-                          o.id === updated.id
-                            ? { ...o, label: updated.name, phone: updated.phone, whatsapp: updated.whatsapp, email: updated.email }
-                            : o
-                        )
-                      );
-                      setCustomerSearchResults((prev) =>
-                        prev === null
-                          ? prev
-                          : prev.map((o) =>
-                              o.id === updated.id
-                                ? { ...o, label: updated.name, phone: updated.phone, whatsapp: updated.whatsapp, email: updated.email }
-                                : o
-                            )
-                      );
-                      setCreateCustomerQuery((current) =>
-                        current === selectedCustomer.label ? updated.name : current
-                      );
-                    }}
-                  />
-                ) : null}
-
-                {customerPickerOpen ? (
-                  <div className="space-y-2 rounded-md border p-2">
-                    <Input
-                      value={createCustomerQuery}
-                      onChange={(e) => setCreateCustomerQuery(e.target.value)}
-                      placeholder="חיפוש לפי שם / טלפון / אימייל"
-                    />
-                    <div className="max-h-56 space-y-1.5 overflow-y-auto">
-                      {filteredCustomerOptions.map((customer) => (
-                        <button
-                          key={customer.id}
-                          type="button"
-                          onClick={() => {
-                            setCreateCustomerId(customer.id);
-                            setCreateCustomerQuery(customer.label);
-                            setCustomerPickerOpen(false);
-                          }}
-                          className={`w-full rounded-xl border px-3 py-2 text-right text-sm transition-all duration-200 ${
-                            customer.id === createCustomerId
-                              ? "border-primary/20 bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                              : "border-border bg-accent/50 text-accent-foreground shadow-sm hover:-translate-y-0.5 hover:bg-accent hover:shadow-md"
-                          }`}
-                        >
-                          <div className="flex flex-wrap items-baseline gap-x-2">
-                            <span className="font-medium">{customer.label}</span>
-                            {customer.phone ? (
-                              <span className={`text-xs ${customer.id === createCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                                · {customer.phone}
-                              </span>
-                            ) : null}
-                          </div>
-                          {customer.name_for_invoice && customer.name_for_invoice.trim() && customer.name_for_invoice.trim() !== customer.label.trim() ? (
-                            <div className={`mt-0.5 text-xs ${customer.id === createCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                              שם לחשבונית: {customer.name_for_invoice}
-                            </div>
-                          ) : null}
-                          {(customer.contacts ?? []).length > 0 ? (
-                            <div className={`mt-0.5 text-xs ${customer.id === createCustomerId ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                              ← {customer.contacts![0].full_name}{customer.contacts![0].phone ? ` · ${customer.contacts![0].phone}` : ""}
-                            </div>
-                          ) : null}
-                        </button>
-                      ))}
-                      {filteredCustomerOptions.length === 0 ? (
-                        <p className="p-2 text-xs text-muted-foreground">לא נמצאו לקוחות.</p>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="flex items-center justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCreateCustomerOpen(true)}
-                  >
-                    לקוח חדש
-                  </Button>
-                </div>
-              </div>
-            </AdaptiveGrid>
-
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">סוג פרויקט *</label>
-                <select
-                  value={createProjectType}
-                  onChange={(e) => setCreateProjectType(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {projectTypeOptions.map((v) => (
-                    <option key={v} value={v}>
-                      {projectTypeLabel(v)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">סטטוס *</label>
-                <select
-                  value={createStatus}
-                  onChange={(e) => setCreateStatus(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {defaultStatusOptions.map((v) => (
-                    <option key={v} value={v}>
-                      {statusLabel(v)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </AdaptiveGrid>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">מחיר בסיס מוסכם</label>
-              <CurrencyInput
-                value={createAgreedBasePrice}
-                onChange={(e) => setCreateAgreedBasePrice(e.target.value)}
-                placeholder="אופציונלי, ברירת מחדל 0"
-              />
-              <label className="flex items-center gap-2 pt-1 text-sm">
-                <input
-                  type="checkbox"
-                  checked={createPriceIncludesVat}
-                  onChange={(e) => setCreatePriceIncludesVat(e.target.checked)}
-                />
-                <span>המחיר כולל מע״מ (הלקוח משלם בסיס + מע״מ)</span>
-              </label>
-            </div>
-
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך התחלה</label>
-                <DateInput
-                  value={createStartDate}
-                  onChange={(e) => {
-                    const nextStartDate = e.target.value;
-                    setCreateStartDate(nextStartDate);
-                    const computed = computeDueDate(nextStartDate, createPaymentTerms);
-                    if (computed) setCreateDueDate(computed);
-                  }}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך סיום (אופציונלי)</label>
-                <DateInput
-                  value={createEndDate}
-                  onChange={(e) => setCreateEndDate(e.target.value)}
-                />
-              </div>
-            </AdaptiveGrid>
-
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">צורת תשלום</label>
-                <select
-                  value={createPaymentTerms}
-                  onChange={(e) => {
-                    const t = e.target.value;
-                    setCreatePaymentTerms(t);
-                    const computed = computeDueDate(createStartDate, t);
-                    if (computed) setCreateDueDate(computed);
-                  }}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {PAYMENT_TERMS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך פירעון</label>
-                <DateInput value={createDueDate} onChange={(e) => setCreateDueDate(e.target.value)} />
-              </div>
-            </AdaptiveGrid>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">מנהל פרויקט</label>
-              <select
-                value={createProjectManagerId}
-                onChange={(e) => setCreateProjectManagerId(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">ללא שיוך</option>
-                {managerOptions.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={createExpensesSeparately}
-                onChange={(e) => setCreateExpensesSeparately(e.target.checked)}
-              />
-              <span>חיוב הוצאות בנפרד</span>
-            </label>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">תיאור / הערות</label>
-              <Textarea value={createNotes} onChange={(e) => setCreateNotes(e.target.value)} rows={4} />
-            </div>
-
-            {isMovingProjectType(createProjectType) ? (
-              <div className="space-y-1">
-                <label className="text-sm font-medium">פריטים להעברה</label>
-                <Textarea
-                  value={createItemsToMove}
-                  onChange={(e) => setCreateItemsToMove(e.target.value)}
-                  rows={5}
-                  placeholder="כל פריט בשורה נפרדת"
-                />
-                <p className="text-xs text-muted-foreground">
-                  אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.
-                </p>
-              </div>
-            ) : null}
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">תמונות / מסמכים</label>
-              <div className="flex items-center gap-2">
-                <FileUploadActions
-                  files={createAttachmentFiles}
-                  multiple
-                  onFilesSelected={setCreateAttachmentFiles}
-                  chooseLabel={createAttachmentFiles.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
-                  chooseVariant="outline"
-                  size="sm"
-                />
-                {createAttachmentFiles.length > 0 ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setCreateAttachmentFiles([])}>
-                    נקה בחירה
-                  </Button>
-                ) : null}
-              </div>
-              {createAttachmentFiles.length === 0 ? (
-                <div className="text-xs text-muted-foreground">
-                  אפשר להעלות קבצים או לצלם תמונה ישירות מהמכשיר.
-                </div>
-              ) : null}
-            </div>
-
-            {createError ? <p className="text-sm text-destructive">{createError}</p> : null}
-
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => { clearDraft("project-create"); setCreateOpen(false); }} disabled={createSubmitting}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={createSubmitting}>
-                {createSubmitting ? "יוצר..." : "יצירת פרויקט"}
-              </Button>
-            </DialogFooter>
-            {createSubmitting ? (
-              <p className="text-xs text-muted-foreground">הפרויקט נוצר כעת, נא להמתין...</p>
-            ) : null}
-          </form>
+          {createOpen ? (
+            <NewProjectClient
+              customers={wizardCustomers}
+              managers={managerOptions}
+              currentUserId={currentUserId}
+              defaultProjectManagerId={defaultProjectManagerId}
+              initialStatus={createStatus}
+              initialCustomerId={createPrefillCustomerId}
+              draftKey="project-create"
+              projectTypeOptions={projectTypeOptions}
+              onActionLockedChange={setCreateSubmitting}
+              onCancel={() => setCreateOpen(false)}
+              onSubmitted={(project) => {
+                const id = getString(project, "id");
+                if (id) {
+                  setProjects((prev) => [
+                    project as ProjectRow,
+                    ...prev.filter((row) => (getString(row, "id") ?? "") !== id),
+                  ]);
+                }
+                setCreateOpen(false);
+                setCreatePrefillCustomerId(undefined);
+                router.refresh();
+                toast.success(createStatus === "quote" ? "הצעת המחיר נוצרה." : "הפרויקט נוצר.");
+              }}
+            />
+          ) : null}
         </AdaptiveDialog>
       </Dialog>
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <AdaptiveDialog size="form2xl">
-          <DialogHeader>
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          if (!open && editSubmitting) return;
+          setEditOpen(open);
+        }}
+      >
+        <AdaptiveDialog size="newOrder" hideClose className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0">
+          {/* Header for screen readers only — the wizard shows its own visible heading. */}
+          <DialogHeader className="sr-only">
             <DialogTitle>עריכת פרויקט</DialogTitle>
             <DialogDescription>עדכון פרטי פרויקט קיים.</DialogDescription>
           </DialogHeader>
 
-          <form
-            className="grid gap-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void saveProjectEdit();
-            }}
-          >
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">שם פרויקט *</label>
-                <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">לקוח *</label>
-                <select
-                  value={editCustomerId}
-                  onChange={(e) => setEditCustomerId(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="">בחירת לקוח...</option>
-                  {customerOptionsState.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </AdaptiveGrid>
-
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">סוג פרויקט *</label>
-                <select
-                  value={editProjectType}
-                  onChange={(e) => setEditProjectType(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {projectTypeOptions.map((v) => (
-                    <option key={v} value={v}>
-                      {projectTypeLabel(v)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">סטטוס *</label>
-                <select
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {defaultStatusOptions.map((v) => (
-                    <option key={v} value={v}>
-                      {statusLabel(v)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </AdaptiveGrid>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">מחיר בסיס מוסכם</label>
-              <CurrencyInput
-                value={editAgreedBasePrice}
-                onChange={(e) => setEditAgreedBasePrice(e.target.value)}
-              />
-              <label className="flex items-center gap-2 pt-1 text-sm">
-                <input
-                  type="checkbox"
-                  checked={editPriceIncludesVat}
-                  onChange={(e) => setEditPriceIncludesVat(e.target.checked)}
-                />
-                <span>המחיר כולל מע״מ (הלקוח משלם בסיס + מע״מ)</span>
-              </label>
-            </div>
-
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך התחלה</label>
-                <DateInput
-                  value={editStartDate}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setEditStartDate(v);
-                    const computed = computeDueDate(v, editPaymentTerms);
-                    if (computed) setEditDueDate(computed);
-                  }}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך סיום</label>
-                <DateInput value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} />
-              </div>
-            </AdaptiveGrid>
-
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">צורת תשלום</label>
-                <select
-                  value={editPaymentTerms}
-                  onChange={(e) => {
-                    const t = e.target.value;
-                    setEditPaymentTerms(t);
-                    const computed = computeDueDate(editStartDate, t);
-                    if (computed) setEditDueDate(computed);
-                  }}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  {PAYMENT_TERMS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך פירעון</label>
-                <DateInput value={editDueDate} onChange={(e) => setEditDueDate(e.target.value)} />
-              </div>
-            </AdaptiveGrid>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">מנהל פרויקט</label>
-              <select
-                value={editProjectManagerId}
-                onChange={(e) => setEditProjectManagerId(e.target.value)}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">ללא שיוך</option>
-                {managerOptions.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={editExpensesSeparately}
-                onChange={(e) => setEditExpensesSeparately(e.target.checked)}
-              />
-              <span>חיוב הוצאות בנפרד</span>
-            </label>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">הערות</label>
-              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={3} />
-            </div>
-
-            {isMovingProjectType(editProjectType) ? (
-              <div className="space-y-1">
-                <label className="text-sm font-medium">פריטים להעברה</label>
-                <Textarea
-                  value={editItemsToMove}
-                  onChange={(e) => setEditItemsToMove(e.target.value)}
-                  rows={5}
-                  placeholder="כל פריט בשורה נפרדת"
-                />
-                <p className="text-xs text-muted-foreground">
-                  אפשר להשאיר ריק. כל שורה תישמר כפריט נפרד.
-                </p>
-              </div>
-            ) : null}
-
-            {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
-
-            <DialogFooter>
-              <Button type="button" variant="secondary" onClick={() => setEditOpen(false)} disabled={editSubmitting}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={editSubmitting}>
-                {editSubmitting ? "שומר..." : "שמירת שינויים"}
-              </Button>
-            </DialogFooter>
-          </form>
+          {editOpen && editProject ? (
+            <NewProjectClient
+              key={getString(editProject, "id") ?? "edit"}
+              mode="edit"
+              customers={wizardCustomers}
+              managers={managerOptions}
+              currentUserId={currentUserId}
+              defaultProjectManagerId={defaultProjectManagerId}
+              initialProject={toInitialProject(editProject)}
+              projectTypeOptions={projectTypeOptions}
+              onActionLockedChange={setEditSubmitting}
+              onCancel={() => setEditOpen(false)}
+              onSubmitted={(project) => {
+                const id = getString(project, "id");
+                if (id) {
+                  setProjects((prev) =>
+                    prev.map((row) => ((getString(row, "id") ?? "") === id ? (project as ProjectRow) : row))
+                  );
+                }
+                setEditOpen(false);
+                router.refresh();
+                toast.success("הפרויקט עודכן.");
+              }}
+            />
+          ) : null}
         </AdaptiveDialog>
       </Dialog>
-
-      <CreateCustomerDialog
-        open={createCustomerOpen}
-        onOpenChange={setCreateCustomerOpen}
-        description="הלקוח לא נמצא? אפשר ליצור אותו ישירות כאן. שדות חובה: שם, טלפון ועיר."
-        onCreated={(customer: CreatedCustomer) => {
-          const newOption: Option = {
-            id: customer.id,
-            label: customer.name,
-            phone: customer.phone,
-            whatsapp: customer.whatsapp,
-            email: customer.email,
-          };
-          setCustomerOptionsState((prev) => [newOption, ...prev]);
-          setCreateCustomerId(newOption.id);
-          setCreateCustomerQuery(newOption.label);
-        }}
-      />
 
       <Dialog open={monthlySummaryOpen} onOpenChange={setMonthlySummaryOpen}>
         <AdaptiveDialog size="formLg">
