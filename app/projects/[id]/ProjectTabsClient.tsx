@@ -1,4 +1,5 @@
 ﻿"use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import type { AuditRecordInfo } from "@/lib/audit";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -729,7 +730,7 @@ export default function ProjectTabsClient({
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
-          toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: json?.error ?? "" });
+          toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: toHebrewError(json?.error, "") });
           setPendingDocsRefresh(false);
           setPendingDocsStuck(false);
           setPendingDocUploads((prev) =>
@@ -813,7 +814,7 @@ export default function ProjectTabsClient({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("שגיאה בעדכון תג", { description: json?.error ?? "" });
+        toast.error("שגיאה בעדכון תג", { description: toHebrewError(json?.error, "") });
         return;
       }
       toast.success("התג עודכן");
@@ -847,7 +848,7 @@ export default function ProjectTabsClient({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("שגיאה במחיקה", { description: json?.error ?? "" });
+        toast.error("שגיאה במחיקה", { description: toHebrewError(json?.error, "") });
         return;
       }
       toast.success("המסמך נמחק");
@@ -1116,7 +1117,7 @@ export default function ProjectTabsClient({
         "מחיקת חיוב"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת ההוצאה", { description: result.error || "" });
+        toast.error("שגיאה במחיקת ההוצאה", { description: toHebrewError(result.error, "") });
         return;
       }
       setExpensesUi((prev) =>
@@ -1149,7 +1150,7 @@ export default function ProjectTabsClient({
         "מחיקת משמרת"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת המשמרת", { description: result.error || "" });
+        toast.error("שגיאה במחיקת המשמרת", { description: toHebrewError(result.error, "") });
         return;
       }
 
@@ -1178,7 +1179,7 @@ export default function ProjectTabsClient({
         "מחיקת הכנסה"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת ההכנסה", { description: result.error || "" });
+        toast.error("שגיאה במחיקת ההכנסה", { description: toHebrewError(result.error, "") });
         return;
       }
       setPaymentsUi((prev) => prev.filter((row) => row.id !== payment.id));
@@ -1290,7 +1291,7 @@ export default function ProjectTabsClient({
         "עדכון מחיר בסיס"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון מחיר בסיס", { id: toastId, description: result.error || "" });
+        toast.error("שגיאה בעדכון מחיר בסיס", { id: toastId, description: toHebrewError(result.error, "") });
         return;
       }
       const json = result.queued ? null : (result.data as { project?: { agreed_base_price?: unknown } } | null);
@@ -2810,7 +2811,7 @@ function ProjectTasksTab({
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error("שגיאה ביצירת משימה", { description: json?.error ?? "" });
+        toast.error("שגיאה ביצירת משימה", { description: toHebrewError(json?.error, "") });
         return;
       }
       const createdTaskId =
@@ -2833,7 +2834,7 @@ function ProjectTasksTab({
           const uploadJson = await uploadRes.json().catch(() => ({}));
           if (!uploadRes.ok) {
             toast.error("שגיאה בהעלאת קובץ", {
-              description: uploadJson?.error ?? "",
+              description: toHebrewError(uploadJson?.error, ""),
             });
             break;
           }
@@ -2869,7 +2870,7 @@ function ProjectTasksTab({
         "עדכון סטטוס משימה"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון סטטוס", { description: result.error || "" });
+        toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(result.error, "") });
         return false;
       }
       if (!result.queued) toast.success("הסטטוס עודכן");
@@ -2902,7 +2903,7 @@ function ProjectTasksTab({
         "עדכון עדיפות משימה"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון עדיפות", { description: result.error || "" });
+        toast.error("שגיאה בעדכון עדיפות", { description: toHebrewError(result.error, "") });
         return false;
       }
       if (!result.queued) toast.success("העדיפות עודכנה");
@@ -2985,7 +2986,7 @@ function ProjectTasksTab({
     try {
       const result = await offlineFetch("/api/tasks/delete", { id }, "מחיקת משימה");
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת משימה", { description: result.error || "" });
+        toast.error("שגיאה במחיקת משימה", { description: toHebrewError(result.error, "") });
         return;
       }
 
@@ -3740,7 +3741,7 @@ export function projectTypeLabel(value: string) {
 }
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "";
+  return toHebrewError(error, "");
 }
 
 const PROJECT_EXPENSE_CATEGORY_OPTIONS = [
@@ -4238,7 +4239,7 @@ function AddExpenseDialog({
       const json = await res.json();
       if (!res.ok || !json?.user?.id) {
         toast.error("שגיאה ביצירת עובד", {
-          description: json?.error ?? "",
+          description: toHebrewError(json?.error, ""),
         });
         return;
       }
@@ -4324,7 +4325,7 @@ function AddExpenseDialog({
         const json = await res.json();
         if (!res.ok) {
           toast.error(isEditingSession ? "שגיאה בעדכון משמרת" : "שגיאה בהוספת משמרת", {
-            description: json?.error ?? "",
+            description: toHebrewError(json?.error, ""),
           });
           return;
         }
@@ -4477,7 +4478,7 @@ function AddExpenseDialog({
       const json = await res.json();
       if (!res.ok) {
         toast.error(isEditing ? "שגיאה בעדכון ההוצאה" : "שגיאה בהוספת הוצאה", {
-          description: json?.error ?? "",
+          description: toHebrewError(json?.error, ""),
         });
         return;
       }
@@ -5312,7 +5313,7 @@ function AddIncomeDialog({
       const json = await res.json();
       if (!res.ok) {
         toast.error(isEditing ? "שגיאה בעדכון ההכנסה" : "שגיאה בהוספת ההכנסה", {
-          description: json?.error ?? "",
+          description: toHebrewError(json?.error, ""),
         });
         return;
       }

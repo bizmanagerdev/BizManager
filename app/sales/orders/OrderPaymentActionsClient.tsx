@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -161,7 +162,7 @@ function EditPaymentDialog({
         return;
       }
       if (!result.ok) {
-        setError(result.error || "עדכון נכשל.");
+        setError(toHebrewError(result.error, "עדכון נכשל."));
         return;
       }
       if (paymentMethod === "check" && checkPhotoFiles.length > 0) {
@@ -169,7 +170,7 @@ function EditPaymentDialog({
       }
       await onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "שגיאה לא ידועה");
+      setError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {
       setSubmitting(false);
     }
@@ -350,13 +351,13 @@ export function OrderPaymentActionsClient({
         "מחיקת תשלום"
       );
       if (!result.queued && !result.ok) {
-        setDeleteError(result.error || "מחיקה נכשלה.");
+        setDeleteError(toHebrewError(result.error, "מחיקה נכשלה."));
         return;
       }
       setDeletingId(null);
       await refreshAndWait();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "שגיאה לא ידועה");
+      setDeleteError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {
       setDeleteSubmitting(false);
     }

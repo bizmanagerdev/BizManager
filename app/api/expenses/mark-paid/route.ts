@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -76,7 +77,7 @@ export async function POST(req: Request) {
     }
 
     if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
     }
     if (!expense?.id) {
       return NextResponse.json({ error: "ההוצאה לא נמצאה." }, { status: 404 });
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ expense });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "שגיאה לא צפויה בעת סימון ההוצאה כשולמה.";
+    const message = toHebrewError(err, "שגיאה לא צפויה בעת סימון ההוצאה כשולמה.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

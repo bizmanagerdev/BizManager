@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { toast } from "sonner";
@@ -98,13 +99,13 @@ export default function MorningQuoteDialog({
         error?: string;
         morningDocument?: MorningLocalDocument;
       };
-      if (!response.ok) throw new Error(json.error ?? "יצירת הצעת מחיר נכשלה.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "יצירת הצעת מחיר נכשלה."));
       toast.success("הצעת המחיר נוצרה ב-Morning");
       if (json.morningDocument) onCreated?.(json.morningDocument);
       setOpen(false);
       resetForm();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "יצירת הצעת מחיר נכשלה.");
+      toast.error(toHebrewError(error, "יצירת הצעת מחיר נכשלה."));
     } finally {
       setSubmitting(false);
     }

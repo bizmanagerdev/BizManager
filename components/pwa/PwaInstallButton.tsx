@@ -101,7 +101,7 @@ export default function PwaInstallButton() {
         onClick={() => void handleInstall()}
       >
         <Download className="h-4 w-4" />
-        <span className="hidden sm:inline">Install app</span>
+        <span className="hidden sm:inline">התקנת האפליקציה</span>
       </Button>
     );
   }
@@ -113,20 +113,20 @@ export default function PwaInstallButton() {
       <DialogTrigger asChild>
         <Button variant="secondary" size="sm" className="gap-2 rounded-xl" type="button">
           <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">Install app</span>
+          <span className="hidden sm:inline">התקנת האפליקציה</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-sm rounded-3xl">
         <DialogHeader>
-          <DialogTitle>Install BizH</DialogTitle>
+          <DialogTitle>התקנת BizH</DialogTitle>
           <DialogDescription>
-            On iPhone and iPad, Safari installs PWAs from the share menu instead of showing a pop-up.
+            באייפון ובאייפד, ספארי מתקין אפליקציות מתפריט השיתוף במקום להציג חלון קופץ.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 text-sm text-muted-foreground">
-          <p>1. Tap the <Share className="mx-1 inline h-4 w-4 align-text-bottom" /> share button in Safari.</p>
-          <p>2. Choose <strong>Add to Home Screen</strong>.</p>
-          <p>3. Tap <strong>Add</strong> to place BizH on your home screen.</p>
+          <p>1. הקישו על כפתור השיתוף <Share className="mx-1 inline h-4 w-4 align-text-bottom" /> בספארי.</p>
+          <p>2. בחרו באפשרות <strong>הוספה למסך הבית</strong>.</p>
+          <p>3. הקישו על <strong>הוספה</strong> כדי להוסיף את BizH למסך הבית.</p>
         </div>
       </DialogContent>
     </Dialog>

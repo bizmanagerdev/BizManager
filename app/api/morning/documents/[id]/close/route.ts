@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { closeMorningDocumentByLocalId } from "@/lib/morning/service";
@@ -14,7 +15,7 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
     });
     return NextResponse.json({ document });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "סגירת מסמך Morning נכשלה.";
+    const message = toHebrewError(error, "סגירת מסמך Morning נכשלה.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

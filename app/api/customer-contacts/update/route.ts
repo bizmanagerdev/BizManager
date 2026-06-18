@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
       .eq("id", id)
       .maybeSingle();
     if (lookupError) {
-      return NextResponse.json({ error: lookupError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(lookupError.message) }, { status: 400 });
     }
     if (!existing || typeof existing.customer_id !== "string") {
       return NextResponse.json({ error: "Contact not found" }, { status: 404 });
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
         .eq("is_primary", true)
         .neq("id", id);
       if (clearError) {
-        return NextResponse.json({ error: clearError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(clearError.message) }, { status: 400 });
       }
     }
 
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     }
     if (!data || typeof data.id !== "string") {
       return NextResponse.json({ error: "Contact was not updated" }, { status: 400 });
@@ -91,7 +92,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ contact: data });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

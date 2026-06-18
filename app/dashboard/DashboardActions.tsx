@@ -1,4 +1,5 @@
 ﻿"use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -844,7 +845,7 @@ export default function DashboardActions({
           session?: { id?: string; user_id?: string; clock_in?: string; clock_out?: string; labor_cost?: number | string | null };
         };
         if (!res.ok || !json.session) {
-          setExpenseError(json.error ?? HEBREW.expenseCreateFailed);
+          setExpenseError(toHebrewError(json.error, HEBREW.expenseCreateFailed));
           return;
         }
 
@@ -879,7 +880,7 @@ export default function DashboardActions({
           });
           const paymentJson = (await paymentResponse.json().catch(() => ({}))) as { error?: string };
           if (!paymentResponse.ok) {
-            throw new Error(paymentJson.error ?? "שמירת התשלום לעובד נכשלה.");
+            throw new Error(toHebrewError(paymentJson.error, "שמירת התשלום לעובד נכשלה."));
           }
         }
 
@@ -898,7 +899,7 @@ export default function DashboardActions({
             : HEBREW.expenseSaved
         );
       } catch (error: unknown) {
-        setExpenseError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
+        setExpenseError(toHebrewError(error, HEBREW.saveErrorUnknown));
       } finally {
         setExpenseSubmitting(false);
       }
@@ -947,7 +948,7 @@ export default function DashboardActions({
         return;
       }
       if (!result.ok) {
-        setExpenseError(result.error || HEBREW.expenseCreateFailed);
+        setExpenseError(toHebrewError(result.error, HEBREW.expenseCreateFailed));
         return;
       }
       const json = result.data as { expense?: Row };
@@ -967,7 +968,7 @@ export default function DashboardActions({
       router.refresh();
       toast.success(HEBREW.expenseSaved);
     } catch (error: unknown) {
-      setExpenseError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
+      setExpenseError(toHebrewError(error, HEBREW.saveErrorUnknown));
     } finally {
       setExpenseSubmitting(false);
     }
@@ -1005,7 +1006,7 @@ export default function DashboardActions({
       };
       const createdUser = json.user;
       if (!res.ok || !createdUser?.id) {
-        setExpenseNewWorkerError(json.error ?? "שגיאה ביצירת עובד.");
+        setExpenseNewWorkerError(toHebrewError(json.error, "שגיאה ביצירת עובד."));
         return;
       }
 
@@ -1025,7 +1026,7 @@ export default function DashboardActions({
       setExpenseNewWorkerPhone("");
       toast.success("העובד נוסף ונבחר להוצאה.");
     } catch (error: unknown) {
-      setExpenseNewWorkerError(error instanceof Error ? error.message : "שגיאה ביצירת עובד.");
+      setExpenseNewWorkerError(toHebrewError(error, "שגיאה ביצירת עובד."));
     } finally {
       setExpenseNewWorkerSubmitting(false);
     }
@@ -1095,7 +1096,7 @@ export default function DashboardActions({
         return;
       }
       if (!result.ok) {
-        setIncomeError(result.error || HEBREW.incomeCreateFailed);
+        setIncomeError(toHebrewError(result.error, HEBREW.incomeCreateFailed));
         return;
       }
       const json = result.data as { payment?: Row };
@@ -1120,7 +1121,7 @@ export default function DashboardActions({
       router.refresh();
       toast.success(HEBREW.incomeSaved);
     } catch (error: unknown) {
-      setIncomeError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
+      setIncomeError(toHebrewError(error, HEBREW.saveErrorUnknown));
     } finally {
       setIncomeSubmitting(false);
     }
@@ -1154,7 +1155,7 @@ export default function DashboardActions({
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         toast.error(HEBREW.selfSessionStartFailed, {
-          description: json.error ?? HEBREW.saveErrorUnknown,
+          description: toHebrewError(json.error, HEBREW.saveErrorUnknown),
         });
         return;
       }
@@ -1163,7 +1164,7 @@ export default function DashboardActions({
       router.refresh();
     } catch (error: unknown) {
       toast.error(HEBREW.selfSessionStartFailed, {
-        description: error instanceof Error ? error.message : HEBREW.saveErrorUnknown,
+        description: toHebrewError(error, HEBREW.saveErrorUnknown),
       });
     } finally {
       setSelfSessionSubmitting(false);
@@ -1256,7 +1257,7 @@ export default function DashboardActions({
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string; session?: { id?: string; user_id?: string; clock_in?: string; clock_out?: string; labor_cost?: number | string | null } };
       if (!res.ok || !json.session) {
-        setManualSessionError(json.error ?? HEBREW.manualSessionFailed);
+        setManualSessionError(toHebrewError(json.error, HEBREW.manualSessionFailed));
         return;
       }
 
@@ -1291,7 +1292,7 @@ export default function DashboardActions({
         }).then(async (response) => {
           const paymentJson = (await response.json().catch(() => ({}))) as { error?: string };
           if (!response.ok) {
-            throw new Error(paymentJson.error ?? "שמירת התשלום נכשלה.");
+            throw new Error(toHebrewError(paymentJson.error, "שמירת התשלום נכשלה."));
           }
         });
       }
@@ -1305,7 +1306,7 @@ export default function DashboardActions({
           : HEBREW.manualSessionSaved
       );
     } catch (error: unknown) {
-      setManualSessionError(error instanceof Error ? error.message : HEBREW.saveErrorUnknown);
+      setManualSessionError(toHebrewError(error, HEBREW.saveErrorUnknown));
     } finally {
       setManualSessionSubmitting(false);
     }

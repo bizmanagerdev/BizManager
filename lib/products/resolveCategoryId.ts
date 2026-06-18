@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
 
 type RouteSupabaseClient = Awaited<ReturnType<typeof createSupabaseRouteClient>>;
@@ -64,7 +65,7 @@ export async function resolveExistingCategoryId(
     return {
       categoryId: null,
       created: false,
-      error: existingResult.error.message,
+      error: toHebrewError(existingResult.error.message),
     };
   }
 
@@ -78,7 +79,7 @@ export async function resolveExistingCategoryId(
     return {
       categoryId: null,
       created: false,
-      error: createdResult.error.message,
+      error: toHebrewError(createdResult.error.message),
     };
   }
 

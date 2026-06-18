@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
       .eq("id", orderId)
       .maybeSingle();
 
-    if (orderError) return NextResponse.json({ error: orderError.message }, { status: 400 });
+    if (orderError) return NextResponse.json({ error: toHebrewError(orderError.message) }, { status: 400 });
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
     const signedAmount = entryType === "refund" ? payment.amount_total * -1 : payment.amount_total;
@@ -101,7 +102,7 @@ export async function POST(req: Request) {
       .eq("order_id", orderId);
 
     if (paymentsError) {
-      return NextResponse.json({ error: paymentsError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(paymentsError.message) }, { status: 400 });
     }
 
     // Status reflects COLLECTED money only — a future-dated / uncleared payment
@@ -116,7 +117,7 @@ export async function POST(req: Request) {
       .eq("id", orderId);
 
     if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
     }
 
     // Best-effort Morning auto-receipt. Refunds (negative amounts) skip themselves
@@ -147,7 +148,7 @@ export async function POST(req: Request) {
     });
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

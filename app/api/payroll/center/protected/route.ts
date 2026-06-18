@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { fetchSalaryCenterProtectedPayload, isSalaryTrackedWorker } from "@/lib/payroll-center";
@@ -16,7 +17,7 @@ export async function GET() {
       .range(0, 999);
 
     if (usersResult.error) {
-      return NextResponse.json({ error: usersResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(usersResult.error.message) }, { status: 400 });
     }
 
     const allRows = (usersResult.data ?? []) as Array<{
@@ -36,7 +37,7 @@ export async function GET() {
 
     return NextResponse.json(payload);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

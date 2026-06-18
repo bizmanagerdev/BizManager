@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
       .select("id,expense_id")
       .eq("id", rowId)
       .maybeSingle();
-    if (rowError) return NextResponse.json({ error: rowError.message }, { status: 400 });
+    if (rowError) return NextResponse.json({ error: toHebrewError(rowError.message) }, { status: 400 });
     if (!row?.id) return NextResponse.json({ error: "השורה לא נמצאה." }, { status: 404 });
     const expenseId = typeof row.expense_id === "string" ? row.expense_id : "";
 
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
       if (Number.isFinite(amount)) snapshot.amount = amount;
       if (typeof body.include === "boolean") snapshot.include = body.include;
       const { error: snapError } = await supabase.from("card_statement_rows").update(snapshot).eq("id", rowId);
-      if (snapError) return NextResponse.json({ error: snapError.message }, { status: 400 });
+      if (snapError) return NextResponse.json({ error: toHebrewError(snapError.message) }, { status: 400 });
       return NextResponse.json({ ok: true });
     }
 
@@ -98,7 +99,7 @@ export async function POST(req: Request) {
         property_id: propertyId,
       })
       .eq("id", expenseId);
-    if (expenseError) return NextResponse.json({ error: expenseError.message }, { status: 400 });
+    if (expenseError) return NextResponse.json({ error: toHebrewError(expenseError.message) }, { status: 400 });
 
     // Reconcile the project_expenses link (mirrors create/import behavior).
     const { data: link } = await supabase
@@ -151,7 +152,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "עדכון השורה נכשל.";
+    const message = toHebrewError(err, "עדכון השורה נכשל.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

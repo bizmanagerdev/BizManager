@@ -1,4 +1,5 @@
 ﻿"use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -211,7 +212,7 @@ export default function ProjectDetailsActions({
       setExistingDocuments((prev) => prev.filter((document) => document.document_id !== documentId));
       router.refresh();
     } catch (error: unknown) {
-      setDocumentActionError(error instanceof Error ? error.message : "שגיאה לא ידועה");
+      setDocumentActionError(toHebrewError(error, "שגיאה לא ידועה"));
     } finally {
       setDeletingDocumentId(null);
     }
@@ -272,7 +273,7 @@ export default function ProjectDetailsActions({
       setAttachmentFiles([]);
       router.refresh();
     } catch (error: unknown) {
-      setEditError(error instanceof Error ? error.message : "שגיאה לא ידועה");
+      setEditError(toHebrewError(error, "שגיאה לא ידועה"));
     } finally {
       setEditSubmitting(false);
     }

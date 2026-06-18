@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { logAuditEvent } from "@/lib/audit";
@@ -85,7 +86,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     .eq("id", userId)
     .maybeSingle();
   if (workerResult.error) {
-    return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(workerResult.error.message) }, { status: 400 });
   }
   if (!workerResult.data?.id) {
     return NextResponse.json({ error: "Worker not found." }, { status: 404 });
@@ -135,7 +136,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
       .maybeSingle();
 
     if (existingPaymentResult.error) {
-      return NextResponse.json({ error: existingPaymentResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(existingPaymentResult.error.message) }, { status: 400 });
     }
     if (!existingPaymentResult.data?.id) {
       return NextResponse.json({ error: "Payment not found." }, { status: 404 });
@@ -150,7 +151,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
       .eq("worker_payment_id", paymentId);
 
     if (existingAllocationsResult.error) {
-      return NextResponse.json({ error: existingAllocationsResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(existingAllocationsResult.error.message) }, { status: 400 });
     }
 
     existingAllocations = (existingAllocationsResult.data ?? []) as ExistingAllocationRow[];
@@ -181,7 +182,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
       .in("source_id", sourceIdsToValidate);
 
     if (debtItemsResult.error) {
-      return NextResponse.json({ error: debtItemsResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(debtItemsResult.error.message) }, { status: 400 });
     }
 
     debtItems = (debtItemsResult.data ?? []) as DebtItemRow[];
@@ -219,7 +220,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
       .maybeSingle();
 
     if (paymentInsert.error) {
-      return NextResponse.json({ error: paymentInsert.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(paymentInsert.error.message) }, { status: 400 });
     }
     if (!paymentInsert.data?.id) {
       return NextResponse.json({ error: "Failed to create payment." }, { status: 500 });
@@ -241,7 +242,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
       .maybeSingle();
 
     if (paymentUpdate.error) {
-      return NextResponse.json({ error: paymentUpdate.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(paymentUpdate.error.message) }, { status: 400 });
     }
     if (!paymentUpdate.data?.id) {
       return NextResponse.json({ error: "Failed to update payment." }, { status: 500 });
@@ -253,7 +254,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
       .eq("worker_payment_id", existingPaymentId);
 
     if (deleteExistingAllocations.error) {
-      return NextResponse.json({ error: deleteExistingAllocations.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(deleteExistingAllocations.error.message) }, { status: 400 });
     }
 
   }
@@ -278,7 +279,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
       if (mode === "create") {
         await supabase.from("worker_payments").delete().eq("id", existingPaymentId);
       }
-      return NextResponse.json({ error: allocationInsert.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(allocationInsert.error.message) }, { status: 400 });
     }
     insertedAllocations = allocationInsert.data ?? [];
   }
@@ -290,7 +291,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
     .maybeSingle();
 
   if (paymentResult.error) {
-    return NextResponse.json({ error: paymentResult.error.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(paymentResult.error.message) }, { status: 400 });
   }
 
   await logAuditEvent({
@@ -312,7 +313,7 @@ export async function POST(req: Request) {
   try {
     return await saveWorkerPayment(req, "create");
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -321,7 +322,7 @@ export async function PATCH(req: Request) {
   try {
     return await saveWorkerPayment(req, "update");
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -347,7 +348,7 @@ export async function DELETE(req: Request) {
       .maybeSingle();
 
     if (existingPaymentResult.error) {
-      return NextResponse.json({ error: existingPaymentResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(existingPaymentResult.error.message) }, { status: 400 });
     }
     if (!existingPaymentResult.data?.id) {
       return NextResponse.json({ error: "Payment not found." }, { status: 404 });
@@ -358,7 +359,7 @@ export async function DELETE(req: Request) {
 
     const deleteResult = await supabase.from("worker_payments").delete().eq("id", paymentId);
     if (deleteResult.error) {
-      return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(deleteResult.error.message) }, { status: 400 });
     }
 
     await logAuditEvent({
@@ -372,7 +373,7 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

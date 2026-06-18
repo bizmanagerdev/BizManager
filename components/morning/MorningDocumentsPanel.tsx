@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -145,7 +146,7 @@ export default function MorningDocumentsPanel({
         error?: string;
         morningDocument?: MorningLocalDocument;
       };
-      if (!response.ok) throw new Error(json.error ?? "פעולת Morning נכשלה.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "פעולת Morning נכשלה."));
       const nextDocument = json.morningDocument;
       if (nextDocument) {
         setDocs((current) => [nextDocument, ...current]);
@@ -153,7 +154,7 @@ export default function MorningDocumentsPanel({
       toast.success("המסמך נוצר ב-Morning");
       onChanged?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "פעולת Morning נכשלה.");
+      toast.error(toHebrewError(error, "פעולת Morning נכשלה."));
     } finally {
       setBusyKey("");
     }
@@ -167,7 +168,7 @@ export default function MorningDocumentsPanel({
         error?: string;
         document?: MorningLocalDocument;
       };
-      if (!response.ok) throw new Error(json.error ?? "סנכרון מסמך Morning נכשל.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "סנכרון מסמך Morning נכשל."));
       const nextDocument = json.document;
       if (nextDocument) {
         setDocs((current) => current.map((item) => (item.id === localId ? nextDocument : item)));
@@ -175,7 +176,7 @@ export default function MorningDocumentsPanel({
       toast.success("מסמך Morning סונכרן");
       onChanged?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "סנכרון מסמך Morning נכשל.");
+      toast.error(toHebrewError(error, "סנכרון מסמך Morning נכשל."));
     } finally {
       setBusyKey("");
     }
@@ -192,12 +193,12 @@ export default function MorningDocumentsPanel({
     try {
       const response = await fetch(`/api/morning/documents/${localId}`, { method: "DELETE" });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(json.error ?? "מחיקת מסמך Morning נכשלה.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "מחיקת מסמך Morning נכשלה."));
       setDocs((current) => current.filter((item) => item.id !== localId));
       toast.success("המסמך הוסר מ-BizH");
       onChanged?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "מחיקת מסמך Morning נכשלה.");
+      toast.error(toHebrewError(error, "מחיקת מסמך Morning נכשלה."));
     } finally {
       setBusyKey("");
     }
@@ -221,7 +222,7 @@ export default function MorningDocumentsPanel({
         error?: string;
         document?: MorningLocalDocument;
       };
-      if (!response.ok) throw new Error(json.error ?? "עדכון מסמך Morning נכשל.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "עדכון מסמך Morning נכשל."));
       if (json.document) {
         setDocs((current) => current.map((item) => (item.id === editing.id ? json.document! : item)));
       }
@@ -230,7 +231,7 @@ export default function MorningDocumentsPanel({
       setEditNotes("");
       onChanged?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "עדכון מסמך Morning נכשל.");
+      toast.error(toHebrewError(error, "עדכון מסמך Morning נכשל."));
     } finally {
       setBusyKey("");
     }
@@ -244,7 +245,7 @@ export default function MorningDocumentsPanel({
         error?: string;
         document?: MorningLocalDocument;
       };
-      if (!response.ok) throw new Error(json.error ?? "סגירת מסמך Morning נכשלה.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "סגירת מסמך Morning נכשלה."));
       const nextDocument = json.document;
       if (nextDocument) {
         setDocs((current) => current.map((item) => (item.id === localId ? nextDocument : item)));
@@ -252,7 +253,7 @@ export default function MorningDocumentsPanel({
       toast.success("מסמך Morning נסגר");
       onChanged?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "סגירת מסמך Morning נכשלה.");
+      toast.error(toHebrewError(error, "סגירת מסמך Morning נכשלה."));
     } finally {
       setBusyKey("");
     }

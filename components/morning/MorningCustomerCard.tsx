@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -112,11 +113,11 @@ export default function MorningCustomerCard({
         body: JSON.stringify({ customerId }),
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(json.error ?? "יצירת לקוח ב-Morning נכשלה.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "יצירת לקוח ב-Morning נכשלה."));
       toast.success("לקוח Morning נוצר בהצלחה.");
       onChanged?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "יצירת לקוח ב-Morning נכשלה.");
+      toast.error(toHebrewError(error, "יצירת לקוח ב-Morning נכשלה."));
     } finally {
       setBusyKey("");
     }
@@ -131,11 +132,11 @@ export default function MorningCustomerCard({
         body: JSON.stringify({ customerId }),
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(json.error ?? "סנכרון פרטי חיוב ל-Morning נכשל.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "סנכרון פרטי חיוב ל-Morning נכשל."));
       toast.success("פרטי החיוב סונכרנו ל-Morning.");
       onChanged?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "סנכרון פרטי חיוב ל-Morning נכשל.");
+      toast.error(toHebrewError(error, "סנכרון פרטי חיוב ל-Morning נכשל."));
     } finally {
       setBusyKey("");
     }
@@ -154,7 +155,7 @@ export default function MorningCustomerCard({
         bestCandidate?: MatchCandidate | null;
         shouldAutoMatch?: boolean;
       };
-      if (!response.ok) throw new Error(json.error ?? "בדיקת התאמות Morning נכשלה.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "בדיקת התאמות Morning נכשלה."));
       const nextCandidates = Array.isArray(json.candidates) ? json.candidates : [];
       setCandidates(nextCandidates);
       if (json.shouldAutoMatch && json.bestCandidate?.morningClientId) {
@@ -163,7 +164,7 @@ export default function MorningCustomerCard({
         toast.info("לא נמצאה התאמה אוטומטית ב-Morning. אפשר ליצור לקוח חדש.");
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "בדיקת התאמות Morning נכשלה.");
+      toast.error(toHebrewError(error, "בדיקת התאמות Morning נכשלה."));
     } finally {
       setBusyKey("");
     }
@@ -181,12 +182,12 @@ export default function MorningCustomerCard({
         }),
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(json.error ?? "קישור הלקוח ל-Morning נכשל.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "קישור הלקוח ל-Morning נכשל."));
       toast.success("הלקוח קושר ל-Morning.");
       setCandidates([]);
       onChanged?.();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "קישור הלקוח ל-Morning נכשל.");
+      toast.error(toHebrewError(error, "קישור הלקוח ל-Morning נכשל."));
     } finally {
       setBusyKey("");
     }

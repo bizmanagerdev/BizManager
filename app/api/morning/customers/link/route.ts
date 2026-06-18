@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "קישור לקוח ל-Morning נכשל.";
+    const message = toHebrewError(error, "קישור לקוח ל-Morning נכשל.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { importMatchMorningClients } from "@/lib/morning/service";
@@ -9,7 +10,7 @@ export async function GET() {
     const result = await importMatchMorningClients(access.value.supabase);
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "ייבוא/התאמת לקוחות Morning נכשל.";
+    const message = toHebrewError(error, "ייבוא/התאמת לקוחות Morning נכשל.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

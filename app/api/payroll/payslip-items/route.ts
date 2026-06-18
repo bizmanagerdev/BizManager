@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isPayrollPeriodEditable } from "@/lib/payroll-center";
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (payslipResult.error) {
-      return NextResponse.json({ error: payslipResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(payslipResult.error.message) }, { status: 400 });
     }
     if (!payslipResult.data) {
       return NextResponse.json({ error: "Payslip not found." }, { status: 404 });
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (periodResult.error) {
-      return NextResponse.json({ error: periodResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(periodResult.error.message) }, { status: 400 });
     }
     if (!periodResult.data || !isPayrollPeriodEditable(periodResult.data.status)) {
       return NextResponse.json({ error: "Only open payroll periods can be edited." }, { status: 409 });
@@ -74,7 +75,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (insertResult.error) {
-      return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(insertResult.error.message) }, { status: 400 });
     }
 
     const itemsResult = await supabase
@@ -84,7 +85,7 @@ export async function POST(req: Request) {
       .range(0, 999);
 
     if (itemsResult.error) {
-      return NextResponse.json({ error: itemsResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(itemsResult.error.message) }, { status: 400 });
     }
 
     const totalItems = ((itemsResult.data ?? []) as Array<{ amount: number | string | null }>).reduce(
@@ -113,12 +114,12 @@ export async function POST(req: Request) {
       .eq("id", payslipId);
 
     if (updatePayslip.error) {
-      return NextResponse.json({ error: updatePayslip.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(updatePayslip.error.message) }, { status: 400 });
     }
 
     return NextResponse.json({ item: insertResult.data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -160,7 +161,7 @@ export async function DELETE(req: Request) {
 
     const deleteResult = await supabase.from("payslip_items").delete().eq("id", itemId).eq("payslip_id", payslipId);
     if (deleteResult.error) {
-      return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(deleteResult.error.message) }, { status: 400 });
     }
 
     const itemsResult = await supabase.from("payslip_items").select("amount").eq("payslip_id", payslipId).range(0, 999);
@@ -177,7 +178,7 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

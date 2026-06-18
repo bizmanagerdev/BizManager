@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (workerResult.error) {
-      return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(workerResult.error.message) }, { status: 400 });
     }
     if (!workerResult.data?.id) {
       return NextResponse.json({ error: "Worker not found." }, { status: 404 });
@@ -76,7 +77,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (sessionError) {
-      return NextResponse.json({ error: sessionError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(sessionError.message) }, { status: 400 });
     }
     if (!session || typeof session.clock_in !== "string" || typeof session.clock_out !== "string") {
       return NextResponse.json({ error: "Saved session not found" }, { status: 404 });
@@ -156,7 +157,7 @@ export async function POST(req: Request) {
           .select("id")
           .eq("id", part.projectId)
           .maybeSingle();
-        if (projectError) return NextResponse.json({ error: projectError.message }, { status: 400 });
+        if (projectError) return NextResponse.json({ error: toHebrewError(projectError.message) }, { status: 400 });
         if (!project) return NextResponse.json({ error: "הפרויקט שנבחר לא נמצא." }, { status: 404 });
       }
       if (part.propertyId) {
@@ -165,7 +166,7 @@ export async function POST(req: Request) {
           .select("id")
           .eq("id", part.propertyId)
           .maybeSingle();
-        if (propertyError) return NextResponse.json({ error: propertyError.message }, { status: 400 });
+        if (propertyError) return NextResponse.json({ error: toHebrewError(propertyError.message) }, { status: 400 });
         if (!property) return NextResponse.json({ error: "הנכס שנבחר לא נמצא." }, { status: 404 });
       }
     }
@@ -205,7 +206,7 @@ export async function POST(req: Request) {
       .eq("user_id", profile.id);
 
     if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
     }
 
     const insertRows = computedRanges.slice(1).map((part) => ({
@@ -234,7 +235,7 @@ export async function POST(req: Request) {
           .eq("id", sessionId)
           .eq("user_id", profile.id);
 
-        return NextResponse.json({ error: insertError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(insertError.message) }, { status: 400 });
       }
     }
 
@@ -245,7 +246,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

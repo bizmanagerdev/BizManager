@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -28,7 +29,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
     });
     return NextResponse.json({ document });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "עדכון מסמך Morning נכשל.";
+    const message = toHebrewError(error, "עדכון מסמך Morning נכשל.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
@@ -45,7 +46,7 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "מחיקת מסמך Morning נכשלה.";
+    const message = toHebrewError(error, "מחיקת מסמך Morning נכשלה.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

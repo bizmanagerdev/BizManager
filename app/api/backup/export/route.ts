@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -67,7 +68,7 @@ async function fetchAllRows(
         useOrder = false;
         continue;
       }
-      return { error: error.message || error.code || "read failed" };
+      return { error: toHebrewError(error.message) || error.code || "read failed" };
     }
 
     const rows = (data ?? []) as Row[];

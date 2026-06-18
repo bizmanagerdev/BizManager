@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -155,7 +156,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ transactions });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "חילוץ הקובץ נכשל.";
+    const message = toHebrewError(err, "חילוץ הקובץ נכשל.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

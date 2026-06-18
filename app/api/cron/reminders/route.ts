@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendPushToUser } from "@/lib/push";
@@ -37,7 +38,7 @@ export async function GET(req: Request) {
     .order("remind_at", { ascending: true })
     .range(0, 199);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 500 });
 
   const reminders = (dueRows ?? []) as Row[];
   if (reminders.length === 0) {

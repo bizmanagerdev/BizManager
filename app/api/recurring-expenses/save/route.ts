@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
@@ -153,7 +154,7 @@ export async function POST(req: Request) {
         .update(payload)
         .eq("id", templateId);
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     } else {
       const { data, error } = await supabase
         .from("recurring_expense_templates")
@@ -164,7 +165,7 @@ export async function POST(req: Request) {
         .select("id")
         .maybeSingle<{ id: string }>();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
       templateId = data?.id ?? null;
     }
 
@@ -174,7 +175,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, id: templateId });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

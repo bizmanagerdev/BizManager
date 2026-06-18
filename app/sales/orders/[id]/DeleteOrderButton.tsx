@@ -1,4 +1,5 @@
 ﻿"use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -31,7 +32,7 @@ export default function DeleteOrderButton({
       const result = await offlineFetch("/api/orders/delete", { order_id: orderId }, "מחיקת הזמנה");
       if (!result.queued) {
         if (!result.ok) {
-          setError(result.error || "מחיקת הזמנה נכשלה.");
+          setError(toHebrewError(result.error, "מחיקת הזמנה נכשלה."));
           return;
         }
         if (!(result.data as { ok?: boolean })?.ok) {
@@ -44,7 +45,7 @@ export default function DeleteOrderButton({
       router.push("/sales");
       router.refresh();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
       setLoading(false);
     }

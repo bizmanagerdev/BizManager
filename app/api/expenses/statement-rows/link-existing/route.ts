@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
       .select("id")
       .eq("id", expenseId)
       .maybeSingle();
-    if (expErr) return NextResponse.json({ error: expErr.message }, { status: 400 });
+    if (expErr) return NextResponse.json({ error: toHebrewError(expErr.message) }, { status: 400 });
     if (!expense?.id) return NextResponse.json({ error: "ההוצאה הקיימת לא נמצאה." }, { status: 404 });
 
     const { data: row, error: rowErr } = await supabase
@@ -30,14 +31,14 @@ export async function POST(req: Request) {
       .select("id,statement_id")
       .eq("id", rowId)
       .maybeSingle();
-    if (rowErr) return NextResponse.json({ error: rowErr.message }, { status: 400 });
+    if (rowErr) return NextResponse.json({ error: toHebrewError(rowErr.message) }, { status: 400 });
     if (!row?.id) return NextResponse.json({ error: "השורה לא נמצאה." }, { status: 404 });
 
     const { error: linkErr } = await supabase
       .from("card_statement_rows")
       .update({ expense_id: expenseId })
       .eq("id", rowId);
-    if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 400 });
+    if (linkErr) return NextResponse.json({ error: toHebrewError(linkErr.message) }, { status: 400 });
 
     // Keep the statement's created_count in sync (rows that now carry an expense).
     const statementId = typeof row.statement_id === "string" ? row.statement_id : "";
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "הקישור נכשל.";
+    const message = toHebrewError(err, "הקישור נכשל.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

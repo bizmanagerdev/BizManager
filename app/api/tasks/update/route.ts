@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -135,7 +136,7 @@ export async function POST(req: Request) {
         .maybeSingle<Record<string, unknown>>();
 
       if (currentError) {
-        return NextResponse.json({ error: currentError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(currentError.message) }, { status: 400 });
       }
       if (!current) {
         return NextResponse.json({ error: "Task not found" }, { status: 404 });
@@ -214,7 +215,7 @@ export async function POST(req: Request) {
           .from("task_members")
           .insert(memberIds.map((userId) => ({ task_id: id, user_id: userId })));
         if (membersError) {
-          return NextResponse.json({ error: membersError.message }, { status: 400 });
+          return NextResponse.json({ error: toHebrewError(membersError.message) }, { status: 400 });
         }
       }
     }
@@ -232,7 +233,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ task: data });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

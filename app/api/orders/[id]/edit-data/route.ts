@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { STORAGE_BUCKET } from "@/lib/storage";
@@ -74,22 +75,22 @@ export async function GET(
   ]);
 
   if (customersError) {
-    return NextResponse.json({ error: customersError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(customersError.message) }, { status: 400 });
   }
   if (productsError) {
-    return NextResponse.json({ error: productsError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(productsError.message) }, { status: 400 });
   }
   if (orderError) {
-    return NextResponse.json({ error: orderError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(orderError.message) }, { status: 400 });
   }
   if (orderItemsError) {
-    return NextResponse.json({ error: orderItemsError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(orderItemsError.message) }, { status: 400 });
   }
   if (paymentsError) {
-    return NextResponse.json({ error: paymentsError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(paymentsError.message) }, { status: 400 });
   }
   if (deliveryLinksError) {
-    return NextResponse.json({ error: deliveryLinksError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(deliveryLinksError.message) }, { status: 400 });
   }
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });

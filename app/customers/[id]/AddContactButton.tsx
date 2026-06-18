@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -83,14 +84,14 @@ export default function AddContactButton({
         { idempotent: true }
       );
       if (!result.queued && !result.ok) {
-        setError(result.error || "יצירת איש קשר נכשלה.");
+        setError(toHebrewError(result.error, "יצירת איש קשר נכשלה."));
         return;
       }
       if (!result.queued) toast.success("איש הקשר נוסף");
       setOpen(false);
       router.refresh();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
       setBusy(false);
     }

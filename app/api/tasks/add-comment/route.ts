@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
       .select("id,author_id,body,created_at")
       .maybeSingle();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
 
     return NextResponse.json({
       ok: true,
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
     });
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

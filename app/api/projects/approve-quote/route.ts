@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
       )
       .maybeSingle();
 
-    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 400 });
+    if (updateError) return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
     if (!updated || typeof updated.id !== "string") {
       return NextResponse.json({ error: "Project was not updated" }, { status: 400 });
     }
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ project: dashboardRow ?? updated });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -109,7 +109,7 @@ type ReminderItem = {
 };
 
 function getErrorMessage(err: unknown) {
-  return err instanceof Error ? err.message : "Unknown error";
+  return toHebrewError(err, "Unknown error");
 }
 
 const STATUS_OPTIONS: TaskStatus[] = ["todo", "in_progress", "blocked", "done", "cancelled"];
@@ -303,7 +303,7 @@ export function TaskUpsertDialog(props: Props) {
         // Open on the description by default; the user opens one section at a time.
         setOpenSection("description");
       } catch (error: unknown) {
-        toast.error(error instanceof Error ? error.message : "טעינת המשימה נכשלה.");
+        toast.error(toHebrewError(error, "טעינת המשימה נכשלה."));
         props.onOpenChange(false);
       } finally {
         setLoading(false);
@@ -451,7 +451,7 @@ export function TaskUpsertDialog(props: Props) {
         "עדכון משימה"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון משימה", { description: result.error || "" });
+        toast.error("שגיאה בעדכון משימה", { description: toHebrewError(result.error, "") });
         return;
       }
       if (!result.queued) toast.success("המשימה עודכנה");
@@ -485,7 +485,7 @@ export function TaskUpsertDialog(props: Props) {
         return;
       }
       if (!result.ok) {
-        toast.error("שגיאה בהוספת תגובה", { description: result.error || "" });
+        toast.error("שגיאה בהוספת תגובה", { description: toHebrewError(result.error, "") });
         return;
       }
       const comment =
@@ -521,7 +521,7 @@ export function TaskUpsertDialog(props: Props) {
         return;
       }
       if (!result.ok) {
-        toast.error("שגיאה בהוספת תזכורת", { description: result.error || "" });
+        toast.error("שגיאה בהוספת תזכורת", { description: toHebrewError(result.error, "") });
         return;
       }
       const reminder =
@@ -559,7 +559,7 @@ export function TaskUpsertDialog(props: Props) {
         nextStatus === "done" ? "סימון תזכורת כבוצעה" : "ביטול תזכורת"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון תזכורת", { description: result.error || "" });
+        toast.error("שגיאה בעדכון תזכורת", { description: toHebrewError(result.error, "") });
       }
     } catch (error: unknown) {
       toast.error("שגיאה בעדכון תזכורת", { description: getErrorMessage(error) });

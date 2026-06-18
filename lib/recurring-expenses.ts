@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type EnsureRecurringExpensesResult = {
@@ -47,7 +48,7 @@ async function runEnsureRecurringExpensesForDate(
     if (looksLikeMissingSchema(error.message)) {
       return { ok: true, createdCount: 0, skippedMissingSchema: true };
     }
-    return { ok: false, createdCount: 0, skippedMissingSchema: false, error: error.message };
+    return { ok: false, createdCount: 0, skippedMissingSchema: false, error: toHebrewError(error.message) };
   }
 
   const createdCount =

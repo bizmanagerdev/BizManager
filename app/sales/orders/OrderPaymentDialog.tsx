@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -163,7 +164,7 @@ export default function OrderPaymentDialog({
       }
 
       if (!result.ok) {
-        setError(result.error ?? (entryType === "refund" ? "רישום ההחזר נכשל." : "עדכון התשלום נכשל."));
+        setError(toHebrewError(result.error, (entryType === "refund" ? "רישום ההחזר נכשל." : "עדכון התשלום נכשל.")));
         return;
       }
 
@@ -187,7 +188,7 @@ export default function OrderPaymentDialog({
       resetForm();
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "שגיאה לא ידועה");
+      setError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {
       setSubmitting(false);
     }

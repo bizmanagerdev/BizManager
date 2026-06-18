@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useCallback, useState } from "react";
 import { Loader2, MessageCircle } from "lucide-react";
@@ -113,7 +114,7 @@ export default function ProjectWorkerExportActions({
       if (error instanceof Error && error.name === "AbortError") {
         return;
       }
-      setShareMessage(error instanceof Error ? error.message : "יצירת ה-PDF נכשלה.");
+      setShareMessage(toHebrewError(error, "יצירת ה-PDF נכשלה."));
     } finally {
       setActiveMode(null);
     }

@@ -428,7 +428,7 @@ export default function SalaryCenterClient({
       setProtectedData(json);
       setSelectedPeriodId((current) => current || getCurrentPayrollPeriod(json.periods)?.id || "");
     } catch (loadError: unknown) {
-      setProtectedError(loadError instanceof Error ? loadError.message : "Unknown error");
+      setProtectedError(toHebrewError(loadError, "Unknown error"));
       setProtectedData(null);
     } finally {
       setLoadingProtected(false);
@@ -1432,7 +1432,7 @@ export default function SalaryCenterClient({
         body: JSON.stringify({ item_id: itemId, payslip_id: payslipId }),
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(json.error ?? "Request failed.");
+      if (!response.ok) throw new Error(toHebrewError(json.error, "Request failed."));
       setMessage("פריט התלוש נמחק.");
       await refreshAll();
     });
@@ -1612,7 +1612,7 @@ export default function SalaryCenterClient({
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        throw new Error(json.error ?? "Request failed.");
+        throw new Error(toHebrewError(json.error, "Request failed."));
       }
       setWorkerPaymentDialogOpen(false);
       setWorkerPaymentForm(DEFAULT_WORKER_PAYMENT_FORM);
@@ -1688,7 +1688,7 @@ export default function SalaryCenterClient({
       });
       const json = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        throw new Error(json.error ?? "Request failed.");
+        throw new Error(toHebrewError(json.error, "Request failed."));
       }
 
       if (workerPaymentForm.payment_id === pending.paymentId) {

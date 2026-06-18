@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (workerResult.error) {
-      return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(workerResult.error.message) }, { status: 400 });
     }
     if (!workerResult.data?.id) {
       return NextResponse.json({ error: "Worker not found." }, { status: 404 });
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (sessionError) {
-      return NextResponse.json({ error: sessionError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(sessionError.message) }, { status: 400 });
     }
     if (!session?.id) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
@@ -66,12 +67,12 @@ export async function POST(req: Request) {
       .delete()
       .eq("attendance_session_id", sessionId);
     if (deleteAllocationsResult.error) {
-      return NextResponse.json({ error: deleteAllocationsResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(deleteAllocationsResult.error.message) }, { status: 400 });
     }
 
     const { error } = await supabase.from(WORK_SESSIONS_TABLE).delete().eq("id", sessionId);
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     }
 
     await recalculateUserSessionCostsFromRules(supabase, profile.id, {
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
@@ -49,14 +50,14 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (result.error) {
-      return NextResponse.json({ error: result.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(result.error.message) }, { status: 400 });
     }
 
     await recalculateUserSessionCostsFromRules(supabase, userId);
 
     return NextResponse.json({ override: result.data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

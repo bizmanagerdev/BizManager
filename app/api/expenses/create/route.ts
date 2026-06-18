@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (projectError) {
-        return NextResponse.json({ error: projectError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(projectError.message) }, { status: 400 });
       }
       if (!project?.id) {
         return NextResponse.json({ error: "הפרויקט שנבחר לא קיים." }, { status: 400 });
@@ -94,7 +95,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (orderError) {
-        return NextResponse.json({ error: orderError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(orderError.message) }, { status: 400 });
       }
       if (!order?.id) {
         return NextResponse.json({ error: "ההזמנה שנבחרה לא קיימת." }, { status: 400 });
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (propertyError) {
-        return NextResponse.json({ error: propertyError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(propertyError.message) }, { status: 400 });
       }
       if (!property?.id) {
         return NextResponse.json({ error: "הנכס שנבחר לא קיים." }, { status: 400 });
@@ -161,7 +162,7 @@ export async function POST(req: Request) {
 
     const createdExpenseId = typeof expense?.id === "string" ? expense.id : null;
 
-    if (expenseError) return NextResponse.json({ error: expenseError.message }, { status: 400 });
+    if (expenseError) return NextResponse.json({ error: toHebrewError(expenseError.message) }, { status: 400 });
     if (!createdExpenseId) return NextResponse.json({ error: "יצירת ההוצאה נכשלה." }, { status: 500 });
 
     let projectExpense: Record<string, unknown> | null = null;
@@ -181,7 +182,7 @@ export async function POST(req: Request) {
 
       if (linkError) {
         await supabase.from("expenses").delete().eq("id", createdExpenseId);
-        return NextResponse.json({ error: linkError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
       }
 
       projectExpense = (link as Record<string, unknown> | null) ?? null;
@@ -199,7 +200,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ expense, projectExpense });
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "שגיאה לא צפויה בעת יצירת ההוצאה.";
+    const message = toHebrewError(err, "שגיאה לא צפויה בעת יצירת ההוצאה.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

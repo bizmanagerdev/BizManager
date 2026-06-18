@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -413,13 +414,13 @@ export default function TasksPageClient(props: Props) {
           "עדכון סטטוס משימה"
         );
         if (!result.queued && !result.ok) {
-          toast.error("שגיאה בעדכון סטטוס", { description: result.error || "" });
+          toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(result.error, "") });
           setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
           return;
         }
         if (!result.queued) toast.success("הסטטוס עודכן");
       } catch (error: unknown) {
-        toast.error("שגיאה בעדכון סטטוס", { description: error instanceof Error ? error.message : "" });
+        toast.error("שגיאה בעדכון סטטוס", { description: toHebrewError(error, "") });
         setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: task.status } : t)));
       } finally {
         emitProgressActivityEnd();
@@ -488,13 +489,13 @@ export default function TasksPageClient(props: Props) {
     try {
       const result = await offlineFetch("/api/tasks/delete", { id }, "מחיקת משימה");
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת משימה", { description: result.error || "" });
+        toast.error("שגיאה במחיקת משימה", { description: toHebrewError(result.error, "") });
         setTasks(previous);
         return;
       }
       if (!result.queued) toast.success("המשימה נמחקה");
     } catch (error: unknown) {
-      toast.error("שגיאה במחיקת משימה", { description: error instanceof Error ? error.message : "" });
+      toast.error("שגיאה במחיקת משימה", { description: toHebrewError(error, "") });
       setTasks(previous);
     } finally {
       emitProgressActivityEnd();

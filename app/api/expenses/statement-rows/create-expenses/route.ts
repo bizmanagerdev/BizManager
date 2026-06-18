@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
       )
       .eq("statement_id", statementId)
       .is("expense_id", null);
-    if (rowError) return NextResponse.json({ error: rowError.message }, { status: 400 });
+    if (rowError) return NextResponse.json({ error: toHebrewError(rowError.message) }, { status: 400 });
 
     const candidates = (rowData ?? []) as RowRecord[];
     const errors: { id: string; message: string }[] = [];
@@ -179,7 +180,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ created: insertedIds.length, skipped, errors });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "יצירת ההוצאות נכשלה.";
+    const message = toHebrewError(err, "יצירת ההוצאות נכשלה.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

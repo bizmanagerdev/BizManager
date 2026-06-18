@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit";
@@ -166,7 +167,7 @@ export async function ensureMorningClientForCustomer(
 
     return morningClient;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "סנכרון לקוח ל-Morning נכשל.";
+    const message = toHebrewError(error, "סנכרון לקוח ל-Morning נכשל.");
     await updateCustomerMorningFields(supabase, customerId, {
       morning_last_sync_error: message,
     });
@@ -955,7 +956,7 @@ export async function tryAutoIssueInvoiceForOrder(
 
     return { ok: true, skipped: false, reason: null, morningDocumentId };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "auto-issue invoice failed";
+    const message = toHebrewError(error, "auto-issue invoice failed");
     await logAutoIssueFailure(supabase, {
       tableName: "orders",
       recordId: orderId,
@@ -1026,7 +1027,7 @@ export async function tryAutoIssueReceiptForPayment(
     const morningDocumentId = getString(result.morningDocument as DbRow | null, ["id"]);
     return { ok: true, skipped: false, reason: null, morningDocumentId };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "auto-issue receipt failed";
+    const message = toHebrewError(error, "auto-issue receipt failed");
     await logAutoIssueFailure(supabase, {
       tableName: "payments",
       recordId: paymentId,

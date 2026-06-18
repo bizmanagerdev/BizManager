@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -169,14 +170,14 @@ export default function AddCollectionEntryDialog({
         return;
       }
       if (!result.ok) {
-        setError(result.error || "שמירה נכשלה.");
+        setError(toHebrewError(result.error, "שמירה נכשלה."));
         return;
       }
       toast.success(mode === "reminder" ? "התזכורת נוספה." : "השיחה תועדה.");
       onSaved();
       onOpenChange(false);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "שמירה נכשלה.");
+      setError(toHebrewError(err, "שמירה נכשלה."));
     } finally {
       setSubmitting(false);
     }

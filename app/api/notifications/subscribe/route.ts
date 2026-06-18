@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
   );
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: toHebrewError(error.message) }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

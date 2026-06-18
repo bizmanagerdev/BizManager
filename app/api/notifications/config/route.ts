@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import type { AlertRow } from "@/lib/notifications/types";
@@ -17,7 +18,7 @@ export async function GET() {
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
 
-  if (error) return NextResponse.json({ alerts: [], error: error.message });
+  if (error) return NextResponse.json({ alerts: [], error: toHebrewError(error.message) });
   return NextResponse.json({ alerts: (data ?? []) as AlertRow[] });
 }
 
@@ -47,6 +48,6 @@ export async function POST(req: Request) {
     .select("id")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 500 });
   return NextResponse.json({ ok: true, id: data.id });
 }

@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { createSupabaseRouteClient } from "@/lib/supabase/route";
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
       );
     }
 
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
   }
 
   // Record the login in the activity feed (best-effort — never blocks sign-in).

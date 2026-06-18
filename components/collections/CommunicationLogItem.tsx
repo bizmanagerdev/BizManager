@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { toast } from "sonner";
@@ -101,7 +102,7 @@ export default function CommunicationLogItem({
         setEditing(false);
         onChanged();
       } else {
-        toast.error("עדכון השיחה נכשל", { description: result.error || "" });
+        toast.error("עדכון השיחה נכשל", { description: toHebrewError(result.error, "") });
       }
     } finally {
       setBusy(false);
@@ -121,7 +122,7 @@ export default function CommunicationLogItem({
         toast.success("השיחה נמחקה");
         onChanged();
       } else {
-        toast.error("מחיקת השיחה נכשלה", { description: result.error || "" });
+        toast.error("מחיקת השיחה נכשלה", { description: toHebrewError(result.error, "") });
       }
     } finally {
       setBusy(false);

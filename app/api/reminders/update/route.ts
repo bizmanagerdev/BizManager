@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
       .update(updates)
       .eq("id", id)
       .select("id");
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     // No row came back → the update matched nothing the caller may change (wrong
     // id, or blocked by row-level security). Surface it instead of a false "ok".
     if (!data || data.length === 0) {
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

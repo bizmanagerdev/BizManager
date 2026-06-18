@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -233,7 +234,7 @@ export default function CollectionsClient({
         status === "done" ? "סימון תזכורת כבוצעה" : "ביטול תזכורת"
       );
       if (!result.queued && !result.ok) {
-        toast.error(result.error || "עדכון התזכורת נכשל.");
+        toast.error(toHebrewError(result.error, "עדכון התזכורת נכשל."));
         return;
       }
       setCompletedReminderIds((prev) => new Set(prev).add(id));
@@ -242,7 +243,7 @@ export default function CollectionsClient({
         router.refresh();
       }
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "עדכון התזכורת נכשל.");
+      toast.error(toHebrewError(err, "עדכון התזכורת נכשל."));
     }
   }
 

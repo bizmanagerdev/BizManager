@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -102,12 +103,12 @@ export async function POST(req: Request) {
     if (rowsError) {
       // Roll back the (now-empty) statement so we don't leave an orphan header.
       await supabase.from("card_statements").delete().eq("id", statementId);
-      return NextResponse.json({ error: rowsError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(rowsError.message) }, { status: 400 });
     }
 
     return NextResponse.json({ statement_id: statementId, saved: statementRows.length });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "שגיאה לא צפויה בעת שמירת הדף.";
+    const message = toHebrewError(err, "שגיאה לא צפויה בעת שמירת הדף.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -78,14 +79,14 @@ export default function RemindersPanel({ reminders: initial }: { reminders: Remi
         return;
       }
       if (!result.ok) {
-        toast.error(result.error || "הפעולה נכשלה.");
+        toast.error(toHebrewError(result.error, "הפעולה נכשלה."));
         return;
       }
       setDoneIds((prev) => new Set(prev).add(id));
       toast.success("התזכורת סומנה כבוצעה.");
       router.refresh();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "הפעולה נכשלה.");
+      toast.error(toHebrewError(err, "הפעולה נכשלה."));
     } finally {
       setBusyId(null);
     }

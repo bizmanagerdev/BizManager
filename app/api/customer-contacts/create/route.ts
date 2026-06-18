@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 ﻿import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (customerError) {
-      return NextResponse.json({ error: customerError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(customerError.message) }, { status: 400 });
     }
     if (!customer?.id) {
       return NextResponse.json({ error: "Invalid customer_id" }, { status: 400 });
@@ -64,7 +65,7 @@ export async function POST(req: Request) {
         .eq("is_primary", true);
       if (clearPrimaryError) {
         return NextResponse.json(
-          { error: clearPrimaryError.message },
+          { error: toHebrewError(clearPrimaryError.message) },
           { status: 400 }
         );
       }
@@ -87,7 +88,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     }
     if (!data || typeof data.id !== "string") {
       return NextResponse.json({ error: "Contact was not created" }, { status: 400 });
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ contact: data });
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

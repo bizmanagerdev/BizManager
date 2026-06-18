@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
@@ -123,7 +124,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (sessionError) {
-      return NextResponse.json({ error: sessionError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(sessionError.message) }, { status: 400 });
     }
     if (!session) {
       return NextResponse.json({ error: "המשמרת לא נמצאה." }, { status: 404 });
@@ -139,7 +140,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (selectedUserError) {
-      return NextResponse.json({ error: selectedUserError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(selectedUserError.message) }, { status: 400 });
     }
     if (!selectedUser?.id) {
       return NextResponse.json({ error: "העובד שנבחר לא נמצא." }, { status: 404 });
@@ -155,7 +156,7 @@ export async function POST(req: Request) {
         .select("id")
         .eq("id", projectId)
         .maybeSingle();
-      if (projectError) return NextResponse.json({ error: projectError.message }, { status: 400 });
+      if (projectError) return NextResponse.json({ error: toHebrewError(projectError.message) }, { status: 400 });
       if (!project) return NextResponse.json({ error: "הפרויקט שנבחר לא נמצא." }, { status: 404 });
     }
 
@@ -165,7 +166,7 @@ export async function POST(req: Request) {
         .select("id")
         .eq("id", propertyId)
         .maybeSingle();
-      if (propertyError) return NextResponse.json({ error: propertyError.message }, { status: 400 });
+      if (propertyError) return NextResponse.json({ error: toHebrewError(propertyError.message) }, { status: 400 });
       if (!property) return NextResponse.json({ error: "הנכס שנבחר לא נמצא." }, { status: 404 });
     }
 
@@ -178,7 +179,7 @@ export async function POST(req: Request) {
       .limit(500);
 
     if (siblingSessionsError) {
-      return NextResponse.json({ error: siblingSessionsError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(siblingSessionsError.message) }, { status: 400 });
     }
 
     const { data: salaryAgreements, error: salaryAgreementsError } = await supabase
@@ -188,7 +189,7 @@ export async function POST(req: Request) {
       .order("valid_from", { ascending: false });
 
     if (salaryAgreementsError) {
-      return NextResponse.json({ error: salaryAgreementsError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(salaryAgreementsError.message) }, { status: 400 });
     }
 
     if (workerType !== "session_only") {
@@ -256,7 +257,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     }
 
     if (canRecalculateLaborCost && requestedLaborCost === null && clockOut) {
@@ -281,14 +282,14 @@ export async function POST(req: Request) {
         .eq("id", sessionId)
         .maybeSingle();
       if (refreshed.error) {
-        return NextResponse.json({ error: refreshed.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(refreshed.error.message) }, { status: 400 });
       }
       return NextResponse.json({ session: refreshed.data });
     }
 
     return NextResponse.json({ session: data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

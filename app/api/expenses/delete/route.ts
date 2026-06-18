@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -45,10 +46,10 @@ export async function POST(req: Request) {
       ]);
 
     if (expenseReadError) {
-      return NextResponse.json({ error: expenseReadError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(expenseReadError.message) }, { status: 400 });
     }
     if (projectExpenseReadError) {
-      return NextResponse.json({ error: projectExpenseReadError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(projectExpenseReadError.message) }, { status: 400 });
     }
     if (!expenseRow?.id) {
       return NextResponse.json({ error: "Expense not found" }, { status: 404 });
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
       .eq("expense_id", expenseId);
 
     if (projectExpenseDeleteError) {
-      return NextResponse.json({ error: projectExpenseDeleteError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(projectExpenseDeleteError.message) }, { status: 400 });
     }
 
     const { error: expenseDeleteError } = await supabase
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
       .eq("id", expenseId);
 
     if (expenseDeleteError) {
-      return NextResponse.json({ error: expenseDeleteError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(expenseDeleteError.message) }, { status: 400 });
     }
 
     await logAuditEvent({
@@ -106,7 +107,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

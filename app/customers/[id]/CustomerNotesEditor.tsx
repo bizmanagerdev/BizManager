@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -31,7 +32,7 @@ export default function CustomerNotesEditor({
         "עדכון הערות לקוח"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שמירת ההערות נכשלה", { description: result.error || "" });
+        toast.error("שמירת ההערות נכשלה", { description: toHebrewError(result.error, "") });
         return;
       }
       if (!result.queued) toast.success("ההערות נשמרו");

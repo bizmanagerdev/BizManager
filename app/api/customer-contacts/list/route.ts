@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -20,7 +21,7 @@ export async function GET(req: Request) {
     .order("full_name", { ascending: true });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
   }
 
   return NextResponse.json({ contacts: data ?? [] });

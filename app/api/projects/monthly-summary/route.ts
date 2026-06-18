@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
       .range(0, 4999);
 
     if (projectError) {
-      return NextResponse.json({ error: projectError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(projectError.message) }, { status: 400 });
     }
 
     const projects = (projectRows ?? []) as Row[];
@@ -88,13 +89,13 @@ export async function POST(req: Request) {
           ];
 
     if (paymentError) {
-      return NextResponse.json({ error: paymentError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(paymentError.message) }, { status: 400 });
     }
     if (financialError) {
-      return NextResponse.json({ error: financialError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(financialError.message) }, { status: 400 });
     }
     if (workerBalanceError) {
-      return NextResponse.json({ error: workerBalanceError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(workerBalanceError.message) }, { status: 400 });
     }
 
     const paidTotalByProjectId = new Map<string, number>();
@@ -185,7 +186,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

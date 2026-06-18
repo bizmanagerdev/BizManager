@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useSyncExternalStore } from "react";
 
@@ -71,7 +72,7 @@ async function refresh(force = false): Promise<void> {
         error?: string;
       };
       if (!res.ok) {
-        throw new Error(json.error ?? "טעינת ההתראות נכשלה.");
+        throw new Error(toHebrewError(json.error, "טעינת ההתראות נכשלה."));
       }
       const alerts = Array.isArray(json.alerts) ? json.alerts : [];
       state = { alerts, error: null, loading: false };
@@ -80,7 +81,7 @@ async function refresh(force = false): Promise<void> {
       state = {
         alerts: state.alerts,
         loading: false,
-        error: err instanceof Error ? err.message : "טעינת ההתראות נכשלה.",
+        error: toHebrewError(err, "טעינת ההתראות נכשלה."),
       };
     } finally {
       inFlight = null;

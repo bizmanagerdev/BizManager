@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import Image from "next/image";
 import { useMemo, useState } from "react";
@@ -83,7 +84,7 @@ type TaskReminder = {
 };
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "";
+  return toHebrewError(error, "");
 }
 
 type Props = {
@@ -178,7 +179,7 @@ export default function TaskDetailClient(props: Props) {
       }
       if (!result.ok) {
         toast.error("שגיאה בהוספת תגובה", {
-          description: result.error || "",
+          description: toHebrewError(result.error, ""),
         });
         return;
       }
@@ -217,7 +218,7 @@ export default function TaskDetailClient(props: Props) {
         return;
       }
       if (!result.ok) {
-        toast.error("שגיאה בהוספת תזכורת", { description: result.error || "" });
+        toast.error("שגיאה בהוספת תזכורת", { description: toHebrewError(result.error, "") });
         return;
       }
       const reminder =
@@ -255,7 +256,7 @@ export default function TaskDetailClient(props: Props) {
         nextStatus === "done" ? "סימון תזכורת כבוצעה" : "ביטול תזכורת"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה בעדכון תזכורת", { description: result.error || "" });
+        toast.error("שגיאה בעדכון תזכורת", { description: toHebrewError(result.error, "") });
       }
     } catch (error: unknown) {
       toast.error("שגיאה בעדכון תזכורת", { description: getErrorMessage(error) });
@@ -279,7 +280,7 @@ export default function TaskDetailClient(props: Props) {
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
           toast.error("שגיאה בהעלאת קובץ", {
-            description: json?.error ?? "",
+            description: toHebrewError(json?.error, ""),
           });
           return;
         }
@@ -314,7 +315,7 @@ export default function TaskDetailClient(props: Props) {
         "מחיקת קובץ"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקה", { description: result.error || "" });
+        toast.error("שגיאה במחיקה", { description: toHebrewError(result.error, "") });
         return;
       }
       if (!result.queued) toast.success("הקובץ נמחק");
@@ -339,7 +340,7 @@ export default function TaskDetailClient(props: Props) {
     try {
       const result = await offlineFetch("/api/tasks/delete", { id: props.taskId }, "מחיקת משימה");
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת משימה", { description: result.error || "" });
+        toast.error("שגיאה במחיקת משימה", { description: toHebrewError(result.error, "") });
         return;
       }
       if (!result.queued) toast.success("המשימה נמחקה");

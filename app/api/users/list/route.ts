@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -14,7 +15,7 @@ export async function GET() {
     .order("full_name", { ascending: true })
     .range(0, 499);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
 
   const users = (data ?? []).map((u: Record<string, unknown>) => ({
     id: typeof u.id === "string" ? u.id : "",

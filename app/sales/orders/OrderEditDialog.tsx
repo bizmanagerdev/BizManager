@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -83,12 +84,12 @@ export default function OrderEditDialog({
         const res = await fetch(`/api/orders/${orderId}/edit-data`, { cache: "no-store" });
         const json = (await res.json().catch(() => ({}))) as EditPayload & { error?: string };
         if (!res.ok) {
-          throw new Error(json.error ?? "טעינת נתוני העריכה נכשלה.");
+          throw new Error(toHebrewError(json.error, "טעינת נתוני העריכה נכשלה."));
         }
         if (!cancelled) setData(json);
       } catch (err: unknown) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "טעינת נתוני העריכה נכשלה.");
+          setError(toHebrewError(err, "טעינת נתוני העריכה נכשלה."));
         }
       } finally {
         if (!cancelled) setLoading(false);

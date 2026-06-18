@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { logAuditEvent } from "@/lib/audit";
@@ -25,7 +26,7 @@ async function deleteOrderDirectly(
     .eq("order_id", orderId);
 
   if (paymentReadError) {
-    return { ok: false as const, error: paymentReadError.message };
+    return { ok: false as const, error: toHebrewError(paymentReadError.message) };
   }
 
   const paymentIds = (paymentRows ?? [])
@@ -41,7 +42,7 @@ async function deleteOrderDirectly(
     .eq("entity_id", orderId);
 
   if (orderDocumentLinksError) {
-    return { ok: false as const, error: orderDocumentLinksError.message };
+    return { ok: false as const, error: toHebrewError(orderDocumentLinksError.message) };
   }
 
   for (const row of orderDocumentLinks ?? []) {
@@ -56,7 +57,7 @@ async function deleteOrderDirectly(
       .in("entity_id", paymentIds);
 
     if (paymentDocumentLinksError) {
-      return { ok: false as const, error: paymentDocumentLinksError.message };
+      return { ok: false as const, error: toHebrewError(paymentDocumentLinksError.message) };
     }
 
     for (const row of paymentDocumentLinks ?? []) {
@@ -74,7 +75,7 @@ async function deleteOrderDirectly(
       .in("id", documentIdList);
 
     if (documentReadError) {
-      return { ok: false as const, error: documentReadError.message };
+      return { ok: false as const, error: toHebrewError(documentReadError.message) };
     }
 
     storageKeys = (documentRows ?? [])
@@ -89,7 +90,7 @@ async function deleteOrderDirectly(
       .in("payment_id", paymentIds);
 
     if (paymentMorningDocumentsDeleteError) {
-      return { ok: false as const, error: paymentMorningDocumentsDeleteError.message };
+      return { ok: false as const, error: toHebrewError(paymentMorningDocumentsDeleteError.message) };
     }
   }
 
@@ -99,13 +100,13 @@ async function deleteOrderDirectly(
     .eq("order_id", orderId);
 
   if (orderMorningDocumentsDeleteError) {
-    return { ok: false as const, error: orderMorningDocumentsDeleteError.message };
+    return { ok: false as const, error: toHebrewError(orderMorningDocumentsDeleteError.message) };
   }
 
   const { error: paymentsDeleteError } = await supabase.from("payments").delete().eq("order_id", orderId);
 
   if (paymentsDeleteError) {
-    return { ok: false as const, error: paymentsDeleteError.message };
+    return { ok: false as const, error: toHebrewError(paymentsDeleteError.message) };
   }
 
   // Release the order's reserved/consumed stock first. We delete the order's
@@ -123,7 +124,7 @@ async function deleteOrderDirectly(
       releaseRpcError.message.includes("function");
 
     if (!missingReleaseRpc) {
-      return { ok: false as const, error: releaseRpcError.message };
+      return { ok: false as const, error: toHebrewError(releaseRpcError.message) };
     }
 
     const { error: inventoryMovementsDeleteError } = await supabase
@@ -133,7 +134,7 @@ async function deleteOrderDirectly(
       .eq("source_id", orderId);
 
     if (inventoryMovementsDeleteError) {
-      return { ok: false as const, error: inventoryMovementsDeleteError.message };
+      return { ok: false as const, error: toHebrewError(inventoryMovementsDeleteError.message) };
     }
   }
 
@@ -144,7 +145,7 @@ async function deleteOrderDirectly(
     .eq("entity_id", orderId);
 
   if (orderDocumentLinksDeleteError) {
-    return { ok: false as const, error: orderDocumentLinksDeleteError.message };
+    return { ok: false as const, error: toHebrewError(orderDocumentLinksDeleteError.message) };
   }
 
   if (paymentIds.length > 0) {
@@ -155,7 +156,7 @@ async function deleteOrderDirectly(
       .in("entity_id", paymentIds);
 
     if (paymentDocumentLinksDeleteError) {
-      return { ok: false as const, error: paymentDocumentLinksDeleteError.message };
+      return { ok: false as const, error: toHebrewError(paymentDocumentLinksDeleteError.message) };
     }
   }
 
@@ -163,20 +164,20 @@ async function deleteOrderDirectly(
     const { error: documentsDeleteError } = await supabase.from("documents").delete().in("id", documentIdList);
 
     if (documentsDeleteError) {
-      return { ok: false as const, error: documentsDeleteError.message };
+      return { ok: false as const, error: toHebrewError(documentsDeleteError.message) };
     }
   }
 
   const { error: orderItemsDeleteError } = await supabase.from("order_items").delete().eq("order_id", orderId);
 
   if (orderItemsDeleteError) {
-    return { ok: false as const, error: orderItemsDeleteError.message };
+    return { ok: false as const, error: toHebrewError(orderItemsDeleteError.message) };
   }
 
   const { error: orderDeleteError } = await supabase.from("orders").delete().eq("id", orderId);
 
   if (orderDeleteError) {
-    return { ok: false as const, error: orderDeleteError.message };
+    return { ok: false as const, error: toHebrewError(orderDeleteError.message) };
   }
 
   await logAuditEvent({
@@ -225,7 +226,7 @@ export async function POST(req: Request) {
         error.message.includes("delete_sales_order") || error.message.includes("function");
 
       if (!missingDeleteRpc) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
       }
 
       const fallbackResult = await deleteOrderDirectly(supabase, {
@@ -248,7 +249,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

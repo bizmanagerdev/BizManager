@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -76,7 +77,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (existingUserError) {
-        return NextResponse.json({ error: existingUserError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(existingUserError.message) }, { status: 400 });
       }
       if (existingUser?.id) {
         return NextResponse.json({ user: existingUser });
@@ -101,7 +102,7 @@ export async function POST(req: Request) {
       );
 
       if (insertUserError) {
-        return NextResponse.json({ error: insertUserError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(insertUserError.message) }, { status: 400 });
       }
 
       const { data: insertedUser, error: insertedUserReadError } = await supabase
@@ -111,7 +112,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (insertedUserReadError) {
-        return NextResponse.json({ error: insertedUserReadError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(insertedUserReadError.message) }, { status: 400 });
       }
       const { data: refreshedUser, error: refreshedUserError } = await supabase
         .from("users")
@@ -120,7 +121,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (refreshedUserError) {
-        return NextResponse.json({ error: refreshedUserError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(refreshedUserError.message) }, { status: 400 });
       }
 
       return NextResponse.json({ user: refreshedUser ?? insertedUser });
@@ -150,7 +151,7 @@ export async function POST(req: Request) {
     });
 
     if (signUpError) {
-      return NextResponse.json({ error: signUpError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(signUpError.message) }, { status: 400 });
     }
 
     let user: UserRow | null = null;
@@ -170,7 +171,7 @@ export async function POST(req: Request) {
       });
 
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
       }
 
       if (upsertedUserId) {
@@ -181,7 +182,7 @@ export async function POST(req: Request) {
           .maybeSingle();
 
         if (readError) {
-          return NextResponse.json({ error: readError.message }, { status: 400 });
+          return NextResponse.json({ error: toHebrewError(readError.message) }, { status: 400 });
         }
 
         if (data?.id) {
@@ -206,12 +207,12 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (refreshedUserError) {
-      return NextResponse.json({ error: refreshedUserError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(refreshedUserError.message) }, { status: 400 });
     }
 
     return NextResponse.json({ user: refreshedUser ?? user });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

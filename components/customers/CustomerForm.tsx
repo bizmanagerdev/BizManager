@@ -393,7 +393,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
 
       onSaved({ customer: savedCustomer, contacts: savedContacts.filter((c) => c.active !== false) });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
       setSubmitting(false);
     }

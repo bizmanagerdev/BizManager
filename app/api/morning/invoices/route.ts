@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { MorningDocumentType } from "@/lib/morning/types";
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "יצירת חשבונית מס ב-Morning נכשלה.";
+    const message = toHebrewError(error, "יצירת חשבונית מס ב-Morning נכשלה.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { toHebrewError } from "@/lib/error-messages";
 
 export type UserRole = "admin" | "office" | "worker" | "worker_no_access";
 
@@ -60,7 +61,7 @@ export default function AuthGuard({ children, allowedRoles }: Props) {
       if (cancelled) return;
 
       if (profileError) {
-        setErr(profileError.message);
+        setErr(toHebrewError(profileError.message, "טעינת ההרשאות נכשלה."));
         setLoading(false);
         return;
       }
@@ -96,12 +97,12 @@ export default function AuthGuard({ children, allowedRoles }: Props) {
     };
   }, [allowedRoles, router, supabase]);
 
-  if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
+  if (loading) return <div style={{ padding: 24 }}>טוען…</div>;
 
   if (err) {
     return (
       <div style={{ padding: 24 }}>
-        <h1>Something went wrong</h1>
+        <h1>אירעה שגיאה</h1>
         <p className="text-destructive">{err}</p>
       </div>
     );

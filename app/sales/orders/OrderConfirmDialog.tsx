@@ -205,7 +205,7 @@ export default function OrderConfirmDialog({
         if (!cancelled) setData(json);
       } catch (err: unknown) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "טעינת נתוני האישור נכשלה.");
+          setError(toHebrewError(err, "טעינת נתוני האישור נכשלה."));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -411,7 +411,7 @@ export default function OrderConfirmDialog({
       setOpen(false);
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "שגיאה לא ידועה");
+      setError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {
       setSubmitting(false);
     }

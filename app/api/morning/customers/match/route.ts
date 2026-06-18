@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -20,7 +21,7 @@ export async function GET(req: Request) {
     const result = await matchMorningCustomer(access.value.supabase, parsed.data.customerId);
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "בדיקת התאמות לקוח ב-Morning נכשלה.";
+    const message = toHebrewError(error, "בדיקת התאמות לקוח ב-Morning נכשלה.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

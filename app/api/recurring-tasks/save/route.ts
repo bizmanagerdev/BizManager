@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
@@ -115,7 +116,7 @@ export async function POST(req: Request) {
         .update(templatePayload)
         .eq("id", templateId);
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     } else {
       const { data, error } = await supabase
         .from("recurring_task_templates")
@@ -126,7 +127,7 @@ export async function POST(req: Request) {
         .select("id")
         .maybeSingle<{ id: string }>();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
       templateId = data?.id ?? null;
     }
 
@@ -140,7 +141,7 @@ export async function POST(req: Request) {
       .eq("recurring_task_template_id", templateId);
 
     if (deleteAssigneesError) {
-      return NextResponse.json({ error: deleteAssigneesError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(deleteAssigneesError.message) }, { status: 400 });
     }
 
     const { error: insertAssigneesError } = await supabase
@@ -153,12 +154,12 @@ export async function POST(req: Request) {
       );
 
     if (insertAssigneesError) {
-      return NextResponse.json({ error: insertAssigneesError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(insertAssigneesError.message) }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true, id: templateId });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

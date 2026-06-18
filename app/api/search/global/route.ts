@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { performGlobalSearch } from "@/lib/global-search";
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
     return NextResponse.json(results);
   } catch (error: unknown) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "החיפוש הגלובלי נכשל" },
+      { error: toHebrewError(error, "החיפוש הגלובלי נכשל") },
       { status: 400 }
     );
   }

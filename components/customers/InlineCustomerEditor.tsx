@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
@@ -162,7 +163,7 @@ export function InlineCustomerEditor({
         address: json.customer.address,
       });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setError(toHebrewError(e, "שגיאה לא ידועה"));
       setValues((current) => ({ ...current, [field]: prev }));
     } finally {
       setSavingField((current) => (current === field ? null : current));

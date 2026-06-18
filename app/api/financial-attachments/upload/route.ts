@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
       .eq("id", entityId)
       .maybeSingle();
 
-    if (entityError) return NextResponse.json({ error: entityError.message }, { status: 400 });
+    if (entityError) return NextResponse.json({ error: toHebrewError(entityError.message) }, { status: 400 });
     if (!entity?.id) return NextResponse.json({ error: `${entityType} not found` }, { status: 404 });
 
     const documentId = crypto.randomUUID();
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
       contentType: file.type || undefined,
       upsert: false,
     });
-    if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 400 });
+    if (uploadError) return NextResponse.json({ error: toHebrewError(uploadError.message) }, { status: 400 });
 
     const { error: docError } = await supabase.from("documents").insert({
       id: documentId,
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
 
     if (docError) {
       await supabase.storage.from(BUCKET).remove([storagePath]);
-      return NextResponse.json({ error: docError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(docError.message) }, { status: 400 });
     }
 
     const linkRows = [
@@ -112,7 +113,7 @@ export async function POST(req: Request) {
     if (linkError) {
       await supabase.from("documents").delete().eq("id", documentId);
       await supabase.storage.from(BUCKET).remove([storagePath]);
-      return NextResponse.json({ error: linkError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
     }
 
     const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 60 * 60);
@@ -128,7 +129,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

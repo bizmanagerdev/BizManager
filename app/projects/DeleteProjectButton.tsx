@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -47,7 +48,7 @@ export default function DeleteProjectButton({
     try {
       const result = await offlineFetch("/api/projects/delete", { id: projectId }, "מחיקת פרויקט");
       if (!result.queued && !result.ok) {
-        setError(result.error || "מחיקת פרויקט נכשלה.");
+        setError(toHebrewError(result.error, "מחיקת פרויקט נכשלה."));
         return;
       }
       const json = result.queued
@@ -72,7 +73,7 @@ export default function DeleteProjectButton({
         setError(json.warning);
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
       setLoading(false);
     }

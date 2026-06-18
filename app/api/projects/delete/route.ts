@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (projectReadError) {
-      return NextResponse.json({ error: projectReadError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(projectReadError.message) }, { status: 400 });
     }
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
       .eq("project_id", id);
 
     if (tasksReadError) {
-      return NextResponse.json({ error: tasksReadError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(tasksReadError.message) }, { status: 400 });
     }
 
     const taskIds = (taskRows ?? [])
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
       .eq("entity_id", id);
 
     if (projectDocumentLinksError) {
-      return NextResponse.json({ error: projectDocumentLinksError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(projectDocumentLinksError.message) }, { status: 400 });
     }
 
     for (const row of projectDocumentLinks ?? []) {
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
         .in("entity_id", taskIds);
 
       if (taskDocumentLinksError) {
-        return NextResponse.json({ error: taskDocumentLinksError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(taskDocumentLinksError.message) }, { status: 400 });
       }
 
       for (const row of taskDocumentLinks ?? []) {
@@ -91,7 +92,7 @@ export async function POST(req: Request) {
         .in("id", documentIdList);
 
       if (documentsReadError) {
-        return NextResponse.json({ error: documentsReadError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(documentsReadError.message) }, { status: 400 });
       }
 
       storageKeys = (documentRows ?? [])
@@ -105,7 +106,7 @@ export async function POST(req: Request) {
       .eq("project_id", id);
 
     if (expenseLinksError) {
-      return NextResponse.json({ error: expenseLinksError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(expenseLinksError.message) }, { status: 400 });
     }
 
     const expenseIds = (expenseLinks ?? [])
@@ -118,7 +119,7 @@ export async function POST(req: Request) {
       .eq("project_id", id);
 
     if (paymentsDeleteError) {
-      return NextResponse.json({ error: paymentsDeleteError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(paymentsDeleteError.message) }, { status: 400 });
     }
 
     const { error: projectExpenseDeleteError } = await supabase
@@ -127,7 +128,7 @@ export async function POST(req: Request) {
       .eq("project_id", id);
 
     if (projectExpenseDeleteError) {
-      return NextResponse.json({ error: projectExpenseDeleteError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(projectExpenseDeleteError.message) }, { status: 400 });
     }
 
     if (expenseIds.length > 0) {
@@ -137,7 +138,7 @@ export async function POST(req: Request) {
         .in("id", expenseIds);
 
       if (expensesDeleteError) {
-        return NextResponse.json({ error: expensesDeleteError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(expensesDeleteError.message) }, { status: 400 });
       }
     }
 
@@ -148,7 +149,7 @@ export async function POST(req: Request) {
         .eq("project_id", id);
 
       if (tasksDeleteError) {
-        return NextResponse.json({ error: tasksDeleteError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(tasksDeleteError.message) }, { status: 400 });
       }
     }
 
@@ -159,7 +160,7 @@ export async function POST(req: Request) {
       .eq("entity_id", id);
 
     if (projectDocumentLinkDeleteError) {
-      return NextResponse.json({ error: projectDocumentLinkDeleteError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(projectDocumentLinkDeleteError.message) }, { status: 400 });
     }
 
     if (taskIds.length > 0) {
@@ -170,7 +171,7 @@ export async function POST(req: Request) {
         .in("entity_id", taskIds);
 
       if (taskDocumentLinkDeleteError) {
-        return NextResponse.json({ error: taskDocumentLinkDeleteError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(taskDocumentLinkDeleteError.message) }, { status: 400 });
       }
     }
 
@@ -181,14 +182,14 @@ export async function POST(req: Request) {
         .in("id", documentIdList);
 
       if (documentsDeleteError) {
-        return NextResponse.json({ error: documentsDeleteError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(documentsDeleteError.message) }, { status: 400 });
       }
     }
 
     const { error: projectDeleteError } = await supabase.from("projects").delete().eq("id", id);
 
     if (projectDeleteError) {
-      return NextResponse.json({ error: projectDeleteError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(projectDeleteError.message) }, { status: 400 });
     }
 
     await logAuditEvent({
@@ -218,7 +219,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

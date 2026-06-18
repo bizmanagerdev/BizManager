@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -207,11 +208,11 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
       try {
         const res = await fetch(`/api/orders/${orderId}/details`, { cache: "no-store" });
         const json = (await res.json().catch(() => ({}))) as DetailsResponse & { error?: string };
-        if (!res.ok) throw new Error(json.error ?? "טעינת פרטי ההזמנה נכשלה.");
+        if (!res.ok) throw new Error(toHebrewError(json.error, "טעינת פרטי ההזמנה נכשלה."));
         if (!cancelled) setData(json);
       } catch (err: unknown) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "טעינת פרטי ההזמנה נכשלה.");
+          setError(toHebrewError(err, "טעינת פרטי ההזמנה נכשלה."));
         }
       } finally {
         if (!cancelled) setLoading(false);

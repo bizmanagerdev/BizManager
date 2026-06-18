@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useRef, useState } from "react";
 
@@ -84,7 +85,7 @@ export function useInfiniteScroll<T>({
         setNextPage((page) => page + 1);
         setHasMore(result.hasMore);
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : String(caught));
+        setError(toHebrewError(caught, String(caught)));
       } finally {
         setLoading(false);
       }

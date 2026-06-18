@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { collectLockedSessionIds, recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
@@ -37,8 +38,8 @@ export async function POST(req: Request) {
       supabase.from("payroll_periods").select("id,period_month,start_date,end_date,status").range(0, 119),
     ]);
 
-    if (sessionResult.error) return NextResponse.json({ error: sessionResult.error.message }, { status: 400 });
-    if (periodsResult.error) return NextResponse.json({ error: periodsResult.error.message }, { status: 400 });
+    if (sessionResult.error) return NextResponse.json({ error: toHebrewError(sessionResult.error.message) }, { status: 400 });
+    if (periodsResult.error) return NextResponse.json({ error: toHebrewError(periodsResult.error.message) }, { status: 400 });
     if (!sessionResult.data) return NextResponse.json({ error: "Session not found." }, { status: 404 });
 
     const lockedIds = collectLockedSessionIds([sessionResult.data], (periodsResult.data ?? []) as PayrollPeriodRow[]);
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (updateResult.error) {
-      return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(updateResult.error.message) }, { status: 400 });
     }
 
     const workerResult = await supabase
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (workerResult.error) {
-      return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(workerResult.error.message) }, { status: 400 });
     }
 
     const workerType = normalizePayrollWorkerType(
@@ -101,12 +102,12 @@ export async function POST(req: Request) {
       .eq("id", sessionId)
       .maybeSingle();
     if (refreshed.error) {
-      return NextResponse.json({ error: refreshed.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(refreshed.error.message) }, { status: 400 });
     }
 
     return NextResponse.json({ session: refreshed.data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

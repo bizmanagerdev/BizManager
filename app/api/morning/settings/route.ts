@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logAuditEvent } from "@/lib/audit";
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ settings });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "שמירת הגדרות Morning נכשלה.";
+    const message = toHebrewError(error, "שמירת הגדרות Morning נכשלה.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

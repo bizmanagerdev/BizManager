@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -74,9 +75,9 @@ export async function POST(req: Request) {
           .maybeSingle(),
       ]);
 
-    if (expenseReadError) return NextResponse.json({ error: expenseReadError.message }, { status: 400 });
+    if (expenseReadError) return NextResponse.json({ error: toHebrewError(expenseReadError.message) }, { status: 400 });
     if (projectExpenseReadError) {
-      return NextResponse.json({ error: projectExpenseReadError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(projectExpenseReadError.message) }, { status: 400 });
     }
     if (!expenseRow?.id) return NextResponse.json({ error: "ההוצאה לא נמצאה." }, { status: 404 });
 
@@ -161,7 +162,7 @@ export async function POST(req: Request) {
 
     const updatedExpenseId = typeof expense?.id === "string" ? expense.id : null;
 
-    if (expenseError) return NextResponse.json({ error: expenseError.message }, { status: 400 });
+    if (expenseError) return NextResponse.json({ error: toHebrewError(expenseError.message) }, { status: 400 });
 
     let projectExpense: Record<string, unknown> | null = null;
 
@@ -179,7 +180,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (projectExpenseError) {
-        return NextResponse.json({ error: projectExpenseError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(projectExpenseError.message) }, { status: 400 });
       }
 
       projectExpense = (updatedProjectExpense as Record<string, unknown> | null) ?? null;
@@ -198,7 +199,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ expense, projectExpense });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "שגיאה לא צפויה בעת עדכון ההוצאה.";
+    const message = toHebrewError(err, "שגיאה לא צפויה בעת עדכון ההוצאה.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

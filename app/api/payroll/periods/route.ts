@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import {
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (existing.error) {
-        return NextResponse.json({ error: existing.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(existing.error.message) }, { status: 400 });
       }
 
       if (existing.data) {
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
           .maybeSingle();
 
         if (reopened.error) {
-          return NextResponse.json({ error: reopened.error.message }, { status: 400 });
+          return NextResponse.json({ error: toHebrewError(reopened.error.message) }, { status: 400 });
         }
 
         return NextResponse.json({ period: reopened.data });
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (insertResult.error) {
-        return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(insertResult.error.message) }, { status: 400 });
       }
 
       return NextResponse.json({ period: insertResult.data });
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (periodResult.error) {
-      return NextResponse.json({ error: periodResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(periodResult.error.message) }, { status: 400 });
     }
     if (!periodResult.data) {
       return NextResponse.json({ error: "Payroll period not found." }, { status: 404 });
@@ -110,7 +111,7 @@ export async function POST(req: Request) {
         .range(0, 999);
 
       if (usersResult.error) {
-        return NextResponse.json({ error: usersResult.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(usersResult.error.message) }, { status: 400 });
       }
 
       const generated = await generatePayslipsForPeriod(
@@ -138,7 +139,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (updateResult.error) {
-        return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(updateResult.error.message) }, { status: 400 });
       }
 
       return NextResponse.json({ period: updateResult.data });
@@ -146,7 +147,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

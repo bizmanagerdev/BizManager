@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -203,12 +204,12 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
       try {
         const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ notes: sessionNote.trim() || null, business_domain: sessionDomain }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setActionError(json.error ?? "הפעולה נכשלה.");
+        if (!response.ok) return setActionError(toHebrewError(json.error, "הפעולה נכשלה."));
         setSessionNote("");
         setSessionDomain("general_business");
         router.refresh();
       } catch (error: unknown) {
-        setActionError(error instanceof Error ? error.message : "Unknown error");
+        setActionError(toHebrewError(error, "Unknown error"));
       }
     });
   }
@@ -222,10 +223,10 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
           body: JSON.stringify({ session_id: sessionId }),
         });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setActionError(json.error ?? "מחיקת המשמרת נכשלה.");
+        if (!response.ok) return setActionError(toHebrewError(json.error, "מחיקת המשמרת נכשלה."));
         router.refresh();
       } catch (error: unknown) {
-        setActionError(error instanceof Error ? error.message : "Unknown error");
+        setActionError(toHebrewError(error, "Unknown error"));
       }
     });
   }
@@ -277,11 +278,11 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
         const billToCustomer = sessionEditDomain === "logistics_projects" && sessionEditBilledToCustomer;
         const response = await fetch("/api/profile/session/update", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sessionId, user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: sessionEditClockOut ? toIso(sessionEditClockOut) : null, is_billable_to_customer: billToCustomer, bill_to_customer_amount: billToCustomer && sessionEditBillToCustomerAmount.trim() ? Number(sessionEditBillToCustomerAmount) : null, billing_status: billToCustomer ? "billable" : "not_billable" }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setActionError(json.error ?? "עדכון המשמרת נכשל.");
+        if (!response.ok) return setActionError(toHebrewError(json.error, "עדכון המשמרת נכשל."));
         closeEditor();
         router.refresh();
       } catch (error: unknown) {
-        setActionError(error instanceof Error ? error.message : "Unknown error");
+        setActionError(toHebrewError(error, "Unknown error"));
       }
     });
   }
@@ -294,11 +295,11 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
         const billToCustomer = sessionEditDomain === "logistics_projects" && sessionEditBilledToCustomer;
         const response = await fetch("/api/profile/session/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ user_id: profile.id, business_domain: sessionEditDomain, project_id: sessionEditProjectId || null, property_id: sessionEditPropertyId || null, notes: sessionEditNotes.trim() || null, clock_in: toIso(sessionEditClockIn), clock_out: toIso(sessionEditClockOut), is_billable_to_customer: billToCustomer, bill_to_customer_amount: billToCustomer && sessionEditBillToCustomerAmount.trim() ? Number(sessionEditBillToCustomerAmount) : null, billing_status: billToCustomer ? "billable" : "not_billable" }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setActionError(json.error ?? "יצירת המשמרת נכשלה.");
+        if (!response.ok) return setActionError(toHebrewError(json.error, "יצירת המשמרת נכשלה."));
         closeEditor();
         router.refresh();
       } catch (error: unknown) {
-        setActionError(error instanceof Error ? error.message : "Unknown error");
+        setActionError(toHebrewError(error, "Unknown error"));
       }
     });
   }
@@ -369,11 +370,11 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
       try {
         const response = await fetch("/api/profile/session/split", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sessionId, parts: splitParts.map((part) => ({ minutes: part.minutes, business_domain: part.domain, project_id: part.projectId || null, property_id: part.propertyId || null })) }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
-        if (!response.ok) return setActionError(json.error ?? "פיצול המשמרת נכשל.");
+        if (!response.ok) return setActionError(toHebrewError(json.error, "פיצול המשמרת נכשל."));
         closeEditor();
         router.refresh();
       } catch (error: unknown) {
-        setActionError(error instanceof Error ? error.message : "Unknown error");
+        setActionError(toHebrewError(error, "Unknown error"));
       }
     });
   }

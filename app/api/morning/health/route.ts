@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import {
@@ -102,7 +103,7 @@ export async function GET() {
         upstreamRequestFormat = upstreamAttempt.format;
       } catch (upstreamError) {
         upstreamBody =
-          upstreamError instanceof Error ? upstreamError.message : "Failed to reach Morning token endpoint.";
+          toHebrewError(upstreamError, "Failed to reach Morning token endpoint.");
       }
     }
 
@@ -115,7 +116,7 @@ export async function GET() {
         authUrl,
         keyId: maskValue(keyId),
         hasSecret: Boolean(secret?.trim()),
-        error: error instanceof Error ? error.message : "Morning health check failed.",
+        error: toHebrewError(error, "Morning health check failed."),
         requestPayload,
         upstreamStatus,
         upstreamStatusText,

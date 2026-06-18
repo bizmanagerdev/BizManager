@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -21,7 +22,7 @@ export async function POST() {
       if (looksLikeMissingSchema(error.message)) {
         return NextResponse.json({ error: "Missing recurring expense schema" }, { status: 400 });
       }
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     }
 
     return NextResponse.json({
@@ -30,7 +31,7 @@ export async function POST() {
         typeof data === "number" ? data : typeof data === "string" ? Number(data) || 0 : 0,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useCallback, useEffect, useState } from "react";
 import { BellRing, Check, Pencil, X } from "lucide-react";
@@ -108,14 +109,14 @@ export default function CollectionTrackingPanel({
         error?: string;
       };
       if (!res.ok) {
-        setError(json.error ?? "טעינה נכשלה");
+        setError(toHebrewError(json.error, "טעינה נכשלה"));
         return;
       }
       setLogs(json.logs ?? []);
       setReminders(json.reminders ?? []);
       setReceivables(json.receivables ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "שגיאה לא ידועה");
+      setError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {
       setLoading(false);
     }
@@ -171,7 +172,7 @@ export default function CollectionTrackingPanel({
         return;
       }
       if (!result.ok) {
-        setError(result.error || "שמירה נכשלה");
+        setError(toHebrewError(result.error, "שמירה נכשלה"));
         return;
       }
       toast.success(withFollowUp ? "השיחה תועדה ותזכורת המשך נקבעה" : "השיחה תועדה");
@@ -218,7 +219,7 @@ export default function CollectionTrackingPanel({
         return;
       }
       if (!result.ok) {
-        setError(result.error || "שמירת התזכורת נכשלה");
+        setError(toHebrewError(result.error, "שמירת התזכורת נכשלה"));
         return;
       }
       toast.success("התזכורת נוספה");
@@ -245,7 +246,7 @@ export default function CollectionTrackingPanel({
       await load();
       onChanged?.();
     } else {
-      toast.error("עדכון התזכורת נכשל", { description: result.error || "" });
+      toast.error("עדכון התזכורת נכשל", { description: toHebrewError(result.error, "") });
     }
   }
 
@@ -265,7 +266,7 @@ export default function CollectionTrackingPanel({
         await load();
         onChanged?.();
       } else {
-        toast.error("סימון התשלום נכשל", { description: result.error || "" });
+        toast.error("סימון התשלום נכשל", { description: toHebrewError(result.error, "") });
       }
     } finally {
       setCollectingId(null);

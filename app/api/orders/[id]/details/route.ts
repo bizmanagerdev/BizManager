@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
@@ -60,18 +61,18 @@ export async function GET(
   ]);
 
   if (orderError) {
-    return NextResponse.json({ error: orderError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(orderError.message) }, { status: 400 });
   }
   if (itemsError) {
-    return NextResponse.json({ error: itemsError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(itemsError.message) }, { status: 400 });
   }
   if (paymentsError) {
-    return NextResponse.json({ error: paymentsError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(paymentsError.message) }, { status: 400 });
   }
   if (financialsError) {
     const missingView = financialsError.message.includes("order_financials_view");
     if (!missingView) {
-      return NextResponse.json({ error: financialsError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(financialsError.message) }, { status: 400 });
     }
   }
   if (!order) {
@@ -90,7 +91,7 @@ export async function GET(
     : { data: null, error: null };
 
   if (customerError) {
-    return NextResponse.json({ error: customerError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(customerError.message) }, { status: 400 });
   }
 
   const productIds = Array.from(
@@ -107,7 +108,7 @@ export async function GET(
       : { data: [], error: null };
 
   if (productsError) {
-    return NextResponse.json({ error: productsError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(productsError.message) }, { status: 400 });
   }
 
   // Attach current stock availability so the order view can flag out-of-stock
@@ -232,10 +233,10 @@ export async function GET(
   ]);
 
   if (orderMorningDocumentsError) {
-    return NextResponse.json({ error: orderMorningDocumentsError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(orderMorningDocumentsError.message) }, { status: 400 });
   }
   if (paymentMorningDocumentsError) {
-    return NextResponse.json({ error: paymentMorningDocumentsError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(paymentMorningDocumentsError.message) }, { status: 400 });
   }
 
   const morningDocuments = Array.from(
@@ -254,7 +255,7 @@ export async function GET(
     .eq("entity_id", id);
 
   if (deliveryLinksError) {
-    return NextResponse.json({ error: deliveryLinksError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(deliveryLinksError.message) }, { status: 400 });
   }
 
   const deliveryDocumentIds = Array.from(
@@ -274,7 +275,7 @@ export async function GET(
       : { data: [], error: null };
 
   if (deliveryDocumentsError) {
-    return NextResponse.json({ error: deliveryDocumentsError.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(deliveryDocumentsError.message) }, { status: 400 });
   }
 
   const deliveryDocumentMap = new Map<string, Row>();

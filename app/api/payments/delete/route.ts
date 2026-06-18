@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (paymentReadError) {
-      return NextResponse.json({ error: paymentReadError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(paymentReadError.message) }, { status: 400 });
     }
     if (!paymentRow?.id || paymentRow.project_id !== projectId) {
       return NextResponse.json({ error: "Payment not found for project" }, { status: 404 });
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
       .eq("project_id", projectId);
 
     if (paymentDeleteError) {
-      return NextResponse.json({ error: paymentDeleteError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(paymentDeleteError.message) }, { status: 400 });
     }
 
     await logAuditEvent({
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
@@ -136,7 +137,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (workerResult.error) {
-        return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(workerResult.error.message) }, { status: 400 });
       }
       if (!workerResult.data?.id) {
         return NextResponse.json({ error: "Worker not found." }, { status: 404 });
@@ -177,7 +178,7 @@ export async function POST(req: Request) {
       .order("valid_from", { ascending: false });
 
     if (agreementsResult.error) {
-      return NextResponse.json({ error: agreementsResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(agreementsResult.error.message) }, { status: 400 });
     }
 
     const agreements = (agreementsResult.data ?? []) as SalaryAgreementRow[];
@@ -190,7 +191,7 @@ export async function POST(req: Request) {
 
       const deleteResult = await supabase.from("salary_agreements").delete().eq("id", agreementId);
       if (deleteResult.error) {
-        return NextResponse.json({ error: deleteResult.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(deleteResult.error.message) }, { status: 400 });
       }
 
       const remainingAgreements = agreements.filter((agreement) => agreement.id !== agreementId);
@@ -238,7 +239,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (updateResult.error) {
-        return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(updateResult.error.message) }, { status: 400 });
       }
 
       const refreshedAgreementsResult = await supabase
@@ -250,7 +251,7 @@ export async function POST(req: Request) {
         .order("valid_from", { ascending: false });
 
       if (refreshedAgreementsResult.error) {
-        return NextResponse.json({ error: refreshedAgreementsResult.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(refreshedAgreementsResult.error.message) }, { status: 400 });
       }
 
       const refreshedAgreements = (refreshedAgreementsResult.data ?? []) as SalaryAgreementRow[];
@@ -265,7 +266,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (normalizedAgreementResult.error) {
-        return NextResponse.json({ error: normalizedAgreementResult.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(normalizedAgreementResult.error.message) }, { status: 400 });
       }
 
       await recalculateUserSessionCostsFromRules(supabase, userId, {
@@ -296,7 +297,7 @@ export async function POST(req: Request) {
         .eq("id", previousActive.id);
 
       if (closeResult.error) {
-        return NextResponse.json({ error: closeResult.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(closeResult.error.message) }, { status: 400 });
       }
     }
 
@@ -320,7 +321,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (insertResult.error) {
-      return NextResponse.json({ error: insertResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(insertResult.error.message) }, { status: 400 });
     }
 
     const insertedAgreement = insertResult.data as SalaryAgreementRow | null;
@@ -338,7 +339,7 @@ export async function POST(req: Request) {
       : { data: null, error: null };
 
     if (normalizedInsertResult.error) {
-      return NextResponse.json({ error: normalizedInsertResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(normalizedInsertResult.error.message) }, { status: 400 });
     }
 
     await recalculateUserSessionCostsFromRules(supabase, userId, {
@@ -348,7 +349,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ agreement: normalizedInsertResult.data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -304,7 +304,7 @@ export default function SalesInventoryClient({
       setAdjustmentOpen(false);
       resetAdjustmentForm();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
       setSubmitting(false);
     }

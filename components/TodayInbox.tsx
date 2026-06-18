@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -60,14 +61,14 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        toast.error(json.error ?? "הפעולה נכשלה.");
+        toast.error(toHebrewError(json.error, "הפעולה נכשלה."));
         return;
       }
       onSuccess();
       toast.success(successMsg);
       router.refresh();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "הפעולה נכשלה.");
+      toast.error(toHebrewError(err, "הפעולה נכשלה."));
     } finally {
       setBusyId(null);
     }

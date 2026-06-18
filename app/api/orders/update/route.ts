@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -207,10 +208,10 @@ export async function POST(req: Request) {
     ]);
 
     if (existingPaymentsError) {
-      return NextResponse.json({ error: existingPaymentsError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(existingPaymentsError.message) }, { status: 400 });
     }
     if (customerError) {
-      return NextResponse.json({ error: customerError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(customerError.message) }, { status: 400 });
     }
 
     const totalPaidAfterSave =
@@ -250,7 +251,7 @@ export async function POST(req: Request) {
         if (succeededPaths.length > 0) {
           await supabase.storage.from(BUCKET).remove(succeededPaths);
         }
-        return NextResponse.json({ error: failedUpload.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(failedUpload.error.message) }, { status: 400 });
       }
 
       const uploadedAt = new Date().toISOString();
@@ -269,7 +270,7 @@ export async function POST(req: Request) {
 
       if (docError) {
         await supabase.storage.from(BUCKET).remove(allPaths);
-        return NextResponse.json({ error: docError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(docError.message) }, { status: 400 });
       }
 
       const { error: linkError } = await supabase.from("document_links").insert(
@@ -286,7 +287,7 @@ export async function POST(req: Request) {
           .delete()
           .in("id", prepared.map((entry) => entry.documentId));
         await supabase.storage.from(BUCKET).remove(allPaths);
-        return NextResponse.json({ error: linkError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
       }
 
       uploadedDocuments.push(
@@ -341,7 +342,7 @@ export async function POST(req: Request) {
 
       if (paymentsInsertError) {
         await cleanupUploadedDocument(supabase, uploadedDocuments);
-        return NextResponse.json({ error: paymentsInsertError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(paymentsInsertError.message) }, { status: 400 });
       }
       for (const row of insertedPaymentRows ?? []) {
         if (row && typeof (row as { id?: unknown }).id === "string") {
@@ -402,7 +403,7 @@ export async function POST(req: Request) {
 
     if (updateError) {
       await cleanupUploadedDocument(supabase, uploadedDocuments);
-      return NextResponse.json({ error: updateError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
     }
 
     // Best-effort: the column only exists after db/sql/add_collect_payment_on_delivery.sql.
@@ -442,7 +443,7 @@ export async function POST(req: Request) {
       payment_ids: insertedPaymentIds,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

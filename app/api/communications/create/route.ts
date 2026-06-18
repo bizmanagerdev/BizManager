@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
       .select("id")
       .maybeSingle();
 
-    if (logError) return NextResponse.json({ error: logError.message }, { status: 400 });
+    if (logError) return NextResponse.json({ error: toHebrewError(logError.message) }, { status: 400 });
 
     // Optional follow-up reminder linked to this log.
     let reminderId: string | null = null;
@@ -74,14 +75,14 @@ export async function POST(req: Request) {
         })
         .select("id")
         .maybeSingle();
-      if (reminderError) return NextResponse.json({ error: reminderError.message }, { status: 400 });
+      if (reminderError) return NextResponse.json({ error: toHebrewError(reminderError.message) }, { status: 400 });
       reminderId = reminder?.id ?? null;
     }
 
     return NextResponse.json({ ok: true, id: log?.id ?? null, reminder_id: reminderId });
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

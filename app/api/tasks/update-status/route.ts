@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 ﻿import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
       .select("id,status,updated_at")
       .maybeSingle();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     if (data?.id) {
       await logAuditEvent({
         supabase,
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ task: data });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

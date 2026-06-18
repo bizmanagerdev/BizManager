@@ -311,13 +311,13 @@ export default function PayrollAdminClient({
         });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) {
-          setUnlockError(json.error ?? "פתיחת מרכז השכר נכשלה.");
+          setUnlockError(toHebrewError(json.error, "פתיחת מרכז השכר נכשלה."));
           return;
         }
         setPassword("");
         router.refresh();
       } catch (error: unknown) {
-        setUnlockError(error instanceof Error ? error.message : "Unknown error");
+        setUnlockError(toHebrewError(error, "Unknown error"));
       }
     });
   }
@@ -387,7 +387,7 @@ export default function PayrollAdminClient({
 
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) {
-          setCreateUserError(json.error ?? "יצירת העובד נכשלה.");
+          setCreateUserError(toHebrewError(json.error, "יצירת העובד נכשלה."));
           return;
         }
 
@@ -396,7 +396,7 @@ export default function PayrollAdminClient({
         setSaveMessage("העובד והחשבון נוצרו בהצלחה.");
         router.refresh();
       } catch (error: unknown) {
-        setCreateUserError(error instanceof Error ? error.message : "Unknown error");
+        setCreateUserError(toHebrewError(error, "Unknown error"));
       }
     });
   }
@@ -523,7 +523,7 @@ export default function PayrollAdminClient({
         });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) {
-          setSaveError(json.error ?? "שמירת הסכם השכר נכשלה.");
+          setSaveError(toHebrewError(json.error, "שמירת הסכם השכר נכשלה."));
           return;
         }
         setSaveMessage("הסכם השכר נשמר בהצלחה.");
@@ -531,7 +531,7 @@ export default function PayrollAdminClient({
         setFormState(DEFAULT_FORM);
         router.refresh();
       } catch (error: unknown) {
-        setSaveError(error instanceof Error ? error.message : "Unknown error");
+        setSaveError(toHebrewError(error, "Unknown error"));
       }
     });
   }
@@ -670,7 +670,7 @@ export default function PayrollAdminClient({
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) {
           setSessionEditErrorId(session.id);
-          setSessionEditError(json.error ?? getSessionFieldUpdateErrorMessage(field));
+          setSessionEditError(toHebrewError(json.error, getSessionFieldUpdateErrorMessage(field)));
           return;
         }
         syncSessionDraftValue(session, field, newValue);
@@ -678,7 +678,7 @@ export default function PayrollAdminClient({
         router.refresh();
       } catch (error: unknown) {
         setSessionEditErrorId(session.id);
-        setSessionEditError(error instanceof Error ? error.message : "Unknown error");
+        setSessionEditError(toHebrewError(error, "Unknown error"));
       }
     });
   }
@@ -708,7 +708,7 @@ export default function PayrollAdminClient({
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) {
           setDeleteSessionErrorId(session.id);
-          setDeleteSessionError(json.error ?? "מחיקת המשמרת נכשלה.");
+          setDeleteSessionError(toHebrewError(json.error, "מחיקת המשמרת נכשלה."));
           return;
         }
         if (pendingSessionEditConfirm?.session.id === session.id) {
@@ -733,7 +733,7 @@ export default function PayrollAdminClient({
         router.refresh();
       } catch (error: unknown) {
         setDeleteSessionErrorId(session.id);
-        setDeleteSessionError(error instanceof Error ? error.message : "Unknown error");
+        setDeleteSessionError(toHebrewError(error, "Unknown error"));
       } finally {
         setDeletingSessionId("");
       }
@@ -1290,7 +1290,6 @@ export default function PayrollAdminClient({
                 onChange={(event) =>
                   setCreateUserForm((current) => ({ ...current, email: event.target.value }))
                 }
-                placeholder="name@company.com"
               />
             </Field>
             <Field label="טלפון">

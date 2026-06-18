@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getBusinessDomainLabel, isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 
@@ -110,7 +111,7 @@ async function runEnsureRecurringTasksForDate(
     if (looksLikeMissingSchema(templatesError.message)) {
       return { ok: true, createdCount: 0, skippedMissingSchema: true };
     }
-    return { ok: false, createdCount: 0, skippedMissingSchema: false, error: templatesError.message };
+    return { ok: false, createdCount: 0, skippedMissingSchema: false, error: toHebrewError(templatesError.message) };
   }
 
   const templates = (templatesData ?? []) as TemplateRow[];
@@ -128,7 +129,7 @@ async function runEnsureRecurringTasksForDate(
     if (looksLikeMissingSchema(assigneesError.message)) {
       return { ok: true, createdCount: 0, skippedMissingSchema: true };
     }
-    return { ok: false, createdCount: 0, skippedMissingSchema: false, error: assigneesError.message };
+    return { ok: false, createdCount: 0, skippedMissingSchema: false, error: toHebrewError(assigneesError.message) };
   }
 
   const assigneesByTemplateId = new Map<string, string[]>();
@@ -184,7 +185,7 @@ async function runEnsureRecurringTasksForDate(
 
       if (error) {
         if (looksLikeUniqueViolation(error.message)) continue;
-        return { ok: false, createdCount, skippedMissingSchema: false, error: error.message };
+        return { ok: false, createdCount, skippedMissingSchema: false, error: toHebrewError(error.message) };
       }
       createdCount += 1;
     }

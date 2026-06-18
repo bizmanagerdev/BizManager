@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -18,7 +19,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
   }
   if (!data) {
     return NextResponse.json({ error: "Customer not found" }, { status: 404 });

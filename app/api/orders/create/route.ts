@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import {
@@ -127,7 +128,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (customerError) {
-      return NextResponse.json({ error: customerError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(customerError.message) }, { status: 400 });
     }
     if (customer?.requires_prepayment === true && totalPaid + 0.009 < totalAmount) {
       return NextResponse.json(
@@ -185,7 +186,7 @@ export async function POST(req: Request) {
         .select("id");
 
       if (paymentsInsertError) {
-        return NextResponse.json({ error: paymentsInsertError.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(paymentsInsertError.message) }, { status: 400 });
       }
       for (const row of insertedPaymentRows ?? []) {
         if (row && typeof (row as { id?: unknown }).id === "string") {
@@ -221,7 +222,7 @@ export async function POST(req: Request) {
     }
 
     if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
     }
 
     // Best-effort Morning auto-issue on new order: invoice for the order, plus a
@@ -268,7 +269,7 @@ export async function POST(req: Request) {
       morning_auto_receipts: receiptOutcomes,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

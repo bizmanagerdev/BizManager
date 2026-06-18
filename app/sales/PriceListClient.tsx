@@ -384,7 +384,7 @@ export default function PriceListClient({
         return;
       }
 
-      setShareError(error instanceof Error ? error.message : "יצירת ה-PDF נכשלה.");
+      setShareError(toHebrewError(error, "יצירת ה-PDF נכשלה."));
     } finally {
       setShareLoading(false);
     }
@@ -472,7 +472,7 @@ export default function PriceListClient({
         setEditNewCategoryName("");
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "שגיאה לא ידועה";
+      const message = toHebrewError(err, "שגיאה לא ידועה");
       if (isCreate) setCreateCategoryError(message);
       else setEditCategoryError(message);
     } finally {
@@ -603,7 +603,7 @@ export default function PriceListClient({
       setCreateOpen(false);
       resetCreateForm(selectedCategoryId);
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : "שגיאה לא ידועה");
+      setCreateError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {
       setCreateLoading(false);
     }
@@ -754,7 +754,7 @@ export default function PriceListClient({
 
       setEditOpen(false);
     } catch (err: unknown) {
-      setEditError(err instanceof Error ? err.message : "שגיאה לא ידועה");
+      setEditError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {
       setEditLoading(false);
     }
@@ -793,7 +793,7 @@ export default function PriceListClient({
       setDeleteConfirmOpen(false);
       setPendingDelete(null);
     } catch (err: unknown) {
-      setTableError(err instanceof Error ? err.message : "שגיאה לא ידועה");
+      setTableError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {
       setDeleteLoadingId("");
     }
@@ -851,7 +851,7 @@ export default function PriceListClient({
           <div className="bg-header-navy px-10 py-8 text-on-navy">
             <div className="flex items-start justify-between gap-8">
               <div className="space-y-3">
-                <div className="text-xs font-medium tracking-[0.32em] text-on-navy-muted">BIZMANAGER PRICE LIST</div>
+                <div className="text-xs font-medium tracking-[0.32em] text-on-navy-muted">מחירון</div>
                 <div>
                   <h2 className="text-3xl font-semibold">{shareTitle}</h2>
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-on-navy-muted">

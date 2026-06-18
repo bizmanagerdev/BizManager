@@ -77,7 +77,6 @@ export default function ForgotPasswordClient() {
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground">אימייל</label>
           <Input
-            placeholder="name@company.com"
             type="email"
             value={email}
             onChange={onEmailChange}

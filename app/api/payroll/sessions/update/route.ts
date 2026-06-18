@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { logAuditEvent } from "@/lib/audit";
@@ -120,11 +121,11 @@ export async function POST(req: Request) {
         .maybeSingle(),
     ]);
 
-    if (sessionResult.error) return NextResponse.json({ error: sessionResult.error.message }, { status: 400 });
-    if (periodsResult.error) return NextResponse.json({ error: periodsResult.error.message }, { status: 400 });
-    if (siblingsResult.error) return NextResponse.json({ error: siblingsResult.error.message }, { status: 400 });
-    if (agreementsResult.error) return NextResponse.json({ error: agreementsResult.error.message }, { status: 400 });
-    if (workerResult.error) return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+    if (sessionResult.error) return NextResponse.json({ error: toHebrewError(sessionResult.error.message) }, { status: 400 });
+    if (periodsResult.error) return NextResponse.json({ error: toHebrewError(periodsResult.error.message) }, { status: 400 });
+    if (siblingsResult.error) return NextResponse.json({ error: toHebrewError(siblingsResult.error.message) }, { status: 400 });
+    if (agreementsResult.error) return NextResponse.json({ error: toHebrewError(agreementsResult.error.message) }, { status: 400 });
+    if (workerResult.error) return NextResponse.json({ error: toHebrewError(workerResult.error.message) }, { status: 400 });
     if (!sessionResult.data) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     if (!workerResult.data?.id) return NextResponse.json({ error: "Worker not found." }, { status: 404 });
 
@@ -179,7 +180,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (previousWorkerResult.error) {
-        return NextResponse.json({ error: previousWorkerResult.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(previousWorkerResult.error.message) }, { status: 400 });
       }
 
       const previousWorkerType = normalizePayrollWorkerType(
@@ -212,7 +213,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (updateResult.error) {
-      return NextResponse.json({ error: updateResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(updateResult.error.message) }, { status: 400 });
     }
 
     if (canRecalculateLaborCost && requestedLaborCost === null && clockOut) {
@@ -239,7 +240,7 @@ export async function POST(req: Request) {
         .eq("id", sessionId)
         .maybeSingle();
       if (refreshed.error) {
-        return NextResponse.json({ error: refreshed.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(refreshed.error.message) }, { status: 400 });
       }
       if (refreshed.data?.id) {
         await logAuditEvent({
@@ -274,7 +275,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ session: updateResult.data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

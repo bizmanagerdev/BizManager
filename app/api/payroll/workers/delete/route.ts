@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (existingUserResult.error) {
-      return NextResponse.json({ error: existingUserResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(existingUserResult.error.message) }, { status: 400 });
     }
     if (!existingUserResult.data?.id) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
@@ -53,12 +54,12 @@ export async function POST(req: Request) {
     });
 
     if (rpcResult.error) {
-      return NextResponse.json({ error: rpcResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(rpcResult.error.message) }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ morningClient: client });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "יצירת לקוח ב-Morning נכשלה.";
+    const message = toHebrewError(error, "יצירת לקוח ב-Morning נכשלה.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

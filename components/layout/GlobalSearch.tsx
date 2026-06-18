@@ -165,7 +165,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
     })
       .then(async (response) => {
         const json = (await response.json().catch(() => null)) as GlobalSearchResponse | null;
-        if (!response.ok) throw new Error("Global search failed");
+        if (!response.ok) throw new Error("החיפוש נכשל.");
         setFetchedResults(json);
       })
       .catch((error: unknown) => {

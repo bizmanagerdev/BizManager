@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
       .update(updates)
       .eq("id", id)
       .select("id");
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     if (!data || data.length === 0) {
       return NextResponse.json(
         { error: "התזכורת לא נמצאה או שאין הרשאה לעדכן אותה." },
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

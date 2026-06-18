@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (workerResult.error) {
-      return NextResponse.json({ error: workerResult.error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(workerResult.error.message) }, { status: 400 });
     }
     if (!workerResult.data?.id) {
       return NextResponse.json({ error: "Worker not found." }, { status: 404 });
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (openSessionError) {
-      return NextResponse.json({ error: openSessionError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(openSessionError.message) }, { status: 400 });
     }
 
     if (openSession) {
@@ -64,12 +65,12 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     }
 
     return NextResponse.json({ session: data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

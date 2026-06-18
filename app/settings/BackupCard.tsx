@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { toast } from "sonner";
@@ -40,7 +41,7 @@ export default function BackupCard() {
 
       toast.success("הגיבוי הורד בהצלחה");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "הורדת הגיבוי נכשלה");
+      toast.error(toHebrewError(e, "הורדת הגיבוי נכשלה"));
     } finally {
       setLoading(false);
     }

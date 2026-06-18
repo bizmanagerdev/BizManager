@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 ﻿import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -119,7 +120,7 @@ export async function POST(req: Request) {
       )
       .maybeSingle();
 
-    if (insertError) return NextResponse.json({ error: insertError.message }, { status: 400 });
+    if (insertError) return NextResponse.json({ error: toHebrewError(insertError.message) }, { status: 400 });
     if (!created || typeof created.id !== "string") {
       return NextResponse.json({ error: "Project was not created" }, { status: 400 });
     }
@@ -144,7 +145,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ project: dashboardRow ?? created });
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

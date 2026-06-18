@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useState } from "react";
 import { toast } from "sonner";
@@ -37,11 +38,11 @@ export default function MorningAutoIssueForm({ initial }: Props) {
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? "שמירת ההגדרות נכשלה.");
+        throw new Error(toHebrewError(body?.error, "שמירת ההגדרות נכשלה."));
       }
       toast.success("ההגדרות נשמרו.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "שמירת ההגדרות נכשלה.");
+      toast.error(toHebrewError(error, "שמירת ההגדרות נכשלה."));
     } finally {
       setSaving(false);
     }

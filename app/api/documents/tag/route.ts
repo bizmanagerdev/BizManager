@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 ﻿import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 
@@ -15,11 +16,11 @@ export async function POST(req: Request) {
     if (!documentType) return NextResponse.json({ error: "Missing document_type" }, { status: 400 });
 
     const { error } = await supabase.from("documents").update({ document_type: documentType }).eq("id", documentId);
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

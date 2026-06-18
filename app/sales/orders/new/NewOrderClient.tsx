@@ -526,7 +526,7 @@ export default function NewOrderClient({
         })
         .catch((error: unknown) => {
           if (error instanceof Error && error.name === "AbortError") return;
-          setCustomerSearchError(error instanceof Error ? error.message : "שגיאת חיפוש לקוחות");
+          setCustomerSearchError(toHebrewError(error, "שגיאת חיפוש לקוחות"));
         })
         .finally(() => setCustomerSearchLoading(false));
 
@@ -558,7 +558,7 @@ export default function NewOrderClient({
         })
         .catch((error: unknown) => {
           if (error instanceof Error && error.name === "AbortError") return;
-          setCustomerSearchError(error instanceof Error ? error.message : "שגיאת חיפוש לקוחות");
+          setCustomerSearchError(toHebrewError(error, "שגיאת חיפוש לקוחות"));
         })
         .finally(() => setCustomerSearchLoading(false));
 
@@ -616,7 +616,7 @@ export default function NewOrderClient({
         })
         .catch((error: unknown) => {
           if (error instanceof Error && error.name === "AbortError") return;
-          setProductSearchError(error instanceof Error ? error.message : "שגיאת חיפוש מוצרים");
+          setProductSearchError(toHebrewError(error, "שגיאת חיפוש מוצרים"));
         })
         .finally(() => setProductSearchLoading(false));
 
@@ -904,7 +904,7 @@ export default function NewOrderClient({
       };
 
       if (!res.ok || !json.order_id) {
-        setSubmitError(json.error ?? (isEditMode ? "עדכון ההזמנה נכשל." : "יצירת ההזמנה נכשלה."));
+        setSubmitError(toHebrewError(json.error, (isEditMode ? "עדכון ההזמנה נכשל." : "יצירת ההזמנה נכשלה.")));
         return;
       }
 
@@ -931,7 +931,7 @@ export default function NewOrderClient({
         router.refresh();
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "שגיאה לא ידועה";
+      const message = toHebrewError(error, "שגיאה לא ידועה");
       setSubmitError(message);
     } finally {
       setSubmitting(false);

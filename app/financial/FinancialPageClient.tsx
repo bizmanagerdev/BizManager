@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import DomainBarChart from "@/components/charts/DomainBarChart";
 import Link from "next/link";
@@ -246,7 +247,7 @@ function SelectField({
 
 function FilterLoadingDots() {
   return (
-    <div className="flex justify-center" aria-live="polite" aria-label="Loading filtered financial data">
+    <div className="flex justify-center" aria-live="polite" aria-label="טוען נתונים פיננסיים">
       <div className="flex items-center gap-4">
         {[
           { delayMs: 0, className: "bg-primary shadow-primary/35" },
@@ -710,7 +711,7 @@ export default function FinancialPageClient({
       router.refresh();
     } catch (error) {
       toast.error("שגיאה בסימון ההוצאה כשולמה", {
-        description: error instanceof Error ? error.message : "",
+        description: toHebrewError(error, ""),
       });
     } finally {
       setIsMarkingPaid(false);
@@ -733,7 +734,7 @@ export default function FinancialPageClient({
         "מחיקת חיוב"
       );
       if (!result.queued && !result.ok) {
-        toast.error("שגיאה במחיקת החיוב", { description: result.error || "" });
+        toast.error("שגיאה במחיקת החיוב", { description: toHebrewError(result.error, "") });
         return;
       }
 
@@ -742,7 +743,7 @@ export default function FinancialPageClient({
       router.refresh();
     } catch (error) {
       toast.error("שגיאה במחיקת החיוב", {
-        description: error instanceof Error ? error.message : "",
+        description: toHebrewError(error, ""),
       });
     } finally {
       setIsDeletingExpense(false);
@@ -820,7 +821,7 @@ export default function FinancialPageClient({
       router.refresh();
     } catch (error) {
       toast.error("שגיאה ביצירת ההכנסה", {
-        description: error instanceof Error ? error.message : "",
+        description: toHebrewError(error, ""),
       });
     } finally {
       setIsCreatingIncome(false);

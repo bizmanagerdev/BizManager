@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -322,7 +323,7 @@ export default function CustomersClient({
       );
       setContactOpen(false);
     } catch (e: unknown) {
-      setContactErr(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setContactErr(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
       setContactLoading(false);
     }

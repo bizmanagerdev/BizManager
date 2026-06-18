@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -69,14 +70,14 @@ export default function EditReminderDialog({
         return;
       }
       if (!result.ok) {
-        setError(result.error || "עדכון התזכורת נכשל.");
+        setError(toHebrewError(result.error, "עדכון התזכורת נכשל."));
         return;
       }
       toast.success("התזכורת עודכנה.");
       onSaved();
       onOpenChange(false);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "עדכון התזכורת נכשל.");
+      setError(toHebrewError(err, "עדכון התזכורת נכשל."));
     } finally {
       setSubmitting(false);
     }

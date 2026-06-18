@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
     ]);
 
     const task = taskRes.data;
-    if (taskRes.error) return NextResponse.json({ error: taskRes.error.message }, { status: 400 });
+    if (taskRes.error) return NextResponse.json({ error: toHebrewError(taskRes.error.message) }, { status: 400 });
     if (!task) return NextResponse.json({ task: null });
 
     const memberIds = ((membersRes.data ?? []) as Row[])
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ task, members, comments, reminders });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

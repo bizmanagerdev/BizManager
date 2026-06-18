@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type AuditLogPrimitive = string | number | boolean | null;
@@ -451,7 +452,7 @@ export async function logAuditEvent({
       tableName,
       recordId,
       action,
-      error: error.message,
+      error: toHebrewError(error.message),
     });
   }
 }
@@ -464,7 +465,7 @@ export async function getRecentAuditEvents(supabase: SupabaseClient, limit = 8) 
     .range(0, Math.max(limit - 1, 0));
 
   if (error) {
-    return { items: [] as AuditFeedItem[], error: error.message };
+    return { items: [] as AuditFeedItem[], error: toHebrewError(error.message) };
   }
 
   const rows = (data ?? []) as AuditLogRow[];
@@ -514,7 +515,7 @@ export async function getLatestAuditByRecordIds(
   const { data, error } = await query.range(0, rowLimit - 1);
 
   if (error) {
-    return { byRecordId: {} as Record<string, AuditRecordInfo>, error: error.message };
+    return { byRecordId: {} as Record<string, AuditRecordInfo>, error: toHebrewError(error.message) };
   }
 
   const rows = (data ?? []) as AuditLogRow[];
@@ -604,7 +605,7 @@ export async function getAuditFeedPaginated(
   const { data, error, count } = await query;
 
   if (error) {
-    return { items: [] as AuditFeedItem[], totalCount: 0, page: safePage, totalPages: 1, error: error.message };
+    return { items: [] as AuditFeedItem[], totalCount: 0, page: safePage, totalPages: 1, error: toHebrewError(error.message) };
   }
 
   const rows = (data ?? []) as AuditLogRow[];

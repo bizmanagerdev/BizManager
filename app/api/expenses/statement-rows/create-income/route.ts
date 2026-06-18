@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
@@ -117,7 +118,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ payment_id: paymentId, linked: rowIds.length });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "יצירת ההכנסה נכשלה.";
+    const message = toHebrewError(err, "יצירת ההכנסה נכשלה.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

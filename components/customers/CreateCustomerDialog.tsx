@@ -1,4 +1,5 @@
 "use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, Info, Plus, Sparkles, UserRound, Users } from "lucide-react";
@@ -368,7 +369,7 @@ export function CreateCustomerDialog({
         return;
       }
       if (!result.ok) {
-        setError(result.error || "יצירת לקוח נכשלה.");
+        setError(toHebrewError(result.error, "יצירת לקוח נכשלה."));
         return;
       }
       const json = result.data as { customer?: Record<string, unknown> } | null;
@@ -423,7 +424,7 @@ export function CreateCustomerDialog({
       reset();
       onOpenChange(false);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
       setSubmitting(false);
     }

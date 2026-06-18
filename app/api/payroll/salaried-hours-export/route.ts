@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildSalariedHoursWorkbook, buildPeriodMonthBounds } from "@/lib/payroll-salaried-export";
 import type { SalaryAgreementRow, WorkSessionRow } from "@/lib/payroll";
@@ -46,7 +47,7 @@ export async function GET(req: Request) {
       .range(0, 999);
 
     if (usersResult.error) {
-      return new Response(JSON.stringify({ error: usersResult.error.message }), {
+      return new Response(JSON.stringify({ error: toHebrewError(usersResult.error.message) }), {
         status: 400,
         headers: { "content-type": "application/json; charset=utf-8" },
       });
@@ -75,13 +76,13 @@ export async function GET(req: Request) {
     ]);
 
     if (agreementsResult.error) {
-      return new Response(JSON.stringify({ error: agreementsResult.error.message }), {
+      return new Response(JSON.stringify({ error: toHebrewError(agreementsResult.error.message) }), {
         status: 400,
         headers: { "content-type": "application/json; charset=utf-8" },
       });
     }
     if (sessionsResult.error) {
-      return new Response(JSON.stringify({ error: sessionsResult.error.message }), {
+      return new Response(JSON.stringify({ error: toHebrewError(sessionsResult.error.message) }), {
         status: 400,
         headers: { "content-type": "application/json; charset=utf-8" },
       });
@@ -103,7 +104,7 @@ export async function GET(req: Request) {
       },
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = toHebrewError(error, "Unknown error");
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { "content-type": "application/json; charset=utf-8" },

@@ -1,3 +1,4 @@
+import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
@@ -112,7 +113,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (selectedUserError) {
-      return NextResponse.json({ error: selectedUserError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(selectedUserError.message) }, { status: 400 });
     }
     if (!selectedUser?.id) {
       return NextResponse.json({ error: "העובד שנבחר לא נמצא." }, { status: 404 });
@@ -135,7 +136,7 @@ export async function POST(req: Request) {
         .select("id")
         .eq("id", projectId)
         .maybeSingle();
-      if (projectError) return NextResponse.json({ error: projectError.message }, { status: 400 });
+      if (projectError) return NextResponse.json({ error: toHebrewError(projectError.message) }, { status: 400 });
       if (!project) return NextResponse.json({ error: "הפרויקט שנבחר לא נמצא." }, { status: 404 });
     }
 
@@ -145,7 +146,7 @@ export async function POST(req: Request) {
         .select("id")
         .eq("id", propertyId)
         .maybeSingle();
-      if (propertyError) return NextResponse.json({ error: propertyError.message }, { status: 400 });
+      if (propertyError) return NextResponse.json({ error: toHebrewError(propertyError.message) }, { status: 400 });
       if (!property) return NextResponse.json({ error: "הנכס שנבחר לא נמצא." }, { status: 404 });
     }
 
@@ -157,7 +158,7 @@ export async function POST(req: Request) {
       .limit(500);
 
     if (existingSessionsError) {
-      return NextResponse.json({ error: existingSessionsError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(existingSessionsError.message) }, { status: 400 });
     }
 
     const { data: salaryAgreements, error: salaryAgreementsError } = await supabase
@@ -167,7 +168,7 @@ export async function POST(req: Request) {
       .order("valid_from", { ascending: false });
 
     if (salaryAgreementsError) {
-      return NextResponse.json({ error: salaryAgreementsError.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(salaryAgreementsError.message) }, { status: 400 });
     }
 
     if (workerType !== "session_only") {
@@ -206,7 +207,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     }
 
     const activeAgreement = getActiveSalaryAgreementForDate(
@@ -227,7 +228,7 @@ export async function POST(req: Request) {
         .eq("id", data?.id ?? "")
         .maybeSingle();
       if (refreshed.error) {
-        return NextResponse.json({ error: refreshed.error.message }, { status: 400 });
+        return NextResponse.json({ error: toHebrewError(refreshed.error.message) }, { status: 400 });
       }
       if (refreshed.data?.id) {
         await logAuditEvent({
@@ -260,7 +261,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ session: data });
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "שגיאה לא צפויה בעת יצירת המשמרת.";
+    const message = toHebrewError(error, "שגיאה לא צפויה בעת יצירת המשמרת.");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

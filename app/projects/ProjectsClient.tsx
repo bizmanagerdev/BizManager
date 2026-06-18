@@ -1,4 +1,5 @@
 ﻿"use client";
+import { toHebrewError } from "@/lib/error-messages";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -532,12 +533,12 @@ export default function ProjectsClient({
         error?: string;
       } & Partial<ProjectMonthlySummary>;
       if (!res.ok) {
-        setMonthlySummaryError(json.error ?? "טעינת הסיכום נכשלה.");
+        setMonthlySummaryError(toHebrewError(json.error, "טעינת הסיכום נכשלה."));
         return;
       }
       setMonthlySummary(json as ProjectMonthlySummary);
     } catch (e: unknown) {
-      setMonthlySummaryError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setMonthlySummaryError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
       setMonthlySummaryLoading(false);
     }
@@ -575,7 +576,7 @@ export default function ProjectsClient({
       }>;
 
       if (!res.ok || !json.project) {
-        setApproveQuoteError(json.error ?? "אישור הצעת המחיר נכשל.");
+        setApproveQuoteError(toHebrewError(json.error, "אישור הצעת המחיר נכשל."));
         return;
       }
 
@@ -591,7 +592,7 @@ export default function ProjectsClient({
       setApproveQuotePrice("");
       router.refresh();
     } catch (e: unknown) {
-      setApproveQuoteError(e instanceof Error ? e.message : "שגיאה לא ידועה");
+      setApproveQuoteError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
       setApproveQuoteSubmitting(false);
     }
