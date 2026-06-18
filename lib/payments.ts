@@ -21,6 +21,8 @@ export type PaymentRow = {
   amount_including_vat: number | string | null;
   amount_before_vat: number | string | null;
   net_amount: number | string | null;
+  vat_amount: number | string | null;
+  vat_rate: number | string | null;
   payment_status: string | null;
   business_domain: ExpenseBusinessDomain | string | null;
   project_id: string | null;
@@ -36,7 +38,7 @@ export type PaymentRow = {
 };
 
 export const PAYMENT_SELECT =
-  "id,payment_date,amount_total,payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,net_amount,payment_status,business_domain,project_id,order_id,property_id,due_date,requires_split,recorded_by,notes,created_at,updated_at";
+  "id,payment_date,amount_total,payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,net_amount,vat_amount,vat_rate,payment_status,business_domain,project_id,order_id,property_id,due_date,requires_split,recorded_by,notes,created_at,updated_at";
 
 // Single source of truth for the payment-method dropdown, shared by both the
 // expense dialog and the order/project payment dialogs so they always match.
@@ -64,7 +66,15 @@ type BuildPaymentInsertInput = {
   notes?: string | null;
   dueDate?: string | null;
   requiresSplit?: boolean;
+  /**
+   * VAT rate to apply when requiresSplit (official payment). Fraction, e.g. 0.18.
+   * Frozen onto the row so a later rate change never alters this payment.
+   * Defaults to 0.18 if omitted (legacy callers).
+   */
+  vatRate?: number;
 };
+
+export const DEFAULT_PAYMENT_VAT_RATE = 0.18;
 
 function normalizePaymentMethod(method: string) {
   return method.trim().toLowerCase();
@@ -98,10 +108,18 @@ export function buildPaymentInsert(input: BuildPaymentInsertInput) {
     input.paymentStatus ??
     defaultPaymentStatusForMethod(input.paymentMethod, input.paymentDate, dueDate);
   const requiresSplit = input.requiresSplit ?? false;
+  // Fraction (0.18). Frozen onto the row so later rate changes don't touch it.
+  const vatRate =
+    requiresSplit && typeof input.vatRate === "number" && Number.isFinite(input.vatRate) && input.vatRate >= 0
+      ? input.vatRate
+      : DEFAULT_PAYMENT_VAT_RATE;
   const amountTotal = roundMoney(input.amountTotal);
-  const amountBeforeVat = requiresSplit ? roundMoney(amountTotal / 1.18) : null;
+  // Official: strip VAT — only the pre-VAT (net) part counts toward the price.
+  // Non-official: the whole amount counts, no VAT.
+  const amountBeforeVat = requiresSplit ? roundMoney(amountTotal / (1 + vatRate)) : null;
   const amountIncludingVat = requiresSplit ? amountTotal : null;
-  const netAmount = requiresSplit ? amountBeforeVat : amountTotal;
+  const netAmount = requiresSplit ? (amountBeforeVat as number) : amountTotal;
+  const vatAmount = requiresSplit ? roundMoney(amountTotal - (amountBeforeVat as number)) : 0;
 
   return {
     payment_date: input.paymentDate,
@@ -112,6 +130,8 @@ export function buildPaymentInsert(input: BuildPaymentInsertInput) {
     amount_including_vat: amountIncludingVat,
     amount_before_vat: amountBeforeVat,
     net_amount: netAmount,
+    vat_amount: vatAmount,
+    vat_rate: requiresSplit ? vatRate : 0,
     payment_status: paymentStatus,
     business_domain: input.businessDomain,
     project_id: input.projectId ?? null,

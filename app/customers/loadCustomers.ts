@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
+import { applyProjectVatToBase } from "@/lib/projects/vat";
 
 type Row = Record<string, unknown>;
 
@@ -86,7 +87,7 @@ async function enrichCustomerOverviewRows(
           .order("issued_at", { ascending: false }),
         supabase
           .from("projects")
-          .select("id,customer_id,agreed_base_price,actual_price")
+          .select("id,customer_id,agreed_base_price,actual_price,price_includes_vat,vat_rate")
           .in("customer_id", customerIds),
         supabase
           .from("order_overview_view")
@@ -120,7 +121,7 @@ async function enrichCustomerOverviewRows(
             .in("id", projectIds),
           supabase
             .from("payments")
-            .select("project_id,amount_total,payment_date,payment_status,due_date")
+            .select("project_id,amount_total,net_amount,payment_date,payment_status,due_date")
             .in("project_id", projectIds),
         ])
       : [{ data: [], error: null }, { data: [], error: null }];
@@ -199,8 +200,10 @@ async function enrichCustomerOverviewRows(
     const actualPrice = toNumber(row?.actual_price);
     const agreedBasePrice = toNumber(row?.agreed_base_price);
     const expensesBilled = toNumber(financialRow?.expenses_billed);
-    const fallbackTotal =
-      (actualPrice > 0 ? actualPrice : agreedBasePrice > 0 ? agreedBasePrice : 0) + expensesBilled;
+    // Phase 2: gross up the base for price-includes-VAT projects.
+    const vatMode = { priceIncludesVat: row?.price_includes_vat === true, vatRate: row?.vat_rate as number | null };
+    const baseNet = actualPrice > 0 ? actualPrice : agreedBasePrice > 0 ? agreedBasePrice : 0;
+    const fallbackTotal = applyProjectVatToBase(baseNet, vatMode) + expensesBilled;
     const customerTotalPrice = Math.max(
       toNumber(financialRow?.customer_total_price),
       fallbackTotal
@@ -208,6 +211,9 @@ async function enrichCustomerOverviewRows(
     const split = splitPaymentAmounts(
       (projectPaymentsByProjectId.get(projectId) ?? []).map((payment) => ({
         amount_total: toNumber(payment?.amount_total),
+        // Raw (not toNumber): null must stay null so the split falls back to
+        // gross for legacy rows; toNumber would coerce null → 0 and undercount.
+        net_amount: payment?.net_amount as number | string | null,
         payment_status: typeof payment?.payment_status === "string" ? payment.payment_status : null,
         due_date: typeof payment?.due_date === "string" ? payment.due_date : null,
       }))

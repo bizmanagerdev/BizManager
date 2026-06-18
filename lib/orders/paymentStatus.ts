@@ -182,6 +182,13 @@ export type CollectionStatus = "collected" | "partial" | "awaiting" | "overdue" 
 
 export type PaymentSplitInput = {
   amount_total?: number | string | null;
+  /**
+   * Amount that COUNTS toward the price (net of VAT for official payments).
+   * When present it is used instead of amount_total, so VAT on official payments
+   * never inflates the collected/expected totals. Equals amount_total for
+   * non-official payments. See lib/payments.buildPaymentInsert.
+   */
+  net_amount?: number | string | null;
   payment_status?: string | null;
   due_date?: string | null;
 };
@@ -209,7 +216,9 @@ export function splitPaymentAmounts(
   const reference = todayIso(today);
   return (entries ?? []).reduce<PaymentSplit>(
     (acc, entry) => {
-      const amount = toNumber(entry.amount_total);
+      // Prefer the price-counting (net) amount; fall back to the gross.
+      const net = toNumber(entry.net_amount);
+      const amount = Number.isFinite(net) ? net : toNumber(entry.amount_total);
       if (!Number.isFinite(amount)) return acc;
       const status =
         typeof entry.payment_status === "string" ? entry.payment_status.trim().toLowerCase() : "";

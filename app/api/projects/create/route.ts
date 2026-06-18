@@ -3,6 +3,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
+import { getCurrentVatRate } from "@/lib/settings/vat";
 
 type CreateProjectPayload = {
   customer_id?: string;
@@ -11,6 +12,7 @@ type CreateProjectPayload = {
   status?: string;
   agreed_base_price?: number | string;
   actual_price?: number | string;
+  price_includes_vat?: boolean;
   expenses_billed_separately?: boolean;
   project_manager_id?: string | null;
   start_date?: string;
@@ -58,6 +60,7 @@ export async function POST(req: Request) {
         ? 0
         : toNumber(agreedBasePriceRaw);
     const actualPrice = agreedBasePrice;
+    const priceIncludesVat = Boolean(body.price_includes_vat);
     const expensesBilledSeparately = Boolean(body.expenses_billed_separately);
     const projectManagerId = typeof body.project_manager_id === "string" ? body.project_manager_id : null;
     const startDate = typeof body.start_date === "string" ? body.start_date : "";
@@ -87,6 +90,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid prices" }, { status: 400 });
     }
 
+    // Freeze the current rate onto price-includes-VAT projects so the gross
+    // target stays stable if the global rate later changes.
+    const projectVatRate = priceIncludesVat ? await getCurrentVatRate(supabase) : null;
+
     const { data: created, error: insertError } = await supabase
       .from("projects")
       .insert({
@@ -96,6 +103,8 @@ export async function POST(req: Request) {
         status,
         agreed_base_price: agreedBasePrice,
         actual_price: actualPrice,
+        price_includes_vat: priceIncludesVat,
+        vat_rate: projectVatRate,
         expenses_billed_separately: expensesBilledSeparately,
         project_manager_id: projectManagerId,
         start_date: startDate || null,

@@ -34,6 +34,7 @@ type ProjectDetails = {
   project_type: string;
   agreed_base_price: number | string | null;
   actual_price: number | string | null;
+  price_includes_vat: boolean | null;
   expenses_billed_separately: boolean | null;
   project_manager_id: string | null;
   start_date: string | null;
@@ -167,6 +168,7 @@ export default function ProjectDetailsActions({
   const [editProjectType, setEditProjectType] = useState(project.project_type);
   const [editStatus, setEditStatus] = useState(project.status);
   const [editAgreedBasePrice, setEditAgreedBasePrice] = useState(String(toNumber(project.agreed_base_price) ?? 0));
+  const [editPriceIncludesVat, setEditPriceIncludesVat] = useState(project.price_includes_vat === true);
   const [editExpensesSeparately, setEditExpensesSeparately] = useState(project.expenses_billed_separately === true);
   const [editProjectManagerId, setEditProjectManagerId] = useState(project.project_manager_id ?? "");
   const [editStartDate, setEditStartDate] = useState(project.start_date ?? "");
@@ -243,6 +245,7 @@ export default function ProjectDetailsActions({
           status: editStatus,
           agreed_base_price: agreed,
           actual_price: agreed,
+          price_includes_vat: editPriceIncludesVat,
           expenses_billed_separately: editExpensesSeparately,
           project_manager_id: editProjectManagerId || null,
           start_date: editStartDate || null,
@@ -378,6 +381,18 @@ export default function ProjectDetailsActions({
                 value={editAgreedBasePrice}
                 onChange={(event) => setEditAgreedBasePrice(event.target.value)}
               />
+              <label className="flex items-center gap-2 pt-1 text-sm">
+                <input
+                  type="checkbox"
+                  checked={editPriceIncludesVat}
+                  onChange={(event) => setEditPriceIncludesVat(event.target.checked)}
+                />
+                <span>המחיר כולל מע״מ (הלקוח משלם בסיס + מע״מ)</span>
+              </label>
+              <div className="text-xs text-muted-foreground">
+                כשמסומן — היעד הוא הסכום כולל מע״מ וכל תשלום נזקף במלואו. כשלא — המחיר הוא נטו ותשלום
+                רשמי מנכה מע״מ.
+              </div>
             </div>
 
             <AdaptiveGrid variant="formTwo">

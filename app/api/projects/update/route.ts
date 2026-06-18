@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
+import { getCurrentVatRate } from "@/lib/settings/vat";
 
 type UpdateProjectPayload = {
   id?: string;
@@ -11,6 +12,7 @@ type UpdateProjectPayload = {
   status?: string;
   agreed_base_price?: number | string;
   actual_price?: number | string;
+  price_includes_vat?: boolean;
   expenses_billed_separately?: boolean;
   project_manager_id?: string | null;
   start_date?: string | null;
@@ -54,6 +56,7 @@ export async function POST(req: Request) {
         ? 0
         : toNumber(agreedBasePriceRaw);
     const actualPrice = agreedBasePrice;
+    const priceIncludesVat = Boolean(body.price_includes_vat);
     const expensesBilledSeparately = Boolean(body.expenses_billed_separately);
     const projectManagerId = typeof body.project_manager_id === "string" ? body.project_manager_id : null;
     const startDate = typeof body.start_date === "string" ? body.start_date : null;
@@ -81,6 +84,25 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
 
+    // Freeze the rate when turning the VAT-in-price mode on; preserve a
+    // previously frozen rate; clear it when the mode is off.
+    let projectVatRate: number | null = null;
+    if (priceIncludesVat) {
+      const { data: existingProject } = await supabase
+        .from("projects")
+        .select("vat_rate")
+        .eq("id", id)
+        .maybeSingle();
+      const existingRate =
+        typeof existingProject?.vat_rate === "number"
+          ? existingProject.vat_rate
+          : Number(existingProject?.vat_rate);
+      projectVatRate =
+        Number.isFinite(existingRate) && existingRate > 0
+          ? existingRate
+          : await getCurrentVatRate(supabase);
+    }
+
     const { data: updated, error: updateError } = await supabase
       .from("projects")
       .update({
@@ -90,6 +112,8 @@ export async function POST(req: Request) {
         status,
         agreed_base_price: agreedBasePrice,
         actual_price: actualPrice,
+        price_includes_vat: priceIncludesVat,
+        vat_rate: projectVatRate,
         expenses_billed_separately: expensesBilledSeparately,
         project_manager_id: projectManagerId,
         start_date: startDate,

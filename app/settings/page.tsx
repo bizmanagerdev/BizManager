@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import SettingsTabs from "@/app/settings/SettingsTabs";
 import { loadMorningSettings, type MorningSettings } from "@/lib/morning/settings";
+import { getCurrentVatRate } from "@/lib/settings/vat";
 import type { TaskPriority, TaskStatus } from "@/components/tasks/TaskUpsertDialog";
 import type { RecurringExpenseTemplateItem } from "@/app/financial/RecurringExpensesManager";
 
@@ -171,6 +172,9 @@ export default async function SettingsPage() {
     morningSettings = await loadMorningSettings(supabase);
   }
 
+  // ── VAT rate (admin only) ────────────────────────────────────────────────
+  const vatRate = isAdmin ? await getCurrentVatRate(supabase) : 0.18;
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <SettingsTabs
@@ -186,6 +190,7 @@ export default async function SettingsPage() {
         expenseOrders={orderOptions}
         expenseMissingSchema={expenseMissingSchema}
         morningSettings={morningSettings}
+        vatRate={vatRate}
       />
     </AppShell>
   );

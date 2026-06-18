@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
+import { getCurrentVatRate } from "@/lib/settings/vat";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
 
 function toNumber(value: unknown) {
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
 
     const { data: existingPayment, error: existingPaymentError } = await supabase
       .from("payments")
-      .select("id,project_id,order_id,property_id,business_domain,payment_status")
+      .select("id,project_id,order_id,property_id,business_domain,payment_status,vat_rate")
       .eq("id", paymentId)
       .maybeSingle();
 
@@ -73,6 +74,21 @@ export async function POST(req: Request) {
     const businessDomain = isExpenseBusinessDomain(body.business_domain)
       ? body.business_domain
       : mapProjectTypeToExpenseDomain(null);
+
+    // Keep the payment's original frozen rate when it was already official;
+    // when newly marking it official, use the current rate.
+    let vatRate: number | undefined;
+    if (requiresSplit) {
+      const existingRate =
+        typeof existingPayment.vat_rate === "number"
+          ? existingPayment.vat_rate
+          : Number(existingPayment.vat_rate);
+      vatRate =
+        Number.isFinite(existingRate) && existingRate > 0
+          ? existingRate
+          : await getCurrentVatRate(supabase);
+    }
+
     const { recorded_by: ignoredRecordedBy, ...paymentValues } = buildPaymentInsert({
       amountTotal: amountNumber,
       businessDomain: isExpenseBusinessDomain(existingPayment.business_domain)
@@ -91,6 +107,7 @@ export async function POST(req: Request) {
       notes,
       dueDate,
       requiresSplit,
+      vatRate,
       recordedBy: user.id,
     });
     void ignoredRecordedBy;

@@ -19,6 +19,8 @@ import type { WorkSessionRow } from "@/lib/payroll";
 import { paymentStatusClasses, paymentStatusLabel, splitPaymentAmounts, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
 import { computeSourceCollection } from "@/lib/collections";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
+import { getCurrentVatRate } from "@/lib/settings/vat";
+import { applyProjectVatToBase } from "@/lib/projects/vat";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -156,6 +158,7 @@ export default async function ProjectPage({
 }) {
   const { id } = await params;
   const { profile, supabase } = await requireProfile();
+  const currentVatRate = await getCurrentVatRate(supabase);
 
   const { data: overviewRaw, error: overviewError } = await supabase
     .from("project_overview_view")
@@ -167,7 +170,7 @@ export default async function ProjectPage({
 
   const { data: projectDetailsRaw } = await supabase
     .from("projects")
-    .select("id,notes,items_to_move,payment_terms,due_date")
+    .select("id,notes,items_to_move,payment_terms,due_date,price_includes_vat,vat_rate")
     .eq("id", id)
     .maybeSingle<{
       id: string;
@@ -175,6 +178,8 @@ export default async function ProjectPage({
       items_to_move: string[] | null;
       payment_terms: string | null;
       due_date: string | null;
+      price_includes_vat: boolean | null;
+      vat_rate: number | string | null;
     }>();
 
   const overview: ProjectOverview | null = overviewRaw
@@ -184,6 +189,13 @@ export default async function ProjectPage({
         items_to_move: Array.isArray(projectDetailsRaw?.items_to_move)
           ? projectDetailsRaw.items_to_move.filter((item): item is string => typeof item === "string")
           : null,
+        price_includes_vat: projectDetailsRaw?.price_includes_vat === true,
+        vat_rate:
+          typeof projectDetailsRaw?.vat_rate === "number"
+            ? projectDetailsRaw.vat_rate
+            : typeof projectDetailsRaw?.vat_rate === "string"
+              ? Number(projectDetailsRaw.vat_rate)
+              : null,
       }
     : null;
 
@@ -832,6 +844,7 @@ export default async function ProjectPage({
   const projectPaymentSplit = splitPaymentAmounts(
     paymentsWithPhotos.map((payment) => ({
       amount_total: payment.amount_total,
+      net_amount: payment.net_amount,
       payment_status: payment.payment_status,
       due_date: payment.due_date,
     }))
@@ -857,12 +870,19 @@ export default async function ProjectPage({
       : typeof financials?.expenses_billed === "string"
         ? Number(financials.expenses_billed)
         : 0;
-  const baseProjectPrice =
+  const projectVatMode = {
+    priceIncludesVat: overview?.price_includes_vat === true,
+    vatRate: overview?.vat_rate ?? null,
+  };
+  const baseProjectPriceNet =
     actualPrice !== null && Number.isFinite(actualPrice) && actualPrice > 0
       ? actualPrice
       : agreedBasePrice !== null && Number.isFinite(agreedBasePrice) && agreedBasePrice > 0
         ? agreedBasePrice
         : null;
+  // Phase 2: when the price includes VAT, the target the customer pays is the gross.
+  const baseProjectPrice =
+    baseProjectPriceNet !== null ? applyProjectVatToBase(baseProjectPriceNet, projectVatMode) : null;
   const totalCustomerCharge =
     baseProjectPrice !== null ? baseProjectPrice + (Number.isFinite(expensesBilled) ? expensesBilled : 0) : null;
   const customerPaymentStatus = deriveCustomerPaymentStatus(totalCustomerCharge, paidTotal);
@@ -1051,6 +1071,7 @@ export default async function ProjectPage({
           <ProjectTabsClient
             viewerRole={profile.role}
             overview={overview}
+            currentVatRate={currentVatRate}
             paymentTerms={projectPaymentTerms}
             dueDate={projectDueDate}
             financials={financials ?? null}

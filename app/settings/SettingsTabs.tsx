@@ -12,6 +12,7 @@ import type { RecurringExpenseTemplateItem } from "@/app/financial/RecurringExpe
 import type { TaskPriority, TaskStatus } from "@/components/tasks/TaskUpsertDialog";
 import MorningAutoIssueForm from "@/app/settings/integrations/morning/MorningAutoIssueForm";
 import BackupCard from "@/app/settings/BackupCard";
+import VatRateCard from "@/app/settings/VatRateCard";
 import type { MorningSettings } from "@/lib/morning/settings";
 
 type UserOption = { id: string; label: string };
@@ -50,12 +51,15 @@ type Props = {
   expenseMissingSchema: boolean;
   // Morning integration (admin only)
   morningSettings: MorningSettings | null;
+  // Current VAT rate (fraction, e.g. 0.18) — admin only
+  vatRate: number;
 };
 
 const ALL_TABS = [
   { key: "notifications", label: "התראות", adminOnly: false },
   { key: "recurring-tasks", label: "משימות קבועות", adminOnly: false },
   { key: "recurring-expenses", label: "הוצאות קבועות", adminOnly: false },
+  { key: "finance", label: "כספים", adminOnly: true },
   { key: "morning", label: "Morning", adminOnly: true },
   { key: "backup", label: "גיבוי", adminOnly: true },
 ] as const;
@@ -134,6 +138,13 @@ export default function SettingsTabs(props: Props) {
           orders={props.expenseOrders}
           missingSchema={props.expenseMissingSchema}
         />
+      )}
+
+      {/* Finance tab (admin only) */}
+      {activeTab === "finance" && props.isAdmin && (
+        <div className="space-y-4">
+          <VatRateCard initialRate={props.vatRate} />
+        </div>
       )}
 
       {/* Morning integration tab (admin only) */}

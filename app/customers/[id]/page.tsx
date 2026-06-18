@@ -13,6 +13,7 @@ import {
   getProjectStatusLabel,
 } from "@/lib/ui/status-colors";
 import { splitPaymentAmounts, paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import { applyProjectVatToBase } from "@/lib/projects/vat";
 import { getCustomerReceivables } from "@/lib/collections";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { STORAGE_BUCKET } from "@/lib/storage";
@@ -217,7 +218,7 @@ export default async function CustomerDetailsPage({
       .order("order_date", { ascending: false }),
     supabase
       .from("projects")
-      .select("id,customer_id,name,status,start_date,end_date,agreed_base_price,actual_price")
+      .select("id,customer_id,name,status,start_date,end_date,agreed_base_price,actual_price,price_includes_vat,vat_rate")
       .eq("customer_id", id)
       .order("start_date", { ascending: false, nullsFirst: false }),
     // Term-aware days-late for the debt banner — same source the מעקב גבייה
@@ -252,7 +253,7 @@ export default async function CustomerDetailsPage({
       ? supabase
           .from("payments")
           .select(
-            "id,project_id,amount_total,payment_date,payment_method,payment_status,due_date,check_number"
+            "id,project_id,amount_total,net_amount,payment_date,payment_method,payment_status,due_date,check_number"
           )
           .in("project_id", projectIds)
           .order("payment_date", { ascending: false })
@@ -327,12 +328,17 @@ export default async function CustomerDetailsPage({
     const actualPrice = n(row.actual_price);
     const agreedBasePrice = n(row.agreed_base_price);
     const expensesBilled = n(financialRow?.expenses_billed);
-    const fallbackTotal =
-      (actualPrice > 0 ? actualPrice : agreedBasePrice > 0 ? agreedBasePrice : 0) + expensesBilled;
+    // Phase 2: gross up the base for price-includes-VAT projects.
+    const vatMode = { priceIncludesVat: row.price_includes_vat === true, vatRate: row.vat_rate as number | null };
+    const baseNet = actualPrice > 0 ? actualPrice : agreedBasePrice > 0 ? agreedBasePrice : 0;
+    const fallbackTotal = applyProjectVatToBase(baseNet, vatMode) + expensesBilled;
     const totalPrice = Math.max(n(financialRow?.customer_total_price), fallbackTotal);
     const split = splitPaymentAmounts(
       (paymentsByProjectId.get(projectId) ?? []).map((payment) => ({
         amount_total: n(payment.amount_total),
+        // Raw (not n()): null must stay null so the split falls back to gross
+        // for legacy rows; n() would coerce null → 0 and undercount.
+        net_amount: payment.net_amount as number | string | null,
         payment_status: s(payment, "payment_status") || null,
         due_date: s(payment, "due_date") || null,
       }))

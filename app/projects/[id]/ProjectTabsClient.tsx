@@ -47,6 +47,7 @@ import {
 } from "@/lib/orders/paymentStatus";
 import { computeSourceCollection } from "@/lib/collections";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
+import { applyProjectVatToBase } from "@/lib/projects/vat";
 import { offlineFetch } from "@/lib/offline-queue";
 import {
   type PaymentRow,
@@ -95,6 +96,8 @@ export type ProjectOverview = {
   agreed_base_price: string | number | null;
   actual_price: string | number | null;
   expenses_billed_separately: boolean | null;
+  price_includes_vat: boolean | null;
+  vat_rate: string | number | null;
   customer_id: string;
   customer_name: string;
   project_manager_id: string | null;
@@ -391,6 +394,7 @@ type CashFlowEvent =
 export default function ProjectTabsClient({
   viewerRole,
   overview,
+  currentVatRate,
   paymentTerms,
   dueDate,
   financials,
@@ -417,6 +421,7 @@ export default function ProjectTabsClient({
 }: {
   viewerRole: string | null;
   overview: ProjectOverview;
+  currentVatRate: number;
   paymentTerms: string | null;
   dueDate: string | null;
   financials: ProjectFinancials;
@@ -922,18 +927,43 @@ export default function ProjectTabsClient({
       : Boolean(item.project_expense?.["billed_to_customer"])
   );
   const billedExpensesTotal = billedExpensesFromDb ?? 0;
-  const displayedBasePrice = agreedBasePriceUi ?? agreedBasePrice;
+  // Phase 2: when the project price includes VAT, the agreed base is grossed up
+  // to the with-VAT target the customer actually pays.
+  const projectVatMode = {
+    priceIncludesVat: overview.price_includes_vat === true,
+    vatRate: overview.vat_rate ?? currentVatRate,
+  };
+  const displayedBaseNet = agreedBasePriceUi ?? agreedBasePrice;
+  const displayedBasePrice =
+    displayedBaseNet === null ? null : applyProjectVatToBase(displayedBaseNet, projectVatMode);
   // Collection split: "שולם" reflects COLLECTED money only; pending (future-dated)
   // payments are expected, not paid — so the status can read תשלום צפוי / באיחור.
+  // Counts toward the price use net_amount (VAT stripped from official payments).
   const paymentSplit = splitPaymentAmounts(
     paymentsUi.map((p) => ({
       amount_total: toNumber(p.amount_total) ?? 0,
+      net_amount: toNumber(p.net_amount),
       payment_status: typeof p.payment_status === "string" ? p.payment_status : null,
       due_date: typeof p.due_date === "string" ? p.due_date : null,
     }))
   );
   const paymentsTotal = paymentSplit.collected;
-  // Expected price = agreed base + charges billed to the customer.
+  // Real cash that arrived (gross, incl. VAT) and VAT stripped from official
+  // payments — shown alongside, for reconciliation and the tax bucket.
+  const grossReceivedTotal = paymentsUi.reduce((sum, p) => {
+    const status = typeof p.payment_status === "string" ? p.payment_status.toLowerCase() : "";
+    if (status === "pending" || status === "rejected") return sum;
+    return sum + (toNumber(p.amount_total) ?? 0);
+  }, 0);
+  const vatCollectedTotal = paymentsUi.reduce((sum, p) => {
+    const status = typeof p.payment_status === "string" ? p.payment_status.toLowerCase() : "";
+    if (status === "pending" || status === "rejected") return sum;
+    const gross = toNumber(p.amount_total) ?? 0;
+    const net = toNumber(p.net_amount);
+    const vat = toNumber(p.vat_amount);
+    return sum + (Number.isFinite(vat) ? (vat as number) : Number.isFinite(net) ? gross - (net as number) : 0);
+  }, 0);
+  // Expected price = agreed base (grossed up if price includes VAT) + billed charges.
   const expectedCustomerPrice =
     displayedBasePrice === null
       ? customerTotalPrice
@@ -1591,6 +1621,14 @@ export default function ProjectTabsClient({
                     </>
                   ) : null}
                 </div>
+                {vatCollectedTotal > 0.009 ? (
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    <span>סה״כ התקבל בפועל </span>
+                    <LtrInline>{formatIls(grossReceivedTotal)}</LtrInline>
+                    <span> • מע״מ שנגבה </span>
+                    <LtrInline>{formatIls(vatCollectedTotal)}</LtrInline>
+                  </div>
+                ) : null}
                 <div className="mt-1 text-xs text-muted-foreground">
                   <span>צורת תשלום: {paymentTermsLabel(paymentTerms)}</span>
                   {dueDate ? <span> • פירעון: <LtrInline>{formatDate(dueDate)}</LtrInline></span> : null}
@@ -2592,6 +2630,8 @@ export default function ProjectTabsClient({
         projectId={overview.id}
         projectType={overview.project_type}
         projectStartDate={overview.start_date}
+        vatRate={projectVatMode.priceIncludesVat ? Number(overview.vat_rate ?? currentVatRate) : currentVatRate}
+        priceIncludesVat={projectVatMode.priceIncludesVat}
         editingPayment={editingPayment}
         onSaved={(saved) => {
           setPaymentsUi((prev) => {
@@ -5147,6 +5187,8 @@ function AddIncomeDialog({
   projectId,
   projectType,
   projectStartDate,
+  vatRate,
+  priceIncludesVat,
   editingPayment,
   onSaved,
 }: {
@@ -5155,6 +5197,8 @@ function AddIncomeDialog({
   projectId: string;
   projectType: string | null;
   projectStartDate: string | null;
+  vatRate: number;
+  priceIncludesVat: boolean;
   editingPayment: PaymentRow | null;
   onSaved: (saved: PaymentRow) => void;
 }) {
@@ -5256,7 +5300,8 @@ function AddIncomeDialog({
           amount_total: amountNumber,
           payment_date: paymentDate ? paymentDate : null,
           due_date: dueDate.trim() || null,
-          requires_split: requiresSplit,
+          // Price-includes-VAT projects always record payments in full.
+          requires_split: priceIncludesVat ? false : requiresSplit,
           payment_method: paymentMethod.trim() ? paymentMethod : undefined,
           reference_number: referenceNumber.trim() ? referenceNumber : undefined,
           check_number:
@@ -5457,14 +5502,42 @@ function AddIncomeDialog({
             ) : null}
           </AdaptiveGrid>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={requiresSplit}
-              onChange={(e) => setRequiresSplit(e.target.checked)}
-            />
-            <span>כולל מע״מ 18%</span>
-          </label>
+          {priceIncludesVat ? (
+            <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              מחיר הפרויקט כולל מע״מ — כל תשלום נזקף במלואו ליעד. אין צורך לסמן ״תשלום רשמי״.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={requiresSplit}
+                  onChange={(e) => setRequiresSplit(e.target.checked)}
+                />
+                <span>תשלום רשמי (כולל מע״מ {Math.round(vatRate * 10000) / 100}%)</span>
+              </label>
+              {requiresSplit && Number.isFinite(Number(amount)) && Number(amount) > 0
+                ? (() => {
+                    const gross = Number(amount);
+                    const net = Math.round((gross / (1 + vatRate)) * 100) / 100;
+                    const vat = Math.round((gross - net) * 100) / 100;
+                    const fmt = (n: number) =>
+                      new Intl.NumberFormat("he-IL", {
+                        style: "currency",
+                        currency: "ILS",
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 2,
+                      }).format(n);
+                    return (
+                      <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                        מתוך {fmt(gross)} — <span className="font-medium text-foreground">{fmt(net)}</span> ייזקפו
+                        למחיר הפרויקט · {fmt(vat)} מע״מ.
+                      </div>
+                    );
+                  })()
+                : null}
+            </div>
+          )}
 
           <div className="space-y-1">
             <div className="text-sm font-medium">{"\u05d4\u05e2\u05e8\u05d5\u05ea (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)"}</div>

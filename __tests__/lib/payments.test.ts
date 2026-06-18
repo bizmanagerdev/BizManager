@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildPaymentInsert } from "@/lib/payments";
+import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
+import { applyProjectVatToBase } from "@/lib/projects/vat";
 
 const BASE_INPUT = {
   paymentDate: "2024-06-01",
@@ -25,6 +27,36 @@ describe("buildPaymentInsert — VAT split (18%)", () => {
     expect(result.amount_before_vat).toBe(1000);
     expect(result.amount_including_vat).toBe(1180);
     expect(result.net_amount).toBe(1000); // net = before VAT
+    expect(result.vat_amount).toBe(180); // arrived − counted
+    expect(result.vat_rate).toBe(0.18);
+  });
+
+  it("non-official payment has vat_amount 0 and vat_rate 0", () => {
+    const result = buildPaymentInsert({ ...BASE_INPUT });
+    expect(result.vat_amount).toBe(0);
+    expect(result.vat_rate).toBe(0);
+  });
+
+  it("uses the supplied VAT rate and freezes it on the row", () => {
+    // 17% era: 1170 / 1.17 = 1000 net, 170 VAT.
+    const result = buildPaymentInsert({ ...BASE_INPUT, amountTotal: 1170, requiresSplit: true, vatRate: 0.17 });
+    expect(result.amount_before_vat).toBe(1000);
+    expect(result.net_amount).toBe(1000);
+    expect(result.vat_amount).toBe(170);
+    expect(result.vat_rate).toBe(0.17);
+  });
+
+  it("arrived = counted + VAT always holds", () => {
+    const result = buildPaymentInsert({ ...BASE_INPUT, amountTotal: 100, requiresSplit: true });
+    expect(
+      Math.round(((result.net_amount as number) + (result.vat_amount as number)) * 100) / 100
+    ).toBe(result.amount_total);
+  });
+
+  it("vatRate is ignored for non-official payments", () => {
+    const result = buildPaymentInsert({ ...BASE_INPUT, requiresSplit: false, vatRate: 0.17 });
+    expect(result.net_amount).toBe(1180);
+    expect(result.vat_rate).toBe(0);
   });
 
   it("rounds VAT split amounts to 2 decimal places", () => {
@@ -83,5 +115,51 @@ describe("buildPaymentInsert — future due_date (bank transfer)", () => {
   it("status=cleared for bank transfer with a past due_date", () => {
     const result = buildPaymentInsert({ ...BASE_INPUT, dueDate: "2020-01-01" });
     expect(result.payment_status).toBe("cleared");
+  });
+});
+
+describe("splitPaymentAmounts — counts toward price uses net_amount", () => {
+  it("official payment counts only the net (VAT excluded)", () => {
+    const split = splitPaymentAmounts([
+      { amount_total: 118, net_amount: 100, payment_status: "cleared" },
+    ]);
+    expect(split.collected).toBe(100);
+  });
+
+  it("non-official payment counts in full", () => {
+    const split = splitPaymentAmounts([
+      { amount_total: 100, net_amount: 100, payment_status: "cleared" },
+    ]);
+    expect(split.collected).toBe(100);
+  });
+
+  it("falls back to gross when net_amount is missing (legacy rows)", () => {
+    const split = splitPaymentAmounts([
+      { amount_total: 100, net_amount: null, payment_status: "cleared" },
+    ]);
+    expect(split.collected).toBe(100);
+  });
+
+  it("mixed official + cash net out to the agreed price, not the gross received", () => {
+    // 1,000,000 project: 500,000 net via official (590,000 arrived) + 540,000 cash.
+    const split = splitPaymentAmounts([
+      { amount_total: 590000, net_amount: 500000, payment_status: "cleared" },
+      { amount_total: 540000, net_amount: 540000, payment_status: "cleared" },
+    ]);
+    expect(split.collected).toBe(1040000); // counts toward price (not 1,130,000 gross)
+  });
+});
+
+describe("applyProjectVatToBase — Phase 2 gross target", () => {
+  it("returns the base unchanged for net-priced projects", () => {
+    expect(applyProjectVatToBase(30000, { priceIncludesVat: false })).toBe(30000);
+  });
+
+  it("grosses up the base for price-includes-VAT projects", () => {
+    expect(applyProjectVatToBase(30000, { priceIncludesVat: true, vatRate: 0.18 })).toBe(35400);
+  });
+
+  it("uses the frozen project rate when provided", () => {
+    expect(applyProjectVatToBase(1000, { priceIncludesVat: true, vatRate: 0.17 })).toBe(1170);
   });
 });

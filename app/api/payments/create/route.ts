@@ -4,6 +4,7 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
+import { getCurrentVatRate } from "@/lib/settings/vat";
 import {
   isExpenseBusinessDomain,
   mapProjectTypeToExpenseDomain,
@@ -123,6 +124,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing or invalid business_domain" }, { status: 400 });
     }
 
+    // Freeze the current VAT rate onto official payments so later rate changes
+    // never alter this row's net/VAT split.
+    const vatRate = requiresSplit ? await getCurrentVatRate(supabase) : undefined;
+
     const { data, error } = await supabase
       .from("payments")
       .insert(
@@ -139,6 +144,7 @@ export async function POST(req: Request) {
           notes,
           dueDate,
           requiresSplit,
+          vatRate,
           recordedBy: user.id,
         })
       )

@@ -404,6 +404,7 @@ export default function ProjectsClient({
   const [createProjectType, setCreateProjectType] = useState(defaultProjectTypeOptions[0]);
   const [createStatus, setCreateStatus] = useState(defaultStatusOptions[0]);
   const [createAgreedBasePrice, setCreateAgreedBasePrice] = useState("");
+  const [createPriceIncludesVat, setCreatePriceIncludesVat] = useState(false);
   const [createExpensesSeparately, setCreateExpensesSeparately] = useState(false);
   const [createProjectManagerId, setCreateProjectManagerId] = useState(defaultProjectManagerId ?? "");
   const [createStartDate, setCreateStartDate] = useState(todayIso());
@@ -429,6 +430,7 @@ export default function ProjectsClient({
   const [editStatus, setEditStatus] = useState(defaultStatusOptions[0]);
   const [editAgreedBasePrice, setEditAgreedBasePrice] = useState("");
   const [editExpensesSeparately, setEditExpensesSeparately] = useState(false);
+  const [editPriceIncludesVat, setEditPriceIncludesVat] = useState(false);
   const [editProjectManagerId, setEditProjectManagerId] = useState("");
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
@@ -650,6 +652,7 @@ export default function ProjectsClient({
         status: createStatus,
         agreed_base_price: agreed,
         actual_price: actual,
+        price_includes_vat: createPriceIncludesVat,
         expenses_billed_separately: createExpensesSeparately,
         project_manager_id: createProjectManagerId || null,
         start_date: createStartDate || null,
@@ -692,6 +695,7 @@ export default function ProjectsClient({
       setCreateProjectType(projectTypeOptions[0] ?? defaultProjectTypeOptions[0]);
       setCreateStatus(defaultCreateStatusForTab(activeTab));
       setCreateAgreedBasePrice("");
+      setCreatePriceIncludesVat(false);
       setCreateExpensesSeparately(false);
       setCreateProjectManagerId(defaultProjectManagerId ?? currentUserId ?? "");
       const now = todayIso();
@@ -718,6 +722,7 @@ export default function ProjectsClient({
     setEditStatus(getString(row, "status") ?? defaultStatusOptions[0]);
     setEditAgreedBasePrice(String(getNumber(row, "agreed_base_price") ?? 0));
     setEditExpensesSeparately(row["expenses_billed_separately"] === true);
+    setEditPriceIncludesVat(row["price_includes_vat"] === true);
     setEditProjectManagerId(getString(row, "project_manager_id") ?? "");
     setEditStartDate(getString(row, "start_date") ?? "");
     setEditEndDate(getString(row, "end_date") ?? "");
@@ -789,6 +794,7 @@ export default function ProjectsClient({
           status: editStatus,
           agreed_base_price: agreed,
           actual_price: agreed,
+          price_includes_vat: editPriceIncludesVat,
           expenses_billed_separately: editExpensesSeparately,
           project_manager_id: editProjectManagerId || null,
           start_date: editStartDate || null,
@@ -1661,6 +1667,14 @@ export default function ProjectsClient({
                 onChange={(e) => setCreateAgreedBasePrice(e.target.value)}
                 placeholder="אופציונלי, ברירת מחדל 0"
               />
+              <label className="flex items-center gap-2 pt-1 text-sm">
+                <input
+                  type="checkbox"
+                  checked={createPriceIncludesVat}
+                  onChange={(e) => setCreatePriceIncludesVat(e.target.checked)}
+                />
+                <span>המחיר כולל מע״מ (הלקוח משלם בסיס + מע״מ)</span>
+              </label>
             </div>
 
             <AdaptiveGrid variant="formTwo">
@@ -1870,6 +1884,14 @@ export default function ProjectsClient({
                 value={editAgreedBasePrice}
                 onChange={(e) => setEditAgreedBasePrice(e.target.value)}
               />
+              <label className="flex items-center gap-2 pt-1 text-sm">
+                <input
+                  type="checkbox"
+                  checked={editPriceIncludesVat}
+                  onChange={(e) => setEditPriceIncludesVat(e.target.checked)}
+                />
+                <span>המחיר כולל מע״מ (הלקוח משלם בסיס + מע״מ)</span>
+              </label>
             </div>
 
             <AdaptiveGrid variant="formTwo">
