@@ -226,7 +226,17 @@ export default function CollectionsClient({
 
   const overdueReminderCount = reminders.filter((r) => r.remind_at.slice(0, 10) < todayIso()).length;
 
+  function unhideReminder(id: string) {
+    setCompletedReminderIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
   async function updateReminder(id: string, status: "done" | "cancelled") {
+    // Optimistic: hide the reminder immediately, restore it if the server rejects.
+    setCompletedReminderIds((prev) => new Set(prev).add(id));
     try {
       const result = await offlineFetch(
         "/api/reminders/update",
@@ -234,15 +244,16 @@ export default function CollectionsClient({
         status === "done" ? "סימון תזכורת כבוצעה" : "ביטול תזכורת"
       );
       if (!result.queued && !result.ok) {
+        unhideReminder(id); // rollback
         toast.error(toHebrewError(result.error, "עדכון התזכורת נכשל."));
         return;
       }
-      setCompletedReminderIds((prev) => new Set(prev).add(id));
       if (!result.queued) {
         toast.success(status === "done" ? "התזכורת סומנה כבוצעה." : "התזכורת בוטלה.");
         router.refresh();
       }
     } catch (err: unknown) {
+      unhideReminder(id); // rollback
       toast.error(toHebrewError(err, "עדכון התזכורת נכשל."));
     }
   }

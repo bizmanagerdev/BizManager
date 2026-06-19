@@ -36,6 +36,15 @@ yarn-error.log*
 # vercel
 .vercel
 
+# database backups / migration dumps (contain customer data + secrets — never commit)
+/db-backups/
+*.dump
+/roles.sql
+/schema.sql
+/schema_clean.sql
+/data_public.sql
+/data_auth.sql
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -652,13 +652,14 @@ export default function FinancialPageClient({
     }
   }, [isRefreshPending]);
 
+  // Trigger a background refresh of server data WITHOUT blocking the caller.
+  // Dialogs that call this on save close instantly; the page reconciles a moment
+  // later. (Previously this awaited the full refetch, which made saves feel slow.)
   function refreshAndWait() {
-    return new Promise<void>((resolve) => {
-      refreshResolveRef.current = resolve;
-      startRefreshTransition(() => {
-        router.refresh();
-      });
+    startRefreshTransition(() => {
+      router.refresh();
     });
+    return Promise.resolve();
   }
 
   useEffect(() => {

@@ -1,7 +1,8 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
+import { toast } from "sonner";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -315,35 +316,34 @@ export function OrderPaymentActionsClient({
   canManage,
 }: Props) {
   const router = useRouter();
+  const [items, setItems] = useState(payments);
   const [editingPayment, setEditingPayment] = useState<PaymentItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [collectingId, setCollectingId] = useState<string | null>(null);
+  const [, startRefreshTransition] = useTransition();
 
-  const [isRefreshPending, startRefreshTransition] = useTransition();
-  const refreshResolveRef = useRef<(() => void) | null>(null);
-
+  // Keep the local list in sync when the server sends fresh data.
   useEffect(() => {
-    if (!isRefreshPending && refreshResolveRef.current) {
-      const resolve = refreshResolveRef.current;
-      refreshResolveRef.current = null;
-      resolve();
-    }
-  }, [isRefreshPending]);
+    setItems(payments);
+  }, [payments]);
 
-  function refreshAndWait() {
-    return new Promise<void>((resolve) => {
-      refreshResolveRef.current = resolve;
-      startRefreshTransition(() => {
-        router.refresh();
-      });
+  // Reconcile server-derived data (order totals, Morning docs) in the
+  // background — never blocks the instant local update the user already saw.
+  function backgroundRefresh() {
+    startRefreshTransition(() => {
+      router.refresh();
     });
   }
 
   async function deletePayment(paymentId: string) {
-    setDeleteSubmitting(true);
     setDeleteError(null);
+    const snapshot = items;
+    // Optimistic: remove the row immediately.
+    setItems((prev) => prev.filter((p) => p.id !== paymentId));
+    setDeletingId(null);
+    setDeleteSubmitting(true);
     try {
       const result = await offlineFetch(
         "/api/orders/payments/delete",
@@ -351,19 +351,26 @@ export function OrderPaymentActionsClient({
         "מחיקת תשלום"
       );
       if (!result.queued && !result.ok) {
-        setDeleteError(toHebrewError(result.error, "מחיקה נכשלה."));
+        setItems(snapshot); // rollback
+        toast.error("מחיקת התשלום נכשלה", { description: toHebrewError(result.error, "") });
         return;
       }
-      setDeletingId(null);
-      await refreshAndWait();
+      backgroundRefresh();
     } catch (err) {
-      setDeleteError(toHebrewError(err, "שגיאה לא ידועה"));
+      setItems(snapshot); // rollback
+      toast.error("מחיקת התשלום נכשלה", { description: toHebrewError(err, "") });
     } finally {
       setDeleteSubmitting(false);
     }
   }
 
   async function markCollected(paymentId: string, collected: boolean) {
+    const nextStatus = collected ? "cleared" : "pending";
+    const snapshot = items;
+    // Optimistic: reflect the new collection status immediately.
+    setItems((prev) =>
+      prev.map((p) => (p.id === paymentId ? { ...p, payment_status: nextStatus } : p))
+    );
     setCollectingId(paymentId);
     try {
       const result = await offlineFetch(
@@ -371,24 +378,27 @@ export function OrderPaymentActionsClient({
         { id: paymentId, collected },
         collected ? "סימון תשלום כנגבה" : "ביטול גבייה"
       );
-      if (result.queued || result.ok) {
-        await refreshAndWait();
+      if (!result.queued && !result.ok) {
+        setItems(snapshot); // rollback
+        toast.error("עדכון הגבייה נכשל", { description: toHebrewError(result.error, "") });
+        return;
       }
+      backgroundRefresh();
     } finally {
       setCollectingId(null);
     }
   }
 
-  const totalPaid = payments.reduce((s, p) => s + p.amount_total, 0);
+  const totalPaid = items.reduce((s, p) => s + p.amount_total, 0);
 
-  if (payments.length === 0) {
+  if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">עדיין לא הוזנו תשלומים להזמנה זו.</p>;
   }
 
   return (
     <>
       <div className="space-y-2">
-        {payments.map((payment, index) => {
+        {items.map((payment, index) => {
           const isRefund = payment.amount_total < 0;
           const isDeleting = deletingId === payment.id;
           const collectionChip = paymentCollectionChip(payment);
@@ -531,7 +541,7 @@ export function OrderPaymentActionsClient({
           onClose={() => setEditingPayment(null)}
           onSaved={async () => {
             setEditingPayment(null);
-            await refreshAndWait();
+            backgroundRefresh();
           }}
         />
       ) : null}
