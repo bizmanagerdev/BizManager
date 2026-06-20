@@ -827,8 +827,10 @@ export default function NewOrderClient({
       return;
     }
 
-    // "מיידי" (immediate) tracks no payment rows — ignore any drafts left from another term.
-    const paymentsToSubmit = paymentTerms === "immediate" ? [] : newPayments;
+    // Always submit the payments the user entered; the term only drives the due date,
+    // not whether payment rows are recorded. (Dropping them for "מיידי" silently lost
+    // the payment and tripped the prepayment guard server-side.)
+    const paymentsToSubmit = newPayments;
 
     const invalidPayment = paymentsToSubmit.find((payment) => {
       const amount = Number(payment.amount_total || 0);
