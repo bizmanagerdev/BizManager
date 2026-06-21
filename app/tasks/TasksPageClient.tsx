@@ -21,7 +21,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bell, CheckCircle2, Circle, GripVertical, Lock, MapPin, MessageSquare, Plus } from "lucide-react";
+import { Bell, CheckCircle2, Circle, Clock, GripVertical, Lock, MapPin, MessageSquare, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/tasks/loadTasks";
@@ -30,7 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
-import { formatShortDate } from "@/lib/date";
+import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { TaskUpsertDialog, type TaskOption, type TaskStatus, type UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
@@ -94,6 +94,9 @@ function TaskCard({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   const extraMembers = task.members.length > 3 ? task.members.length - 3 : 0;
   const isDone = task.status === "done";
+  // Colour the due date by how close it is: red ≤3 days / overdue, yellow ≤1 week.
+  const dueUrgency = getDueUrgency(task.due_date, { done: isDone });
+  const dueChipClass = dueUrgencyChipClass(dueUrgency);
 
   return (
     <div
@@ -105,7 +108,7 @@ function TaskCard({
         e.preventDefault();
         onContextMenu(task.id, e.clientX, e.clientY);
       }}
-      className={`cursor-pointer select-none rounded-lg border bg-muted/30 p-2.5 text-sm shadow-sm transition hover:border-primary/40 ${
+      className={`cursor-pointer select-none rounded-lg border bg-card p-2.5 text-sm shadow-sm transition hover:border-primary/40 ${
         isDragging ? "opacity-40" : ""
       }`}
     >
@@ -134,7 +137,14 @@ function TaskCard({
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
           {task.due_date ? (
-            <span className={task.is_overdue ? "font-medium text-destructive" : ""}>
+            <span
+              className={
+                dueChipClass
+                  ? `inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-medium ${dueChipClass}`
+                  : ""
+              }
+            >
+              {dueChipClass ? <Clock className="h-3 w-3" /> : null}
               {formatShortDate(task.due_date)}
               {task.due_time ? ` ${task.due_time}` : ""}
             </span>

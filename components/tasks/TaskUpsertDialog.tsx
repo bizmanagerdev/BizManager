@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
@@ -19,8 +20,10 @@ import {
   Lock,
   MapPin,
   MessageSquare,
+  Paperclip,
   Plus,
   Tag,
+  Trash2,
   Unlock,
   Users,
   X,
@@ -31,6 +34,7 @@ import {
 } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import {
   Dialog,
@@ -108,6 +112,15 @@ type ReminderItem = {
   status: string;
   assigned_to: string | null;
   assigned_to_name: string | null;
+};
+
+type AttachmentItem = {
+  id: string;
+  kind: "image" | "video" | "file";
+  original_name: string | null;
+  created_at: string | null;
+  uploader_name: string | null;
+  url: string | null;
 };
 
 function getErrorMessage(err: unknown) {
@@ -213,6 +226,9 @@ export function TaskUpsertDialog(props: Props) {
   const [reminderNote, setReminderNote] = useState("");
   const [addingReminder, setAddingReminder] = useState(false);
 
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+
   const projects = props.projects ?? [];
   const properties = props.properties ?? [];
 
@@ -254,6 +270,21 @@ export function TaskUpsertDialog(props: Props) {
   // The creator is never auto-added. They can opt in unless they're the assignee.
   const meId = props.currentUserId ?? "";
   const canAddSelf = Boolean(meId) && meId !== assignedUserId;
+
+  const fetchAttachments = useCallback(async (taskId: string) => {
+    try {
+      const res = await fetch("/api/tasks/attachments/list", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ task_id: taskId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      setAttachments(Array.isArray(json?.attachments) ? (json.attachments as AttachmentItem[]) : []);
+    } catch {
+      // Non-fatal — the rest of the card still works without the file list.
+    }
+  }, []);
 
   const loadCard = useCallback(
     async (taskId: string) => {
@@ -301,6 +332,7 @@ export function TaskUpsertDialog(props: Props) {
         setMemberIds(membersRaw.map((m) => (typeof m.id === "string" ? m.id : "")).filter(Boolean));
         setComments(Array.isArray(json?.comments) ? (json.comments as CommentItem[]) : []);
         setReminders(Array.isArray(json?.reminders) ? (json.reminders as ReminderItem[]) : []);
+        void fetchAttachments(taskId);
 
         // Open on the description by default; the user opens one section at a time.
         setOpenSection("description");
@@ -326,6 +358,7 @@ export function TaskUpsertDialog(props: Props) {
     setActiveTaskId(null);
     setComments([]);
     setReminders([]);
+    setAttachments([]);
     setNewComment("");
     setReminderAt("");
     setReminderNote("");
@@ -571,6 +604,55 @@ export function TaskUpsertDialog(props: Props) {
     }
   }
 
+  async function uploadAttachments(files: File[]) {
+    const targetId = activeTaskId ?? props.taskId;
+    if (!targetId || files.length === 0) return;
+    setUploadingFiles(true);
+    emitProgressActivityStart();
+    try {
+      for (const file of files) {
+        const form = new FormData();
+        form.set("task_id", targetId);
+        form.set("file", file);
+        const res = await fetch("/api/tasks/attachments/upload", { method: "POST", body: form });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error("שגיאה בהעלאת קובץ", { description: toHebrewError(json?.error, "") });
+          return;
+        }
+      }
+      toast.success(files.length === 1 ? "הקובץ הועלה" : "הקבצים הועלו");
+      await fetchAttachments(targetId);
+    } catch (error: unknown) {
+      toast.error("שגיאה בהעלאת קובץ", { description: getErrorMessage(error) });
+    } finally {
+      emitProgressActivityEnd();
+      setUploadingFiles(false);
+    }
+  }
+
+  async function deleteAttachment(documentId: string, name: string | null) {
+    const targetId = activeTaskId ?? props.taskId;
+    if (!targetId) return;
+    if (!window.confirm(`למחוק את הקובץ "${name ?? ""}"?`)) return;
+    setAttachments((prev) => prev.filter((a) => a.id !== documentId));
+    emitProgressActivityStart();
+    try {
+      const result = await offlineFetch("/api/documents/delete", { document_id: documentId }, "מחיקת קובץ");
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה במחיקת קובץ", { description: toHebrewError(result.error, "") });
+        await fetchAttachments(targetId);
+        return;
+      }
+      if (!result.queued) toast.success("הקובץ נמחק");
+    } catch (error: unknown) {
+      toast.error("שגיאה במחיקת קובץ", { description: getErrorMessage(error) });
+      await fetchAttachments(targetId);
+    } finally {
+      emitProgressActivityEnd();
+    }
+  }
+
   const dialogTitle = isEditing ? "כרטיס משימה" : "משימה חדשה";
   const targetTaskId = activeTaskId ?? props.taskId ?? null;
 
@@ -627,7 +709,8 @@ export function TaskUpsertDialog(props: Props) {
       <AdaptiveDialog size={isEditing && targetTaskId ? "details4xl" : "form2xl"}>
         <DialogHeader>
           <DialogTitle className="sr-only">{subject.trim() ? subject : dialogTitle}</DialogTitle>
-          <div className="flex items-center gap-2">
+          {/* pe-8 keeps the end button clear of the dialog's close X (top-left in RTL). */}
+          <div className="flex items-center gap-2 pe-8">
             {isEditing ? (
               <button
                 type="button"
@@ -701,6 +784,10 @@ export function TaskUpsertDialog(props: Props) {
             <ActionChip icon={Users} label="אחראי וחברים" active={isOpen("people")} onClick={() => toggleSection("people")} />
             <ActionChip icon={Tag} label="עדיפות וסטטוס" active={isOpen("labels")} onClick={() => toggleSection("labels")} />
             <ActionChip icon={MapPin} label="מיקום" active={isOpen("location")} onClick={() => toggleSection("location")} />
+            {/* Files need a saved task — only offer the section once one exists. */}
+            {targetTaskId ? (
+              <ActionChip icon={Paperclip} label="קבצים ותמונות" active={isOpen("files")} onClick={() => toggleSection("files")} />
+            ) : null}
           </div>
 
           {isOpen("description") ? (
@@ -914,6 +1001,74 @@ export function TaskUpsertDialog(props: Props) {
                   <Input value={city} onChange={(e) => setCity(e.target.value)} />
                 </div>
               ) : null}
+              </div>
+              ) : null}
+
+              {isOpen("files") && targetTaskId ? (
+              <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+                    קבצים ותמונות
+                  </div>
+                  <FileUploadActions
+                    files={[]}
+                    accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
+                    multiple
+                    size="sm"
+                    disabled={uploadingFiles}
+                    onFilesSelected={(files) => void uploadAttachments(files)}
+                    chooseLabel={uploadingFiles ? "מעלה..." : "צירוף קובץ"}
+                    takePhotoLabel="צילום"
+                    showPreview={false}
+                    notifyOnAdd={false}
+                  />
+                </div>
+                {attachments.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">אין קבצים מצורפים.</div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {attachments.map((attachment) => (
+                      <div
+                        key={attachment.id}
+                        className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5"
+                      >
+                        <a
+                          href={attachment.url ?? "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex min-w-0 items-center gap-2"
+                        >
+                          {attachment.url && attachment.kind === "image" ? (
+                            <Image
+                              src={attachment.url}
+                              alt={attachment.original_name ?? "image"}
+                              width={64}
+                              height={64}
+                              unoptimized
+                              className="h-9 w-9 shrink-0 rounded object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground">
+                              {attachment.kind === "video" ? "וידאו" : "קובץ"}
+                            </span>
+                          )}
+                          <span className="min-w-0 truncate text-sm text-primary hover:underline">
+                            {attachment.original_name ?? "קובץ"}
+                          </span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => void deleteAttachment(attachment.id, attachment.original_name)}
+                          aria-label="מחיקת קובץ"
+                          className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               ) : null}
 

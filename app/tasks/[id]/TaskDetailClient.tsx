@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { offlineFetch } from "@/lib/offline-queue";
-import { formatShortDate, formatShortDateTime } from "@/lib/date";
+import { dueUrgencyTextClass, formatShortDate, formatShortDateTime, getDueUrgency } from "@/lib/date";
 import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
 import {
   Dialog,
@@ -113,14 +113,16 @@ type Props = {
 function DetailItem({
   label,
   value,
+  valueClassName,
 }: {
   label: string;
   value: string | null | undefined;
+  valueClassName?: string;
 }) {
   return (
     <div className="rounded-md border bg-muted/20 px-3 py-2">
       <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="mt-0.5 text-sm font-medium">{value || "—"}</div>
+      <div className={`mt-0.5 text-sm font-medium ${valueClassName ?? ""}`}>{value || "—"}</div>
     </div>
   );
 }
@@ -395,6 +397,7 @@ export default function TaskDetailClient(props: Props) {
             <DetailItem
               label="תאריך יעד"
               value={props.dueTime ? `${formatDate(props.dueDate)} · ${props.dueTime}` : formatDate(props.dueDate)}
+              valueClassName={dueUrgencyTextClass(getDueUrgency(props.dueDate, { done: props.status === "done" }))}
             />
             <DetailItem label="אחראי" value={props.assignedUserName} />
             <DetailItem label="פרויקט" value={props.projectName} />

@@ -30,6 +30,62 @@ export function formatShortDateTime(value: string | null | undefined, fallback =
   return `${formatShortDate(value, fallback)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+export type DueUrgency = "overdue" | "due-soon" | "due-week" | "none";
+
+/**
+ * How close a due date is, for colour-coding:
+ *  - "overdue"  : already past (and the task isn't done)
+ *  - "due-soon" : within the next 3 days → red
+ *  - "due-week" : within the next 7 days → yellow
+ *  - "none"     : further out, missing, or the task is done
+ */
+export function getDueUrgency(
+  value: string | null | undefined,
+  options?: { done?: boolean; refDate?: string }
+): DueUrgency {
+  if (!value || options?.done) return "none";
+  const date = parseDateValue(value);
+  if (Number.isNaN(date.getTime())) return "none";
+
+  const today = options?.refDate ? parseDateValue(options.refDate) : new Date();
+  const targetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diffDays = Math.round((targetDay.getTime() - todayDay.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return "overdue";
+  if (diffDays <= 3) return "due-soon";
+  if (diffDays <= 7) return "due-week";
+  return "none";
+}
+
+// Soft-outline chip classes (border + light tint + text) for a due-date urgency.
+// Empty string for "none" so the date renders as plain text. Matches the app's
+// soft-badge convention (no solid pills).
+export function dueUrgencyChipClass(urgency: DueUrgency): string {
+  switch (urgency) {
+    case "overdue":
+    case "due-soon":
+      return "border-destructive/40 bg-destructive/10 text-destructive";
+    case "due-week":
+      return "border-warning/40 bg-warning/15 text-warning-strong";
+    default:
+      return "";
+  }
+}
+
+// Text-only colour for a due-date urgency (when a chip background isn't wanted).
+export function dueUrgencyTextClass(urgency: DueUrgency): string {
+  switch (urgency) {
+    case "overdue":
+    case "due-soon":
+      return "text-destructive";
+    case "due-week":
+      return "text-warning-strong";
+    default:
+      return "";
+  }
+}
+
 export function formatRelativeDateLabel(value: string | null | undefined, fallback = "-", refDate?: string) {
   if (!value) return fallback;
   const date = parseDateValue(value);
