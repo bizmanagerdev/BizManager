@@ -11,7 +11,14 @@ export type StatementListItem = {
   total_rows: number | null;
   created_at: string;
   marked_done: boolean | null;
+  expensesTotal: number;
+  incomeTotal: number;
+  chargesTotal: number;
 };
+
+function formatCurrency(n: number): string {
+  return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(n);
+}
 
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
@@ -58,6 +65,9 @@ export default function StatementsListClient({ statements }: { statements: State
               <th className="px-3 py-2 font-medium">מקור</th>
               <th className="px-3 py-2 font-medium">סטטוס</th>
               <th className="px-3 py-2 font-medium">הוצאות שנוצרו</th>
+              <th className="px-3 py-2 font-medium">סה"כ הוצאות</th>
+              <th className="px-3 py-2 font-medium">סה"כ הכנסות</th>
+              <th className="px-3 py-2 font-medium">סה"כ חיובים</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -77,6 +87,15 @@ export default function StatementsListClient({ statements }: { statements: State
                 <td className="px-3 py-2">
                   {created}
                   {total !== created ? ` מתוך ${total}` : ""}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 font-medium">
+                  {s.expensesTotal > 0 ? formatCurrency(s.expensesTotal) : "—"}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 font-medium text-success-soft-foreground">
+                  {s.incomeTotal > 0 ? formatCurrency(s.incomeTotal) : "—"}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                  {s.chargesTotal > 0 ? formatCurrency(s.chargesTotal) : "—"}
                 </td>
               </tr>
               );

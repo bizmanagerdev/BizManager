@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     }
     const statementId = stmt.id as string;
 
-    const statementRows = rows.map((row) => {
+    const statementRows = rows.map((row, rowIndex) => {
       const amount = typeof row.amount === "number" ? row.amount : Number(row.amount);
       const expenseDate =
         typeof row.expense_date === "string" && row.expense_date.trim() ? row.expense_date.trim() : null;
@@ -85,6 +85,7 @@ export async function POST(req: Request) {
       return {
         statement_id: statementId,
         expense_id: null,
+        row_index: rowIndex,
         expense_date: expenseDate,
         transaction_date: transactionDate,
         amount: Number.isFinite(amount) ? amount : null,

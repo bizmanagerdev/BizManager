@@ -44,6 +44,7 @@ export default async function CardStatementDetailPage({ params }: { params: Prom
           "income_payment:payments(id,amount_total)"
       )
       .eq("statement_id", id)
+      .order("row_index", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: true }),
     supabase.from("projects").select("id,name").order("name", { ascending: true }),
     supabase.from("properties").select("id,name").order("name", { ascending: true }),

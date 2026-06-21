@@ -9,7 +9,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
 import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/financial/cardImport";
@@ -128,6 +128,13 @@ export default function StatementDetailClient({
 
   const [markedDone, setMarkedDone] = useState(statement.markedDone);
   const [markingDone, setMarkingDone] = useState(false);
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
 
   const [dupByRowId, setDupByRowId] = useState<Record<string, ExistingExpense | null>>({});
   // Rows the user dismissed as "not a duplicate" — stay un-flagged even when the scan re-runs.
@@ -460,11 +467,92 @@ export default function StatementDetailClient({
   // Toggle is "on" (X rows excluded) when none of them are still checked.
   const xExcluded = xDraftRows.length > 0 && checkedXCount === 0;
 
+  // Progress buckets — shown in the summary bar so the user can see where they left off.
+  const progressCounts = useMemo(() => {
+    let created = 0, ready = 0, needsDomain = 0, excluded = 0;
+    for (const r of rows) {
+      const m = rowMode(r);
+      if (m === "created") { created++; continue; }
+      if (m === "deleted") continue;
+      if (!r.include) { excluded++; continue; }
+      if (r.businessDomain) ready++;
+      else needsDomain++;
+    }
+    return { created, ready, needsDomain, excluded };
+  }, [rows]);
+  const hasPending = progressCounts.ready > 0 || progressCounts.needsDomain > 0;
+
+  // Navigation guard — fires for browser refresh/close AND Next.js client-side link clicks.
+  useEffect(() => {
+    if (!hasPending) return;
+
+    // Browser refresh / close / address-bar navigation.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    // Browser back/forward button: push a history entry so we can intercept the popstate.
+    history.pushState(null, "", window.location.href);
+    const onPopState = () => {
+      history.pushState(null, "", window.location.href); // push forward again so back still works after dismiss
+      setLeaveTarget(null); // unknown target — user can confirm and then press back again
+      setShowLeaveConfirm(true);
+    };
+    window.addEventListener("popstate", onPopState);
+
+    // Next.js Link / <a> clicks — capture phase so we see them before React's handler.
+    const onDocumentClick = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest("a");
+      if (!anchor || !anchor.href) return;
+      try {
+        const dest = new URL(anchor.href);
+        // Only intercept same-origin navigation away from the current page.
+        if (dest.origin !== window.location.origin) return;
+        if (dest.pathname === window.location.pathname) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setLeaveTarget(dest.pathname + dest.search);
+        setShowLeaveConfirm(true);
+      } catch {
+        // Malformed href — let it through.
+      }
+    };
+    document.addEventListener("click", onDocumentClick, true);
+
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("popstate", onPopState);
+      document.removeEventListener("click", onDocumentClick, true);
+    };
+  }, [hasPending]);
+
   async function toggleXRows() {
     if (xDraftRows.length === 0) return;
     const next = xExcluded; // currently excluded → re-check all; otherwise uncheck all
     const ids = xDraftRows.filter((r) => r.include !== next).map((r) => r.id);
     await bulkSetInclude(ids, next);
+  }
+
+  async function deleteStatement() {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch("/api/expenses/statement-delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ statement_id: statement.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setDeleteError(toHebrewError(data.error, "המחיקה נכשלה."));
+        setDeleting(false);
+        return;
+      }
+      router.push("/financial/statements");
+    } catch {
+      setDeleteError("המחיקה נכשלה.");
+      setDeleting(false);
+    }
   }
 
   async function toggleDone() {
@@ -621,10 +709,73 @@ export default function StatementDetailClient({
               </a>
             </Button>
           ) : null}
-          <Button asChild variant="outline" size="sm">
-            <Link href="/financial/statements">חזרה לרשימה</Link>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:bg-destructive/10"
+            onClick={() => { setDeleteError(null); setShowDeleteConfirm(true); }}
+          >
+            מחיקת פירוט
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setLeaveTarget("/financial/statements"); if (hasPending) { setShowLeaveConfirm(true); } else { router.push("/financial/statements"); } }}>
+            חזרה לרשימה
           </Button>
         </div>
+
+        {/* Delete confirmation */}
+        {showDeleteConfirm ? (
+          <div className="mt-3 w-full rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-right">
+            <p className="font-medium text-destructive">מחיקת הפירוט</p>
+            <p className="mt-1 text-muted-foreground">
+              הפירוט ו-{rows.length} שורותיו יימחקו. ההוצאות שכבר נוצרו <strong>לא יימחקו</strong> — הן נשארות במערכת.
+              לאחר המחיקה תוכל/י להעלות את הקובץ מחדש.
+            </p>
+            {deleteError ? <p className="mt-1 text-destructive">{deleteError}</p> : null}
+            <div className="mt-3 flex gap-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => void deleteStatement()}
+                disabled={deleting}
+              >
+                {deleting ? "מוחק..." : "כן, מחק את הפירוט"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}>
+                ביטול
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* Progress summary — shows where the user is holding at a glance */}
+      <div className="flex flex-wrap gap-3 text-sm">
+        <div className="flex items-center gap-1.5 rounded-md border bg-success-soft/20 px-3 py-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-success-soft-foreground/60" />
+          <span className="font-medium">{progressCounts.created}</span>
+          <span className="text-muted-foreground">נוצרו</span>
+        </div>
+        {progressCounts.ready > 0 ? (
+          <div className="flex items-center gap-1.5 rounded-md border bg-info-soft/20 px-3 py-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-info-soft-foreground/60" />
+            <span className="font-medium">{progressCounts.ready}</span>
+            <span className="text-muted-foreground">מוכנות ליצירה</span>
+          </div>
+        ) : null}
+        {progressCounts.needsDomain > 0 ? (
+          <div className="flex items-center gap-1.5 rounded-md border bg-warning-soft/20 px-3 py-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-warning-soft-foreground/60" />
+            <span className="font-medium">{progressCounts.needsDomain}</span>
+            <span className="text-muted-foreground">ממתינות לשיוך</span>
+          </div>
+        ) : null}
+        {progressCounts.excluded > 0 ? (
+          <div className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 opacity-60">
+            <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/40" />
+            <span className="font-medium">{progressCounts.excluded}</span>
+            <span className="text-muted-foreground">לא לתיעוד</span>
+          </div>
+        ) : null}
       </div>
 
       {/* Action bar: assign hint on top, then helpers + the create CTA on a separate row */}
@@ -722,13 +873,18 @@ export default function StatementDetailClient({
                 {rows.map((row) => {
                   const mode = rowMode(row);
                   const dup = mode === "draft" ? dupByRowId[row.id] : null;
+
+                  // Row background: dup check overrides domain-readiness colors.
+                  let rowBg = "";
+                  if (mode === "created") rowBg = "bg-success-soft/20";
+                  else if (mode === "deleted") rowBg = "opacity-50";
+                  else if (!row.include) rowBg = "opacity-50";
+                  else if (dup) rowBg = "bg-warning-soft/25";
+                  else if (row.businessDomain) rowBg = "bg-info-soft/20";
+                  else rowBg = "bg-warning-soft/15";
+
                   return (
-                    <tr
-                      key={row.id}
-                      className={`align-top ${mode === "draft" && !row.include ? "opacity-60" : ""} ${
-                        dup ? "bg-warning-soft/20" : ""
-                      }`.trim()}
-                    >
+                    <tr key={row.id} className={`align-top ${rowBg}`}>
                       {/* Status / include */}
                       <td className="px-3 py-2">
                         {mode === "created" ? (
@@ -813,22 +969,22 @@ export default function StatementDetailClient({
                       {showDupCol ? (
                         <td className="px-3 py-2">
                           {dup ? (
-                            <div className="space-y-1">
-                              <span
-                                title={`קיים: ${formatIsoDisplay(dup.transaction_date || dup.expense_date)} · ${formatCurrency(
-                                  dup.amount
-                                )} — ${dup.description}`}
-                                className="inline-block rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-soft-foreground"
-                              >
-                                כפילות?
+                            <div className="space-y-1.5 min-w-[11rem]">
+                              <span className="inline-block rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-soft-foreground">
+                                כפילות אפשרית
                               </span>
+                              <div className="rounded border border-warning-soft/50 bg-warning-soft/10 px-2 py-1 text-[11px] leading-snug">
+                                <div className="font-medium text-foreground">{dup.description || "—"}</div>
+                                <div className="text-muted-foreground">
+                                  {formatIsoDisplay(dup.transaction_date || dup.expense_date)} · {formatCurrency(dup.amount)}
+                                </div>
+                              </div>
                               {dup.id ? (
                                 <button
                                   type="button"
                                   onClick={() => void markExisting(row, dup)}
                                   disabled={savingRowId === row.id}
-                                  title="זו אכן כפילות — קשר/י להוצאה הקיימת וסמן/י כקיים"
-                                  className="block whitespace-nowrap rounded border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-50"
+                                  className="block w-full whitespace-nowrap rounded border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-50"
                                 >
                                   כן, כבר קיים
                                 </button>
@@ -836,8 +992,7 @@ export default function StatementDetailClient({
                               <button
                                 type="button"
                                 onClick={() => ignoreDup(row.id)}
-                                title="זו אינה כפילות — הסר/י את הסימון"
-                                className="block whitespace-nowrap rounded border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                                className="block w-full whitespace-nowrap rounded border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
                               >
                                 לא כפילות
                               </button>
@@ -892,6 +1047,30 @@ export default function StatementDetailClient({
           </div>
         </CardContent>
       </Card>
+
+      {/* Leave-page guard dialog */}
+      <Dialog open={showLeaveConfirm} onOpenChange={(open) => { if (!open) setShowLeaveConfirm(false); }}>
+        <AdaptiveDialog size="formLg">
+          <DialogHeader>
+            <DialogTitle>לצאת מהפירוט?</DialogTitle>
+            <DialogDescription>
+              יש {progressCounts.ready + progressCounts.needsDomain} שורות שטרם נוצרו כהוצאות
+              {progressCounts.ready > 0 ? ` (${progressCounts.ready} מוכנות ליצירה` : ""}
+              {progressCounts.needsDomain > 0 ? `${progressCounts.ready > 0 ? ", " : " ("}${progressCounts.needsDomain} ממתינות לשיוך` : ""}
+              {(progressCounts.ready > 0 || progressCounts.needsDomain > 0) ? ")" : ""}.
+              הנתונים שמורים — תוכל/י לחזור בכל עת.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-row-reverse gap-2 pt-2">
+            <Button onClick={() => setShowLeaveConfirm(false)}>
+              המשך בפירוט
+            </Button>
+            <Button variant="outline" onClick={() => { setShowLeaveConfirm(false); if (leaveTarget) router.push(leaveTarget); else history.back(); }}>
+              צא/י בכל זאת
+            </Button>
+          </DialogFooter>
+        </AdaptiveDialog>
+      </Dialog>
 
       {/* Edit dialog */}
       <Dialog open={editingId !== null} onOpenChange={(open) => { if (!open && !saving) cancelEdit(); }}>

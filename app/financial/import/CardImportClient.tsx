@@ -227,6 +227,7 @@ export default function CardImportClient({
   const [colAssignment, setColAssignment] = useState(-1);
 
   const [rows, setRows] = useState<ReviewRow[]>([]);
+  const [skippedCount, setSkippedCount] = useState(0);
   const [cardLabels, setCardLabels] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -427,6 +428,7 @@ export default function CardImportClient({
     const out: ReviewRow[] = [];
     const labels: Record<string, string> = {};
     let currentCard = "";
+    let skipped = 0;
 
     for (const r of sheet.rows) {
       const card = extractCardName(r);
@@ -437,7 +439,13 @@ export default function CardImportClient({
       }
       const amount = parseAmount(colAmount >= 0 ? r[colAmount] : "");
       const expenseDate = parseDateToIso(colDate >= 0 ? r[colDate] : "");
-      if (!Number.isFinite(amount) || amount === 0 || !expenseDate) continue;
+      if (!Number.isFinite(amount) || amount === 0 || !expenseDate) {
+        // Count non-empty rows that were dropped (excludes blank rows and header rows)
+        const hasContent = r.some((cell) => String(cell ?? "").trim().length > 0);
+        const looksLikeHeader = hasContent && findColumn(r, FIELD_TOKENS.date) >= 0 && findColumn(r, FIELD_TOKENS.amount) >= 0;
+        if (hasContent && !looksLikeHeader) skipped++;
+        continue;
+      }
 
       const description = (colMerchant >= 0 ? String(r[colMerchant] ?? "").trim() : "") || "ללא שם";
       const txn = colTxnDate >= 0 ? parseDateToIso(r[colTxnDate]) : null;
@@ -462,6 +470,7 @@ export default function CardImportClient({
 
     setCardLabels(labels);
     setRows(out);
+    setSkippedCount(skipped);
     setStep("review");
   }
 
@@ -729,6 +738,11 @@ export default function CardImportClient({
                 </Card>
               ) : null}
 
+              {skippedCount > 0 ? (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  אזהרה: {skippedCount} שורות בקובץ לא נקראו (תאריך או סכום לא תקין במיפוי הנוכחי). אם הקובץ אמור להכיל יותר שורות — חזור/י למיפוי עמודות ובדוק/י שהעמודות נבחרו נכון.
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm text-muted-foreground">
                   נמצאו {rows.length} שורות · {includedCount} מסומנות ליצירת הוצאה

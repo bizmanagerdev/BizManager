@@ -66,10 +66,15 @@ export function parseDateToIso(raw: unknown): string | null {
   if (!s) return null;
   const dmy = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
   if (dmy) {
-    const day = Number(dmy[1]);
-    const month = Number(dmy[2]);
+    let day = Number(dmy[1]);
+    let month = Number(dmy[2]);
     let year = Number(dmy[3]);
     if (dmy[3].length === 2) year = year >= 70 ? 1900 + year : 2000 + year;
+    // If DD-MM-YY gives an impossible month but swapping yields a valid one, try MM-DD-YY.
+    // Handles bank exports that use MM-DD-YY format (e.g. 02-13-26 = February 13th).
+    if ((month < 1 || month > 12) && day >= 1 && day <= 12) {
+      [day, month] = [month, day];
+    }
     if (month < 1 || month > 12 || day < 1 || day > 31) return null;
     return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   }
