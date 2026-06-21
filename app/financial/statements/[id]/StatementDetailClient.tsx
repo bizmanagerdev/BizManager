@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
@@ -135,6 +135,7 @@ export default function StatementDetailClient({
 
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
+  const bypassGuard = useRef(false);
 
   const [dupByRowId, setDupByRowId] = useState<Record<string, ExistingExpense | null>>({});
   // Rows the user dismissed as "not a duplicate" — stay un-flagged even when the scan re-runs.
@@ -493,19 +494,20 @@ export default function StatementDetailClient({
     // Browser back/forward button: push a history entry so we can intercept the popstate.
     history.pushState(null, "", window.location.href);
     const onPopState = () => {
-      history.pushState(null, "", window.location.href); // push forward again so back still works after dismiss
-      setLeaveTarget(null); // unknown target — user can confirm and then press back again
+      if (bypassGuard.current) return; // user already confirmed leave — let it through
+      history.pushState(null, "", window.location.href);
+      setLeaveTarget(null);
       setShowLeaveConfirm(true);
     };
     window.addEventListener("popstate", onPopState);
 
     // Next.js Link / <a> clicks — capture phase so we see them before React's handler.
     const onDocumentClick = (e: MouseEvent) => {
+      if (bypassGuard.current) return;
       const anchor = (e.target as HTMLElement).closest("a");
       if (!anchor || !anchor.href) return;
       try {
         const dest = new URL(anchor.href);
-        // Only intercept same-origin navigation away from the current page.
         if (dest.origin !== window.location.origin) return;
         if (dest.pathname === window.location.pathname) return;
         e.preventDefault();
@@ -717,7 +719,7 @@ export default function StatementDetailClient({
           >
             מחיקת פירוט
           </Button>
-          <Button variant="outline" size="sm" onClick={() => { setLeaveTarget("/financial/statements"); if (hasPending) { setShowLeaveConfirm(true); } else { router.push("/financial/statements"); } }}>
+          <Button variant="outline" size="sm" onClick={() => { if (hasPending) { setLeaveTarget("/financial/statements"); setShowLeaveConfirm(true); } else { bypassGuard.current = true; router.push("/financial/statements"); } }}>
             חזרה לרשימה
           </Button>
         </div>
@@ -1065,7 +1067,7 @@ export default function StatementDetailClient({
             <Button onClick={() => setShowLeaveConfirm(false)}>
               המשך בפירוט
             </Button>
-            <Button variant="outline" onClick={() => { setShowLeaveConfirm(false); if (leaveTarget) router.push(leaveTarget); else history.back(); }}>
+            <Button variant="outline" onClick={() => { bypassGuard.current = true; setShowLeaveConfirm(false); if (leaveTarget) router.push(leaveTarget); else history.back(); }}>
               צא/י בכל זאת
             </Button>
           </DialogFooter>
