@@ -261,15 +261,8 @@ export default async function SalesOrderPage({
       ? ((order as Row).customer_id as string)
       : null;
 
-  const { data: customer } =
-    customerId
-      ? await supabase
-          .from("customers")
-          .select("id,name,name_for_invoice,registration_number,email,phone,address")
-          .eq("id", customerId)
-          .maybeSingle()
-      : { data: null as Row | null };
-
+  // Derive all the lookup keys from the first batch up front so the dependent
+  // reads below can all run in ONE parallel round trip instead of ~5 sequential.
   const productIds = Array.from(
     new Set(
       (orderItems ?? [])
@@ -277,22 +270,6 @@ export default async function SalesOrderPage({
         .filter(Boolean)
     )
   ) as string[];
-
-  const { data: products } =
-    productIds.length > 0
-      ? await supabase
-          .from("products")
-          .select("id,name,sku,barcode")
-          .in("id", productIds)
-      : { data: [] as Row[] };
-
-  const productMap = new Map<string, Row>();
-  (products ?? []).forEach((row) => {
-    if (typeof row?.id === "string") {
-      productMap.set(row.id, row as Row);
-    }
-  });
-
   const paymentIds = Array.from(
     new Set(
       ((payments ?? []) as Row[])
@@ -307,41 +284,70 @@ export default async function SalesOrderPage({
         .filter((value): value is string => Boolean(value))
     )
   );
-
   const orderCreatedBy = getString((order as Row) ?? {}, "created_by");
-  const [paymentAuditResult, paymentRecordedByNameByValue] = await Promise.all([
-    getLatestAuditByRecordIds(supabase, {
-      tableName: "payments",
-      recordIds: paymentIds,
-    }),
+  const deliveryDocumentIds = Array.from(
+    new Set(
+      ((deliveryLinks ?? []) as Row[])
+        .map((row) => getString(row as Row, "document_id"))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const morningDocSelect =
+    "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes";
+
+  const [
+    { data: customer },
+    { data: products },
+    paymentAuditResult,
+    paymentRecordedByNameByValue,
+    { data: orderMorningDocuments, error: orderMorningDocumentsError },
+    { data: paymentMorningDocuments, error: paymentMorningDocumentsError },
+    { data: deliveryDocuments },
+  ] = await Promise.all([
+    customerId
+      ? supabase
+          .from("customers")
+          .select("id,name,name_for_invoice,registration_number,email,phone,address")
+          .eq("id", customerId)
+          .maybeSingle()
+      : Promise.resolve({ data: null as Row | null }),
+    productIds.length > 0
+      ? supabase.from("products").select("id,name,sku,barcode").in("id", productIds)
+      : Promise.resolve({ data: [] as Row[] }),
+    getLatestAuditByRecordIds(supabase, { tableName: "payments", recordIds: paymentIds }),
     resolveUserDisplayNamesForValues(
       supabase,
       Array.from(new Set([...paymentRecordedByValues, ...(orderCreatedBy ? [orderCreatedBy] : [])]))
     ),
-  ]);
-  const orderCreatedByName = orderCreatedBy ? paymentRecordedByNameByValue[orderCreatedBy] ?? null : null;
-
-  const [
-    { data: orderMorningDocuments, error: orderMorningDocumentsError },
-    { data: paymentMorningDocuments, error: paymentMorningDocumentsError },
-  ] = await Promise.all([
     supabase
       .from("morning_documents")
-      .select(
-        "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes"
-      )
+      .select(morningDocSelect)
       .eq("order_id", id)
       .order("issued_at", { ascending: false }),
     paymentIds.length > 0
       ? supabase
           .from("morning_documents")
-          .select(
-            "id,morning_document_id,morning_document_number,document_type,document_type_label,status,customer_id,order_id,project_id,payment_id,document_id,morning_client_id,amount,currency,morning_url,pdf_url,issued_at,closed_at,notes"
-          )
+          .select(morningDocSelect)
           .in("payment_id", paymentIds)
           .order("issued_at", { ascending: false })
-      : Promise.resolve({ data: [], error: null }),
+      : Promise.resolve({ data: [] as Row[], error: null }),
+    deliveryDocumentIds.length > 0
+      ? supabase
+          .from("documents")
+          .select("id,file_name,storage_key,uploaded_at,document_type")
+          .in("id", deliveryDocumentIds)
+      : Promise.resolve({ data: [] as Row[] }),
   ]);
+
+  const orderCreatedByName = orderCreatedBy ? paymentRecordedByNameByValue[orderCreatedBy] ?? null : null;
+
+  const productMap = new Map<string, Row>();
+  (products ?? []).forEach((row) => {
+    if (typeof row?.id === "string") {
+      productMap.set(row.id, row as Row);
+    }
+  });
 
   const morningDocuments = Array.from(
     new Map(
@@ -354,51 +360,51 @@ export default async function SalesOrderPage({
 
   const orderLevelMorningDocuments = morningDocuments.filter((document) => !document.payment_id);
 
-  const deliveryDocumentIds = Array.from(
-    new Set(
-      ((deliveryLinks ?? []) as Row[])
-        .map((row) => getString(row as Row, "document_id"))
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-
-  const { data: deliveryDocuments } =
-    deliveryDocumentIds.length > 0
-      ? await supabase
-          .from("documents")
-          .select("id,file_name,storage_key,uploaded_at,document_type")
-          .in("id", deliveryDocumentIds)
-      : { data: [] as Row[] };
-
   const deliveryDocumentMap = new Map<string, Row>();
   ((deliveryDocuments ?? []) as Row[]).forEach((row) => {
     const documentId = getString(row as Row, "id");
     if (documentId) deliveryDocumentMap.set(documentId, row as Row);
   });
 
-  const deliveryImages = await Promise.all(
-    ((deliveryLinks ?? []) as Row[]).map(async (link) => {
+  // Sign every delivery image in ONE storage call (was one request per image).
+  const deliveryImageDocs = ((deliveryLinks ?? []) as Row[])
+    .map((link) => {
       const documentId = getString(link as Row, "document_id");
-      if (!documentId) return null;
-      const document = deliveryDocumentMap.get(documentId);
-      if (!document) return null;
+      const document = documentId ? deliveryDocumentMap.get(documentId) : null;
+      if (!documentId || !document) return null;
       if (getString(document, "document_type") !== "order_delivery_image") return null;
-
       const storageKey = getString(document, "storage_key");
-      const { data: signed } = storageKey
-        ? await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(storageKey, 60 * 60)
-        : { data: null };
-
+      if (!storageKey) return null;
       return {
         id: documentId,
+        storageKey,
         file_name: getString(document, "file_name"),
         uploaded_at: getString(document, "uploaded_at") ?? getString(link as Row, "created_at"),
-        url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
       };
     })
-  );
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
 
-  const deliveryImagesResolved = deliveryImages.filter((row): row is NonNullable<typeof row> => Boolean(row));
+  const signedUrlByKey = new Map<string, string>();
+  if (deliveryImageDocs.length > 0) {
+    const { data: signedList } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrls(
+        deliveryImageDocs.map((d) => d.storageKey),
+        60 * 60
+      );
+    (signedList ?? []).forEach((entry) => {
+      if (entry && typeof entry.path === "string" && typeof entry.signedUrl === "string") {
+        signedUrlByKey.set(entry.path, entry.signedUrl);
+      }
+    });
+  }
+
+  const deliveryImagesResolved = deliveryImageDocs.map((d) => ({
+    id: d.id,
+    file_name: d.file_name,
+    uploaded_at: d.uploaded_at,
+    url: signedUrlByKey.get(d.storageKey) ?? null,
+  }));
 
   const customerName =
     getString((customer as Row) ?? {}, "name") ??

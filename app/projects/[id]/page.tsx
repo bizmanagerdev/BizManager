@@ -27,6 +27,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { formatShortDate } from "@/lib/date";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const ProjectTabsClient = dynamic(() => import("@/app/projects/[id]/ProjectTabsClient"), {
   // No skeleton — the top navigation progress bar covers loading feedback.
@@ -73,6 +74,54 @@ function getFirstString(obj: UnknownRow | null | undefined, keys: string[]) {
     if (typeof v === "string" && v) return v;
   }
   return null;
+}
+
+// Build attachments for a set of document_links, signing ALL their storage keys
+// in a single createSignedUrls call (instead of one request per attachment).
+async function buildAttachmentsByEntity(
+  supabase: SupabaseClient,
+  links: UnknownRow[] | null,
+  documentById: Map<string, UnknownRow>
+): Promise<Map<string, FinancialAttachment[]>> {
+  const keys = new Set<string>();
+  for (const link of links ?? []) {
+    const documentId = typeof link.document_id === "string" ? link.document_id : null;
+    if (!documentId) continue;
+    const key = getFirstString(documentById.get(documentId), ["storage_key"]);
+    if (key) keys.add(key);
+  }
+
+  const urlByKey = new Map<string, string>();
+  if (keys.size > 0) {
+    const { data: signedList } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .createSignedUrls([...keys], 60 * 60);
+    (signedList ?? []).forEach((entry) => {
+      if (entry && typeof entry.path === "string" && typeof entry.signedUrl === "string") {
+        urlByKey.set(entry.path, entry.signedUrl);
+      }
+    });
+  }
+
+  const byEntity = new Map<string, FinancialAttachment[]>();
+  for (const link of links ?? []) {
+    const entityId = typeof link.entity_id === "string" ? link.entity_id : null;
+    const documentId = typeof link.document_id === "string" ? link.document_id : null;
+    if (!entityId || !documentId) continue;
+    const doc = documentById.get(documentId);
+    const storageKey = getFirstString(doc, ["storage_key"]);
+    const existing = byEntity.get(entityId) ?? [];
+    existing.push({
+      document_id: documentId,
+      file_name: getFirstString(doc, ["file_name"]),
+      storage_key: storageKey,
+      uploaded_at: getFirstString(doc, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]),
+      document_type: getFirstString(doc, ["document_type"]),
+      url: storageKey ? urlByKey.get(storageKey) ?? null : null,
+    });
+    byEntity.set(entityId, existing);
+  }
+  return byEntity;
 }
 
 function isMissingColumnError(error: unknown, columnName: string) {
@@ -158,29 +207,81 @@ export default async function ProjectPage({
 }) {
   const { id } = await params;
   const { profile, supabase } = await requireProfile();
-  const currentVatRate = await getCurrentVatRate(supabase);
-
-  const { data: overviewRaw, error: overviewError } = await supabase
-    .from("project_overview_view")
-    .select(
-      "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,expenses_billed_separately,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at"
-    )
-    .eq("id", id)
-    .maybeSingle<Omit<ProjectOverview, "notes" | "items_to_move">>();
-
-  const { data: projectDetailsRaw } = await supabase
-    .from("projects")
-    .select("id,notes,items_to_move,payment_terms,due_date,price_includes_vat,vat_rate")
-    .eq("id", id)
-    .maybeSingle<{
-      id: string;
-      notes: string | null;
-      items_to_move: string[] | null;
-      payment_terms: string | null;
-      due_date: string | null;
-      price_includes_vat: boolean | null;
-      vat_rate: number | string | null;
-    }>();
+  // These reads are all independent (keyed only by the project id), so fetch them
+  // in ONE parallel batch instead of ~10 sequential round trips.
+  const [
+    currentVatRate,
+    { data: overviewRaw, error: overviewError },
+    { data: projectDetailsRaw },
+    { data: financials },
+    { data: workerBalance },
+    { data: tasks },
+    { data: projectTasks, error: projectTasksError },
+    { data: assignableUsers, error: assignableUsersError },
+    { data: customers },
+    { data: projectExpenses, error: projectExpensesError },
+  ] = await Promise.all([
+    getCurrentVatRate(supabase),
+    supabase
+      .from("project_overview_view")
+      .select(
+        "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,expenses_billed_separately,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at"
+      )
+      .eq("id", id)
+      .maybeSingle<Omit<ProjectOverview, "notes" | "items_to_move">>(),
+    supabase
+      .from("projects")
+      .select("id,notes,items_to_move,payment_terms,due_date,price_includes_vat,vat_rate")
+      .eq("id", id)
+      .maybeSingle<{
+        id: string;
+        notes: string | null;
+        items_to_move: string[] | null;
+        payment_terms: string | null;
+        due_date: string | null;
+        price_includes_vat: boolean | null;
+        vat_rate: number | string | null;
+      }>(),
+    supabase
+      .from("project_financials_view")
+      .select("id,agreed_base_price,actual_price,total_expenses,expenses_billed,customer_total_price,gross_profit")
+      .eq("id", id)
+      .maybeSingle<ProjectFinancials extends infer T ? Exclude<T, null> : never>(),
+    supabase
+      .from("project_worker_balance_view")
+      .select("project_id,earned_amount,paid_amount,owed_amount")
+      .eq("project_id", id)
+      .maybeSingle<ProjectWorkerBalance extends infer T ? Exclude<T, null> : never>(),
+    supabase
+      .from("project_task_progress_view")
+      .select("project_id,total_tasks,completed_tasks,open_tasks")
+      .eq("project_id", id)
+      .maybeSingle<ProjectTaskProgress extends infer T ? Exclude<T, null> : never>(),
+    supabase
+      .from("task_overview_view")
+      .select(
+        "task_id,subject,status,priority,due_date,project_id,project_name,assigned_user_id,assigned_user_name,created_at,updated_at,is_overdue"
+      )
+      .eq("project_id", id)
+      .order("due_date", { ascending: true })
+      .range(0, 199),
+    supabase
+      .from("users")
+      .select("id,full_name,email,role,active,payroll_worker_type,pay_tracking_mode")
+      .order("full_name", { ascending: true })
+      .range(0, 199),
+    supabase
+      .from("customer_overview_view")
+      .select("customer_id,customer_name,phone")
+      .order("customer_name", { ascending: true })
+      .range(0, 199),
+    supabase
+      .from("project_expenses")
+      .select("id,project_id,expense_id,included_in_base_price,billed_to_customer,notes")
+      .eq("project_id", id)
+      .order("id", { ascending: false })
+      .range(0, 99),
+  ]);
 
   const overview: ProjectOverview | null = overviewRaw
     ? {
@@ -198,39 +299,6 @@ export default async function ProjectPage({
               : null,
       }
     : null;
-
-  const { data: financials } = await supabase
-    .from("project_financials_view")
-    .select("id,agreed_base_price,actual_price,total_expenses,expenses_billed,customer_total_price,gross_profit")
-    .eq("id", id)
-    .maybeSingle<ProjectFinancials extends infer T ? Exclude<T, null> : never>();
-
-  const { data: workerBalance } = await supabase
-    .from("project_worker_balance_view")
-    .select("project_id,earned_amount,paid_amount,owed_amount")
-    .eq("project_id", id)
-    .maybeSingle<ProjectWorkerBalance extends infer T ? Exclude<T, null> : never>();
-
-  const { data: tasks } = await supabase
-    .from("project_task_progress_view")
-    .select("project_id,total_tasks,completed_tasks,open_tasks")
-    .eq("project_id", id)
-    .maybeSingle<ProjectTaskProgress extends infer T ? Exclude<T, null> : never>();
-
-  const { data: projectTasks, error: projectTasksError } = await supabase
-    .from("task_overview_view")
-    .select(
-      "task_id,subject,status,priority,due_date,project_id,project_name,assigned_user_id,assigned_user_name,created_at,updated_at,is_overdue"
-    )
-    .eq("project_id", id)
-    .order("due_date", { ascending: true })
-    .range(0, 199);
-
-  const { data: assignableUsers, error: assignableUsersError } = await supabase
-    .from("users")
-    .select("id,full_name,email,role,active,payroll_worker_type,pay_tracking_mode")
-    .order("full_name", { ascending: true })
-    .range(0, 199);
 
   const assignableUserIds = Array.from(
     new Set(
@@ -250,19 +318,6 @@ export default async function ProjectPage({
           .in("user_id", assignableUserIds)
           .order("valid_from", { ascending: false })
       : { data: [] as ProjectSalaryAgreement[] };
-
-  const { data: customers } = await supabase
-    .from("customer_overview_view")
-    .select("customer_id,customer_name,phone")
-    .order("customer_name", { ascending: true })
-    .range(0, 199);
-
-  const { data: projectExpenses, error: projectExpensesError } = await supabase
-    .from("project_expenses")
-    .select("id,project_id,expense_id,included_in_base_price,billed_to_customer,notes")
-    .eq("project_id", id)
-    .order("id", { ascending: false })
-    .range(0, 99);
 
   const expenseIds = Array.from(
     new Set(
@@ -377,30 +432,11 @@ export default async function ProjectPage({
     if (typeof row.id === "string") expenseDocumentById.set(row.id, row);
   });
 
-  const expenseAttachmentByEntityId = new Map<string, FinancialAttachment[]>();
-  for (const link of expenseLinks ?? []) {
-    const entityId = typeof link.entity_id === "string" ? link.entity_id : null;
-    const documentId = typeof link.document_id === "string" ? link.document_id : null;
-    if (!entityId || !documentId) continue;
-    const doc = expenseDocumentById.get(documentId);
-    const storageKey = getFirstString(doc, ["storage_key"]);
-    const fileName = getFirstString(doc, ["file_name"]);
-    const documentType = getFirstString(doc, ["document_type"]);
-    const uploadedAt = getFirstString(doc, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]);
-    const { data: signed } = storageKey
-      ? await supabase.storage.from(DOCUMENTS_BUCKET).createSignedUrl(storageKey, 60 * 60)
-      : { data: null };
-    const existing = expenseAttachmentByEntityId.get(entityId) ?? [];
-    existing.push({
-      document_id: documentId,
-      file_name: fileName,
-      storage_key: storageKey,
-      uploaded_at: uploadedAt,
-      document_type: documentType,
-      url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
-    });
-    expenseAttachmentByEntityId.set(entityId, existing);
-  }
+  const expenseAttachmentByEntityId = await buildAttachmentsByEntity(
+    supabase,
+    expenseLinks ?? [],
+    expenseDocumentById
+  );
 
   expenseAttachmentByEntityId.forEach((attachment, entityId) => {
     const expense = expensesById.get(entityId);
@@ -494,30 +530,11 @@ export default async function ProjectPage({
     if (typeof row.id === "string") sessionDocumentById.set(row.id, row);
   });
 
-  const sessionAttachmentByEntityId = new Map<string, FinancialAttachment[]>();
-  for (const link of sessionLinks ?? []) {
-    const entityId = typeof link.entity_id === "string" ? link.entity_id : null;
-    const documentId = typeof link.document_id === "string" ? link.document_id : null;
-    if (!entityId || !documentId) continue;
-    const doc = sessionDocumentById.get(documentId);
-    const storageKey = getFirstString(doc, ["storage_key"]);
-    const fileName = getFirstString(doc, ["file_name"]);
-    const documentType = getFirstString(doc, ["document_type"]);
-    const uploadedAt = getFirstString(doc, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]);
-    const { data: signed } = storageKey
-      ? await supabase.storage.from(DOCUMENTS_BUCKET).createSignedUrl(storageKey, 60 * 60)
-      : { data: null };
-    const existing = sessionAttachmentByEntityId.get(entityId) ?? [];
-    existing.push({
-      document_id: documentId,
-      file_name: fileName,
-      storage_key: storageKey,
-      uploaded_at: uploadedAt,
-      document_type: documentType,
-      url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
-    });
-    sessionAttachmentByEntityId.set(entityId, existing);
-  }
+  const sessionAttachmentByEntityId = await buildAttachmentsByEntity(
+    supabase,
+    sessionLinks ?? [],
+    sessionDocumentById
+  );
 
   const combinedExpenseList = [
     ...expenseList,
@@ -643,30 +660,11 @@ export default async function ProjectPage({
     if (typeof row.id === "string") paymentDocumentById.set(row.id, row);
   });
 
-  const paymentAttachmentByEntityId = new Map<string, FinancialAttachment[]>();
-  for (const link of paymentLinks ?? []) {
-    const entityId = typeof link.entity_id === "string" ? link.entity_id : null;
-    const documentId = typeof link.document_id === "string" ? link.document_id : null;
-    if (!entityId || !documentId) continue;
-    const doc = paymentDocumentById.get(documentId);
-    const storageKey = getFirstString(doc, ["storage_key"]);
-    const fileName = getFirstString(doc, ["file_name"]);
-    const documentType = getFirstString(doc, ["document_type"]);
-    const uploadedAt = getFirstString(doc, ["uploaded_at"]) ?? getFirstString(link, ["created_at"]);
-    const { data: signed } = storageKey
-      ? await supabase.storage.from(DOCUMENTS_BUCKET).createSignedUrl(storageKey, 60 * 60)
-      : { data: null };
-    const existing = paymentAttachmentByEntityId.get(entityId) ?? [];
-    existing.push({
-      document_id: documentId,
-      file_name: fileName,
-      storage_key: storageKey,
-      uploaded_at: uploadedAt,
-      document_type: documentType,
-      url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
-    });
-    paymentAttachmentByEntityId.set(entityId, existing);
-  }
+  const paymentAttachmentByEntityId = await buildAttachmentsByEntity(
+    supabase,
+    paymentLinks ?? [],
+    paymentDocumentById
+  );
 
   const paymentsWithPhotos = (payments ?? []).map((payment) => {
     const attachments = paymentAttachmentByEntityId.get(payment.id);
