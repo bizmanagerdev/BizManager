@@ -381,6 +381,11 @@ export default function NewOrderClient({
   const [productQuery, setProductQuery] = useState("");
   const [lines, setLines] = useState<OrderLine[]>(initialOrder?.items ?? []);
   const [newPayments, setNewPayments] = useState<PaymentDraft[]>([]);
+  // Editable notes for already-saved payments (edit mode). Keyed by payment id,
+  // seeded from the loaded values; changed entries are sent back on save.
+  const [existingPaymentNotes, setExistingPaymentNotes] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialPayments.map((payment) => [payment.id, payment.notes ?? ""]))
+  );
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -881,6 +886,10 @@ export default function NewOrderClient({
             discount_amount: line.discount_amount,
             notes: line.notes.trim() || null,
           })),
+          // Note-only edits to already-saved payments (only the ones that changed).
+          existing_payment_notes: initialPayments
+            .filter((payment) => (existingPaymentNotes[payment.id] ?? "") !== (payment.notes ?? ""))
+            .map((payment) => ({ id: payment.id, notes: existingPaymentNotes[payment.id]?.trim() || null })),
         }),
       });
 
@@ -1706,22 +1715,35 @@ export default function NewOrderClient({
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">תשלומים קיימים</p>
                   {initialPayments.map((payment) => (
-                    <div key={payment.id} className="grid gap-2 rounded-xl border bg-muted/20 p-3 text-sm sm:grid-cols-4">
-                      <div>
-                        <div className="text-xs text-muted-foreground">תאריך</div>
-                        <div>{payment.payment_date || "-"}</div>
+                    <div key={payment.id} className="space-y-2 rounded-xl border bg-muted/20 p-3 text-sm">
+                      <div className="grid gap-2 sm:grid-cols-4">
+                        <div>
+                          <div className="text-xs text-muted-foreground">תאריך</div>
+                          <div>{payment.payment_date || "-"}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">אמצעי</div>
+                          <div>{paymentMethodLabel(payment.payment_method)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">סכום</div>
+                          <div>{formatCurrency(payment.amount_total)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">אסמכתא</div>
+                          <div>{payment.reference_number || "-"}</div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="text-xs text-muted-foreground">אמצעי</div>
-                        <div>{paymentMethodLabel(payment.payment_method)}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-muted-foreground">סכום</div>
-                        <div>{formatCurrency(payment.amount_total)}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-muted-foreground">אסמכתא</div>
-                        <div>{payment.reference_number || "-"}</div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">הערות</label>
+                        <Input
+                          value={existingPaymentNotes[payment.id] ?? ""}
+                          disabled={actionLocked}
+                          onChange={(e) =>
+                            setExistingPaymentNotes((prev) => ({ ...prev, [payment.id]: e.target.value }))
+                          }
+                          placeholder="אופציונלי"
+                        />
                       </div>
                     </div>
                   ))}

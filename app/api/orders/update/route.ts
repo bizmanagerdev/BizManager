@@ -57,6 +57,8 @@ type UpdateOrderPayload = {
     check_number?: string | null;
     notes?: string | null;
   }[];
+  // Note-only edits to already-saved payments (the wizard's existing-payments editor).
+  existing_payment_notes?: { id?: string; notes?: string | null }[];
   items?: OrderItemPayload[];
 };
 
@@ -412,6 +414,25 @@ export async function POST(req: Request) {
         .from("orders")
         .update({ collect_payment_on_delivery: body.collect_payment_on_delivery })
         .eq("id", orderId);
+    }
+
+    // Note-only edits to existing payments. Scoped to this order so a payment can
+    // never be edited out of context. Only the rows the client flagged as changed.
+    const existingPaymentNotes = Array.isArray(body.existing_payment_notes)
+      ? body.existing_payment_notes
+      : [];
+    for (const entry of existingPaymentNotes) {
+      const paymentId = typeof entry?.id === "string" ? entry.id.trim() : "";
+      if (!paymentId) continue;
+      const noteValue = typeof entry?.notes === "string" ? entry.notes.trim() : "";
+      const { error: noteError } = await supabase
+        .from("payments")
+        .update({ notes: noteValue || null })
+        .eq("id", paymentId)
+        .eq("order_id", orderId);
+      if (noteError) {
+        return NextResponse.json({ error: toHebrewError(noteError.message) }, { status: 400 });
+      }
     }
 
     const updatedOrderId = typeof data === "string" ? data : orderId;
