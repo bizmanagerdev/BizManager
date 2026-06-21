@@ -10,10 +10,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import { EXPENSE_BUSINESS_DOMAINS, WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
-import { shouldShowSessionHours } from "@/lib/payroll-worker-type";
+import { payrollWorkerTypeAllowsSessions, payrollWorkerTypeGeneratesPayslips, shouldShowSessionHours } from "@/lib/payroll-worker-type";
 import {
   calculateSessionLaborCost,
   formatCurrency,
@@ -138,6 +137,14 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
   const openSession = useMemo(() => sessions.find((session) => !session.clock_out) ?? null, [sessions]);
   const currentAgreement = useMemo(() => getCurrentSalaryAgreement(agreements), [agreements]);
   const showSessionTimingForProfile = shouldShowSessionHours(profile.payroll_worker_type);
+  // Sessions UI is only relevant to workers whose pay type actually tracks
+  // sessions (קבלנות / שעתי) — monthly-payslip or staff with no type don't punch in.
+  const canTrackSessions =
+    profile.payroll_worker_type != null && payrollWorkerTypeAllowsSessions(profile.payroll_worker_type);
+  const showSalarySection =
+    (profile.payroll_worker_type != null && payrollWorkerTypeGeneratesPayslips(profile.payroll_worker_type)) ||
+    agreements.length > 0 ||
+    payslips.length > 0;
   const sessionEditDateOnly = (() => {
     const match = /^(\d{4}-\d{2}-\d{2})/.exec(sessionEditClockIn);
     return match ? match[1] : new Date().toISOString().slice(0, 10);
@@ -511,33 +518,6 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
   }
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="סטטוס נוכחי" value={openSession ? "במשמרת" : "לא במשמרת"} hint={openSession ? `נכנסת ב-${formatDateTime(openSession.clock_in)}` : "אין משמרת פתוחה כרגע"} />
-        <SummaryCard title="שעות החודש" value={selectedMonthSummary ? formatMinutes(selectedMonthSummary.totalMinutes) : "0:00"} hint={selectedMonthSummary ? selectedMonthSummary.label : "אין שעות מדווחות"} />
-<SummaryCard title="שכר נוכחי" value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `סוג שכר: ${getSalaryTypeLabel(currentAgreement.salary_type)}` : "אין משכורת פעילה"} />
-        <SummaryCard title="תלוש אחרון" value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? `${latestPeriod.period_month} • ${getPayrollStatusLabel(latestPeriod.status)}` : "אין תלושים זמינים"} />
-      </div>
-
-      <Card>
-        <CardContent className="space-y-4 py-5">
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div><div className="text-lg font-semibold">{profile.full_name ?? profile.email ?? "עובד"}</div><div className="text-sm text-muted-foreground">{profile.email ?? "-"} | {profile.phone ?? "-"}</div></div>
-            <div className="flex flex-wrap justify-center gap-3">
-              <Button size="lg" className="min-w-40" disabled={Boolean(openSession) || isPending} onClick={() => void postSessionAction("/api/profile/session/start")}>פתיחת משמרת</Button>
-              <Button size="lg" className="min-w-40" disabled={!openSession || isPending} onClick={() => void postSessionAction("/api/profile/session/end")}>סיום משמרת</Button>
-            </div>
-          </div>
-          {openSession ? <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px]">
-            <Input value={sessionNote} onChange={(event) => setSessionNote(event.target.value)} placeholder="הערות למשמרת" />
-            <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={sessionDomain} onChange={(event) => setSessionDomain(event.target.value as ExpenseBusinessDomain)}>
-              {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => <option key={domain} value={domain}>{getBusinessDomainLabel(domain)}</option>)}
-            </select>
-            <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm">{`זמן פתיחה: ${formatDateTime(openSession.clock_in)}`}</div>
-          </div> : null}
-          {actionError ? <div className="text-sm text-destructive">{actionError}</div> : null}
-        </CardContent>
-      </Card>
-
       <Card>
         <CardContent className="py-5">
           <div className="mb-1 text-sm font-semibold">גודל טקסט</div>
@@ -567,12 +547,31 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">סיכום חודשי</TabsTrigger>
-          <TabsTrigger value="salary">שכר והיסטוריה</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview">
+      {canTrackSessions ? (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-right">נוכחות ומשמרות</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SummaryCard title="סטטוס נוכחי" value={openSession ? "במשמרת" : "לא במשמרת"} hint={openSession ? `נכנסת ב-${formatDateTime(openSession.clock_in)}` : "אין משמרת פתוחה כרגע"} />
+            <SummaryCard title="שעות החודש" value={selectedMonthSummary ? formatMinutes(selectedMonthSummary.totalMinutes) : "0:00"} hint={selectedMonthSummary ? selectedMonthSummary.label : "אין שעות מדווחות"} />
+          </div>
+
+          <Card>
+            <CardContent className="space-y-4 py-5">
+              <div className="flex flex-wrap justify-center gap-3">
+                <Button size="lg" className="min-w-40" disabled={Boolean(openSession) || isPending} onClick={() => void postSessionAction("/api/profile/session/start")}>פתיחת משמרת</Button>
+                <Button size="lg" className="min-w-40" disabled={!openSession || isPending} onClick={() => void postSessionAction("/api/profile/session/end")}>סיום משמרת</Button>
+              </div>
+              {openSession ? <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_220px]">
+                <Input value={sessionNote} onChange={(event) => setSessionNote(event.target.value)} placeholder="הערות למשמרת" />
+                <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={sessionDomain} onChange={(event) => setSessionDomain(event.target.value as ExpenseBusinessDomain)}>
+                  {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => <option key={domain} value={domain}>{getBusinessDomainLabel(domain)}</option>)}
+                </select>
+                <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm">{`זמן פתיחה: ${formatDateTime(openSession.clock_in)}`}</div>
+              </div> : null}
+              {actionError ? <div className="text-sm text-destructive">{actionError}</div> : null}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardContent className="space-y-4 py-5 text-right">
               <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
@@ -623,14 +622,22 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-        <TabsContent value="salary">
+        </section>
+      ) : null}
+
+      {showSalarySection ? (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-right">שכר ותלושים</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SummaryCard title="שכר נוכחי" value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `סוג שכר: ${getSalaryTypeLabel(currentAgreement.salary_type)}` : "אין משכורת פעילה"} />
+            <SummaryCard title="תלוש אחרון" value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? `${latestPeriod.period_month} • ${getPayrollStatusLabel(latestPeriod.status)}` : "אין תלושים זמינים"} />
+          </div>
           <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
             <Card><CardContent className="space-y-3 py-5"><div className="text-lg font-semibold">היסטוריית שכר</div>{agreements.length === 0 ? <div className="text-sm text-muted-foreground">אין היסטוריית שכר זמינה.</div> : agreements.map((agreement) => <div key={agreement.id} className="rounded-2xl border p-4 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><div className="font-medium">{getSalaryTypeLabel(agreement.salary_type)}</div><div className="text-base font-semibold">{agreement.salary_type === "hourly" ? `${formatCurrency(agreement.hourly_rate)} לשעה` : formatCurrency(agreement.monthly_salary)}</div></div><div className="mt-2 text-muted-foreground">בתוקף: {formatDate(agreement.valid_from)} - {formatDate(agreement.valid_to)}</div><div className="mt-1 text-muted-foreground">שעות תקן: {toNumber(agreement.standard_daily_hours)} | שעות נוספות: {agreement.overtime_rate ? formatCurrency(agreement.overtime_rate) : "-"}</div>{agreement.notes ? <div className="mt-2">{agreement.notes}</div> : null}</div>)}</CardContent></Card>
             <Card><CardContent className="space-y-3 py-5"><div className="text-lg font-semibold">תלושי שכר</div>{payslips.length === 0 ? <div className="text-sm text-muted-foreground">אין תלושי שכר זמינים כרגע.</div> : payslips.map((payslip) => { const period = periodsById.get(payslip.payroll_period_id) ?? null; return <div key={payslip.id} className="rounded-2xl border p-4 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><div className="font-medium">{period?.period_month ?? "תקופת שכר"}</div><div className="text-base font-semibold">{formatCurrency(payslip.gross_salary)}</div></div><div className="mt-2 text-muted-foreground">שעות לחישוב: {formatMinutes(payslip.total_work_minutes)} | סוג: {getSalaryTypeLabel(payslip.calculated_salary_type)}</div><div className="mt-1 text-muted-foreground">שכר בסיס: {formatCurrency(payslip.calculated_base_salary)} | התאמות: {formatCurrency(payslip.manual_adjustments)}</div>{period ? <div className="mt-1 text-muted-foreground">סטטוס: {getPayrollStatusLabel(period.status)} | טווח: {formatDate(period.start_date)} - {formatDate(period.end_date)} | צפי תשלום: {getNextMonthDueText(period.end_date)}</div> : null}{payslip.notes ? <div className="mt-2">{payslip.notes}</div> : null}</div>; })}</CardContent></Card>
           </div>
-        </TabsContent>
-      </Tabs>
+        </section>
+      ) : null}
 
       <Dialog
         open={manualEditorOpen}

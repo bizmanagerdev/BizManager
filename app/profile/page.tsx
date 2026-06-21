@@ -127,10 +127,12 @@ export default async function ProfilePage() {
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
         <div>
-          <h1 className="text-2xl font-semibold">פרופיל עובד</h1>
-          <p className="text-sm text-muted-foreground">
-            ריכוז שעות, משמרות, תלושי שכר והיסטוריית שכר אישית.
-          </p>
+          <h1 className="text-2xl font-semibold">{profile.full_name ?? profile.email ?? "עובד"}</h1>
+          {[profile.email, profile.phone].filter(Boolean).length ? (
+            <p className="text-sm text-muted-foreground">
+              {[profile.email, profile.phone].filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
         </div>
 
         {loadError ? (
