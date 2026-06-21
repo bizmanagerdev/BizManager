@@ -59,8 +59,9 @@ export default async function EditSalesOrderPage({
       .order("name", { ascending: true })
       .range(0, 49),
     supabase
-      .from("products")
+      .from("products_with_last_used")
       .select("id,name,sku,barcode,description,base_price,base_cost,active")
+      .order("order_count", { ascending: false })
       .order("name", { ascending: true })
       .range(0, 49),
   ]);

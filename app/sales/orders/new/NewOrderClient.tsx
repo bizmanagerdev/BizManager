@@ -180,25 +180,6 @@ function mapCustomerSearchResult(row: Record<string, unknown>): CustomerOption |
   };
 }
 
-function ValueField({
-  label,
-  value,
-  className = "",
-  valueClassName = "",
-}: {
-  label: string;
-  value: string;
-  className?: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className={`rounded-xl border border-border/70 bg-background/70 px-4 py-3 ${className}`.trim()}>
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className={`mt-2 text-sm font-medium leading-6 text-foreground ${valueClassName}`.trim()}>{value}</div>
-    </div>
-  );
-}
-
 function extractCityFromAddress(address: string | null) {
   if (!address) return null;
   const normalized = address.trim();
@@ -339,6 +320,7 @@ export default function NewOrderClient({
 
   const [step, setStep] = useState<Step>(1);
   const topRef = useRef<HTMLDivElement>(null);
+  const customerDetailRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = topRef.current;
     if (!el) return;
@@ -353,6 +335,9 @@ export default function NewOrderClient({
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
   const [editingCustomer, setEditingCustomer] = useState(false);
+  // Mobile master→detail: after a customer is picked the results list collapses
+  // so the detail/edit card isn't buried under a long list (lg shows both).
+  const [mobileListCollapsed, setMobileListCollapsed] = useState(false);
   // The chosen customer is held independently of the search results, so searching to
   // switch shows pure results (the previously-selected one is not pinned into the list).
   const [pickedCustomer, setPickedCustomer] = useState<CustomerOption | null>(null);
@@ -1019,19 +1004,24 @@ export default function NewOrderClient({
   }
 
   return (
-    <div ref={topRef} className="flex flex-col gap-5">
+    <div ref={topRef} className={cn("flex flex-col gap-5", !embedded && "pb-28 md:pb-0")}>
       <div
         className={cn(
-          "sticky z-20 mb-1 rounded-2xl border border-border/70 bg-background px-3 py-2.5 shadow-lg sm:px-4",
-          embedded ? "top-0" : "top-16 -mt-4 md:-mt-6 lg:-mt-8"
+          // Mobile: a flush, full-width bar that scrolls WITH the page (not pinned),
+          // so content never tucks under it. md+: a pinned rounded card.
+          "z-20 border-border/70 bg-background px-3 py-2.5 sm:px-4",
+          embedded
+            ? "sticky top-0 mb-1 rounded-2xl border shadow-lg"
+            : "-mx-4 -mt-4 mb-1 border-b shadow-[0_2px_12px_rgb(0_0_0_/_0.06)] md:sticky md:top-16 md:mx-0 md:rounded-2xl md:border md:shadow-lg md:-mt-6 lg:-mt-8"
         )}
       >
         <WizardStepper current={step} canClick={canClickStep} onStepClick={goToStep} />
       </div>
 
       <div>
-        <h2 className="text-xl font-semibold text-foreground">{heading.title}</h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">{heading.subtitle}</p>
+        <h2 className="text-lg font-semibold text-foreground sm:text-xl">{heading.title}</h2>
+        {/* Subtitle is guidance only — hidden on mobile to free vertical room. */}
+        <p className="mt-0.5 hidden text-sm text-muted-foreground sm:block">{heading.subtitle}</p>
       </div>
 
       {customersError ? <p className="text-sm text-destructive">שגיאת לקוחות: {customersError}</p> : null}
@@ -1091,15 +1081,18 @@ export default function NewOrderClient({
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
               {/* Search + list */}
-              <Card>
+              <Card className="min-w-0">
                 <CardContent className="space-y-3 pt-5">
                   <div className="relative">
                     {customerQuery ? (
                       <button
                         type="button"
-                        onClick={() => setCustomerQuery("")}
+                        onClick={() => {
+                          setCustomerQuery("");
+                          setMobileListCollapsed(false);
+                        }}
                         aria-label="ניקוי חיפוש"
                         className="absolute end-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       >
@@ -1110,17 +1103,21 @@ export default function NewOrderClient({
                     )}
                     <Input
                       value={customerQuery}
-                      onChange={(e) => setCustomerQuery(e.target.value)}
+                      onChange={(e) => {
+                        setCustomerQuery(e.target.value);
+                        setMobileListCollapsed(false);
+                      }}
+                      onFocus={() => setMobileListCollapsed(false)}
                       placeholder="חיפוש..."
                       aria-label="חיפוש לקוח"
                       className="pe-9"
                     />
                   </div>
                   {customerSearchLoading ? (
-                    <p className="text-xs text-muted-foreground">מחפש לקוחות...</p>
+                    <p className={cn("text-xs text-muted-foreground", mobileListCollapsed && "hidden lg:block")}>מחפש לקוחות...</p>
                   ) : null}
 
-                  <div className="max-h-[24rem] space-y-2 overflow-auto pe-1">
+                  <div className={cn("space-y-2 pe-1 lg:max-h-[24rem] lg:overflow-auto", mobileListCollapsed && "hidden lg:block")}>
                     {filteredCustomers.map((customer) => {
                       const isSelected = customer.id === customerId;
                       return (
@@ -1131,8 +1128,14 @@ export default function NewOrderClient({
                           onClick={() => {
                             setCustomerId(customer.id);
                             setPickedCustomer(customer);
-                            setCustomerQuery(customer.name);
                             setEditingCustomer(false);
+                            // On mobile, collapse the list so the compact detail card
+                            // takes its place. No programmatic scroll — that was the
+                            // source of the jumpy/broken behavior; the page just gets
+                            // short on its own. lg keeps both columns visible (no collapse).
+                            if (typeof window !== "undefined" && window.innerWidth < 1024) {
+                              setMobileListCollapsed(true);
+                            }
                           }}
                           className={cn(
                             "flex w-full items-start gap-3 rounded-2xl border px-3 py-2.5 text-right transition-all duration-200",
@@ -1195,9 +1198,10 @@ export default function NewOrderClient({
                 </CardContent>
               </Card>
 
-              {/* Selected customer detail */}
-              <Card>
-                <CardContent className="pt-5">
+              {/* Selected customer detail — scroll target when a customer is picked */}
+              <div ref={customerDetailRef} className="min-w-0 scroll-mt-28">
+              <Card className="min-w-0">
+                <CardContent className="min-w-0 pt-5">
                   {selectedCustomer ? (
                     <div className="space-y-4">
                       <div className="flex items-start justify-between gap-3">
@@ -1206,12 +1210,12 @@ export default function NewOrderClient({
                             {selectedCustomer.name}
                           </h3>
                           {selectedCustomer.contacts?.[0]?.full_name ? (
-                            <p className="mt-0.5 text-sm text-muted-foreground">
+                            <p className="mt-0.5 truncate text-sm text-muted-foreground">
                               {selectedCustomer.contacts[0].full_name}
                               {selectedCustomer.email ? ` · ${selectedCustomer.email}` : ""}
                             </p>
                           ) : selectedCustomer.email ? (
-                            <p className="mt-0.5 text-sm text-muted-foreground">{selectedCustomer.email}</p>
+                            <p className="mt-0.5 truncate text-sm text-muted-foreground">{selectedCustomer.email}</p>
                           ) : null}
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -1240,19 +1244,32 @@ export default function NewOrderClient({
                           onSaved={({ customer }) => handleCustomerSaved(customer)}
                         />
                       ) : (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <ValueField label="טלפון" value={selectedCustomer.phone || "-"} />
-                          <ValueField label="וואטסאפ" value={selectedCustomer.whatsapp || "-"} />
-                          <ValueField label="אימייל" value={selectedCustomer.email || "-"} />
-                          <ValueField label="עיר / כתובת" value={selectedCustomer.address || selectedCustomer.city || "-"} />
-                          {selectedCustomer.nameForInvoice ? (
-                            <ValueField label="שם לחשבונית" value={selectedCustomer.nameForInvoice} className="sm:col-span-2" />
-                          ) : null}
-                          <ValueField
-                            label="אופן תשלום"
-                            value={selectedCustomer.requiresPrepayment ? "תשלום מראש" : "רגיל"}
-                            className="sm:col-span-2"
-                          />
+                        /* All fields shown (even empty) so missing data is visible —
+                           empty ones are flagged "חסר" in red. */
+                        <div className="space-y-1 rounded-lg border border-border/60 px-3 py-2 text-sm">
+                          {[
+                            { label: "טלפון", value: selectedCustomer.phone, ltr: true },
+                            { label: "וואטסאפ", value: selectedCustomer.whatsapp, ltr: true },
+                            { label: "אימייל", value: selectedCustomer.email, ltr: true },
+                            { label: "כתובת", value: selectedCustomer.address || selectedCustomer.city, ltr: false },
+                            { label: "שם לחשבונית", value: selectedCustomer.nameForInvoice, ltr: false },
+                            { label: "אופן תשלום", value: selectedCustomer.requiresPrepayment ? "תשלום מראש" : "רגיל", ltr: false },
+                          ].map((row) => (
+                            <p key={row.label} className="break-words leading-5">
+                              <span className="text-muted-foreground">{row.label}: </span>
+                              {row.value ? (
+                                <span
+                                  dir={row.ltr ? "ltr" : undefined}
+                                  className="font-medium text-foreground"
+                                >
+                                  {/* LRI…PDI forces LTR ordering for emails/phones in the RTL line */}
+                                  {row.ltr ? `⁦${row.value}⁩` : row.value}
+                                </span>
+                              ) : (
+                                <span className="font-medium text-destructive">חסר</span>
+                              )}
+                            </p>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -1267,6 +1284,7 @@ export default function NewOrderClient({
                   )}
                 </CardContent>
               </Card>
+              </div>
             </div>
           )}
         </div>
@@ -1290,7 +1308,7 @@ export default function NewOrderClient({
               </div>
               {productSearchLoading ? <p className="text-xs text-muted-foreground">מחפש מוצרים...</p> : null}
 
-              <div className="max-h-[28rem] overflow-auto rounded-xl border border-border/70 bg-muted/10 p-2.5">
+              <div className="rounded-xl border border-border/70 bg-muted/10 p-2.5 lg:max-h-[28rem] lg:overflow-auto">
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {filteredProducts.map((product) => {
                     const selected = selectedLineByProductId.get(product.id);
@@ -1372,7 +1390,7 @@ export default function NewOrderClient({
               ) : (
                 <div className="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
                   {/* Items scroll on their own so the discount + totals stay visible */}
-                  <div className="-me-1 space-y-3 overflow-y-auto pe-1 lg:min-h-0 lg:flex-1">
+                  <div className="-me-1 space-y-3 pe-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
                   {lines.map((line, index) => {
                     const gross = line.quantity_ordered * line.unit_price;
                     const lineTotal = gross - line.discount_amount;
@@ -1831,7 +1849,7 @@ export default function NewOrderClient({
       {/* ---------------------------------------------------------------- STEP 4 */}
       {step === 4 ? (
         <div className="space-y-4">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
             {/* Customer */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
@@ -1893,7 +1911,7 @@ export default function NewOrderClient({
             </Card>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
             {/* Order details — editable inline here, sensible defaults */}
             <Card>
               <CardHeader>
@@ -1972,44 +1990,48 @@ export default function NewOrderClient({
 
       {/* ---------------------------------------------------------------- FOOTER */}
       <div className={cn(
-        "rounded-2xl border border-border/70 bg-background/95 px-3 py-3 shadow-lg backdrop-blur sm:px-4",
+        // Action bar. On mobile it's an edge-to-edge bar flush above the bottom
+        // nav (no floating card overlapping content); a rounded card on md+.
+        "border-border/70 bg-background/95 px-3 py-3 backdrop-blur sm:px-4",
         embedded
-          ? "sticky bottom-0 z-10 mt-1"
-          : "fixed inset-x-3 bottom-16 z-40 md:sticky md:inset-x-auto md:bottom-0 md:z-10 md:mt-1"
+          ? "sticky bottom-0 z-10 mt-1 rounded-2xl border shadow-lg"
+          : "fixed inset-x-0 bottom-[58px] z-40 border-t shadow-[0_-2px_12px_rgb(0_0_0_/_0.06)] md:sticky md:inset-x-auto md:bottom-0 md:z-10 md:mt-1 md:rounded-2xl md:border md:shadow-lg"
       )}>
-        <div className="flex items-center justify-between gap-2">
+        {/* Wraps when cramped: total drops to its own row above the buttons on
+            narrow screens (me-auto on the back button keeps cancel⇄next spread),
+            and sits inline between them when there's room (sm+). */}
+        <div className="flex flex-wrap items-center gap-2">
           {step === 1 ? (
             embedded ? (
-              <Button type="button" variant="secondary" onClick={onCancel} disabled={actionLocked}>
+              <Button type="button" variant="secondary" onClick={onCancel} disabled={actionLocked} className="me-auto">
                 ביטול
               </Button>
             ) : (
-              <Button type="button" variant="secondary" asChild disabled={actionLocked}>
+              <Button type="button" variant="secondary" asChild disabled={actionLocked} className="me-auto">
                 <Link href={cancelHref}>ביטול</Link>
               </Button>
             )
           ) : (
-            <Button type="button" variant="secondary" onClick={goBack} disabled={actionLocked}>
+            <Button type="button" variant="secondary" onClick={goBack} disabled={actionLocked} className="me-auto">
               חזרה
             </Button>
           )}
 
-          <div className="flex min-w-0 items-center gap-2">
-            {lines.length > 0 ? (
-              <div className="min-w-0 shrink text-end leading-tight">
-                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {effectiveOrderDiscount > 0 ? "סכום לתשלום" : "סכום ביניים"}
-                </div>
-                <div className="text-lg font-bold text-foreground">
-                  {formatCurrency(totalAmount)}
-                </div>
+          {lines.length > 0 ? (
+            <div className="order-first w-full text-center leading-tight sm:order-none sm:w-auto sm:text-end">
+              <div className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {effectiveOrderDiscount > 0 ? "סכום לתשלום" : "סכום ביניים"}
               </div>
-            ) : null}
-            <Button type="button" onClick={goNext} disabled={nextDisabled} className="shrink-0">
-              {step === 4 ? <Check className="h-4 w-4" /> : null}
-              {nextLabel}
-            </Button>
-          </div>
+              <div className="whitespace-nowrap text-base font-bold text-foreground">
+                {formatCurrency(totalAmount)}
+              </div>
+            </div>
+          ) : null}
+
+          <Button type="button" onClick={goNext} disabled={nextDisabled} className="shrink-0">
+            {step === 4 ? <Check className="h-4 w-4" /> : null}
+            {nextLabel}
+          </Button>
         </div>
       </div>
     </div>
