@@ -6,8 +6,6 @@ import type { ReactNode } from "react";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMorePriceList } from "@/app/sales/actions";
 import type { ProductsFilters } from "@/app/sales/loadProducts";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
 import { Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
@@ -293,6 +291,11 @@ export default function PriceListClient({
     if ("fonts" in document) {
       await document.fonts.ready;
     }
+
+    const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+      import("html2canvas"),
+      import("jspdf"),
+    ]);
 
     const canvas = await html2canvas(exportElement, {
       scale: Math.min(window.devicePixelRatio || 1, 2),

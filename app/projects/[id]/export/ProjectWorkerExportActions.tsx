@@ -3,8 +3,6 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { useCallback, useState } from "react";
 import { Loader2, MessageCircle } from "lucide-react";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
 import { Button } from "@/components/ui/button";
 
 type ShareMode = "whatsapp" | null;
@@ -36,6 +34,11 @@ export default function ProjectWorkerExportActions({
     if ("fonts" in document) {
       await document.fonts.ready;
     }
+
+    const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+      import("html2canvas"),
+      import("jspdf"),
+    ]);
 
     const canvas = await html2canvas(exportElement, {
       scale: Math.min(window.devicePixelRatio || 1, 2),

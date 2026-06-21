@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
@@ -293,6 +292,7 @@ export default function CardImportClient({
     }
     try {
       const buf = await file.arrayBuffer();
+      const XLSX = await import("xlsx");
       const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
       const parsed: Sheet[] = wb.SheetNames.map((name) => ({
         name,
