@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import PwaRegistration from "@/components/pwa/PwaRegistration";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
   title: "BizH",
@@ -47,6 +48,7 @@ export default function RootLayout({
         <PwaRegistration />
         {children}
         <Toaster />
+        <SpeedInsights />
       </body>
     </html>
   );

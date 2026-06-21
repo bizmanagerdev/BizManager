@@ -29,9 +29,27 @@ import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+function ProjectTabsSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="grid h-14 grid-cols-3 gap-2">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="animate-pulse rounded-2xl border bg-card/95" />
+        ))}
+      </div>
+      <div className="animate-pulse space-y-3">
+        <div className="h-40 rounded-xl border bg-muted/40" />
+        <div className="grid gap-3 xl:grid-cols-2">
+          <div className="h-80 rounded-xl border bg-muted/40" />
+          <div className="h-80 rounded-xl border bg-muted/40" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ProjectTabsClient = dynamic(() => import("@/app/projects/[id]/ProjectTabsClient"), {
-  // No skeleton — the top navigation progress bar covers loading feedback.
-  loading: () => null,
+  loading: () => <ProjectTabsSkeleton />,
 });
 
 const DOCUMENTS_BUCKET = STORAGE_BUCKET;
