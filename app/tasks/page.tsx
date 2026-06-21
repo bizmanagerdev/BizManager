@@ -1,6 +1,7 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
+import { TasksTabs } from "@/components/tasks/TasksTabs";
 import TasksPageClient from "./TasksPageClient";
 import { loadTasksBoard } from "./loadTasks";
 
@@ -91,19 +92,23 @@ export default async function TasksPage({
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      {boardResult.error ? (
-        <div className="text-destructive text-sm">שגיאה: {boardResult.error}</div>
-      ) : (
-        <TasksPageClient
-          tasks={boardResult.items}
-          projects={projectOptions}
-          properties={propertyOptions}
-          users={userOptions}
-          canSeeAll={canSeeAll}
-          currentUserId={profile.id}
-          initialFilters={{ q, priority: filterPriority, domain: filterDomain, linkedId: filterLinkedId, scope: filterScope }}
-        />
-      )}
+      <div className="space-y-4">
+        {/* Recurring tasks is admin/office-only — only they get the tab bar. */}
+        {canSeeAll ? <TasksTabs /> : null}
+        {boardResult.error ? (
+          <div className="text-destructive text-sm">שגיאה: {boardResult.error}</div>
+        ) : (
+          <TasksPageClient
+            tasks={boardResult.items}
+            projects={projectOptions}
+            properties={propertyOptions}
+            users={userOptions}
+            canSeeAll={canSeeAll}
+            currentUserId={profile.id}
+            initialFilters={{ q, priority: filterPriority, domain: filterDomain, linkedId: filterLinkedId, scope: filterScope }}
+          />
+        )}
+      </div>
     </AppShell>
   );
 }

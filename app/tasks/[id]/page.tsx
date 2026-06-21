@@ -28,6 +28,7 @@ type TaskRow = {
   project_id: string | null;
   property_id: string | null;
   business_domain: string | null;
+  is_private: boolean | null;
 };
 
 type DocumentLinkRow = {
@@ -125,7 +126,7 @@ export default async function TaskPage({
 
   const { data: taskRow, error: taskError } = await supabase
     .from("tasks")
-    .select("id,description,notes,due_time,city,address,project_id,property_id,business_domain")
+    .select("id,description,notes,due_time,city,address,project_id,property_id,business_domain,is_private")
     .eq("id", id)
     .maybeSingle<TaskRow>();
 
@@ -280,7 +281,10 @@ export default async function TaskPage({
       <div className="space-y-4">
         {error ? (
           <div className="text-destructive text-sm">שגיאה: {error}</div>
-        ) : !overview ? (
+        ) : !overview || !taskRow ? (
+          // taskRow comes from the RLS-bound base table — if it's missing the
+          // viewer can't access the task (e.g. a private task they don't own),
+          // even when a SECURITY DEFINER overview view would have returned it.
           <div className="text-muted-foreground">משימה לא נמצאה.</div>
         ) : (
           <TaskDetailClient

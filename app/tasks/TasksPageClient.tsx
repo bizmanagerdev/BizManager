@@ -21,7 +21,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bell, CheckCircle2, Circle, GripVertical, MapPin, MessageSquare, Plus } from "lucide-react";
+import { Bell, CheckCircle2, Circle, GripVertical, Lock, MapPin, MessageSquare, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/tasks/loadTasks";
@@ -147,6 +147,11 @@ function TaskCard({
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {task.is_private ? (
+            <span title="משימה פרטית — רק את/ה רואה אותה">
+              <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+            </span>
+          ) : null}
           {task.has_open_reminder ? <Bell className="h-3.5 w-3.5 text-warning-strong" /> : null}
           {task.comment_count > 0 ? (
             <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">

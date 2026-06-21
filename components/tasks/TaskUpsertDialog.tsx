@@ -16,10 +16,12 @@ import {
   Clock,
   ExternalLink,
   Loader2,
+  Lock,
   MapPin,
   MessageSquare,
   Plus,
   Tag,
+  Unlock,
   Users,
   X,
 } from "lucide-react";
@@ -193,6 +195,9 @@ export function TaskUpsertDialog(props: Props) {
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [status, setStatus] = useState<TaskStatus>(props.defaultStatus ?? "todo");
+  // Private = visible only to the owner (the user who turns it on). Hidden from
+  // everyone else, including office/admin.
+  const [isPrivate, setIsPrivate] = useState(false);
 
   // The card extras (comments / reminders) need a saved task. activeTaskId is the
   // edit target, or the id of a just-created task when keepOpenAfterCreate is set.
@@ -290,6 +295,7 @@ export function TaskUpsertDialog(props: Props) {
         setPriority((PRIORITY_OPTIONS.includes(priorityRaw as TaskPriority) ? priorityRaw : "medium") as TaskPriority);
         const statusRaw = typeof task.status === "string" ? task.status : null;
         setStatus((STATUS_OPTIONS.includes(statusRaw as TaskStatus) ? statusRaw : "todo") as TaskStatus);
+        setIsPrivate(task.is_private === true);
 
         const membersRaw = Array.isArray(json?.members) ? (json.members as Array<{ id?: unknown }>) : [];
         setMemberIds(membersRaw.map((m) => (typeof m.id === "string" ? m.id : "")).filter(Boolean));
@@ -314,7 +320,7 @@ export function TaskUpsertDialog(props: Props) {
       projectId: string; propertyId: string; businessDomain: ExpenseBusinessDomain;
       subject: string; description: string; dueDate: string; dueTime: string;
       city: string; address: string; assignedUserId: string; memberIds: string[];
-      priority: TaskPriority; status: TaskStatus;
+      priority: TaskPriority; status: TaskStatus; isPrivate: boolean;
     }>("task-create");
 
     setActiveTaskId(null);
@@ -346,6 +352,7 @@ export function TaskUpsertDialog(props: Props) {
     setMemberIds(Array.isArray(draft?.memberIds) ? draft.memberIds : []);
     setPriority(draft?.priority ?? "medium");
     setStatus(props.defaultStatus ?? draft?.status ?? "todo");
+    setIsPrivate(draft?.isPrivate ?? false);
 
     setOpenSection("description");
   }
@@ -375,9 +382,9 @@ export function TaskUpsertDialog(props: Props) {
     if (!props.open || props.mode !== "create" || activeTaskId) return;
     saveDraft("task-create", {
       projectId, propertyId, businessDomain, subject, description, dueDate, dueTime,
-      city, address, assignedUserId, memberIds, priority, status,
+      city, address, assignedUserId, memberIds, priority, status, isPrivate,
     });
-  }, [props.open, props.mode, activeTaskId, projectId, propertyId, businessDomain, subject, description, dueDate, dueTime, city, address, assignedUserId, memberIds, priority, status]);
+  }, [props.open, props.mode, activeTaskId, projectId, propertyId, businessDomain, subject, description, dueDate, dueTime, city, address, assignedUserId, memberIds, priority, status, isPrivate]);
 
   function handleBusinessDomainChange(nextDomain: ExpenseBusinessDomain | "") {
     setBusinessDomain(nextDomain);
@@ -412,6 +419,7 @@ export function TaskUpsertDialog(props: Props) {
       member_ids: memberIds,
       priority,
       status,
+      is_private: isPrivate,
     };
   }
 
@@ -581,6 +589,7 @@ export function TaskUpsertDialog(props: Props) {
     memberIds: [...memberIds].sort(),
     priority,
     status,
+    isPrivate,
   });
   const baselineRef = useRef<string | null>(null);
   useEffect(() => {
@@ -642,6 +651,22 @@ export function TaskUpsertDialog(props: Props) {
               disabled={loading}
               className="border-transparent bg-transparent px-1 text-lg font-semibold shadow-none focus-visible:border-input"
             />
+            <Button
+              type="button"
+              variant={isPrivate ? "default" : "secondary"}
+              size="sm"
+              disabled={loading}
+              onClick={() => setIsPrivate((v) => !v)}
+              title={
+                isPrivate
+                  ? "משימה פרטית — רק את/ה רואה אותה. לחצו כדי לבטל"
+                  : "הפיכה לפרטית — רק את/ה תראו את המשימה"
+              }
+              className="shrink-0"
+            >
+              {isPrivate ? <Lock className="ms-1 h-3.5 w-3.5" /> : <Unlock className="ms-1 h-3.5 w-3.5" />}
+              {isPrivate ? "פרטי" : "הפוך לפרטי"}
+            </Button>
             {targetTaskId ? (
               <Button asChild type="button" variant="secondary" size="sm" className="shrink-0">
                 <Link href={`/tasks/${encodeURIComponent(targetTaskId)}`}>

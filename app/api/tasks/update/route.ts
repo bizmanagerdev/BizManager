@@ -53,6 +53,7 @@ export async function POST(req: Request) {
       member_ids?: string[] | null;
       priority?: string | null;
       status?: string | null;
+      is_private?: boolean | null;
     };
 
     const id = typeof body.id === "string" ? body.id : "";
@@ -119,6 +120,13 @@ export async function POST(req: Request) {
       const status = typeof body.status === "string" ? body.status : "";
       if (!status) return NextResponse.json({ error: "Missing status" }, { status: 400 });
       update.status = status;
+    }
+
+    if ("is_private" in body) {
+      // Toggling private claims ownership for the actor; turning it off clears it.
+      const isPrivate = body.is_private === true;
+      update.is_private = isPrivate;
+      update.private_owner_id = isPrivate ? profile.id : null;
     }
 
     const projectProvided = "project_id" in body;

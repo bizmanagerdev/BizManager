@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import type { TaskPriority, TaskStatus } from "@/components/tasks/TaskUpsertDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import RecurringTasksClient from "@/app/tasks/recurring/RecurringTasksClient";
+import { TasksTabs } from "@/components/tasks/TasksTabs";
 import { requireProfile } from "@/lib/auth/requireProfile";
 
 type Row = Record<string, unknown>;
@@ -151,21 +152,25 @@ export default async function RecurringTasksPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      {loadError ? (
-        <Card>
-          <CardContent className="py-6 text-sm text-destructive">
-            {`שגיאה בטעינת משימות קבועות: ${loadError}`}
-          </CardContent>
-        </Card>
-      ) : (
-        <RecurringTasksClient
-          templates={templates}
-          projects={projectOptions}
-          properties={propertyOptions}
-          users={userOptions}
-          missingSchema={missingSchema}
-        />
-      )}
+      <div className="space-y-4">
+        <TasksTabs />
+        {loadError ? (
+          <Card>
+            <CardContent className="py-6 text-sm text-destructive">
+              {`שגיאה בטעינת משימות קבועות: ${loadError}`}
+            </CardContent>
+          </Card>
+        ) : (
+          <RecurringTasksClient
+            templates={templates}
+            projects={projectOptions}
+            properties={propertyOptions}
+            users={userOptions}
+            missingSchema={missingSchema}
+            hideHeader
+          />
+        )}
+      </div>
     </AppShell>
   );
 }

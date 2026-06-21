@@ -27,7 +27,7 @@ export async function POST(req: Request) {
       supabase
         .from("tasks")
         .select(
-          "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at,notes"
+          "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at,notes,is_private,private_owner_id"
         )
         .eq("id", id)
         .maybeSingle(),

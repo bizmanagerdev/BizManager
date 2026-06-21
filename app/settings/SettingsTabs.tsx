@@ -6,10 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import NotificationSettings from "@/components/notifications/NotificationSettings";
-import RecurringTasksClient from "@/app/tasks/recurring/RecurringTasksClient";
 import RecurringExpensesManager from "@/app/financial/RecurringExpensesManager";
 import type { RecurringExpenseTemplateItem } from "@/app/financial/RecurringExpensesManager";
-import type { TaskPriority, TaskStatus } from "@/components/tasks/TaskUpsertDialog";
 import MorningAutoIssueForm from "@/app/settings/integrations/morning/MorningAutoIssueForm";
 import BackupCard from "@/app/settings/BackupCard";
 import VatRateCard from "@/app/settings/VatRateCard";
@@ -19,31 +17,9 @@ import type { MorningSettings } from "@/lib/morning/settings";
 type UserOption = { id: string; label: string };
 type Option = { id: string; label: string };
 
-type TemplateItem = {
-  id: string;
-  subject_template: string;
-  description_template: string | null;
-  business_domain: string;
-  project_id: string | null;
-  property_id: string | null;
-  default_priority: TaskPriority;
-  default_status: TaskStatus;
-  create_day_of_month: number;
-  due_day_of_month: number;
-  start_date: string | null;
-  end_date: string | null;
-  is_active: boolean;
-  assignee_user_ids: string[];
-};
-
 type Props = {
   isAdmin: boolean;
   users: UserOption[];
-  // recurring tasks
-  taskTemplates: TemplateItem[];
-  taskProjects: Option[];
-  taskProperties: Option[];
-  taskMissingSchema: boolean;
   // recurring expenses
   expenseTemplates: RecurringExpenseTemplateItem[];
   expenseProjects: Option[];
@@ -60,7 +36,6 @@ type Props = {
 
 const ALL_TABS = [
   { key: "notifications", label: "התראות", adminOnly: false },
-  { key: "recurring-tasks", label: "משימות קבועות", adminOnly: false },
   { key: "recurring-expenses", label: "הוצאות קבועות", adminOnly: false },
   { key: "finance", label: "כספים", adminOnly: true },
   { key: "morning", label: "Morning", adminOnly: true },
@@ -119,18 +94,6 @@ export default function SettingsTabs(props: Props) {
             </Card>
           )}
         </div>
-      )}
-
-      {/* Recurring tasks tab */}
-      {activeTab === "recurring-tasks" && (
-        <RecurringTasksClient
-          templates={props.taskTemplates}
-          projects={props.taskProjects}
-          properties={props.taskProperties}
-          users={props.users}
-          missingSchema={props.taskMissingSchema}
-          hideHeader
-        />
       )}
 
       {/* Recurring expenses tab */}

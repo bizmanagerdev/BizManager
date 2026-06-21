@@ -50,6 +50,7 @@ export async function POST(req: Request) {
       member_ids?: string[] | null;
       priority?: string | null;
       status?: string | null;
+      is_private?: boolean | null;
     };
 
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
@@ -74,6 +75,8 @@ export async function POST(req: Request) {
       : [];
     const priority = typeof body.priority === "string" && body.priority.trim() ? body.priority : "medium";
     const status = typeof body.status === "string" && body.status.trim() ? body.status : "todo";
+    // A private task is visible only to its owner — the creator claims it.
+    const isPrivate = body.is_private === true;
 
     const hasProject = Boolean(projectId);
     const hasProperty = Boolean(propertyId);
@@ -102,6 +105,8 @@ export async function POST(req: Request) {
         address,
         priority,
         status,
+        is_private: isPrivate,
+        private_owner_id: isPrivate ? profile.id : null,
       })
       .select(
         "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at"

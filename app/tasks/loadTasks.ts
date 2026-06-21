@@ -23,6 +23,7 @@ export type TaskBoardItem = {
   comment_count: number;
   has_open_reminder: boolean;
   is_overdue: boolean;
+  is_private: boolean;
 };
 
 export type TasksFilters = {
@@ -45,7 +46,7 @@ const DONE_LIMIT = 60;
 const OPEN_LIMIT = 1000;
 
 const TASK_SELECT =
-  "id,subject,status,priority,due_date,due_time,city,business_domain,project_id,property_id,assigned_user_id";
+  "id,subject,status,priority,due_date,due_time,city,business_domain,project_id,property_id,assigned_user_id,is_private,private_owner_id";
 
 function getString(row: Row, key: string) {
   const value = row[key];
@@ -68,6 +69,8 @@ type TaskRow = {
   project_id: string | null;
   property_id: string | null;
   assigned_user_id: string | null;
+  is_private: boolean | null;
+  private_owner_id: string | null;
 };
 
 export type TasksBoardResult = {
@@ -112,14 +115,12 @@ export async function loadTasksBoard(
   let doneFilter = supabase.from("tasks").select(TASK_SELECT).eq("status", "done");
 
   if (scope === "mine") {
-    if (memberTaskIds.length > 0) {
-      const mineOr = `assigned_user_id.eq.${userId},id.in.(${memberTaskIds.join(",")})`;
-      openFilter = openFilter.or(mineOr);
-      doneFilter = doneFilter.or(mineOr);
-    } else {
-      openFilter = openFilter.eq("assigned_user_id", userId);
-      doneFilter = doneFilter.eq("assigned_user_id", userId);
-    }
+    // Mine = assigned to me, a member of, or a private task I own.
+    const parts = [`assigned_user_id.eq.${userId}`, `private_owner_id.eq.${userId}`];
+    if (memberTaskIds.length > 0) parts.push(`id.in.(${memberTaskIds.join(",")})`);
+    const mineOr = parts.join(",");
+    openFilter = openFilter.or(mineOr);
+    doneFilter = doneFilter.or(mineOr);
   }
   if (priority) {
     openFilter = openFilter.eq("priority", priority);
@@ -147,7 +148,10 @@ export async function loadTasksBoard(
 
   const [openRes, doneRes] = await Promise.all([openQuery, doneQuery]);
   const error = openRes.error?.message ?? doneRes.error?.message ?? null;
-  const taskRows = [...((openRes.data ?? []) as TaskRow[]), ...((doneRes.data ?? []) as TaskRow[])];
+  const taskRows = [...((openRes.data ?? []) as TaskRow[]), ...((doneRes.data ?? []) as TaskRow[])]
+    // Private tasks are visible only to their owner. RLS already enforces this at
+    // the DB; this is a belt-and-suspenders guard in case the policy isn't applied.
+    .filter((t) => !t.is_private || t.private_owner_id === userId);
 
   if (taskRows.length === 0) return { items: [], error };
 
@@ -246,6 +250,7 @@ export async function loadTasksBoard(
       comment_count: commentCountByTask.get(row.id) ?? 0,
       has_open_reminder: reminderTaskIds.has(row.id),
       is_overdue: isOpen && row.due_date !== null && row.due_date.slice(0, 10) < todayIso,
+      is_private: Boolean(row.is_private),
     };
   });
 

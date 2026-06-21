@@ -4,7 +4,6 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import SettingsTabs from "@/app/settings/SettingsTabs";
 import { loadMorningSettings, type MorningSettings } from "@/lib/morning/settings";
 import { getCurrentVatRate } from "@/lib/settings/vat";
-import type { TaskPriority, TaskStatus } from "@/components/tasks/TaskUpsertDialog";
 import type { RecurringExpenseTemplateItem } from "@/app/financial/RecurringExpensesManager";
 
 type Row = Record<string, unknown>;
@@ -24,14 +23,6 @@ function getNumber(row: Row | null | undefined, key: string) {
 function looksLikeMissingSchema(msg: string) {
   const m = msg.toLowerCase();
   return m.includes("does not exist") || m.includes("could not find") || m.includes("schema cache");
-}
-
-function normalizePriority(v: string | null): TaskPriority {
-  return v === "low" || v === "medium" || v === "high" || v === "urgent" ? v : "medium";
-}
-
-function normalizeStatus(v: string | null): TaskStatus {
-  return v === "todo" || v === "in_progress" || v === "blocked" || v === "done" || v === "cancelled" ? v : "todo";
 }
 
 export default async function SettingsPage() {
@@ -70,47 +61,6 @@ export default async function SettingsPage() {
     .filter((r) => r.is_active !== false)
     .map((r) => ({ id: getString(r, "id") ?? "", label: getString(r, "address") ?? "" }))
     .filter((o) => o.id && o.label);
-
-  // ── Recurring tasks ─────────────────────────────────────────────────────
-  let taskTemplates: ReturnType<typeof buildTaskTemplates> = [];
-  let taskMissingSchema = false;
-
-  if (canManage) {
-    const [templatesResult, assigneesResult] = await (async () => {
-      const tr = await supabase
-        .from("recurring_task_templates")
-        .select("id,subject_template,description_template,business_domain,project_id,property_id,default_priority,default_status,create_day_of_month,due_day_of_month,start_date,end_date,is_active")
-        .order("created_at", { ascending: true });
-
-      const missingSchema = Boolean(tr.error?.message && looksLikeMissingSchema(tr.error.message));
-
-      const ar =
-        missingSchema || (tr.data ?? []).length === 0
-          ? { data: [], error: null }
-          : await supabase
-              .from("recurring_task_template_assignees")
-              .select("recurring_task_template_id,user_id")
-              .in("recurring_task_template_id",
-                ((tr.data ?? []) as Row[]).map((r) => getString(r, "id")).filter((v): v is string => Boolean(v))
-              );
-
-      return [tr, ar];
-    })();
-
-    taskMissingSchema = Boolean(
-      templatesResult.error?.message && looksLikeMissingSchema(templatesResult.error.message)
-    );
-
-    const assigneeMap = new Map<string, string[]>();
-    ((assigneesResult.data ?? []) as Row[]).forEach((r) => {
-      const tid = getString(r, "recurring_task_template_id");
-      const uid = getString(r, "user_id");
-      if (!tid || !uid) return;
-      assigneeMap.set(tid, [...(assigneeMap.get(tid) ?? []), uid]);
-    });
-
-    taskTemplates = buildTaskTemplates((templatesResult.data ?? []) as Row[], assigneeMap);
-  }
 
   // ── Recurring expenses ──────────────────────────────────────────────────
   let expenseTemplates: RecurringExpenseTemplateItem[] = [];
@@ -192,10 +142,6 @@ export default async function SettingsPage() {
       <SettingsTabs
         isAdmin={isAdmin}
         users={users}
-        taskTemplates={taskTemplates}
-        taskProjects={projectOptions}
-        taskProperties={propertyOptions}
-        taskMissingSchema={taskMissingSchema}
         expenseTemplates={expenseTemplates}
         expenseProjects={projectOptions}
         expenseProperties={propertyOptions}
@@ -207,26 +153,4 @@ export default async function SettingsPage() {
       />
     </AppShell>
   );
-}
-
-function buildTaskTemplates(rows: Row[], assigneeMap: Map<string, string[]>) {
-  return rows.map((r) => {
-    const id = getString(r, "id") ?? "";
-    return {
-      id,
-      subject_template: getString(r, "subject_template") ?? "",
-      description_template: getString(r, "description_template"),
-      business_domain: getString(r, "business_domain") ?? "general_business",
-      project_id: getString(r, "project_id"),
-      property_id: getString(r, "property_id"),
-      default_priority: normalizePriority(getString(r, "default_priority")),
-      default_status: normalizeStatus(getString(r, "default_status")),
-      create_day_of_month: typeof r.create_day_of_month === "number" ? r.create_day_of_month : Number(r.create_day_of_month ?? 1) || 1,
-      due_day_of_month: typeof r.due_day_of_month === "number" ? r.due_day_of_month : Number(r.due_day_of_month ?? 1) || 1,
-      start_date: getString(r, "start_date"),
-      end_date: getString(r, "end_date"),
-      is_active: r.is_active !== false,
-      assignee_user_ids: assigneeMap.get(id) ?? [],
-    };
-  });
 }
