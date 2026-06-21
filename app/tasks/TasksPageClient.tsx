@@ -502,12 +502,37 @@ export default function TasksPageClient(props: Props) {
     }
   }
 
-  // Quick-add opens the guided create stepper prefilled with the typed title +
-  // the column's status (the task is created only when the user saves).
+  // Quick-add creates the card immediately from just the typed name (Trello-style):
+  // it lands in the column's status, owned by the creator so it stays visible, and
+  // the rest of the details can be filled in later by opening the card.
   async function quickAdd(status: string, title: string) {
-    setCreateSubject(title);
-    setCreateStatus(status as TaskStatus);
-    setCreateOpen(true);
+    const subject = title.trim();
+    if (!subject) return;
+    emitProgressActivityStart();
+    try {
+      const result = await offlineFetch(
+        "/api/tasks/create",
+        {
+          subject,
+          status,
+          business_domain: "general_business",
+          priority: "medium",
+          assigned_user_id: props.currentUserId,
+        },
+        "משימה חדשה",
+        { idempotent: true }
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה ביצירת משימה", { description: toHebrewError(result.error, "") });
+        return;
+      }
+      if (!result.queued) toast.success("המשימה נוצרה");
+      router.refresh();
+    } catch (error: unknown) {
+      toast.error("שגיאה ביצירת משימה", { description: toHebrewError(error, "") });
+    } finally {
+      emitProgressActivityEnd();
+    }
   }
 
   return (

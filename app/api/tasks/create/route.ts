@@ -54,23 +54,30 @@ export async function POST(req: Request) {
 
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
     const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
-    const businessDomain = isExpenseBusinessDomain(body.business_domain) ? body.business_domain : null;
+    // Only the name is required. Everything else is optional and can be added later
+    // by opening the card, so we fall back to sensible defaults when not supplied.
+    const businessDomain = isExpenseBusinessDomain(body.business_domain)
+      ? body.business_domain
+      : "general_business";
     const subject = typeof body.subject === "string" ? body.subject.trim() : "";
     const description = typeof body.description === "string" ? body.description.trim() : null;
-    const dueDate = typeof body.due_date === "string" ? body.due_date : body.due_date ?? null;
+    const dueDate = typeof body.due_date === "string" && body.due_date.trim() ? body.due_date : null;
     const dueTime = typeof body.due_time === "string" && body.due_time.trim() ? body.due_time.trim() : null;
     const city = typeof body.city === "string" && body.city.trim() ? body.city.trim() : null;
     const address = typeof body.address === "string" && body.address.trim() ? body.address.trim() : null;
-    const assignedUserId = typeof body.assigned_user_id === "string" ? body.assigned_user_id : body.assigned_user_id ?? null;
+    const assignedUserId =
+      typeof body.assigned_user_id === "string" && body.assigned_user_id.trim()
+        ? body.assigned_user_id.trim()
+        : null;
     const memberIds = Array.isArray(body.member_ids)
       ? [...new Set(body.member_ids.filter((id): id is string => typeof id === "string" && Boolean(id.trim())))]
       : [];
-    const priority = typeof body.priority === "string" ? body.priority : body.priority ?? null;
-    const status = typeof body.status === "string" ? body.status : body.status ?? null;
+    const priority = typeof body.priority === "string" && body.priority.trim() ? body.priority : "medium";
+    const status = typeof body.status === "string" && body.status.trim() ? body.status : "todo";
 
     const hasProject = Boolean(projectId);
     const hasProperty = Boolean(propertyId);
-    if (!businessDomain || !subject || !dueDate || !assignedUserId || !priority || !status) {
+    if (!subject) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
     if (!validateTaskLinkArgs({ businessDomain, hasProject, hasProperty })) {

@@ -233,14 +233,10 @@ export function TaskUpsertDialog(props: Props) {
         ? Boolean(propertyId)
         : true;
 
-  const canSubmit =
-    Boolean(subject.trim()) &&
-    Boolean(dueDate) &&
-    Boolean(assignedUserId) &&
-    Boolean(businessDomain) &&
-    Boolean(priority) &&
-    Boolean(status) &&
-    targetOk;
+  // Only the task name is required. Everything else is optional and can be added
+  // later by reopening the card. (targetOk still applies: once a domain that needs
+  // a project/property is chosen, that link must be filled in.)
+  const canSubmit = Boolean(subject.trim()) && targetOk;
 
   const memberOptions = useMemo(
     () => props.users.filter((u) => u.id !== assignedUserId),
@@ -402,16 +398,17 @@ export function TaskUpsertDialog(props: Props) {
   function buildPayload() {
     const linkType = effectiveTarget?.type ?? derivedTargetType;
     return {
-      business_domain: effectiveDomain,
+      // No domain chosen → default to general business (no project/property link).
+      business_domain: effectiveDomain || "general_business",
       project_id: linkType === "project" ? effectiveTarget?.id ?? projectId : null,
       property_id: linkType === "property" ? effectiveTarget?.id ?? propertyId : null,
       subject: subject.trim(),
       description: description.trim() ? description.trim() : null,
-      due_date: dueDate,
+      due_date: dueDate || null,
       due_time: dueTime || null,
       city: city.trim() ? city.trim() : null,
       address: address.trim() ? address.trim() : null,
-      assigned_user_id: assignedUserId,
+      assigned_user_id: assignedUserId || null,
       member_ids: memberIds,
       priority,
       status,
@@ -691,7 +688,7 @@ export function TaskUpsertDialog(props: Props) {
           {isOpen("domain") ? (
             <div className="space-y-3 rounded-md border bg-muted/20 p-3">
               <div className="space-y-1">
-                <div className="text-sm font-medium">תחום עסקי *</div>
+                <div className="text-sm font-medium">תחום עסקי</div>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={effectiveDomain}
@@ -743,7 +740,7 @@ export function TaskUpsertDialog(props: Props) {
               <div className="rounded-md border bg-muted/20 p-3">
               <AdaptiveGrid variant="formTwo">
                 <div className="space-y-1">
-                  <div className="text-sm font-medium">תאריך יעד *</div>
+                  <div className="text-sm font-medium">תאריך יעד</div>
                   <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
                 </div>
                 <div className="space-y-1">
@@ -760,7 +757,7 @@ export function TaskUpsertDialog(props: Props) {
               {isOpen("people") ? (
               <div className="space-y-3 rounded-md border bg-muted/20 p-3">
               <div className="space-y-1">
-                <div className="text-sm font-medium">אחראי *</div>
+                <div className="text-sm font-medium">אחראי</div>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={assignedUserId}
@@ -899,7 +896,7 @@ export function TaskUpsertDialog(props: Props) {
               <div className="rounded-md border bg-muted/20 p-3">
               <AdaptiveGrid variant="formTwo">
                 <div className="space-y-1">
-                  <div className="text-sm font-medium">עדיפות *</div>
+                  <div className="text-sm font-medium">עדיפות</div>
                   <select
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     value={priority}
@@ -913,7 +910,7 @@ export function TaskUpsertDialog(props: Props) {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <div className="text-sm font-medium">סטטוס *</div>
+                  <div className="text-sm font-medium">סטטוס</div>
                   <select
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     value={status}

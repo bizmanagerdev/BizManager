@@ -85,10 +85,9 @@ export async function POST(req: Request) {
     }
 
     if ("due_date" in body) {
-      const dueDate =
-        typeof body.due_date === "string" ? body.due_date : body.due_date ?? null;
-      if (!dueDate) return NextResponse.json({ error: "Missing due_date" }, { status: 400 });
-      update.due_date = dueDate;
+      // Optional — a task may have no due date; an empty value clears it.
+      update.due_date =
+        typeof body.due_date === "string" && body.due_date.trim() ? body.due_date : null;
     }
 
     if ("due_time" in body) {
@@ -106,11 +105,8 @@ export async function POST(req: Request) {
     }
 
     if ("assigned_user_id" in body) {
-      const assignedUserId = normalizeId(body.assigned_user_id);
-      if (!assignedUserId) {
-        return NextResponse.json({ error: "Missing assigned_user_id" }, { status: 400 });
-      }
-      update.assigned_user_id = assignedUserId;
+      // Optional — a task may be unassigned; an empty value clears the assignee.
+      update.assigned_user_id = normalizeId(body.assigned_user_id);
     }
 
     if ("priority" in body) {
