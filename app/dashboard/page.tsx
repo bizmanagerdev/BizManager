@@ -31,7 +31,10 @@ export default async function DashboardPage() {
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageStack>
         <section className="flex items-start justify-between gap-3">
-          <div className="text-right">
+          {/* min-w-0 lets this flex item shrink below its content so a long
+              (unbreakable) name truncates instead of pushing the row — and the
+              whole page — wider than a phone screen. */}
+          <div className="min-w-0 text-right">
             <DashboardGreeting name={firstName} initialGreeting={greeting} />
           </div>
           <DashboardCustomizer role={profile.role} initialPrefs={dashboardPrefs} />

@@ -32,7 +32,7 @@ export default function DashboardGreeting({
   );
 
   return (
-    <h1 className="text-xl font-semibold">
+    <h1 className="truncate text-xl font-semibold">
       {greeting}
       {name ? `, ${name}` : ""}
     </h1>

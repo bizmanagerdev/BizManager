@@ -287,13 +287,17 @@ export async function DashboardPanels() {
 
       {widgetRows.map((row) =>
         row.length === 2 ? (
-          <div key={row[0].id} className="grid gap-4 xl:grid-cols-2">
+          // grid-cols-1 base (NOT a bare `grid`, whose single implicit `auto`
+          // track grows to its content and pushes a chart/list-row card wider
+          // than a phone). minmax(0,1fr) + min-w-0 cells keep each card capped
+          // to the column so wide content (recharts svg, long names) fits.
+          <div key={row[0].id} className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {row.map((w) => (
-              <div key={w.id}>{w.node}</div>
+              <div key={w.id} className="min-w-0">{w.node}</div>
             ))}
           </div>
         ) : (
-          <div key={row[0].id}>{row[0].node}</div>
+          <div key={row[0].id} className="min-w-0">{row[0].node}</div>
         )
       )}
 

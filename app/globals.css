@@ -53,6 +53,14 @@
   body {
     max-width: 100%;
     overflow-wrap: break-word;
+    /* Second line of defence against a sideways page scroll on mobile. The
+       `overflow-x: hidden` on <html> above is unreliable on iOS Safari (a few px
+       of child overflow can still leak into a body-level horizontal scroll). We
+       clip on body too — `clip` (not `hidden`) so body never becomes a scroll
+       container, keeping overflow-y visible and the sticky top bar working.
+       Fixed/portaled overlays (dialogs, sheets) are NOT clipped by this, and
+       wide tables keep scrolling inside their own overflow-x-auto wrappers. */
+    overflow-x: clip;
   }
 
   :root {
