@@ -2,6 +2,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Check, ChevronLeft, ChevronRight, Info, Plus, Sparkles, UserRound, Users } from "lucide-react";
 import {
   AdaptiveDialog,
@@ -92,6 +93,7 @@ export function CreateCustomerDialog({
   onCreated,
   description = "שדות חובה: שם, טלפון ועיר.",
 }: CreateCustomerDialogProps) {
+  const router = useRouter();
   const [step, setStep] = useState<WizardStep>(1);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -188,9 +190,11 @@ export function CreateCustomerDialog({
   }, [open, similarTermsKey, similarDismissed]);
 
   function applyExistingCustomer(existing: CreatedCustomer) {
-    onCreated(existing, []);
+    // A duplicate was picked instead of creating a new customer — close the
+    // wizard and open that customer's page rather than staying on the list.
     reset();
     onOpenChange(false);
+    router.push(`/customers/${encodeURIComponent(existing.id)}`);
   }
 
   function reset() {
