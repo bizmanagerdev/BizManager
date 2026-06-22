@@ -335,6 +335,9 @@ export default function TasksPageClient(props: Props) {
   const urlPriority = searchParams.get("priority") ?? "";
   const urlDomain = searchParams.get("domain") ?? "";
   const urlLinkedId = searchParams.get("linked_id") ?? "";
+  // Deep link to a single task (e.g. /tasks?task=<id>) opens its card. This is
+  // what the old /tasks/[id] detail page redirects to now.
+  const urlTask = searchParams.get("task") ?? "";
   const urlScope: "mine" | "all" = !canSeeAll ? "mine" : searchParams.get("scope") === "mine" ? "mine" : "all";
 
   const [tasks, setTasks] = useState<TaskBoardItem[]>(props.tasks);
@@ -371,6 +374,20 @@ export default function TasksPageClient(props: Props) {
   const [qInput, setQInput] = useState(urlQ);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => setQInput(urlQ), [urlQ]);
+
+  // Open the card for a deep-linked ?task=<id>.
+  useEffect(() => {
+    if (urlTask) setEditId(urlTask);
+  }, [urlTask]);
+
+  // Strip ?task= from the URL after closing the card so it doesn't reopen.
+  function clearTaskParam() {
+    if (!urlTask) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("task");
+    const qs = params.toString();
+    router.replace(qs ? `/tasks?${qs}` : "/tasks");
+  }
 
   // Mouse for desktop (drag after 8px so plain clicks open the card); touch with a
   // short press-delay for mobile so a tap opens the card and the board still scrolls.
@@ -729,7 +746,10 @@ export default function TasksPageClient(props: Props) {
       <TaskUpsertDialog
         open={editId !== null}
         onOpenChange={(open) => {
-          if (!open) setEditId(null);
+          if (!open) {
+            setEditId(null);
+            clearTaskParam();
+          }
         }}
         mode="edit"
         taskId={editId}

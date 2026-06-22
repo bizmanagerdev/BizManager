@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
@@ -15,7 +14,6 @@ import {
   CheckCircle2,
   Circle,
   Clock,
-  ExternalLink,
   Loader2,
   Lock,
   MapPin,
@@ -123,6 +121,24 @@ type AttachmentItem = {
   url: string | null;
 };
 
+type LegacyNote = { stamp: string | null; author: string | null; message: string | null; raw: string };
+
+// Old tasks stored comments in a single tasks.notes blob ("[stamp] author: message",
+// separated by blank lines). Parse them so that history stays visible on the card.
+function parseLegacyNotes(raw: string | null | undefined): LegacyNote[] {
+  const text = (raw ?? "").trim();
+  if (!text) return [];
+  return text
+    .split("\n\n")
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((t) => {
+      const m = t.match(/^\[(.+?)\]\s(.+?):\s([\s\S]*)$/);
+      if (!m) return { raw: t, stamp: null, author: null, message: null };
+      return { raw: t, stamp: m[1] ?? null, author: m[2] ?? null, message: m[3] ?? null };
+    });
+}
+
 function getErrorMessage(err: unknown) {
   return toHebrewError(err, "Unknown error");
 }
@@ -218,6 +234,7 @@ export function TaskUpsertDialog(props: Props) {
   const isEditing = props.mode === "edit" || activeTaskId !== null;
 
   const [comments, setComments] = useState<CommentItem[]>([]);
+  const [legacyNotes, setLegacyNotes] = useState<LegacyNote[]>([]);
   const [newComment, setNewComment] = useState("");
   const [addingComment, setAddingComment] = useState(false);
 
@@ -331,6 +348,7 @@ export function TaskUpsertDialog(props: Props) {
         const membersRaw = Array.isArray(json?.members) ? (json.members as Array<{ id?: unknown }>) : [];
         setMemberIds(membersRaw.map((m) => (typeof m.id === "string" ? m.id : "")).filter(Boolean));
         setComments(Array.isArray(json?.comments) ? (json.comments as CommentItem[]) : []);
+        setLegacyNotes(parseLegacyNotes(typeof task.notes === "string" ? task.notes : null));
         setReminders(Array.isArray(json?.reminders) ? (json.reminders as ReminderItem[]) : []);
         void fetchAttachments(taskId);
 
@@ -357,6 +375,7 @@ export function TaskUpsertDialog(props: Props) {
 
     setActiveTaskId(null);
     setComments([]);
+    setLegacyNotes([]);
     setReminders([]);
     setAttachments([]);
     setNewComment("");
@@ -653,6 +672,30 @@ export function TaskUpsertDialog(props: Props) {
     }
   }
 
+  async function deleteTask() {
+    const targetId = activeTaskId ?? props.taskId;
+    if (!targetId) return;
+    if (!window.confirm(`למחוק את המשימה "${subject.trim()}"?`)) return;
+    setSaving(true);
+    emitProgressActivityStart();
+    try {
+      const result = await offlineFetch("/api/tasks/delete", { id: targetId }, "מחיקת משימה");
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה במחיקת משימה", { description: toHebrewError(result.error, "") });
+        return;
+      }
+      if (!result.queued) toast.success("המשימה נמחקה");
+      props.onSaved?.();
+      props.onOpenChange(false);
+      router.refresh();
+    } catch (error: unknown) {
+      toast.error("שגיאה במחיקת משימה", { description: getErrorMessage(error) });
+    } finally {
+      emitProgressActivityEnd();
+      setSaving(false);
+    }
+  }
+
   const dialogTitle = isEditing ? "כרטיס משימה" : "משימה חדשה";
   const targetTaskId = activeTaskId ?? props.taskId ?? null;
 
@@ -750,13 +793,17 @@ export function TaskUpsertDialog(props: Props) {
               {isPrivate ? <Lock className="ms-1 h-3.5 w-3.5" /> : <Unlock className="ms-1 h-3.5 w-3.5" />}
               {isPrivate ? "פרטי" : "הפוך לפרטי"}
             </Button>
-            {targetTaskId ? (
-              <Button asChild type="button" variant="secondary" size="sm" className="shrink-0">
-                <Link href={`/tasks/${encodeURIComponent(targetTaskId)}`}>
-                  <ExternalLink className="ms-1 h-3.5 w-3.5" />
-                  עמוד מלא
-                </Link>
-              </Button>
+            {isEditing && targetTaskId ? (
+              <button
+                type="button"
+                aria-label="מחיקת המשימה"
+                title="מחיקת המשימה"
+                disabled={saving || loading}
+                onClick={() => void deleteTask()}
+                className="shrink-0 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
+              >
+                <Trash2 className="h-5 w-5" />
+              </button>
             ) : null}
           </div>
           <DialogDescription className="sr-only">פרטי המשימה</DialogDescription>
@@ -1053,8 +1100,20 @@ export function TaskUpsertDialog(props: Props) {
                               {attachment.kind === "video" ? "וידאו" : "קובץ"}
                             </span>
                           )}
-                          <span className="min-w-0 truncate text-sm text-primary hover:underline">
-                            {attachment.original_name ?? "קובץ"}
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm text-primary hover:underline">
+                              {attachment.original_name ?? "קובץ"}
+                            </span>
+                            {attachment.created_at || attachment.uploader_name ? (
+                              <span className="block truncate text-[11px] text-muted-foreground">
+                                {[
+                                  attachment.created_at ? formatShortDateTime(attachment.created_at) : null,
+                                  attachment.uploader_name ? `הועלה ע"י ${attachment.uploader_name}` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" • ")}
+                              </span>
+                            ) : null}
                           </span>
                         </a>
                         <button
@@ -1188,10 +1247,22 @@ export function TaskUpsertDialog(props: Props) {
                 <MessageSquare className="h-4 w-4 text-muted-foreground" />
                 תגובות
               </div>
-              {comments.length === 0 ? (
+              {comments.length === 0 && legacyNotes.length === 0 ? (
                 <div className="text-xs text-muted-foreground">אין תגובות עדיין.</div>
               ) : (
                 <div className="space-y-2">
+                  {/* Legacy comments stored in tasks.notes (read-only history). */}
+                  {legacyNotes.map((note, index) => (
+                    <div key={`legacy-${index}`} className="rounded-md border bg-muted/20 px-3 py-2">
+                      {note.stamp && note.author ? (
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                          <span className="text-sm font-medium">{note.author}</span>
+                          <span className="text-[11px] text-muted-foreground">{note.stamp}</span>
+                        </div>
+                      ) : null}
+                      <div className="mt-0.5 whitespace-pre-wrap text-sm">{note.message ?? note.raw}</div>
+                    </div>
+                  ))}
                   {comments.map((comment) => (
                     <div key={comment.id} className="flex gap-2">
                       <InitialsAvatar name={comment.author_name} size="sm" />
