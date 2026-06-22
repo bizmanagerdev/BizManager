@@ -61,7 +61,7 @@ import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
 
 type Row = Record<string, unknown>;
 
-type ProjectOption = {
+export type ProjectOption = {
   id: string;
   name: string;
   type?: string;
@@ -70,7 +70,7 @@ type ProjectOption = {
   startDate?: string;
 };
 
-type UserOption = {
+export type UserOption = {
   id: string;
   label: string;
   role?: UserRole;
@@ -78,13 +78,13 @@ type UserOption = {
   pay_tracking_mode?: string | null;
 };
 
-type EntityOption = {
+export type EntityOption = {
   id: string;
   name: string;
   subtitle?: string;
 };
 
-type OpenSessionInfo = {
+export type OpenSessionInfo = {
   id: string;
   clock_in: string;
 };
@@ -391,6 +391,14 @@ export default function DashboardActions({
   const [transferOpen, setTransferOpen] = useState(false);
   const [manualSessionOpen, setManualSessionOpen] = useState(false);
   const [availableUsers, setAvailableUsers] = useState(users);
+  // The dropdown data may stream in AFTER the buttons first render (so the
+  // quick-action buttons appear instantly and dialogs fill in a moment later).
+  // `users` is the only data prop copied into local state, so sync it when it
+  // changes — every other dropdown reads its prop directly and updates on its own.
+  // Skip the empty initial payload so a worker added mid-session isn't clobbered.
+  useEffect(() => {
+    if (users.length > 0) setAvailableUsers(users);
+  }, [users]);
 
   // The project create flow now runs through the shared <NewProjectClient/> wizard.
   const [projectSubmitting, setProjectSubmitting] = useState(false);

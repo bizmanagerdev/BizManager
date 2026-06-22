@@ -58,6 +58,9 @@ export default async function ProjectsPage({
     projectsResult,
     { data: users },
     { data: customers },
+    projectsCountRes,
+    quotesCountRes,
+    closedCountRes,
   ] = await Promise.all([
     loadProjectsPage(supabase, { page: 1, filters }),
     supabase
@@ -70,6 +73,32 @@ export default async function ProjectsPage({
       .select("customer_id,customer_name,name_for_invoice,phone,email")
       .order("customer_name", { ascending: true })
       .range(0, OPTIONS_PAGE_SIZE - 1),
+    // Tab counts — folded into this batch so they run concurrently instead of as
+    // a second sequential round-trip wave.
+    (() => {
+      let q = supabase
+        .from("project_dashboard_view")
+        .select("id", { count: "estimated", head: true })
+        .not("status", "in", `(${CLOSED_STATUSES.join(",")})`);
+      if (customerId) q = q.eq("customer_id", customerId);
+      return q;
+    })(),
+    (() => {
+      let q = supabase
+        .from("project_dashboard_view")
+        .select("id", { count: "estimated", head: true })
+        .eq("status", "quote");
+      if (customerId) q = q.eq("customer_id", customerId);
+      return q;
+    })(),
+    (() => {
+      let q = supabase
+        .from("project_dashboard_view")
+        .select("id", { count: "estimated", head: true })
+        .eq("status", "completed");
+      if (customerId) q = q.eq("customer_id", customerId);
+      return q;
+    })(),
   ]);
 
   const rowsWithPaymentStatus = projectsResult.rows;
@@ -127,36 +156,10 @@ export default async function ProjectsPage({
   const totalCount = projectsResult.totalCount;
   const hasMore = projectsResult.hasMore;
 
-  const tabCountQueries = await Promise.all([
-    (() => {
-      let q = supabase
-        .from("project_dashboard_view")
-        .select("id", { count: "estimated", head: true })
-        .not("status", "in", `(${CLOSED_STATUSES.join(",")})`);
-      if (customerId) q = q.eq("customer_id", customerId);
-      return q;
-    })(),
-    (() => {
-      let q = supabase
-        .from("project_dashboard_view")
-        .select("id", { count: "estimated", head: true })
-        .eq("status", "quote");
-      if (customerId) q = q.eq("customer_id", customerId);
-      return q;
-    })(),
-    (() => {
-      let q = supabase
-        .from("project_dashboard_view")
-        .select("id", { count: "estimated", head: true })
-        .eq("status", "completed");
-      if (customerId) q = q.eq("customer_id", customerId);
-      return q;
-    })(),
-  ]);
   const tabCounts = {
-    projects: typeof tabCountQueries[0].count === "number" ? tabCountQueries[0].count : 0,
-    quotes: typeof tabCountQueries[1].count === "number" ? tabCountQueries[1].count : 0,
-    closed: typeof tabCountQueries[2].count === "number" ? tabCountQueries[2].count : 0,
+    projects: typeof projectsCountRes.count === "number" ? projectsCountRes.count : 0,
+    quotes: typeof quotesCountRes.count === "number" ? quotesCountRes.count : 0,
+    closed: typeof closedCountRes.count === "number" ? closedCountRes.count : 0,
   };
 
   return (
