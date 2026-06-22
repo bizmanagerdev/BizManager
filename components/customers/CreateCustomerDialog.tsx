@@ -3,6 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { Check, ChevronLeft, ChevronRight, Info, Plus, Sparkles, UserRound, Users } from "lucide-react";
 import {
   AdaptiveDialog,
@@ -424,6 +425,7 @@ export function CreateCustomerDialog({
         requires_prepayment: raw.requires_prepayment === true,
       };
 
+      invalidateCustomerSearchIndex();
       onCreated(customer, createdContacts);
       reset();
       onOpenChange(false);

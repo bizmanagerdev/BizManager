@@ -98,81 +98,46 @@ function* chunked<T>(items: T[], size: number): Generator<T[]> {
   }
 }
 
-/**
- * Find customers matching a free-text query, applying the shared matching rules
- * (Hebrew-fuzzy names, phone↔whatsapp cross-match). Returns ranked customer
- * rows (with the matching contacts attached) plus their ids for list loaders.
- *
- * Strategy: a cheap `ilike` pass catches exact/substring matches across the
- * whole table, and a bounded fuzzy scan catches misspellings/letter swaps.
- */
-export async function findMatchingCustomers(
-  supabase: SupabaseClient,
-  rawQuery: string,
-  options?: { limit?: number; idsOnly?: boolean }
-): Promise<FindMatchingCustomersResult> {
-  const query = rawQuery.trim();
-  if (!query) return { customers: [], customerIds: [] };
+type MatchPools = {
+  customerRowById: Map<string, Row>;
+  contactsByCustomer: Map<string, CustomerSearchContact[]>;
+};
 
-  const resultLimit = Math.min(Math.max(options?.limit ?? 50, 1), 300);
-  const idsOnly = options?.idsOnly === true;
-  const escaped = query.replace(/[%,]/g, " ");
+type MatchResult = {
+  matchedIds: Set<string>;
+  matchedContactsByCustomer: Map<string, MatchedCustomer["contacts"]>;
+};
 
-  const [ilikeCustomersRes, ilikeContactsRes, scanCustomersRes, scanContactsRes] = await Promise.all([
-    supabase
-      .from("customers")
-      .select(CUSTOMER_COLUMNS)
-      .or(
-        `name.ilike.%${escaped}%,name_for_invoice.ilike.%${escaped}%,email.ilike.%${escaped}%,phone.ilike.%${escaped}%,whatsapp.ilike.%${escaped}%,address.ilike.%${escaped}%`
-      )
-      .limit(300),
-    supabase
-      .from("contacts")
-      .select(CONTACT_COLUMNS)
-      .eq("active", true)
-      .or(`full_name.ilike.%${escaped}%,phone.ilike.%${escaped}%,email.ilike.%${escaped}%,whatsapp.ilike.%${escaped}%`)
-      .limit(300),
-    supabase
-      .from("customers")
-      .select(CUSTOMER_COLUMNS)
-      .order("name", { ascending: true })
-      .range(0, FUZZY_SCAN_LIMIT - 1),
-    supabase
-      .from("contacts")
-      .select(CONTACT_COLUMNS)
-      .eq("active", true)
-      .order("full_name", { ascending: true })
-      .range(0, FUZZY_SCAN_LIMIT - 1),
-  ]);
-
-  // Pool of candidate customer rows (full columns) keyed by id.
-  const customerRowById = new Map<string, Row>();
-  for (const row of [...rows(ilikeCustomersRes), ...rows(scanCustomersRes)]) {
+function addCustomerRows(pools: MatchPools, result: { data: unknown }) {
+  for (const row of rows(result)) {
     const id = str(row.id);
-    if (id && !customerRowById.has(id)) customerRowById.set(id, row);
+    if (id && !pools.customerRowById.has(id)) pools.customerRowById.set(id, row);
   }
+}
 
-  // All candidate contacts grouped by customer.
-  const contactsByCustomer = new Map<string, CustomerSearchContact[]>();
-  for (const row of [...rows(ilikeContactsRes), ...rows(scanContactsRes)]) {
+function addContactRows(pools: MatchPools, result: { data: unknown }) {
+  for (const row of rows(result)) {
     const customerId = str(row.customer_id);
     if (!customerId) continue;
-    const list = contactsByCustomer.get(customerId) ?? [];
+    const list = pools.contactsByCustomer.get(customerId) ?? [];
     list.push(toContact(row));
-    contactsByCustomer.set(customerId, list);
+    pools.contactsByCustomer.set(customerId, list);
   }
+}
 
+/** Run the shared matching rules over the current candidate pools. */
+function computeMatches(pools: MatchPools, query: string): MatchResult {
   const matchedIds = new Set<string>();
   const matchedContactsByCustomer = new Map<string, MatchedCustomer["contacts"]>();
 
   // (a) customers whose own fields match.
-  for (const [id, row] of customerRowById) {
+  for (const [id, row] of pools.customerRowById) {
     if (customerMatchesQuery(fieldsFromRow(row, undefined), query)) matchedIds.add(id);
   }
 
   // (b) customers reached through a matching contact (pull in the customer even
   // if its own fields don't match), and record which contacts matched.
-  for (const [customerId, contacts] of contactsByCustomer) {
+  for (const [customerId, contacts] of pools.contactsByCustomer) {
     const matching = contacts.filter((contact) => customerMatchesQuery({ contacts: [contact] }, query));
     if (matching.length === 0) continue;
     matchedIds.add(customerId);
@@ -186,6 +151,78 @@ export async function findMatchingCustomers(
       }))
     );
   }
+
+  return { matchedIds, matchedContactsByCustomer };
+}
+
+/**
+ * Find customers matching a free-text query, applying the shared matching rules
+ * (Hebrew-fuzzy names, phone↔whatsapp cross-match). Returns ranked customer
+ * rows (with the matching contacts attached) plus their ids for list loaders.
+ *
+ * Strategy: a cheap, indexed `ilike` pass catches exact/substring matches across
+ * the whole table — this is the fast path that serves the vast majority of
+ * searches. Only when it finds NOTHING (a typo, a letter swap, an
+ * oddly-formatted number) do we pay for the bounded fuzzy scan. This keeps
+ * type-ahead instant instead of shipping thousands of rows on every keystroke.
+ */
+export async function findMatchingCustomers(
+  supabase: SupabaseClient,
+  rawQuery: string,
+  options?: { limit?: number; idsOnly?: boolean }
+): Promise<FindMatchingCustomersResult> {
+  const query = rawQuery.trim();
+  if (!query) return { customers: [], customerIds: [] };
+
+  const resultLimit = Math.min(Math.max(options?.limit ?? 50, 1), 300);
+  const idsOnly = options?.idsOnly === true;
+  const escaped = query.replace(/[%,]/g, " ");
+
+  const pools: MatchPools = { customerRowById: new Map(), contactsByCustomer: new Map() };
+
+  // Fast path: indexed substring match across the whole table.
+  const [ilikeCustomersRes, ilikeContactsRes] = await Promise.all([
+    supabase
+      .from("customers")
+      .select(CUSTOMER_COLUMNS)
+      .or(
+        `name.ilike.%${escaped}%,name_for_invoice.ilike.%${escaped}%,email.ilike.%${escaped}%,phone.ilike.%${escaped}%,whatsapp.ilike.%${escaped}%,address.ilike.%${escaped}%`
+      )
+      .limit(300),
+    supabase
+      .from("contacts")
+      .select(CONTACT_COLUMNS)
+      .eq("active", true)
+      .or(`full_name.ilike.%${escaped}%,phone.ilike.%${escaped}%,email.ilike.%${escaped}%,whatsapp.ilike.%${escaped}%`)
+      .limit(300),
+  ]);
+  addCustomerRows(pools, ilikeCustomersRes);
+  addContactRows(pools, ilikeContactsRes);
+
+  let { matchedIds, matchedContactsByCustomer } = computeMatches(pools, query);
+
+  // Fallback: only when substring matching found nothing do we scan for
+  // fuzzy (typo / letter-swap / re-formatted-number) matches.
+  if (matchedIds.size === 0) {
+    const [scanCustomersRes, scanContactsRes] = await Promise.all([
+      supabase
+        .from("customers")
+        .select(CUSTOMER_COLUMNS)
+        .order("name", { ascending: true })
+        .range(0, FUZZY_SCAN_LIMIT - 1),
+      supabase
+        .from("contacts")
+        .select(CONTACT_COLUMNS)
+        .eq("active", true)
+        .order("full_name", { ascending: true })
+        .range(0, FUZZY_SCAN_LIMIT - 1),
+    ]);
+    addCustomerRows(pools, scanCustomersRes);
+    addContactRows(pools, scanContactsRes);
+    ({ matchedIds, matchedContactsByCustomer } = computeMatches(pools, query));
+  }
+
+  const customerRowById = pools.customerRowById;
 
   // List loaders only need ids (they filter their own query by customer_id) —
   // skip building full rows and the contact-only bulk fetch.

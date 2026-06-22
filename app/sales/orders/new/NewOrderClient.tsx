@@ -29,6 +29,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { CustomerForm } from "@/components/customers/CustomerForm";
 import type { CustomerRecord } from "@/components/customers/CustomerForm";
+import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
   derivePaymentStatus,
@@ -148,10 +149,6 @@ function formatCurrency(value: number) {
 
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function normalizePhone(value: string) {
-  return value.replace(/[^\d+]/g, "");
 }
 
 function mapCustomerSearchResult(row: Record<string, unknown>): CustomerOption | null {
@@ -418,6 +415,7 @@ export default function NewOrderClient({
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>(initialCustomerOptions);
   const [customerSearchError, setCustomerSearchError] = useState<string | null>(null);
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
+  const { search: searchCustomerIndex, loading: customerIndexLoading } = useCustomerSearchIndex();
 
   useEffect(() => {
     setCustomerOptions(initialCustomerOptions);
@@ -481,84 +479,20 @@ export default function NewOrderClient({
   }, [initialProductOptions]);
 
   useEffect(() => {
-    const q = customerQuery.trim();
-    const qPhone = normalizePhone(customerQuery);
-
-    if (!q && !qPhone) {
-      if (initialCustomerOptions.length > 0) {
-        setCustomerOptions(initialCustomerOptions);
-        setCustomerSearchError(null);
-        setCustomerSearchLoading(false);
-        return;
-      }
-
-      const controller = new AbortController();
+    setCustomerSearchError(null);
+    // The index is still loading on first open — show the server-seeded list.
+    if (customerIndexLoading) {
       setCustomerSearchLoading(true);
-      setCustomerSearchError(null);
-
-      void fetch("/api/customers/search?limit=50", {
-        signal: controller.signal,
-      })
-        .then(async (res) => {
-          const json = (await res.json().catch(() => ({}))) as {
-            error?: string;
-            customers?: Array<Record<string, unknown>>;
-          };
-          if (!res.ok) throw new Error(toHebrewError(json.error, "שגיאת חיפוש לקוחות"));
-
-          const remoteCustomers = (json.customers ?? [])
-            .map(mapCustomerSearchResult)
-            .filter((row): row is CustomerOption => Boolean(row));
-
-          setCustomerOptions(
-            Array.from(new Map(remoteCustomers.map((row) => [row.id, row])).values())
-          );
-        })
-        .catch((error: unknown) => {
-          if (error instanceof Error && error.name === "AbortError") return;
-          setCustomerSearchError(toHebrewError(error, "שגיאת חיפוש לקוחות"));
-        })
-        .finally(() => setCustomerSearchLoading(false));
-
-      return () => controller.abort();
+      if (!customerQuery.trim()) setCustomerOptions(initialCustomerOptions);
+      return;
     }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => {
-      setCustomerSearchLoading(true);
-      setCustomerSearchError(null);
-
-      void fetch(`/api/customers/search?q=${encodeURIComponent(customerQuery)}&limit=50`, {
-        signal: controller.signal,
-      })
-        .then(async (res) => {
-          const json = (await res.json().catch(() => ({}))) as {
-            error?: string;
-            customers?: Array<Record<string, unknown>>;
-          };
-          if (!res.ok) throw new Error(toHebrewError(json.error, "שגיאת חיפוש לקוחות"));
-
-          const remoteCustomers = (json.customers ?? [])
-            .map(mapCustomerSearchResult)
-            .filter((row): row is CustomerOption => Boolean(row));
-
-          setCustomerOptions(
-            Array.from(new Map(remoteCustomers.map((row) => [row.id, row])).values())
-          );
-        })
-        .catch((error: unknown) => {
-          if (error instanceof Error && error.name === "AbortError") return;
-          setCustomerSearchError(toHebrewError(error, "שגיאת חיפוש לקוחות"));
-        })
-        .finally(() => setCustomerSearchLoading(false));
-
-    }, 250);
-
-    return () => {
-      clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [customerQuery, initialCustomerOptions]);
+    setCustomerSearchLoading(false);
+    // Instant, in-memory filtering — no network round-trip per keystroke.
+    const results = searchCustomerIndex(customerQuery, 50)
+      .map((entry) => mapCustomerSearchResult(entry as Record<string, unknown>))
+      .filter((row): row is CustomerOption => Boolean(row));
+    setCustomerOptions(results.length === 0 && !customerQuery.trim() ? initialCustomerOptions : results);
+  }, [customerQuery, searchCustomerIndex, customerIndexLoading, initialCustomerOptions]);
 
   useEffect(() => {
     const q = productQuery.trim();

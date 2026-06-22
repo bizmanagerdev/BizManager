@@ -7,6 +7,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
+import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 
 export type CustomerRecord = {
   id: string;
@@ -391,6 +392,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
         if (cRes.ok && cJson.contact) savedContacts.push(cJson.contact);
       }
 
+      invalidateCustomerSearchIndex();
       onSaved({ customer: savedCustomer, contacts: savedContacts.filter((c) => c.active !== false) });
     } catch (e: unknown) {
       setError(toHebrewError(e, "שגיאה לא ידועה"));

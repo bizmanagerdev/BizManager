@@ -340,6 +340,75 @@ export async function loadCustomersPage(
   return { rows, totalCount, hasMore, error };
 }
 
+/** A lightweight customer row for the in-memory client search index. */
+export type CustomerSearchIndexEntry = {
+  id: string;
+  name: string;
+  name_for_invoice: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  address: string | null;
+  active: boolean;
+  requires_prepayment: boolean;
+  contacts: Array<{ full_name: string; phone: string | null; email: string | null; whatsapp: string | null }>;
+};
+
+const SEARCH_INDEX_CUSTOMER_CAP = 10000;
+const SEARCH_INDEX_CONTACT_CAP = 20000;
+
+/**
+ * Load EVERY customer (lightweight, with contacts) for the client-side search
+ * index. Fetched once per session and searched in memory so customer
+ * type-ahead is instant instead of a network round-trip per keystroke.
+ */
+export async function loadCustomerSearchIndexRows(
+  supabase: SupabaseClient
+): Promise<CustomerSearchIndexEntry[]> {
+  const [{ data: customerRows }, { data: contactRows }] = await Promise.all([
+    supabase
+      .from("customers")
+      .select("id,name,name_for_invoice,phone,whatsapp,email,address,active,requires_prepayment")
+      .order("name", { ascending: true })
+      .range(0, SEARCH_INDEX_CUSTOMER_CAP - 1),
+    supabase
+      .from("contacts")
+      .select("customer_id,full_name,phone,email,whatsapp")
+      .eq("active", true)
+      .range(0, SEARCH_INDEX_CONTACT_CAP - 1),
+  ]);
+
+  const contactsByCustomer = new Map<string, CustomerSearchIndexEntry["contacts"]>();
+  for (const contact of (contactRows ?? []) as Row[]) {
+    const customerId = typeof contact?.customer_id === "string" ? contact.customer_id : "";
+    if (!customerId) continue;
+    const list = contactsByCustomer.get(customerId) ?? [];
+    list.push({
+      full_name: typeof contact?.full_name === "string" ? contact.full_name : "",
+      phone: (contact?.phone as string | null) ?? null,
+      email: (contact?.email as string | null) ?? null,
+      whatsapp: (contact?.whatsapp as string | null) ?? null,
+    });
+    contactsByCustomer.set(customerId, list);
+  }
+
+  return ((customerRows ?? []) as Row[]).map((row) => {
+    const id = typeof row?.id === "string" ? row.id : "";
+    return {
+      id,
+      name: typeof row?.name === "string" ? row.name : "",
+      name_for_invoice: (row?.name_for_invoice as string | null) ?? null,
+      phone: (row?.phone as string | null) ?? null,
+      whatsapp: (row?.whatsapp as string | null) ?? null,
+      email: (row?.email as string | null) ?? null,
+      address: (row?.address as string | null) ?? null,
+      active: row?.active !== false,
+      requires_prepayment: row?.requires_prepayment === true,
+      contacts: contactsByCustomer.get(id) ?? [],
+    };
+  });
+}
+
 /**
  * Load fully-enriched list rows for a specific set of customers (used by the
  * client search so results carry real counts and totals instead of zeros).

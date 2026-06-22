@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DateInput } from "@/components/ui/date-input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { CustomerForm, type CustomerRecord } from "@/components/customers/CustomerForm";
+import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 
@@ -321,44 +322,27 @@ export default function NewProjectClient({
   const [customerOptions, setCustomerOptions] = useState<ProjectCustomerOption[]>(customers);
   const [customerSearchError, setCustomerSearchError] = useState<string | null>(null);
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
+  const { search: searchCustomerIndex, loading: customerIndexLoading } = useCustomerSearchIndex();
 
   useEffect(() => {
     setCustomerOptions(customers);
   }, [customers]);
 
-  // Debounced remote search; empty query restores the initial list.
+  // Instant in-memory search over the cached customer index — no per-keystroke
+  // network round-trip. Falls back to the server-seeded list while it loads.
   useEffect(() => {
-    const q = customerQuery.trim();
-    if (!q) {
-      setCustomerOptions(customers);
-      setCustomerSearchError(null);
-      setCustomerSearchLoading(false);
+    setCustomerSearchError(null);
+    if (customerIndexLoading) {
+      setCustomerSearchLoading(true);
+      if (!customerQuery.trim()) setCustomerOptions(customers);
       return;
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      setCustomerSearchLoading(true);
-      setCustomerSearchError(null);
-      void fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`, { signal: controller.signal })
-        .then(async (res) => {
-          const json = (await res.json().catch(() => ({}))) as { error?: string; customers?: Row[] };
-          if (!res.ok) throw new Error(toHebrewError(json.error, "שגיאת חיפוש לקוחות"));
-          const remote = (json.customers ?? [])
-            .map(mapProjectCustomer)
-            .filter((row): row is ProjectCustomerOption => Boolean(row));
-          setCustomerOptions(Array.from(new Map(remote.map((row) => [row.id, row])).values()));
-        })
-        .catch((error: unknown) => {
-          if (error instanceof Error && error.name === "AbortError") return;
-          setCustomerSearchError(toHebrewError(error, "שגיאת חיפוש לקוחות"));
-        })
-        .finally(() => setCustomerSearchLoading(false));
-    }, 300);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [customerQuery, customers]);
+    setCustomerSearchLoading(false);
+    const results = searchCustomerIndex(customerQuery, 50)
+      .map((entry) => mapProjectCustomer(entry as Row))
+      .filter((row): row is ProjectCustomerOption => Boolean(row));
+    setCustomerOptions(results.length === 0 && !customerQuery.trim() ? customers : results);
+  }, [customerQuery, searchCustomerIndex, customerIndexLoading, customers]);
 
   const filteredCustomers = useMemo(() => customerOptions.slice(0, 50), [customerOptions]);
   const selectedCustomer =

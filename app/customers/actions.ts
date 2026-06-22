@@ -1,7 +1,12 @@
 "use server";
 
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { loadCustomersByIds, loadCustomersPage, type CustomersFilters } from "./loadCustomers";
+import {
+  loadCustomerSearchIndexRows,
+  loadCustomersByIds,
+  loadCustomersPage,
+  type CustomersFilters,
+} from "./loadCustomers";
 
 /**
  * Fetch the next page of customers for the infinite-scroll list. Re-authenticates
@@ -21,4 +26,14 @@ export async function loadCustomerRowsByIds(customerIds: string[]) {
   const { supabase } = await requireProfile();
   const { rows } = await loadCustomersByIds(supabase, customerIds);
   return { rows };
+}
+
+/**
+ * Load the full lightweight customer index for the client-side in-memory search
+ * (instant customer type-ahead across the app). Re-authenticates per call.
+ */
+export async function loadCustomerSearchIndex() {
+  const { supabase } = await requireProfile();
+  const customers = await loadCustomerSearchIndexRows(supabase);
+  return { customers };
 }

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { offlineFetch } from "@/lib/offline-queue";
 import { loadCustomerRowsByIds, loadMoreCustomers } from "@/app/customers/actions";
+import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import type { CustomersFilters } from "@/app/customers/loadCustomers";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
@@ -88,6 +89,7 @@ export default function CustomersClient({
   };
 }) {
   const router = useRouter();
+  const { search: searchCustomerIndex, loading: customerIndexLoading } = useCustomerSearchIndex();
   const [apiSearchRows, setApiSearchRows] = useState<Row[] | null>(null);
   const [handledInitialEdit, setHandledInitialEdit] = useState(false);
   const [handledInitialAddContact, setHandledInitialAddContact] = useState(false);
@@ -171,33 +173,32 @@ export default function CustomersClient({
   useEffect(() => {
     const q = query.trim();
     if (!q) { setApiSearchRows(null); return; }
+    if (customerIndexLoading) return; // index still loading on first use
     let cancelled = false;
+
+    // Instant: match the cached index in memory and paint the basic rows now.
+    const matched = searchCustomerIndex(q, 50);
+    const basicRows = matched.map((c) => ({
+      customer_id: c.id, customer_name: c.name, name: c.name,
+      phone: c.phone, whatsapp: c.whatsapp, email: c.email, address: c.address,
+      name_for_invoice: c.name_for_invoice,
+      requires_prepayment: c.requires_prepayment,
+      contacts: c.contacts,
+      orders_count: 0, projects_count: 0, total_sales: 0, total_paid: 0, open_balance: 0,
+    }));
+    setApiSearchRows(basicRows);
+
+    // Then enrich (counts/totals) in the background, debounced, preserving order.
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/customers/search?q=${encodeURIComponent(q)}&limit=50`);
-        if (!res.ok) return;
-        const json = await res.json() as { customers?: Array<{ id: string; name: string; phone?: string | null; email?: string | null; address?: string | null; requires_prepayment?: boolean; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> }> };
-        const matched = json.customers ?? [];
-        const fallbackRows = matched.map((c) => ({
-          customer_id: c.id, customer_name: c.name, name: c.name,
-          phone: c.phone ?? null, email: c.email ?? null, address: c.address ?? null,
-          requires_prepayment: c.requires_prepayment ?? false,
-          contacts: c.contacts ?? [],
-          orders_count: 0, projects_count: 0, total_sales: 0, total_paid: 0, open_balance: 0,
-        }));
-        if (cancelled) return;
-        setApiSearchRows(fallbackRows);
-        // Second pass: swap in the enriched rows (real counts/totals) once loaded.
         const { rows: enriched } = await loadCustomerRowsByIds(matched.map((c) => c.id));
         if (cancelled || enriched.length === 0) return;
         const enrichedById = new Map(enriched.map((row) => [s(row, "customer_id"), row]));
-        setApiSearchRows(
-          fallbackRows.map((row) => enrichedById.get(row.customer_id) ?? row)
-        );
+        setApiSearchRows(basicRows.map((row) => enrichedById.get(row.customer_id) ?? row));
       } catch { /* ignore */ }
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [query]);
+  }, [query, searchCustomerIndex, customerIndexLoading]);
 
   const filtered = useMemo(() => {
     // When searching: API returns full-DB matches (search is global). When not searching:
