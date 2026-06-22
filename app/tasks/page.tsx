@@ -28,9 +28,10 @@ export default async function TasksPage({
 
   const { profile, supabase } = await requireProfile();
   const canSeeAll = profile.role === "admin" || profile.role === "office";
-  // Admin/office default to "all"; they can opt into "mine". Workers are always
-  // restricted to their own tasks (enforced again in the loader).
-  const filterScope: "mine" | "all" = !canSeeAll ? "mine" : params.scope === "mine" ? "mine" : "all";
+  // Everyone defaults to their own tasks ("mine" = assigned / member / creator).
+  // Admin/office can opt into "all"; workers are always restricted (re-enforced
+  // in the loader).
+  const filterScope: "mine" | "all" = !canSeeAll ? "mine" : params.scope === "all" ? "all" : "mine";
 
   const filters = {
     q,

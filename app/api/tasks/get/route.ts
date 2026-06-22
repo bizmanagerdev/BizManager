@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase } = access.value;
+    const { supabase, profile } = access.value;
 
     // Fetch the task alongside its members/comments/reminders in one round-trip —
     // none of the sub-queries depend on the task row (they all key off the id).
@@ -81,7 +81,11 @@ export async function POST(req: Request) {
       assigned_to_name: names[str(r, "assigned_to") ?? ""] ?? null,
     }));
 
-    return NextResponse.json({ task, members, comments, reminders });
+    // Only the creator/owner may toggle privacy. Tell the client so it can gate the UI.
+    const owner = str(task as Row, "private_owner_id");
+    const viewerIsCreator = Boolean(owner) && owner === profile.id;
+
+    return NextResponse.json({ task, members, comments, reminders, viewer_is_creator: viewerIsCreator });
   } catch (err: unknown) {
     const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });

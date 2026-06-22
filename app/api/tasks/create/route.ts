@@ -106,7 +106,9 @@ export async function POST(req: Request) {
         priority,
         status,
         is_private: isPrivate,
-        private_owner_id: isPrivate ? profile.id : null,
+        // private_owner_id doubles as the creator/owner: always the creator, set at
+        // creation. Only this user may later toggle the task's privacy.
+        private_owner_id: profile.id,
       })
       .select(
         "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at"

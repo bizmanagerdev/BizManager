@@ -32,6 +32,7 @@ import {
 } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import {
@@ -225,8 +226,10 @@ export function TaskUpsertDialog(props: Props) {
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [status, setStatus] = useState<TaskStatus>(props.defaultStatus ?? "todo");
   // Private = visible only to the owner (the user who turns it on). Hidden from
-  // everyone else, including office/admin.
+  // everyone else, including office/admin. Only the task's creator may toggle it
+  // (the server reports whether the current viewer created the task).
   const [isPrivate, setIsPrivate] = useState(false);
+  const [viewerIsCreator, setViewerIsCreator] = useState(true);
 
   // The card extras (comments / reminders) need a saved task. activeTaskId is the
   // edit target, or the id of a just-created task when keepOpenAfterCreate is set.
@@ -245,6 +248,10 @@ export function TaskUpsertDialog(props: Props) {
 
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  const [attachmentToDelete, setAttachmentToDelete] = useState<{ id: string; name: string | null } | null>(null);
+  const [deletingAttachment, setDeletingAttachment] = useState(false);
 
   const projects = props.projects ?? [];
   const properties = props.properties ?? [];
@@ -344,6 +351,7 @@ export function TaskUpsertDialog(props: Props) {
         const statusRaw = typeof task.status === "string" ? task.status : null;
         setStatus((STATUS_OPTIONS.includes(statusRaw as TaskStatus) ? statusRaw : "todo") as TaskStatus);
         setIsPrivate(task.is_private === true);
+        setViewerIsCreator(json?.viewer_is_creator === true);
 
         const membersRaw = Array.isArray(json?.members) ? (json.members as Array<{ id?: unknown }>) : [];
         setMemberIds(membersRaw.map((m) => (typeof m.id === "string" ? m.id : "")).filter(Boolean));
@@ -405,6 +413,8 @@ export function TaskUpsertDialog(props: Props) {
     setPriority(draft?.priority ?? "medium");
     setStatus(props.defaultStatus ?? draft?.status ?? "todo");
     setIsPrivate(draft?.isPrivate ?? false);
+    // Creating → the current user is the creator, so the privacy toggle is theirs.
+    setViewerIsCreator(true);
 
     setOpenSection("description");
   }
@@ -650,32 +660,34 @@ export function TaskUpsertDialog(props: Props) {
     }
   }
 
-  async function deleteAttachment(documentId: string, name: string | null) {
+  async function performDeleteAttachment() {
+    const target = attachmentToDelete;
     const targetId = activeTaskId ?? props.taskId;
-    if (!targetId) return;
-    if (!window.confirm(`למחוק את הקובץ "${name ?? ""}"?`)) return;
-    setAttachments((prev) => prev.filter((a) => a.id !== documentId));
+    if (!target || !targetId) return;
+    setDeletingAttachment(true);
+    setAttachments((prev) => prev.filter((a) => a.id !== target.id));
     emitProgressActivityStart();
     try {
-      const result = await offlineFetch("/api/documents/delete", { document_id: documentId }, "מחיקת קובץ");
+      const result = await offlineFetch("/api/documents/delete", { document_id: target.id }, "מחיקת קובץ");
       if (!result.queued && !result.ok) {
         toast.error("שגיאה במחיקת קובץ", { description: toHebrewError(result.error, "") });
         await fetchAttachments(targetId);
         return;
       }
       if (!result.queued) toast.success("הקובץ נמחק");
+      setAttachmentToDelete(null);
     } catch (error: unknown) {
       toast.error("שגיאה במחיקת קובץ", { description: getErrorMessage(error) });
       await fetchAttachments(targetId);
     } finally {
       emitProgressActivityEnd();
+      setDeletingAttachment(false);
     }
   }
 
   async function deleteTask() {
     const targetId = activeTaskId ?? props.taskId;
     if (!targetId) return;
-    if (!window.confirm(`למחוק את המשימה "${subject.trim()}"?`)) return;
     setSaving(true);
     emitProgressActivityStart();
     try {
@@ -727,18 +739,24 @@ export function TaskUpsertDialog(props: Props) {
   }, [props.open, loading, formSnapshot]);
   const dirty = baselineRef.current !== null && formSnapshot !== baselineRef.current;
 
-  // Guard: don't lose an unsaved new task without confirming.
-  function attemptClose() {
-    if (saving || loading) return;
-    const unsavedCreate = props.mode === "create" && !activeTaskId;
-    if (unsavedCreate && (subject.trim() || description.trim())) {
-      if (!window.confirm("המשימה עדיין לא נשמרה. לצאת בלי לשמור?")) return;
-    }
+  function doClose() {
     if (props.mode === "create" && !activeTaskId) clearDraft("task-create");
     props.onOpenChange(false);
   }
 
+  // Guard: don't lose an unsaved new task without confirming (styled dialog).
+  function attemptClose() {
+    if (saving || loading) return;
+    const unsavedCreate = props.mode === "create" && !activeTaskId;
+    if (unsavedCreate && (subject.trim() || description.trim())) {
+      setConfirmDiscardOpen(true);
+      return;
+    }
+    doClose();
+  }
+
   return (
+    <>
     <Dialog
       open={props.open}
       onOpenChange={(next) => {
@@ -777,29 +795,40 @@ export function TaskUpsertDialog(props: Props) {
               disabled={loading}
               className="border-transparent bg-transparent px-1 text-lg font-semibold shadow-none focus-visible:border-input"
             />
-            <Button
-              type="button"
-              variant={isPrivate ? "default" : "secondary"}
-              size="sm"
-              disabled={loading}
-              onClick={() => setIsPrivate((v) => !v)}
-              title={
-                isPrivate
-                  ? "משימה פרטית — רק את/ה רואה אותה. לחצו כדי לבטל"
-                  : "הפיכה לפרטית — רק את/ה תראו את המשימה"
-              }
-              className="shrink-0"
-            >
-              {isPrivate ? <Lock className="ms-1 h-3.5 w-3.5" /> : <Unlock className="ms-1 h-3.5 w-3.5" />}
-              {isPrivate ? "פרטי" : "הפוך לפרטי"}
-            </Button>
+            {viewerIsCreator ? (
+              <Button
+                type="button"
+                variant={isPrivate ? "default" : "secondary"}
+                size="sm"
+                disabled={loading}
+                onClick={() => setIsPrivate((v) => !v)}
+                title={
+                  isPrivate
+                    ? "משימה פרטית — רק את/ה רואה אותה. לחצו כדי לבטל"
+                    : "הפיכה לפרטית — רק את/ה תראו את המשימה"
+                }
+                className="shrink-0"
+              >
+                {isPrivate ? <Lock className="ms-1 h-3.5 w-3.5" /> : <Unlock className="ms-1 h-3.5 w-3.5" />}
+                {isPrivate ? "פרטי" : "הפוך לפרטי"}
+              </Button>
+            ) : isPrivate ? (
+              // Non-creator viewing a private task they own: show a static marker.
+              <span
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-sm text-primary"
+                title="משימה פרטית"
+              >
+                <Lock className="h-3.5 w-3.5" />
+                פרטי
+              </span>
+            ) : null}
             {isEditing && targetTaskId ? (
               <button
                 type="button"
                 aria-label="מחיקת המשימה"
                 title="מחיקת המשימה"
                 disabled={saving || loading}
-                onClick={() => void deleteTask()}
+                onClick={() => setConfirmDeleteOpen(true)}
                 className="shrink-0 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
               >
                 <Trash2 className="h-5 w-5" />
@@ -1118,7 +1147,9 @@ export function TaskUpsertDialog(props: Props) {
                         </a>
                         <button
                           type="button"
-                          onClick={() => void deleteAttachment(attachment.id, attachment.original_name)}
+                          onClick={() =>
+                            setAttachmentToDelete({ id: attachment.id, name: attachment.original_name })
+                          }
                           aria-label="מחיקת קובץ"
                           className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
                         >
@@ -1297,5 +1328,59 @@ export function TaskUpsertDialog(props: Props) {
         )}
       </AdaptiveDialog>
     </Dialog>
+
+    <ConfirmDialog
+      open={confirmDeleteOpen}
+      onOpenChange={setConfirmDeleteOpen}
+      title="מחיקת משימה"
+      description={
+        <>
+          למחוק את המשימה{" "}
+          <span className="font-medium">&quot;{subject.trim()}&quot;</span>? לא ניתן לשחזר משימה שנמחקה.
+        </>
+      }
+      confirmLabel="מחיקה"
+      destructive
+      loading={saving}
+      onConfirm={() => {
+        setConfirmDeleteOpen(false);
+        void deleteTask();
+      }}
+    />
+
+    <ConfirmDialog
+      open={attachmentToDelete !== null}
+      onOpenChange={(open) => {
+        if (!open) setAttachmentToDelete(null);
+      }}
+      title="מחיקת קובץ"
+      description={
+        <>
+          למחוק את הקובץ{" "}
+          <span className="font-medium">&quot;{attachmentToDelete?.name ?? ""}&quot;</span>? הקובץ יוסר לצמיתות.
+        </>
+      }
+      confirmLabel="מחיקה"
+      destructive
+      loading={deletingAttachment}
+      onConfirm={() => void performDeleteAttachment()}
+    />
+
+    <ConfirmDialog
+      open={confirmDiscardOpen}
+      onOpenChange={(open) => {
+        if (!open) setConfirmDiscardOpen(false);
+      }}
+      title="יציאה בלי לשמור"
+      description="המשימה עדיין לא נשמרה. לצאת בלי לשמור?"
+      confirmLabel="יציאה בלי שמירה"
+      cancelLabel="חזרה לעריכה"
+      destructive
+      onConfirm={() => {
+        setConfirmDiscardOpen(false);
+        doClose();
+      }}
+    />
+    </>
   );
 }

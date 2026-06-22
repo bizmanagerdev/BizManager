@@ -123,10 +123,30 @@ export async function POST(req: Request) {
     }
 
     if ("is_private" in body) {
-      // Toggling private claims ownership for the actor; turning it off clears it.
-      const isPrivate = body.is_private === true;
-      update.is_private = isPrivate;
-      update.private_owner_id = isPrivate ? profile.id : null;
+      // Only the creator/owner may change privacy. private_owner_id is the creator
+      // (set at creation), so gate on it and never clear it — privacy on/off only
+      // flips is_private. The dialog always sends is_private, so we only
+      // enforce/apply when the value actually changes (others can still edit
+      // everything else on the task).
+      const desired = body.is_private === true;
+      const { data: cur } = await supabase
+        .from("tasks")
+        .select("is_private,private_owner_id")
+        .eq("id", id)
+        .maybeSingle<Record<string, unknown>>();
+      const currentPrivate = (cur as Record<string, unknown> | null)?.is_private === true;
+      const owner = typeof cur?.private_owner_id === "string" ? cur.private_owner_id : null;
+      if (desired !== currentPrivate) {
+        if (owner && owner !== profile.id) {
+          return NextResponse.json(
+            { error: "רק יוצר המשימה יכול לשנות את הפרטיות שלה." },
+            { status: 403 }
+          );
+        }
+        update.is_private = desired;
+        // Legacy rows may have no owner yet — the first one to set privacy claims it.
+        if (!owner) update.private_owner_id = profile.id;
+      }
     }
 
     const projectProvided = "project_id" in body;

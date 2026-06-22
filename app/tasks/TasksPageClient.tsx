@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/tasks/loadTasks";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -69,8 +70,8 @@ function buildTasksUrl(filters: UrlFilters) {
   if (filters.priority) params.set("priority", filters.priority);
   if (filters.domain) params.set("domain", filters.domain);
   if (filters.linkedId) params.set("linked_id", filters.linkedId);
-  // "all" is the default for admin/office, so only persist the opt-in "mine".
-  if (filters.scope === "mine") params.set("scope", "mine");
+  // "mine" is the default for everyone, so only persist the opt-in "all".
+  if (filters.scope === "all") params.set("scope", "all");
   const qs = params.toString();
   return qs ? `/tasks?${qs}` : "/tasks";
 }
@@ -338,7 +339,7 @@ export default function TasksPageClient(props: Props) {
   // Deep link to a single task (e.g. /tasks?task=<id>) opens its card. This is
   // what the old /tasks/[id] detail page redirects to now.
   const urlTask = searchParams.get("task") ?? "";
-  const urlScope: "mine" | "all" = !canSeeAll ? "mine" : searchParams.get("scope") === "mine" ? "mine" : "all";
+  const urlScope: "mine" | "all" = !canSeeAll ? "mine" : searchParams.get("scope") === "all" ? "all" : "mine";
 
   const [tasks, setTasks] = useState<TaskBoardItem[]>(props.tasks);
   // Re-sync when the server re-renders (e.g. after a save → router.refresh()).
@@ -367,6 +368,8 @@ export default function TasksPageClient(props: Props) {
   const [createSubject, setCreateSubject] = useState("");
   const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
   const [editId, setEditId] = useState<string | null>(null);
+  const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
+  const [deletingTask, setDeletingTask] = useState(false);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const justDraggedRef = useRef(false);
@@ -512,9 +515,10 @@ export default function TasksPageClient(props: Props) {
     setMenu({ id, x, y });
   }
 
-  async function deleteTask(id: string) {
-    const task = tasks.find((t) => t.id === id);
-    if (!window.confirm(`למחוק את המשימה "${task?.subject ?? ""}"?`)) return;
+  async function performDeleteTask() {
+    const id = deleteTaskId;
+    if (!id) return;
+    setDeletingTask(true);
     const previous = tasks;
     setTasks((prev) => prev.filter((t) => t.id !== id));
     emitProgressActivityStart();
@@ -526,11 +530,13 @@ export default function TasksPageClient(props: Props) {
         return;
       }
       if (!result.queued) toast.success("המשימה נמחקה");
+      setDeleteTaskId(null);
     } catch (error: unknown) {
       toast.error("שגיאה במחיקת משימה", { description: toHebrewError(error, "") });
       setTasks(previous);
     } finally {
       emitProgressActivityEnd();
+      setDeletingTask(false);
     }
   }
 
@@ -716,7 +722,7 @@ export default function TasksPageClient(props: Props) {
               onClick={() => {
                 const id = menu.id;
                 setMenu(null);
-                void deleteTask(id);
+                setDeleteTaskId(id);
               }}
               className="block w-full px-3 py-1.5 text-start text-destructive hover:bg-destructive/10"
             >
@@ -758,6 +764,27 @@ export default function TasksPageClient(props: Props) {
         properties={props.properties}
         currentUserId={props.currentUserId}
         onSaved={() => router.refresh()}
+      />
+
+      <ConfirmDialog
+        open={deleteTaskId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTaskId(null);
+        }}
+        title="מחיקת משימה"
+        description={
+          <>
+            למחוק את המשימה{" "}
+            <span className="font-medium">
+              &quot;{tasks.find((t) => t.id === deleteTaskId)?.subject ?? ""}&quot;
+            </span>
+            ? לא ניתן לשחזר משימה שנמחקה.
+          </>
+        }
+        confirmLabel="מחיקה"
+        destructive
+        loading={deletingTask}
+        onConfirm={() => void performDeleteTask()}
       />
     </div>
   );
