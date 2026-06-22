@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
+import { customerMatchesQuery, fuzzyTextMatch, phoneMatchesQuery } from "@/lib/search/customerMatch";
 
 export type GlobalSearchGroupKey =
   | "customers"
@@ -90,11 +91,11 @@ function normalizeHebrewText(value: string) {
     .toLowerCase();
 }
 
+// Fuzzy (typo / letter-swap tolerant) match across the joined fields, so e.g.
+// "באין" still finds "ביאן". The global search is the most sophisticated
+// surface and applies this everywhere, not just to names.
 function includesNormalized(haystackParts: Array<string | null | undefined>, query: string) {
-  const normalizedQuery = normalizeHebrewText(query);
-  if (!normalizedQuery) return false;
-  const haystack = normalizeHebrewText(haystackParts.filter(Boolean).join(" "));
-  return haystack.includes(normalizedQuery);
+  return fuzzyTextMatch(haystackParts.filter(Boolean).join(" "), query);
 }
 
 function exactIdMatch(id: string | null | undefined, query: string) {
@@ -169,7 +170,7 @@ function buildGroups(results: GlobalSearchResult[]): GlobalSearchResponse["group
 
 function customerResult(row: Row): GlobalSearchResult | null {
   const id = text(row.customer_id) || text(row.id);
-  const name = text(row.customer_name);
+  const name = text(row.customer_name) || text(row.name) || text(row.name_for_invoice);
   if (!id || !name) return null;
   return {
     id,
@@ -377,9 +378,9 @@ export async function performGlobalSearch(
 
   const requests = [
     supabase
-      .from("customer_overview_view")
-      .select("customer_id,customer_name,phone,email,address")
-      .order("customer_name", { ascending: true })
+      .from("customers")
+      .select("id,name,name_for_invoice,phone,whatsapp,email,address")
+      .order("name", { ascending: true })
       .range(0, fetchSize - 1),
     supabase
       .from("project_dashboard_view")
@@ -471,10 +472,20 @@ export async function performGlobalSearch(
   const customers = sortByMatch(
     ((customersResult.data ?? []) as Row[]).filter((row) =>
       (uuidLike && exactIdMatch(text(row.customer_id) || text(row.id), query)) ||
-      includesNormalized([text(row.customer_name), text(row.email), text(row.phone), text(row.address)], query)
+      customerMatchesQuery(
+        {
+          name: text(row.name) || text(row.customer_name),
+          name_for_invoice: text(row.name_for_invoice),
+          email: text(row.email),
+          phone: text(row.phone),
+          whatsapp: text(row.whatsapp),
+          address: text(row.address),
+        },
+        query
+      )
     ),
     query,
-    (row) => [text(row.customer_name), text(row.email), text(row.phone), text(row.address)]
+    (row) => [text(row.name) || text(row.customer_name), text(row.name_for_invoice), text(row.email), text(row.phone)]
   ).slice(0, limitPerGroup);
 
   const projects = sortByMatch(
@@ -574,13 +585,15 @@ export async function performGlobalSearch(
   const customerNameById = new Map<string, string>(
     ((customersResult.data ?? []) as Row[]).map((row) => [
       text(row.customer_id) || text(row.id),
-      text(row.customer_name),
+      text(row.customer_name) || text(row.name) || text(row.name_for_invoice),
     ])
   );
 
   const contacts = sortByMatch(
     ((contactsResult.data ?? []) as Row[]).filter((row) =>
-      includesNormalized([text(row.full_name), text(row.phone), text(row.email), text(row.whatsapp), text(row.role)], query)
+      fuzzyTextMatch([text(row.full_name), text(row.role)].join(" "), query) ||
+      phoneMatchesQuery([text(row.phone), text(row.whatsapp)], query) ||
+      includesNormalized([text(row.email)], query)
     ),
     query,
     (row) => [text(row.full_name), text(row.phone), text(row.email), text(row.role)]

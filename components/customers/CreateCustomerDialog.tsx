@@ -116,14 +116,14 @@ export function CreateCustomerDialog({
 
   const similarTerms = useMemo(() => {
     const unique = new Set<string>();
-    for (const value of [name, phone, whatsapp, email, address, ...contactSearchValues]) {
+    for (const value of [name, nameForInvoice, regNumber, phone, whatsapp, email, address, ...contactSearchValues]) {
       const trimmed = value.trim();
       if (trimmed.length >= 2) unique.add(trimmed);
     }
     return Array.from(unique);
     // contactSearchKey captures all contact field changes without depending on the array reference
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, phone, whatsapp, email, address, contactSearchKey]);
+  }, [name, nameForInvoice, regNumber, phone, whatsapp, email, address, contactSearchKey]);
 
   const similarTermsKey = similarTerms.join("|");
 

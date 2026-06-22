@@ -207,13 +207,13 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
   const similarTerms = useMemo(() => {
     if (isEdit) return [];
     const unique = new Set<string>();
-    for (const value of [name, phone, whatsapp, email, address, ...contactSearchValues]) {
+    for (const value of [name, invoiceName, reg, phone, whatsapp, email, address, ...contactSearchValues]) {
       const trimmed = value.trim();
       if (trimmed.length >= 2) unique.add(trimmed);
     }
     return Array.from(unique);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEdit, name, phone, whatsapp, email, address, contactSearchKey]);
+  }, [isEdit, name, invoiceName, reg, phone, whatsapp, email, address, contactSearchKey]);
   const similarTermsKey = similarTerms.join("|");
 
   useEffect(() => {
@@ -427,7 +427,14 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium text-foreground">{match.name}</div>
                   <div className="truncate text-xs text-muted-foreground">
-                    {[match.phone, match.email, match.address].filter(Boolean).join(" · ")}
+                    {[
+                      match.phone,
+                      match.whatsapp && match.whatsapp !== match.phone ? `וואטסאפ: ${match.whatsapp}` : null,
+                      match.email,
+                      match.address,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </div>
                 </div>
                 <Button type="button" size="sm" variant="secondary" disabled={submitting} onClick={() => applyExistingCustomer(match)}>

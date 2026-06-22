@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchOrderDueDates } from "@/lib/collections";
+import { findMatchingCustomers } from "@/lib/search/findMatchingCustomers";
 
 type Row = Record<string, unknown>;
 
@@ -138,23 +139,19 @@ export async function loadOrdersPage(
   }
   if (q) {
     const escaped = q.replace(/[%,]/g, " ");
-    // Search customers by name and invoice name to get matching customer IDs.
-    const { data: matchingCustomers } = await supabase
-      .from("customers")
-      .select("id")
-      .or(`name.ilike.%${escaped}%,name_for_invoice.ilike.%${escaped}%`)
-      .limit(300);
-    const matchedCustomerIds = ((matchingCustomers ?? []) as Row[])
-      .map((c) => (typeof c.id === "string" ? c.id : null))
-      .filter((id): id is string => id !== null);
+    // Resolve matching customers with the shared matcher (fuzzy names,
+    // phone↔whatsapp cross-match) and match orders by their IDs. The order
+    // snapshot fields stay in the OR so an order keeps matching even after the
+    // customer record changes.
+    const { customerIds } = await findMatchingCustomers(supabase, q, { limit: 300, idsOnly: true });
 
     const conditions: string[] = [
       `customer_phone.ilike.%${escaped}%`,
       `customer_email.ilike.%${escaped}%`,
       `customer_city.ilike.%${escaped}%`,
     ];
-    if (matchedCustomerIds.length > 0) {
-      conditions.push(`customer_id.in.(${matchedCustomerIds.join(",")})`);
+    if (customerIds.length > 0) {
+      conditions.push(`customer_id.in.(${customerIds.join(",")})`);
     }
     ordersQuery = ordersQuery.or(conditions.join(","));
   }

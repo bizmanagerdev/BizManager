@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { computeSourceCollection } from "@/lib/collections";
+import { findMatchingCustomers } from "@/lib/search/findMatchingCustomers";
 
 type Row = Record<string, unknown>;
 
@@ -66,7 +67,14 @@ export async function loadProjectsPage(
   if (customerId) query = query.eq("customer_id", customerId);
   if (searchQuery) {
     const escaped = searchQuery.replace(/[%,]/g, " ");
-    query = query.or(`name.ilike.%${escaped}%,customer_name.ilike.%${escaped}%`);
+    // Match the project name directly; match the customer through the shared
+    // matcher (fuzzy names, phone↔whatsapp cross-match) by customer id.
+    const { customerIds } = await findMatchingCustomers(supabase, searchQuery, { limit: 300, idsOnly: true });
+    const conditions = [`name.ilike.%${escaped}%`, `customer_name.ilike.%${escaped}%`];
+    if (customerIds.length > 0) {
+      conditions.push(`customer_id.in.(${customerIds.join(",")})`);
+    }
+    query = query.or(conditions.join(","));
   }
 
   if (sort === "profit_desc") {
