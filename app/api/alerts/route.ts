@@ -7,7 +7,7 @@ export async function GET() {
   if (!access.ok) return access.response;
 
   const { supabase, profile } = access.value;
-  const { alerts, errors } = await getAlertsData(supabase, { viewerRole: profile.role });
+  const { alerts, errors } = await getAlertsData(supabase, { viewerRole: profile.role, userId: profile.id });
 
   return NextResponse.json({
     alerts,

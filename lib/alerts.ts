@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { computeSourceCollection, fetchOrderDueDates, fetchProjectDueDates, isOpenOrderStatus } from "@/lib/collections";
 import { addWorkingDays } from "@/lib/dashboard/week";
+import { countMyOverdueTasks } from "@/lib/dashboard/tasks-overview";
 
 type Row = Record<string, unknown>;
 
@@ -90,9 +91,10 @@ function currencyFormatterHeIl() {
 
 export async function getAlertsData(
   supabase: SupabaseClient,
-  options?: { viewerRole?: string | null }
+  options?: { viewerRole?: string | null; userId?: string | null }
 ): Promise<AlertsResult> {
   const viewerRole = options?.viewerRole ?? null;
+  const userId = options?.userId ?? null;
   const nearDeadlineToday = new Date();
   nearDeadlineToday.setHours(0, 0, 0, 0);
   const nearDeadlineTodayIso = nearDeadlineToday.toISOString().slice(0, 10);
@@ -104,6 +106,7 @@ export async function getAlertsData(
     inventoryProductsResult,
     inventoryRowsResult,
     projectsNearDeadlineResult,
+    myOverdueTasksCount,
   ] = await Promise.all([
     supabase
       .from("operations_dashboard_view")
@@ -133,6 +136,7 @@ export async function getAlertsData(
       .gte("end_date", nearDeadlineTodayIso)
       .lte("end_date", nearDeadlineHorizonIso)
       .then((r) => r, () => ({ count: 0 })),
+    userId ? countMyOverdueTasks(supabase, userId).catch(() => null) : Promise.resolve(null),
   ]);
 
   const projectsNearDeadlineCount =
@@ -158,8 +162,13 @@ export async function getAlertsData(
     ? []
     : ((invoiceRows ?? []) as Row[]).filter((row) => isInvoiceUnpaid(row));
 
+  // Scope the overdue-tasks alert to MY tasks only (the badge links to
+  // "?scope=mine", so it must count mine — not the org-wide view total). Falls
+  // back to the global view count only when no userId is supplied.
   const overdueTasksCount =
-    getNumber((dashboardRow as Row | null) ?? undefined, "overdue_tasks_count") ?? 0;
+    typeof myOverdueTasksCount === "number"
+      ? myOverdueTasksCount
+      : getNumber((dashboardRow as Row | null) ?? undefined, "overdue_tasks_count") ?? 0;
 
   const inventoryProductsErrorCode = (inventoryProductsResult.error as { code?: string } | null)?.code ?? null;
   const inventoryProducts =

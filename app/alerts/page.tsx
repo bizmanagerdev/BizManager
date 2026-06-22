@@ -49,7 +49,7 @@ export default async function AlertsPage() {
     );
 
   const [{ alerts, errors }, mineSchedule, allSchedule, todayInbox] = await Promise.all([
-    getAlertsData(supabase, { viewerRole: profile.role }),
+    getAlertsData(supabase, { viewerRole: profile.role, userId: profile.id }),
     safeSchedule(getScheduleEntries(supabase, { scope: "mine", userId: profile.id })),
     canSeeAll
       ? safeSchedule(getScheduleEntries(supabase, { scope: "all", userId: profile.id }))

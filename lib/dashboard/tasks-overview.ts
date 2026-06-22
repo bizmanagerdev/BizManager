@@ -95,6 +95,44 @@ export async function getMyTasks(
 }
 
 /**
+ * How many of MY open tasks (assigned to me, or that I was added to as a member)
+ * are overdue — i.e. due strictly before today. "Mine" matches getMyTasks, so the
+ * alert badge agrees with the "/tasks?scope=mine" view it links to. Any failure
+ * resolves to 0 (graceful degradation).
+ */
+export async function countMyOverdueTasks(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<number> {
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  const { data: memberRows } = await supabase
+    .from("task_members")
+    .select("task_id")
+    .eq("user_id", userId)
+    .range(0, 999);
+  const memberTaskIds = [
+    ...new Set(
+      ((memberRows ?? []) as Row[]).map((r) => getString(r, "task_id")).filter((v): v is string => Boolean(v))
+    ),
+  ];
+
+  let query = supabase
+    .from("tasks")
+    .select("id", { count: "exact", head: true })
+    .in("status", OPEN_TASK_STATUSES)
+    .not("due_date", "is", null)
+    .lt("due_date", todayIso);
+  query =
+    memberTaskIds.length > 0
+      ? query.or(`assigned_user_id.eq.${userId},id.in.(${memberTaskIds.join(",")})`)
+      : query.eq("assigned_user_id", userId);
+
+  const { count, error } = await query;
+  return !error && typeof count === "number" ? count : 0;
+}
+
+/**
  * Org-wide task counts by status for the donut. Four lightweight head-count queries
  * (estimated) so we never pull the full `done` history. Back-office only — gated by
  * the caller. Any failure resolves to 0 (graceful degradation).

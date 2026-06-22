@@ -4,14 +4,11 @@ import { PageStack } from "@/components/layout/page-layout";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { Card, CardContent } from "@/components/ui/card";
 import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
+import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
 import QuickActionsClient from "@/app/dashboard/QuickActionsClient";
 import { loadQuickActionsData } from "@/app/dashboard/quick-actions-data";
-import {
-  WeekOverviewSection,
-  WeekOverviewFallback,
-  DashboardPanels,
-  PanelsFallback,
-} from "@/app/dashboard/DashboardSections";
+import { getDashboardPrefs } from "@/lib/dashboard/widgets";
+import { DashboardPanels, PanelsFallback } from "@/app/dashboard/DashboardSections";
 
 export const revalidate = 60;
 
@@ -24,6 +21,7 @@ export default async function DashboardPage() {
   const { profile, supabase } = await requireProfile();
 
   const dataPromise = loadQuickActionsData(supabase, profile);
+  const dashboardPrefs = await getDashboardPrefs(supabase, profile.id).catch(() => null);
 
   const firstName = profile.full_name?.trim().split(/\s+/)[0] ?? "";
   const currentHour = new Date().getHours();
@@ -32,8 +30,11 @@ export default async function DashboardPage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageStack>
-        <section className="text-right">
-          <DashboardGreeting name={firstName} initialGreeting={greeting} />
+        <section className="flex items-start justify-between gap-3">
+          <div className="text-right">
+            <DashboardGreeting name={firstName} initialGreeting={greeting} />
+          </div>
+          <DashboardCustomizer role={profile.role} initialPrefs={dashboardPrefs} />
         </section>
 
         {/* Quick actions — instant. Buttons render now; dialog data streams in. */}
@@ -46,10 +47,6 @@ export default async function DashboardPage() {
             />
           </CardContent>
         </Card>
-
-        <Suspense fallback={<WeekOverviewFallback />}>
-          <WeekOverviewSection />
-        </Suspense>
 
         <Suspense fallback={<PanelsFallback />}>
           <DashboardPanels />

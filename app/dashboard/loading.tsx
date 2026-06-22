@@ -2,11 +2,7 @@ import AppShell from "@/components/layout/AppShell";
 import { PageStack } from "@/components/layout/page-layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  QuickActionsFallback,
-  WeekOverviewFallback,
-  PanelsFallback,
-} from "@/app/dashboard/DashboardSections";
+import { QuickActionsFallback, PanelsFallback } from "@/app/dashboard/DashboardSections";
 
 // Streamed instantly while the page's auth check runs, so the document's first
 // byte (TTFB) no longer waits for any data. Renders the real AppShell (nav
@@ -22,7 +18,6 @@ export default function DashboardLoading() {
             <QuickActionsFallback />
           </CardContent>
         </Card>
-        <WeekOverviewFallback />
         <PanelsFallback />
       </PageStack>
     </AppShell>

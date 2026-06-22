@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import AlertCenter from "@/components/dashboard/AlertCenter";
@@ -19,6 +20,7 @@ import { getMyTasks, getTaskStatusCounts } from "@/lib/dashboard/tasks-overview"
 import { getProjectsOverview } from "@/lib/dashboard/projects-overview";
 import { getWorkforceOverview } from "@/lib/dashboard/workforce";
 import { getInventoryHealth } from "@/lib/dashboard/inventory-health";
+import { getDashboardPrefs, resolveWidgets, type WidgetId } from "@/lib/dashboard/widgets";
 import { loadDeliveriesPage, type DeliveryItem } from "@/app/sales/loadDeliveries";
 import { getRecentAuditEvents, type AuditFeedItem } from "@/lib/audit";
 import { getCashFlowPageData } from "@/lib/cashflow";
@@ -27,7 +29,6 @@ import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 
 type Row = Record<string, unknown>;
 
@@ -64,13 +65,10 @@ export function QuickActionsFallback() {
   );
 }
 
-export function WeekOverviewFallback() {
-  return <Skeleton className="h-28 w-full rounded-[1.5rem]" />;
-}
-
 export function PanelsFallback() {
   return (
     <>
+      <Skeleton className="h-28 w-full rounded-[1.5rem]" />
       <Skeleton className="h-40 w-full rounded-[1.5rem]" />
       <div className="grid gap-4 xl:grid-cols-2">
         <Skeleton className="h-48 w-full rounded-[1.5rem]" />
@@ -80,25 +78,50 @@ export function PanelsFallback() {
   );
 }
 
-/** The week calendar strip — streams in its own boundary (not on the critical path). */
-export async function WeekOverviewSection() {
-  const { profile, supabase } = await requireProfile();
-  const entries = await getScheduleEntries(supabase, { scope: "mine", userId: profile.id }).catch(
-    () => [] as CalendarEntry[]
-  );
-  return <WeekOverview entries={entries} />;
+type WidgetRow = { id: WidgetId; span: 1 | 2; node: ReactNode };
+
+/**
+ * Group the ordered, present widgets into render rows: two consecutive
+ * half-width (span 1) widgets share a 2-col row; everything else is its own
+ * full-width row. This preserves the original side-by-side pairing
+ * (deliveries+donut, reminders+activity) for ANY user-chosen order, without
+ * leaving an empty half when a span-1 widget has no span-1 neighbour.
+ */
+function groupIntoRows(items: WidgetRow[]): WidgetRow[][] {
+  const rows: WidgetRow[][] = [];
+  for (let i = 0; i < items.length; ) {
+    const cur = items[i];
+    const next = items[i + 1];
+    if (cur.span === 1 && next?.span === 1) {
+      rows.push([cur, next]);
+      i += 2;
+    } else {
+      rows.push([cur]);
+      i += 1;
+    }
+  }
+  return rows;
 }
 
 /**
  * Everything below the quick actions: alerts, personal tasks/reminders, and the
- * (role-gated) operational + finance panels. Streams in its own boundary so the
- * shell, greeting, and quick-action buttons are never blocked by these heavier
- * aggregations.
+ * (role-gated) operational + finance panels. Each widget is shown/hidden/ordered
+ * per the viewer's saved dashboard prefs (the "התאמת לוח" customizer); role is
+ * always re-applied via resolveWidgets so prefs can never reveal a forbidden
+ * widget. Hidden widgets skip their data fetch entirely. Streams in its own
+ * Suspense boundary so the shell, greeting, and quick-action buttons are never
+ * blocked by these heavier aggregations.
  */
 export async function DashboardPanels() {
   const { profile, supabase } = await requireProfile();
-  const isAdminOrOffice = profile.role === "admin" || profile.role === "office";
-  const isAdmin = profile.role === "admin";
+  const role = profile.role;
+  const isAdminOrOffice = role === "admin" || role === "office";
+  const isAdmin = role === "admin";
+
+  const prefs = await getDashboardPrefs(supabase, profile.id).catch(() => null);
+  const ordered = resolveWidgets(role, prefs);
+  const visible = new Set(ordered.map((w) => w.id));
+  const show = (id: WidgetId) => visible.has(id);
 
   // Recurring-task generation does a write + a few round-trips. Run it
   // concurrently with the reads (awaited below) rather than blocking ahead of
@@ -116,8 +139,13 @@ export async function DashboardPanels() {
   const forecastHorizonIso = forecastHorizon.toISOString().slice(0, 10);
   const monthStartIso = `${todayIso.slice(0, 7)}-01`;
 
+  // The cash-tightening banner (admin-only, conditional) is a system element —
+  // it is NOT in the widget catalog and can't be hidden — so its inputs
+  // (workerOwed / near-term in/out forecasts) are gated on role only, not on a
+  // widget toggle.
   const [
     alertsResult,
+    scheduleEntries,
     myTasks,
     reminders,
     taskStatusCounts,
@@ -133,31 +161,36 @@ export async function DashboardPanels() {
     forecastOutResult,
     domainBreakdown,
   ] = await Promise.all([
-    getAlertsData(supabase, { viewerRole: profile.role }),
-    getMyTasks(supabase, profile.id),
-    getOpenReminders(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as Reminder[]),
-    isAdminOrOffice ? getTaskStatusCounts(supabase) : Promise.resolve(null),
-    isAdminOrOffice ? getProjectsOverview(supabase) : Promise.resolve(null),
-    isAdminOrOffice
+    show("alerts") ? getAlertsData(supabase, { viewerRole: role, userId: profile.id }) : Promise.resolve(null),
+    show("week")
+      ? getScheduleEntries(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as CalendarEntry[])
+      : Promise.resolve([] as CalendarEntry[]),
+    show("myTasks") ? getMyTasks(supabase, profile.id) : Promise.resolve([]),
+    show("reminders")
+      ? getOpenReminders(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as Reminder[])
+      : Promise.resolve([] as Reminder[]),
+    show("taskDonut") && isAdminOrOffice ? getTaskStatusCounts(supabase) : Promise.resolve(null),
+    show("projects") && isAdminOrOffice ? getProjectsOverview(supabase) : Promise.resolve(null),
+    show("deliveries") && isAdminOrOffice
       ? loadDeliveriesPage(supabase, { page: 1, filters: { customerId: null } }).then((r) => r.deliveries).catch(() => [] as DeliveryItem[])
       : Promise.resolve([] as DeliveryItem[]),
-    isAdminOrOffice ? getWorkforceOverview(supabase) : Promise.resolve(null),
-    isAdminOrOffice ? getInventoryHealth(supabase) : Promise.resolve(null),
-    isAdmin ? getRecentAuditEvents(supabase, 8).then((r) => r.items).catch(() => [] as AuditFeedItem[]) : Promise.resolve([] as AuditFeedItem[]),
-    isAdminOrOffice
+    show("workforce") && isAdminOrOffice ? getWorkforceOverview(supabase) : Promise.resolve(null),
+    show("inventory") && isAdminOrOffice ? getInventoryHealth(supabase) : Promise.resolve(null),
+    show("activity") && isAdmin ? getRecentAuditEvents(supabase, 8).then((r) => r.items).catch(() => [] as AuditFeedItem[]) : Promise.resolve([] as AuditFeedItem[]),
+    show("finance") && isAdminOrOffice
       ? supabase.from("invoices").select("balance_due,payment_status").in("payment_status", ["unpaid", "partial", "overdue"]).range(0, 499)
       : Promise.resolve({ data: null, error: null }),
     isAdmin
       ? supabase.from("worker_debt_items_view").select("owed_amount").eq("source_type", "payslip").gt("owed_amount", 0.009).range(0, 999)
       : Promise.resolve({ data: null, error: null }),
-    isAdminOrOffice ? getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[]) : Promise.resolve([] as PaymentDueToday[]),
-    isAdminOrOffice
+    show("finance") && isAdminOrOffice ? getPaymentsDueToday(supabase).catch(() => [] as PaymentDueToday[]) : Promise.resolve([] as PaymentDueToday[]),
+    isAdmin
       ? supabase.from("payments").select("amount_total").eq("payment_status", "pending").not("due_date", "is", null).gte("due_date", todayIso).lte("due_date", forecastHorizonIso).range(0, 999)
       : Promise.resolve({ data: null, error: null }),
-    isAdminOrOffice
+    isAdmin
       ? supabase.from("expenses").select("amount,paid_amount").in("payment_status", ["not_paid", "partial"]).gte("expense_date", todayIso).lte("expense_date", forecastHorizonIso).range(0, 999)
       : Promise.resolve({ data: null, error: null }),
-    isAdminOrOffice
+    show("domainChart") && isAdminOrOffice
       ? getCashFlowPageData(supabase, { from: monthStartIso, to: todayIso, pageSize: 1 })
           .then((d) => d.domainBreakdown)
           .catch(() => [] as { domainName: string; inflow: number; outflow: number }[])
@@ -190,22 +223,54 @@ export async function DashboardPanels() {
     .map((d) => ({ name: d.domainName, inflow: d.inflow, outflow: d.outflow }))
     .filter((d) => d.inflow > 0 || d.outflow > 0);
 
-  // Presence flags so a hidden panel never leaves an empty half in a 2-col row.
-  const hasTasks = myTasks.length > 0;
-  const hasDeliveries = isAdminOrOffice && deliveriesResult.length > 0;
   const taskStatusTotal = taskStatusCounts
     ? taskStatusCounts.todo + taskStatusCounts.in_progress + taskStatusCounts.blocked + taskStatusCounts.done
     : 0;
-  const hasDonut = isAdminOrOffice && taskStatusTotal > 0;
-  const hasReminders = reminders.length > 0;
-  const hasActivity = isAdmin && recentActivity.length > 0;
+
+  // ── Rendered node per widget (null when its data is empty, so we never show an
+  // empty panel — mirrors the previous presence flags). ──────────────────────
+  const nodes: Record<WidgetId, ReactNode> = {
+    alerts: alertsResult ? <AlertCenter alerts={alertsResult.alerts} /> : null,
+    week: show("week") ? <WeekOverview entries={scheduleEntries} /> : null,
+    myTasks: myTasks.length > 0 ? <MyTasksPanel tasks={myTasks} /> : null,
+    finance: show("finance") && isAdminOrOffice ? (
+      <CompactFinanceStrip
+        openCollections={invoicesTableMissing ? 0 : openCollectionsCount}
+        dueToday={dueTodayCount}
+        payrollOwed={isAdmin ? workerOwedCount : null}
+      />
+    ) : null,
+    projects: projectsOverview ? <ProjectStatusCards statusCounts={projectsOverview.statusCounts} /> : null,
+    deliveries: deliveriesResult.length > 0 ? <UpcomingDeliveries deliveries={deliveriesResult} /> : null,
+    taskDonut: taskStatusCounts && taskStatusTotal > 0 ? <TaskStatusDonut counts={taskStatusCounts} /> : null,
+    workforce: workforce ? <WorkforceOverview data={workforce} /> : null,
+    inventory: inventoryHealth ? <InventoryHealth data={inventoryHealth} /> : null,
+    domainChart: domainBars.length > 0 ? (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">הכנסות והוצאות לפי תחום</CardTitle>
+          <CardDescription>החודש הנוכחי</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DomainBarChart data={domainBars} />
+        </CardContent>
+      </Card>
+    ) : null,
+    reminders: reminders.length > 0 ? <RemindersPanel reminders={reminders} /> : null,
+    activity: recentActivity.length > 0 ? <RecentActivityFeed items={recentActivity} /> : null,
+  };
+
+  const widgetRows = groupIntoRows(
+    ordered
+      .map((w) => ({ id: w.id, span: w.span, node: nodes[w.id] }))
+      .filter((e): e is WidgetRow => e.node != null)
+  );
 
   return (
     <>
-      <ErrorCard messages={alertsResult.errors.dashboard ? [`התראות: ${alertsResult.errors.dashboard}`] : []} />
+      <ErrorCard messages={alertsResult?.errors.dashboard ? [`התראות: ${alertsResult.errors.dashboard}`] : []} />
 
-      <AlertCenter alerts={alertsResult.alerts} />
-
+      {/* System banner — critical cash warning, not user-hideable. */}
       {cashTighteningSoon ? (
         <Card className="border-warning/50">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
@@ -220,48 +285,24 @@ export async function DashboardPanels() {
         </Card>
       ) : null}
 
-      {isAdminOrOffice ? (
-        <CompactFinanceStrip
-          openCollections={invoicesTableMissing ? 0 : openCollectionsCount}
-          dueToday={dueTodayCount}
-          payrollOwed={isAdmin ? workerOwedCount : null}
-        />
-      ) : null}
+      {widgetRows.map((row) =>
+        row.length === 2 ? (
+          <div key={row[0].id} className="grid gap-4 xl:grid-cols-2">
+            {row.map((w) => (
+              <div key={w.id}>{w.node}</div>
+            ))}
+          </div>
+        ) : (
+          <div key={row[0].id}>{row[0].node}</div>
+        )
+      )}
 
-      {hasTasks ? <MyTasksPanel tasks={myTasks} /> : null}
-
-      {isAdminOrOffice && projectsOverview ? (
-        <ProjectStatusCards statusCounts={projectsOverview.statusCounts} />
-      ) : null}
-
-      {hasDeliveries || hasDonut ? (
-        <div className={cn("grid gap-4", hasDeliveries && hasDonut && "xl:grid-cols-2")}>
-          {hasDeliveries ? <UpcomingDeliveries deliveries={deliveriesResult} /> : null}
-          {hasDonut && taskStatusCounts ? <TaskStatusDonut counts={taskStatusCounts} /> : null}
-        </div>
-      ) : null}
-
-      {isAdminOrOffice && workforce ? <WorkforceOverview data={workforce} /> : null}
-
-      {isAdminOrOffice && inventoryHealth ? <InventoryHealth data={inventoryHealth} /> : null}
-
-      {isAdminOrOffice && domainBars.length > 0 ? (
+      {widgetRows.length === 0 ? (
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">הכנסות והוצאות לפי תחום</CardTitle>
-            <CardDescription>החודש הנוכחי</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <DomainBarChart data={domainBars} />
+          <CardContent className="p-6 text-center text-sm text-muted-foreground">
+            אין כרטיסים להצגה. ניתן להוסיף כרטיסים דרך «התאמת לוח».
           </CardContent>
         </Card>
-      ) : null}
-
-      {hasReminders || hasActivity ? (
-        <div className={cn("grid gap-4", hasReminders && hasActivity && "xl:grid-cols-2")}>
-          {hasReminders ? <RemindersPanel reminders={reminders} /> : null}
-          {hasActivity ? <RecentActivityFeed items={recentActivity} /> : null}
-        </div>
       ) : null}
     </>
   );
