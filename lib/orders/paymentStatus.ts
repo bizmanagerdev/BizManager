@@ -30,7 +30,7 @@ export type OrderPaymentRow = {
 // existing order/project payment dialogs that import it stay unchanged.
 export const ORDER_PAYMENT_METHOD_OPTIONS = PAYMENT_METHOD_OPTIONS;
 
-function normalizePaymentMethodValue(method: string | null | undefined) {
+export function normalizePaymentMethodValue(method: string | null | undefined) {
   const raw = typeof method === "string" ? method.trim() : "";
   if (!raw) return "";
 

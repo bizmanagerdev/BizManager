@@ -88,6 +88,7 @@ export type ReceivablePendingPayment = {
   amount: number;
   due_date: string | null;
   payment_method: string | null;
+  check_number: string | null;
   overdue: boolean;
 };
 
@@ -664,6 +665,7 @@ async function attachPendingPayments(
         amount: toNum(row.amount_total),
         due_date: due,
         payment_method: str(row, "payment_method"),
+        check_number: str(row, "check_number"),
         overdue: Boolean(due && due.slice(0, 10) <= today),
       });
       byKey.set(key, list);
@@ -674,7 +676,7 @@ async function attachPendingPayments(
     orderIds.length > 0
       ? supabase
           .from("payments")
-          .select("id,amount_total,due_date,payment_method,order_id")
+          .select("id,amount_total,due_date,payment_method,check_number,order_id")
           .eq("payment_status", "pending")
           .in("order_id", orderIds)
           .then(({ data }) => collect((data ?? []) as Row[], "order", "order_id"))
@@ -682,7 +684,7 @@ async function attachPendingPayments(
     projectIds.length > 0
       ? supabase
           .from("payments")
-          .select("id,amount_total,due_date,payment_method,project_id")
+          .select("id,amount_total,due_date,payment_method,check_number,project_id")
           .eq("payment_status", "pending")
           .in("project_id", projectIds)
           .then(({ data }) => collect((data ?? []) as Row[], "project", "project_id"))

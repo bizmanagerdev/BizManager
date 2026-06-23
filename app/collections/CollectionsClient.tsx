@@ -1,17 +1,23 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Bell, ChevronDown, MessageCircle, Phone } from "lucide-react";
+import { Bell, ChevronDown, Coins, MessageCircle, Phone, type LucideIcon } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { formatShortDate } from "@/lib/date";
 import { getBusinessDomainLabel } from "@/lib/expenses";
-import { collectionStatusClasses, collectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
+import {
+  collectionStatusClasses,
+  collectionStatusLabel,
+  normalizePaymentMethodValue,
+  paymentMethodLabel,
+} from "@/lib/orders/paymentStatus";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import {
   actionTypeLabel,
@@ -102,26 +108,31 @@ function LastContactSignal({ lastContactAt, overdue }: { lastContactAt: string |
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  tone = "default",
+// Underline-style top tab: active = solid foreground text + underline, the rest muted.
+function ViewTab({
+  active,
+  onClick,
+  icon: Icon,
+  children,
 }: {
-  label: string;
-  value: string;
-  tone?: "default" | "danger" | "warning";
+  active: boolean;
+  onClick: () => void;
+  icon: LucideIcon;
+  children: ReactNode;
 }) {
-  const toneClass =
-    tone === "danger"
-      ? "text-destructive"
-      : tone === "warning"
-        ? "text-warning-strong"
-        : "text-foreground";
   return (
-    <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-lg font-semibold ${toneClass}`}>{value}</div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`-mb-px flex items-center gap-1.5 border-b-2 pb-2 text-sm font-medium transition-colors ${
+        active
+          ? "border-primary text-primary"
+          : "border-transparent text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      {children}
+    </button>
   );
 }
 
@@ -274,10 +285,25 @@ export default function CollectionsClient({
 
   return (
     <div className="space-y-4">
-      {/* Page-level quick actions — add a follow-up without drilling into a debtor */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold">פניות ומעקב גבייה</h1>
-        <div className="flex flex-wrap gap-2">
+      {/* Tabs on the right, quick-action buttons on the left, one row */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60">
+        <div className="flex items-center gap-4 sm:gap-6">
+          <ViewTab active={view === "activity"} onClick={() => setView("activity")} icon={MessageCircle}>
+            יומן שיחות
+          </ViewTab>
+          <ViewTab active={view === "reminders"} onClick={() => setView("reminders")} icon={Bell}>
+            תזכורות{reminders.length ? ` (${reminders.length})` : ""}
+            {overdueReminderCount ? (
+              <span className="rounded-full bg-destructive px-1.5 text-[10px] text-destructive-foreground">
+                {overdueReminderCount}
+              </span>
+            ) : null}
+          </ViewTab>
+          <ViewTab active={view === "debtors"} onClick={() => setView("debtors")} icon={Coins}>
+            חייבים{totals.customerCount ? ` (${totals.customerCount})` : ""}
+          </ViewTab>
+        </div>
+        <div className="flex flex-wrap gap-2 pb-2">
           <Button type="button" size="sm" onClick={() => setAddCallOpen(true)}>
             <MessageCircle className="me-1 h-4 w-4" />
             תיעוד שיחה
@@ -320,39 +346,6 @@ export default function CollectionsClient({
         onUpdateReminder={updateReminder}
       />
 
-      {/* View switch — call history first, then reminders, then debtors */}
-      <div className="flex flex-wrap gap-2 border-b border-border/60 pb-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={view === "activity" ? "default" : "ghost"}
-          onClick={() => setView("activity")}
-        >
-          יומן שיחות
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={view === "reminders" ? "default" : "ghost"}
-          onClick={() => setView("reminders")}
-        >
-          תזכורות{reminders.length ? ` (${reminders.length})` : ""}
-          {overdueReminderCount ? (
-            <span className="ms-1 rounded-full bg-destructive px-1.5 text-[10px] text-destructive-foreground">
-              {overdueReminderCount}
-            </span>
-          ) : null}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={view === "debtors" ? "default" : "ghost"}
-          onClick={() => setView("debtors")}
-        >
-          חייבים{totals.customerCount ? ` (${totals.customerCount})` : ""}
-        </Button>
-      </div>
-
       {view === "activity" ? (
         <ActivityView logs={recentLogs} onChanged={() => router.refresh()} />
       ) : view === "reminders" ? (
@@ -391,27 +384,21 @@ export default function CollectionsClient({
           />
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard label="סה״כ לגבייה" value={formatCurrency(totals.outstanding)} />
-            <SummaryCard label="באיחור" value={formatCurrency(totals.overdue)} tone="danger" />
-            <SummaryCard label="צפוי (טרם נגבה)" value={formatCurrency(totals.pending)} tone="warning" />
-            <SummaryCard label="לקוחות חייבים" value={`${totals.customerCount}`} />
-          </div>
-          <DebtorsTable
-            filter={filter}
-            setFilter={setFilter}
-            search={search}
-            setSearch={setSearch}
-            domain={domain}
-            setDomain={setDomain}
-            domainOptions={domainOptions}
-            sort={sort}
-            setSort={setSort}
-            filtered={filtered}
-            onOpenReminders={openReminders}
-          />
-        </div>
+        <DebtorsTable
+          totals={totals}
+          customers={customers}
+          filter={filter}
+          setFilter={setFilter}
+          search={search}
+          setSearch={setSearch}
+          domain={domain}
+          setDomain={setDomain}
+          domainOptions={domainOptions}
+          sort={sort}
+          setSort={setSort}
+          filtered={filtered}
+          onOpenReminders={openReminders}
+        />
       )}
     </div>
   );
@@ -569,32 +556,6 @@ function DueTodaySection({
       </div>
     </div>
   );
-}
-
-// Aging buckets by DAYS LATE. "שוטף" is avoided as a header because in Israeli
-// business it means a payment TERM (end-of-month, שוטף+30/+40), not "not late".
-const AGING_COLUMNS: {
-  key: keyof CollectionCustomerGroup["aging"];
-  label: string;
-  tone: "muted" | "warning" | "danger";
-  hint: string;
-}[] = [
-  { key: "current", label: "צפוי", tone: "muted", hint: "טרם הגיע מועד התשלום — תשלום עתידי מתוזמן" },
-  { key: "d30", label: "1–30 ימים", tone: "muted", hint: "באיחור 1–30 ימים" },
-  { key: "d60", label: "31–60 ימים", tone: "warning", hint: "באיחור 31–60 ימים" },
-  { key: "d90", label: "61–90 ימים", tone: "warning", hint: "באיחור 61–90 ימים" },
-  { key: "d90plus", label: "90+ ימים", tone: "danger", hint: "באיחור מעל 90 ימים" },
-];
-
-function AgingValue({ value, tone }: { value: number; tone: "muted" | "warning" | "danger" }) {
-  if (value <= 0.009) return <span className="text-muted-foreground/40">—</span>;
-  const cls =
-    tone === "danger"
-      ? "font-semibold text-destructive"
-      : tone === "warning"
-        ? "font-medium text-warning-strong"
-        : "";
-  return <span className={cls}>{formatCurrency(value)}</span>;
 }
 
 // Subtle row/card tint by worst aging bucket, so the riskiest debts stand out.
@@ -818,7 +779,214 @@ function CustomerCard({
   );
 }
 
+// ─── Expected receipts (תקבולים צפויים) ─────────────────────────────────────
+// A flat, payment-centric view of every future-dated / uncleared receivable, so
+// the office can answer "show me all the expected checks" or "all the transfers
+// due this month" — filterable by payment method and due-date range.
+
+type ExpectedReceipt = {
+  paymentId: string;
+  amount: number;
+  dueDate: string | null;
+  methodKey: string; // normalized: check / bank_transfer / cash / bit / credit_card / ...
+  methodRaw: string | null;
+  checkNumber: string | null;
+  overdue: boolean;
+  customerId: string | null;
+  customerName: string;
+  customerPhone: string | null;
+  sourceType: "order" | "project";
+  sourceId: string;
+};
+
+// Method chips. Only those actually present in the data are shown (plus "הכל").
+const RECEIPT_METHODS: { key: string; label: string }[] = [
+  { key: "all", label: "הכל" },
+  { key: "check", label: "צ׳ק" },
+  { key: "bank_transfer", label: "העברה" },
+  { key: "bit", label: "ביט" },
+  { key: "cash", label: "מזומן" },
+  { key: "credit_card", label: "אשראי" },
+];
+
+function flattenExpectedReceipts(customers: CollectionCustomerGroup[]): ExpectedReceipt[] {
+  const out: ExpectedReceipt[] = [];
+  for (const group of customers) {
+    for (const source of group.sources) {
+      for (const p of source.pending_payments) {
+        out.push({
+          paymentId: p.id,
+          amount: p.amount,
+          dueDate: p.due_date,
+          methodKey: normalizePaymentMethodValue(p.payment_method),
+          methodRaw: p.payment_method,
+          checkNumber: p.check_number,
+          overdue: p.overdue,
+          customerId: group.customer_id,
+          customerName: group.customer_name,
+          customerPhone: group.customer_phone,
+          sourceType: source.source_type,
+          sourceId: source.source_id,
+        });
+      }
+    }
+  }
+  // Earliest due date first — the natural "what's coming up" order.
+  return out.sort((a, b) => (a.dueDate ?? "9999-99-99").localeCompare(b.dueDate ?? "9999-99-99"));
+}
+
+function ExpectedReceiptRow({ receipt }: { receipt: ExpectedReceipt }) {
+  const href =
+    receipt.sourceType === "order"
+      ? `/sales/orders/${receipt.sourceId}`
+      : `/projects/${receipt.sourceId}`;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="shrink-0 rounded-md border border-border/70 px-1.5 py-0.5 text-xs text-muted-foreground">
+          {paymentMethodLabel(receipt.methodRaw)}
+        </span>
+        {receipt.customerId ? (
+          <NavLink to={`/customers/${receipt.customerId}`} className="font-medium hover:underline">
+            {receipt.customerName}
+          </NavLink>
+        ) : (
+          <span className="font-medium">{receipt.customerName}</span>
+        )}
+        {receipt.customerPhone ? (
+          <a href={`tel:${receipt.customerPhone}`} className="text-muted-foreground hover:underline">
+            ☎ {receipt.customerPhone}
+          </a>
+        ) : null}
+        {receipt.checkNumber ? (
+          <span className="font-mono text-xs text-muted-foreground">מס׳ {receipt.checkNumber}</span>
+        ) : null}
+        <NavLink to={href} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+          {receipt.sourceType === "order" ? "הזמנה" : "פרויקט"}
+        </NavLink>
+        <span className={receipt.overdue ? "font-medium text-destructive" : "text-muted-foreground"}>
+          {receipt.overdue ? "באיחור · " : "פירעון "}
+          {receipt.dueDate ? formatShortDate(receipt.dueDate) : "—"}
+        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="font-semibold">{formatCurrency(receipt.amount)}</span>
+        <MarkCollectedButton paymentIds={[receipt.paymentId]} />
+      </div>
+    </div>
+  );
+}
+
+function ExpectedReceiptsView({
+  receipts,
+  search,
+  setSearch,
+}: {
+  receipts: ExpectedReceipt[];
+  search: string;
+  setSearch: (s: string) => void;
+}) {
+  const [method, setMethod] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  // Only offer chips for methods that actually appear in the data (plus "הכל").
+  const methodChips = useMemo(() => {
+    const present = new Set(receipts.map((r) => r.methodKey).filter(Boolean));
+    return RECEIPT_METHODS.filter((m) => m.key === "all" || present.has(m.key));
+  }, [receipts]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return receipts.filter((r) => {
+      if (method !== "all" && r.methodKey !== method) return false;
+      const day = r.dueDate ? r.dueDate.slice(0, 10) : null;
+      if (from && (!day || day < from)) return false;
+      if (to && (!day || day > to)) return false;
+      if (q) {
+        const haystack = `${r.customerName} ${r.customerPhone ?? ""} ${r.checkNumber ?? ""}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [receipts, method, from, to, search]);
+
+  const total = filtered.reduce((sum, r) => sum + r.amount, 0);
+
+  return (
+    <div className="space-y-3">
+      {/* Payment-method chips — horizontally scrollable on mobile */}
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        {methodChips.map((m) => (
+          <Button
+            key={m.key}
+            type="button"
+            size="sm"
+            variant={method === m.key ? "default" : "outline"}
+            className="shrink-0"
+            onClick={() => setMethod(m.key)}
+          >
+            {m.label}
+          </Button>
+        ))}
+      </div>
+
+      {/* Due-date range + search */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground">מ־</span>
+          <DateInput value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 w-32" />
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground">עד</span>
+          <DateInput value={to} onChange={(e) => setTo(e.target.value)} className="h-9 w-32" />
+        </div>
+        {from || to ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setFrom("");
+              setTo("");
+            }}
+          >
+            נקה תאריך
+          </Button>
+        ) : null}
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="חיפוש לפי שם / טלפון / מס׳ צ׳ק..."
+          className="h-9 w-full sm:w-56"
+        />
+      </div>
+
+      {/* Totals for the current filter */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className="text-muted-foreground">{filtered.length} תקבולים</span>
+        <span className="text-border">·</span>
+        <span className="font-semibold">סה״כ {formatCurrency(total)}</span>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-10 text-center text-sm text-muted-foreground">
+          {receipts.length === 0 ? "אין תקבולים צפויים." : "אין תקבולים שתואמים לסינון."}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((r) => (
+            <ExpectedReceiptRow key={r.paymentId} receipt={r} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DebtorsTable({
+  totals,
+  customers,
   filter,
   setFilter,
   search,
@@ -831,6 +999,8 @@ function DebtorsTable({
   filtered,
   onOpenReminders,
 }: {
+  totals: { outstanding: number; pending: number; overdue: number; customerCount: number };
+  customers: CollectionCustomerGroup[];
   filter: FilterKey;
   setFilter: (f: FilterKey) => void;
   search: string;
@@ -845,6 +1015,10 @@ function DebtorsTable({
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Sub-view inside חייבים: the customer worklist, or a flat list of all the
+  // expected (future-dated) receipts filterable by payment method + due date.
+  const [subView, setSubView] = useState<"customers" | "receipts">("customers");
+  const expectedReceipts = useMemo(() => flattenExpectedReceipts(customers), [customers]);
   const tabs: { key: FilterKey; label: string }[] = [
     { key: "all", label: "הכל" },
     { key: "overdue", label: "באיחור" },
@@ -887,82 +1061,102 @@ function DebtorsTable({
 
   const footer = filtered.reduce(
     (acc, c) => {
-      acc.current += c.aging.current;
-      acc.d30 += c.aging.d30;
-      acc.d60 += c.aging.d60;
-      acc.d90 += c.aging.d90;
-      acc.d90plus += c.aging.d90plus;
       acc.outstanding += c.outstanding_amount;
       return acc;
     },
-    { current: 0, d30: 0, d60: 0, d90: 0, d90plus: 0, outstanding: 0 }
+    { outstanding: 0 }
   );
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {tabs.map((tab) => (
-          <Button
-            key={tab.key}
-            type="button"
-            size="sm"
-            variant={filter === tab.key ? "default" : "outline"}
-            onClick={() => setFilter(tab.key)}
-          >
-            {tab.label}
-          </Button>
-        ))}
-        {domainOptions.length > 1 ? (
-          <select
-            value={domain}
-            onChange={(e) => setDomain(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="all">כל התחומים</option>
-            {domainOptions.map((d) => (
-              <option key={d.value} value={d.value}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as SortKey)}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option value="amount">מיון: סכום</option>
-          <option value="oldest">מיון: ותק החוב</option>
-          <option value="due">מיון: תאריך פירעון</option>
-          <option value="name">מיון: שם</option>
-        </select>
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="חיפוש לפי שם או טלפון..."
-          className="h-9 w-full sm:w-56"
-        />
+      {/* Compact stats line — replaces the old 4-card grid */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className="text-muted-foreground">סה״כ לגבייה</span>
+        <span className="font-semibold">{formatCurrency(totals.outstanding)}</span>
+        <span className="text-border">·</span>
+        <span className="text-muted-foreground">באיחור</span>
+        <span className="font-semibold text-destructive">{formatCurrency(totals.overdue)}</span>
+        <span className="text-border">·</span>
+        <span className="text-muted-foreground">צפוי</span>
+        <span className="font-semibold text-warning-strong">{formatCurrency(totals.pending)}</span>
+        <span className="text-border">·</span>
+        <span className="text-muted-foreground">{totals.customerCount} לקוחות</span>
       </div>
 
-      <div className="space-y-1">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {AGING_COLUMNS.map((c) => (
-            <div
-              key={c.key}
-              title={c.hint}
-              className="rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-center"
-            >
-              <div className="text-[11px] text-muted-foreground">{c.label}</div>
-              <div className="text-sm font-semibold">
-                <AgingValue value={footer[c.key]} tone={c.tone} />
-              </div>
-            </div>
-          ))}
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          חלוקת החוב לפי ימי איחור · ׳צפוי׳ = טרם הגיע מועד התשלום (תשלום עתידי מתוזמן, למשל צ׳ק דחוי).
-        </p>
+      {/* Switch between the per-customer worklist and the flat expected-receipts list */}
+      <div className="flex w-fit rounded-xl border bg-secondary/40 p-0.5 text-sm">
+        <button
+          type="button"
+          onClick={() => setSubView("customers")}
+          className={`rounded-lg px-3 py-1 transition-colors ${
+            subView === "customers"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-secondary/10"
+          }`}
+        >
+          לקוחות ({totals.customerCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubView("receipts")}
+          className={`rounded-lg px-3 py-1 transition-colors ${
+            subView === "receipts"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-secondary/10"
+          }`}
+        >
+          תקבולים צפויים ({expectedReceipts.length})
+        </button>
       </div>
+
+      {subView === "receipts" ? (
+        <ExpectedReceiptsView receipts={expectedReceipts} search={search} setSearch={setSearch} />
+      ) : (
+        <>
+          {/* All filters in one row: search, then status / sort / domain dropdowns */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="חיפוש לפי שם או טלפון..."
+              className="h-9 w-full sm:w-56"
+            />
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as FilterKey)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              {tabs.map((tab) => (
+                <option key={tab.key} value={tab.key}>
+                  הצג: {tab.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="amount">מיון: סכום</option>
+              <option value="oldest">מיון: ותק החוב</option>
+              <option value="due">מיון: תאריך פירעון</option>
+              <option value="name">מיון: שם</option>
+            </select>
+            {domainOptions.length > 1 ? (
+              <select
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="all">כל התחומים</option>
+                {domainOptions.map((d) => (
+                  <option key={d.value} value={d.value}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
 
       {selectedGroups.length > 0 ? (
         <BulkActions groups={selectedGroups} onClear={clearSelection} />
@@ -1053,6 +1247,8 @@ function DebtorsTable({
               סה״כ ({filtered.length} לקוחות): {formatCurrency(footer.outstanding)}
             </div>
           </div>
+        </>
+      )}
         </>
       )}
     </div>

@@ -101,7 +101,12 @@ export default function EditReminderDialog({
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium">אחראי</label>
-            <AssigneeSelect value={assignee} onChange={setAssignee} />
+            <AssigneeSelect
+              value={assignee}
+              onChange={setAssignee}
+              emptyLabel="ללא אחראי"
+              currentLabel={reminder?.assigned_to_name ?? undefined}
+            />
           </div>
           {error ? <div className="text-sm text-destructive">{error}</div> : null}
         </div>

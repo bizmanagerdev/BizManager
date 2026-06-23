@@ -200,9 +200,15 @@ export async function getOpenReminders(
     .select(REMINDER_SELECT)
     .eq("status", "pending");
 
-  // "Mine" = reminders I'm in charge of OR that I created (both columns exist).
+  // "Mine" = reminders I'm in charge of (assigned_to). Creating a reminder
+  // defaults assigned_to to the creator, so this still covers ones I made — but
+  // once I REASSIGN a reminder to someone else it correctly leaves my list (it
+  // becomes theirs). The created_by fallback only catches legacy reminders that
+  // have no assignee at all, so I don't lose ones I own that were never assigned.
   if (options?.scope === "mine" && options.userId) {
-    query = query.or(`assigned_to.eq.${options.userId},created_by.eq.${options.userId}`);
+    query = query.or(
+      `assigned_to.eq.${options.userId},and(assigned_to.is.null,created_by.eq.${options.userId})`
+    );
   }
 
   const { data, error } = await query
