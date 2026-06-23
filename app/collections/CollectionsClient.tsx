@@ -124,10 +124,10 @@ function ViewTab({
     <button
       type="button"
       onClick={onClick}
-      className={`-mb-px flex items-center gap-1.5 border-b-2 pb-2 text-sm font-medium transition-colors ${
+      className={`-mb-px flex items-center gap-1 rounded-t-md border-b-[3px] px-2 pb-2 pt-1 text-base transition-colors hover:bg-muted/60 ${
         active
-          ? "border-primary text-primary"
-          : "border-transparent text-muted-foreground hover:text-foreground"
+          ? "border-primary font-bold text-primary"
+          : "border-transparent font-medium text-muted-foreground hover:text-foreground"
       }`}
     >
       <Icon className="h-4 w-4" />
@@ -287,7 +287,7 @@ export default function CollectionsClient({
     <div className="space-y-4">
       {/* Tabs on the right, quick-action buttons on the left, one row */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60">
-        <div className="flex items-center gap-4 sm:gap-6">
+        <div className="flex items-center gap-2 sm:gap-3">
           <ViewTab active={view === "activity"} onClick={() => setView("activity")} icon={MessageCircle}>
             יומן שיחות
           </ViewTab>

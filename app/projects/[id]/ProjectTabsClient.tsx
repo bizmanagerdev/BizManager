@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FileText, ListChecks, Wallet } from "lucide-react";
 import { ClientOnly } from "@/components/ClientOnly";
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -1481,21 +1482,23 @@ export default function ProjectTabsClient({
       fallback={<div className="text-muted-foreground text-base">טוען…</div>}
     >
       <Tabs value={tabValue} onValueChange={setTab} dir="rtl">
-        <TabsList className={`sticky top-2 z-10 grid h-auto w-full ${canSeeFinances ? "grid-cols-3" : "grid-cols-2"} gap-2 overflow-visible border-b-0 bg-transparent p-0 shadow-none sm:top-4 sm:mx-auto sm:max-w-3xl [&>*]:min-w-0 [&>*]:rounded-2xl [&>*]:border [&>*]:border-foreground/20 [&>*]:bg-card/95 [&>*]:px-3 [&>*]:py-3 [&>*]:text-sm [&>*]:font-semibold [&>*]:text-foreground [&>*]:shadow-sm [&>*]:backdrop-blur [&>*]:transition-colors [&>*]:hover:border-foreground/35 [&>*]:hover:bg-card [&>*]:data-[state=active]:border-foreground [&>*]:data-[state=active]:bg-foreground [&>*]:data-[state=active]:text-background sm:[&>*]:text-base`}>
+        <TabsList variant="underline" className="sticky top-2 z-10 justify-center bg-background sm:top-4">
           {canSeeFinances ? (
-            <TabsTrigger value="overview" className="flex-col gap-1">
-              <span>כספים</span>
-              <span className="text-[11px] opacity-80">מצב כספי</span>
+            <TabsTrigger value="overview">
+              <Wallet className="h-4 w-4" />
+              כספים
             </TabsTrigger>
           ) : null}
-          <TabsTrigger value="tasks" className="flex-col gap-1">
-            <span>משימות</span>
+          <TabsTrigger value="tasks">
+            <ListChecks className="h-4 w-4" />
+            משימות
             <Badge variant="secondary" className="rounded-full px-2 py-0 text-[11px]">
               {completion}%
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="documents" className="flex-col gap-1">
-            <span>מסמכים</span>
+          <TabsTrigger value="documents">
+            <FileText className="h-4 w-4" />
+            מסמכים
             <Badge variant="secondary" className="rounded-full px-2 py-0 text-[11px]">
               {projectDocuments.length}
             </Badge>

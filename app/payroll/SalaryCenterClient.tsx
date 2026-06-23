@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
-import { AlertTriangle, LockKeyhole, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { AlertTriangle, Banknote, CalendarCheck, Coins, Hammer, LockKeyhole, Pencil, Plus, Printer, Receipt, SlidersHorizontal, Trash2, Users, Wallet } from "lucide-react";
 import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -2498,12 +2498,12 @@ export default function SalaryCenterClient({
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
-        <TabsList>
-          <TabsTrigger value="employees">{"עובדים"}</TabsTrigger>
-          <TabsTrigger value="labor">{"פועלים"}</TabsTrigger>
-          <TabsTrigger value="attendance">{"נוכחות"}</TabsTrigger>
-          {canManageSalary ? <TabsTrigger value="agreements">{"משכורות"}</TabsTrigger> : null}
-          {canManageSalary ? <TabsTrigger value="payslips">{"תקופות ותלושים"}</TabsTrigger> : null}
+        <TabsList variant="underline" className="sm:justify-center">
+          <TabsTrigger value="employees"><Users className="h-4 w-4" />עובדים</TabsTrigger>
+          <TabsTrigger value="labor"><Hammer className="h-4 w-4" />פועלים</TabsTrigger>
+          <TabsTrigger value="attendance"><CalendarCheck className="h-4 w-4" />נוכחות</TabsTrigger>
+          {canManageSalary ? <TabsTrigger value="agreements"><Wallet className="h-4 w-4" />משכורות</TabsTrigger> : null}
+          {canManageSalary ? <TabsTrigger value="payslips"><Receipt className="h-4 w-4" />תקופות ותלושים</TabsTrigger> : null}
         </TabsList>
 
         <TabsContent value="employees" className="space-y-3">
@@ -3976,13 +3976,13 @@ export default function SalaryCenterClient({
                 </Card>
 
                 <Tabs defaultValue={canManageSalary ? "finances" : "attendance"} dir="rtl">
-                  <TabsList>
-                    {canManageSalary ? <TabsTrigger value="finances">{"כספים"}</TabsTrigger> : null}
-                    <TabsTrigger value="attendance">{"נוכחות"}</TabsTrigger>
+                  <TabsList variant="underline" className="sm:justify-center">
+                    {canManageSalary ? <TabsTrigger value="finances"><Coins className="h-4 w-4" />כספים</TabsTrigger> : null}
+                    <TabsTrigger value="attendance"><CalendarCheck className="h-4 w-4" />נוכחות</TabsTrigger>
                     {canSelectedWorkerHaveAgreement && canManageSalary ? (
-                      <TabsTrigger value="salary">{"שכר"}</TabsTrigger>
+                      <TabsTrigger value="salary"><Banknote className="h-4 w-4" />שכר</TabsTrigger>
                     ) : null}
-                    <TabsTrigger value="print">{"הדפסה"}</TabsTrigger>
+                    <TabsTrigger value="print"><Printer className="h-4 w-4" />הדפסה</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="finances" className="space-y-5">

@@ -260,16 +260,17 @@ export default async function SalesPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          {customerName ? (
-            <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
-          ) : null}
-          <Button asChild className="h-11 w-full sm:ms-auto sm:h-10 sm:w-auto">
-            <Link href="/sales/orders/new">הזמנה חדשה</Link>
-          </Button>
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border/60">
+          <SalesTabsNav activeTab={activeTab} counts={salesTabCounts} searchParams={params} />
+          <div className="flex flex-wrap items-center gap-3 pb-2">
+            {customerName ? (
+              <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
+            ) : null}
+            <Button asChild>
+              <Link href="/sales/orders/new">הזמנה חדשה</Link>
+            </Button>
+          </div>
         </div>
-
-        <SalesTabsNav activeTab={activeTab} counts={salesTabCounts} searchParams={params} />
         {content}
       </div>
     </AppShell>

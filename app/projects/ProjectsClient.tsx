@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreProjects } from "@/app/projects/actions";
 import type { ProjectsFilters } from "@/app/projects/loadProjects";
-import { FileText, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { CheckCircle2, FileText, FolderKanban, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
@@ -601,30 +601,18 @@ export default function ProjectsClient({
   return (
     <PageStack>
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <div className="hidden items-center justify-center gap-3 md:flex">
-          <TabsList className="flex w-fit max-w-full justify-center overflow-hidden">
-            <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="quotes">
-              הצעות ({quoteCount})
-            </TabsTrigger>
-            <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="projects">
-              פרויקטים ({projectCount})
-            </TabsTrigger>
-            <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="closed">
-              סגורים ({closedCount})
-            </TabsTrigger>
+        <div className="hidden md:block">
+          <TabsList variant="underline" className="justify-center">
+            <TabsTrigger value="quotes"><FileText className="h-4 w-4" />הצעות ({quoteCount})</TabsTrigger>
+            <TabsTrigger value="projects"><FolderKanban className="h-4 w-4" />פרויקטים ({projectCount})</TabsTrigger>
+            <TabsTrigger value="closed"><CheckCircle2 className="h-4 w-4" />סגורים ({closedCount})</TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsList className="mx-auto grid w-full grid-cols-3 justify-center overflow-hidden md:hidden">
-          <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="quotes">
-            הצעות ({quoteCount})
-          </TabsTrigger>
-          <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="projects">
-            פרויקטים ({projectCount})
-          </TabsTrigger>
-          <TabsTrigger className="min-w-0 whitespace-normal px-3 text-center leading-tight" value="closed">
-            סגורים ({closedCount})
-          </TabsTrigger>
+        <TabsList variant="underline" className="justify-center md:hidden">
+          <TabsTrigger value="quotes"><FileText className="h-4 w-4" />הצעות ({quoteCount})</TabsTrigger>
+          <TabsTrigger value="projects"><FolderKanban className="h-4 w-4" />פרויקטים ({projectCount})</TabsTrigger>
+          <TabsTrigger value="closed"><CheckCircle2 className="h-4 w-4" />סגורים ({closedCount})</TabsTrigger>
         </TabsList>
       </Tabs>
 

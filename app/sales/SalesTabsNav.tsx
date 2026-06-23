@@ -1,16 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { Boxes, CheckCircle2, ShoppingCart, Tags, Truck, type LucideIcon } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 
 type SalesTab = "orders" | "closed" | "inventory" | "price-list" | "deliveries";
 
-const tabs: Array<{ id: SalesTab; label: string; shortLabel?: string }> = [
-  { id: "orders", label: "הזמנות" },
-  { id: "closed", label: "הזמנות סגורות", shortLabel: "סגורות" },
-  { id: "inventory", label: "מלאי" },
-  { id: "price-list", label: "מחירון" },
-  { id: "deliveries", label: "משלוחים" },
+const tabs: Array<{ id: SalesTab; label: string; shortLabel?: string; icon: LucideIcon }> = [
+  { id: "orders", label: "הזמנות", icon: ShoppingCart },
+  { id: "closed", label: "הזמנות סגורות", shortLabel: "סגורות", icon: CheckCircle2 },
+  { id: "inventory", label: "מלאי", icon: Boxes },
+  { id: "price-list", label: "מחירון", icon: Tags },
+  { id: "deliveries", label: "משלוחים", icon: Truck },
 ];
 
 type SalesTabsSearchParams = {
@@ -44,21 +45,24 @@ function getCountSuffix(tab: { id: SalesTab }, counts: Record<SalesTab, number>)
   return ` (${counts[tab.id] ?? 0})`;
 }
 
-// Mirrors the Radix TabsTrigger styling from components/ui/tabs.tsx so sales
-// tabs look identical to project / payroll / financial tabs across the app.
+// Mirrors the "underline" TabsTrigger styling from components/ui/tabs.tsx so the
+// sales tabs match the project / payroll / collections tab bars across the app:
+// flat tabs with a primary-colored underline on the active one.
 function triggerClassName(isActive: boolean) {
   const base =
-    "inline-flex min-w-0 items-center justify-center whitespace-normal rounded-xl px-2 py-2 text-center text-xs font-medium leading-tight ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:whitespace-nowrap sm:px-3 sm:text-sm";
+    "-mb-px inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-t-md border-b-[3px] px-2 pb-2 pt-1 text-sm leading-tight ring-offset-background transition-colors hover:bg-muted/60 focus-visible:outline-none sm:text-base";
 
   return isActive
-    ? `${base} bg-primary text-primary-foreground shadow-md shadow-primary/25 hover:ring-2 hover:ring-secondary hover:ring-offset-2 hover:ring-offset-background`
-    : `${base} text-muted-foreground hover:bg-secondary hover:text-secondary-foreground`;
+    ? `${base} border-primary font-bold text-primary`
+    : `${base} border-transparent font-medium text-muted-foreground hover:text-foreground`;
 }
 
-// Mobile: full-width grid with 5 columns (compact labels).
-// Tablet/desktop: fits content and centers.
+// Inline flat tab row (underline style). The bottom border lives on the PARENT
+// row (so the tabs sit on the same baseline as the "הזמנה חדשה" button);
+// overflow-y-hidden stops overflow-x-auto from spawning a stray vertical
+// scrollbar (the ▲▼ arrows). min-w-0 lets it shrink + scroll when space is tight.
 const LIST_CLASSES =
-  "mx-auto grid w-full grid-cols-5 items-center gap-1 rounded-2xl border border-border/60 bg-background/70 p-1 text-muted-foreground shadow-sm sm:flex sm:h-12 sm:w-fit sm:max-w-full sm:justify-center sm:overflow-x-auto";
+  "flex min-w-0 items-center gap-2 overflow-x-auto overflow-y-hidden text-muted-foreground sm:gap-3";
 
 export default function SalesTabsNav({
   activeTab,
@@ -74,6 +78,7 @@ export default function SalesTabsNav({
       {tabs.map((tab) => {
         const isActive = tab.id === activeTab;
         const countSuffix = getCountSuffix(tab, counts);
+        const Icon = tab.icon;
         return (
           <Link
             key={tab.id}
@@ -82,6 +87,7 @@ export default function SalesTabsNav({
             className={triggerClassName(isActive)}
             onClick={() => emitNavigationStart()}
           >
+            <Icon className="h-4 w-4 shrink-0" />
             <span className="sm:hidden">
               {(tab.shortLabel ?? tab.label)}
               {countSuffix}
