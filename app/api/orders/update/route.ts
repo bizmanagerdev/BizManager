@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { toHebrewError } from "@/lib/error-messages";
 import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -313,6 +314,47 @@ export async function POST(req: Request) {
 
     if (error) {
       await cleanupUploadedDocument(supabase, uploadedDocuments);
+      // This failure is returned as a 400, so it never reaches Sentry on its own — log
+      // it explicitly with the real DB message and context so order-confirm failures are
+      // diagnosable instead of surfacing only as the generic "אישור ההזמנה נכשל".
+      console.error("update_sales_order RPC failed", { orderId, message: error.message });
+      Sentry.captureException(new Error(`update_sales_order failed: ${error.message}`), {
+        tags: { route: "orders/update", op: "update_sales_order" },
+        extra: { orderId, customerId, itemCount: normalizedItems.length, totalAmount },
+      });
+
+      // Insufficient stock: confirming supply consumes stock (`out` movement), and the
+      // inventory trigger blocks on-hand from going negative. Explain it in Hebrew, naming
+      // the product and the shortfall, instead of the generic "אישור ההזמנה נכשל".
+      const stockMatch = error.message.match(
+        /Inventory cannot be negative for product ([0-9a-f-]{36})/i
+      );
+      if (stockMatch) {
+        const shortProductId = stockMatch[1];
+        const requested = normalizedItems
+          .filter((item) => item.product_id === shortProductId)
+          .reduce((sum, item) => sum + item.quantity_ordered, 0);
+        const [{ data: product }, { data: stock }] = await Promise.all([
+          supabase.from("products").select("name").eq("id", shortProductId).maybeSingle(),
+          supabase
+            .from("inventory")
+            .select("quantity_on_hand")
+            .eq("product_id", shortProductId)
+            .maybeSingle(),
+        ]);
+        const name = (product as { name?: string } | null)?.name?.trim() || "הפריט";
+        const onHand = Math.max(
+          0,
+          Number((stock as { quantity_on_hand?: number } | null)?.quantity_on_hand ?? 0)
+        );
+        return NextResponse.json(
+          {
+            error: `אין מספיק מלאי לאישור אספקה של "${name}" — במלאי ${onHand}, נדרש ${requested}. צמצמו את הכמות או עדכנו את המלאי ונסו שוב.`,
+          },
+          { status: 400 }
+        );
+      }
+
       const hint =
         error.message.includes("update_sales_order") || error.message.includes("function")
           ? "Missing DB function update_sales_order. Run db/sql/update_sales_order_rpc.sql"
@@ -464,6 +506,8 @@ export async function POST(req: Request) {
       payment_ids: insertedPaymentIds,
     });
   } catch (err: unknown) {
+    console.error("orders/update unhandled error", err);
+    Sentry.captureException(err, { tags: { route: "orders/update" } });
     const message = toHebrewError(err, "Unknown error");
     return NextResponse.json({ error: message }, { status: 500 });
   }

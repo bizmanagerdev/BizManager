@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
+import * as Sentry from "@sentry/nextjs";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
@@ -349,8 +350,10 @@ export default function OrderConfirmDialog({
 
     setSubmitting(true);
     try {
+      const orderId = data.initialOrder.id;
+
       const payload = {
-        order_id: data.initialOrder.id,
+        order_id: orderId,
         customer_id: data.initialOrder.customer_id,
         order_date: data.initialOrder.order_date,
         status: finalStatus,
@@ -402,15 +405,30 @@ export default function OrderConfirmDialog({
         body: formData,
       });
 
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
       if (!res.ok) {
-        setError(toHebrewError(json.error, "אישור ההזמנה נכשל."));
+        // The client handles this failure, so it never reaches Sentry on its own —
+        // report it with the real server message + status. That's what was missing
+        // when this only surfaced as a screenshot of "אישור ההזמנה נכשל".
+        Sentry.captureMessage("order confirm failed", {
+          level: "error",
+          tags: { area: "order-confirm" },
+          extra: { orderId, status: res.status, serverError: json?.error ?? null },
+        });
+        const fallback =
+          res.status === 413
+            ? "הקבצים שצורפו גדולים מדי. צמצמו את מספר התמונות ונסו שוב."
+            : res.status === 504 || res.status === 408
+              ? "השרת לא הגיב בזמן. נסו שוב."
+              : "אישור ההזמנה נכשל.";
+        setError(toHebrewError(json?.error, fallback));
         return;
       }
 
       setOpen(false);
       router.refresh();
     } catch (err: unknown) {
+      Sentry.captureException(err, { tags: { area: "order-confirm" } });
       setError(toHebrewError(err, "שגיאה לא ידועה"));
     } finally {
       setSubmitting(false);

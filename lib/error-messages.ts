@@ -149,6 +149,10 @@ const PATTERN_RULES: Array<{ test: RegExp; hebrew: string }> = [
     hebrew: "חסר שדה חובה.",
   },
   {
+    test: /Inventory cannot be negative/i,
+    hebrew: "אין מספיק מלאי לאחד הפריטים. צמצמו את הכמות או עדכנו את המלאי ונסו שוב.",
+  },
+  {
     test: /violates row-level security/i,
     hebrew: "אין הרשאה לבצע את הפעולה.",
   },
