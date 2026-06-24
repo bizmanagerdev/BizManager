@@ -1,6 +1,7 @@
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
+import type { Loan } from "@/lib/loans";
 import type {
   AttendanceSessionFinanceRow,
   ExpenseRow,
@@ -747,6 +748,140 @@ export function buildExpenseEntries(args: {
       expensePaidDate: normalizeDate(row.paid_date),
     }];
   });
+}
+
+/**
+ * Loan cash movements → financial entries. Principal (received / repaid) carries
+ * cash but NOT P&L (origin "loan" is ignored by aggregateProfitLoss). The interest
+ * portion of each repayment is emitted separately as an expense (loan taken) or
+ * income (loan given) so it — and only it — flows into the P&L.
+ *
+ *   taken  : principal received = inflow;  repayment = outflow; interest = expense
+ *   given  : principal lent     = outflow; repayment = inflow;  interest = income
+ */
+export function buildLoanEntries(loans: Loan[], referenceDate: string): FinancialEntry[] {
+  const entries: FinancialEntry[] = [];
+
+  const stageFor = (flowDate: string): FinancialEntryStage =>
+    flowDate <= referenceDate ? "posted" : "scheduled";
+
+  for (const loan of loans) {
+    if (!loan.id) continue;
+    const businessDomain = normalizeDomain(loan.business_domain);
+    const domainName = getBusinessDomainLabel(businessDomain);
+    const taken = loan.direction === "taken";
+    const counterparty = (taken ? loan.lender : loan.borrower)?.trim() || null;
+
+    // ── Principal: the loan event itself ──
+    if (loan.amount > 0 && loan.loan_date) {
+      const type: FinancialEntryType = taken ? "inflow" : "outflow";
+      const description = taken
+        ? `הלוואה שהתקבלה${counterparty ? ` מ-${counterparty}` : ""}`
+        : `הלוואה שניתנה${counterparty ? ` ל-${counterparty}` : ""}`;
+      entries.push({
+        id: `loan:${loan.id}`,
+        type,
+        amount: loan.amount,
+        signedAmount: type === "inflow" ? loan.amount : -loan.amount,
+        businessDomain,
+        domainName,
+        flowDate: loan.loan_date,
+        recordedDate: loan.loan_date,
+        dueDate: loan.due_date,
+        stage: stageFor(loan.loan_date),
+        sourceKind: "general",
+        sourceId: loan.id,
+        sourceLabel: description,
+        sourceHref: "/financial/loans",
+        description,
+        origin: "loan",
+        reference: null,
+        paymentMethod: loan.loan_method,
+        paymentMethodLabel: loan.loan_method ? paymentMethodLabel(loan.loan_method) : null,
+        paymentStatus: null,
+        recordedByName: null,
+        customerId: loan.counterparty_customer_id,
+        searchText: [description, counterparty ?? "", loan.notes ?? "", domainName]
+          .join(" ")
+          .toLowerCase(),
+      });
+    }
+
+    // ── Repayments: principal (cash only) + interest (P&L) ──
+    for (const repayment of loan.repayments) {
+      if (!repayment.id || !repayment.repayment_date) continue;
+      const principalPart = Math.max(repayment.amount - repayment.interest_amount, 0);
+      const interestPart = Math.max(repayment.interest_amount, 0);
+      const stage = stageFor(repayment.repayment_date);
+
+      if (principalPart > 0) {
+        const type: FinancialEntryType = taken ? "outflow" : "inflow";
+        const description = `החזר הלוואה${counterparty ? ` (${counterparty})` : ""}`;
+        entries.push({
+          id: `loan_repay:${repayment.id}`,
+          type,
+          amount: principalPart,
+          signedAmount: type === "inflow" ? principalPart : -principalPart,
+          businessDomain,
+          domainName,
+          flowDate: repayment.repayment_date,
+          recordedDate: repayment.repayment_date,
+          dueDate: null,
+          stage,
+          sourceKind: "general",
+          sourceId: loan.id,
+          sourceLabel: description,
+          sourceHref: "/financial/loans",
+          description,
+          origin: "loan",
+          reference: null,
+          paymentMethod: repayment.method,
+          paymentMethodLabel: repayment.method ? paymentMethodLabel(repayment.method) : null,
+          paymentStatus: null,
+          recordedByName: null,
+          customerId: loan.counterparty_customer_id,
+          searchText: [description, counterparty ?? "", domainName].join(" ").toLowerCase(),
+        });
+      }
+
+      if (interestPart > 0) {
+        // Interest paid (taken) is an expense; interest received (given) is income.
+        const type: FinancialEntryType = taken ? "outflow" : "inflow";
+        const origin = taken ? "expense" : "payment";
+        const description = `ריבית הלוואה${counterparty ? ` (${counterparty})` : ""}`;
+        entries.push({
+          id: `loan_interest:${repayment.id}`,
+          type,
+          amount: interestPart,
+          signedAmount: type === "inflow" ? interestPart : -interestPart,
+          businessDomain,
+          domainName,
+          flowDate: repayment.repayment_date,
+          recordedDate: repayment.repayment_date,
+          dueDate: null,
+          stage,
+          sourceKind: "general",
+          sourceId: loan.id,
+          sourceLabel: description,
+          sourceHref: "/financial/loans",
+          description,
+          origin,
+          reference: "ריבית",
+          paymentMethod: repayment.method,
+          paymentMethodLabel: repayment.method ? paymentMethodLabel(repayment.method) : null,
+          paymentStatus: origin === "expense" ? "paid" : null,
+          recordedByName: null,
+          customerId: loan.counterparty_customer_id,
+          searchText: [description, counterparty ?? "", domainName].join(" ").toLowerCase(),
+          ...(origin === "expense"
+            ? { expenseCategory: "ריבית הלוואה", expensePaidAmount: interestPart }
+            : {}),
+        });
+      }
+    }
+  }
+
+  return entries;
 }
 
 export function buildWorkerPaymentEntries(args: {

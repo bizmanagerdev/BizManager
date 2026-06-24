@@ -31,7 +31,7 @@ function hasActivity(cell: EarnedDomainCell) {
 }
 
 /**
- * Reports → הכנסה לפי חודש: earned (booked) income, expenses and net per month,
+ * Reports → רווח עבודה חודשי: earned (booked) income, expenses and net per month,
  * per domain. Accrual basis — attributed to the month the work belongs to, not
  * the month its cash cleared (that's the מגמה חודשית tab).
  */
@@ -53,11 +53,14 @@ export default function EarnedRevenuePanel({ report }: { report: EarnedRevenueRe
     <div className="space-y-4 text-right" dir="rtl">
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base text-right">הכנסה, הוצאות ורווח לפי חודש ותחום</CardTitle>
+          <CardTitle className="text-base text-right">
+            רווח עבודה חודשי לפי תחום — מה עשיתי החודש (גם אם עדיין לא נגבה)
+          </CardTitle>
           <CardDescription className="text-right">
-            מה נעשה בכל חודש לפי שיוך (לא לפי מועד גביית/תשלום הכסף). הזמנות לפי תאריך ההזמנה;
-            פרויקטים מחולקים שווה בשווה על חודשי הפרויקט; שאר התחומים לפי תקבולים/הוצאות באותו חודש.
-            הוצאות לפי תאריך ההוצאה. סכומים כולל מע״מ. תחומים אישיים (בית/צדקה) אינם נכללים.
+            הכנסה לפי ביצוע ולא לפי גבייה — נספרת בחודש שבו נוצרה, בלי קשר אם הכסף כבר ביד.
+            הזמנות לפי תאריך ההזמנה; פרויקטים מחולקים שווה בשווה על חודשי הפרויקט; שאר התחומים לפי
+            תקבולים/הוצאות באותו חודש. הוצאות אשראי לפי תאריך הקנייה. סכומים כולל מע״מ. תחומים אישיים
+            (בית/צדקה) אינם נכללים.
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import StatementsListClient, { type StatementListItem } from "./StatementsListClient";
+import { loadCardCostsByMonth } from "@/lib/financial/cardCosts";
+import { type StatementListItem } from "./StatementsListClient";
+import CardsPageClient from "./CardsPageClient";
 
 export const dynamic = "force-dynamic";
 
@@ -63,12 +65,14 @@ export default async function CardStatementsPage() {
     chargesTotal: totals[s.id]?.chargesTotal ?? 0,
   }));
 
+  const cardCosts = await loadCardCostsByMonth(supabase);
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4 text-right" dir="rtl">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg font-semibold">פירוטי אשראי שנשמרו</h1>
+            <h1 className="text-lg font-semibold">כרטיסי אשראי</h1>
             <p className="text-sm text-muted-foreground">
               כל פירוט שהועלה נשמר כאן — לחצ/י על שורה כדי לשייך תחומים, ליצור הוצאות ולערוך.
             </p>
@@ -83,7 +87,7 @@ export default async function CardStatementsPage() {
           </div>
         </div>
 
-        <StatementsListClient statements={statements} />
+        <CardsPageClient report={cardCosts} statements={statements} />
       </div>
     </AppShell>
   );

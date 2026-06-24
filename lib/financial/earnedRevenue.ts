@@ -255,7 +255,10 @@ export async function loadEarnedRevenueByMonth(
         .select("id,start_date,end_date,created_at,status")
         .range(0, 20000),
       supabase.from("project_financials_view").select("id,customer_total_price").range(0, 20000),
-      supabase.from("expenses").select("expense_date,amount,business_domain").range(0, 50000),
+      supabase
+        .from("expenses")
+        .select("expense_date,transaction_date,amount,business_domain,payment_method")
+        .range(0, 50000),
       supabase
         .from("payments")
         .select("payment_date,amount_total,business_domain,payment_status")
@@ -282,11 +285,19 @@ export async function loadEarnedRevenueByMonth(
     status: str(row.status),
   }));
 
-  const expenses: EarnedExpenseInput[] = ((expensesResult.data ?? []) as Row[]).map((row) => ({
-    date: str(row.expense_date),
-    amount: Math.abs(toNum(row.amount)),
-    domain: str(row.business_domain) ?? "",
-  }));
+  const expenses: EarnedExpenseInput[] = ((expensesResult.data ?? []) as Row[]).map((row) => {
+    // Cost basis: a credit-card charge belongs to the month it was PURCHASED
+    // (transaction_date), not the month it was billed (expense_date). Other
+    // expenses keep their expense_date. (Cash-flow reports stay on billing date.)
+    const method = (str(row.payment_method) ?? "").trim().toLowerCase();
+    const isCard = method === "credit_card" || method.includes("אשראי");
+    const purchaseDate = str(row.transaction_date);
+    return {
+      date: isCard && purchaseDate ? purchaseDate : str(row.expense_date),
+      amount: Math.abs(toNum(row.amount)),
+      domain: str(row.business_domain) ?? "",
+    };
+  });
 
   // Other-domain income = collected payments tagged to a non-order/project domain.
   const otherIncome: EarnedIncomeInput[] = ((paymentsResult.data ?? []) as Row[])

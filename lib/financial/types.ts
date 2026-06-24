@@ -1,4 +1,5 @@
 import type { ExpenseBusinessDomain } from "@/lib/expenses";
+import type { LoansSummary } from "@/lib/loans";
 
 // ─── Internal DB row types ────────────────────────────────────────────────────
 
@@ -173,7 +174,12 @@ export type FinancialEntryOrigin =
   | "worker_payment"
   | "worker_owed"
   | "project_receivable"
-  | "order_receivable";
+  | "order_receivable"
+  // Loan principal cash movement (loan received / repaid). Carries cash but NOT
+  // P&L — aggregateProfitLoss only counts payment/expense/receivable origins, so
+  // loan principal is excluded from profit by construction. Interest is emitted
+  // separately as expense/payment so it does hit P&L.
+  | "loan";
 
 export type FinancialEntry = {
   id: string;
@@ -274,6 +280,9 @@ export type FinancialPageData = {
   plannedReceivablesSummary: FinancialSummary;
   openLiabilitiesSummary: FinancialSummary;
   scheduledLiabilitiesSummary: FinancialSummary;
+  // Outstanding loan principal: borrowed (a debt) vs lent (an asset). Counts into
+  // the dashboard's position/net-worth but not P&L. See lib/loans.
+  loansSummary: LoansSummary;
   domainGroups: FinancialDomainGroup[];
   profitLoss: ProfitLossDomainRow[];
   profitLossExpenseCategories: ProfitLossCategoryRow[];

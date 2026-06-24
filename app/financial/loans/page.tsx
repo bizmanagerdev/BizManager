@@ -1,27 +1,25 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
-import { Card, CardContent } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { fetchLoans, summarizeLoans } from "@/lib/loans";
+import LoansClient from "./LoansClient";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 export default async function LoansPage() {
-  const { profile } = await requireProfile();
+  const { profile, supabase } = await requireProfile();
 
+  // Loans are sensitive financial data — admin only (matches the nav gating).
   if (profile.role !== "admin") {
     redirect("/no-access");
   }
 
+  const loans = await fetchLoans(supabase);
+  const summary = summarizeLoans(loans);
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      <div className="space-y-4 text-right" dir="rtl">
-        <h1 className="text-lg font-semibold">הלוואות והחזרים</h1>
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            המסך בבנייה. כאן ינוהלו הלוואות שניתנו/התקבלו וההחזרים שלהן.
-          </CardContent>
-        </Card>
-      </div>
+      <LoansClient loans={loans} summary={summary} />
     </AppShell>
   );
 }

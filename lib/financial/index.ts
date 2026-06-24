@@ -27,6 +27,7 @@ import {
   buildMonthlyTrend,
   isPersonalDomain,
   buildExpenseEntries,
+  buildLoanEntries,
   buildOrderReceivableEntries,
   buildPaymentEntries,
   buildProjectReceivableEntries,
@@ -37,6 +38,7 @@ import {
   sortEntries,
   summarizeEntries,
 } from "./entries";
+import { fetchLoans, summarizeLoans, type LoansSummary } from "@/lib/loans";
 import {
   type FinancialEntry,
   type FinancialPageData,
@@ -94,7 +96,7 @@ export type {
 export async function loadFinancialEntries(
   supabase: SupabaseClient,
   options: { from?: string | null; customerId?: string | null } = {}
-): Promise<{ entries: FinancialEntry[]; referenceDate: string }> {
+): Promise<{ entries: FinancialEntry[]; referenceDate: string; loansSummary: LoansSummary }> {
   const customerId = normalizeCustomerId(options.customerId);
   const referenceDate = todayIso();
   const from = normalizeDate(options.from);
@@ -253,6 +255,10 @@ export async function loadFinancialEntries(
     orderRows, ordersById, orderFinancialsById, paidByOrderId, pendingByOrderId, customerId, customerProjectSet, referenceDate,
   });
 
+  // Loans are business-wide (not customer-scoped), so skip them on a customer view.
+  const loans = customerId ? [] : await fetchLoans(supabase);
+  const loanEntries = buildLoanEntries(loans, referenceDate);
+
   const entries = sortEntries([
     ...payments,
     ...expenses,
@@ -260,9 +266,10 @@ export async function loadFinancialEntries(
     ...workerOwedEntries,
     ...projectReceivableEntries,
     ...orderReceivableEntries,
+    ...loanEntries,
   ]);
 
-  return { entries, referenceDate };
+  return { entries, referenceDate, loansSummary: summarizeLoans(loans) };
 }
 
 export async function getFinancialPageData(
@@ -281,7 +288,7 @@ export async function getFinancialPageData(
           return { from: addDaysToIso(from, -lengthDays), to: addDaysToIso(from, -1) };
         })()
       : null;
-  const { entries, referenceDate } = await loadFinancialEntries(supabase, {
+  const { entries, referenceDate, loansSummary } = await loadFinancialEntries(supabase, {
     from: previousPeriod ? previousPeriod.from : filters.from,
     customerId: filters.customerId,
   });
@@ -362,6 +369,7 @@ export async function getFinancialPageData(
     plannedReceivablesSummary: summarizeEntries(plannedReceivableEntries),
     openLiabilitiesSummary: summarizeEntries(openLiabilityEntries),
     scheduledLiabilitiesSummary: summarizeEntries(scheduledLiabilityEntries),
+    loansSummary,
     domainGroups: buildDomainGroups(filteredEntries, referenceDate),
     // P&L, monthly trend and forecast are driven by date/domain only (they need both
     // inflow+outflow and posted+pending), so they ignore the type/stage/source/q filters.

@@ -31,6 +31,7 @@ import ProfitLossPanel from "@/app/financial/reports/ProfitLossPanel";
 import MonthlyTrendPanel from "@/app/financial/reports/MonthlyTrendPanel";
 import ForecastPanel from "@/app/financial/reports/ForecastPanel";
 import EarnedRevenuePanel from "@/app/financial/reports/EarnedRevenuePanel";
+import PositionPanel from "@/app/financial/reports/PositionPanel";
 import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import {
@@ -345,7 +346,11 @@ export default function FinancialPageClient({
   const currentWorthNow =
     summaries.actual.net +
     data.openReceivablesSummary.inflow -
-    data.openLiabilitiesSummary.outflow;
+    data.openLiabilitiesSummary.outflow +
+    data.loansSummary.lentOutstanding -
+    data.loansSummary.borrowedOutstanding;
+  const hasLoans =
+    data.loansSummary.borrowedOutstanding > 0.5 || data.loansSummary.lentOutstanding > 0.5;
   const activeFilterCount = [
     query,
     from,
@@ -1002,70 +1007,108 @@ export default function FinancialPageClient({
 
       {view === "reports" ? (
       <Tabs value={reportTab} onValueChange={setReportTab} dir="rtl" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3 print:hidden sm:grid-cols-6">
+        <TabsList className="grid w-full grid-cols-3 print:hidden sm:grid-cols-4 lg:grid-cols-7">
           <TabsTrigger value="summary">סיכום</TabsTrigger>
+          <TabsTrigger value="position">מאזן</TabsTrigger>
           <TabsTrigger value="domains">תחומים</TabsTrigger>
           <TabsTrigger value="pl">רווח והפסד</TabsTrigger>
-          <TabsTrigger value="earned">הכנסה לפי חודש</TabsTrigger>
+          <TabsTrigger value="earned">רווח עבודה חודשי</TabsTrigger>
           <TabsTrigger value="trend">מגמה חודשית</TabsTrigger>
           <TabsTrigger value="forecast">תחזית</TabsTrigger>
         </TabsList>
-        <TabsContent value="summary" className="space-y-4">
-      <section dir="rtl" className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          title="כניסות בפועל"
-          value={formatCurrency(summaries.actual.inflow)}
-          description={`${summaries.actual.count} תנועות שכבר נכנסו לתזרים`}
-          accent="success"
-        />
-        <SummaryCard
-          title="יציאות בפועל"
-          value={formatCurrency(summaries.actual.outflow)}
-          description="הוצאות שכבר ירדו בפועל"
-          accent="destructive"
-        />
-        <SummaryCard
-          title="חובות לקוחות פתוחים"
-          value={formatCurrency(data.openReceivablesSummary.inflow)}
-          description={`${data.openReceivablesSummary.count} יתרות מפרויקטים/הזמנות שהושלמו ועדיין לא שולמו`}
-          accent="success"
-        />
-        <SummaryCard
-          title="הכנסות מתוכננות"
-          value={formatCurrency(data.plannedReceivablesSummary.inflow)}
-          description={`${data.plannedReceivablesSummary.count} תקבולים צפויים מצ'קים, פרויקטים והזמנות שעדיין בתהליך`}
-          accent="success"
-        />
-        <SummaryCard
-          title="התחייבויות פתוחות"
-          value={formatCurrency(data.openLiabilitiesSummary.outflow)}
-          description={`${data.openLiabilitiesSummary.count} חובות שכבר נוצרו ועדיין לא שולמו`}
-          accent="destructive"
-        />
-        <SummaryCard
-          title="תשלומים מתוזמנים"
-          value={formatCurrency(data.scheduledLiabilitiesSummary.outflow)}
-          description={`${data.scheduledLiabilitiesSummary.count} תשלומים עתידיים שעדיין לא הגיע מועד התזרים שלהם`}
-          accent="destructive"
-        />
-        <SummaryCard
-          title="יתרה בפועל"
-          value={formatCurrency(summaries.actual.net)}
-          description="מאזן מזומנים שכבר נרשם בפועל"
-          accent={summaries.actual.net >= 0 ? "success" : "destructive"}
-        />
-        <SummaryCard
-          title="שווי נוכחי"
-          value={formatCurrency(currentWorthNow)}
-          description="יתרה בפועל + חובות לקוחות פתוחים - התחייבויות פתוחות"
-          accent={currentWorthNow >= 0 ? "success" : "destructive"}
-        />
-        <SummaryCard
-          title={initialFilters.to ? "תחזית עד תאריך" : "תחזית ל-30 יום"}
-          value={formatCurrency(data.forecastSummary.net)}
-          description={`כולל בפועל וצפי עד ${formatShortDate(data.forecastEndIso)}`}
-          accent={data.forecastSummary.net >= 0 ? "success" : "destructive"}
-        />
+        <TabsContent value="summary" className="space-y-6">
+      {/* ── עכשיו: כסף שכבר זז בפועל ── */}
+      <section dir="rtl" className="space-y-2">
+        <div>
+          <h3 className="text-base font-semibold">עכשיו — מה כבר קרה בפועל</h3>
+          <p className="text-xs text-muted-foreground">כסף שכבר נכנס או יצא בפועל.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <SummaryCard
+            title="כניסות בפועל"
+            value={formatCurrency(summaries.actual.inflow)}
+            description={`${summaries.actual.count} תנועות שכבר נכנסו לתזרים`}
+            accent="success"
+          />
+          <SummaryCard
+            title="יציאות בפועל"
+            value={formatCurrency(summaries.actual.outflow)}
+            description="הוצאות שכבר ירדו בפועל"
+            accent="destructive"
+          />
+          <SummaryCard
+            title="יתרה בפועל"
+            value={formatCurrency(summaries.actual.net)}
+            description="מאזן מזומנים שכבר נרשם בפועל"
+            accent={summaries.actual.net >= 0 ? "success" : "destructive"}
+          />
+        </div>
+      </section>
+
+      {/* ── צפוי: כסף שעדיין לא זז ── */}
+      <section dir="rtl" className="space-y-2">
+        <div>
+          <h3 className="text-base font-semibold">צפוי — מה צפוי קדימה</h3>
+          <p className="text-xs text-muted-foreground">כסף שעדיין לא זז — צפוי להיכנס או לצאת בהמשך.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <SummaryCard
+            title="הכנסות מתוכננות"
+            value={formatCurrency(data.plannedReceivablesSummary.inflow)}
+            description={`${data.plannedReceivablesSummary.count} תקבולים צפויים מצ'קים, פרויקטים והזמנות שעדיין בתהליך`}
+            accent="success"
+          />
+          <SummaryCard
+            title="תשלומים מתוזמנים"
+            value={formatCurrency(data.scheduledLiabilitiesSummary.outflow)}
+            description={`${data.scheduledLiabilitiesSummary.count} תשלומים עתידיים שעדיין לא הגיע מועד התזרים שלהם`}
+            accent="destructive"
+          />
+          <SummaryCard
+            title={initialFilters.to ? "תחזית עד תאריך" : "תחזית ל-30 יום"}
+            value={formatCurrency(data.forecastSummary.net)}
+            description={`כולל בפועל וצפי עד ${formatShortDate(data.forecastEndIso)}`}
+            accent={data.forecastSummary.net >= 0 ? "success" : "destructive"}
+          />
+        </div>
+      </section>
+
+      {/* ── מאזן: רכוש מול חוב ── */}
+      <section dir="rtl" className="space-y-2">
+        <div>
+          <h3 className="text-base font-semibold">מאזן — רכוש מול חוב</h3>
+          <p className="text-xs text-muted-foreground">
+            מה שיש מול מה שחייבים. פירוט מלא בלשונית ״מאזן״.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <SummaryCard
+            title="חובות לקוחות פתוחים"
+            value={formatCurrency(data.openReceivablesSummary.inflow)}
+            description={`${data.openReceivablesSummary.count} יתרות מפרויקטים/הזמנות שהושלמו ועדיין לא שולמו`}
+            accent="success"
+          />
+          <SummaryCard
+            title="התחייבויות פתוחות"
+            value={formatCurrency(data.openLiabilitiesSummary.outflow)}
+            description={`${data.openLiabilitiesSummary.count} חובות שכבר נוצרו ועדיין לא שולמו`}
+            accent="destructive"
+          />
+          {hasLoans ? (
+            <SummaryCard
+              title="הלוואות (נטו)"
+              value={formatCurrency(data.loansSummary.netPosition)}
+              description="הלוואות שנתתי פחות הלוואות שלקחתי"
+              accent={data.loansSummary.netPosition >= 0 ? "success" : "destructive"}
+            />
+          ) : null}
+          <SummaryCard
+            title="שווי נוכחי"
+            value={formatCurrency(currentWorthNow)}
+            description="יתרה בפועל + חובות לקוחות + הלוואות שנתתי − התחייבויות − הלוואות שלקחתי"
+            accent={currentWorthNow >= 0 ? "success" : "destructive"}
+          />
+        </div>
       </section>
         </TabsContent>
         <TabsContent value="domains" className="space-y-4">
@@ -1148,6 +1191,9 @@ export default function FinancialPageClient({
             from={initialFilters.from || null}
             to={initialFilters.to || null}
           />
+        </TabsContent>
+        <TabsContent value="position" className="space-y-4">
+          <PositionPanel data={data} />
         </TabsContent>
         <TabsContent value="earned" className="space-y-4">
           {earnedRevenue ? (
