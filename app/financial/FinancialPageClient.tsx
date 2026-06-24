@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, Pencil, Search, SlidersHorizontal, TimerReset, Trash2 } from "lucide-react";
+import { BarChart3, CalendarClock, CheckCircle2, Clock, Gauge, History, Layers, LineChart, Loader2, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, TrendingUp, Trash2 } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,6 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
-import FinancialTotalsStrip from "@/app/financial/FinancialTotalsStrip";
 import ProfitLossPanel from "@/app/financial/reports/ProfitLossPanel";
 import MonthlyTrendPanel from "@/app/financial/reports/MonthlyTrendPanel";
 import ForecastPanel from "@/app/financial/reports/ForecastPanel";
@@ -838,42 +837,45 @@ export default function FinancialPageClient({
     }
   };
 
+  const filterControls = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button type="button" variant="outline" onClick={() => setFiltersOpen((value) => !value)}>
+        <SlidersHorizontal className="ml-2 h-4 w-4" />
+        סינון
+        {activeFilterCount > 0 ? (
+          <Badge variant="secondary" className="ms-2">{activeFilterCount}</Badge>
+        ) : null}
+      </Button>
+      {activeFilterCount > 0 ? (
+        <Button type="button" variant="ghost" onClick={resetFilters}>
+          <TimerReset className="ml-1 h-4 w-4" />
+          איפוס סינון
+        </Button>
+      ) : null}
+    </div>
+  );
+
+  const flowActions =
+    canManageExpenses && view === "flow" ? (
+      <>
+        <Button type="button" variant="secondary" onClick={() => setIncomeCreateOpen(true)}>
+          הוספת הכנסה
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => setExpenseCreateOpen(true)}>
+          הוספת הוצאה
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => setTransferCreateOpen(true)}>
+          העברה / שיוך כפול
+        </Button>
+      </>
+    ) : null;
+
   return (
     <div className="space-y-4" dir="rtl">
       {resolvedCanView ? (
         <>
-      <FinancialTotalsStrip data={data} />
-
       <div dir="rtl" className="space-y-4 text-right">
       <div ref={filtersCardRef} className="print:hidden space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {canManageExpenses && view === "flow" ? (
-          <>
-            <Button type="button" variant="secondary" onClick={() => setIncomeCreateOpen(true)}>
-              הוספת הכנסה
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setExpenseCreateOpen(true)}>
-              הוספת הוצאה
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setTransferCreateOpen(true)}>
-              העברה / שיוך כפול
-            </Button>
-          </>
-        ) : null}
-        <Button type="button" variant="outline" onClick={() => setFiltersOpen((value) => !value)}>
-          <SlidersHorizontal className="ml-2 h-4 w-4" />
-          סינון
-          {activeFilterCount > 0 ? (
-            <Badge variant="secondary" className="ms-2">{activeFilterCount}</Badge>
-          ) : null}
-        </Button>
-        {activeFilterCount > 0 ? (
-          <Button type="button" variant="ghost" onClick={resetFilters}>
-            <TimerReset className="ml-1 h-4 w-4" />
-            איפוס סינון
-          </Button>
-        ) : null}
-      </div>
       {filtersOpen ? (
       <Card>
         <CardHeader className="hidden">
@@ -1007,15 +1009,20 @@ export default function FinancialPageClient({
 
       {view === "reports" ? (
       <Tabs value={reportTab} onValueChange={setReportTab} dir="rtl" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3 print:hidden sm:grid-cols-4 lg:grid-cols-7">
-          <TabsTrigger value="summary">סיכום</TabsTrigger>
-          <TabsTrigger value="position">מאזן</TabsTrigger>
-          <TabsTrigger value="domains">תחומים</TabsTrigger>
-          <TabsTrigger value="pl">רווח והפסד</TabsTrigger>
-          <TabsTrigger value="earned">רווח עבודה חודשי</TabsTrigger>
-          <TabsTrigger value="trend">מגמה חודשית</TabsTrigger>
-          <TabsTrigger value="forecast">תחזית</TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between gap-3 print:hidden">
+          <div className="min-w-0 flex-1">
+            <TabsList variant="underline">
+              <TabsTrigger value="summary"><Gauge className="h-4 w-4 shrink-0" />סיכום</TabsTrigger>
+              <TabsTrigger value="position"><Scale className="h-4 w-4 shrink-0" />מאזן</TabsTrigger>
+              <TabsTrigger value="domains"><Layers className="h-4 w-4 shrink-0" />תחומים</TabsTrigger>
+              <TabsTrigger value="pl"><BarChart3 className="h-4 w-4 shrink-0" />רווח והפסד</TabsTrigger>
+              <TabsTrigger value="earned"><TrendingUp className="h-4 w-4 shrink-0" />רווח עבודה חודשי</TabsTrigger>
+              <TabsTrigger value="trend"><LineChart className="h-4 w-4 shrink-0" />מגמה חודשית</TabsTrigger>
+              <TabsTrigger value="forecast"><CalendarClock className="h-4 w-4 shrink-0" />תחזית</TabsTrigger>
+            </TabsList>
+          </div>
+          <div className="shrink-0">{filterControls}</div>
+        </div>
         <TabsContent value="summary" className="space-y-6">
       {/* ── עכשיו: כסף שכבר זז בפועל ── */}
       <section dir="rtl" className="space-y-2">
@@ -1218,18 +1225,27 @@ export default function FinancialPageClient({
         dir="rtl"
         className="space-y-4"
       >
-        <TabsList className="grid w-full grid-cols-3 print:hidden">
-          <TabsTrigger value="history">היסטוריה</TabsTrigger>
-          <TabsTrigger value="ledger">יומן מלא</TabsTrigger>
-          <TabsTrigger value="upcoming">
-            תזרים עתידי
-            {upcomingCount > 0 ? (
-              <span className="ms-2 inline-flex items-center rounded-full bg-foreground/10 px-1.5 text-[11px] font-semibold leading-5">
-                {upcomingCount}
-              </span>
-            ) : null}
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between gap-3 print:hidden">
+          <div className="min-w-0 flex-1">
+            <TabsList variant="underline">
+              <TabsTrigger value="history"><History className="h-4 w-4 shrink-0" />היסטוריה</TabsTrigger>
+              <TabsTrigger value="ledger"><ScrollText className="h-4 w-4 shrink-0" />יומן מלא</TabsTrigger>
+              <TabsTrigger value="upcoming">
+                <Clock className="h-4 w-4 shrink-0" />
+                תזרים עתידי
+                {upcomingCount > 0 ? (
+                  <span className="ms-2 inline-flex items-center rounded-full bg-foreground/10 px-1.5 text-[11px] font-semibold leading-5">
+                    {upcomingCount}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+            </TabsList>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {flowActions}
+            {filterControls}
+          </div>
+        </div>
         <TabsContent value="history" forceMount className="data-[state=inactive]:hidden">
       <Card>
         <CardHeader className="pb-3">

@@ -1,7 +1,5 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
-import { Button } from "@/components/ui/button";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { loadCardCostsByMonth } from "@/lib/financial/cardCosts";
 import { type StatementListItem } from "./StatementsListClient";
@@ -70,23 +68,6 @@ export default async function CardStatementsPage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4 text-right" dir="rtl">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-semibold">כרטיסי אשראי</h1>
-            <p className="text-sm text-muted-foreground">
-              כל פירוט שהועלה נשמר כאן — לחצ/י על שורה כדי לשייך תחומים, ליצור הוצאות ולערוך.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button asChild size="sm">
-              <Link href="/financial/import">העלאת פירוט חדש</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/financial">חזרה לפיננסי</Link>
-            </Button>
-          </div>
-        </div>
-
         <CardsPageClient report={cardCosts} statements={statements} />
       </div>
     </AppShell>

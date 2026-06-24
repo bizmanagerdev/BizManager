@@ -762,8 +762,7 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold sm:text-xl">הלוואות והחזרים</h1>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <Button type="button" onClick={openCreate}>
           <Plus className="h-4 w-4" />
           הלוואה חדשה

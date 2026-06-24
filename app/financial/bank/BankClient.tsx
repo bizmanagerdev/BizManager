@@ -47,7 +47,7 @@ function StatBox({ label, value, tone }: { label: string; value: string; tone?: 
 }
 
 export default function BankClient({ report }: { report: BankTransfersReport }) {
-  const { transactions, totalIn, totalOut, net, monthsBack } = report;
+  const { transactions, totalIn, totalOut, net } = report;
 
   // Group (already newest-first) by month, preserving order.
   const groups: Array<{ month: string; items: typeof transactions }> = [];
@@ -60,13 +60,6 @@ export default function BankClient({ report }: { report: BankTransfersReport }) 
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
-      <div>
-        <h1 className="text-lg font-semibold sm:text-xl">בנק — העברות בנקאיות</h1>
-        <p className="text-sm text-muted-foreground">
-          כל מה שזז דרך הבנק בהעברה בנקאית — נכנס ויצא. {monthsBack} החודשים האחרונים.
-        </p>
-      </div>
-
       <AdaptiveGrid variant="customerStats">
         <StatBox label="נכנס בהעברות" value={formatIls(totalIn)} tone="in" />
         <StatBox label="יצא בהעברות" value={formatIls(totalOut)} tone="out" />

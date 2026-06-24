@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { CalendarDays, FileText } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CardCostsPanel from "./CardCostsPanel";
 import StatementsListClient, { type StatementListItem } from "./StatementsListClient";
@@ -14,10 +17,22 @@ export default function CardsPageClient({
 }) {
   return (
     <Tabs defaultValue="monthly" dir="rtl" className="space-y-4">
-      <TabsList className="grid w-full grid-cols-2 sm:inline-flex sm:w-auto">
-        <TabsTrigger value="monthly">סיכום חודשי</TabsTrigger>
-        <TabsTrigger value="statements">פירוטים שהועלו</TabsTrigger>
-      </TabsList>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <TabsList variant="underline">
+            <TabsTrigger value="monthly"><CalendarDays className="h-4 w-4 shrink-0" />סיכום חודשי</TabsTrigger>
+            <TabsTrigger value="statements"><FileText className="h-4 w-4 shrink-0" />פירוטים שהועלו</TabsTrigger>
+          </TabsList>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button asChild size="sm">
+            <Link href="/financial/import">העלאת פירוט חדש</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/financial">חזרה לפיננסי</Link>
+          </Button>
+        </div>
+      </div>
       <TabsContent value="monthly" className="space-y-4">
         <CardCostsPanel report={report} />
       </TabsContent>
