@@ -641,6 +641,8 @@ export default async function CustomerDetailsPage({
                     const status = s(order, "status");
                     const total = n(order.total_amount);
                     const remaining = n(order.remaining_balance);
+                    const collected = n(order.collected_amount);
+                    const overpaid = total > 0 && collected > total + 0.009;
                     const pending = n(order.pending_amount);
                     const paymentCount = n(order.payment_count);
                     return (
@@ -666,10 +668,16 @@ export default async function CustomerDetailsPage({
                           <div className="font-semibold">{formatCurrency(total)}</div>
                           <div
                             className={`text-xs font-medium ${
-                              remaining > 0.009 ? "text-destructive" : "text-success-soft-foreground"
+                              overpaid || remaining > 0.009
+                                ? "text-destructive"
+                                : "text-success-soft-foreground"
                             }`}
                           >
-                            {remaining > 0.009 ? `נותר ${formatCurrency(remaining)}` : "שולם"}
+                            {overpaid
+                              ? "שולם יתר"
+                              : remaining > 0.009
+                                ? `נותר ${formatCurrency(remaining)}`
+                                : "שולם"}
                           </div>
                         </div>
                       </Link>

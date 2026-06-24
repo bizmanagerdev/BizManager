@@ -30,6 +30,8 @@ import FinancialTotalsStrip from "@/app/financial/FinancialTotalsStrip";
 import ProfitLossPanel from "@/app/financial/reports/ProfitLossPanel";
 import MonthlyTrendPanel from "@/app/financial/reports/MonthlyTrendPanel";
 import ForecastPanel from "@/app/financial/reports/ForecastPanel";
+import EarnedRevenuePanel from "@/app/financial/reports/EarnedRevenuePanel";
+import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import {
   EXPENSE_BUSINESS_DOMAINS,
@@ -80,6 +82,7 @@ type InitialFilters = {
 
 type Props = {
   data: FinancialPageData;
+  earnedRevenue?: EarnedRevenueReport | null;
   initialFilters: InitialFilters;
   /** "flow" = the cash-flow ledger page; "reports" = totals + domain views + P&L. */
   view?: "flow" | "reports";
@@ -279,6 +282,7 @@ export default function FinancialPageClient({
   data,
   initialFilters,
   view = "flow",
+  earnedRevenue = null,
   canManageExpenses,
   canViewCashflow,
   recurringProjects,
@@ -998,10 +1002,11 @@ export default function FinancialPageClient({
 
       {view === "reports" ? (
       <Tabs value={reportTab} onValueChange={setReportTab} dir="rtl" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3 print:hidden sm:grid-cols-5">
+        <TabsList className="grid w-full grid-cols-3 print:hidden sm:grid-cols-6">
           <TabsTrigger value="summary">סיכום</TabsTrigger>
           <TabsTrigger value="domains">תחומים</TabsTrigger>
           <TabsTrigger value="pl">רווח והפסד</TabsTrigger>
+          <TabsTrigger value="earned">הכנסה לפי חודש</TabsTrigger>
           <TabsTrigger value="trend">מגמה חודשית</TabsTrigger>
           <TabsTrigger value="forecast">תחזית</TabsTrigger>
         </TabsList>
@@ -1143,6 +1148,15 @@ export default function FinancialPageClient({
             from={initialFilters.from || null}
             to={initialFilters.to || null}
           />
+        </TabsContent>
+        <TabsContent value="earned" className="space-y-4">
+          {earnedRevenue ? (
+            <EarnedRevenuePanel report={earnedRevenue} />
+          ) : (
+            <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+              אין נתוני הכנסה להצגה.
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="trend" className="space-y-4">
           <MonthlyTrendPanel points={data.monthlyTrend} />

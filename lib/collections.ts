@@ -6,7 +6,13 @@ import { getCollectionActivityByCustomer } from "@/lib/communications";
 // — and aggregates it per customer so an office worker can see, at a glance, who
 // owes money, how much is overdue, and when the next payment is due.
 
-export type CollectionStatus = "collected" | "partial" | "awaiting" | "overdue" | "unpaid";
+export type CollectionStatus =
+  | "overpaid"
+  | "collected"
+  | "partial"
+  | "awaiting"
+  | "overdue"
+  | "unpaid";
 
 export type CollectionSourceRow = {
   source_type: "order" | "project";
@@ -137,6 +143,7 @@ const STATUS_RANK: Record<CollectionStatus, number> = {
   partial: 2,
   unpaid: 1,
   collected: 0,
+  overpaid: 0, // not a collection target — overpayment is a data issue, not a debt
 };
 
 const MS_PER_DAY = 86_400_000;
@@ -218,7 +225,8 @@ export function computeSourceCollection(p: {
   }
 
   let status: CollectionStatus;
-  if (p.total > 0 && p.collected + 0.009 >= p.total) status = "collected";
+  if (p.total > 0 && p.collected > p.total + 0.009) status = "overpaid";
+  else if (p.total > 0 && p.collected + 0.009 >= p.total) status = "collected";
   else if (late > 0.009) status = "overdue";
   else if (p.collected > 0.009) status = "partial";
   else if (expected > 0.009) status = "awaiting";

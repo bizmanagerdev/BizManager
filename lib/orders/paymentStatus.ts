@@ -178,7 +178,13 @@ function getOrderPaymentStatusColor(status: string): StatusColor {
 // collected vs what is still expected, and derive a collection status for the
 // owner's גבייה (collections) worklist.
 
-export type CollectionStatus = "collected" | "partial" | "awaiting" | "overdue" | "unpaid";
+export type CollectionStatus =
+  | "overpaid"
+  | "collected"
+  | "partial"
+  | "awaiting"
+  | "overdue"
+  | "unpaid";
 
 export type PaymentSplitInput = {
   amount_total?: number | string | null;
@@ -243,6 +249,7 @@ export function deriveCollectionStatus(params: {
   overdue: number;
 }): CollectionStatus {
   const { totalAmount, collected, pending, overdue } = params;
+  if (totalAmount > 0 && collected > totalAmount + 0.009) return "overpaid"; // collected more than due — likely a mistake
   if (totalAmount > 0 && collected + 0.009 >= totalAmount) return "collected";
   if (overdue > 0.009) return "overdue"; // expected money past due — call them now
   if (pending > 0.009) return "awaiting"; // expected money, still future-dated
@@ -254,6 +261,8 @@ export function deriveCollectionStatus(params: {
 // labels are gender-invariant.
 export function collectionStatusLabel(status: string) {
   switch (status) {
+    case "overpaid":
+      return "שולם יתר";
     case "collected":
       return "שולם";
     case "partial":
@@ -269,6 +278,8 @@ export function collectionStatusLabel(status: string) {
 
 function getCollectionStatusColor(status: string): StatusColor {
   switch (status) {
+    case "overpaid":
+      return "danger"; // flag it red — overpayment usually means a duplicate/wrong payment
     case "collected":
       return "success";
     case "partial":

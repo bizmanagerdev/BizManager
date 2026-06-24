@@ -5,6 +5,10 @@ import FinancialPageClient, {
   type FinancialPageInitialFilters,
 } from "@/app/financial/FinancialPageClient";
 import { getFinancialPageData } from "@/lib/financial";
+import {
+  loadEarnedRevenueByMonth,
+  type EarnedRevenueReport,
+} from "@/lib/financial/earnedRevenue";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
 
 type Row = Record<string, unknown>;
@@ -84,6 +88,15 @@ export default async function CashFlowPageContent({
   const canManageExpenses = profile.role === "admin" || profile.role === "office";
   const canViewCashflow = profile.role === "admin";
 
+  // Earned (booked) revenue per month per domain — only needed on the reports view.
+  let earnedRevenue: EarnedRevenueReport | null = null;
+  if (view === "reports") {
+    earnedRevenue = await loadEarnedRevenueByMonth(supabase, {
+      from: initialFilters.from || null,
+      to: initialFilters.to || null,
+    });
+  }
+
   let projectOptions: Array<{ id: string; label: string }> = [];
   let propertyOptions: Array<{ id: string; label: string }> = [];
   let orderOptions: Array<{ id: string; label: string }> = [];
@@ -153,6 +166,7 @@ export default async function CashFlowPageContent({
           q: initialFilters.q,
         })}
         data={data}
+        earnedRevenue={earnedRevenue}
         initialFilters={initialFilters}
         view={view}
         canManageExpenses={canManageExpenses}

@@ -98,6 +98,8 @@ function paymentInsertedByLabel(
 /** Text-only color for the collection status (no badge pill, per user request). */
 function collectionStatusTextClass(status: string) {
   switch (status) {
+    case "overpaid":
+      return "text-destructive";
     case "collected":
       return "text-success-soft-foreground";
     case "partial":
@@ -643,7 +645,9 @@ export default async function SalesOrderPage({
                 }
                 badges={
                   <>
-                    {needsPricingAction || remainingBalance > 0.009 ? (
+                    {needsPricingAction ||
+                    remainingBalance > 0.009 ||
+                    collectionStatus === "overpaid" ? (
                       <span className={`text-xs font-semibold ${collectionStatusTextClass(collectionStatus)}`}>
                         {orderCollectionStatusLabel(collectionStatus)}
                       </span>

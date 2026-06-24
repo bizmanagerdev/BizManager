@@ -4,6 +4,7 @@ import AppShell from "@/components/layout/AppShell";
 import SalesDeliveriesQueue from "@/app/sales/SalesDeliveriesQueue";
 import SalesInventoryClient from "@/app/sales/SalesInventoryClient";
 import SalesOrdersClient from "@/app/sales/SalesOrdersClient";
+import OrderMonthlySummaryButton from "@/app/sales/OrderMonthlySummaryButton";
 import PriceListClient from "@/app/sales/PriceListClient";
 import SalesTabsNav from "@/app/sales/SalesTabsNav";
 import { requireProfile } from "@/lib/auth/requireProfile";
@@ -265,6 +266,9 @@ export default async function SalesPage({
           <div className="flex flex-wrap items-center gap-3 pb-2">
             {customerName ? (
               <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
+            ) : null}
+            {profile.role === "admin" && (activeTab === "orders" || activeTab === "closed") ? (
+              <OrderMonthlySummaryButton />
             ) : null}
             <Button asChild>
               <Link href="/sales/orders/new">הזמנה חדשה</Link>
