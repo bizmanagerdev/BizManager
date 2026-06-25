@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Row = Record<string, unknown>;
 
-export type TaskMember = { id: string; name: string };
+export type TaskMember = { id: string; name: string; color: string | null };
 
 export type TaskBoardItem = {
   id: string;
@@ -142,7 +142,7 @@ export async function loadTasksBoard(
   }
 
   const openQuery = openFilter
-    .order("due_date", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false, nullsFirst: false })
     .range(0, OPEN_LIMIT - 1);
   const doneQuery = doneFilter.order("updated_at", { ascending: false }).range(0, DONE_LIMIT - 1);
 
@@ -182,7 +182,7 @@ export async function loadTasksBoard(
   const allUserIds = [...new Set([...assigneeIds, ...memberUserIds])];
 
   const usersRes = allUserIds.length
-    ? await supabase.from("users").select("id,full_name,email").in("id", allUserIds)
+    ? await supabase.from("users").select("id,full_name,email,avatar_color").in("id", allUserIds)
     : { data: [] as Row[] };
 
   const projectNameById = new Map(
@@ -196,6 +196,9 @@ export async function loadTasksBoard(
       (r) => [getString(r, "id"), getString(r, "full_name") ?? getString(r, "email") ?? ""] as const
     )
   );
+  const userColorById = new Map(
+    ((usersRes.data ?? []) as Row[]).map((r) => [getString(r, "id"), getString(r, "avatar_color")] as const)
+  );
 
   const membersByTask = new Map<string, TaskMember[]>();
   for (const row of memberRows) {
@@ -203,7 +206,7 @@ export async function loadTasksBoard(
     const memberId = getString(row, "user_id");
     if (!taskId || !memberId) continue;
     const list = membersByTask.get(taskId) ?? [];
-    list.push({ id: memberId, name: userNameById.get(memberId) ?? "" });
+    list.push({ id: memberId, name: userNameById.get(memberId) ?? "", color: userColorById.get(memberId) ?? null });
     membersByTask.set(taskId, list);
   }
 
@@ -226,7 +229,9 @@ export async function loadTasksBoard(
     const extraMembers = membersByTask.get(row.id) ?? [];
     // Avatars: primary assignee first, then extra members.
     const members: TaskMember[] = [
-      ...(assigneeId ? [{ id: assigneeId, name: assigneeName ?? "" }] : []),
+      ...(assigneeId
+        ? [{ id: assigneeId, name: assigneeName ?? "", color: userColorById.get(assigneeId) ?? null }]
+        : []),
       ...extraMembers.filter((m) => m.id !== assigneeId),
     ];
     const status = row.status;

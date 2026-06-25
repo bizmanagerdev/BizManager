@@ -44,7 +44,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
+import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { formatShortDateTime } from "@/lib/date";
 import {
@@ -62,7 +62,7 @@ export type TaskPriority = "low" | "medium" | "high" | "urgent";
 export type TaskTargetType = "project" | "property";
 
 export type TaskOption = { id: string; label: string };
-export type UserOption = { id: string; label: string };
+export type UserOption = { id: string; label: string; color?: string | null };
 
 type Mode = "create" | "edit";
 
@@ -283,6 +283,14 @@ export function TaskUpsertDialog(props: Props) {
   // a project/property is chosen, that link must be filled in.)
   const canSubmit = Boolean(subject.trim()) && targetOk;
 
+  // Same color map as the board (built from the same user list) so a person's
+  // bold color matches between the card, the picker and their comments.
+  const colorIndexById = useMemo(() => buildColorIndexMap(props.users.map((u) => u.id)), [props.users]);
+  // The user's own chosen color (when set) overrides the auto color.
+  const chosenColorById = useMemo(
+    () => new Map(props.users.filter((u) => u.color).map((u) => [u.id, u.color as string])),
+    [props.users]
+  );
   const memberOptions = useMemo(
     () => props.users.filter((u) => u.id !== assignedUserId),
     [props.users, assignedUserId]
@@ -408,7 +416,9 @@ export function TaskUpsertDialog(props: Props) {
     setCity(draftCity);
     setCityOther(Boolean(draftCity) && !(CITY_OPTIONS as readonly string[]).includes(draftCity));
     setAddress(draft?.address ?? "");
-    setAssignedUserId(draft?.assignedUserId ?? "");
+    // Default the owner to the creator so a new task is never ownerless; a saved
+    // draft assignee still wins, and the user can reassign before saving.
+    setAssignedUserId(draft?.assignedUserId ?? props.currentUserId ?? "");
     setMemberIds(Array.isArray(draft?.memberIds) ? draft.memberIds : []);
     setPriority(draft?.priority ?? "medium");
     setStatus(props.defaultStatus ?? draft?.status ?? "todo");
@@ -984,7 +994,7 @@ export function TaskUpsertDialog(props: Props) {
                         key={member.id}
                         className="inline-flex items-center gap-1 rounded-full border bg-secondary/40 py-0.5 ps-1 pe-2 text-xs"
                       >
-                        <InitialsAvatar name={member.label} size="sm" />
+                        <InitialsAvatar name={member.label} color={member.color} colorKey={member.id} colorIndex={colorIndexById.get(member.id)} size="sm" />
                         {member.label}
                         <button
                           type="button"
@@ -1023,7 +1033,7 @@ export function TaskUpsertDialog(props: Props) {
                             >
                               {checked ? <Check className="h-3 w-3" /> : null}
                             </span>
-                            <InitialsAvatar name={user.label} size="sm" />
+                            <InitialsAvatar name={user.label} color={user.color} colorKey={user.id} colorIndex={colorIndexById.get(user.id)} size="sm" />
                             {user.label}
                           </button>
                         );
@@ -1296,7 +1306,7 @@ export function TaskUpsertDialog(props: Props) {
                   ))}
                   {comments.map((comment) => (
                     <div key={comment.id} className="flex gap-2">
-                      <InitialsAvatar name={comment.author_name} size="sm" />
+                      <InitialsAvatar name={comment.author_name} color={comment.author_id ? chosenColorById.get(comment.author_id) : undefined} colorKey={comment.author_id} colorIndex={comment.author_id ? colorIndexById.get(comment.author_id) : undefined} size="sm" />
                       <div className="min-w-0 flex-1 rounded-md border bg-muted/20 px-3 py-2">
                         <div className="flex flex-wrap items-baseline gap-x-2">
                           <span className="text-sm font-medium">{comment.author_name ?? "משתמש"}</span>

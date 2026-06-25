@@ -66,10 +66,12 @@ export async function POST(req: Request) {
     const dueTime = typeof body.due_time === "string" && body.due_time.trim() ? body.due_time.trim() : null;
     const city = typeof body.city === "string" && body.city.trim() ? body.city.trim() : null;
     const address = typeof body.address === "string" && body.address.trim() ? body.address.trim() : null;
+    // Every task must have an owner — default to the creator when no assignee is
+    // supplied, so we never store ownerless tasks.
     const assignedUserId =
       typeof body.assigned_user_id === "string" && body.assigned_user_id.trim()
         ? body.assigned_user_id.trim()
-        : null;
+        : profile.id;
     const memberIds = Array.isArray(body.member_ids)
       ? [...new Set(body.member_ids.filter((id): id is string => typeof id === "string" && Boolean(id.trim())))]
       : [];

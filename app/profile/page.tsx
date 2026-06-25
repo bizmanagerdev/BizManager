@@ -96,6 +96,16 @@ export default async function ProfilePage() {
   const rawFontScale = (fontScaleRow as { font_scale?: unknown } | null)?.font_scale;
   const initialFontScale = typeof rawFontScale === "number" && rawFontScale > 0 ? rawFontScale : null;
 
+  // Chosen avatar color — separate query so a missing column (before
+  // db/sql/add_user_avatar_color.sql runs) can't break the font-scale load.
+  const { data: avatarColorRow } = await supabase
+    .from("users")
+    .select("avatar_color")
+    .eq("id", profile.id)
+    .maybeSingle();
+  const rawAvatarColor = (avatarColorRow as { avatar_color?: unknown } | null)?.avatar_color;
+  const initialAvatarColor = typeof rawAvatarColor === "string" ? rawAvatarColor : null;
+
   const loadError =
     sessionsError?.message ??
     agreementsError?.message ??
@@ -145,6 +155,7 @@ export default async function ProfilePage() {
           <ProfileClient
             profile={profile}
             initialFontScale={initialFontScale}
+            initialAvatarColor={initialAvatarColor}
             sessions={sessions}
             agreements={agreements}
             payslips={payslips}

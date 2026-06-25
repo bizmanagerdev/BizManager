@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { InitialsAvatar, isHexColor } from "@/components/dashboard/InitialsAvatar";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import { EXPENSE_BUSINESS_DOMAINS, WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { payrollWorkerTypeAllowsSessions, payrollWorkerTypeGeneratesPayslips, shouldShowSessionHours } from "@/lib/payroll-worker-type";
@@ -36,6 +37,7 @@ import {
 type Props = {
   profile: UserProfile;
   initialFontScale: number | null;
+  initialAvatarColor: string | null;
   sessions: WorkSessionRow[];
   agreements: SalaryAgreementRow[];
   payslips: PayslipRow[];
@@ -46,6 +48,18 @@ type Props = {
 };
 
 type SplitPartDraft = { id: string; minutes: string; domain: ExpenseBusinessDomain; projectId: string; propertyId: string };
+
+// A broad spectrum of quick-pick swatches for the personal avatar color. Any
+// color is allowed (the picker below accepts a custom hex); these are just
+// convenient presets. The avatar text auto-contrasts, so light picks stay legible.
+const AVATAR_COLOR_PRESETS = [
+  "#DC2626", "#EF4444", "#F87171", "#EA580C", "#F97316", "#FB923C",
+  "#D97706", "#F59E0B", "#FBBF24", "#65A30D", "#84CC16", "#16A34A",
+  "#22C55E", "#4ADE80", "#059669", "#0D9488", "#14B8A6", "#0891B2",
+  "#06B6D4", "#0284C7", "#2563EB", "#3B82F6", "#60A5FA", "#4F46E5",
+  "#6366F1", "#7C3AED", "#9333EA", "#A855F7", "#C026D3", "#DB2777",
+  "#EC4899", "#F472B6", "#E11D48", "#F43F5E", "#475569", "#0F172A",
+] as const;
 
 function toLocalValue(value: string | null | undefined) {
   if (!value) return "";
@@ -70,7 +84,7 @@ function toLocalDateTimeValue(date: Date) {
   return adjusted.toISOString().slice(0, 16);
 }
 
-export default function ProfileClient({ profile, initialFontScale, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions }: Props) {
+export default function ProfileClient({ profile, initialFontScale, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions }: Props) {
   const router = useRouter();
   const splitPartIdRef = useRef(0);
   const [isPending, startTransition] = useTransition();
@@ -132,6 +146,23 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ scale }),
     }).catch(() => {});
+  }
+
+  // Personal avatar color — the colored initials circle shown across the app.
+  const [avatarColor, setAvatarColor] = useState<string | null>(
+    isHexColor(initialAvatarColor) ? initialAvatarColor : null
+  );
+  const profileName = profile.full_name ?? profile.email ?? "";
+  function selectAvatarColor(color: string | null) {
+    setAvatarColor(color);
+    // Fire-and-forget; a refresh propagates the new color to every avatar.
+    void fetch("/api/profile/avatar-color", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ color }),
+    })
+      .then(() => router.refresh())
+      .catch(() => {});
   }
 
   const openSession = useMemo(() => sessions.find((session) => !session.clock_out) ?? null, [sessions]);
@@ -543,6 +574,58 @@ export default function ProfileClient({ profile, initialFontScale, sessions, agr
                 </button>
               );
             })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="py-5">
+          <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
+            הצבע שלי
+            <InitialsAvatar name={profileName} color={avatarColor} size="md" />
+          </div>
+          <div className="mb-3 text-xs text-muted-foreground">
+            הצבע של עיגול ראשי התיבות שלך בכל המערכת. הבחירה נשמרת בחשבון שלך.
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {AVATAR_COLOR_PRESETS.map((color) => {
+              const isActive = avatarColor?.toUpperCase() === color.toUpperCase();
+              return (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => selectAvatarColor(color)}
+                  aria-label={`בחירת צבע ${color}`}
+                  aria-pressed={isActive}
+                  className={`h-8 w-8 rounded-full transition-transform ${
+                    isActive ? "ring-2 ring-foreground ring-offset-2 ring-offset-background" : "hover:scale-110"
+                  }`}
+                  style={{ backgroundColor: color }}
+                />
+              );
+            })}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className="flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50">
+              <span
+                className="h-5 w-5 rounded-full border"
+                style={{ backgroundColor: isHexColor(avatarColor) ? (avatarColor as string) : "transparent" }}
+              />
+              צבע מותאם אישית
+              <input
+                type="color"
+                className="sr-only"
+                value={isHexColor(avatarColor) ? (avatarColor as string) : "#2563EB"}
+                onChange={(e) => selectAvatarColor(e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => selectAvatarColor(null)}
+              className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50"
+            >
+              אוטומטי
+            </button>
           </div>
         </CardContent>
       </Card>

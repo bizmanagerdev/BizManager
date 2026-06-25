@@ -68,6 +68,16 @@ export default async function TasksPage({
       .range(0, 499),
   ]);
 
+  // Chosen avatar colors — separate, tolerant query so a missing column (before
+  // db/sql/add_user_avatar_color.sql runs) can't break the user list.
+  const colorsResult = await supabase.from("users").select("id,avatar_color").range(0, 499);
+  const colorById = new Map<string, string>();
+  for (const row of (colorsResult.data ?? []) as Row[]) {
+    const id = getString(row, "id");
+    const color = getString(row, "avatar_color");
+    if (id && color) colorById.set(id, color);
+  }
+
   await recurringTasksPromise;
 
   const projectRows = (projectsResult.data ?? []) as Row[];
@@ -91,10 +101,14 @@ export default async function TasksPage({
 
   const userOptions = userRows
     .filter((u) => u.active !== false)
-    .map((u) => ({
-      id: getString(u, "id") ?? "",
-      label: getString(u, "full_name") ?? getString(u, "email") ?? "",
-    }))
+    .map((u) => {
+      const id = getString(u, "id") ?? "";
+      return {
+        id,
+        label: getString(u, "full_name") ?? getString(u, "email") ?? "",
+        color: colorById.get(id) ?? null,
+      };
+    })
     .filter((u) => u.id && u.label);
 
   return (

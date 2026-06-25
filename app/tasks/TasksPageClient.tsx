@@ -30,7 +30,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
+import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { TaskUpsertDialog, type TaskOption, type TaskStatus, type UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
@@ -86,11 +86,13 @@ function TaskCard({
   onOpen,
   onToggleDone,
   onContextMenu,
+  colorIndexById,
 }: {
   task: TaskBoardItem;
   onOpen: (id: string) => void;
   onToggleDone: (id: string, done: boolean) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
+  colorIndexById: Map<string, number>;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   const extraMembers = task.members.length > 3 ? task.members.length - 3 : 0;
@@ -173,7 +175,7 @@ function TaskCard({
           {task.members.length > 0 ? (
             <div className="flex -space-x-2">
               {task.members.slice(0, 3).map((member) => (
-                <InitialsAvatar key={member.id} name={member.name} size="sm" className="ring-2 ring-background" />
+                <InitialsAvatar key={member.id} name={member.name} color={member.color} colorKey={member.id} colorIndex={colorIndexById.get(member.id)} size="sm" className="ring-2 ring-background" />
               ))}
               {extraMembers > 0 ? (
                 <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[11px] font-medium ring-2 ring-background">
@@ -196,6 +198,7 @@ function BoardColumn({
   onToggleDone,
   onContextMenu,
   onQuickAdd,
+  colorIndexById,
 }: {
   status: string;
   tasks: TaskBoardItem[];
@@ -203,6 +206,7 @@ function BoardColumn({
   onToggleDone: (id: string, done: boolean) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
   onQuickAdd: (status: string, title: string) => Promise<void>;
+  colorIndexById: Map<string, number>;
 }) {
   const {
     setNodeRef,
@@ -307,6 +311,7 @@ function BoardColumn({
             onOpen={onOpen}
             onToggleDone={onToggleDone}
             onContextMenu={onContextMenu}
+            colorIndexById={colorIndexById}
           />
         ))}
 
@@ -397,6 +402,13 @@ export default function TasksPageClient(props: Props) {
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } })
+  );
+
+  // Unique, stable color slot per user — shared by the card avatars (and matches
+  // the dialog, which builds the same map from the same user list).
+  const colorIndexById = useMemo(
+    () => buildColorIndexMap(props.users.map((u) => u.id)),
+    [props.users]
   );
 
   const tasksByStatus = useMemo(() => {
@@ -673,6 +685,7 @@ export default function TasksPageClient(props: Props) {
                 onToggleDone={toggleDone}
                 onContextMenu={openMenu}
                 onQuickAdd={quickAdd}
+                colorIndexById={colorIndexById}
               />
             ))}
           </div>
