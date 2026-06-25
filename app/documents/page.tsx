@@ -1,7 +1,7 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { resolveUserDisplayNamesForValues } from "@/lib/audit";
-import { mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import DocumentsArchiveClient, {
   type ArchiveTargetOption,
   type DocumentArchiveFilters,
@@ -28,6 +28,7 @@ type DocumentsSearchParams = {
 type DocumentRow = {
   id: string;
   document_type: string | null;
+  business_domain: string | null;
   title: string | null;
   file_name: string | null;
   storage_key: string | null;
@@ -155,7 +156,7 @@ export default async function DocumentsPage({
 
   const { data: documentsRaw, error: documentsError, count } = await supabase
     .from("documents")
-    .select("id,document_type,title,file_name,storage_key,uploaded_at,notes,uploaded_by", {
+    .select("id,document_type,business_domain,title,file_name,storage_key,uploaded_at,notes,uploaded_by", {
       count: "estimated",
     })
     .order("uploaded_at", { ascending: false, nullsFirst: false })
@@ -196,6 +197,7 @@ export default async function DocumentsPage({
   const taskIds = new Set<string>();
   const customerIds = new Set<string>();
   const orderIds = new Set<string>();
+  const userIds = new Set<string>();
 
   for (const link of links) {
     const entityType = normalizeString(link.entity_type);
@@ -205,7 +207,13 @@ export default async function DocumentsPage({
     if (entityType === "task") taskIds.add(entityId);
     if (entityType === "customer") customerIds.add(entityId);
     if (entityType === "order") orderIds.add(entityId);
+    if (entityType === "user") userIds.add(entityId);
   }
+
+  // Worker names for session attachments linked via entity_type='user'
+  // (attendance_sessions.user_id = public.users.id).
+  const workerNames =
+    userIds.size > 0 ? await resolveUserDisplayNamesForValues(supabase, Array.from(userIds)) : {};
 
   const [allProjectsResult, uploadProjectsResult, allPropertiesResult, tasksOverviewResult, tasksMetaResult, ordersResult] = await Promise.all([
     supabase.from("project_overview_view").select("id,name,project_type,customer_id,customer_name"),
@@ -439,6 +447,16 @@ export default async function DocumentsPage({
             });
           }
         }
+
+        if (entityType === "user") {
+          const label = normalizeString(workerNames[entityId]) || `עובד ${entityId.slice(0, 8)}`;
+          linkedEntities.set(`${entityType}:${entityId}`, {
+            type: entityType,
+            id: entityId,
+            label,
+            href: entityHref(entityType, entityId),
+          });
+        }
       }
 
       const storageKey = normalizeString(doc.storage_key) || null;
@@ -458,8 +476,13 @@ export default async function DocumentsPage({
       const propertyList = uniqueById(Array.from(relatedProperties.values())).sort(compareByLabel);
       const taskList = uniqueById(Array.from(relatedTasks.values())).sort(compareByLabel);
       const orderList = uniqueById(Array.from(relatedOrders.values())).sort(compareByLabel);
-      const businessDomainList =
-        relatedBusinessDomains.size > 0
+      // An explicit business_domain (override chosen on upload or via the UI)
+      // wins. Otherwise infer from the linked entity (project → פרויקטים, order →
+      // מכירות …), falling back to שוטף when there is no link.
+      const storedDomain = isExpenseBusinessDomain(doc.business_domain) ? doc.business_domain : null;
+      const businessDomainList = storedDomain
+        ? [storedDomain]
+        : relatedBusinessDomains.size > 0
           ? Array.from(relatedBusinessDomains.values())
           : (["general_business"] as ExpenseBusinessDomain[]);
 

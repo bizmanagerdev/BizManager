@@ -262,6 +262,7 @@ export async function POST(req: Request) {
         prepared.map((entry) => ({
           id: entry.documentId,
           document_type: "order_delivery_image",
+          business_domain: "sales", // order documents always belong to the מכירות domain
           title: entry.displayName,
           file_name: entry.displayName,
           storage_key: entry.storagePath,

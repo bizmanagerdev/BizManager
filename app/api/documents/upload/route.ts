@@ -2,6 +2,8 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { DEFAULT_DOCUMENT_CATEGORY } from "@/lib/documents";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
 
@@ -24,25 +26,43 @@ export async function POST(req: Request) {
 
     const form = await req.formData();
     const file = form.get("file");
-    const businessDomain = String(form.get("business_domain") ?? "").trim() || "logistics_projects";
+    const businessDomainRaw = String(form.get("business_domain") ?? "").trim();
+    const businessDomain = isExpenseBusinessDomain(businessDomainRaw)
+      ? businessDomainRaw
+      : "general_business";
     const projectId = String(form.get("project_id") ?? "").trim();
     const propertyId = String(form.get("property_id") ?? "").trim();
     const customerId = String(form.get("customer_id") ?? "").trim();
     const category = String(form.get("category") ?? form.get("tag") ?? "").trim();
 
-    // customer_id is a standalone target (customer page uploads); the
-    // business_domain/project/property rules only apply without it.
-    if (!customerId) {
-      if (businessDomain === "logistics_projects" && !projectId) {
+    // Resolve the link target. A customer_id (customer-page upload) links to that
+    // customer; logistics_projects links to a project; property_management links
+    // to a property; every other domain uploads as a standalone document with no
+    // entity link (still tagged with its business_domain).
+    let linkedEntityType: "customer" | "project" | "property" | null = null;
+    let linkedEntityId: string | null = null;
+    let storageFolder = "general";
+
+    if (customerId) {
+      linkedEntityType = "customer";
+      linkedEntityId = customerId;
+      storageFolder = "customers";
+    } else if (businessDomain === "logistics_projects") {
+      if (!projectId) {
         return NextResponse.json({ error: "Missing project_id" }, { status: 400 });
       }
-      if (businessDomain === "property_management" && !propertyId) {
+      linkedEntityType = "project";
+      linkedEntityId = projectId;
+      storageFolder = "projects";
+    } else if (businessDomain === "property_management") {
+      if (!propertyId) {
         return NextResponse.json({ error: "Missing property_id" }, { status: 400 });
       }
-      if (!["logistics_projects", "property_management"].includes(businessDomain)) {
-        return NextResponse.json({ error: "Unsupported business_domain" }, { status: 400 });
-      }
+      linkedEntityType = "property";
+      linkedEntityId = propertyId;
+      storageFolder = "properties";
     }
+
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
@@ -56,20 +76,10 @@ export async function POST(req: Request) {
     const documentId = crypto.randomUUID();
     const displayName = (file.name.split(/[/\\]/).pop() ?? "file").trim() || "file";
     const ext = safeExtensionFromFilename(displayName);
-    const linkedEntityType = customerId
-      ? "customer"
-      : businessDomain === "property_management"
-        ? "property"
-        : "project";
-    const linkedEntityId = customerId || (businessDomain === "property_management" ? propertyId : projectId);
-    const storageFolder = customerId
-      ? "customers"
-      : businessDomain === "property_management"
-        ? "properties"
-        : "projects";
-    const storagePath = ext
-      ? `${storageFolder}/${linkedEntityId}/${documentId}.${ext}`
-      : `${storageFolder}/${linkedEntityId}/${documentId}`;
+    const storageBase = linkedEntityId
+      ? `${storageFolder}/${linkedEntityId}/${documentId}`
+      : `${storageFolder}/${documentId}`;
+    const storagePath = ext ? `${storageBase}.${ext}` : storageBase;
     const uploadedAt = new Date().toISOString();
 
     const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, file, {
@@ -82,7 +92,10 @@ export async function POST(req: Request) {
 
     const { error: docError } = await supabase.from("documents").insert({
       id: documentId,
-      document_type: category || "general_document",
+      document_type: category || DEFAULT_DOCUMENT_CATEGORY,
+      // Linked files (project/property/customer) infer their domain from the
+      // link → store NULL. Standalone files carry the chosen domain explicitly.
+      business_domain: linkedEntityId ? null : businessDomain,
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,
@@ -96,16 +109,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: toHebrewError(docError.message) }, { status: 400 });
     }
 
-    const { error: linkError } = await supabase.from("document_links").insert({
-      document_id: documentId,
-      entity_type: linkedEntityType,
-      entity_id: linkedEntityId,
-    });
+    // Standalone documents (home/charity/general_business/sales/spaceit with no
+    // customer) carry no entity link — only project/property/customer do.
+    if (linkedEntityType && linkedEntityId) {
+      const { error: linkError } = await supabase.from("document_links").insert({
+        document_id: documentId,
+        entity_type: linkedEntityType,
+        entity_id: linkedEntityId,
+      });
 
-    if (linkError) {
-      await supabase.from("documents").delete().eq("id", documentId);
-      await supabase.storage.from(BUCKET).remove([storagePath]);
-      return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
+      if (linkError) {
+        await supabase.from("documents").delete().eq("id", documentId);
+        await supabase.storage.from(BUCKET).remove([storagePath]);
+        return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
+      }
     }
 
     await logAuditEvent({
@@ -122,11 +139,11 @@ export async function POST(req: Request) {
         id: documentId,
         storage_key: storagePath,
         file_name: displayName,
-        document_type: category || "general_document",
+        document_type: category || DEFAULT_DOCUMENT_CATEGORY,
         uploaded_at: uploadedAt,
         business_domain: businessDomain,
-        project_id: projectId || null,
-        property_id: propertyId || null,
+        project_id: linkedEntityType === "project" ? linkedEntityId : null,
+        property_id: linkedEntityType === "property" ? linkedEntityId : null,
       },
     });
   } catch (err: unknown) {

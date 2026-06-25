@@ -9,6 +9,7 @@ import {
   FileText,
   FolderOpen,
   ImageIcon,
+  Layers,
   Package,
   Upload,
   Search,
@@ -38,6 +39,7 @@ import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Input } from "@/components/ui/input";
 import { formatShortDateTime } from "@/lib/date";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
+import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel, inferDefaultDocumentCategory } from "@/lib/documents";
 
 export type DocumentArchiveFilters = {
   customer_id: string;
@@ -110,6 +112,8 @@ function entityTypeLabel(value: string) {
       return "לקוח";
     case "order":
       return "הזמנה";
+    case "user":
+      return "עובד";
     case "unlinked":
       return "ללא שיוך";
     default:
@@ -156,10 +160,10 @@ function groupLabel(groupBy: string, doc: DocumentArchiveItem) {
     return "מסמכים המשויכים למספר ישויות";
   }
 
-  if (groupBy === "type") return doc.document_type || "ללא קטגוריה";
+  if (groupBy === "type") return getDocumentCategoryLabel(doc.document_type);
   if (groupBy === "kind") return fileKindLabel(doc.file_kind);
   if (groupBy === "customer") return doc.customers[0]?.label || "ללא לקוח";
-  if (groupBy === "project") return doc.projects[0]?.label || "ללא פרויקט";
+  if (groupBy === "domain") return getBusinessDomainLabel(doc.business_domains[0] ?? "general_business");
   return "כל המסמכים";
 }
 
@@ -217,17 +221,19 @@ export default function DocumentsArchiveClient({
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadBusinessDomain, setUploadBusinessDomain] = useState(
-    initialFilters.business_domain === "property_management" ? "property_management" : "logistics_projects"
+    (EXPENSE_BUSINESS_DOMAINS as readonly string[]).includes(initialFilters.business_domain)
+      ? initialFilters.business_domain
+      : "logistics_projects"
   );
-  const [uploadCategoryMode, setUploadCategoryMode] = useState<"existing" | "new">("existing");
   const [uploadCategory, setUploadCategory] = useState("");
-  const [uploadNewCategory, setUploadNewCategory] = useState("");
   const [uploadProjectId, setUploadProjectId] = useState(initialFilters.project_id);
   const [uploadPropertyId, setUploadPropertyId] = useState(initialFilters.property_id);
   const [uploadProjectOptions, setUploadProjectOptions] = useState<ArchiveTargetOption[]>(projectOptions);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [editDialogDoc, setEditDialogDoc] = useState<DocumentArchiveItem | null>(null);
   const [editTagValue, setEditTagValue] = useState("");
+  const [editDomainDoc, setEditDomainDoc] = useState<DocumentArchiveItem | null>(null);
+  const [editDomainValue, setEditDomainValue] = useState("");
   const [deleteDialogDoc, setDeleteDialogDoc] = useState<DocumentArchiveItem | null>(null);
 
   const deferredQuery = useDeferredValue(query);
@@ -250,10 +256,11 @@ export default function DocumentsArchiveClient({
   const documentTypeOptions = useMemo(() => {
     return Array.from(
       new Set(documents.map((doc) => doc.document_type).filter((value): value is string => Boolean(value)))
-    ).sort((a, b) => a.localeCompare(b, "he"));
+    )
+      .map((value) => ({ value, label: getDocumentCategoryLabel(value) }))
+      .sort((a, b) => a.label.localeCompare(b.label, "he"));
   }, [documents]);
 
-  const uploadCategoryOptions = useMemo(() => documentTypeOptions, [documentTypeOptions]);
   const projectFilterOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const doc of documents) {
@@ -286,9 +293,11 @@ export default function DocumentsArchiveClient({
 
   function resetUploadForm() {
     setUploadCategory("");
-    setUploadNewCategory("");
-    setUploadCategoryMode("existing");
-    setUploadBusinessDomain(businessDomain === "property_management" ? "property_management" : "logistics_projects");
+    setUploadBusinessDomain(
+      (EXPENSE_BUSINESS_DOMAINS as readonly string[]).includes(businessDomain)
+        ? businessDomain
+        : "logistics_projects"
+    );
     setUploadProjectId(initialFilters.project_id);
     setUploadPropertyId(initialFilters.property_id);
     setUploadFiles([]);
@@ -414,15 +423,10 @@ export default function DocumentsArchiveClient({
   async function startUpload() {
     if (uploading || uploadFiles.length === 0) return;
 
-    const category =
-      uploadCategoryMode === "new" ? uploadNewCategory.trim() : uploadCategory.trim();
+    const category = uploadCategory.trim();
     const projectId = uploadProjectId.trim();
     const propertyId = uploadPropertyId.trim();
 
-    if (uploadCategoryMode === "new" && !category) {
-      toast.error("יש להזין קטגוריה חדשה");
-      return;
-    }
     if (showUploadProjectField && !projectId) {
       toast.error("יש לבחור פרויקט");
       return;
@@ -479,10 +483,6 @@ export default function DocumentsArchiveClient({
   async function saveTag() {
     if (!editDialogDoc) return;
     const nextValue = editTagValue.trim();
-    if (!nextValue) {
-      toast.error("יש להזין קטגוריה");
-      return;
-    }
 
     startTransition(async () => {
       try {
@@ -506,6 +506,40 @@ export default function DocumentsArchiveClient({
       } catch (errorValue: unknown) {
         const description = toHebrewError(errorValue);
         toast.error("שגיאה בעדכון הקטגוריה", { description });
+      }
+    });
+  }
+
+  async function saveDomain() {
+    if (!editDomainDoc) return;
+    const nextValue = editDomainValue.trim();
+    if (!nextValue) {
+      toast.error("יש לבחור תחום");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/documents/domain", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            document_id: editDomainDoc.id,
+            business_domain: nextValue,
+          }),
+        });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          toast.error("שגיאה בעדכון התחום", { description: toHebrewError(json?.error, "") });
+          return;
+        }
+        toast.success("התחום עודכן");
+        setEditDomainDoc(null);
+        setEditDomainValue("");
+        router.refresh();
+      } catch (errorValue: unknown) {
+        const description = toHebrewError(errorValue);
+        toast.error("שגיאה בעדכון התחום", { description });
       }
     });
   }
@@ -582,7 +616,7 @@ export default function DocumentsArchiveClient({
                 <option value="type">לפי קטגוריית מסמך</option>
                 <option value="kind">לפי סוג קובץ</option>
                 <option value="customer">לפי לקוח</option>
-                <option value="project">לפי פרויקט</option>
+                <option value="domain">לפי תחום</option>
               </SelectField>
             </div>
           </AdaptiveGrid>
@@ -609,8 +643,8 @@ export default function DocumentsArchiveClient({
               >
                 <option value="">כל הקטגוריות</option>
                 {documentTypeOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </SelectField>
@@ -724,128 +758,109 @@ export default function DocumentsArchiveClient({
                 return (
                   <div
                     key={doc.id}
-                    className="rounded-2xl border border-border/70 bg-background/70 p-4"
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border/70 bg-background/70 px-3 py-2"
                   >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="space-y-3">
-                        <div className="flex items-start gap-3">
-                          <div className="rounded-2xl bg-muted p-3 text-muted-foreground">
-                            <KindIcon className="h-5 w-5" />
-                          </div>
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="font-medium">{doc.title}</div>
-                              <Badge variant="outline">{fileKindLabel(doc.file_kind)}</Badge>
-                              {doc.business_domains.map((domain) => (
-                                <Badge key={`${doc.id}-${domain}`} variant="outline">
-                                  {getBusinessDomainLabel(domain)}
-                                </Badge>
-                              ))}
-                              {doc.document_type ? (
-                                <Badge variant="secondary">{doc.document_type}</Badge>
-                              ) : (
-                                <Badge variant="outline">ללא קטגוריה</Badge>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                              <span>הועלה: {formatDate(doc.uploaded_at)}</span>
-                              {doc.uploaded_by_name ? <span>הוזן ע״י: {doc.uploaded_by_name}</span> : null}
-                              {doc.file_name ? <span>קובץ: {doc.file_name}</span> : null}
-                              {doc.storage_key ? <span>נתיב: {doc.storage_key}</span> : null}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 text-xs">
-                          {doc.linked_entities.length > 0 ? (
-                            doc.linked_entities.map((entity) =>
-                              entity.href ? (
-                                <Link
-                                  key={`${entity.type}:${entity.id}`}
-                                  href={entity.href}
-                                  className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background px-3 py-1 text-foreground hover:bg-accent"
-                                >
-                                  <span>{entityTypeLabel(entity.type)}:</span>
-                                  <span>{entity.label}</span>
-                                </Link>
-                              ) : (
-                                <span
-                                  key={`${entity.type}:${entity.id}`}
-                                  className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background px-3 py-1"
-                                >
-                                  <span>{entityTypeLabel(entity.type)}:</span>
-                                  <span>{entity.label}</span>
-                                </span>
-                              )
+                    {doc.file_kind === "image" && doc.url ? (
+                      <a
+                        href={doc.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0"
+                        title="פתיחת התמונה"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={doc.url}
+                          alt={doc.title}
+                          loading="lazy"
+                          className="h-12 w-12 rounded-lg border border-border/60 object-cover"
+                        />
+                      </a>
+                    ) : (
+                      <div className="shrink-0 rounded-lg bg-muted p-2 text-muted-foreground">
+                        <KindIcon className="h-4 w-4" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="truncate font-medium">{doc.title}</span>
+                        <Badge variant="outline">{fileKindLabel(doc.file_kind)}</Badge>
+                        {doc.business_domains.map((domain) => (
+                          <Badge key={`${doc.id}-${domain}`} variant="outline">
+                            {getBusinessDomainLabel(domain)}
+                          </Badge>
+                        ))}
+                        <Badge variant="secondary">{getDocumentCategoryLabel(doc.document_type)}</Badge>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                        <span>{formatDate(doc.uploaded_at)}</span>
+                        {doc.uploaded_by_name ? <span>· {doc.uploaded_by_name}</span> : null}
+                        {doc.linked_entities.length > 0 ? (
+                          doc.linked_entities.map((entity) =>
+                            entity.href ? (
+                              <Link
+                                key={`${entity.type}:${entity.id}`}
+                                href={entity.href}
+                                className="text-foreground hover:underline"
+                              >
+                                · {entityTypeLabel(entity.type)}: {entity.label}
+                              </Link>
+                            ) : (
+                              <span key={`${entity.type}:${entity.id}`}>
+                                · {entityTypeLabel(entity.type)}: {entity.label}
+                              </span>
                             )
-                          ) : (
-                            <span className="inline-flex items-center rounded-full border border-dashed px-3 py-1 text-muted-foreground">
-                              ללא שיוך
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-5">
-                          <div>
-                            <span className="font-medium text-foreground">לקוחות:</span>{" "}
-                            {doc.customers.length > 0
-                              ? doc.customers.map((item) => item.label).join(", ")
-                              : "—"}
-                          </div>
-                          <div>
-                            <span className="font-medium text-foreground">פרויקטים:</span>{" "}
-                            {doc.projects.length > 0
-                              ? doc.projects.map((item) => item.label).join(", ")
-                              : "—"}
-                          </div>
-                          <div>
-                            <span className="font-medium text-foreground">נכסים:</span>{" "}
-                            {doc.properties.length > 0
-                              ? doc.properties.map((item) => item.label).join(", ")
-                              : "—"}
-                          </div>
-                          <div>
-                            <span className="font-medium text-foreground">משימות:</span>{" "}
-                            {doc.tasks.length > 0 ? doc.tasks.map((item) => item.label).join(", ") : "—"}
-                          </div>
-                          <div>
-                            <span className="font-medium text-foreground">הזמנות:</span>{" "}
-                            {doc.orders.length > 0
-                              ? doc.orders.map((item) => item.label).join(", ")
-                              : "—"}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        {doc.url ? (
-                          <Button asChild variant="outline" size="sm">
-                            <a href={doc.url} target="_blank" rel="noreferrer">
-                              <ExternalLink className="h-4 w-4" />
-                              פתיחה
-                            </a>
-                          </Button>
+                          )
+                        ) : (
+                          <span>· ללא שיוך</span>
+                        )}
+                        {doc.customers.length > 0 &&
+                        !doc.linked_entities.some((entity) => entity.type === "customer") ? (
+                          <span>· לקוח: {doc.customers.map((item) => item.label).join(", ")}</span>
                         ) : null}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setEditDialogDoc(doc);
-                            setEditTagValue(doc.document_type ?? "");
-                          }}
-                        >
-                          <Tag className="h-4 w-4" />
-                          קטגוריה
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setDeleteDialogDoc(doc)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          מחיקה
-                        </Button>
                       </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {doc.url ? (
+                        <Button asChild variant="outline" size="icon" aria-label="פתיחה" title="פתיחה">
+                          <a href={doc.url} target="_blank" rel="noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        aria-label="קטגוריה"
+                        title="קטגוריה"
+                        onClick={() => {
+                          setEditDialogDoc(doc);
+                          setEditTagValue(doc.document_type ?? "");
+                        }}
+                      >
+                        <Tag className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        aria-label="שינוי תחום"
+                        title="שינוי תחום"
+                        onClick={() => {
+                          setEditDomainDoc(doc);
+                          setEditDomainValue(doc.business_domains[0] ?? "general_business");
+                        }}
+                      >
+                        <Layers className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        aria-label="מחיקה"
+                        title="מחיקה"
+                        onClick={() => setDeleteDialogDoc(doc)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 );
@@ -874,8 +889,11 @@ export default function DocumentsArchiveClient({
             <div className="space-y-1">
               <div className="text-sm font-medium">תחום</div>
               <SelectField value={uploadBusinessDomain} onChange={setUploadBusinessDomain} ariaLabel="תחום למסמך חדש">
-                <option value="logistics_projects">{getBusinessDomainLabel("logistics_projects")}</option>
-                <option value="property_management">{getBusinessDomainLabel("property_management")}</option>
+                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                  <option key={domain} value={domain}>
+                    {getBusinessDomainLabel(domain)}
+                  </option>
+                ))}
               </SelectField>
             </div>
 
@@ -922,44 +940,15 @@ export default function DocumentsArchiveClient({
             ) : null}
 
             <div className="space-y-1">
-              <div className="text-sm font-medium">קטגוריה (אופציונלי)</div>
-              <AdaptiveGrid variant="formTwo" className="gap-2">
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={uploadCategoryMode === "new" ? "__new__" : uploadCategory}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (value === "__new__") {
-                      setUploadCategoryMode("new");
-                      setUploadCategory("");
-                    } else {
-                      setUploadCategoryMode("existing");
-                      setUploadCategory(value);
-                      setUploadNewCategory("");
-                    }
-                  }}
-                >
-                  <option value="">ללא קטגוריה</option>
-                  {uploadCategoryOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                  <option value="__new__">קטגוריה חדשה...</option>
-                </select>
-                {uploadCategoryMode === "new" ? (
-                  <Input
-                    value={uploadNewCategory}
-                    onChange={(event) => setUploadNewCategory(event.target.value)}
-                    placeholder="שם קטגוריה חדשה"
-                    aria-invalid={!uploadNewCategory.trim()}
-                    className={!uploadNewCategory.trim() ? "border-destructive focus-visible:ring-destructive" : ""}
-                  />
-                ) : null}
-              </AdaptiveGrid>
-              {uploadCategoryMode === "new" && !uploadNewCategory.trim() ? (
-                <div className="text-xs text-destructive">יש להזין שם קטגוריה</div>
-              ) : null}
+              <div className="text-sm font-medium">קטגוריה</div>
+              <SelectField value={uploadCategory} onChange={setUploadCategory} ariaLabel="קטגוריית מסמך">
+                <option value="">ללא קטגוריה</option>
+                {DOCUMENT_CATEGORIES.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </SelectField>
             </div>
 
             <div className="space-y-1">
@@ -968,7 +957,12 @@ export default function DocumentsArchiveClient({
                 <FileUploadActions
                   files={uploadFiles}
                   multiple
-                  onFilesSelected={setUploadFiles}
+                  onFilesSelected={(files) => {
+                    setUploadFiles(files);
+                    if (files.length > 0 && !uploadCategory) {
+                      setUploadCategory(inferDefaultDocumentCategory(files[0]?.name));
+                    }
+                  }}
                   chooseLabel="בחר קבצים"
                 />
                 <div className="text-xs text-muted-foreground">{uploadFiles.length} קבצים</div>
@@ -993,8 +987,7 @@ export default function DocumentsArchiveClient({
                 uploading ||
                 uploadFiles.length === 0 ||
                 (showUploadProjectField && !uploadProjectId.trim()) ||
-                (showUploadPropertyField && !uploadPropertyId.trim()) ||
-                (uploadCategoryMode === "new" && !uploadNewCategory.trim())
+                (showUploadPropertyField && !uploadPropertyId.trim())
               }
               onClick={() => void startUpload()}
             >
@@ -1023,12 +1016,17 @@ export default function DocumentsArchiveClient({
           </DialogHeader>
           <div className="mt-4 space-y-3">
             <div className="text-sm font-medium">{editDialogDoc?.title ?? "מסמך"}</div>
-            <Input
-              value={editTagValue}
-              onChange={(event) => setEditTagValue(event.target.value)}
-              placeholder="לדוגמה: חשבונית, חוזה, תעודת משלוח"
-              aria-label="קטגוריית מסמך"
-            />
+            <SelectField value={editTagValue} onChange={setEditTagValue} ariaLabel="קטגוריית מסמך">
+              <option value="">ללא קטגוריה</option>
+              {editTagValue && !(DOCUMENT_CATEGORIES as readonly string[]).includes(editTagValue) ? (
+                <option value={editTagValue}>{getDocumentCategoryLabel(editTagValue)} (נוכחי)</option>
+              ) : null}
+              {DOCUMENT_CATEGORIES.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </SelectField>
           </div>
           <DialogFooter className="mt-6">
             <Button
@@ -1043,6 +1041,50 @@ export default function DocumentsArchiveClient({
               ביטול
             </Button>
             <Button type="button" onClick={() => void saveTag()} disabled={isPending}>
+              {isPending ? "שומר..." : "שמירה"}
+            </Button>
+          </DialogFooter>
+        </AdaptiveDialog>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(editDomainDoc)}
+        onOpenChange={(open) => {
+          if (!open && isPending) return;
+          if (!open) {
+            setEditDomainDoc(null);
+            setEditDomainValue("");
+          }
+        }}
+      >
+        <AdaptiveDialog size="formMd">
+          <DialogHeader>
+            <DialogTitle>שינוי תחום</DialogTitle>
+            <DialogDescription>בחירת התחום העסקי שאליו ישויך המסמך.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-3">
+            <div className="text-sm font-medium">{editDomainDoc?.title ?? "מסמך"}</div>
+            <SelectField value={editDomainValue} onChange={setEditDomainValue} ariaLabel="תחום המסמך">
+              {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
+                <option key={domain} value={domain}>
+                  {getBusinessDomainLabel(domain)}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+          <DialogFooter className="mt-6">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setEditDomainDoc(null);
+                setEditDomainValue("");
+              }}
+              disabled={isPending}
+            >
+              ביטול
+            </Button>
+            <Button type="button" onClick={() => void saveDomain()} disabled={isPending}>
               {isPending ? "שומר..." : "שמירה"}
             </Button>
           </DialogFooter>

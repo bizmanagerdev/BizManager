@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { isExpenseBusinessDomain } from "@/lib/expenses";
 
 export async function POST(req: Request) {
   try {
@@ -8,14 +9,19 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase } = access.value;
 
-    const body = (await req.json()) as { document_id?: string; document_type?: string };
+    const body = (await req.json()) as { document_id?: string; business_domain?: string };
     const documentId = typeof body.document_id === "string" ? body.document_id : "";
-    const documentType = typeof body.document_type === "string" ? body.document_type.trim() : "";
+    const businessDomain = typeof body.business_domain === "string" ? body.business_domain.trim() : "";
 
     if (!documentId) return NextResponse.json({ error: "Missing document_id" }, { status: 400 });
+    if (!isExpenseBusinessDomain(businessDomain)) {
+      return NextResponse.json({ error: "Unsupported business_domain" }, { status: 400 });
+    }
 
-    // Empty = "ללא קטגוריה" (column is non-nullable, so store an empty string).
-    const { error } = await supabase.from("documents").update({ document_type: documentType }).eq("id", documentId);
+    const { error } = await supabase
+      .from("documents")
+      .update({ business_domain: businessDomain })
+      .eq("id", documentId);
     if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
 
     return NextResponse.json({ ok: true });

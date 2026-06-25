@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { isExpenseBusinessDomain } from "@/lib/expenses";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
 
@@ -53,14 +54,66 @@ export async function POST(req: Request) {
         : entityType === "payment"
           ? "payments"
           : "attendance_sessions";
+    // attendance_sessions have no order_id but carry the worker (user_id);
+    // payments & expenses carry order_id.
+    const selectColumns =
+      entityType === "payment"
+        ? "id,project_id,order_id,business_domain,payment_method"
+        : entityType === "expense"
+          ? "id,project_id,order_id,business_domain"
+          : "id,project_id,business_domain,user_id";
     const { data: entity, error: entityError } = await supabase
       .from(table)
-      .select("id,project_id")
+      .select(selectColumns)
       .eq("id", entityId)
       .maybeSingle();
 
     if (entityError) return NextResponse.json({ error: toHebrewError(entityError.message) }, { status: 400 });
-    if (!entity?.id) return NextResponse.json({ error: `${entityType} not found` }, { status: 404 });
+    const entityRow = entity as {
+      id?: string;
+      project_id?: string | null;
+      order_id?: string | null;
+      user_id?: string | null;
+      business_domain?: string | null;
+      payment_method?: string | null;
+    } | null;
+    if (!entityRow?.id) return NextResponse.json({ error: `${entityType} not found` }, { status: 404 });
+
+    const projectId =
+      typeof entityRow.project_id === "string" && entityRow.project_id ? entityRow.project_id : null;
+    const orderId = typeof entityRow.order_id === "string" && entityRow.order_id ? entityRow.order_id : null;
+    const sessionUserId =
+      entityType === "session" && typeof entityRow.user_id === "string" && entityRow.user_id
+        ? entityRow.user_id
+        : null;
+
+    // Derive the customer from the order (preferred) or project so the file is
+    // also related to the לקוח, not only the payment/expense/session.
+    let customerId: string | null = null;
+    if (orderId) {
+      const { data: order } = await supabase.from("orders").select("customer_id").eq("id", orderId).maybeSingle();
+      customerId = typeof order?.customer_id === "string" ? order.customer_id : null;
+    } else if (projectId) {
+      const { data: project } = await supabase
+        .from("projects")
+        .select("customer_id")
+        .eq("id", projectId)
+        .maybeSingle();
+      customerId = typeof project?.customer_id === "string" ? project.customer_id : null;
+    }
+
+    // A check payment's photo is filed as a "צק" category; otherwise the generic
+    // <entity>_attachment.
+    const isCheckPayment =
+      entityType === "payment" && String(entityRow.payment_method ?? "").trim() === "check";
+    const documentType = isCheckPayment ? "צק" : `${entityType}_attachment`;
+
+    // Domain: the payment/expense/session each carry their own authoritative
+    // business_domain — store it explicitly so the file lands in that תחום
+    // (sessions can be domain-only with no order/project).
+    const docBusinessDomain = isExpenseBusinessDomain(entityRow.business_domain)
+      ? entityRow.business_domain
+      : null;
 
     const documentId = crypto.randomUUID();
     const displayName = (file.name.split(/[/\\]/).pop() ?? "attachment").trim() || "attachment";
@@ -78,7 +131,8 @@ export async function POST(req: Request) {
 
     const { error: docError } = await supabase.from("documents").insert({
       id: documentId,
-      document_type: `${entityType}_attachment`,
+      document_type: documentType,
+      business_domain: docBusinessDomain,
       title: displayName,
       file_name: displayName,
       storage_key: storagePath,
@@ -92,6 +146,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: toHebrewError(docError.message) }, { status: 400 });
     }
 
+    // Relate the file to everything it has to do with: the source entity (kept —
+    // the checks register looks photos up by the payment link), its order and/or
+    // project, and the derived customer.
     const linkRows = [
       {
         document_id: documentId,
@@ -100,12 +157,17 @@ export async function POST(req: Request) {
       },
     ];
 
-    if (typeof entity.project_id === "string" && entity.project_id) {
-      linkRows.push({
-        document_id: documentId,
-        entity_type: "project",
-        entity_id: entity.project_id,
-      });
+    if (projectId) {
+      linkRows.push({ document_id: documentId, entity_type: "project", entity_id: projectId });
+    }
+    if (orderId) {
+      linkRows.push({ document_id: documentId, entity_type: "order", entity_id: orderId });
+    }
+    if (customerId) {
+      linkRows.push({ document_id: documentId, entity_type: "customer", entity_id: customerId });
+    }
+    if (sessionUserId) {
+      linkRows.push({ document_id: documentId, entity_type: "user", entity_id: sessionUserId });
     }
 
     const { error: linkError } = await supabase.from("document_links").insert(linkRows);
@@ -123,7 +185,7 @@ export async function POST(req: Request) {
         document_id: documentId,
         file_name: displayName,
         storage_key: storagePath,
-        document_type: `${entityType}_attachment`,
+        document_type: documentType,
         uploaded_at: uploadedAt,
         url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
       },
