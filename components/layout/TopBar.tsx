@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bell, ChevronDown, LogOut, User } from "lucide-react";
+import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { BackButton } from "@/components/layout/BackButton";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -29,6 +30,24 @@ export function TopBar({
   showSearch = true,
 }: Props) {
   const { alerts, loading: alertsLoading, error: alertsError } = useAlerts();
+
+  // The signed-in user's chosen avatar color (null = auto). Fetched client-side
+  // so we don't have to thread it through every AppShell call site.
+  const [avatarColor, setAvatarColor] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/profile/avatar-color", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json: { avatarColor?: string | null } | null) => {
+        if (active && json && typeof json.avatarColor === "string") setAvatarColor(json.avatarColor);
+      })
+      .catch(() => {
+        // Offline / not signed in — fall back to the auto color from the name.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // "Real alerts" = actionable items that need attention. Excludes baseline info
   // rows (e.g. "X active projects") and any explicitly opted-out entries.
@@ -137,9 +156,13 @@ export function TopBar({
               type="button"
               id="topbar-user-trigger"
             >
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
-                <User className="h-3.5 w-3.5" fill="currentColor" strokeWidth={2.2} />
-              </div>
+              {userName ? (
+                <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="sm" />
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+                  <User className="h-3.5 w-3.5" fill="currentColor" strokeWidth={2.2} />
+                </div>
+              )}
               {userName && <span className="hidden text-sm lg:inline">{userName}</span>}
               <ChevronDown className="h-3 w-3" />
             </Button>
