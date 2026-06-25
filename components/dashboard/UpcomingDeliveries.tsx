@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getOrderStatusColor, getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
-import type { DeliveryItem } from "@/app/sales/loadDeliveries";
+import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 const COLOR_TO_VARIANT = {
   success: "success",

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Bell, ChevronDown, LogOut, User } from "lucide-react";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
+import { getAvatarColorCache, setAvatarColorCache, subscribeAvatarColor } from "@/lib/ui/avatar-color";
 import { BackButton } from "@/components/layout/BackButton";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -21,33 +22,47 @@ import { useAlerts } from "@/lib/ui/alerts-store";
 type Props = {
   appName?: string;
   userName?: string;
+  initialColor?: string | null;
   showSearch?: boolean;
 };
 
 export function TopBar({
   appName = "BizH",
   userName,
+  initialColor,
   showSearch = true,
 }: Props) {
   const { alerts, loading: alertsLoading, error: alertsError } = useAlerts();
 
-  // The signed-in user's chosen avatar color (null = auto). Fetched client-side
-  // so we don't have to thread it through every AppShell call site.
-  const [avatarColor, setAvatarColor] = useState<string | null>(null);
+  // The signed-in user's chosen avatar color (null = auto). The (app) layout
+  // passes the value from the server (`initialColor`), so the correct color is
+  // painted on the very first render — no flash, ever. A module-level cache (see
+  // lib/ui/avatar-color) keeps it consistent across mounts and lets the profile
+  // page push a new choice here live. `initialColor` is the same on server and
+  // client, so seeding state from it causes no hydration mismatch.
+  const [avatarColor, setAvatarColor] = useState<string | null>(() => {
+    const cached = getAvatarColorCache();
+    return cached !== undefined ? cached : initialColor ?? null;
+  });
   useEffect(() => {
-    let active = true;
-    void fetch("/api/profile/avatar-color", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((json: { avatarColor?: string | null } | null) => {
-        if (active && json && typeof json.avatarColor === "string") setAvatarColor(json.avatarColor);
-      })
-      .catch(() => {
-        // Offline / not signed in — fall back to the auto color from the name.
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+    if (getAvatarColorCache() === undefined && initialColor !== undefined) {
+      setAvatarColorCache(initialColor ?? null);
+    }
+    const unsubscribe = subscribeAvatarColor(() => setAvatarColor(getAvatarColorCache() ?? null));
+    // Fallback fetch only if the server didn't provide a value (e.g. the column
+    // isn't there yet) — normally the cache is already seeded above.
+    if (getAvatarColorCache() === undefined) {
+      void fetch("/api/profile/avatar-color", { cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((json: { avatarColor?: string | null } | null) => {
+          setAvatarColorCache(json && typeof json.avatarColor === "string" ? json.avatarColor : null);
+        })
+        .catch(() => {
+          // Offline / not signed in — leave the cache unset so a later mount retries.
+        });
+    }
+    return unsubscribe;
+  }, [initialColor]);
 
   // "Real alerts" = actionable items that need attention. Excludes baseline info
   // rows (e.g. "X active projects") and any explicitly opted-out entries.

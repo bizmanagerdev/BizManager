@@ -7,8 +7,8 @@ import {
   normalizeSearchText,
   type CustomerSearchFields,
 } from "@/lib/search/customerMatch";
-import { loadCustomerSearchIndex } from "@/app/customers/actions";
-import type { CustomerSearchIndexEntry } from "@/app/customers/loadCustomers";
+import { loadCustomerSearchIndex } from "@/app/(app)/customers/actions";
+import type { CustomerSearchIndexEntry } from "@/app/(app)/customers/loadCustomers";
 
 export type { CustomerSearchIndexEntry };
 

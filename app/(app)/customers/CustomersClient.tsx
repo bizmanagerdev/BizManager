@@ -1,0 +1,1097 @@
+"use client";
+import { toHebrewError } from "@/lib/error-messages";
+
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { offlineFetch } from "@/lib/offline-queue";
+import { loadCustomerRowsByIds, loadMoreCustomers } from "@/app/(app)/customers/actions";
+import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
+import type { CustomersFilters } from "@/app/(app)/customers/loadCustomers";
+import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
+import type { CreatedCustomer } from "@/components/customers/CreateCustomerDialog";
+import { EditCustomerDialog, type EditCustomerInput } from "@/components/customers/EditCustomerDialog";
+import {
+  AdaptiveCell,
+  AdaptiveDialog,
+  AdaptiveGrid,
+  PageStack,
+} from "@/components/layout/page-layout";
+import { NavLink } from "@/components/NavLink";
+import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
+import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { formatShortDate } from "@/lib/date";
+import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+
+type Row = Record<string, unknown>;
+type FilterMode = "all" | "yes" | "no";
+
+const s = (row: Row, key: string) => {
+  const v = row[key];
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  return "";
+};
+const n = (row: Row, key: string) => {
+  const v = row[key];
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const p = Number(v);
+    return Number.isFinite(p) ? p : 0;
+  }
+  return 0;
+};
+const contactsOf = (row: Row): Row[] => (Array.isArray(row.contacts) ? (row.contacts as Row[]) : []);
+const ils = (v: number) =>
+  new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(v);
+const dateText = (v: string) => {
+  return formatShortDate(v);
+};
+const morningClientUrl = (morningClientId: string) =>
+  `https://app.greeninvoice.co.il/incomes/clients/${encodeURIComponent(morningClientId)}/documents`;
+
+function customerFlagBadgeClass(tone: "success" | "danger" | "neutral") {
+  return getStatusColorClasses(tone);
+}
+
+export default function CustomersClient({
+  initialRows,
+  initialHasMore = false,
+  initialEditCustomerId = "",
+  initialAddContactCustomerId = "",
+  totalCount,
+  initialFilters,
+}: {
+  initialRows: Row[];
+  initialHasMore?: boolean;
+  initialEditCustomerId?: string;
+  initialAddContactCustomerId?: string;
+  totalCount?: number;
+  initialFilters?: {
+    withProjects: FilterMode;
+    withOrders: FilterMode;
+    withDebt: FilterMode;
+    activeOnly: FilterMode;
+  };
+}) {
+  const router = useRouter();
+  const { search: searchCustomerIndex, loading: customerIndexLoading } = useCustomerSearchIndex();
+  const [apiSearchRows, setApiSearchRows] = useState<Row[] | null>(null);
+  const [handledInitialEdit, setHandledInitialEdit] = useState(false);
+  const [handledInitialAddContact, setHandledInitialAddContact] = useState(false);
+  const [query, setQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(
+    Boolean(
+      initialFilters && (
+        initialFilters.withProjects !== "all" ||
+        initialFilters.withOrders !== "all" ||
+        initialFilters.withDebt !== "all" ||
+        initialFilters.activeOnly !== "all"
+      )
+    )
+  );
+  const withProjects = initialFilters?.withProjects ?? "all";
+  const withOrders = initialFilters?.withOrders ?? "all";
+  const withDebt = initialFilters?.withDebt ?? "all";
+  const activeOnly = initialFilters?.activeOnly ?? "all";
+
+  // Fetch-from-DB-as-you-scroll: accumulate customer pages and pull the next one
+  // from the server when the bottom comes into view (no "next page" button).
+  const fetchFilters = useMemo<CustomersFilters>(
+    () => ({ withProjects, withOrders, withDebt, activeOnly }),
+    [withProjects, withOrders, withDebt, activeOnly]
+  );
+  const fetchPage = useCallback(
+    (page: number) => loadMoreCustomers(page, fetchFilters),
+    [fetchFilters]
+  );
+  const getRowId = useCallback((row: Row) => s(row, "customer_id"), []);
+  const {
+    rows,
+    setRows,
+    hasMore,
+    loading: loadingMore,
+    sentinelRef,
+    mobileSentinelRef,
+    scrollRef,
+  } = useInfiniteScroll<Row>({
+    initialRows,
+    initialHasMore,
+    fetchPage,
+    getId: getRowId,
+  });
+
+  function applyFilter(next: { withProjects?: FilterMode; withOrders?: FilterMode; withDebt?: FilterMode; activeOnly?: FilterMode }) {
+    const merged = {
+      withProjects: next.withProjects ?? withProjects,
+      withOrders: next.withOrders ?? withOrders,
+      withDebt: next.withDebt ?? withDebt,
+      activeOnly: next.activeOnly ?? activeOnly,
+    };
+    const params = new URLSearchParams();
+    if (merged.withProjects !== "all") params.set("with_projects", merged.withProjects);
+    if (merged.withOrders !== "all") params.set("with_orders", merged.withOrders);
+    if (merged.withDebt !== "all") params.set("with_debt", merged.withDebt);
+    if (merged.activeOnly !== "all") params.set("active_only", merged.activeOnly);
+    const qs = params.toString();
+    router.push(qs ? `/customers?${qs}` : "/customers", { scroll: false });
+  }
+
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<EditCustomerInput | null>(null);
+
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactErr, setContactErr] = useState("");
+  const [contactLoading, setContactLoading] = useState(false);
+  const [targetCustomerId, setTargetCustomerId] = useState("");
+  const [targetCustomerName, setTargetCustomerName] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactRole, setContactRole] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactWhatsapp, setContactWhatsapp] = useState("");
+  const [contactNotes, setContactNotes] = useState("");
+  const [contactPrimary, setContactPrimary] = useState(false);
+  const [contactActive, setContactActive] = useState(true);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) { setApiSearchRows(null); return; }
+    if (customerIndexLoading) return; // index still loading on first use
+    let cancelled = false;
+
+    // Instant: match the cached index in memory and paint the basic rows now.
+    const matched = searchCustomerIndex(q, 50);
+    const basicRows = matched.map((c) => ({
+      customer_id: c.id, customer_name: c.name, name: c.name,
+      phone: c.phone, whatsapp: c.whatsapp, email: c.email, address: c.address,
+      name_for_invoice: c.name_for_invoice,
+      requires_prepayment: c.requires_prepayment,
+      contacts: c.contacts,
+      orders_count: 0, projects_count: 0, total_sales: 0, total_paid: 0, open_balance: 0,
+    }));
+    setApiSearchRows(basicRows);
+
+    // Then enrich (counts/totals) in the background, debounced, preserving order.
+    const timer = setTimeout(async () => {
+      try {
+        const { rows: enriched } = await loadCustomerRowsByIds(matched.map((c) => c.id));
+        if (cancelled || enriched.length === 0) return;
+        const enrichedById = new Map(enriched.map((row) => [s(row, "customer_id"), row]));
+        setApiSearchRows(basicRows.map((row) => enrichedById.get(row.customer_id) ?? row));
+      } catch { /* ignore */ }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [query, searchCustomerIndex, customerIndexLoading]);
+
+  const filtered = useMemo(() => {
+    // When searching: API returns full-DB matches (search is global). When not searching:
+    // server already applied the filters via URL params, so we just use the rows as-is.
+    return apiSearchRows ?? rows;
+  }, [rows, apiSearchRows]);
+
+  useEffect(() => {
+    if (handledInitialEdit || !initialEditCustomerId || rows.length === 0) return;
+    const row = rows.find((current) => s(current, "customer_id") === initialEditCustomerId);
+    if (!row) return;
+    openEdit(row);
+    setHandledInitialEdit(true);
+  }, [handledInitialEdit, initialEditCustomerId, rows]);
+
+  useEffect(() => {
+    if (handledInitialAddContact || !initialAddContactCustomerId || rows.length === 0) return;
+    const row = rows.find((current) => s(current, "customer_id") === initialAddContactCustomerId);
+    if (!row) return;
+    openAddContact(row);
+    setHandledInitialAddContact(true);
+  }, [handledInitialAddContact, initialAddContactCustomerId, rows]);
+
+  function openEdit(row: Row) {
+    setEditTarget({
+      id: s(row, "customer_id"),
+      name: s(row, "name") || s(row, "customer_name"),
+      name_for_invoice: s(row, "name_for_invoice") || null,
+      registration_number: s(row, "registration_number") || null,
+      phone: s(row, "phone") || null,
+      whatsapp: s(row, "whatsapp") || null,
+      email: s(row, "email") || null,
+      address: s(row, "address") || null,
+      notes: s(row, "notes") || null,
+      active: row.active !== false,
+      requires_prepayment: row.requires_prepayment === true,
+      contacts: contactsOf(row),
+    });
+    setEditOpen(true);
+  }
+
+  function applySavedCustomer(u: Row, savedContacts: Row[]) {
+    setRows((prev) =>
+      prev.map((row) =>
+        s(row, "customer_id") !== s(u, "id")
+          ? row
+          : {
+              ...row,
+              customer_name: s(u, "name") || s(row, "customer_name"),
+              name: s(u, "name") || s(row, "name"),
+              name_for_invoice: s(u, "name_for_invoice"),
+              registration_number: s(u, "registration_number"),
+              phone: s(u, "phone"),
+              whatsapp: s(u, "whatsapp"),
+              email: s(u, "email"),
+              address: s(u, "address"),
+              notes: s(u, "notes"),
+              active: u.active !== false,
+              requires_prepayment: u.requires_prepayment === true,
+              contacts: savedContacts,
+            }
+      )
+    );
+  }
+
+  function openAddContact(row: Row) {
+    setContactErr("");
+    setTargetCustomerId(s(row, "customer_id"));
+    setTargetCustomerName(s(row, "customer_name") || "לקוח");
+    setContactName("");
+    setContactRole("");
+    setContactPhone("");
+    setContactEmail("");
+    setContactWhatsapp("");
+    setContactNotes("");
+    setContactPrimary(false);
+    setContactActive(true);
+    setContactOpen(true);
+  }
+
+  async function createContact() {
+    if (contactLoading) return;
+    setContactErr("");
+    if (!targetCustomerId) return setContactErr("חסר לקוח.");
+    if (!contactName.trim()) return setContactErr("יש למלא שם איש קשר.");
+    setContactLoading(true);
+    try {
+      const result = await offlineFetch(
+        "/api/customer-contacts/create",
+        {
+          customer_id: targetCustomerId,
+          full_name: contactName.trim(),
+          role: contactRole.trim() || null,
+          phone: contactPhone.trim() || null,
+          email: contactEmail.trim() || null,
+          whatsapp: contactWhatsapp.trim() || null,
+          is_primary: contactPrimary,
+          active: contactActive,
+          notes: contactNotes.trim() || null,
+        },
+        "איש קשר חדש",
+        { idempotent: true }
+      );
+      if (result.queued) {
+        // Will appear in the list after it syncs and the page refreshes.
+        setContactOpen(false);
+        return;
+      }
+      const json = result.ok ? (result.data as { contact?: Row } | null) : null;
+      if (!result.ok || !json?.contact) {
+        return setContactErr((result.ok ? "יצירת איש קשר נכשלה." : result.error) || "יצירת איש קשר נכשלה.");
+      }
+      setRows((prev) =>
+        prev.map((row) => {
+          if (s(row, "customer_id") !== targetCustomerId) return row;
+          const current = contactsOf(row);
+          let next = [json.contact as Row, ...current];
+          if ((json.contact as Row).is_primary === true) {
+            next = next.map((c, i) => (i === 0 ? c : { ...c, is_primary: false }));
+          }
+          return { ...row, contacts: next };
+        })
+      );
+      setContactOpen(false);
+    } catch (e: unknown) {
+      setContactErr(toHebrewError(e, "שגיאה לא ידועה"));
+    } finally {
+      setContactLoading(false);
+    }
+  }
+
+  function customerDetailsHref(customerId: string) {
+    return `/customers/${encodeURIComponent(customerId)}`;
+  }
+
+  function openCustomerDetails(customerId: string) {
+    if (!customerId) return;
+    emitNavigationStart();
+    window.location.href = customerDetailsHref(customerId);
+  }
+
+  return (
+    <PageStack>
+      <div className="space-y-3 lg:hidden">
+        <div className="min-w-0">
+          <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="שם, טלפון, אימייל או כתובת"
+            className="mt-1 h-11"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11"
+            onClick={() => setFiltersOpen((x) => !x)}
+          >
+            {filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
+          </Button>
+          <Button type="button" className="h-11" onClick={() => setCreateOpen(true)}>
+            הוספת לקוח
+          </Button>
+        </div>
+      </div>
+
+      <AdaptiveGrid variant="customersToolbar" className="hidden lg:grid">
+        <AdaptiveCell variant="customersPrimary">
+          <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="שם, טלפון, אימייל או כתובת"
+            className="h-11"
+          />
+        </AdaptiveCell>
+        <AdaptiveCell variant="customersSecondary">
+          <label className="text-sm text-muted-foreground opacity-0">מסננים</label>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 w-full"
+            onClick={() => setFiltersOpen((x) => !x)}
+          >
+            {filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
+          </Button>
+        </AdaptiveCell>
+        <AdaptiveCell variant="customersSecondary">
+          <label className="text-sm text-muted-foreground opacity-0">לקוח חדש</label>
+          <Button type="button" className="h-11 w-full" onClick={() => setCreateOpen(true)}>
+            הוספת לקוח
+          </Button>
+        </AdaptiveCell>
+      </AdaptiveGrid>
+
+      {filtersOpen ? (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <FilterSelect
+            label="פרויקטים"
+            value={withProjects}
+            onChange={(v) => applyFilter({ withProjects: v })}
+            yes="עם פרויקטים"
+            no="ללא פרויקטים"
+          />
+          <FilterSelect
+            label="הזמנות"
+            value={withOrders}
+            onChange={(v) => applyFilter({ withOrders: v })}
+            yes="עם הזמנות"
+            no="ללא הזמנות"
+          />
+          <FilterSelect
+            label="חוב פתוח"
+            value={withDebt}
+            onChange={(v) => applyFilter({ withDebt: v })}
+            yes="חייבים כסף"
+            no="ללא חוב"
+          />
+          <FilterSelect
+            label="סטטוס"
+            value={activeOnly}
+            onChange={(v) => applyFilter({ activeOnly: v })}
+            yes="פעילים"
+            no="לא פעילים"
+          />
+        </div>
+      ) : null}
+
+      <div className="text-sm text-muted-foreground">
+        {(() => {
+          const usingApiSearch = apiSearchRows !== null;
+          const hasActiveFilter =
+            withProjects !== "all" ||
+            withOrders !== "all" ||
+            withDebt !== "all" ||
+            activeOnly !== "all";
+          if (usingApiSearch) {
+            return `נמצאו ${filtered.length} לקוחות בחיפוש`;
+          }
+          if (hasActiveFilter) {
+            return `סה״כ ${totalCount ?? filtered.length} לקוחות אחרי סינון`;
+          }
+          return `סה״כ ${totalCount ?? filtered.length} לקוחות`;
+        })()}
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 xl:hidden">
+        {filtered.map((row) => {
+          const id = s(row, "customer_id");
+          const customerName = s(row, "customer_name") || "לקוח";
+          const linkedMorningClientId = s(row, "morning_client_id");
+          const openBalance = n(row, "open_balance");
+          const phone = s(row, "phone");
+          const email = s(row, "email");
+          const ordersCount = n(row, "orders_count");
+          const projectsCount = n(row, "projects_count");
+          return (
+            <Card key={id || customerName} className="min-w-0 overflow-hidden border-border/70 shadow-sm">
+              <CardContent className="space-y-2 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <NavLink
+                    to={customerDetailsHref(id)}
+                    className="min-w-0 flex-1 text-right leading-tight"
+                  >
+                    <div className="truncate text-sm font-semibold">{customerName}</div>
+                    {phone || email ? (
+                      <div className="truncate text-xs text-muted-foreground">
+                        {phone || "-"}
+                        {email ? ` • ${email}` : ""}
+                      </div>
+                    ) : null}
+                  </NavLink>
+                  <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                    {row.requires_prepayment === true ? (
+                      <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
+                    ) : null}
+                    {openBalance > 0 ? (
+                      <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>חוב פתוח</Badge>
+                    ) : null}
+                    {row.active === false ? (
+                      <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>לא פעיל</Badge>
+                    ) : null}
+                    {linkedMorningClientId ? (
+                      <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>Morning</Badge>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-muted-foreground">הזמנות:</span>
+                    <span className="font-medium">{ordersCount}</span>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-muted-foreground">פרויקטים:</span>
+                    <span className="font-medium">{projectsCount}</span>
+                  </div>
+                  <div className="flex items-baseline gap-1 col-span-2">
+                    <span className="text-muted-foreground">יתרה:</span>
+                    <span className={`font-medium ${openBalance > 0 ? "text-destructive" : ""}`}>{ils(openBalance)}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Button type="button" size="sm" className="h-9 rounded-lg" onClick={() => openCustomerDetails(id)}>
+                    פרטי לקוח
+                  </Button>
+                  <Button asChild type="button" size="sm" variant="outline" className="h-9 rounded-lg">
+                    <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>+ הזמנה</Link>
+                  </Button>
+                  <Button asChild type="button" size="sm" variant="outline" className="h-9 rounded-lg">
+                    <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>+ פרויקט</Link>
+                  </Button>
+                  {linkedMorningClientId ? (
+                    <Button asChild type="button" size="sm" variant="outline" className="h-9 rounded-lg">
+                      <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
+                        Morning
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button type="button" size="sm" variant="outline" className="h-9 rounded-lg" onClick={() => openEdit(row)}>
+                      עריכה
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+      {!apiSearchRows && hasMore ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
+
+      <Card className="hidden overflow-hidden border-border/70 shadow-sm xl:block">
+        <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[17%]" />
+            <col className="w-[15%]" />
+            <col className="w-[14%]" />
+            <col className="w-[6%]" />
+            <col className="w-[6%]" />
+            <col className="w-[6%]" />
+            <col className="w-[9%]" />
+            <col className="w-[11%]" />
+            <col className="w-[16%]" />
+          </colgroup>
+          <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
+            <tr className="border-b border-border/70 text-right">
+              <th className="px-2 py-2 font-medium">לקוח</th>
+              <th className="px-2 py-2 font-medium">טלפון ואימייל</th>
+              <th className="px-2 py-2 font-medium">כתובת</th>
+              <th className="px-2 py-2 font-medium">Morning</th>
+              <th className="px-2 py-2 font-medium">הזמנות</th>
+              <th className="px-2 py-2 font-medium">פרויקטים</th>
+              <th className="px-2 py-2 font-medium">יתרה פתוחה</th>
+              <th className="px-2 py-2 font-medium">סטטוס</th>
+              <th className="px-2 py-2 font-medium">פעולות</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/70">
+            {filtered.map((row) => {
+              const id = s(row, "customer_id");
+              const customerName = s(row, "customer_name") || "לקוח";
+              const linkedMorningClientId = s(row, "morning_client_id");
+              const openBalance = n(row, "open_balance");
+
+              return (
+                <tr
+                  key={`${id || customerName}-desktop`}
+                  className="cursor-pointer align-middle hover:bg-muted/20 focus-visible:bg-muted/20"
+                  tabIndex={0}
+                  role="link"
+                  onClick={(event) => {
+                    if (shouldIgnoreRowNavigation(event.target)) return;
+                    openCustomerDetails(id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (shouldIgnoreRowNavigation(event.target)) return;
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    openCustomerDetails(id);
+                  }}
+                >
+                  <td className="px-2 py-1.5">
+                    <div className="truncate text-right font-medium leading-tight">{customerName}</div>
+                    {s(row, "name_for_invoice") && s(row, "name_for_invoice") !== customerName ? (
+                      <div className="truncate text-right text-xs leading-tight text-muted-foreground">
+                        שם לחשבונית: {s(row, "name_for_invoice")}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <div className="truncate leading-tight">{s(row, "phone") || "-"}</div>
+                    {s(row, "email") ? (
+                      <div className="truncate text-xs leading-tight text-muted-foreground">{s(row, "email")}</div>
+                    ) : null}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <div className="truncate text-muted-foreground">{s(row, "address") || "-"}</div>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    {linkedMorningClientId ? (
+                      <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
+                        <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>Morning</Badge>
+                      </a>
+                    ) : (
+                      <Badge className={`${customerFlagBadgeClass("neutral")} px-1.5 py-0 text-[10px]`}>ללא</Badge>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5">{n(row, "orders_count")}</td>
+                  <td className="px-2 py-1.5">{n(row, "projects_count")}</td>
+                  <td className="px-2 py-1.5">
+                    <div className={`truncate font-medium ${openBalance > 0 ? "text-destructive" : ""}`}>
+                      {ils(openBalance)}
+                    </div>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <div className="flex flex-wrap gap-1">
+                      {row.requires_prepayment === true ? (
+                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
+                      ) : null}
+                      {openBalance > 0 ? (
+                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>חוב פתוח</Badge>
+                      ) : null}
+                      {row.active === false ? (
+                        <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>לא פעיל</Badge>
+                      ) : (
+                        <Badge className={`${customerFlagBadgeClass("success")} px-1.5 py-0 text-[10px]`}>פעיל</Badge>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <div className="flex flex-nowrap gap-1">
+                      <Button asChild size="sm" className="h-7 px-2 text-xs">
+                        <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>
+                          + הזמנה
+                        </Link>
+                      </Button>
+                      <Button asChild size="sm" variant="secondary" className="h-7 px-2 text-xs">
+                        <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>
+                          + פרויקט
+                        </Link>
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {!apiSearchRows && hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
+        </div>
+      </Card>
+
+      {!apiSearchRows ? (
+        <div className="pt-1 text-center text-xs text-muted-foreground">
+          {loadingMore
+            ? "טוען…"
+            : `מציג ${rows.length}${totalCount != null ? ` מתוך ${Math.max(totalCount, rows.length)}` : ""} לקוחות`}
+        </div>
+      ) : null}
+
+      <CreateCustomerDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        description="שדות חובה: שם, טלפון ועיר."
+        onCreated={(customer: CreatedCustomer, contacts) => {
+          setRows((prev) => [
+            {
+              customer_id: customer.id,
+              customer_name: customer.name,
+              name: customer.name,
+              name_for_invoice: customer.name_for_invoice,
+              registration_number: customer.registration_number,
+              email: customer.email,
+              phone: customer.phone,
+              whatsapp: customer.whatsapp,
+              address: customer.address,
+              active: customer.active,
+              requires_prepayment: customer.requires_prepayment,
+              orders_count: 0,
+              projects_count: 0,
+              total_sales: 0,
+              total_paid: 0,
+              open_balance: 0,
+              contacts,
+            },
+            ...prev,
+          ]);
+        }}
+      />
+
+      <EditCustomerDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        customer={editTarget}
+        onSaved={({ customer, contacts }) => applySavedCustomer(customer, contacts)}
+      />
+
+      <CustomerDialog
+        open={contactOpen}
+        onOpenChange={setContactOpen}
+        title="הוספת איש קשר"
+        description={`לקוח: ${targetCustomerName}`}
+        submitLabel={contactLoading ? "יוצר..." : "יצירת איש קשר"}
+        onSubmit={() => void createContact()}
+        error={contactErr}
+        submitting={contactLoading}
+      >
+        <Field label="שם מלא *">
+          <Input value={contactName} onChange={(e) => setContactName(e.target.value)} />
+        </Field>
+        <Field label="תפקיד">
+          <Input value={contactRole} onChange={(e) => setContactRole(e.target.value)} />
+        </Field>
+        <AdaptiveGrid variant="formTwo">
+          <Field label="טלפון">
+            <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+          </Field>
+          <Field label="וואטסאפ">
+            <Input value={contactWhatsapp} onChange={(e) => setContactWhatsapp(e.target.value)} />
+          </Field>
+        </AdaptiveGrid>
+        <Field label="אימייל">
+          <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+        </Field>
+        <Field label="הערות">
+          <Textarea
+            value={contactNotes}
+            onChange={(e) => setContactNotes(e.target.value)}
+            rows={3}
+          />
+        </Field>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={contactPrimary}
+            onChange={(e) => setContactPrimary(e.target.checked)}
+          />
+          <span>איש קשר ראשי</span>
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={contactActive}
+            onChange={(e) => setContactActive(e.target.checked)}
+          />
+          <span>פעיל</span>
+        </label>
+      </CustomerDialog>
+    </PageStack>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  yes,
+  no,
+}: {
+  label: string;
+  value: FilterMode;
+  onChange: (v: FilterMode) => void;
+  yes: string;
+  no: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-sm text-muted-foreground">{label}</label>
+      <select
+        className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+        value={value}
+        onChange={(e) => onChange(e.target.value as FilterMode)}
+      >
+        <option value="all">הכל</option>
+        <option value="yes">{yes}</option>
+        <option value="no">{no}</option>
+      </select>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function ValueField({
+  label,
+  value,
+  className = "",
+  valueClassName = "",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className={`rounded-xl border bg-background px-3 py-3 ${className}`.trim()}>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className={`mt-2 text-sm font-medium leading-6 text-foreground ${valueClassName}`.trim()}>{value}</div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-sm font-medium">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function CustomerDetailsDialog({
+  row,
+  open,
+  onOpenChange,
+  onEdit,
+  onAddContact,
+}: {
+  row: Row | null;
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  onEdit: (row: Row) => void;
+  onAddContact: (row: Row) => void;
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isNavigating, startNavigation] = useTransition();
+  const [navigationTarget, setNavigationTarget] = useState<"projects" | "sales" | "financial" | "documents" | "">("");
+  const contacts = row ? contactsOf(row) : [];
+  const activeContacts = contacts.filter((c) => c.active !== false);
+  const inactiveContacts = contacts.filter((c) => c.active === false);
+  const id = row ? s(row, "customer_id") : "";
+
+  function navigateToCustomerPage(
+    target: "projects" | "sales" | "financial" | "documents",
+    path: string
+  ) {
+    if (!id) return;
+    setNavigationTarget(target);
+    startNavigation(() => {
+      router.push(path);
+    });
+  }
+
+  const customerNameParam = row ? s(row, "customer_name").trim() : "";
+  const customerPageParam = (searchParams.get("page") ?? "").trim();
+  const name = row ? s(row, "customer_name") || "לקוח" : "לקוח";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <AdaptiveDialog size="details4xl">
+        <DialogHeader>
+          <DialogTitle>{name}</DialogTitle>
+          <DialogDescription>פרטי לקוח, אנשי קשר וקישורים מהירים.</DialogDescription>
+        </DialogHeader>
+
+        {row ? (
+          <div className="space-y-4">
+            <AdaptiveGrid variant="customerStats">
+              <Stat label="הזמנות" value={`${n(row, "orders_count")}`} />
+              <Stat label="פרויקטים" value={`${n(row, "projects_count")}`} />
+              <Stat label='סה"כ מכירות' value={ils(n(row, "total_sales"))} />
+              <Stat label="יתרה פתוחה" value={ils(n(row, "open_balance"))} />
+            </AdaptiveGrid>
+
+            <AdaptiveGrid variant="customerPanels">
+              <div className="space-y-2 rounded-md border bg-background p-3 text-sm">
+                <div className="font-semibold">פרטי לקוח</div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ValueField label="שם לחשבונית" value={s(row, "name_for_invoice") || "-"} />
+                  <ValueField label="ח.פ/ת.ז" value={s(row, "registration_number") || "-"} />
+                  <ValueField label="וואטסאפ" value={s(row, "whatsapp") || "-"} />
+                  <ValueField label="הזמנה אחרונה" value={dateText(s(row, "last_order_at"))} />
+                  <ValueField label="תשלום אחרון" value={dateText(s(row, "last_payment_at"))} />
+                  <ValueField
+                    label="כתובת"
+                    value={s(row, "address") || "-"}
+                    className="sm:col-span-2"
+                    valueClassName="whitespace-pre-wrap"
+                  />
+                  <ValueField
+                    label="הערות"
+                    value={s(row, "notes") || "-"}
+                    className="sm:col-span-2"
+                    valueClassName="whitespace-pre-wrap"
+                  />
+                </div>
+                <div className="grid gap-2 pt-1 sm:grid-cols-2">
+                  <Button type="button" size="sm" variant="outline" onClick={() => onEdit(row)}>
+                    עריכת לקוח
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!id || isNavigating}
+                    onClick={() =>
+                      navigateToCustomerPage(
+                        "projects",
+                        `/projects?customer_id=${encodeURIComponent(id)}${
+                          customerNameParam
+                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                            : ""
+                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                      )
+                    }
+                  >
+                    {isNavigating && navigationTarget === "projects" ? "פותח פרויקטים..." : "צפייה בפרויקטים"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!id || isNavigating}
+                    onClick={() =>
+                      navigateToCustomerPage(
+                        "sales",
+                        `/sales?customer_id=${encodeURIComponent(id)}${
+                          customerNameParam
+                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                            : ""
+                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                      )
+                    }
+                  >
+                    {isNavigating && navigationTarget === "sales" ? "פותח הזמנות..." : "צפייה בהזמנות"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!id || isNavigating}
+                    onClick={() =>
+                      navigateToCustomerPage(
+                        "financial",
+                        `/financial?customer_id=${encodeURIComponent(id)}${
+                          customerNameParam
+                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                            : ""
+                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                      )
+                    }
+                  >
+                    {isNavigating && navigationTarget === "financial" ? "פותח מידע פיננסי..." : "מידע פיננסי"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!id || isNavigating}
+                    onClick={() =>
+                      navigateToCustomerPage(
+                        "documents",
+                        `/documents?customer_id=${encodeURIComponent(id)}${
+                          customerNameParam
+                            ? `&customer_name=${encodeURIComponent(customerNameParam)}`
+                            : ""
+                        }${customerPageParam ? `&customer_page=${encodeURIComponent(customerPageParam)}` : ""}`
+                      )
+                    }
+                  >
+                    {isNavigating && navigationTarget === "documents" ? "פותח מסמכים..." : "קבלות ומסמכים"}
+                  </Button>
+                </div>
+              </div>
+
+              <MorningCustomerCard
+                customerId={id}
+                morningClientId={s(row, "morning_client_id") || null}
+                morningMatchStatus={s(row, "morning_match_status") || null}
+                morningSyncedAt={s(row, "morning_synced_at") || null}
+                morningLastSyncError={s(row, "morning_last_sync_error") || null}
+                morningDocuments={Array.isArray(row.morning_documents) ? (row.morning_documents as never[]) : []}
+                onChanged={() => router.refresh()}
+              />
+
+              <div className="space-y-2 rounded-md border bg-background p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">אנשי קשר</div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onAddContact(row)}
+                  >
+                    הוספת איש קשר
+                  </Button>
+                </div>
+                {contacts.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">אין אנשי קשר ללקוח זה.</p>
+                ) : null}
+                {activeContacts.map((c, i) => (
+                  <div key={s(c, "id") || `${id}-active-${i}`} className="rounded-md border p-2 text-sm">
+                    <div className="font-medium">
+                      {s(c, "full_name") || `איש קשר ${i + 1}`}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {s(c, "role") || "ללא תפקיד"} | {s(c, "phone") || "-"} |{" "}
+                      {s(c, "email") || "-"}
+                    </div>
+                  </div>
+                ))}
+                {inactiveContacts.length > 0 ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive-soft p-2">
+                    <div className="mb-1 text-xs font-medium text-destructive">
+                      אנשי קשר לא פעילים
+                    </div>
+                    {inactiveContacts.map((c, i) => (
+                      <div
+                        key={s(c, "id") || `${id}-inactive-${i}`}
+                        className="text-xs text-destructive"
+                      >
+                        {s(c, "full_name") || `איש קשר ${i + 1}`} | {s(c, "phone") || "-"}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </AdaptiveGrid>
+
+          </div>
+        ) : null}
+      </AdaptiveDialog>
+    </Dialog>
+  );
+}
+
+function CustomerDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  submitLabel,
+  onSubmit,
+  error,
+  submitting = false,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  title: string;
+  description: string;
+  submitLabel: string;
+  onSubmit: () => void;
+  error: string;
+  submitting?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && submitting) return;
+        onOpenChange(next);
+      }}
+    >
+      <AdaptiveDialog size="formLg">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSubmit();
+          }}
+        >
+          <fieldset disabled={submitting} className="space-y-3">
+            {children}
+          </fieldset>
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={submitting}>
+              ביטול
+            </Button>
+            <Button type="submit" disabled={submitting}>{submitLabel}</Button>
+          </DialogFooter>
+          {submitting ? <p className="text-xs text-muted-foreground">שומר, נא להמתין...</p> : null}
+        </form>
+      </AdaptiveDialog>
+    </Dialog>
+  );
+}
