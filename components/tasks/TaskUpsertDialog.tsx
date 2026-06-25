@@ -474,6 +474,37 @@ export function TaskUpsertDialog(props: Props) {
     setMemberIds((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
   }
 
+  // Privacy is a one-click action, not a staged field: persist it immediately when
+  // editing an existing task so it sticks even if the dialog is closed without
+  // pressing Save. In create mode there's no task yet, so it rides along on submit.
+  async function togglePrivate() {
+    const next = !isPrivate;
+    setIsPrivate(next);
+    if (!isEditing) return;
+    const targetId = activeTaskId ?? props.taskId;
+    if (!targetId) return;
+    emitProgressActivityStart();
+    try {
+      const result = await offlineFetch(
+        "/api/tasks/update",
+        { id: targetId, is_private: next },
+        "עדכון פרטיות"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה בעדכון פרטיות", { description: toHebrewError(result.error, "") });
+        setIsPrivate(!next);
+        return;
+      }
+      if (!result.queued) toast.success(next ? "המשימה הפכה לפרטית" : "המשימה אינה פרטית יותר");
+      props.onSaved?.();
+    } catch (error: unknown) {
+      toast.error("שגיאה בעדכון פרטיות", { description: getErrorMessage(error) });
+      setIsPrivate(!next);
+    } finally {
+      emitProgressActivityEnd();
+    }
+  }
+
   function buildPayload() {
     const linkType = effectiveTarget?.type ?? derivedTargetType;
     return {
@@ -811,7 +842,7 @@ export function TaskUpsertDialog(props: Props) {
                 variant={isPrivate ? "default" : "secondary"}
                 size="sm"
                 disabled={loading}
-                onClick={() => setIsPrivate((v) => !v)}
+                onClick={() => void togglePrivate()}
                 title={
                   isPrivate
                     ? "משימה פרטית — רק את/ה רואה אותה. לחצו כדי לבטל"
