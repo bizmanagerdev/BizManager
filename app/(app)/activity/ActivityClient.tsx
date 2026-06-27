@@ -1,12 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
+import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   buildAuditFeedItem,
   getAuditFeedPaginated,
+  groupAuditFeedItems,
   resolveUserDisplayNamesForValues,
   type AuditFeedItem,
   type AuditLogRow,
@@ -65,6 +68,84 @@ function actionColor(action: string) {
   }
 }
 
+// One feed row's body (badge · entity · actor · details · time). Wrapped in a
+// link to the affected entity when the row has a viewable target.
+function ActivityRow({ item }: { item: AuditFeedItem }) {
+  const body = (
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-2 flex-1 min-w-0">
+        <span
+          className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${actionColor(item.action)}`}
+        >
+          {item.actionLabel}
+        </span>
+        <div className="min-w-0">
+          <div>
+            <span className="text-sm font-medium">{item.entityLabel}</span>
+            <span className="text-muted-foreground text-sm"> · </span>
+            <span className="text-sm text-muted-foreground">{item.actorName}</span>
+            {item.actorRole && (
+              <Badge variant="outline" className="mr-2 text-xs py-0">
+                {item.actorRole}
+              </Badge>
+            )}
+          </div>
+          {item.details && (
+            <div className="mt-0.5 truncate text-xs text-foreground/70">{item.details}</div>
+          )}
+        </div>
+      </div>
+      <time
+        className="shrink-0 text-xs text-muted-foreground whitespace-nowrap"
+        title={formatFullDate(item.createdAt)}
+      >
+        {formatRelativeTime(item.createdAt)}
+      </time>
+    </div>
+  );
+  if (item.href) {
+    return (
+      <Link
+        href={item.href}
+        className="-mx-1 block rounded-md px-1 transition-colors hover:bg-muted/50"
+      >
+        {body}
+      </Link>
+    );
+  }
+  return body;
+}
+
+// Compact side-effect row shown when a group is expanded.
+function ActivityChildRow({ item }: { item: AuditFeedItem }) {
+  const body = (
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <span
+          className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-medium ${actionColor(item.action)}`}
+        >
+          {item.actionLabel}
+        </span>
+        <span className="truncate text-xs text-muted-foreground">
+          {item.entityLabel}
+          {item.details ? ` · ${item.details}` : ""}
+        </span>
+      </div>
+      <time className="shrink-0 text-[10px] text-muted-foreground whitespace-nowrap">
+        {formatRelativeTime(item.createdAt)}
+      </time>
+    </div>
+  );
+  if (item.href) {
+    return (
+      <Link href={item.href} className="-mx-1 block rounded px-1 hover:bg-muted/50">
+        {body}
+      </Link>
+    );
+  }
+  return body;
+}
+
 type Props = {
   items: AuditFeedItem[];
   totalCount: number;
@@ -105,6 +186,9 @@ export default function ActivityClient({
   // Live feed: rows that arrived via realtime since this view mounted (newest
   // first).
   const [extraItems, setExtraItems] = useState<AuditFeedItem[]>([]);
+
+  // Which grouped cards have their side-effect rows expanded.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Fold any newly-arrived first-page rows (from the 15s safety refresh below)
   // into the accumulated list, keeping newest-first order and never duplicating.
@@ -220,6 +304,18 @@ export default function ActivityClient({
   const displayItems = [...extraItems.filter((i) => !existingIds.has(i.id)), ...serverItems];
   const liveCount = displayItems.length - serverItems.length;
 
+  // Collapse side-effect rows (order items, stock movements, …) under the action
+  // that caused them.
+  const groups = groupAuditFeedItems(displayItems);
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   function updateParams(updates: Record<string, string>) {
     const next = new URLSearchParams(searchParams.toString());
     for (const [key, value] of Object.entries(updates)) {
@@ -287,42 +383,38 @@ export default function ActivityClient({
 
       {!error && displayItems.length > 0 && (
         <div className="space-y-2">
-          {displayItems.map((item) => (
-            <Card key={item.id} className={isPending ? "opacity-60 transition-opacity" : ""}>
-              <CardContent className="py-3 px-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-2 flex-1 min-w-0">
-                    <span
-                      className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${actionColor(item.action)}`}
-                    >
-                      {item.actionLabel}
-                    </span>
-                    <div className="min-w-0">
-                      <div>
-                        <span className="text-sm font-medium">{item.entityLabel}</span>
-                        <span className="text-muted-foreground text-sm"> · </span>
-                        <span className="text-sm text-muted-foreground">{item.actorName}</span>
-                        {item.actorRole && (
-                          <Badge variant="outline" className="mr-2 text-xs py-0">
-                            {item.actorRole}
-                          </Badge>
-                        )}
-                      </div>
-                      {item.details && (
-                        <div className="mt-0.5 truncate text-xs text-foreground/70">{item.details}</div>
+          {groups.map((group) => {
+            const { header, children } = group;
+            const isExpanded = expanded.has(header.id);
+            return (
+              <Card key={header.id} className={isPending ? "opacity-60 transition-opacity" : ""}>
+                <CardContent className="py-3 px-4">
+                  <ActivityRow item={header} />
+                  {children.length > 0 && (
+                    <div className="mt-2 border-t pt-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(header.id)}
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                        />
+                        {isExpanded ? "הסתר שינויים" : `ועוד ${children.length} שינויים נלווים`}
+                      </button>
+                      {isExpanded && (
+                        <div className="mt-2 space-y-1.5 pr-2">
+                          {children.map((child) => (
+                            <ActivityChildRow key={child.id} item={child} />
+                          ))}
+                        </div>
                       )}
                     </div>
-                  </div>
-                  <time
-                    className="shrink-0 text-xs text-muted-foreground whitespace-nowrap"
-                    title={formatFullDate(item.createdAt)}
-                  >
-                    {formatRelativeTime(item.createdAt)}
-                  </time>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 

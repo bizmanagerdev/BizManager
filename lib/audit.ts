@@ -46,7 +46,20 @@ export type AuditFeedItem = {
   actorName: string;
   actorRole: string | null;
   createdAt: string | null;
+  // Deep link to the affected entity (or its parent), or null when the row has
+  // no viewable target. e.g. an order_items row links to its order.
+  href: string | null;
+  // Grouping key of the parent business entity (e.g. "order:<uuid>"), used to
+  // collapse side-effect rows under the action that caused them. Null = stands
+  // on its own.
+  parentKey: string | null;
+  // True for low-level side-effect rows (order_items, inventory movements,
+  // document links, payment allocations) that should fold under their parent.
+  isChild: boolean;
 };
+
+// A header row plus the side-effect rows that collapse beneath it.
+export type AuditGroup = { header: AuditFeedItem; children: AuditFeedItem[] };
 
 export type AuditRecordInfo = {
   action: string;
@@ -234,6 +247,180 @@ export function buildSummary(tableName: string, action: string) {
   return `${entityLabel(tableName)} ${actionLabel(action)}`;
 }
 
+// ── Deep links & parent grouping ─────────────────────────────────────────────
+// Each audit row can point at the entity it affected so the feed clicks through
+// to the real thing. Side-effect rows (order items, stock movements, doc links,
+// payment allocations) point at — and collapse under — their parent action.
+
+// Low-level rows that are plumbing of a higher-level action, not actions a user
+// performs directly. These fold under their parent in the feed.
+const CHILD_TABLES = new Set([
+  "order_items",
+  "inventory_movements",
+  "document_links",
+  "worker_payment_allocations",
+]);
+
+function recordData(
+  newData: AuditLogValue,
+  oldData: AuditLogValue
+): Record<string, AuditLogValue> | null {
+  for (const candidate of [newData, oldData]) {
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      return candidate as Record<string, AuditLogValue>;
+    }
+  }
+  return null;
+}
+
+// Resolve a "<type>:<uuid>" parent key to a viewable route.
+function hrefFromParentKey(parentKey: string | null): string | null {
+  if (!parentKey) return null;
+  const sep = parentKey.indexOf(":");
+  if (sep < 0) return null;
+  const type = parentKey.slice(0, sep);
+  const id = parentKey.slice(sep + 1);
+  if (!id) return null;
+  switch (type) {
+    case "order": return `/sales/orders/${id}`;
+    case "project": return `/projects/${id}`;
+    case "customer": return `/customers/${id}`;
+    case "worker": return `/payroll/workers/${id}`;
+    default: return null;
+  }
+}
+
+// The parent business entity a row belongs to (for collapsing + linking). Reads
+// foreign keys from new_data, falling back to old_data for deletes.
+export function buildParentKey(
+  tableName: string,
+  recordId: string,
+  newData: AuditLogValue,
+  oldData: AuditLogValue
+): string | null {
+  const d = recordData(newData, oldData);
+  const fk = (key: string): string | null => {
+    const v = d?.[key];
+    return typeof v === "string" && v ? v : null;
+  };
+
+  switch (tableName) {
+    case "orders": return `order:${recordId}`;
+    case "order_items": {
+      const o = fk("order_id");
+      return o ? `order:${o}` : null;
+    }
+    case "inventory_movements": {
+      if (d?.source_type === "order") {
+        const s = fk("source_id");
+        if (s) return `order:${s}`;
+      }
+      return null;
+    }
+    case "payments": {
+      const o = fk("order_id");
+      if (o) return `order:${o}`;
+      const p = fk("project_id");
+      if (p) return `project:${p}`;
+      return null;
+    }
+    case "projects": return `project:${recordId}`;
+    case "customers": return `customer:${recordId}`;
+    case "document_links": {
+      const et = d?.entity_type;
+      const eid = fk("entity_id");
+      if (typeof et === "string" && eid) {
+        if (et === "order") return `order:${eid}`;
+        if (et === "project") return `project:${eid}`;
+        if (et === "customer") return `customer:${eid}`;
+      }
+      return null;
+    }
+    case "worker_payments":
+    case "worker_payment_allocations":
+    case "attendance_sessions": {
+      const u = fk("user_id");
+      return u ? `worker:${u}` : null;
+    }
+    default: return null;
+  }
+}
+
+// Where clicking the row should go. Prefers the parent entity, then a few
+// entities that are their own destination (tasks, workers, documents).
+export function buildHref(
+  tableName: string,
+  recordId: string,
+  parentKey: string | null
+): string | null {
+  const fromParent = hrefFromParentKey(parentKey);
+  if (fromParent) return fromParent;
+  switch (tableName) {
+    case "tasks": return `/tasks/${recordId}`;
+    case "users": return `/payroll/workers/${recordId}`;
+    case "documents": return "/documents";
+    default: return null;
+  }
+}
+
+// Collapse side-effect rows under the action that caused them. A child attaches
+// to the nearest non-child header sharing its parent key within a short window
+// (one user action's cascade lands within seconds). Order follows the headers'
+// positions in the (newest-first) input; unattached children stand alone.
+const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
+export function groupAuditFeedItems(items: AuditFeedItem[]): AuditGroup[] {
+  const timeOf = (it: AuditFeedItem) =>
+    it.createdAt ? new Date(it.createdAt).getTime() : 0;
+
+  type Bucket = { header: AuditFeedItem; children: AuditFeedItem[]; time: number };
+  const byHeaderId = new Map<string, Bucket>();
+  const byParentKey = new Map<string, Bucket[]>();
+
+  for (const it of items) {
+    if (it.isChild) continue;
+    const bucket: Bucket = { header: it, children: [], time: timeOf(it) };
+    byHeaderId.set(it.id, bucket);
+    if (it.parentKey) {
+      const arr = byParentKey.get(it.parentKey);
+      if (arr) arr.push(bucket);
+      else byParentKey.set(it.parentKey, [bucket]);
+    }
+  }
+
+  const attached = new Set<string>();
+  for (const it of items) {
+    if (!it.isChild || !it.parentKey) continue;
+    const candidates = byParentKey.get(it.parentKey);
+    if (!candidates) continue;
+    const t = timeOf(it);
+    let best: Bucket | null = null;
+    let bestDiff = Infinity;
+    for (const c of candidates) {
+      const diff = Math.abs(c.time - t);
+      if (diff <= GROUP_WINDOW_MS && diff < bestDiff) {
+        best = c;
+        bestDiff = diff;
+      }
+    }
+    if (best) {
+      best.children.push(it);
+      attached.add(it.id);
+    }
+  }
+
+  const result: AuditGroup[] = [];
+  for (const it of items) {
+    if (!it.isChild) {
+      const bucket = byHeaderId.get(it.id);
+      if (bucket) result.push({ header: bucket.header, children: bucket.children });
+    } else if (!attached.has(it.id)) {
+      result.push({ header: it, children: [] });
+    }
+  }
+  return result;
+}
+
 // ── Field-level change detail ("what happened") ─────────────────────────────
 // Shown for update actions: compares old_data → new_data on a curated set of
 // meaningful fields so the feed reads e.g. "סטטוס: פתוח → הושלם".
@@ -367,6 +554,13 @@ export function buildAuditFeedItem(row: AuditLogRow, actorName: string | null): 
     : "";
   const details = [base, changes].filter(Boolean).join(" · ");
 
+  const parentKey = buildParentKey(
+    row.table_name,
+    row.record_id,
+    row.new_data ?? null,
+    row.old_data ?? null
+  );
+
   return {
     id: row.id,
     tableName: row.table_name,
@@ -379,6 +573,9 @@ export function buildAuditFeedItem(row: AuditLogRow, actorName: string | null): 
     actorName: row.changed_by ? actorName ?? "משתמש" : "מערכת",
     actorRole: row.user_role,
     createdAt: row.created_at,
+    parentKey,
+    href: buildHref(row.table_name, row.record_id, parentKey),
+    isChild: CHILD_TABLES.has(row.table_name),
   };
 }
 
