@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Receipt, Ban, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -706,10 +706,20 @@ function LoanDocumentsDialog({
 // ── Main ────────────────────────────────────────────────────────────────────
 export default function LoansClient({ loans, summary }: { loans: Loan[]; summary: LoansSummary }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [filter, setFilter] = useState<"all" | "taken" | "given">("all");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Loan | null>(null);
   const [repayLoan, setRepayLoan] = useState<Loan | null>(null);
+
+  // Deep link: /financial/loans?repay=<loanId> (e.g. from the collections חייבים
+  // list) opens that loan's repayment dialog so the repayment can be recorded here.
+  const repayParam = searchParams?.get("repay") ?? "";
+  useEffect(() => {
+    if (!repayParam) return;
+    const target = loans.find((l) => l.id === repayParam);
+    if (target) setRepayLoan(target);
+  }, [repayParam, loans]);
   const [docsLoan, setDocsLoan] = useState<Loan | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Loan | null>(null);
   const [pending, startTransition] = useTransition();
@@ -891,7 +901,15 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
       )}
 
       <LoanFormDialog open={formOpen} loan={editing} onOpenChange={setFormOpen} />
-      <RepaymentsDialog loan={repayLoan} onOpenChange={(open) => !open && setRepayLoan(null)} />
+      <RepaymentsDialog
+        loan={repayLoan}
+        onOpenChange={(open) => {
+          if (open) return;
+          setRepayLoan(null);
+          // Strip ?repay= so the dialog doesn't reopen on the next render/refresh.
+          if (repayParam) router.replace("/financial/loans");
+        }}
+      />
       <LoanDocumentsDialog loan={docsLoan} onOpenChange={(open) => !open && setDocsLoan(null)} />
       <ConfirmDialog
         open={Boolean(deleteTarget)}

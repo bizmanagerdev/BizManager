@@ -2,6 +2,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { BellRing, Check, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -273,6 +274,7 @@ export default function CollectionTrackingPanel({
     }
   }
 
+
   const totalOutstanding = receivables.reduce((sum, r) => sum + r.outstanding_amount, 0);
 
   const openReminders = reminders.filter((r) => r.status === "pending");
@@ -427,7 +429,9 @@ export default function CollectionTrackingPanel({
               const fallbackTitle =
                 r.source_type === "order"
                   ? `הזמנה #${r.source_id.slice(0, 8)}`
-                  : `פרויקט #${r.source_id.slice(0, 8)}`;
+                  : r.source_type === "loan"
+                    ? "הלוואה"
+                    : `פרויקט #${r.source_id.slice(0, 8)}`;
               return (
                 <div
                   key={r.collection_key}
@@ -435,7 +439,13 @@ export default function CollectionTrackingPanel({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-medium">{r.title ?? fallbackTitle}</span>
+                      <span className="truncate font-medium">
+                        {r.source_type === "loan"
+                          ? r.title
+                            ? `הלוואה — ${r.title}`
+                            : "הלוואה"
+                          : r.title ?? fallbackTitle}
+                      </span>
                       <Badge className={collectionStatusClasses(r.collection_status)}>
                         {collectionStatusLabel(r.collection_status)}
                       </Badge>
@@ -444,7 +454,7 @@ export default function CollectionTrackingPanel({
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
                     <span>תאריך: {r.reference_date ? formatShortDate(r.reference_date) : "—"}</span>
-                    <span>צורת תשלום: {paymentTermsLabel(r.payment_terms)}</span>
+                    {r.payment_terms ? <span>צורת תשלום: {paymentTermsLabel(r.payment_terms)}</span> : null}
                     {r.due_date || r.next_due_date ? (
                       <span>פירעון: {formatShortDate((r.due_date ?? r.next_due_date) as string)}</span>
                     ) : null}
@@ -452,6 +462,13 @@ export default function CollectionTrackingPanel({
                       <span className="text-destructive">{r.days_late} ימים באיחור</span>
                     ) : null}
                   </div>
+                  {r.source_type === "loan" ? (
+                    <div className="mt-2 flex justify-end border-t border-border/50 pt-2">
+                      <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                        <Link href={`/financial/loans?repay=${r.source_id}`}>רישום החזר</Link>
+                      </Button>
+                    </div>
+                  ) : null}
                   {r.pending_payments.length > 0 ? (
                     <div className="mt-2 space-y-1 border-t border-border/50 pt-2">
                       {r.pending_payments.map((p) => (

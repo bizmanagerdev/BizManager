@@ -1,10 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getCollectionActivityByCustomer } from "@/lib/communications";
+import { fetchLoans } from "@/lib/loans";
 
 // Data for the גבייה (collections) worklist. Reads collections_view — one row per
 // open receivable source (order / project) that still has money not yet collected
 // — and aggregates it per customer so an office worker can see, at a glance, who
-// owes money, how much is overdue, and when the next payment is due.
+// owes money, how much is overdue, and when the next payment is due. Open loans the
+// business GAVE OUT (direction 'given') are folded in as an extra source type, so a
+// borrower who still owes us money shows up in the same חייבים worklist.
 
 export type CollectionStatus =
   | "overpaid"
@@ -15,7 +18,7 @@ export type CollectionStatus =
   | "unpaid";
 
 export type CollectionSourceRow = {
-  source_type: "order" | "project";
+  source_type: "order" | "project" | "loan";
   source_id: string;
   collection_key: string;
   customer_id: string | null;
@@ -101,7 +104,7 @@ export type ReceivablePendingPayment = {
 /** One open receivable for a customer, with its pending payments — powers the
  *  "what is owed" section inside the מעקב גבייה dialog. */
 export type CustomerReceivable = {
-  source_type: "order" | "project";
+  source_type: "order" | "project" | "loan";
   source_id: string;
   collection_key: string;
   title: string | null;
@@ -367,6 +370,86 @@ async function enrichCollectionTitles(
   }
 }
 
+/**
+ * Open loans the business GAVE OUT (direction 'given') that still have an
+ * outstanding balance, shaped as collection sources so they fold into the חייבים
+ * worklist. A loan with no due date never reads as "overdue" (referenceDate is
+ * left null); past its due date the outstanding becomes the late amount, exactly
+ * like an order/project. Best-effort — returns [] if loans are unavailable.
+ */
+async function buildLoanSourceRows(
+  supabase: SupabaseClient,
+  today: string
+): Promise<CollectionSourceRow[]> {
+  const loans = await fetchLoans(supabase);
+  const open = loans.filter(
+    (loan) => loan.direction === "given" && loan.derivedStatus !== "written_off" && loan.outstanding > 0.009
+  );
+  if (open.length === 0) return [];
+
+  // Pull name/phone for loans linked to a customer so the row carries contact info.
+  const customerIds = Array.from(
+    new Set(open.map((l) => l.counterparty_customer_id).filter((v): v is string => Boolean(v)))
+  );
+  const customerById = new Map<string, { name: string; phone: string | null }>();
+  if (customerIds.length > 0) {
+    const { data } = await supabase
+      .from("customers")
+      .select("id,name,name_for_invoice,phone")
+      .in("id", customerIds);
+    for (const row of (data ?? []) as Row[]) {
+      const id = str(row, "id");
+      if (!id) continue;
+      customerById.set(id, {
+        name: str(row, "name") ?? str(row, "name_for_invoice") ?? "",
+        phone: str(row, "phone"),
+      });
+    }
+  }
+
+  return open.map((loan) => {
+    const cust = loan.counterparty_customer_id ? customerById.get(loan.counterparty_customer_id) : null;
+    const name = cust?.name || loan.borrower || "הלוואה";
+    const sm = computeSourceCollection({
+      total: loan.amount,
+      collected: loan.repaidPrincipal,
+      pending: 0,
+      overdue: 0,
+      outstanding: loan.outstanding,
+      nextDueDate: loan.due_date,
+      // No due-date fallback for loans — an undated loan isn't automatically late.
+      referenceDate: null,
+      dueDate: loan.due_date,
+      today,
+    });
+    return {
+      source_type: "loan",
+      source_id: loan.id,
+      collection_key: `loan:${loan.id}`,
+      customer_id: loan.counterparty_customer_id,
+      customer_name: name,
+      customer_phone: cust?.phone ?? null,
+      customer_whatsapp: null,
+      business_domain: loan.business_domain,
+      reference_date: loan.loan_date,
+      total_amount: loan.amount,
+      collected_amount: loan.repaidPrincipal,
+      pending_amount: sm.expected,
+      overdue_amount: sm.late,
+      outstanding_amount: loan.outstanding,
+      next_due_date: loan.due_date,
+      last_payment_date: null,
+      due_date: loan.due_date,
+      payment_terms: null,
+      collection_status: sm.status,
+      days_late: sm.daysLate,
+      pending_payments: [],
+      title: loan.notes ?? null,
+      items: [],
+    };
+  });
+}
+
 export async function getCollectionsData(supabase: SupabaseClient): Promise<CollectionsData> {
   const { data, error } = await supabase
     .from("collections_view")
@@ -456,6 +539,11 @@ export async function getCollectionsData(supabase: SupabaseClient): Promise<Coll
   await enrichCollectionTitles(supabase, rows);
   // Attach pending payments so each open debt can be marked collected inline.
   await attachPendingPayments(supabase, rows);
+
+  // Fold in open loans we gave out (money still owed to us). Added after the
+  // order/project enrichment so their titles aren't overwritten. Best-effort.
+  const loanRows = await buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]);
+  if (loanRows.length > 0) rows.push(...loanRows);
 
   // Group by customer
   const groupMap = new Map<string, CollectionCustomerGroup>();
@@ -625,6 +713,12 @@ export async function getCustomerReceivables(
 
   // Pull the pending payments for every source so each can be marked collected.
   await attachPendingPayments(supabase, sourceRows);
+
+  // Fold in this customer's open given-loans (added after enrichment so their
+  // titles/pending-payments aren't overwritten). Best-effort.
+  const loanRows = (await buildLoanSourceRows(supabase, today).catch(() => [] as CollectionSourceRow[]))
+    .filter((r) => r.customer_id === customerId);
+  if (loanRows.length > 0) sourceRows.push(...loanRows);
 
   return sourceRows.map((r) => ({
     source_type: r.source_type,

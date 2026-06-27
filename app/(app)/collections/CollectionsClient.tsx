@@ -605,6 +605,16 @@ function MarkCollectedButton({ paymentIds }: { paymentIds: string[] }) {
   );
 }
 
+// A loan is repaid on the loans page (partial amounts / interest), so the row
+// links straight to that loan's repayment dialog instead of collecting inline.
+function LoanRepaymentLink({ loanId }: { loanId: string }) {
+  return (
+    <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+      <NavLink to={`/financial/loans?repay=${loanId}`}>רישום החזר</NavLink>
+    </Button>
+  );
+}
+
 function CustomerActions({
   group,
   wa,
@@ -653,10 +663,19 @@ function CustomerActions({
 // mobile card. Offers inline "סמן כנגבה" when the debt has pending payments.
 function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][number] }) {
   const isOrder = source.source_type === "order";
-  const href = isOrder ? `/sales/orders/${source.source_id}` : `/projects/${source.source_id}`;
-  const linkText = isOrder
-    ? `הזמנה #${source.source_id.slice(0, 8)}`
-    : source.title ?? `פרויקט #${source.source_id.slice(0, 8)}`;
+  const isLoan = source.source_type === "loan";
+  const href = isLoan
+    ? "/financial/loans"
+    : isOrder
+      ? `/sales/orders/${source.source_id}`
+      : `/projects/${source.source_id}`;
+  const linkText = isLoan
+    ? source.title
+      ? `הלוואה — ${source.title}`
+      : "הלוואה"
+    : isOrder
+      ? `הזמנה #${source.source_id.slice(0, 8)}`
+      : source.title ?? `פרויקט #${source.source_id.slice(0, 8)}`;
   const pendingIds = source.pending_payments.map((p) => p.id);
   const methods = Array.from(
     new Set(source.pending_payments.filter((p) => p.payment_method).map((p) => paymentMethodLabel(p.payment_method)))
@@ -677,7 +696,9 @@ function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][n
         </Badge>
         <span className="text-muted-foreground">תאריך: {formatDate(source.reference_date)}</span>
         <span className="font-semibold text-foreground">{formatCurrency(source.outstanding_amount)}</span>
-        <span className="text-muted-foreground">צורת תשלום: {paymentTermsLabel(source.payment_terms)}</span>
+        {source.payment_terms ? (
+          <span className="text-muted-foreground">צורת תשלום: {paymentTermsLabel(source.payment_terms)}</span>
+        ) : null}
         {source.due_date || source.next_due_date ? (
           <span className="text-muted-foreground">פירעון: {formatDate(source.due_date ?? source.next_due_date)}</span>
         ) : null}
@@ -690,6 +711,10 @@ function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][n
         {pendingIds.length > 0 ? (
           <span className="ms-auto">
             <MarkCollectedButton paymentIds={pendingIds} />
+          </span>
+        ) : isLoan ? (
+          <span className="ms-auto">
+            <LoanRepaymentLink loanId={source.source_id} />
           </span>
         ) : null}
       </div>
@@ -813,6 +838,9 @@ function flattenExpectedReceipts(customers: CollectionCustomerGroup[]): Expected
   const out: ExpectedReceipt[] = [];
   for (const group of customers) {
     for (const source of group.sources) {
+      // Loans are repaid via the loans page, not the pending-payments flow, so
+      // they never contribute expected receipts (and have no order/project link).
+      if (source.source_type === "loan") continue;
       for (const p of source.pending_payments) {
         out.push({
           paymentId: p.id,
