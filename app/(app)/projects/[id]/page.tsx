@@ -2,7 +2,9 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import ProjectDetailsActions from "@/app/(app)/projects/[id]/ProjectDetailsActions";
-import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
+import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
+import { History } from "lucide-react";
 import type {
   AssignableUser,
   ExpenseListItem,
@@ -940,6 +942,19 @@ export default async function ProjectPage({
     .filter((row) => row.id && row.label && row.active !== false)
     .map((row) => ({ id: row.id, label: row.label }));
 
+  // Per-entity activity timeline (admin only, mirroring /activity access): this
+  // project's own changes plus payments and worker sessions logged against it.
+  const projectActivity =
+    profile.role === "admin" && overview
+      ? (
+          await getEntityAuditTrail(supabase, [
+            { tableName: "projects", recordId: id },
+            { tableName: "payments", jsonKey: "project_id", value: id },
+            { tableName: "attendance_sessions", jsonKey: "project_id", value: id },
+          ])
+        ).items
+      : [];
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-5">
@@ -1117,6 +1132,25 @@ export default async function ProjectPage({
             salaryAgreements={(salaryAgreements ?? []) as ProjectSalaryAgreement[]}
           />
         )}
+
+        {profile.role === "admin" && overview ? (
+          <Card>
+            <CardContent className="space-y-3 p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-semibold">היסטוריית פעילות</h2>
+                </div>
+                {projectActivity.length > 0 ? (
+                  <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                    {projectActivity.length} רשומות
+                  </span>
+                ) : null}
+              </div>
+              <EntityActivityTimeline items={projectActivity} />
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </AppShell>
   );

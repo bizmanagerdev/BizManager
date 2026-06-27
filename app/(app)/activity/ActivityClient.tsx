@@ -10,6 +10,7 @@ import {
   buildAuditFeedItem,
   getAuditFeedPaginated,
   groupAuditFeedItems,
+  resolveAuditTitles,
   resolveUserDisplayNamesForValues,
   type AuditFeedItem,
   type AuditLogRow,
@@ -82,6 +83,9 @@ function ActivityRow({ item }: { item: AuditFeedItem }) {
         <div className="min-w-0">
           <div>
             <span className="text-sm font-medium">{item.entityLabel}</span>
+            {item.title && (
+              <span className="text-sm font-semibold text-foreground">{` · ${item.title}`}</span>
+            )}
             <span className="text-muted-foreground text-sm"> · </span>
             <span className="text-sm text-muted-foreground">{item.actorName}</span>
             {item.actorRole && (
@@ -128,6 +132,7 @@ function ActivityChildRow({ item }: { item: AuditFeedItem }) {
         </span>
         <span className="truncate text-xs text-muted-foreground">
           {item.entityLabel}
+          {item.title ? ` · ${item.title}` : ""}
           {item.details ? ` · ${item.details}` : ""}
         </span>
       </div>
@@ -274,7 +279,8 @@ export default function ActivityClient({
               const names = await resolveUserDisplayNamesForValues(supabase, [row.changed_by]);
               actorName = names[row.changed_by] ?? null;
             }
-            const item = buildAuditFeedItem(row, actorName);
+            const titles = await resolveAuditTitles(supabase, [row]);
+            const item = buildAuditFeedItem(row, actorName, titles.get(row.id) ?? null);
 
             setExtraItems((prev) => {
               if (prev.some((existing) => existing.id === item.id)) return prev;

@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileText,
   HandCoins,
+  History,
   Mail,
   MapPin,
   MessageSquareText,
@@ -17,10 +18,11 @@ import {
   Truck,
   UserRound,
 } from "lucide-react";
+import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
@@ -527,6 +529,18 @@ export default async function SalesOrderPage({
     0
   );
 
+  // Per-entity activity timeline (admin only, mirroring /activity access). Shows
+  // this order's own change history plus payments recorded against it.
+  const orderActivity =
+    profile.role === "admin" && order
+      ? (
+          await getEntityAuditTrail(supabase, [
+            { tableName: "orders", recordId: id },
+            { tableName: "payments", jsonKey: "order_id", value: id },
+          ])
+        ).items
+      : [];
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-3">
@@ -973,6 +987,22 @@ export default async function SalesOrderPage({
             <SectionCard icon={<PencilLine className="h-4 w-4" />} title="הערות">
               <OrderNotesEditor orderId={id} initialNotes={orderNotes} />
             </SectionCard>
+
+            {profile.role === "admin" ? (
+              <SectionCard
+                icon={<History className="h-4 w-4" />}
+                title="היסטוריית פעילות"
+                aside={
+                  orderActivity.length > 0 ? (
+                    <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                      {orderActivity.length} רשומות
+                    </span>
+                  ) : null
+                }
+              >
+                <EntityActivityTimeline items={orderActivity} />
+              </SectionCard>
+            ) : null}
           </div>
         </div>
           </section>

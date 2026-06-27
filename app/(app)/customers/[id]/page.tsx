@@ -25,6 +25,7 @@ import {
   FileText,
   FolderKanban,
   HandCoins,
+  History,
   Mail,
   MapPin,
   MessageCircle,
@@ -34,6 +35,8 @@ import {
   ShoppingCart,
   UserRound,
 } from "lucide-react";
+import { getEntityAuditTrail } from "@/lib/audit";
+import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import { notFound } from "next/navigation";
 import AddContactButton from "./AddContactButton";
 import AddCustomerDocumentButton from "./AddCustomerDocumentButton";
@@ -493,6 +496,21 @@ export default async function CustomerDetailsPage({
   const visibleProjects = projectInfos.slice(0, PROJECTS_DISPLAY_LIMIT);
   const visiblePayments = allPayments.slice(0, PAYMENTS_DISPLAY_LIMIT);
 
+  // Per-entity activity timeline (admin only, mirroring /activity access): this
+  // customer's own changes plus their orders, projects, and payments.
+  const customerActivity =
+    profile.role === "admin"
+      ? (
+          await getEntityAuditTrail(supabase, [
+            { tableName: "customers", recordId: id },
+            { tableName: "orders", jsonKey: "customer_id", value: id },
+            { tableName: "projects", jsonKey: "customer_id", value: id },
+            { tableName: "payments", jsonKey: "order_id", values: orderIds },
+            { tableName: "payments", jsonKey: "project_id", values: projectIds },
+          ])
+        ).items
+      : [];
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-3">
@@ -864,6 +882,20 @@ export default async function CustomerDetailsPage({
                 </Button>
               </SectionCard>
             )}
+
+            {profile.role === "admin" ? (
+              <SectionCard
+                icon={<History className="h-4 w-4" />}
+                title="היסטוריית פעילות"
+                aside={
+                  customerActivity.length > 0 ? (
+                    <CountPill>{customerActivity.length} רשומות</CountPill>
+                  ) : null
+                }
+              >
+                <EntityActivityTimeline items={customerActivity} />
+              </SectionCard>
+            ) : null}
           </div>
 
           {/* Reference column: customer details, contacts, documents, notes, Morning */}

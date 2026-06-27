@@ -46,6 +46,10 @@ export type AuditFeedItem = {
   actorName: string;
   actorRole: string | null;
   createdAt: string | null;
+  // Human identifier of the affected entity (customer/project/worker name),
+  // resolved from foreign keys — so a row reads "הזמנה · ביאן מרקט" not just
+  // "הזמנה". Null when nothing nameable could be resolved.
+  title: string | null;
   // Deep link to the affected entity (or its parent), or null when the row has
   // no viewable target. e.g. an order_items row links to its order.
   href: string | null;
@@ -421,6 +425,185 @@ export function groupAuditFeedItems(items: AuditFeedItem[]): AuditGroup[] {
   return result;
 }
 
+// ── Human titles ─────────────────────────────────────────────────────────────
+// Resolve a human name for each row's entity (customer / project / worker), so
+// the feed reads "הזמנה · ביאן מרקט" instead of just "הזמנה". Names live behind
+// foreign keys, so we batch a handful of lookups for a page of rows at once.
+
+type NamedRow = { id?: string | null; name?: string | null };
+
+export async function resolveAuditTitles(
+  supabase: SupabaseClient,
+  rows: AuditLogRow[]
+): Promise<Map<string, string>> {
+  const titles = new Map<string, string>();
+  if (rows.length === 0) return titles;
+
+  const dataOf = (r: AuditLogRow) => recordData(r.new_data ?? null, r.old_data ?? null);
+  const fk = (d: Record<string, AuditLogValue> | null, key: string): string | null => {
+    const v = d?.[key];
+    return typeof v === "string" && v ? v : null;
+  };
+  const inline = (d: Record<string, AuditLogValue> | null, key: string): string | null => {
+    const v = d?.[key];
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+  };
+
+  const customerIds = new Set<string>();
+  const projectIds = new Set<string>();
+  const userIds = new Set<string>();
+  const orderIds = new Set<string>(); // resolved one hop further → their customer
+
+  for (const r of rows) {
+    const d = dataOf(r);
+    switch (r.table_name) {
+      case "orders": {
+        const c = fk(d, "customer_id");
+        if (c) customerIds.add(c);
+        break;
+      }
+      case "order_items": {
+        const o = fk(d, "order_id");
+        if (o) orderIds.add(o);
+        break;
+      }
+      case "inventory_movements": {
+        const c = fk(d, "customer_id");
+        if (c) customerIds.add(c);
+        if (d?.source_type === "order") {
+          const o = fk(d, "source_id");
+          if (o) orderIds.add(o);
+        }
+        break;
+      }
+      case "payments": {
+        const o = fk(d, "order_id");
+        if (o) orderIds.add(o);
+        const p = fk(d, "project_id");
+        if (p) projectIds.add(p);
+        break;
+      }
+      case "worker_payments":
+      case "worker_payment_allocations":
+      case "attendance_sessions": {
+        const u = fk(d, "user_id");
+        if (u) userIds.add(u);
+        break;
+      }
+      case "document_links": {
+        const et = d?.entity_type;
+        const eid = fk(d, "entity_id");
+        if (eid && et === "order") orderIds.add(eid);
+        else if (eid && et === "project") projectIds.add(eid);
+        else if (eid && et === "customer") customerIds.add(eid);
+        break;
+      }
+    }
+  }
+
+  // First hop: order → its customer (so an order/payment shows the buyer's name).
+  const orderCustomer = new Map<string, string>();
+  if (orderIds.size > 0) {
+    const { data } = await supabase
+      .from("orders")
+      .select("id,customer_id")
+      .in("id", Array.from(orderIds));
+    for (const row of (data ?? []) as { id?: string; customer_id?: string }[]) {
+      if (typeof row.id === "string" && typeof row.customer_id === "string") {
+        orderCustomer.set(row.id, row.customer_id);
+        customerIds.add(row.customer_id);
+      }
+    }
+  }
+
+  const [customerRes, projectRes, userNames] = await Promise.all([
+    customerIds.size > 0
+      ? supabase.from("customers").select("id,name").in("id", Array.from(customerIds))
+      : Promise.resolve({ data: [] as NamedRow[] }),
+    projectIds.size > 0
+      ? supabase.from("projects").select("id,name").in("id", Array.from(projectIds))
+      : Promise.resolve({ data: [] as NamedRow[] }),
+    userIds.size > 0
+      ? resolveUserDisplayNamesForValues(supabase, Array.from(userIds))
+      : Promise.resolve({} as Record<string, string>),
+  ]);
+
+  const customerName = new Map<string, string>();
+  for (const row of (customerRes.data ?? []) as NamedRow[]) {
+    if (typeof row.id === "string" && typeof row.name === "string" && row.name.trim()) {
+      customerName.set(row.id, row.name.trim());
+    }
+  }
+  const projectName = new Map<string, string>();
+  for (const row of (projectRes.data ?? []) as NamedRow[]) {
+    if (typeof row.id === "string" && typeof row.name === "string" && row.name.trim()) {
+      projectName.set(row.id, row.name.trim());
+    }
+  }
+
+  const customerOfOrder = (orderId: string | null) => {
+    if (!orderId) return null;
+    const c = orderCustomer.get(orderId);
+    return c ? customerName.get(c) ?? null : null;
+  };
+
+  for (const r of rows) {
+    const d = dataOf(r);
+    let title: string | null = null;
+    switch (r.table_name) {
+      case "customers":
+        title = inline(d, "name");
+        break;
+      case "projects":
+        title = inline(d, "name");
+        break;
+      case "tasks":
+        title = inline(d, "subject") ?? inline(d, "title");
+        break;
+      case "documents":
+        title = inline(d, "file_name") ?? inline(d, "name");
+        break;
+      case "properties":
+        title = inline(d, "name") ?? inline(d, "address");
+        break;
+      case "orders": {
+        const c = fk(d, "customer_id");
+        title = c ? customerName.get(c) ?? null : null;
+        break;
+      }
+      case "order_items":
+        title = customerOfOrder(fk(d, "order_id"));
+        break;
+      case "inventory_movements": {
+        const c = fk(d, "customer_id");
+        title =
+          (c ? customerName.get(c) ?? null : null) ??
+          (d?.source_type === "order" ? customerOfOrder(fk(d, "source_id")) : null);
+        break;
+      }
+      case "payments": {
+        title =
+          customerOfOrder(fk(d, "order_id")) ??
+          (() => {
+            const p = fk(d, "project_id");
+            return p ? projectName.get(p) ?? null : null;
+          })();
+        break;
+      }
+      case "worker_payments":
+      case "worker_payment_allocations":
+      case "attendance_sessions": {
+        const u = fk(d, "user_id");
+        title = u ? userNames[u] ?? null : null;
+        break;
+      }
+    }
+    if (title) titles.set(r.id, title);
+  }
+
+  return titles;
+}
+
 // ── Field-level change detail ("what happened") ─────────────────────────────
 // Shown for update actions: compares old_data → new_data on a curated set of
 // meaningful fields so the feed reads e.g. "סטטוס: פתוח → הושלם".
@@ -547,7 +730,11 @@ async function getActorNames(supabase: SupabaseClient, actorIds: string[]) {
   return new Map(Object.entries(resolved));
 }
 
-export function buildAuditFeedItem(row: AuditLogRow, actorName: string | null): AuditFeedItem {
+export function buildAuditFeedItem(
+  row: AuditLogRow,
+  actorName: string | null,
+  title: string | null = null
+): AuditFeedItem {
   const base = buildDetails(row.table_name, row.new_data ?? null);
   const changes = isUpdateAction(row.action)
     ? buildChanges(row.old_data ?? null, row.new_data ?? null)
@@ -573,15 +760,24 @@ export function buildAuditFeedItem(row: AuditLogRow, actorName: string | null): 
     actorName: row.changed_by ? actorName ?? "משתמש" : "מערכת",
     actorRole: row.user_role,
     createdAt: row.created_at,
+    title,
     parentKey,
     href: buildHref(row.table_name, row.record_id, parentKey),
     isChild: CHILD_TABLES.has(row.table_name),
   };
 }
 
-function normalizeAuditRows(rows: AuditLogRow[], actorNames: Map<string, string>): AuditFeedItem[] {
+function normalizeAuditRows(
+  rows: AuditLogRow[],
+  actorNames: Map<string, string>,
+  titles?: Map<string, string>
+): AuditFeedItem[] {
   return rows.map((row) =>
-    buildAuditFeedItem(row, row.changed_by ? actorNames.get(row.changed_by) ?? null : null)
+    buildAuditFeedItem(
+      row,
+      row.changed_by ? actorNames.get(row.changed_by) ?? null : null,
+      titles?.get(row.id) ?? null
+    )
   );
 }
 
@@ -700,10 +896,13 @@ export async function getRecentAuditEvents(supabase: SupabaseClient, limit = 8) 
         .filter((value): value is string => typeof value === "string" && Boolean(value))
     )
   );
-  const actorNames = await getActorNames(supabase, actorIds);
+  const [actorNames, titles] = await Promise.all([
+    getActorNames(supabase, actorIds),
+    resolveAuditTitles(supabase, rows),
+  ]);
 
   return {
-    items: normalizeAuditRows(rows, actorNames),
+    items: normalizeAuditRows(rows, actorNames, titles),
     error: null as string | null,
   };
 }
@@ -773,6 +972,74 @@ export async function getLatestAuditByRecordIds(
   };
 }
 
+// ── Per-entity timeline ──────────────────────────────────────────────────────
+// "Everything that happened to THIS order/project/customer." A source is either
+// the entity's own rows (by primary key) or related rows that reference it
+// through a foreign key stored in new_data (e.g. payments.order_id).
+export type EntityAuditSource =
+  | { tableName: string; recordId: string }
+  | { tableName: string; jsonKey: string; value: string }
+  | { tableName: string; jsonKey: string; values: string[] };
+
+export async function getEntityAuditTrail(
+  supabase: SupabaseClient,
+  sources: EntityAuditSource[],
+  limit = 30
+): Promise<{ items: AuditFeedItem[]; error: string | null }> {
+  // Drop multi-value sources with nothing to match (an empty IN(...) would
+  // either error or return everything depending on the driver).
+  const active = sources.filter((s) => !("values" in s) || s.values.length > 0);
+  if (active.length === 0) return { items: [], error: null };
+
+  const select =
+    "id,table_name,record_id,action,changed_by,user_role,created_at,new_data,old_data";
+
+  const results = await Promise.all(
+    active.map((source) => {
+      let query = supabase
+        .from("audit_logs")
+        .select(select)
+        .eq("table_name", source.tableName)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if ("recordId" in source) {
+        query = query.eq("record_id", source.recordId);
+      } else if ("values" in source) {
+        query = query.in(`new_data->>${source.jsonKey}`, source.values);
+      } else {
+        query = query.filter(`new_data->>${source.jsonKey}`, "eq", source.value);
+      }
+      return query;
+    })
+  );
+
+  const firstError = results.find((r) => r.error)?.error;
+  if (firstError) {
+    return { items: [], error: toHebrewError(firstError.message) };
+  }
+
+  // Merge, dedupe by id, newest first, cap.
+  const byId = new Map<string, AuditLogRow>();
+  for (const r of results) {
+    for (const row of (r.data ?? []) as AuditLogRow[]) {
+      if (row?.id && !byId.has(row.id)) byId.set(row.id, row);
+    }
+  }
+  const rows = Array.from(byId.values())
+    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))
+    .slice(0, limit);
+
+  const actorIds = Array.from(
+    new Set(rows.map((r) => r.changed_by).filter((v): v is string => typeof v === "string" && Boolean(v)))
+  );
+  const [actorNames, titles] = await Promise.all([
+    getActorNames(supabase, actorIds),
+    resolveAuditTitles(supabase, rows),
+  ]);
+
+  return { items: normalizeAuditRows(rows, actorNames, titles), error: null };
+}
+
 export const AUDIT_PAGE_SIZE = 50;
 
 export const AUDIT_TABLE_OPTIONS = [
@@ -836,12 +1103,15 @@ export async function getAuditFeedPaginated(
   const actorIds = Array.from(
     new Set(rows.map((r) => r.changed_by).filter((v): v is string => typeof v === "string" && Boolean(v)))
   );
-  const actorNames = await getActorNames(supabase, actorIds);
+  const [actorNames, titles] = await Promise.all([
+    getActorNames(supabase, actorIds),
+    resolveAuditTitles(supabase, rows),
+  ]);
   const totalCount = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
 
   return {
-    items: normalizeAuditRows(rows, actorNames),
+    items: normalizeAuditRows(rows, actorNames, titles),
     totalCount,
     page: safePage,
     totalPages,
