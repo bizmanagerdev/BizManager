@@ -58,6 +58,7 @@ import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialo
 import { ProjectPicker, type ProjectPickerOption } from "@/components/projects/ProjectPicker";
 import { TransferDialog } from "@/components/financial/TransferDialog";
 import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
+import { TagPicker } from "@/components/tags/TagPicker";
 
 type Row = Record<string, unknown>;
 
@@ -228,6 +229,7 @@ const DASHBOARD_EXPENSE_CATEGORY_OPTIONS = [
 const OTHER_EXPENSE_CATEGORY = "\u05d0\u05d7\u05e8";
 const EMPLOYEE_WAGE_CATEGORY = "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3";
 const DEFAULT_EXPENSE_CATEGORY = "\u05e8\u05db\u05d9\u05e9\u05d4";
+const CARS_EXPENSE_CATEGORY = "\u05e8\u05db\u05d1\u05d9\u05dd"; // \u05e8\u05db\u05d1\u05d9\u05dd \u2014 picking this lets you link a specific car
 const HEBREW = {
   saveErrorUnknown: "\u05e9\u05d2\u05d9\u05d0\u05d4 \u05dc\u05d0 \u05d9\u05d3\u05d5\u05e2\u05d4",
   cancel: "\u05d1\u05d9\u05d8\u05d5\u05dc",
@@ -442,6 +444,7 @@ export default function DashboardActions({
   const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
   const [expenseAttachmentFiles, setExpenseAttachmentFiles] = useState<File[]>([]);
   const [expenseExistingAttachments, setExpenseExistingAttachments] = useState<FinancialAttachment[]>([]);
+  const [expenseTagIds, setExpenseTagIds] = useState<string[]>([]);
   const [expenseNewWorkerOpen, setExpenseNewWorkerOpen] = useState(false);
   const [expenseNewWorkerSubmitting, setExpenseNewWorkerSubmitting] = useState(false);
   const [expenseNewWorkerError, setExpenseNewWorkerError] = useState<string | null>(null);
@@ -466,6 +469,7 @@ export default function DashboardActions({
   const [incomeNotes, setIncomeNotes] = useState("");
   const [incomeAttachmentFiles, setIncomeAttachmentFiles] = useState<File[]>([]);
   const [incomeExistingAttachments, setIncomeExistingAttachments] = useState<FinancialAttachment[]>([]);
+  const [incomeTagIds, setIncomeTagIds] = useState<string[]>([]);
   const [selfSessionSubmitting, setSelfSessionSubmitting] = useState(false);
   const [manualSessionSubmitting, setManualSessionSubmitting] = useState(false);
   const today = useMemo(() => {
@@ -714,6 +718,7 @@ export default function DashboardActions({
     setExpenseBillToCustomerAmount("");
     setExpenseAttachmentFiles([]);
     setExpenseExistingAttachments([]);
+    setExpenseTagIds([]);
     setExpenseNewWorkerOpen(false);
     setExpenseNewWorkerSubmitting(false);
     setExpenseNewWorkerError(null);
@@ -739,6 +744,7 @@ export default function DashboardActions({
     setIncomeNotes("");
     setIncomeAttachmentFiles([]);
     setIncomeExistingAttachments([]);
+    setIncomeTagIds([]);
   }
 
   function resetManualSessionForm() {
@@ -946,6 +952,7 @@ export default function DashboardActions({
             expensePaymentStatus === "paid" || expensePaymentStatus === "partial"
               ? expensePaymentMethod || null
               : null,
+          tag_ids: expenseCategory === CARS_EXPENSE_CATEGORY ? expenseTagIds : [],
         },
         HEBREW.expenseNew,
         { idempotent: true }
@@ -1094,6 +1101,7 @@ export default function DashboardActions({
           check_number:
             incomeMethod === "check" && incomeCheckNumber.trim() ? incomeCheckNumber.trim() : null,
           notes: incomeNotes.trim() || null,
+          tag_ids: incomeBusinessDomain === "general_business" ? incomeTagIds : [],
         },
         HEBREW.incomeNew,
         { idempotent: true }
@@ -2023,7 +2031,10 @@ export default function DashboardActions({
                     <select
                       className={fieldClass}
                       value={expenseCategory}
-                      onChange={(e) => setExpenseCategory(e.target.value)}
+                      onChange={(e) => {
+                        setExpenseCategory(e.target.value);
+                        if (e.target.value !== CARS_EXPENSE_CATEGORY) setExpenseTagIds([]);
+                      }}
                     >
                       {DASHBOARD_EXPENSE_CATEGORY_OPTIONS.map((option) => (
                         <option key={option} value={option}>
@@ -2350,6 +2361,10 @@ export default function DashboardActions({
                 </label>
               ) : null}
 
+              {expenseCategory === CARS_EXPENSE_CATEGORY ? (
+                <TagPicker value={expenseTagIds} onChange={setExpenseTagIds} />
+              ) : null}
+
               {expenseBusinessDomain ? (
                 <div className="space-y-2">
                   <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
@@ -2447,6 +2462,7 @@ export default function DashboardActions({
                     }
                     if (nextDomain !== "sales") setIncomeOrderId("");
                     if (nextDomain !== "property_management") setIncomePropertyId("");
+                    if (nextDomain !== "general_business") setIncomeTagIds([]);
                   }}
                 >
                   <option value="">בחרו תחום</option>
@@ -2649,6 +2665,10 @@ export default function DashboardActions({
                     <span>{HEBREW.notes}</span>
                     <Textarea value={incomeNotes} onChange={(e) => setIncomeNotes(e.target.value)} />
                   </label>
+
+                  {incomeBusinessDomain === "general_business" ? (
+                    <TagPicker value={incomeTagIds} onChange={setIncomeTagIds} />
+                  ) : null}
 
                   <div className="space-y-2">
                     <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>

@@ -420,6 +420,51 @@ export async function getAlertsData(
         }
       : null;
 
+  // Vehicles with טסט/ביטוח/רישוי due within 30 days or already overdue.
+  // Resilient: stays 0 before the vehicles SQL is run.
+  let vehicleExpiryCount = 0;
+  let vehicleExpiryOverdue = false;
+  if (isBackOffice) {
+    try {
+      const horizon = new Date(nearDeadlineToday);
+      horizon.setDate(horizon.getDate() + 30);
+      const horizonIso = horizon.toISOString().slice(0, 10);
+      const { data: vehicleRows, error: vehicleError } = await supabase
+        .from("vehicles")
+        .select("test_due_date,insurance_due_date,license_due_date")
+        .or(
+          `test_due_date.lte.${horizonIso},insurance_due_date.lte.${horizonIso},license_due_date.lte.${horizonIso}`
+        );
+      if (!vehicleError) {
+        for (const v of (vehicleRows ?? []) as Row[]) {
+          const dates = [
+            getString(v, "test_due_date"),
+            getString(v, "insurance_due_date"),
+            getString(v, "license_due_date"),
+          ].filter((d): d is string => Boolean(d));
+          if (!dates.some((d) => d <= horizonIso)) continue;
+          vehicleExpiryCount += 1;
+          if (dates.some((d) => d < nearDeadlineTodayIso)) vehicleExpiryOverdue = true;
+        }
+      }
+    } catch {
+      // tags/vehicles not set up yet — skip silently
+    }
+  }
+
+  const vehicleExpiryAlert: AlertItem | null =
+    isBackOffice && vehicleExpiryCount > 0
+      ? {
+          id: "vehicle-expiry",
+          title: "רכבים — טסט/ביטוח/רישוי",
+          description: `${vehicleExpiryCount} רכבים עם מועד שמתקרב או חלף`,
+          href: "/vehicles",
+          count: vehicleExpiryCount,
+          severity: vehicleExpiryOverdue ? "danger" : "warning",
+          countsAsActiveAlert: true,
+        }
+      : null;
+
   return {
     alerts: [
       {
@@ -436,6 +481,7 @@ export async function getAlertsData(
       ...(dueRemindersAlert ? [dueRemindersAlert] : []),
       ...(projectsNearDeadlineAlert ? [projectsNearDeadlineAlert] : []),
       ...(customersAwaitingFollowupAlert ? [customersAwaitingFollowupAlert] : []),
+      ...(vehicleExpiryAlert ? [vehicleExpiryAlert] : []),
       ...(unprocessedItemsAlert ? [unprocessedItemsAlert] : []),
       {
         id: "unpaid-invoices",

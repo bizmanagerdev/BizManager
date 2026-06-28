@@ -5,6 +5,7 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import { getCurrentVatRate } from "@/lib/settings/vat";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
+import { parseTagIds, syncEntityTags } from "@/lib/tags";
 
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
       reference_number?: string;
       check_number?: string;
       notes?: string;
+      tag_ids?: unknown;
     };
 
     const paymentId = typeof body.id === "string" ? body.id.trim() : "";
@@ -129,6 +131,10 @@ export async function POST(req: Request) {
         action: "update",
         changedBy: profile.id,
         userRole: profile.role,
+      });
+      await syncEntityTags(supabase, "payment", payment.id, parseTagIds(body.tag_ids), {
+        replace: true,
+        createdBy: profile.id,
       });
     }
 

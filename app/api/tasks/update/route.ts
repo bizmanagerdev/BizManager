@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { parseTagIds, syncEntityTags } from "@/lib/tags";
 
 function normalizeId(value: unknown) {
   if (typeof value === "string") {
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
       priority?: string | null;
       status?: string | null;
       is_private?: boolean | null;
+      tag_ids?: unknown;
     };
 
     const id = typeof body.id === "string" ? body.id : "";
@@ -196,8 +198,9 @@ export async function POST(req: Request) {
     }
 
     const membersProvided = "member_ids" in body && Array.isArray(body.member_ids);
+    const tagsProvided = "tag_ids" in body;
 
-    if (Object.keys(update).length === 0 && !membersProvided) {
+    if (Object.keys(update).length === 0 && !membersProvided && !tagsProvided) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
@@ -242,6 +245,13 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: toHebrewError(membersError.message) }, { status: 400 });
         }
       }
+    }
+
+    if (tagsProvided) {
+      await syncEntityTags(supabase, "task", id, parseTagIds(body.tag_ids), {
+        replace: true,
+        createdBy: profile.id,
+      });
     }
 
     if (id) {

@@ -4,6 +4,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { DEFAULT_DOCUMENT_CATEGORY } from "@/lib/documents";
+import { parseTagIds, syncEntityTags } from "@/lib/tags";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
 
@@ -34,6 +35,16 @@ export async function POST(req: Request) {
     const propertyId = String(form.get("property_id") ?? "").trim();
     const customerId = String(form.get("customer_id") ?? "").trim();
     const category = String(form.get("category") ?? form.get("tag") ?? "").trim();
+    // Optional vehicle/tag links sent as a JSON array string, plus the year the
+    // file is FOR (e.g. a 2026 טסט) so it's searchable by year.
+    let tagIds: string[] = [];
+    try {
+      tagIds = parseTagIds(JSON.parse(String(form.get("tag_ids") ?? "[]")));
+    } catch {
+      tagIds = [];
+    }
+    const refYearRaw = Number(form.get("ref_year"));
+    const refYear = Number.isInteger(refYearRaw) && refYearRaw > 0 ? refYearRaw : null;
 
     // Resolve the link target. A customer_id (customer-page upload) links to that
     // customer; logistics_projects links to a project; property_management links
@@ -124,6 +135,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: toHebrewError(linkError.message) }, { status: 400 });
       }
     }
+
+    await syncEntityTags(supabase, "document", documentId, tagIds, {
+      createdBy: profile.id,
+      refYear,
+    });
 
     await logAuditEvent({
       supabase,

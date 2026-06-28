@@ -6,6 +6,7 @@ import { withIdempotency } from "@/lib/idempotency";
 import { tryAutoIssueReceiptForPayment } from "@/lib/morning/service";
 import { buildPaymentInsert, PAYMENT_SELECT } from "@/lib/payments";
 import { getCurrentVatRate } from "@/lib/settings/vat";
+import { parseTagIds, syncEntityTags } from "@/lib/tags";
 import {
   isExpenseBusinessDomain,
   mapProjectTypeToExpenseDomain,
@@ -25,6 +26,7 @@ type CreatePaymentPayload = {
   reference_number?: string;
   check_number?: string;
   notes?: string;
+  tag_ids?: unknown;
 };
 
 function toNumber(value: unknown) {
@@ -177,6 +179,10 @@ export async function POST(req: Request) {
         reason: outcome.ok ? outcome.reason : outcome.reason,
         morning_document_id: outcome.morningDocumentId,
       };
+
+      await syncEntityTags(supabase, "payment", data.id, parseTagIds(body.tag_ids), {
+        createdBy: profile.id,
+      });
     }
 
     return NextResponse.json({ payment: data, morning_auto_receipt: morningAutoReceipt });

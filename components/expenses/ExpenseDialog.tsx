@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Car, Loader2 } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
@@ -11,6 +11,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
+import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import {
   Dialog,
   DialogDescription,
@@ -78,6 +79,12 @@ type Props = {
   // Attachment support
   showAttachments?: boolean;
 
+  // Pre-select tags (e.g. a vehicle) for a NEW expense.
+  presetTagIds?: string[];
+  // When set, the expense is locked to this tag (e.g. opened from a car's page):
+  // show a read-only "linked to car X" banner instead of the editable picker.
+  presetTagLabel?: string;
+
   onSaved: (data: ExpenseDialogSavedData) => void | Promise<void>;
 };
 
@@ -123,6 +130,8 @@ export function ExpenseDialog({
   recurringOrders = [],
   recurringProperties = [],
   showAttachments = false,
+  presetTagIds,
+  presetTagLabel,
   onSaved,
 }: Props) {
   const isEditing = Boolean(editingExpense);
@@ -145,6 +154,7 @@ export function ExpenseDialog({
   const [billedToCustomer, setBilledToCustomer] = useState(false);
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
+  const [tagIds, setTagIds] = useState<string[]>([]);
 
   const lockedDomain: ExpenseBusinessDomain | null = lockedProjectId
     ? "logistics_projects"
@@ -182,6 +192,8 @@ export function ExpenseDialog({
       setExistingAttachments(
         Array.isArray(editingExpense.attachments) ? editingExpense.attachments : []
       );
+      setTagIds([]);
+      void fetchExistingTagIds("expense", editingExpense.id).then(setTagIds);
     } else {
       setAmount("");
       setExpenseDate(todayIso());
@@ -198,6 +210,7 @@ export function ExpenseDialog({
       setIncludedInBasePrice(false);
       setBilledToCustomer(false);
       setExistingAttachments([]);
+      setTagIds(presetTagIds ?? []);
     }
     setAttachmentFiles([]);
     setErrorMessage("");
@@ -245,6 +258,7 @@ export function ExpenseDialog({
         payment_status: paymentStatus,
         paid_amount: paymentStatus === "partial" ? (Number(paidAmount) || null) : null,
         payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? (paymentMethod || null) : null,
+        tag_ids: tagIds,
       };
 
       let expenseId: string;
@@ -547,6 +561,21 @@ export function ExpenseDialog({
             <div className="text-sm font-medium">הערות</div>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
+
+          {/* Vehicle / tag link. From a car's page the expense is LOCKED to that
+              car (read-only banner). Otherwise the editable picker shows when the
+              category is "רכבים" (cars) or the expense already carries a car tag.
+              Domain is irrelevant: a car expense can sit in any domain. */}
+          {presetTagLabel ? (
+            <div className="flex items-center gap-2 rounded-xl border bg-muted/30 px-3 py-2 text-sm">
+              <Car className="h-4 w-4 text-muted-foreground" />
+              <span>
+                ההוצאה משויכת לרכב: <span className="font-medium text-foreground">{presetTagLabel}</span>
+              </span>
+            </div>
+          ) : category.trim() === "רכבים" || tagIds.length > 0 ? (
+            <TagPicker value={tagIds} onChange={setTagIds} />
+          ) : null}
 
           {/* Attachments */}
           {showAttachments && (

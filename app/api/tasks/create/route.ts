@@ -4,6 +4,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { parseTagIds, syncEntityTags } from "@/lib/tags";
 
 function validateTaskLinkArgs(args: {
   businessDomain: string | null;
@@ -51,6 +52,7 @@ export async function POST(req: Request) {
       priority?: string | null;
       status?: string | null;
       is_private?: boolean | null;
+      tag_ids?: unknown;
     };
 
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
@@ -136,6 +138,9 @@ export async function POST(req: Request) {
         action: "create",
         changedBy: profile.id,
         userRole: profile.role,
+      });
+      await syncEntityTags(supabase, "task", data.id, parseTagIds(body.tag_ids), {
+        createdBy: profile.id,
       });
     }
 

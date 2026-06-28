@@ -14,6 +14,7 @@ export type GlobalSearchGroupKey =
   | "properties"
   | "payments"
   | "expenses"
+  | "tags"
   | "users";
 
 export type GlobalSearchResult = {
@@ -56,8 +57,26 @@ const GROUP_LABELS: Record<GlobalSearchGroupKey, string> = {
   properties: "נכסים",
   payments: "הכנסות",
   expenses: "הוצאות",
+  tags: "רכבים ותגיות",
   users: "עובדים",
 };
+
+function tagKindLabel(kind: string) {
+  switch (kind) {
+    case "vehicle":
+      return "רכב";
+    case "campaign":
+      return "קמפיין";
+    case "equipment":
+      return "ציוד";
+    case "event":
+      return "אירוע";
+    case "vendor":
+      return "ספק";
+    default:
+      return "תגית";
+  }
+}
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -344,6 +363,23 @@ function contactResult(row: Row, customerNameById: Map<string, string>): GlobalS
   };
 }
 
+function tagResult(row: Row): GlobalSearchResult | null {
+  const id = text(row.id);
+  const name = text(row.name);
+  if (!id || !name) return null;
+  const kind = text(row.kind);
+  return {
+    id,
+    group: "tags",
+    groupLabel: GROUP_LABELS.tags,
+    title: name,
+    subtitle: tagKindLabel(kind),
+    meta: [],
+    // A vehicle tag opens its activity rollup; other kinds land on the list.
+    href: kind === "vehicle" ? `/vehicles/${encodeURIComponent(id)}` : "/vehicles",
+  };
+}
+
 function userResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   const name = text(row.full_name) || text(row.email);
@@ -435,6 +471,12 @@ export async function performGlobalSearch(
       .eq("active", true)
       .order("full_name", { ascending: true })
       .range(0, fetchSize - 1),
+    supabase
+      .from("tags")
+      .select("id,kind,name,color,is_active")
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .range(0, fetchSize - 1),
   ] as const;
 
   const [
@@ -449,6 +491,7 @@ export async function performGlobalSearch(
     expensesResult,
     usersResult,
     contactsResult,
+    tagsResult,
   ] = await Promise.all(requests);
 
   const errors = [
@@ -599,11 +642,23 @@ export async function performGlobalSearch(
     (row) => [text(row.full_name), text(row.phone), text(row.email), text(row.role)]
   ).slice(0, limitPerGroup);
 
+  // Tags (vehicles etc.) — resilient: ignored entirely before the SQL is run, so
+  // a missing table never breaks the rest of search.
+  const tags = sortByMatch(
+    ((tagsResult.error ? [] : tagsResult.data ?? []) as Row[]).filter((row) =>
+      (uuidLike && exactIdMatch(text(row.id), query)) ||
+      includesNormalized([text(row.name), text(row.kind)], query)
+    ),
+    query,
+    (row) => [text(row.name)]
+  ).slice(0, limitPerGroup);
+
   const results = [
     ...(customers.map(customerResult).filter(Boolean) as GlobalSearchResult[]),
     ...(contacts.map((row) => contactResult(row, customerNameById)).filter(Boolean) as GlobalSearchResult[]),
     ...(projects.map(projectResult).filter(Boolean) as GlobalSearchResult[]),
     ...(tasks.map(taskResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(tags.map(tagResult).filter(Boolean) as GlobalSearchResult[]),
     ...(orders.map(orderResult).filter(Boolean) as GlobalSearchResult[]),
     ...(products.map(productResult).filter(Boolean) as GlobalSearchResult[]),
     ...(documents.map((row) => documentResult(row, query)).filter(Boolean) as GlobalSearchResult[]),

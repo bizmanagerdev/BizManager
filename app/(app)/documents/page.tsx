@@ -173,6 +173,45 @@ export default async function DocumentsPage({
   );
   const documentUploaderNames = await resolveUserDisplayNamesForValues(supabase, documentUploadedByValues);
 
+  // Vehicle/tag links per document (resilient: stays empty before the tags SQL is run).
+  const tagsByDocument = new Map<string, Array<{ id: string; label: string }>>();
+  let vehicleTagOptions: ArchiveTargetOption[] = [];
+  if (documentIds.length > 0) {
+    const { data: docTagRows, error: docTagErr } = await supabase
+      .from("entity_tags")
+      .select("entity_id,tag_id")
+      .eq("entity_type", "document")
+      .in("entity_id", documentIds);
+    const tagLinks = (!docTagErr && Array.isArray(docTagRows) ? docTagRows : []) as Array<Record<string, unknown>>;
+    if (tagLinks.length > 0) {
+      const tagIdSet = Array.from(
+        new Set(tagLinks.map((r) => normalizeString(r.tag_id)).filter(Boolean))
+      );
+      const { data: tagRows } = tagIdSet.length
+        ? await supabase.from("tags").select("id,name").in("id", tagIdSet)
+        : { data: [] };
+      const tagNameById = new Map<string, string>();
+      for (const t of (tagRows ?? []) as Array<Record<string, unknown>>) {
+        const tid = normalizeString(t.id);
+        if (tid) tagNameById.set(tid, normalizeString(t.name) || "תגית");
+      }
+      for (const r of tagLinks) {
+        const docId = normalizeString(r.entity_id);
+        const tid = normalizeString(r.tag_id);
+        const name = tagNameById.get(tid);
+        if (!docId || !tid || !name) continue;
+        const list = tagsByDocument.get(docId) ?? [];
+        list.push({ id: tid, label: name });
+        tagsByDocument.set(docId, list);
+      }
+      const optMap = new Map<string, string>();
+      for (const list of tagsByDocument.values()) for (const t of list) optMap.set(t.id, t.label);
+      vehicleTagOptions = Array.from(optMap.entries())
+        .map(([id, label]) => ({ id, label }))
+        .sort(compareByLabel);
+    }
+  }
+
   const { data: linksRaw, error: linksError } =
     documentIds.length > 0
       ? await supabase
@@ -508,6 +547,7 @@ export default async function DocumentsPage({
         tasks: taskList,
         orders: orderList,
         business_domains: businessDomainList,
+        tags: tagsByDocument.get(doc.id) ?? [],
         search_text: [
           title,
           normalizeString(doc.file_name),
@@ -515,6 +555,7 @@ export default async function DocumentsPage({
           normalizeString(doc.notes),
           storageKey ?? "",
           ...businessDomainList,
+          ...(tagsByDocument.get(doc.id) ?? []).map((t) => t.label),
           ...linkedEntityList.map((item) => item.label),
           ...customerList.map((item) => item.label),
           ...projectList.map((item) => item.label),
@@ -566,6 +607,7 @@ export default async function DocumentsPage({
         initialFilters={initialFilters}
         projectOptions={uploadProjectOptions}
         propertyOptions={uploadPropertyOptions}
+        vehicleTagOptions={vehicleTagOptions}
         totalDocuments={typeof count === "number" ? count : archiveItems.length}
         isTruncated={typeof count === "number" ? count > archiveItems.length : false}
       />

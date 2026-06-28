@@ -4,6 +4,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain, mapProjectTypeToExpenseDomain } from "@/lib/expenses";
+import { parseTagIds, syncEntityTags } from "@/lib/tags";
 
 
 export async function POST(req: Request) {
@@ -29,6 +30,7 @@ export async function POST(req: Request) {
       payment_status?: string | null;
       paid_amount?: number | string | null;
       payment_method?: string | null;
+      tag_ids?: unknown;
     };
 
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
@@ -195,6 +197,10 @@ export async function POST(req: Request) {
       action: "create",
       changedBy: profile.id,
       userRole: profile.role,
+    });
+
+    await syncEntityTags(supabase, "expense", createdExpenseId, parseTagIds(body.tag_ids), {
+      createdBy: profile.id,
     });
 
     return NextResponse.json({ expense, projectExpense });

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
+import { parseTagIds, syncEntityTags } from "@/lib/tags";
 
 
 export async function POST(req: Request) {
@@ -24,6 +25,7 @@ export async function POST(req: Request) {
       payment_status?: string | null;
       paid_amount?: number | string | null;
       payment_method?: string | null;
+      tag_ids?: unknown;
     };
 
     const expenseId = typeof body.id === "string" ? body.id.trim() : "";
@@ -194,6 +196,10 @@ export async function POST(req: Request) {
         action: "update",
         changedBy: profile.id,
         userRole: profile.role,
+      });
+      await syncEntityTags(supabase, "expense", updatedExpenseId, parseTagIds(body.tag_ids), {
+        replace: true,
+        createdBy: profile.id,
       });
     }
 

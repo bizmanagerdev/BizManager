@@ -9,6 +9,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { BarChart3, CalendarClock, CheckCircle2, Clock, Gauge, History, Layers, LineChart, Loader2, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, TrendingUp, Trash2 } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
+import { TagPicker } from "@/components/tags/TagPicker";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -117,6 +118,7 @@ type IncomeCreateFormState = {
   checkNumber: string;
   notes: string;
   requiresSplit: boolean;
+  tagIds: string[];
 };
 
 const currencyFormatter = new Intl.NumberFormat("he-IL", {
@@ -189,6 +191,7 @@ function createIncomeFormState(): IncomeCreateFormState {
     checkNumber: "",
     notes: "",
     requiresSplit: false,
+    tagIds: [],
   };
 }
 
@@ -798,6 +801,7 @@ export default function FinancialPageClient({
             ? incomeCreateForm.checkNumber.trim()
             : null,
         notes: incomeCreateForm.notes.trim() || null,
+        tag_ids: incomeCreateForm.tagIds,
       }, "הכנסה חדשה", { idempotent: true });
 
       if (result.queued) {
@@ -2068,6 +2072,7 @@ export default function FinancialPageClient({
                     projectId: event.target.value === "logistics_projects" ? current.projectId : "",
                     orderId: event.target.value === "sales" ? current.orderId : "",
                     propertyId: event.target.value === "property_management" ? current.propertyId : "",
+                    tagIds: event.target.value === "general_business" ? current.tagIds : [],
                   }))
                 }
               >
@@ -2242,6 +2247,13 @@ export default function FinancialPageClient({
                 }
               />
             </div>
+
+            {incomeCreateForm.businessDomain === "general_business" ? (
+              <TagPicker
+                value={incomeCreateForm.tagIds}
+                onChange={(ids) => setIncomeCreateForm((current) => ({ ...current, tagIds: ids }))}
+              />
+            ) : null}
               </>
             ) : null}
 

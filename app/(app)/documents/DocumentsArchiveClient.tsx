@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Input } from "@/components/ui/input";
+import { TagPicker } from "@/components/tags/TagPicker";
 import { formatShortDateTime } from "@/lib/date";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
 import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel, inferDefaultDocumentCategory } from "@/lib/documents";
@@ -89,6 +90,7 @@ export type DocumentArchiveItem = {
   tasks: ArchiveRelation[];
   orders: ArchiveRelation[];
   business_domains: string[];
+  tags: ArchiveRelation[];
   search_text: string;
 };
 
@@ -196,6 +198,7 @@ export default function DocumentsArchiveClient({
   initialFilters,
   projectOptions,
   propertyOptions,
+  vehicleTagOptions = [],
   totalDocuments,
   isTruncated,
 }: {
@@ -204,6 +207,7 @@ export default function DocumentsArchiveClient({
   initialFilters: DocumentArchiveFilters;
   projectOptions: ArchiveTargetOption[];
   propertyOptions: ArchiveTargetOption[];
+  vehicleTagOptions?: ArchiveTargetOption[];
   totalDocuments: number;
   isTruncated: boolean;
 }) {
@@ -217,6 +221,7 @@ export default function DocumentsArchiveClient({
   const [projectId, setProjectId] = useState(initialFilters.project_id);
   const [propertyId, setPropertyId] = useState(initialFilters.property_id);
   const [fileKind, setFileKind] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [groupBy, setGroupBy] = useState("entity");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -230,6 +235,8 @@ export default function DocumentsArchiveClient({
   const [uploadPropertyId, setUploadPropertyId] = useState(initialFilters.property_id);
   const [uploadProjectOptions, setUploadProjectOptions] = useState<ArchiveTargetOption[]>(projectOptions);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadTagIds, setUploadTagIds] = useState<string[]>([]);
+  const [uploadRefYear, setUploadRefYear] = useState("");
   const [editDialogDoc, setEditDialogDoc] = useState<DocumentArchiveItem | null>(null);
   const [editTagValue, setEditTagValue] = useState("");
   const [editDomainDoc, setEditDomainDoc] = useState<DocumentArchiveItem | null>(null);
@@ -301,6 +308,8 @@ export default function DocumentsArchiveClient({
     setUploadProjectId(initialFilters.project_id);
     setUploadPropertyId(initialFilters.property_id);
     setUploadFiles([]);
+    setUploadTagIds([]);
+    setUploadRefYear("");
   }
 
   useEffect(() => {
@@ -366,6 +375,7 @@ export default function DocumentsArchiveClient({
       if (showProjectFilter && projectId && !doc.projects.some((project) => project.id === projectId)) return false;
       if (showPropertyFilter && propertyId && !doc.properties.some((property) => property.id === propertyId)) return false;
       if (fileKind && doc.file_kind !== fileKind) return false;
+      if (tagFilter && !(doc.tags ?? []).some((tag) => tag.id === tagFilter)) return false;
       return true;
     });
   }, [
@@ -379,6 +389,7 @@ export default function DocumentsArchiveClient({
     propertyId,
     showProjectFilter,
     showPropertyFilter,
+    tagFilter,
   ]);
 
   const groupedDocuments = useMemo(() => {
@@ -450,6 +461,8 @@ export default function DocumentsArchiveClient({
         if (showUploadProjectField) form.set("project_id", projectId);
         if (showUploadPropertyField) form.set("property_id", propertyId);
         if (category) form.set("category", category);
+        if (uploadTagIds.length > 0) form.set("tag_ids", JSON.stringify(uploadTagIds));
+        if (uploadRefYear.trim()) form.set("ref_year", uploadRefYear.trim());
 
         toast.loading(`מעלה קבצים... (${i + 1}/${files.length})`, { id: toastId });
 
@@ -633,6 +646,20 @@ export default function DocumentsArchiveClient({
                 ))}
               </SelectField>
             </div>
+
+            {vehicleTagOptions.length > 0 ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">רכב</div>
+                <SelectField value={tagFilter} onChange={setTagFilter} ariaLabel="סינון לפי רכב">
+                  <option value="">כל הרכבים</option>
+                  {vehicleTagOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </SelectField>
+              </div>
+            ) : null}
 
             <div className="space-y-1">
               <div className="text-sm font-medium">קטגוריה</div>
@@ -888,7 +915,17 @@ export default function DocumentsArchiveClient({
           <div className="mt-4 space-y-4">
             <div className="space-y-1">
               <div className="text-sm font-medium">תחום</div>
-              <SelectField value={uploadBusinessDomain} onChange={setUploadBusinessDomain} ariaLabel="תחום למסמך חדש">
+              <SelectField
+                value={uploadBusinessDomain}
+                onChange={(value) => {
+                  setUploadBusinessDomain(value);
+                  if (value !== "general_business") {
+                    setUploadTagIds([]);
+                    setUploadRefYear("");
+                  }
+                }}
+                ariaLabel="תחום למסמך חדש"
+              >
                 {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
                   <option key={domain} value={domain}>
                     {getBusinessDomainLabel(domain)}
@@ -950,6 +987,21 @@ export default function DocumentsArchiveClient({
                 ))}
               </SelectField>
             </div>
+
+            {uploadBusinessDomain === "general_business" ? (
+              <TagPicker value={uploadTagIds} onChange={setUploadTagIds} />
+            ) : null}
+
+            {uploadBusinessDomain === "general_business" && uploadTagIds.length > 0 ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">שנת המסמך (לחיפוש לפי שנה)</div>
+                <Input
+                  inputMode="numeric"
+                  value={uploadRefYear}
+                  onChange={(event) => setUploadRefYear(event.target.value)}
+                />
+              </div>
+            ) : null}
 
             <div className="space-y-1">
               <div className="text-sm font-medium">קבצים</div>

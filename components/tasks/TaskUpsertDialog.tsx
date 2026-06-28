@@ -48,6 +48,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
+import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { formatShortDateTime } from "@/lib/date";
 import {
   EXPENSE_BUSINESS_DOMAINS,
@@ -85,6 +86,8 @@ type Props = {
   currentUserId?: string;
   // Guided step-by-step creation (Next → Next → Save). Defaults to false.
   wizard?: boolean;
+  // Pre-select tags (e.g. a vehicle) for a NEW task.
+  presetTagIds?: string[];
   onSaved?: () => void;
 };
 
@@ -225,6 +228,7 @@ export function TaskUpsertDialog(props: Props) {
   const [address, setAddress] = useState("");
   const [assignedUserId, setAssignedUserId] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [tagIds, setTagIds] = useState<string[]>([]);
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [status, setStatus] = useState<TaskStatus>(props.defaultStatus ?? "todo");
   // Private = visible only to the owner (the user who turns it on). Hidden from
@@ -365,6 +369,8 @@ export function TaskUpsertDialog(props: Props) {
 
         const membersRaw = Array.isArray(json?.members) ? (json.members as Array<{ id?: unknown }>) : [];
         setMemberIds(membersRaw.map((m) => (typeof m.id === "string" ? m.id : "")).filter(Boolean));
+        setTagIds([]);
+        void fetchExistingTagIds("task", taskId).then(setTagIds);
         setComments(Array.isArray(json?.comments) ? (json.comments as CommentItem[]) : []);
         setLegacyNotes(parseLegacyNotes(typeof task.notes === "string" ? task.notes : null));
         setReminders(Array.isArray(json?.reminders) ? (json.reminders as ReminderItem[]) : []);
@@ -422,6 +428,7 @@ export function TaskUpsertDialog(props: Props) {
     // draft assignee still wins, and the user can reassign before saving.
     setAssignedUserId(draft?.assignedUserId ?? props.currentUserId ?? "");
     setMemberIds(Array.isArray(draft?.memberIds) ? draft.memberIds : []);
+    setTagIds(props.presetTagIds ?? []);
     setPriority(draft?.priority ?? "medium");
     setStatus(props.defaultStatus ?? draft?.status ?? "todo");
     setIsPrivate(draft?.isPrivate ?? false);
@@ -462,6 +469,7 @@ export function TaskUpsertDialog(props: Props) {
 
   function handleBusinessDomainChange(nextDomain: ExpenseBusinessDomain | "") {
     setBusinessDomain(nextDomain);
+    if (nextDomain !== "general_business") setTagIds([]);
     if (effectiveTarget) return;
     const nextTargetType = nextDomain ? targetTypeForDomain(nextDomain) : null;
     if (nextTargetType === "property") setProjectId("");
@@ -545,6 +553,7 @@ export function TaskUpsertDialog(props: Props) {
       address: address.trim() ? address.trim() : null,
       assigned_user_id: assignedUserId || null,
       member_ids: memberIds,
+      tag_ids: tagIds,
       priority,
       status,
       is_private: isPrivate,
@@ -979,6 +988,10 @@ export function TaskUpsertDialog(props: Props) {
                   ))}
                 </select>
               </div>
+
+              {effectiveDomain === "general_business" ? (
+                <TagPicker value={tagIds} onChange={setTagIds} />
+              ) : null}
 
               {showTargetPicker && derivedTargetType === "project" ? (
                 <div className="space-y-1">
