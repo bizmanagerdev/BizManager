@@ -26,15 +26,27 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function fmtDate(value: string | null) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value.slice(0, 10);
+  return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+}
+
 // Income methods that don't require a due-date/check-number (kept simple here;
 // check income is still added from the financial screen).
 const SIMPLE_METHODS = PAYMENT_METHOD_OPTIONS.filter((m) => m.value !== "check");
+
+type SourceOption = { id: string; label: string };
 
 type Props = {
   tagId: string;
   vehicleName: string;
   activity: VehicleActivity;
   users: UserOption[];
+  projects: SourceOption[];
+  orders: SourceOption[];
+  properties: SourceOption[];
   currentUserId: string;
 };
 
@@ -56,7 +68,16 @@ function toEditingExpense(e: VehicleExpense): EditingExpenseData {
   };
 }
 
-export default function VehicleActivityClient({ tagId, vehicleName, activity, users, currentUserId }: Props) {
+export default function VehicleActivityClient({
+  tagId,
+  vehicleName,
+  activity,
+  users,
+  projects,
+  orders,
+  properties,
+  currentUserId,
+}: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
 
@@ -231,8 +252,10 @@ export default function VehicleActivityClient({ tagId, vehicleName, activity, us
               activity.expenses.map((e) => (
                 <div key={e.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">{e.category || e.description || "הוצאה"}</div>
-                    <div className="text-xs text-muted-foreground">{e.date ?? "—"}</div>
+                    <div className="truncate font-medium">{e.description || e.category || "הוצאה"}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {[e.description ? e.category : null, fmtDate(e.date)].filter(Boolean).join(" · ") || "—"}
+                    </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <span className="font-semibold text-destructive">{formatCurrency(e.amount)}</span>
@@ -266,7 +289,7 @@ export default function VehicleActivityClient({ tagId, vehicleName, activity, us
                 <div key={p.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
                     <div className="truncate font-medium">{p.method || "תשלום"}</div>
-                    <div className="text-xs text-muted-foreground">{p.date ?? "—"}</div>
+                    <div className="text-xs text-muted-foreground">{fmtDate(p.date) || "—"}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <span className="font-semibold text-emerald-600">{formatCurrency(p.amount)}</span>
@@ -302,7 +325,7 @@ export default function VehicleActivityClient({ tagId, vehicleName, activity, us
                 <div key={t.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
                   <div className="min-w-0 text-sm">
                     <div className="truncate font-medium">{t.subject || "משימה"}</div>
-                    <div className="text-xs text-muted-foreground">{t.dueDate ?? "—"}</div>
+                    <div className="text-xs text-muted-foreground">{fmtDate(t.dueDate) || "—"}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Badge variant="outline">{taskStatusLabel(t.status)}</Badge>
@@ -340,7 +363,7 @@ export default function VehicleActivityClient({ tagId, vehicleName, activity, us
                   <div className="min-w-0 text-sm">
                     <div className="truncate font-medium">{d.title || d.fileName || "מסמך"}</div>
                     <div className="text-xs text-muted-foreground">
-                      {[d.documentType, d.uploadedAt].filter(Boolean).join(" · ") || "—"}
+                      {[d.documentType, fmtDate(d.uploadedAt)].filter(Boolean).join(" · ") || "—"}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -361,8 +384,12 @@ export default function VehicleActivityClient({ tagId, vehicleName, activity, us
         open={expenseOpen}
         onOpenChange={setExpenseOpen}
         editingExpense={editingExpense}
+        defaultCategory="רכבים"
         presetTagIds={[tagId]}
         presetTagLabel={vehicleName}
+        recurringProjects={projects}
+        recurringOrders={orders}
+        recurringProperties={properties}
         showAttachments
         onSaved={() => refresh()}
       />

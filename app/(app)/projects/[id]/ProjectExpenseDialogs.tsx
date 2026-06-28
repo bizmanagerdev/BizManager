@@ -10,6 +10,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import {
   Dialog,
@@ -20,7 +21,13 @@ import {
 } from "@/components/ui/dialog";
 import { ORDER_PAYMENT_METHOD_OPTIONS } from "@/lib/orders/paymentStatus";
 import { toHebrewError } from "@/lib/error-messages";
-import { mapProjectTypeToExpenseDomain } from "@/lib/expenses";
+import {
+  mapProjectTypeToExpenseDomain,
+  EXPENSE_CATEGORY_OPTIONS_WITH_WAGE,
+  EXPENSE_OTHER_CATEGORY,
+  EXPENSE_WORKER_WAGE_CATEGORY,
+  EXPENSE_CARS_CATEGORY,
+} from "@/lib/expenses";
 import {
   addMinutes,
   calculateSessionLaborCost,
@@ -92,15 +99,10 @@ function getErrorMessage(error: unknown) {
   return toHebrewError(error, "");
 }
 
-const PROJECT_EXPENSE_CATEGORY_OPTIONS = [
-  "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3",
-  "\u05e8\u05db\u05e9",
-  "\u05ea\u05d7\u05d1\u05d5\u05e8\u05d4",
-  "\u05d0\u05d5\u05db\u05dc",
-  "\u05d0\u05d7\u05e8",
-] as const;
-const OTHER_PROJECT_EXPENSE_CATEGORY = "\u05d0\u05d7\u05e8";
-const EMPLOYEE_WAGE_CATEGORY = "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3";
+// Categories come from the shared source of truth in lib/expenses.
+const PROJECT_EXPENSE_CATEGORY_OPTIONS = EXPENSE_CATEGORY_OPTIONS_WITH_WAGE;
+const OTHER_PROJECT_EXPENSE_CATEGORY = EXPENSE_OTHER_CATEGORY;
+const EMPLOYEE_WAGE_CATEGORY = EXPENSE_WORKER_WAGE_CATEGORY;
 
 function toLocalDateTimeValue(value: string | null | undefined) {
   if (!value) return "";
@@ -221,6 +223,7 @@ export function AddExpenseDialog({
   const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
+  const [tagIds, setTagIds] = useState<string[]>([]);
   const [laborCost, setLaborCost] = useState("");
   const [laborCostTouched, setLaborCostTouched] = useState(false);
   const [originalLaborCost, setOriginalLaborCost] = useState("");
@@ -500,6 +503,11 @@ export function AddExpenseDialog({
           ? (editingExpense.attachments as FinancialAttachment[])
           : []
     );
+    setTagIds([]);
+    if (!isEditingSession) {
+      const expenseIdForTags = getString(editingExpense, "id");
+      if (expenseIdForTags) void fetchExistingTagIds("expense", expenseIdForTags).then(setTagIds);
+    }
     const existingPaidAmount = isEditingSession ? toNumber(editingSession?.paid_amount) ?? 0 : 0;
     const nextWorkerPaymentMode =
       existingPaidAmount > 0
@@ -821,6 +829,7 @@ export function AddExpenseDialog({
           payment_status: expensePaymentStatus,
           paid_amount: expensePaymentStatus === "partial" ? (Number(expensePaidAmount) || null) : null,
           payment_method: (expensePaymentStatus === "paid" || expensePaymentStatus === "partial") ? (expensePaymentMethod || null) : null,
+          tag_ids: finalCategory === EXPENSE_CARS_CATEGORY ? tagIds : [],
         }),
       });
       const json = await res.json();
@@ -1215,6 +1224,10 @@ export function AddExpenseDialog({
                 <div className="text-xs text-destructive">{categoryError}</div>
               ) : null}
             </div>
+          ) : null}
+
+          {!isSessionMode && finalCategory === EXPENSE_CARS_CATEGORY ? (
+            <TagPicker value={tagIds} onChange={setTagIds} />
           ) : null}
 
           {!isSessionMode ? (

@@ -48,6 +48,27 @@ export function mapProjectTypeToExpenseDomain(value: string | null | undefined):
   }
 }
 
+// ── Expense categories (single source of truth, shared by every expense form) ──
+// "שכר עובד" is special: in forms that support worker sessions it turns the
+// expense into a worker-session entry. "רכבים" reveals the vehicle link.
+export const EXPENSE_WORKER_WAGE_CATEGORY = "שכר עובד";
+export const EXPENSE_OTHER_CATEGORY = "אחר";
+export const EXPENSE_CARS_CATEGORY = "רכבים";
+export const DEFAULT_EXPENSE_CATEGORY = "רכישה";
+// Base picklist (no worker-wage entry — added only where sessions are supported).
+export const EXPENSE_CATEGORY_OPTIONS = [
+  DEFAULT_EXPENSE_CATEGORY,
+  "תחבורה",
+  "אוכל",
+  EXPENSE_CARS_CATEGORY,
+  EXPENSE_OTHER_CATEGORY,
+] as const;
+// Full picklist including worker wage (dashboard / project forms).
+export const EXPENSE_CATEGORY_OPTIONS_WITH_WAGE = [
+  EXPENSE_WORKER_WAGE_CATEGORY,
+  ...EXPENSE_CATEGORY_OPTIONS,
+] as const;
+
 export function getBusinessDomainLabel(value: string | null | undefined) {
   if (value === "general_business") return "שוטף";
   if (value === "property_management") return "ניהול נכסים";

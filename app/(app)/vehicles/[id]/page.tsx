@@ -66,13 +66,20 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
   const vehicle = await fetchVehicle(supabase, id);
   if (!vehicle) notFound();
 
-  const [activity, usersResult] = await Promise.all([
+  const [activity, usersResult, projectsResult, ordersResult, propertiesResult] = await Promise.all([
     fetchVehicleActivity(supabase, id),
     supabase
       .from("users")
       .select("id,full_name,email,avatar_color,active")
       .eq("active", true)
       .order("full_name", { ascending: true }),
+    supabase.from("project_dashboard_view").select("id,name").order("name", { ascending: true }).range(0, 999),
+    supabase
+      .from("order_overview_view")
+      .select("order_id,customer_name,order_date")
+      .order("order_date", { ascending: false })
+      .range(0, 499),
+    supabase.from("properties").select("id,address").order("address", { ascending: true }).range(0, 999),
   ]);
 
   const users: UserOption[] = ((usersResult.data ?? []) as Array<Record<string, unknown>>).map((u) => ({
@@ -80,6 +87,20 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
     label: (typeof u.full_name === "string" && u.full_name) || (typeof u.email === "string" ? u.email : "") || "משתמש",
     color: typeof u.avatar_color === "string" ? u.avatar_color : null,
   }));
+
+  type Opt = { id: string; label: string };
+  const projects: Opt[] = ((projectsResult.data ?? []) as Array<Record<string, unknown>>)
+    .map((p) => ({ id: String(p.id ?? ""), label: (typeof p.name === "string" && p.name) || "פרויקט" }))
+    .filter((p) => p.id);
+  const orders: Opt[] = ((ordersResult.data ?? []) as Array<Record<string, unknown>>)
+    .map((o) => ({
+      id: String(o.order_id ?? ""),
+      label: `${typeof o.customer_name === "string" && o.customer_name ? `${o.customer_name} · ` : ""}#${String(o.order_id ?? "").slice(0, 8)}`,
+    }))
+    .filter((o) => o.id);
+  const properties: Opt[] = ((propertiesResult.data ?? []) as Array<Record<string, unknown>>)
+    .map((p) => ({ id: String(p.id ?? ""), label: (typeof p.address === "string" && p.address) || "נכס" }))
+    .filter((p) => p.id);
 
   const net = activity.rollup.totalIncomeAmount - activity.rollup.paidExpenseAmount;
 
@@ -136,6 +157,9 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
           vehicleName={vehicle.name}
           activity={activity}
           users={users}
+          projects={projects}
+          orders={orders}
+          properties={properties}
           currentUserId={profile.id}
         />
       </PageStack>

@@ -27,6 +27,11 @@ import {
   EXPENSE_BUSINESS_DOMAINS,
   getBusinessDomainLabel,
   mapProjectTypeToExpenseDomain,
+  EXPENSE_CATEGORY_OPTIONS_WITH_WAGE,
+  EXPENSE_OTHER_CATEGORY,
+  EXPENSE_WORKER_WAGE_CATEGORY,
+  EXPENSE_CARS_CATEGORY,
+  DEFAULT_EXPENSE_CATEGORY,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import {
@@ -219,17 +224,11 @@ async function uploadFinancialAttachment(
 const fieldClass =
   "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
-const DASHBOARD_EXPENSE_CATEGORY_OPTIONS = [
-  "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3",
-  "\u05e8\u05db\u05d9\u05e9\u05d4",
-  "\u05d0\u05d5\u05db\u05dc",
-  "\u05e8\u05db\u05d1\u05d9\u05dd",
-  "\u05d0\u05d7\u05e8",
-] as const;
-const OTHER_EXPENSE_CATEGORY = "\u05d0\u05d7\u05e8";
-const EMPLOYEE_WAGE_CATEGORY = "\u05e9\u05db\u05e8 \u05e2\u05d5\u05d1\u05d3";
-const DEFAULT_EXPENSE_CATEGORY = "\u05e8\u05db\u05d9\u05e9\u05d4";
-const CARS_EXPENSE_CATEGORY = "\u05e8\u05db\u05d1\u05d9\u05dd"; // \u05e8\u05db\u05d1\u05d9\u05dd \u2014 picking this lets you link a specific car
+// Categories come from the shared source of truth in lib/expenses.
+const DASHBOARD_EXPENSE_CATEGORY_OPTIONS = EXPENSE_CATEGORY_OPTIONS_WITH_WAGE;
+const OTHER_EXPENSE_CATEGORY = EXPENSE_OTHER_CATEGORY;
+const EMPLOYEE_WAGE_CATEGORY = EXPENSE_WORKER_WAGE_CATEGORY;
+const CARS_EXPENSE_CATEGORY = EXPENSE_CARS_CATEGORY;
 const HEBREW = {
   saveErrorUnknown: "\u05e9\u05d2\u05d9\u05d0\u05d4 \u05dc\u05d0 \u05d9\u05d3\u05d5\u05e2\u05d4",
   cancel: "\u05d1\u05d9\u05d8\u05d5\u05dc",
@@ -2074,6 +2073,10 @@ export default function DashboardActions({
                 </label>
               ) : null}
 
+              {expenseCategory === CARS_EXPENSE_CATEGORY ? (
+                <TagPicker value={expenseTagIds} onChange={setExpenseTagIds} />
+              ) : null}
+
               {expenseIsWorkerPayment && canManageWorkerSessions ? (
                 <div className="space-y-3">
                   {!expenseNewWorkerOpen ? (
@@ -2359,10 +2362,6 @@ export default function DashboardActions({
                   <span>{HEBREW.notes}</span>
                   <Textarea value={expenseNotes} onChange={(e) => setExpenseNotes(e.target.value)} />
                 </label>
-              ) : null}
-
-              {expenseCategory === CARS_EXPENSE_CATEGORY ? (
-                <TagPicker value={expenseTagIds} onChange={setExpenseTagIds} />
               ) : null}
 
               {expenseBusinessDomain ? (
