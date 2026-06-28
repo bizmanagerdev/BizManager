@@ -1,8 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
-import { resolveAnthropicConfig, isAnthropicConfigured } from "@/lib/ai/config";
+import { resolveOpenAIConfig, isOpenAIConfigured } from "@/lib/openai/config";
 import { parseDateToIso, type ParsedTxn } from "@/lib/financial/cardImport";
 
 export const maxDuration = 120; // PDF understanding can take a while.
@@ -10,8 +9,6 @@ export const maxDuration = 120; // PDF understanding can take a while.
 const MAX_BYTES = 15 * 1024 * 1024;
 const MAX_TXNS = 2000;
 
-// Stable instructions — kept first so the prompt-caching prefix is byte-identical
-// across statements (the PDF itself is the volatile suffix).
 const SYSTEM_PROMPT = `אתה מחלץ עסקאות מדפי פירוט של כרטיסי אשראי ישראליים (ויזה כאל, ישראכרט, מקס, לאומי קארד וכו').
 הקובץ עשוי לכלול כמה כרטיסים — כל עסקה משויכת לכרטיס שתחת הכותרת שלו (שם הכרטיס + 4 ספרות אחרונות).
 לכל עסקה החזר:
@@ -25,45 +22,42 @@ const SYSTEM_PROMPT = `אתה מחלץ עסקאות מדפי פירוט של כ�
 - installment: אם זה תשלום מתוך פריסה ("תשלום 2 מתוך 6") החזר "2/6", אחרת null.
 אל תכלול שורות סיכום, יתרות, או ריביות שאינן עסקאות. החזר רק עסקאות אמיתיות.`;
 
-const RECORD_TOOL: Anthropic.Tool = {
-  name: "record_transactions",
-  description: "Record every transaction found in the credit-card statement.",
-  strict: true,
-  input_schema: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      transactions: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            transaction_date: { type: "string", description: "YYYY-MM-DD or empty string" },
-            billing_date: { type: "string", description: "YYYY-MM-DD or empty string" },
-            merchant: { type: "string" },
-            amount: { type: "number", description: "ILS charge amount; negative for refunds" },
-            currency: { type: "string", description: "ILS or original currency code" },
-            original_amount: { anyOf: [{ type: "number" }, { type: "null" }] },
-            card_label: { type: "string" },
-            installment: { anyOf: [{ type: "string" }, { type: "null" }] },
-          },
-          required: [
-            "transaction_date",
-            "billing_date",
-            "merchant",
-            "amount",
-            "currency",
-            "original_amount",
-            "card_label",
-            "installment",
-          ],
+// OpenAI structured-output schema (strict): nullable fields use a ["type","null"]
+// union and stay required, per OpenAI's strict json_schema rules.
+const TRANSACTIONS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    transactions: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          transaction_date: { type: "string", description: "YYYY-MM-DD or empty string" },
+          billing_date: { type: "string", description: "YYYY-MM-DD or empty string" },
+          merchant: { type: "string" },
+          amount: { type: "number", description: "ILS charge amount; negative for refunds" },
+          currency: { type: "string", description: "ILS or original currency code" },
+          original_amount: { type: ["number", "null"] },
+          card_label: { type: "string" },
+          installment: { type: ["string", "null"] },
         },
+        required: [
+          "transaction_date",
+          "billing_date",
+          "merchant",
+          "amount",
+          "currency",
+          "original_amount",
+          "card_label",
+          "installment",
+        ],
       },
     },
-    required: ["transactions"],
   },
-};
+  required: ["transactions"],
+} as const;
 
 type RawTxn = {
   transaction_date?: unknown;
@@ -104,9 +98,9 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
 
-    if (!isAnthropicConfigured()) {
+    if (!isOpenAIConfigured()) {
       return NextResponse.json(
-        { error: "חילוץ חכם אינו מוגדר בשרת (חסר ANTHROPIC_API_KEY)." },
+        { error: "חילוץ חכם אינו מוגדר בשרת (חסר OPENAI_API_KEY)." },
         { status: 503 }
       );
     }
@@ -124,34 +118,60 @@ export async function POST(req: Request) {
     }
 
     const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
-    const { apiKey, model } = resolveAnthropicConfig();
-    const client = new Anthropic({ apiKey });
+    const { apiKey, pdfModel } = resolveOpenAIConfig();
 
-    const response = await client.messages.create({
-      model,
-      max_tokens: 16000,
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      tools: [RECORD_TOOL],
-      tool_choice: { type: "tool", name: "record_transactions" },
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
-            { type: "text", text: "חלץ את כל העסקאות מדף הפירוט הזה." },
-          ],
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: pdfModel,
+        max_tokens: 16000,
+        temperature: 0,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "חלץ את כל העסקאות מדף הפירוט הזה." },
+              {
+                type: "file",
+                file: {
+                  filename: file.name || "statement.pdf",
+                  file_data: `data:application/pdf;base64,${base64}`,
+                },
+              },
+            ],
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "transactions_result", strict: true, schema: TRANSACTIONS_SCHEMA },
         },
-      ],
+      }),
     });
 
-    const toolUse = response.content.find(
-      (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "record_transactions"
-    );
-    if (!toolUse) {
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.error("[parse-statement-pdf] OpenAI error", res.status, detail);
+      return NextResponse.json({ error: "חילוץ הקובץ נכשל. נסו שוב." }, { status: 502 });
+    }
+
+    const data = (await res.json().catch(() => ({}))) as {
+      choices?: Array<{ message?: { content?: unknown } }>;
+    };
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content !== "string" || !content.trim()) {
       return NextResponse.json({ error: "לא זוהו עסקאות בקובץ." }, { status: 422 });
     }
 
-    const raw = ((toolUse.input as { transactions?: RawTxn[] }).transactions ?? []).slice(0, MAX_TXNS);
+    let parsed: { transactions?: RawTxn[] };
+    try {
+      parsed = JSON.parse(content) as { transactions?: RawTxn[] };
+    } catch {
+      return NextResponse.json({ error: "לא זוהו עסקאות בקובץ." }, { status: 422 });
+    }
+
+    const raw = (parsed.transactions ?? []).slice(0, MAX_TXNS);
     const transactions = raw.map(normalizeTxn).filter((t): t is ParsedTxn => t !== null);
 
     return NextResponse.json({ transactions });

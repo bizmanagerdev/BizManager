@@ -7,6 +7,7 @@ export type OpenAIConfig = {
   apiKey: string;
   transcribeModel: string;
   parseModel: string;
+  pdfModel: string;
 };
 
 // True when an API key is present, so routes can return a clear "not configured"
@@ -25,5 +26,7 @@ export function resolveOpenAIConfig(): OpenAIConfig {
   const transcribeModel = process.env.OPENAI_TRANSCRIBE_MODEL?.trim() || "gpt-4o-transcribe";
   // Cheap, structured-output-capable model for field extraction (voice → task).
   const parseModel = process.env.OPENAI_PARSE_MODEL?.trim() || "gpt-4o-mini";
-  return { apiKey, transcribeModel, parseModel };
+  // Document-capable model for PDF understanding (credit-card statement import).
+  const pdfModel = process.env.OPENAI_PDF_MODEL?.trim() || "gpt-4o";
+  return { apiKey, transcribeModel, parseModel, pdfModel };
 }

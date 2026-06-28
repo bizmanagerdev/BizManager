@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { isAnthropicConfigured } from "@/lib/ai/config";
+import { isOpenAIConfigured } from "@/lib/openai/config";
 import type { MerchantMemory } from "@/lib/financial/cardImport";
 import CardImportClient from "./CardImportClient";
 
@@ -53,7 +53,7 @@ export default async function ImportExpensesPage() {
       <CardImportClient
         projects={projects}
         properties={properties}
-        smartExtractEnabled={isAnthropicConfigured()}
+        smartExtractEnabled={isOpenAIConfigured()}
         merchantMemory={merchantMemory}
       />
     </AppShell>
