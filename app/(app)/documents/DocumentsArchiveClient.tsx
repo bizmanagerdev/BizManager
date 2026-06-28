@@ -90,6 +90,7 @@ export type DocumentArchiveItem = {
   tasks: ArchiveRelation[];
   orders: ArchiveRelation[];
   business_domains: string[];
+  ref_year: number | null;
   tags: ArchiveRelation[];
   search_text: string;
 };
@@ -109,6 +110,16 @@ function isControlledCategory(value: string | null | undefined) {
 
 function formatDate(value: string | null) {
   return formatShortDateTime(value, "—");
+}
+
+// Year used for filtering: the explicit "document year" (ref_year, set on upload)
+// when present, otherwise the upload year (the date shown on the card).
+function documentYear(doc: DocumentArchiveItem): string {
+  if (doc.ref_year && doc.ref_year > 0) return String(doc.ref_year);
+  const value = doc.uploaded_at ?? doc.created_at;
+  if (!value) return "";
+  const year = value.slice(0, 4);
+  return /^\d{4}$/.test(year) ? year : "";
 }
 
 function entityTypeLabel(value: string) {
@@ -230,6 +241,7 @@ export default function DocumentsArchiveClient({
   const [projectId, setProjectId] = useState(initialFilters.project_id);
   const [propertyId, setPropertyId] = useState(initialFilters.property_id);
   const [fileKind, setFileKind] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
   const [groupBy, setGroupBy] = useState("entity");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -286,6 +298,15 @@ export default function DocumentsArchiveClient({
     ).map((category) => ({ value: category, label: getDocumentCategoryLabel(category) }));
     if (hasSystem) options.push({ value: SYSTEM_CATEGORY_FILTER, label: "אוטומטי (מערכת)" });
     return options;
+  }, [documents]);
+
+  const yearOptions = useMemo(() => {
+    const years = new Set<string>();
+    for (const doc of documents) {
+      const year = documentYear(doc);
+      if (year) years.add(year);
+    }
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
   }, [documents]);
 
   const projectFilterOptions = useMemo(() => {
@@ -402,6 +423,7 @@ export default function DocumentsArchiveClient({
       if (showProjectFilter && projectId && !doc.projects.some((project) => project.id === projectId)) return false;
       if (showPropertyFilter && propertyId && !doc.properties.some((property) => property.id === propertyId)) return false;
       if (fileKind && doc.file_kind !== fileKind) return false;
+      if (yearFilter && documentYear(doc) !== yearFilter) return false;
       if (tagFilter && !(doc.tags ?? []).some((tag) => tag.id === tagFilter)) return false;
       return true;
     });
@@ -417,6 +439,7 @@ export default function DocumentsArchiveClient({
     showProjectFilter,
     showPropertyFilter,
     tagFilter,
+    yearFilter,
   ]);
 
   const groupedDocuments = useMemo(() => {
@@ -455,6 +478,7 @@ export default function DocumentsArchiveClient({
     setProjectId("");
     setPropertyId("");
     setFileKind("");
+    setYearFilter("");
     setGroupBy("entity");
   }
 
@@ -761,6 +785,20 @@ export default function DocumentsArchiveClient({
               </SelectField>
             </div>
 
+            <div className="space-y-1">
+              <div className="text-sm font-medium">שנה</div>
+              <SelectField value={yearFilter} onChange={setYearFilter} ariaLabel="סינון לפי שנה">
+                <option value="">כל השנים</option>
+                {yearOptions.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          </AdaptiveGrid>
+
+          <AdaptiveGrid variant="formTwoLoose">
             <div className="flex items-end justify-between gap-3">
               <div className="text-xs text-muted-foreground">
                 {isTruncated

@@ -175,11 +175,14 @@ export default async function DocumentsPage({
 
   // Vehicle/tag links per document (resilient: stays empty before the tags SQL is run).
   const tagsByDocument = new Map<string, Array<{ id: string; label: string }>>();
+  // The "document year" the file is FOR (e.g. a 2026 טסט), stored on the tag link.
+  // A doc can carry several tag rows → keep the latest ref_year present.
+  const refYearByDocument = new Map<string, number>();
   let vehicleTagOptions: ArchiveTargetOption[] = [];
   if (documentIds.length > 0) {
     const { data: docTagRows, error: docTagErr } = await supabase
       .from("entity_tags")
-      .select("entity_id,tag_id")
+      .select("entity_id,tag_id,ref_year")
       .eq("entity_type", "document")
       .in("entity_id", documentIds);
     const tagLinks = (!docTagErr && Array.isArray(docTagRows) ? docTagRows : []) as Array<Record<string, unknown>>;
@@ -197,6 +200,13 @@ export default async function DocumentsPage({
       }
       for (const r of tagLinks) {
         const docId = normalizeString(r.entity_id);
+        const refYearValue = Number(r.ref_year);
+        if (docId && Number.isInteger(refYearValue) && refYearValue > 0) {
+          const existing = refYearByDocument.get(docId);
+          if (existing === undefined || refYearValue > existing) {
+            refYearByDocument.set(docId, refYearValue);
+          }
+        }
         const tid = normalizeString(r.tag_id);
         const name = tagNameById.get(tid);
         if (!docId || !tid || !name) continue;
@@ -547,6 +557,7 @@ export default async function DocumentsPage({
         tasks: taskList,
         orders: orderList,
         business_domains: businessDomainList,
+        ref_year: refYearByDocument.get(doc.id) ?? null,
         tags: tagsByDocument.get(doc.id) ?? [],
         search_text: [
           title,
