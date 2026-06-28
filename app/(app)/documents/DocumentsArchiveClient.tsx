@@ -98,6 +98,15 @@ function normalizeText(value: string) {
   return value.trim().toLowerCase();
 }
 
+// Sentinel filter value that matches all system/auto-generated document types
+// (delivery photos, card statements, session attachments, Morning docs, …) —
+// i.e. any document_type that isn't one of the controlled DOCUMENT_CATEGORIES.
+const SYSTEM_CATEGORY_FILTER = "__system__";
+
+function isControlledCategory(value: string | null | undefined) {
+  return Boolean(value) && (DOCUMENT_CATEGORIES as readonly string[]).includes(value as string);
+}
+
 function formatDate(value: string | null) {
   return formatShortDateTime(value, "—");
 }
@@ -261,11 +270,22 @@ export default function DocumentsArchiveClient({
 
 
   const documentTypeOptions = useMemo(() => {
-    return Array.from(
-      new Set(documents.map((doc) => doc.document_type).filter((value): value is string => Boolean(value)))
-    )
-      .map((value) => ({ value, label: getDocumentCategoryLabel(value) }))
-      .sort((a, b) => a.label.localeCompare(b.label, "he"));
+    // Your controlled categories appear individually; every system/auto-generated
+    // type is folded into a single "אוטומטי (מערכת)" bucket so the dropdown stays
+    // clean. Only categories that actually have documents are shown.
+    const controlledPresent = new Set<string>();
+    let hasSystem = false;
+    for (const doc of documents) {
+      const value = doc.document_type;
+      if (!value) continue;
+      if (isControlledCategory(value)) controlledPresent.add(value);
+      else hasSystem = true;
+    }
+    const options: Array<{ value: string; label: string }> = DOCUMENT_CATEGORIES.filter((category) =>
+      controlledPresent.has(category)
+    ).map((category) => ({ value: category, label: getDocumentCategoryLabel(category) }));
+    if (hasSystem) options.push({ value: SYSTEM_CATEGORY_FILTER, label: "אוטומטי (מערכת)" });
+    return options;
   }, [documents]);
 
   const projectFilterOptions = useMemo(() => {
@@ -370,7 +390,14 @@ export default function DocumentsArchiveClient({
     return documents.filter((doc) => {
       if (normalizedQuery && !doc.search_text.includes(normalizedQuery)) return false;
       if (businessDomain && !doc.business_domains.includes(businessDomain)) return false;
-      if (documentType && (doc.document_type ?? "") !== documentType) return false;
+      if (documentType) {
+        if (documentType === SYSTEM_CATEGORY_FILTER) {
+          // System bucket: any present type that isn't a controlled category.
+          if (!doc.document_type || isControlledCategory(doc.document_type)) return false;
+        } else if ((doc.document_type ?? "") !== documentType) {
+          return false;
+        }
+      }
       if (customerId && !doc.customers.some((customer) => customer.id === customerId)) return false;
       if (showProjectFilter && projectId && !doc.projects.some((project) => project.id === projectId)) return false;
       if (showPropertyFilter && propertyId && !doc.properties.some((property) => property.id === propertyId)) return false;
