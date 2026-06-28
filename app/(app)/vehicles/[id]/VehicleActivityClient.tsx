@@ -18,6 +18,7 @@ import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { ExpenseDialog, type EditingExpenseData } from "@/components/expenses/ExpenseDialog";
 import { TaskUpsertDialog, type UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
+import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
 import { formatCurrency } from "@/lib/payroll";
 import { taskStatusLabel, type VehicleActivity, type VehicleExpense } from "@/lib/vehicles";
 import { toHebrewError } from "@/lib/error-messages";
@@ -98,6 +99,7 @@ export default function VehicleActivityClient({
   const [docOpen, setDocOpen] = useState(false);
   const [docFiles, setDocFiles] = useState<File[]>([]);
   const [docYear, setDocYear] = useState("");
+  const [docCategory, setDocCategory] = useState("");
   const [docBusy, setDocBusy] = useState(false);
   // delete
   const [del, setDel] = useState<{ kind: string; id: string; label: string } | null>(null);
@@ -129,6 +131,7 @@ export default function VehicleActivityClient({
   function openAddDoc() {
     setDocFiles([]);
     setDocYear("");
+    setDocCategory("");
     setDocOpen(true);
   }
 
@@ -182,6 +185,7 @@ export default function VehicleActivityClient({
         form.set("file", file);
         form.set("business_domain", "general_business");
         form.set("tag_ids", JSON.stringify([tagId]));
+        if (docCategory.trim()) form.set("category", docCategory.trim());
         if (docYear.trim()) form.set("ref_year", docYear.trim());
         const res = await fetch("/api/documents/upload", { method: "POST", body: form });
         if (!res.ok) {
@@ -412,7 +416,7 @@ export default function VehicleActivityClient({
           <DialogHeader>
             <DialogTitle>הוספת הכנסה לרכב: {vehicleName}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="mt-4 space-y-4">
             <div className="space-y-1">
               <div className="text-sm font-medium">סכום *</div>
               <CurrencyInput type="number" min="0" step="0.01" value={incAmount} onChange={(e) => setIncAmount(e.target.value)} />
@@ -438,7 +442,7 @@ export default function VehicleActivityClient({
               <Textarea value={incNotes} onChange={(e) => setIncNotes(e.target.value)} />
             </div>
           </div>
-          <DialogFooter className="mt-4">
+          <DialogFooter className="mt-6">
             <Button variant="secondary" onClick={() => setIncomeOpen(false)} disabled={incBusy}>ביטול</Button>
             <Button onClick={() => void submitIncome()} disabled={incBusy}>{incBusy ? "שומר..." : "הוספה"}</Button>
           </DialogFooter>
@@ -451,14 +455,37 @@ export default function VehicleActivityClient({
           <DialogHeader>
             <DialogTitle>העלאת מסמך לרכב: {vehicleName}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <FileUploadActions files={docFiles} onFilesSelected={setDocFiles} multiple disabled={docBusy} chooseLabel="בחירת קבצים" />
+          <div className="mt-4 space-y-4">
+            <FileUploadActions
+              files={docFiles}
+              onFilesSelected={(files) => {
+                setDocFiles(files);
+                if (files.length > 0 && !docCategory) setDocCategory(inferDefaultDocumentCategory(files[0]?.name));
+              }}
+              multiple
+              disabled={docBusy}
+              chooseLabel="בחירת קבצים"
+            />
+            <div className="space-y-1">
+              <div className="text-sm font-medium">קטגוריה</div>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={docCategory}
+                onChange={(e) => setDocCategory(e.target.value)}
+                disabled={docBusy}
+              >
+                <option value="">ללא קטגוריה</option>
+                {DOCUMENT_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
             <div className="space-y-1">
               <div className="text-sm font-medium">שנת המסמך (לחיפוש לפי שנה)</div>
               <Input inputMode="numeric" value={docYear} onChange={(e) => setDocYear(e.target.value)} />
             </div>
           </div>
-          <DialogFooter className="mt-4">
+          <DialogFooter className="mt-6">
             <Button variant="secondary" onClick={() => setDocOpen(false)} disabled={docBusy}>ביטול</Button>
             <Button onClick={() => void submitDoc()} disabled={docBusy}>{docBusy ? "מעלה..." : "העלאה"}</Button>
           </DialogFooter>
