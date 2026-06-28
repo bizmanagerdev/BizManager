@@ -481,8 +481,6 @@ export default function SalesOrdersClient({
                       </DropdownMenu>
                     </th>
                     <th className="px-4 py-3 font-medium">סכום</th>
-                    <th className="px-4 py-3 font-medium">שולם</th>
-                    <th className="px-4 py-3 font-medium">יתרה</th>
                     <th className="px-4 py-3 font-medium">פעולות</th>
                   </tr>
                 </thead>
@@ -539,9 +537,13 @@ export default function SalesOrdersClient({
                           {orderCollectionStatusLabel(row.collectionStatus)}
                         </Badge>
                       </td>
-                      <td className="px-4 py-4 font-medium">{formatCurrency(row.totalAmount)}</td>
-                      <td className="px-4 py-4">{formatCurrency(row.totalPaid)}</td>
-                      <td className="px-4 py-4">{formatCurrency(row.remainingBalance)}</td>
+                      <td className="px-4 py-4">
+                        <div className="space-y-0.5">
+                          <div className="font-medium">{formatCurrency(row.totalAmount)}</div>
+                          <div className="text-xs text-muted-foreground">שולם: {formatCurrency(row.totalPaid)}</div>
+                          <div className="text-xs text-muted-foreground">יתרה: {formatCurrency(row.remainingBalance)}</div>
+                        </div>
+                      </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap gap-2">
                           <Button asChild size="sm" onClick={() => emitNavigationStart()}>
