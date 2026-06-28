@@ -34,6 +34,8 @@ import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { DictateButton } from "@/components/ui/dictate-button";
+import { TaskVoiceFillButton, type ParsedTaskFields } from "@/components/tasks/TaskVoiceFillButton";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import {
   Dialog,
@@ -474,6 +476,29 @@ export function TaskUpsertDialog(props: Props) {
     setMemberIds((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
   }
 
+  // Domain options offered to the voice parser (codes + Hebrew labels).
+  const domainOptions = useMemo(
+    () => allowedDomains.map((code) => ({ code, label: getBusinessDomainLabel(code) })),
+    [allowedDomains]
+  );
+
+  // Apply fields extracted by the voice parser. Only set values it actually
+  // returned, so we never wipe something the user already typed.
+  function applyParsed(f: ParsedTaskFields) {
+    if (f.subject) setSubject(f.subject);
+    if (f.description) setDescription(f.description);
+    if (f.due_date) setDueDate(f.due_date);
+    if (f.due_time) setDueTime(f.due_time);
+    if (f.priority) setPriority(f.priority as TaskPriority);
+    if (f.assigned_user_id) setAssignedUserId(f.assigned_user_id);
+    if (f.business_domain) handleBusinessDomainChange(f.business_domain as ExpenseBusinessDomain);
+    if (f.city) {
+      setCity(f.city);
+      setCityOther(!(CITY_OPTIONS as readonly string[]).includes(f.city));
+    }
+    setOpenSection("description");
+  }
+
   // Privacy is a one-click action, not a staged field: persist it immediately when
   // editing an existing task so it sticks even if the dialog is closed without
   // pressing Save. In create mode there's no task yet, so it rides along on submit.
@@ -836,6 +861,14 @@ export function TaskUpsertDialog(props: Props) {
               disabled={loading}
               className="border-transparent bg-transparent px-1 text-lg font-semibold shadow-none focus-visible:border-input"
             />
+            <DictateButton
+              onTranscript={(text) =>
+                setSubject((prev) => (prev.trim() ? `${prev.trimEnd()} ${text}` : text))
+              }
+              disabled={loading}
+              title="הכתבת שם המשימה"
+              className="shrink-0"
+            />
             {viewerIsCreator ? (
               <Button
                 type="button"
@@ -893,6 +926,21 @@ export function TaskUpsertDialog(props: Props) {
             void submit();
           }}
         >
+          {/* Voice fill — speak the whole task, let AI fill the fields (create only). */}
+          {!isEditing ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed bg-muted/20 p-2">
+              <span className="text-xs text-muted-foreground">
+                דברו את כל פרטי המשימה והכרטיס יתמלא אוטומטית
+              </span>
+              <TaskVoiceFillButton
+                users={props.users.map((u) => ({ id: u.id, label: u.label }))}
+                domains={domainOptions}
+                onParsed={applyParsed}
+                disabled={loading}
+              />
+            </div>
+          ) : null}
+
           {/* Action buttons — toggle each detail editor (one open at a time). */}
           <div className="flex flex-wrap gap-1.5">
             <ActionChip icon={AlignLeft} label="תיאור" active={isOpen("description")} onClick={() => toggleSection("description")} />

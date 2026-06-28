@@ -28,6 +28,7 @@ import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks"
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { DictateButton } from "@/components/ui/dictate-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
@@ -254,13 +255,21 @@ function BoardColumn({
           }
         }}
       />
-      <div className="flex gap-1.5">
+      <div className="flex items-center gap-1.5">
         <Button type="button" size="sm" disabled={!title.trim() || busy} onClick={() => void submitQuickAdd()}>
           {busy ? "מוסיף..." : "הוספה"}
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={() => { setAdding(null); setTitle(""); }}>
           ביטול
         </Button>
+        <DictateButton
+          onTranscript={(text) =>
+            setTitle((prev) => (prev.trim() ? `${prev.trimEnd()} ${text}` : text))
+          }
+          disabled={busy}
+          title="הכתבת כותרת המשימה"
+          className="ms-auto"
+        />
       </div>
     </div>
   );
