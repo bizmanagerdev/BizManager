@@ -9,6 +9,7 @@ import SalaryProtected from "@/components/payroll/SalaryProtected";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { LoadingDots } from "@/components/ui/loading-dots";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Dialog,
@@ -368,7 +369,7 @@ export default function SalaryCenterClient({
   const [error, setError] = useState("");
   const [protectedData, setProtectedData] = useState<SalaryCenterProtectedPayload | null>(null);
   const [protectedError, setProtectedError] = useState("");
-  const [, setLoadingProtected] = useState(false);
+  const [loadingProtected, setLoadingProtected] = useState(false);
   const [salaryUnlocked, setSalaryUnlocked] = useState(initiallyUnlocked);
   const [workerForm, setWorkerForm] = useState<WorkerFormState>({
     full_name: "",
@@ -412,13 +413,23 @@ export default function SalaryCenterClient({
   // returned data to worker & worker_no_access). Managing salary stays admin-only.
   const canViewSalary = viewerRole === "admin" || viewerRole === "office";
 
-  const loadProtectedData = useCallback(async () => {
+  const loadProtectedData = useCallback(async (options?: { fresh?: boolean }) => {
     if (!canViewSalary) return;
 
     setLoadingProtected(true);
     setProtectedError("");
     try {
-      const response = await fetch("/api/payroll/center/protected", { cache: "no-store" });
+      // Worker-detail page scopes the fetch to its one worker so the server can hit
+      // user_id indexes instead of loading every worker. `fresh=1` bypasses the server
+      // cache on post-mutation reloads so updated numbers are never stale.
+      const params = new URLSearchParams();
+      if (isWorkerDetailMode && defaultWorkerId) params.set("userId", defaultWorkerId);
+      if (options?.fresh) params.set("fresh", "1");
+      const queryString = params.toString();
+      const response = await fetch(
+        `/api/payroll/center/protected${queryString ? `?${queryString}` : ""}`,
+        { cache: "no-store" }
+      );
       const json = (await response.json().catch(() => ({}))) as SalaryCenterProtectedPayload & { error?: string };
       if (!response.ok) {
         setProtectedError(toHebrewError(json.error, "לא ניתן לטעון את נתוני השכר המוגנים."));
@@ -433,13 +444,19 @@ export default function SalaryCenterClient({
     } finally {
       setLoadingProtected(false);
     }
-  }, [canViewSalary]);
+  }, [canViewSalary, isWorkerDetailMode, defaultWorkerId]);
 
   useEffect(() => {
     if (initiallyUnlocked && canViewSalary) {
       void loadProtectedData();
     }
   }, [initiallyUnlocked, canViewSalary, loadProtectedData]);
+
+  // True while the protected payload (balances, payments, session costs) is being
+  // fetched and nothing has arrived yet — covers both the initial render gap before
+  // the effect fires and the in-flight fetch. Stat cards show LoadingDots instead of 0.
+  const protectedLoading =
+    loadingProtected || (canViewSalary && salaryUnlocked && !protectedData && !protectedError);
 
   const currentMonthKey = getCurrentMonthKey();
   const usersById = useMemo(() => new Map(publicUsers.map((user) => [user.id, user])), [publicUsers]);
@@ -950,7 +967,8 @@ export default function SalaryCenterClient({
   async function refreshAll({ reloadProtected = true }: { reloadProtected?: boolean } = {}) {
     router.refresh();
     if (reloadProtected && salaryUnlocked && canViewSalary) {
-      await loadProtectedData();
+      // fresh=1 bypasses the server cache so post-mutation numbers are never stale.
+      await loadProtectedData({ fresh: true });
     }
   }
 
@@ -3921,11 +3939,12 @@ export default function SalaryCenterClient({
                   <Card>
                     <CardContent className="py-4">
                       <div className="grid gap-3 sm:grid-cols-4">
-                        <MiniStat label="סה״כ נצבר" value={formatCurrency(selectedWorkerBalance?.earned_amount ?? 0)} />
-                        <MiniStat label="שולם כולל" value={formatCurrency(selectedWorkerBalance?.paid_amount ?? 0)} />
-                        <MiniStat label="יתרה כוללת" value={formatCurrency(selectedWorkerBalance?.owed_amount ?? 0)} />
+                        <MiniStat label="סה״כ נצבר" loading={protectedLoading} value={formatCurrency(selectedWorkerBalance?.earned_amount ?? 0)} />
+                        <MiniStat label="שולם כולל" loading={protectedLoading} value={formatCurrency(selectedWorkerBalance?.paid_amount ?? 0)} />
+                        <MiniStat label="יתרה כוללת" loading={protectedLoading} value={formatCurrency(selectedWorkerBalance?.owed_amount ?? 0)} />
                         <MiniStat
                           label="סטטוס"
+                          loading={protectedLoading}
                           value={sharedPaymentStatusLabel(selectedWorkerBalance?.payment_status)}
                         />
                       </div>
@@ -4002,7 +4021,11 @@ export default function SalaryCenterClient({
                       </div>
                       <div className="space-y-2">
                         <div className="font-medium">היסטוריית תשלומים</div>
-                        {selectedWorkerPaymentsByPeriod.length === 0 ? (
+                        {protectedLoading ? (
+                          <div className="flex justify-center py-4">
+                            <LoadingDots />
+                          </div>
+                        ) : selectedWorkerPaymentsByPeriod.length === 0 ? (
                           <div className="text-sm text-muted-foreground">אין תשלומים בתקופה שנבחרה.</div>
                         ) : (
                           selectedWorkerPaymentsByPeriod.map((payment) => (
@@ -4063,7 +4086,7 @@ export default function SalaryCenterClient({
                         />
                       ) : null}
                       <MiniStat label="משמרות בתקופה" value={String(selectedWorkerFilteredStats.sessionCount)} />
-                      <MiniStat label="עלות בתקופה" value={formatCurrency(selectedWorkerFilteredStats.totalAmount)} />
+                      <MiniStat label="עלות בתקופה" loading={protectedLoading} value={formatCurrency(selectedWorkerFilteredStats.totalAmount)} />
                     </div>
                     <div className="space-y-2">
                       {selectedWorkerSessionsByFilter.length === 0 ? (
@@ -5496,11 +5519,19 @@ function WorkerTypeBadge({ workerType }: { workerType: PayrollWorkerType }) {
   return <StatusPill tone="info">{getPayrollWorkerTypeLabel(workerType)}</StatusPill>;
 }
 
-function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
+function MiniStat({
+  label,
+  value,
+  loading = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  loading?: boolean;
+}) {
   return (
     <div className="rounded-xl border bg-muted/10 p-2.5 text-center">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-0.5 font-semibold">{value}</div>
+      <div className="mt-0.5 font-semibold">{loading ? <LoadingDots /> : value}</div>
     </div>
   );
 }

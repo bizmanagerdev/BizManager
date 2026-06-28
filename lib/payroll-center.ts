@@ -469,6 +469,8 @@ export async function fetchSalaryCenterProtectedPayload(
     sessionCostsResult,
     workerBalancesResult,
     workerPaymentsResult,
+    workerDebtItemsInitialResult,
+    sessionEffectivePaymentsResult,
   ] = await Promise.all([
     query(supabase.from("salary_agreements"))
       .select(
@@ -504,15 +506,21 @@ export async function fetchSalaryCenterProtectedPayload(
       .in("user_id", safeUserIds)
       .order("payment_date", { ascending: false })
       .range(0, 1999),
+    // These two views depend only on safeUserIds, so they run with the first batch instead
+    // of after it. The debt view's missing-column fallback is handled below, post-await.
+    query(supabase.from("worker_debt_items_view"))
+      .select(
+        "source_type,source_id,user_id,project_id,payslip_id,payroll_period_id,source_date,due_date,period_month,worked_minutes,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date"
+      )
+      .in("user_id", safeUserIds)
+      .range(0, 4999),
+    query(supabase.from("session_effective_payment_view"))
+      .select("session_id,user_id,payment_status,paid_amount,owed_amount,last_payment_date,is_payslip_covered")
+      .in("user_id", safeUserIds)
+      .range(0, 4999),
   ]);
 
-  let workerDebtItemsResult = await query(supabase.from("worker_debt_items_view"))
-    .select(
-      "source_type,source_id,user_id,project_id,payslip_id,payroll_period_id,source_date,due_date,period_month,worked_minutes,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date"
-    )
-    .in("user_id", safeUserIds)
-    .range(0, 4999);
-
+  let workerDebtItemsResult = workerDebtItemsInitialResult;
   if (workerDebtItemsResult.error && isMissingColumnError(workerDebtItemsResult.error, "due_date")) {
     workerDebtItemsResult = await query(supabase.from("worker_debt_items_view"))
       .select(
@@ -525,10 +533,6 @@ export async function fetchSalaryCenterProtectedPayload(
   // Single source for per-session paid status (folds in payslip coverage). Tolerant:
   // until create_session_effective_payment_view.sql is deployed the view won't exist,
   // so on error we degrade to empty (sessions then fall back to their own status).
-  const sessionEffectivePaymentsResult = await query(supabase.from("session_effective_payment_view"))
-    .select("session_id,user_id,payment_status,paid_amount,owed_amount,last_payment_date,is_payslip_covered")
-    .in("user_id", safeUserIds)
-    .range(0, 4999);
   const sessionEffectivePayments = sessionEffectivePaymentsResult.error
     ? []
     : ((sessionEffectivePaymentsResult.data ?? []) as SessionEffectivePaymentRow[]).filter((row) => row.session_id);
