@@ -3,11 +3,20 @@
 -- Supported movement_type values:
 --   in, out, reserve, release, adjustment
 
+-- Drop the previous 4-arg signature so adding p_check_guard doesn't leave an
+-- ambiguous overload (the trigger calls this with positional args).
+drop function if exists public.apply_inventory_movement_effect(uuid, text, numeric, integer);
+
 create or replace function public.apply_inventory_movement_effect(
   p_product_id uuid,
   p_movement_type text,
   p_quantity numeric,
-  p_sign integer default 1
+  p_sign integer default 1,
+  -- When false, skip the negative-stock guard. Used for the REVERT leg of an
+  -- UPDATE: reverting the old effect can transiently dip on-hand below zero even
+  -- though the re-applied new effect lands it back in valid range (e.g. just
+  -- relabeling an 'in' movement). Only the final apply leg is guarded.
+  p_check_guard boolean default true
 )
 returns void
 language plpgsql
@@ -51,8 +60,9 @@ begin
         ),
         updated_at = now();
 
-  -- Guard rail: never allow negative on-hand by mistake.
-  if exists (
+  -- Guard rail: never allow negative on-hand by mistake (skipped on the revert
+  -- leg of an UPDATE — only the final state is validated).
+  if p_check_guard and exists (
     select 1
     from public.inventory i
     where i.product_id = p_product_id
@@ -79,18 +89,21 @@ begin
   end if;
 
   if tg_op = 'UPDATE' then
-    -- Revert old effect, then apply new effect.
+    -- Revert old effect (no guard — this leg can transiently go negative), then
+    -- apply the new effect (guarded — validates the final on-hand).
     perform public.apply_inventory_movement_effect(
       old.product_id,
       old.movement_type,
       old.quantity,
-      -1
+      -1,
+      false
     );
     perform public.apply_inventory_movement_effect(
       new.product_id,
       new.movement_type,
       new.quantity,
-      1
+      1,
+      true
     );
     return new;
   end if;

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveUserDisplayNamesForValues } from "@/lib/audit";
 
 type Row = Record<string, unknown>;
 
@@ -387,6 +388,10 @@ function buildInventoryItems(
 export type InventoryListPageResult = {
   items: InventoryItem[];
   movements: Row[];
+  // Resolved labels for the movements table: order_id → customer name (for
+  // order-sourced rows) and performed_by → user name (for manual rows).
+  orderCustomerById: Record<string, string>;
+  performerNameById: Record<string, string>;
   totalCount: number;
   hasMore: boolean;
   error: string | null;
@@ -436,6 +441,38 @@ export async function loadInventoryListPage(
   );
 
   const movementRows = (movements ?? []) as Row[];
+
+  // Resolve human labels for the movements table: order rows → customer name
+  // (linked to the order), manual rows → who performed the adjustment.
+  const movementOrderIds = Array.from(
+    new Set(
+      movementRows
+        .filter((row) => getString(row, "source_type") === "order")
+        .map((row) => getString(row, "source_id"))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const performerIds = Array.from(
+    new Set(
+      movementRows
+        .map((row) => getString(row, "performed_by"))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const [orderRowsResult, performerNameById] = await Promise.all([
+    movementOrderIds.length
+      ? supabase.from("order_overview_view").select("order_id,customer_name").in("order_id", movementOrderIds)
+      : Promise.resolve({ data: [] as Row[] }),
+    performerIds.length
+      ? resolveUserDisplayNamesForValues(supabase, performerIds)
+      : Promise.resolve({} as Record<string, string>),
+  ]);
+  const orderCustomerById = Object.fromEntries(
+    ((orderRowsResult.data ?? []) as Row[])
+      .map((row) => [getString(row, "order_id") ?? "", getString(row, "customer_name") ?? ""] as const)
+      .filter(([id]) => id)
+  );
+
   const items = buildInventoryItems(
     data.products,
     data.inventoryRows,
@@ -454,6 +491,8 @@ export async function loadInventoryListPage(
   return {
     items,
     movements: movementRows,
+    orderCustomerById,
+    performerNameById,
     totalCount: data.count,
     // Drive "has more" off page fullness, not the estimated count.
     hasMore: data.products.length === PRODUCTS_PAGE_SIZE,

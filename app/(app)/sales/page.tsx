@@ -209,10 +209,18 @@ export default async function SalesPage({
   }
 
   if (activeTab === "inventory") {
-    const { items, movements, totalCount, hasMore, error: loadError } = await loadInventoryListPage(
-      supabase,
-      { page: 1, filters: { q: searchQuery, category: categoryFilter } }
-    );
+    const {
+      items,
+      movements,
+      orderCustomerById,
+      performerNameById,
+      totalCount,
+      hasMore,
+      error: loadError,
+    } = await loadInventoryListPage(supabase, {
+      page: 1,
+      filters: { q: searchQuery, category: categoryFilter },
+    });
 
     content = loadError ? (
       <p className="text-sm text-destructive">שגיאה בטעינת מלאי: {loadError}</p>
@@ -220,6 +228,8 @@ export default async function SalesPage({
       <SalesInventoryClient
         initialItems={items}
         movements={movements}
+        orderCustomerById={orderCustomerById}
+        performerNameById={performerNameById}
         initialHasMore={hasMore}
         totalCount={totalCount}
         initialQuery={searchQuery}

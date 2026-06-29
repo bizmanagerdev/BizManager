@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { PackagePlus } from "lucide-react";
+import { PackagePlus, Pencil, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
@@ -20,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Row = Record<string, unknown>;
 
@@ -65,6 +67,18 @@ function getAdjustmentMeta(adjustmentType: AdjustmentType) {
   }
 }
 
+// Best-guess the adjustment subtype of an existing manual movement from its
+// direction + note, so the edit dialog opens on the right option.
+function inferAdjustmentType(movementType: string | null, notes: string | null): AdjustmentType {
+  const dir = (movementType ?? "").toLowerCase() === "out" ? "out" : "in";
+  const n = notes ?? "";
+  if (/החזרת לקוח|customer return/i.test(n)) return "customer_return_in";
+  if (/רכישה|purchase/i.test(n)) return "purchase_in";
+  if (/החזרה לספק|supplier/i.test(n)) return "return_supplier_out";
+  if (/נזק|פחת|damage/i.test(n)) return "damage_out";
+  return dir === "out" ? "manual_out" : "manual_in";
+}
+
 function formatMovementType(value: string | null) {
   switch ((value ?? "").toLowerCase()) {
     case "in":
@@ -95,23 +109,6 @@ function formatSourceType(value: string | null) {
   }
 }
 
-function formatMovementNotes(value: string | null) {
-  if (!value) return "-";
-
-  const trimmed = value.trim();
-  const updatedMatch = /^Sales order item ([a-f0-9-]+) updated$/i.exec(trimmed);
-  if (updatedMatch) {
-    return `פריט הזמנה ${updatedMatch[1]} עודכן`;
-  }
-
-  const orderItemMatch = /^Sales order item ([a-f0-9-]+)$/i.exec(trimmed);
-  if (orderItemMatch) {
-    return `פריט הזמנה ${orderItemMatch[1]}`;
-  }
-
-  return value;
-}
-
 function formatDateTime(value: string | null) {
   return formatShortDateTime(value);
 }
@@ -119,6 +116,8 @@ function formatDateTime(value: string | null) {
 export default function SalesInventoryClient({
   initialItems,
   movements,
+  orderCustomerById = {},
+  performerNameById = {},
   initialHasMore = false,
   totalCount,
   initialQuery = "",
@@ -126,6 +125,8 @@ export default function SalesInventoryClient({
 }: {
   initialItems: InventoryItem[];
   movements: Row[];
+  orderCustomerById?: Record<string, string>;
+  performerNameById?: Record<string, string>;
   initialHasMore?: boolean;
   totalCount?: number;
   initialQuery?: string;
@@ -180,10 +181,36 @@ export default function SalesInventoryClient({
     setPrevMovements(movements);
     setMovementRows(movements);
   }
+  // Movements table filters (client-side over the loaded set).
+  const [movProduct, setMovProduct] = useState("");
+  const [movType, setMovType] = useState("");
+  const [movSource, setMovSource] = useState("");
+  const filteredMovements = useMemo(() => {
+    return movementRows.filter((row) => {
+      if (movProduct && getString(row, "product_id") !== movProduct) return false;
+      if (movType && (getString(row, "movement_type") ?? "").toLowerCase() !== movType) return false;
+      if (movSource && getString(row, "source_type") !== movSource) return false;
+      return true;
+    });
+  }, [movementRows, movProduct, movType, movSource]);
+  const movementsFiltered = movProduct !== "" || movType !== "" || movSource !== "";
+
   // Scroll-to-load instead of a "next page" button — reveal more rows as the
   // bottom of the list comes into view.
-  const movementsReveal = useRevealOnScroll(movementRows, { initial: 20, step: 20 });
+  const movementsReveal = useRevealOnScroll(filteredMovements, { initial: 20, step: 20 });
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
+  // Editing an existing manual movement row.
+  const [editOpen, setEditOpen] = useState(false);
+  const [editId, setEditId] = useState("");
+  const [editProductId, setEditProductId] = useState("");
+  const [editType, setEditType] = useState<AdjustmentType>("manual_in");
+  const [editQty, setEditQty] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState("");
+  // Deleting a manual movement row (confirmed).
+  const [deleteRow, setDeleteRow] = useState<Row | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [productId, setProductId] = useState("");
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("purchase_in");
   const [quantity, setQuantity] = useState("");
@@ -307,6 +334,179 @@ export default function SalesInventoryClient({
       setError(toHebrewError(e, "שגיאה לא ידועה"));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function openEditDialog(row: Row) {
+    setEditError("");
+    setEditId(getString(row, "id") ?? "");
+    setEditProductId(getString(row, "product_id") ?? "");
+    setEditType(inferAdjustmentType(getString(row, "movement_type"), getString(row, "notes")));
+    const qty = getNumber(row, "quantity");
+    setEditQty(qty != null ? String(qty) : "");
+    setEditNotes(getString(row, "notes") ?? "");
+    setEditOpen(true);
+  }
+
+  // Changing the type relabels the note too — otherwise the note (which is what
+  // the "sold"/returns math keys off) would still read e.g. "החזרת לקוח" and the
+  // fix wouldn't take. A genuinely custom note is preserved.
+  function changeEditType(next: AdjustmentType) {
+    const knownLabels = new Set(["רכישה", "החזרת לקוח", "החזרה לספק", "נזק/פחת", "התאמה ידנית"]);
+    setEditType(next);
+    setEditNotes((cur) => {
+      const trimmed = cur.trim();
+      return trimmed === "" || knownLabels.has(trimmed) ? getAdjustmentMeta(next).label : cur;
+    });
+  }
+
+  async function saveMovementEdit() {
+    if (editSubmitting) return;
+    setEditError("");
+
+    const qty = Number(editQty);
+    if (!editId) return setEditError("חסר מזהה תנועה.");
+    if (!Number.isFinite(qty) || qty <= 0) return setEditError("יש להזין כמות תקינה.");
+
+    const meta = getAdjustmentMeta(editType);
+    const finalNotes = editNotes.trim() || meta.label;
+
+    setEditSubmitting(true);
+    try {
+      const res = await fetch("/api/inventory/movements/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: editId,
+          direction: meta.direction,
+          quantity: qty,
+          notes: finalNotes,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        movement?: Row;
+        inventory?: Row | null;
+      };
+      if (!res.ok || !json.movement) {
+        setEditError(toHebrewError(json.error, "עדכון התנועה נכשל."));
+        return;
+      }
+
+      // Optimistically swap the edited row in place.
+      setMovementRows((prev) =>
+        prev.map((r) => (getString(r, "id") === editId ? (json.movement as Row) : r))
+      );
+      // Reflect the re-synced on-hand / reserved immediately.
+      if (json.inventory) {
+        const onHand = getNumber(json.inventory, "quantity_on_hand") ?? 0;
+        const reserved = getNumber(json.inventory, "quantity_reserved") ?? 0;
+        setItems((prev) =>
+          prev.map((i) =>
+            i.productId === editProductId
+              ? { ...i, quantityOnHand: onHand, quantityReserved: reserved, available: onHand - reserved }
+              : i
+          )
+        );
+      }
+
+      setEditOpen(false);
+      setSuccess("תנועת המלאי עודכנה.");
+      // Recompute the server-derived "נמכר" column (sold − returns) for the fix.
+      router.refresh();
+    } catch (e: unknown) {
+      setEditError(toHebrewError(e, "שגיאה לא ידועה"));
+    } finally {
+      setEditSubmitting(false);
+    }
+  }
+
+  // Human-readable "מקור/הערות" for a movement row: order rows link to the order
+  // and name the customer; manual rows show the reason + who performed it.
+  function renderMovementInfo(row: Row) {
+    const sourceType = getString(row, "source_type");
+    const note = (getString(row, "notes") ?? "").trim();
+
+    if (sourceType === "order") {
+      const orderId = getString(row, "source_id");
+      const customer = orderId ? orderCustomerById[orderId] : null;
+      const updated = /updated$|עודכן$/.test(note);
+      const inner = (
+        <span className="inline-flex items-center gap-1">
+          {customer || "הזמנה"}
+          {updated ? <span className="text-[10px] text-muted-foreground">· עודכן</span> : null}
+        </span>
+      );
+      return orderId ? (
+        <Link href={`/sales/orders/${orderId}`} className="text-primary hover:underline">
+          {inner}
+        </Link>
+      ) : (
+        inner
+      );
+    }
+
+    if (sourceType === "manual_product") {
+      return /initial/i.test(note) ? "מלאי פתיחה" : note || "יצירת מוצר";
+    }
+
+    // manual_adjustment / anything else
+    const performer = getString(row, "performed_by");
+    const who = performer ? performerNameById[performer] : null;
+    return (
+      <span>
+        {note || "-"}
+        {who ? <span className="text-muted-foreground">{` · ע״י ${who}`}</span> : null}
+      </span>
+    );
+  }
+
+  async function confirmDeleteMovement() {
+    if (deleteSubmitting || !deleteRow) return;
+    const id = getString(deleteRow, "id") ?? "";
+    const movementProductId = getString(deleteRow, "product_id") ?? "";
+    if (!id) {
+      setDeleteRow(null);
+      return;
+    }
+
+    setDeleteSubmitting(true);
+    try {
+      const res = await fetch("/api/inventory/movements/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        success?: boolean;
+        inventory?: Row | null;
+      };
+      if (!res.ok || !json.success) {
+        setError(toHebrewError(json.error, "מחיקת התנועה נכשלה."));
+        return;
+      }
+
+      setMovementRows((prev) => prev.filter((r) => getString(r, "id") !== id));
+      if (json.inventory) {
+        const onHand = getNumber(json.inventory, "quantity_on_hand") ?? 0;
+        const reserved = getNumber(json.inventory, "quantity_reserved") ?? 0;
+        setItems((prev) =>
+          prev.map((i) =>
+            i.productId === movementProductId
+              ? { ...i, quantityOnHand: onHand, quantityReserved: reserved, available: onHand - reserved }
+              : i
+          )
+        );
+      }
+
+      setDeleteRow(null);
+      setSuccess("תנועת המלאי נמחקה.");
+      router.refresh();
+    } catch (e: unknown) {
+      setError(toHebrewError(e, "שגיאה לא ידועה"));
+    } finally {
+      setDeleteSubmitting(false);
     }
   }
 
@@ -550,13 +750,145 @@ export default function SalesInventoryClient({
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          if (!open && editSubmitting) return;
+          setEditOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>עריכת תנועת מלאי</DialogTitle>
+            <DialogDescription>
+              {`${(editProductId && productNameById.get(editProductId)) || "מוצר"} · עדכון סוג, כמות והערה. שינוי הכמות או הכיוון יעדכן את המלאי בהתאם.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">סוג פעולה</label>
+                <select
+                  value={editType}
+                  onChange={(e) => changeEditType(e.target.value as AdjustmentType)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="purchase_in">רכישה (הוספה למלאי)</option>
+                  <option value="customer_return_in">החזרת לקוח (הוספה)</option>
+                  <option value="return_supplier_out">החזרה לספק (הפחתה)</option>
+                  <option value="damage_out">נזק / פחת (הפחתה)</option>
+                  <option value="manual_in">התאמה ידנית (+)</option>
+                  <option value="manual_out">התאמה ידנית (-)</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">כמות</label>
+                <Input
+                  value={editQty}
+                  onChange={(e) => setEditQty(e.target.value)}
+                  inputMode="decimal"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">הערות</label>
+              <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} />
+            </div>
+
+            {editError ? <p className="text-sm text-destructive">{editError}</p> : null}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <Button type="button" variant="secondary" disabled={editSubmitting} onClick={() => setEditOpen(false)}>
+                ביטול
+              </Button>
+              <Button type="button" disabled={editSubmitting} onClick={() => void saveMovementEdit()}>
+                {editSubmitting ? "שומר..." : "שמירת שינויים"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={deleteRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteRow(null);
+        }}
+        title="מחיקת תנועת מלאי"
+        description={
+          deleteRow
+            ? `${(getString(deleteRow, "product_id") && productNameById.get(getString(deleteRow, "product_id")!)) || "מוצר"} · ${formatMovementType(getString(deleteRow, "movement_type"))} ${getNumber(deleteRow, "quantity") ?? ""}. המלאי יעודכן בהתאם. לא ניתן לבטל פעולה זו.`
+            : ""
+        }
+        confirmLabel="מחיקה"
+        destructive
+        loading={deleteSubmitting}
+        onConfirm={() => void confirmDeleteMovement()}
+      />
+
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">תנועות מלאי</CardTitle>
+          <div className="flex flex-col gap-2">
+            <CardTitle className="text-base">תנועות מלאי</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={movProduct}
+                onChange={(e) => setMovProduct(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="">כל המוצרים</option>
+                {productOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={movType}
+                onChange={(e) => setMovType(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="">כל הסוגים</option>
+                <option value="in">כניסה</option>
+                <option value="out">יציאה</option>
+                <option value="reserve">שמירה</option>
+                <option value="release">שחרור</option>
+                <option value="adjustment">התאמה</option>
+              </select>
+              <select
+                value={movSource}
+                onChange={(e) => setMovSource(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value="">כל המקורות</option>
+                <option value="order">הזמנה</option>
+                <option value="manual_adjustment">התאמת מלאי</option>
+                <option value="manual_product">יצירת מוצר</option>
+              </select>
+              {movementsFiltered ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-9"
+                  onClick={() => {
+                    setMovProduct("");
+                    setMovType("");
+                    setMovSource("");
+                  }}
+                >
+                  ניקוי סינון
+                </Button>
+              ) : null}
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {movementRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">אין תנועות מלאי להצגה.</p>
+          ) : filteredMovements.length === 0 ? (
+            <p className="text-sm text-muted-foreground">אין תנועות התואמות את הסינון.</p>
           ) : (
             (() => {
               const paginatedMovements = movementsReveal.visibleItems;
@@ -572,12 +904,14 @@ export default function SalesInventoryClient({
                           <th className="px-3 py-2 text-right font-medium">מקור</th>
                           <th className="px-3 py-2 text-right font-medium">תאריך</th>
                           <th className="px-3 py-2 text-right font-medium">הערות</th>
+                          <th className="px-3 py-2 text-right font-medium">פעולות</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
                         {paginatedMovements.map((row, index) => {
                           const id = getString(row, "id") ?? `movement-${index}`;
                           const movementProductId = getString(row, "product_id");
+                          const isManual = getString(row, "source_type") === "manual_adjustment";
                           return (
                             <tr key={id} className="hover:bg-muted/30">
                               <td className="px-3 py-2">
@@ -587,7 +921,35 @@ export default function SalesInventoryClient({
                               <td className="px-3 py-2">{getNumber(row, "quantity") ?? "-"}</td>
                               <td className="px-3 py-2">{formatSourceType(getString(row, "source_type"))}</td>
                               <td className="px-3 py-2">{formatDateTime(getString(row, "created_at"))}</td>
-                              <td className="px-3 py-2">{formatMovementNotes(getString(row, "notes"))}</td>
+                              <td className="px-3 py-2">{renderMovementInfo(row)}</td>
+                              <td className="px-3 py-2">
+                                {isManual ? (
+                                  <div className="-my-1.5 flex items-center gap-1.5">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      className="h-7 w-7 p-0"
+                                      title="עריכת תנועה"
+                                      aria-label="עריכת תנועה"
+                                      onClick={() => openEditDialog(row)}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="destructive"
+                                      className="h-7 w-7 p-0"
+                                      title="מחיקת תנועה"
+                                      aria-label="מחיקת תנועה"
+                                      onClick={() => setDeleteRow(row)}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                ) : null}
+                              </td>
                             </tr>
                           );
                         })}
@@ -602,8 +964,8 @@ export default function SalesInventoryClient({
                       const movementProductId = getString(row, "product_id");
                       const movementType = getString(row, "movement_type");
                       const quantity = getNumber(row, "quantity");
-                      const notes = formatMovementNotes(getString(row, "notes"));
                       const isOut = (movementType ?? "").toLowerCase() === "out";
+                      const isManual = getString(row, "source_type") === "manual_adjustment";
                       return (
                         <div key={id} className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-background p-3 shadow-sm">
                           <div className="flex items-start justify-between gap-2">
@@ -615,17 +977,43 @@ export default function SalesInventoryClient({
                                 {formatSourceType(getString(row, "source_type"))} • {formatDateTime(getString(row, "created_at"))}
                               </div>
                             </div>
-                            <div className="shrink-0 text-left">
-                              <div className="text-xs text-muted-foreground">{formatMovementType(movementType)}</div>
-                              <div className={`text-sm font-semibold ${isOut ? "text-destructive" : "text-success-soft-foreground"}`}>
-                                {isOut ? "-" : "+"}
-                                {quantity ?? "-"}
+                            <div className="flex shrink-0 items-start gap-2">
+                              <div className="text-left">
+                                <div className="text-xs text-muted-foreground">{formatMovementType(movementType)}</div>
+                                <div className={`text-sm font-semibold ${isOut ? "text-destructive" : "text-success-soft-foreground"}`}>
+                                  {isOut ? "-" : "+"}
+                                  {quantity ?? "-"}
+                                </div>
                               </div>
+                              {isManual ? (
+                                <>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    className="h-8 w-8 shrink-0 p-0"
+                                    title="עריכת תנועה"
+                                    aria-label="עריכת תנועה"
+                                    onClick={() => openEditDialog(row)}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="destructive"
+                                    className="h-8 w-8 shrink-0 p-0"
+                                    title="מחיקת תנועה"
+                                    aria-label="מחיקת תנועה"
+                                    onClick={() => setDeleteRow(row)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              ) : null}
                             </div>
                           </div>
-                          {notes && notes !== "-" ? (
-                            <div className="mt-1 truncate text-xs text-muted-foreground">{notes}</div>
-                          ) : null}
+                          <div className="mt-1 truncate text-xs text-muted-foreground">{renderMovementInfo(row)}</div>
                         </div>
                       );
                     })}
