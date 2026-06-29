@@ -26,6 +26,7 @@ type CreatePaymentPayload = {
   reference_number?: string;
   check_number?: string;
   notes?: string;
+  account_id?: string | null;
   tag_ids?: unknown;
 };
 
@@ -149,6 +150,7 @@ export async function POST(req: Request) {
           requiresSplit,
           vatRate,
           recordedBy: user.id,
+          accountId: typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null,
         })
       )
       .select(PAYMENT_SELECT)

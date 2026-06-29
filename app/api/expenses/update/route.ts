@@ -25,6 +25,7 @@ export async function POST(req: Request) {
       payment_status?: string | null;
       paid_amount?: number | string | null;
       payment_method?: string | null;
+      account_id?: string | null;
       tag_ids?: unknown;
     };
 
@@ -137,6 +138,9 @@ export async function POST(req: Request) {
     const paymentMethod = typeof body.payment_method === "string" && body.payment_method.trim()
       ? body.payment_method.trim()
       : null;
+    const accountId = typeof body.account_id === "string" && body.account_id.trim()
+      ? body.account_id.trim()
+      : null;
 
     const baseExpensePayload = {
       amount: amountNumber,
@@ -148,9 +152,10 @@ export async function POST(req: Request) {
       payment_status: paymentStatus,
       paid_amount: paidAmount,
       payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? paymentMethod : null,
+      account_id: accountId,
     };
     const selectExpense =
-      "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,created_at,updated_at";
+      "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,created_at,updated_at";
 
     const { data: expenseData, error: expenseUpdateError } = await supabase
       .from("expenses")

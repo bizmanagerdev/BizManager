@@ -28,6 +28,8 @@ import {
   paymentStatusClasses,
   paymentStatusLabel,
 } from "@/lib/orders/paymentStatus";
+import AccountSelect from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { formatShortDate } from "@/lib/date";
 
 type OrderItem = {
@@ -151,6 +153,9 @@ export default function OrderConfirmDialog({
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentAccountId, setPaymentAccountId] = useState("");
+  const [refundAccountId, setRefundAccountId] = useState("");
+  const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [referenceNumber, setReferenceNumber] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
   const [recordRefund, setRecordRefund] = useState(true);
@@ -232,6 +237,8 @@ export default function OrderConfirmDialog({
     setRefundMethod("");
     setRefundReferenceNumber("");
     setRefundNotes("");
+    setPaymentAccountId("");
+    setRefundAccountId("");
     setDeliveryNotes(data.initialOrder.notes ?? "");
     setDeliveryDate(getTodayDate());
     setDeliveryImages([]);
@@ -329,6 +336,10 @@ export default function OrderConfirmDialog({
         setError("יש לבחור אמצעי תשלום.");
         return;
       }
+      if (accountsList.length > 0 && !paymentAccountId) {
+        setError("יש לבחור חשבון לתשלום.");
+        return;
+      }
     }
 
     if (refundDue > 0 && recordRefund) {
@@ -338,6 +349,10 @@ export default function OrderConfirmDialog({
       }
       if (!refundMethod) {
         setError("יש לבחור אמצעי החזר.");
+        return;
+      }
+      if (accountsList.length > 0 && !refundAccountId) {
+        setError("יש לבחור חשבון להחזר.");
         return;
       }
     }
@@ -375,6 +390,7 @@ export default function OrderConfirmDialog({
                   amount_total: pendingPaymentAmount,
                   payment_date: paymentDate,
                   payment_method: paymentMethod,
+                  account_id: paymentAccountId || null,
                   reference_number: referenceNumber.trim() || null,
                   notes: paymentNotes.trim() || null,
                 },
@@ -387,6 +403,7 @@ export default function OrderConfirmDialog({
                   amount_total: refundDue,
                   payment_date: refundDate,
                   payment_method: refundMethod,
+                  account_id: refundAccountId || null,
                   reference_number: refundReferenceNumber.trim() || null,
                   notes: refundNotes.trim() || null,
                 },
@@ -621,7 +638,11 @@ export default function OrderConfirmDialog({
                       <label className="text-sm font-medium">אמצעי תשלום</label>
                       <select
                         value={paymentMethod}
-                        onChange={(e) => setPaymentMethod(e.target.value)}
+                        onChange={(e) => {
+                          const m = e.target.value;
+                          setPaymentMethod(m);
+                          setPaymentAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                        }}
                         className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                       >
                         <option value="">בחר אמצעי תשלום...</option>
@@ -632,6 +653,15 @@ export default function OrderConfirmDialog({
                         ))}
                       </select>
                     </div>
+                    <AccountSelect
+                      required
+                      value={paymentAccountId}
+                      onChange={setPaymentAccountId}
+                      onLoaded={(list) => {
+                        setAccountsList(list);
+                        setPaymentAccountId((prev) => prev || defaultAccountForMethod(list, paymentMethod));
+                      }}
+                    />
                     <div className="space-y-1">
                       <label className="text-sm font-medium">אסמכתא</label>
                       <Input
@@ -673,7 +703,11 @@ export default function OrderConfirmDialog({
                               <label className="text-sm font-medium">אמצעי החזר</label>
                               <select
                                 value={refundMethod}
-                                onChange={(e) => setRefundMethod(e.target.value)}
+                                onChange={(e) => {
+                                  const m = e.target.value;
+                                  setRefundMethod(m);
+                                  setRefundAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                                }}
                                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                               >
                                 <option value="">בחר אמצעי החזר...</option>
@@ -684,6 +718,15 @@ export default function OrderConfirmDialog({
                                 ))}
                               </select>
                             </div>
+                            <AccountSelect
+                              required
+                              value={refundAccountId}
+                              onChange={setRefundAccountId}
+                              onLoaded={(list) => {
+                                setAccountsList(list);
+                                setRefundAccountId((prev) => prev || defaultAccountForMethod(list, refundMethod));
+                              }}
+                            />
                           </div>
 
                           <div className="grid gap-3 sm:grid-cols-2">

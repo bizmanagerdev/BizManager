@@ -19,6 +19,7 @@ export type LoanInput = {
   due_date: string;
   interest_amount: number;
   business_domain: string;
+  account_id: string | null;
   notes: string;
 };
 
@@ -27,6 +28,7 @@ export type RepaymentInput = {
   amount: number;
   interest_amount: number;
   method: string;
+  account_id: string | null;
   notes: string;
 };
 
@@ -88,6 +90,7 @@ function loanFields(input: LoanInput) {
     due_date: clean(input.due_date),
     interest_amount: Number.isFinite(input.interest_amount) ? input.interest_amount : 0,
     business_domain: clean(input.business_domain) ?? "general_business",
+    account_id: typeof input.account_id === "string" && input.account_id ? input.account_id : null,
     notes: clean(input.notes),
   };
 }
@@ -186,6 +189,7 @@ export async function addRepayment(loanId: string, input: RepaymentInput): Promi
       amount: input.amount,
       interest_amount: interest,
       method: clean(input.method),
+      account_id: typeof input.account_id === "string" && input.account_id ? input.account_id : null,
       notes: clean(input.notes),
       created_by: ctx.profile.id,
     });

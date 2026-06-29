@@ -21,6 +21,7 @@ type WorkerPaymentPayload = {
   payment_method?: string | null;
   reference_number?: string | null;
   notes?: string | null;
+  account_id?: string | null;
   allocations?: WorkerPaymentAllocationInput[];
 };
 
@@ -62,6 +63,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
   const referenceNumber =
     typeof body.reference_number === "string" ? body.reference_number.trim() || null : null;
   const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;
+  const accountId = typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null;
   const amount = toAmount(body.amount);
   const allocations = Array.isArray(body.allocations) ? body.allocations : [];
 
@@ -214,6 +216,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
         payment_method: paymentMethod,
         reference_number: referenceNumber,
         notes,
+        account_id: accountId,
         recorded_by: profile.id,
       })
       .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by,created_at")
@@ -236,6 +239,7 @@ async function saveWorkerPayment(req: Request, mode: "create" | "update") {
         payment_method: paymentMethod,
         reference_number: referenceNumber,
         notes,
+        account_id: accountId,
       })
       .eq("id", existingPaymentId)
       .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by,created_at")

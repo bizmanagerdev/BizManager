@@ -354,7 +354,7 @@ export default async function ProjectPage({
     const primaryResult = await supabase
       .from("expenses")
       .select(
-        "id,expense_date,amount,payment_method,payment_status,paid_amount,category,description,business_domain,notes,recorded_by,created_at,updated_at"
+        "id,expense_date,amount,payment_method,payment_status,paid_amount,category,description,business_domain,notes,account_id,recorded_by,created_at,updated_at"
       )
       .order("expense_date", { ascending: false })
       .in("id", expenseIds);

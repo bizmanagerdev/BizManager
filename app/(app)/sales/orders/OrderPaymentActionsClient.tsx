@@ -29,6 +29,8 @@ import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { offlineFetch } from "@/lib/offline-queue";
+import AccountSelect from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 
 export type PaymentItem = {
@@ -40,6 +42,7 @@ export type PaymentItem = {
   due_date: string | null;
   reference_number: string | null;
   check_number: string | null;
+  account_id: string | null;
   notes: string | null;
   insertedByLabel: string | null;
   morningDocuments: MorningLocalDocument[];
@@ -96,6 +99,8 @@ function EditPaymentDialog({
   const [amount, setAmount] = useState(String(Math.abs(originalAmount)));
   const [paymentDate, setPaymentDate] = useState(payment.payment_date ?? "");
   const [paymentMethod, setPaymentMethod] = useState(payment.payment_method ?? "");
+  const [accountId, setAccountId] = useState(payment.account_id ?? "");
+  const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [dueDate, setDueDate] = useState(payment.due_date ?? "");
   const [referenceNumber, setReferenceNumber] = useState(payment.reference_number ?? "");
   const [checkNumber, setCheckNumber] = useState(payment.check_number ?? "");
@@ -135,6 +140,10 @@ function EditPaymentDialog({
       setError("יש לבחור אמצעי תשלום.");
       return;
     }
+    if (accountsList.length > 0 && !accountId) {
+      setError("יש לבחור חשבון לתנועה.");
+      return;
+    }
     if (paymentMethod === "check" && !dueDate) {
       setError("יש להזין תאריך פירעון לצ'ק.");
       return;
@@ -150,6 +159,7 @@ function EditPaymentDialog({
           amount_total: signedAmount,
           payment_date: paymentDate,
           payment_method: paymentMethod,
+          account_id: accountId || undefined,
           due_date: dueDate.trim() || undefined,
           reference_number: referenceNumber.trim() || undefined,
           check_number:
@@ -220,7 +230,11 @@ function EditPaymentDialog({
             <label className="text-sm font-medium">אמצעי תשלום *</label>
             <select
               value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
+              onChange={(e) => {
+                const m = e.target.value;
+                setPaymentMethod(m);
+                setAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+              }}
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               <option value="">בחר אמצעי תשלום...</option>
@@ -231,6 +245,13 @@ function EditPaymentDialog({
               ))}
             </select>
           </div>
+
+          <AccountSelect
+            required
+            value={accountId}
+            onChange={setAccountId}
+            onLoaded={setAccountsList}
+          />
 
           {paymentMethod ? (
             <div className="space-y-1">

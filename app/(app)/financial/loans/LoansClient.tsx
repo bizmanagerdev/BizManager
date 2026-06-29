@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import AccountSelect from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CustomerPicker, type PickedCustomer } from "@/components/customers/CustomerPicker";
@@ -105,6 +107,7 @@ type FormState = {
   loan_method: string;
   repayment_method: string;
   business_domain: string;
+  account_id: string;
   documentation: string;
   notes: string;
 };
@@ -129,6 +132,7 @@ function loanToForm(loan: Loan | null): FormState {
     loan_method: loan?.loan_method ?? "",
     repayment_method: loan?.repayment_method ?? "",
     business_domain: loan?.business_domain ?? "general_business",
+    account_id: loan?.account_id ?? "",
     documentation: loan?.documentation ?? "",
     notes: loan?.notes ?? "",
   };
@@ -172,6 +176,7 @@ function LoanFormDialog({
 }) {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(() => loanToForm(loan));
+  const [loanAccountsList, setLoanAccountsList] = useState<Account[]>([]);
   const [pending, startTransition] = useTransition();
   // Re-seed the form whenever the dialog opens for a different loan.
   const [seedKey, setSeedKey] = useState<string>("");
@@ -203,6 +208,7 @@ function LoanFormDialog({
       due_date: form.due_date,
       interest_amount: Number(form.interest_amount) || 0,
       business_domain: form.business_domain,
+      account_id: form.account_id || null,
       notes: form.notes,
     };
     if (!payload.loan_date) {
@@ -215,6 +221,10 @@ function LoanFormDialog({
     }
     if (!counterpartyName) {
       toast.error(taken ? "חובה לבחור ממי לקחת את ההלוואה." : "חובה לבחור למי נתת את ההלוואה.");
+      return;
+    }
+    if (loanAccountsList.length > 0 && !payload.account_id) {
+      toast.error("יש לבחור חשבון לתנועה.");
       return;
     }
     startTransition(async () => {
@@ -293,7 +303,14 @@ function LoanFormDialog({
               <select
                 className={SELECT_CLASS}
                 value={form.loan_method}
-                onChange={(e) => set("loan_method", e.target.value)}
+                onChange={(e) => {
+                  const m = e.target.value;
+                  setForm((current) => ({
+                    ...current,
+                    loan_method: m,
+                    account_id: current.account_id || defaultAccountForMethod(loanAccountsList, m),
+                  }));
+                }}
               >
                 {METHOD_OPTIONS.map((m) => (
                   <option key={m.value} value={m.value}>
@@ -302,6 +319,18 @@ function LoanFormDialog({
                 ))}
               </select>
             </Field>
+            <AccountSelect
+              required
+              value={form.account_id}
+              onChange={(accountId) => set("account_id", accountId)}
+              onLoaded={(list) => {
+                setLoanAccountsList(list);
+                setForm((current) => ({
+                  ...current,
+                  account_id: current.account_id || defaultAccountForMethod(list, current.loan_method),
+                }));
+              }}
+            />
             <Field label="אופן ההחזרה">
               <select
                 className={SELECT_CLASS}
@@ -372,6 +401,8 @@ function RepaymentsDialog({
   const [amount, setAmount] = useState("");
   const [interest, setInterest] = useState("");
   const [method, setMethod] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [notes, setNotes] = useState("");
 
   function add() {
@@ -385,18 +416,24 @@ function RepaymentsDialog({
       toast.error("חובה להזין סכום החזר.");
       return;
     }
+    if (accountsList.length > 0 && !accountId) {
+      toast.error("יש לבחור חשבון לתנועה.");
+      return;
+    }
     startTransition(async () => {
       const res = await addRepayment(loan.id, {
         repayment_date: date,
         amount: amt,
         interest_amount: Number(interest) || 0,
         method,
+        account_id: accountId || null,
         notes,
       });
       if (res.ok) {
         toast.success("ההחזר נרשם.");
         setAmount("");
         setInterest("");
+        setAccountId("");
         setNotes("");
         router.refresh();
       } else {
@@ -455,7 +492,15 @@ function RepaymentsDialog({
                   <CurrencyInput value={interest} onChange={(e) => setInterest(e.target.value)} />
                 </Field>
                 <Field label="אופן">
-                  <select className={SELECT_CLASS} value={method} onChange={(e) => setMethod(e.target.value)}>
+                  <select
+                    className={SELECT_CLASS}
+                    value={method}
+                    onChange={(e) => {
+                      const m = e.target.value;
+                      setMethod(m);
+                      setAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                    }}
+                  >
                     {METHOD_OPTIONS.map((m) => (
                       <option key={m.value} value={m.value}>
                         {m.label}
@@ -463,6 +508,15 @@ function RepaymentsDialog({
                     ))}
                   </select>
                 </Field>
+                <AccountSelect
+                  required
+                  value={accountId}
+                  onChange={setAccountId}
+                  onLoaded={(list) => {
+                    setAccountsList(list);
+                    setAccountId((prev) => prev || defaultAccountForMethod(list, method));
+                  }}
+                />
               </AdaptiveGrid>
               <Input
                 placeholder="הערה (לא חובה)"
@@ -718,6 +772,9 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
   useEffect(() => {
     if (!repayParam) return;
     const target = loans.find((l) => l.id === repayParam);
+    // Syncing dialog state to a URL deep-link param — a legitimate effect-driven
+    // setState (opens the repayment dialog when arrived at via ?repay=<id>).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (target) setRepayLoan(target);
   }, [repayParam, loans]);
   const [docsLoan, setDocsLoan] = useState<Loan | null>(null);

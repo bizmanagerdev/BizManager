@@ -25,6 +25,7 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as {
       id?: string;
       payment_method?: string | null;
+      account_id?: string | null;
       paid_date?: string | null;
     };
 
@@ -35,6 +36,8 @@ export async function POST(req: Request) {
 
     const rawMethod = typeof body.payment_method === "string" ? body.payment_method.trim() : "";
     const paymentMethod = rawMethod && PAYMENT_METHODS.has(rawMethod) ? rawMethod : null;
+    const accountId =
+      typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null;
 
     const rawPaidDate = typeof body.paid_date === "string" ? body.paid_date.trim() : "";
     const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(rawPaidDate)
@@ -46,7 +49,7 @@ export async function POST(req: Request) {
     const { supabase, profile } = access.value;
 
     const selectExpense =
-      "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,paid_date,created_at,updated_at";
+      "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,paid_date,created_at,updated_at";
 
     // Try with paid_date; fall back if the column hasn't been added yet.
     let expense: Record<string, unknown> | null = null;
@@ -55,7 +58,7 @@ export async function POST(req: Request) {
     {
       const { data, error } = await supabase
         .from("expenses")
-        .update({ payment_status: "paid", payment_method: paymentMethod, paid_date: paidDate })
+        .update({ payment_status: "paid", payment_method: paymentMethod, account_id: accountId, paid_date: paidDate })
         .eq("id", expenseId)
         .select(selectExpense)
         .maybeSingle();
@@ -66,10 +69,10 @@ export async function POST(req: Request) {
     if (updateError && isMissingColumn(updateError, "paid_date")) {
       const { data, error } = await supabase
         .from("expenses")
-        .update({ payment_status: "paid", payment_method: paymentMethod })
+        .update({ payment_status: "paid", payment_method: paymentMethod, account_id: accountId })
         .eq("id", expenseId)
         .select(
-          "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,created_at,updated_at"
+          "id,expense_date,amount,category,description,business_domain,project_id,order_id,property_id,notes,recorded_by,payment_status,paid_amount,payment_method,account_id,created_at,updated_at"
         )
         .maybeSingle();
       expense = (data as Record<string, unknown> | null) ?? null;

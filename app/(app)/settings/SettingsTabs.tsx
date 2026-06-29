@@ -12,7 +12,9 @@ import MorningAutoIssueForm from "@/app/(app)/settings/integrations/morning/Morn
 import BackupCard from "@/app/(app)/settings/BackupCard";
 import VatRateCard from "@/app/(app)/settings/VatRateCard";
 import AuditLoggingCard from "@/app/(app)/settings/AuditLoggingCard";
+import AccountsCard from "@/app/(app)/settings/AccountsCard";
 import type { MorningSettings } from "@/lib/morning/settings";
+import type { Account } from "@/lib/accounts";
 
 type UserOption = { id: string; label: string };
 type Option = { id: string; label: string };
@@ -32,6 +34,8 @@ type Props = {
   vatRate: number;
   // Global audit-logging switch — admin only
   auditLoggingEnabled: boolean;
+  // Bank/cash accounts (חשבונות) — admin only
+  accounts: Account[];
 };
 
 const ALL_TABS = [
@@ -110,6 +114,7 @@ export default function SettingsTabs(props: Props) {
       {/* Finance tab (admin only) */}
       {activeTab === "finance" && props.isAdmin && (
         <div className="space-y-4">
+          <AccountsCard initialAccounts={props.accounts} />
           <VatRateCard initialRate={props.vatRate} />
         </div>
       )}

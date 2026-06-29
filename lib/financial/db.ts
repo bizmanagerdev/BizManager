@@ -81,6 +81,7 @@ export async function scanPaymentRows(supabase: SupabaseClient, since?: string |
 
 export async function scanExpenseRows(supabase: SupabaseClient, since?: string | null) {
   const selectVariants = [
+    "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status,paid_amount,payment_method,paid_date,account_id",
     "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status,paid_amount,payment_method,paid_date",
     "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status,paid_amount,payment_method",
     "id,expense_date,amount,category,description,business_domain,notes,project_id,order_id,property_id,recorded_by,payment_status",
@@ -95,6 +96,7 @@ export async function scanExpenseRows(supabase: SupabaseClient, since?: string |
     } catch (error) {
       lastError = error;
       if (
+        isMissingColumnError(error, "account_id") ||
         isMissingColumnError(error, "paid_date") ||
         isMissingColumnError(error, "payment_status") ||
         isMissingColumnError(error, "paid_amount") ||

@@ -21,6 +21,8 @@ import {
   paymentStatusClasses,
   paymentStatusLabel,
 } from "@/lib/orders/paymentStatus";
+import AccountSelect from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -74,6 +76,8 @@ export default function OrderPaymentDialog({
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [dueDate, setDueDate] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [checkNumber, setCheckNumber] = useState("");
@@ -113,6 +117,10 @@ export default function OrderPaymentDialog({
       setError(entryType === "refund" ? "יש לבחור אמצעי החזר." : "יש לבחור אמצעי תשלום.");
       return;
     }
+    if (accountsList.length > 0 && !accountId) {
+      setError("יש לבחור חשבון לתנועה.");
+      return;
+    }
     if (paymentMethod === "check" && !dueDate) {
       setError("יש להזין תאריך פירעון לצ'ק.");
       return;
@@ -123,6 +131,7 @@ export default function OrderPaymentDialog({
       setEntryType(preview.nextRefund > 0 ? "refund" : "payment");
       setPaymentDate(getTodayDate());
       setPaymentMethod("");
+      setAccountId("");
       setDueDate("");
       setReferenceNumber("");
       setCheckNumber("");
@@ -141,6 +150,7 @@ export default function OrderPaymentDialog({
           amount_total: amountNumber,
           payment_date: paymentDate,
           payment_method: paymentMethod,
+          account_id: accountId || undefined,
           due_date: dueDate.trim() || undefined,
           reference_number: referenceNumber.trim() || undefined,
           check_number: paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
@@ -277,7 +287,11 @@ export default function OrderPaymentDialog({
               <label className="text-sm font-medium">{entryType === "refund" ? "אמצעי החזר *" : "אמצעי תשלום *"}</label>
               <select
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
+                onChange={(e) => {
+                  const m = e.target.value;
+                  setPaymentMethod(m);
+                  setAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                }}
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               >
                 <option value="">{entryType === "refund" ? "בחר אמצעי החזר..." : "בחר אמצעי תשלום..."}</option>
@@ -288,6 +302,16 @@ export default function OrderPaymentDialog({
                 ))}
               </select>
             </div>
+
+            <AccountSelect
+              required
+              value={accountId}
+              onChange={setAccountId}
+              onLoaded={(list) => {
+                setAccountsList(list);
+                setAccountId((prev) => prev || defaultAccountForMethod(list, paymentMethod));
+              }}
+            />
 
             {paymentMethod ? (
               <div className="space-y-1">

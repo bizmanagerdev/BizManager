@@ -240,7 +240,7 @@ export default async function SalesOrderPage({
       .eq("order_id", id),
     supabase
       .from("payments")
-      .select("id,payment_date,amount_total,payment_method,payment_status,due_date,reference_number,check_number,notes,created_at,recorded_by")
+      .select("id,payment_date,amount_total,payment_method,payment_status,due_date,reference_number,check_number,account_id,notes,created_at,recorded_by")
       .eq("order_id", id)
       .order("payment_date", { ascending: false }),
     supabase
@@ -507,6 +507,7 @@ export default async function SalesOrderPage({
       due_date: getString(payment, "due_date"),
       reference_number: getString(payment, "reference_number"),
       check_number: getString(payment, "check_number"),
+      account_id: getString(payment, "account_id"),
       notes: getString(payment, "notes"),
       insertedByLabel: paymentInsertedByLabel(payment, {
         paymentRecordedByNameByValue,

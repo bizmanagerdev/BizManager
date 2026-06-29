@@ -31,6 +31,7 @@ export type PaymentRow = {
   due_date: string | null;
   requires_split: boolean | null;
   recorded_by: string | null;
+  account_id: string | null;
   notes: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -38,7 +39,7 @@ export type PaymentRow = {
 };
 
 export const PAYMENT_SELECT =
-  "id,payment_date,amount_total,payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,net_amount,vat_amount,vat_rate,payment_status,business_domain,project_id,order_id,property_id,due_date,requires_split,recorded_by,notes,created_at,updated_at";
+  "id,payment_date,amount_total,payment_method,reference_number,check_number,amount_including_vat,amount_before_vat,net_amount,vat_amount,vat_rate,payment_status,business_domain,project_id,order_id,property_id,due_date,requires_split,recorded_by,notes,account_id,created_at,updated_at";
 
 // Single source of truth for the payment-method dropdown, shared by both the
 // expense dialog and the order/project payment dialogs so they always match.
@@ -65,6 +66,7 @@ type BuildPaymentInsertInput = {
   checkNumber?: string | null;
   notes?: string | null;
   dueDate?: string | null;
+  accountId?: string | null;
   requiresSplit?: boolean;
   /**
    * VAT rate to apply when requiresSplit (official payment). Fraction, e.g. 0.18.
@@ -141,6 +143,7 @@ export function buildPaymentInsert(input: BuildPaymentInsertInput) {
     requires_split: requiresSplit,
     notes: input.notes ?? null,
     recorded_by: input.recordedBy,
+    account_id: input.accountId ?? null,
   };
 }
 

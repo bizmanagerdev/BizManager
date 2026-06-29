@@ -17,6 +17,7 @@ export async function POST(req: Request) {
       reference_number?: string | null;
       check_number?: string | null;
       notes?: string | null;
+      account_id?: string | null;
     };
 
     const paymentId = typeof body.id === "string" ? body.id.trim() : "";
@@ -71,6 +72,7 @@ export async function POST(req: Request) {
       checkNumber,
       notes,
       recordedBy: user.id,
+      accountId: typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null,
     });
     void _ignored;
 

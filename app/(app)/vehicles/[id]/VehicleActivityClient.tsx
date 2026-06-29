@@ -16,6 +16,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { ExpenseDialog, type EditingExpenseData } from "@/components/expenses/ExpenseDialog";
+import AccountSelect from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { TaskUpsertDialog, type UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documents";
@@ -63,6 +65,7 @@ function toEditingExpense(e: VehicleExpense): EditingExpenseData {
     payment_status: e.paymentStatus,
     paid_amount: e.paidAmount,
     payment_method: e.paymentMethod,
+    account_id: e.accountId,
     project_id: e.projectId,
     order_id: e.orderId,
     property_id: e.propertyId,
@@ -93,6 +96,8 @@ export default function VehicleActivityClient({
   const [incAmount, setIncAmount] = useState("");
   const [incDate, setIncDate] = useState(todayIso());
   const [incMethod, setIncMethod] = useState("bank_transfer");
+  const [incAccountId, setIncAccountId] = useState("");
+  const [incAccountsList, setIncAccountsList] = useState<Account[]>([]);
   const [incNotes, setIncNotes] = useState("");
   const [incBusy, setIncBusy] = useState(false);
   // document
@@ -145,6 +150,10 @@ export default function VehicleActivityClient({
       toast.error("יש לבחור תאריך");
       return;
     }
+    if (incAccountsList.length > 0 && !incAccountId) {
+      toast.error("יש לבחור חשבון לתנועה.");
+      return;
+    }
     setIncBusy(true);
     try {
       const res = await fetch("/api/payments/create", {
@@ -155,6 +164,7 @@ export default function VehicleActivityClient({
           amount_total: amount,
           payment_date: incDate,
           payment_method: incMethod,
+          account_id: incAccountId || null,
           notes: incNotes.trim() || null,
           tag_ids: [tagId],
         }),
@@ -430,13 +440,26 @@ export default function VehicleActivityClient({
               <select
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={incMethod}
-                onChange={(e) => setIncMethod(e.target.value)}
+                onChange={(e) => {
+                  const m = e.target.value;
+                  setIncMethod(m);
+                  setIncAccountId((prev) => prev || defaultAccountForMethod(incAccountsList, m));
+                }}
               >
                 {SIMPLE_METHODS.map((m) => (
                   <option key={m.value} value={m.value}>{m.label}</option>
                 ))}
               </select>
             </div>
+            <AccountSelect
+              required
+              value={incAccountId}
+              onChange={setIncAccountId}
+              onLoaded={(list) => {
+                setIncAccountsList(list);
+                setIncAccountId((prev) => prev || defaultAccountForMethod(list, incMethod));
+              }}
+            />
             <div className="space-y-1">
               <div className="text-sm font-medium">הערות</div>
               <Textarea value={incNotes} onChange={(e) => setIncNotes(e.target.value)} />

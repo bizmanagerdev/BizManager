@@ -33,6 +33,8 @@ import { offlineFetch } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import { PAYMENT_METHOD_OPTIONS, type FinancialAttachment } from "@/lib/payments";
+import AccountSelect from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import {
   calculateSessionLaborCost,
   getActiveSalaryAgreementForDate,
@@ -72,6 +74,7 @@ export type EditingExpenseData = {
   payment_status?: string | null;
   paid_amount?: number | string | null;
   payment_method?: string | null;
+  account_id?: string | null;
   project_id?: string | null;
   order_id?: string | null;
   property_id?: string | null;
@@ -215,6 +218,8 @@ export function ExpenseDialog({
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("not_paid");
   const [paidAmount, setPaidAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [category, setCategory] = useState(DEFAULT_EXPENSE_CATEGORY);
   const [categoryOther, setCategoryOther] = useState("");
   const [description, setDescription] = useState("");
@@ -234,6 +239,7 @@ export function ExpenseDialog({
   const [laborCost, setLaborCost] = useState("");
   const [workerPaymentChoice, setWorkerPaymentChoice] = useState<PaymentChoice>("none");
   const [workerPaidAmount, setWorkerPaidAmount] = useState("");
+  const [workerAccountId, setWorkerAccountId] = useState("");
   const [newWorkerOpen, setNewWorkerOpen] = useState(false);
   const [newWorkerSubmitting, setNewWorkerSubmitting] = useState(false);
   const [newWorkerError, setNewWorkerError] = useState<string | null>(null);
@@ -316,6 +322,7 @@ export function ExpenseDialog({
       const rawPaid = editingExpense.paid_amount;
       setPaidAmount(rawPaid != null ? String(rawPaid) : "");
       setPaymentMethod(typeof editingExpense.payment_method === "string" ? editingExpense.payment_method : "");
+      setAccountId(typeof editingExpense.account_id === "string" ? editingExpense.account_id : "");
       const cat = editingExpense.category ?? "";
       if (cat && KNOWN_CATEGORIES.has(cat)) {
         setCategory(cat);
@@ -343,6 +350,7 @@ export function ExpenseDialog({
       setPaymentStatus("not_paid");
       setPaidAmount("");
       setPaymentMethod("");
+      setAccountId("");
       setCategory(defaultCategory ?? DEFAULT_EXPENSE_CATEGORY);
       setCategoryOther("");
       setDescription("");
@@ -362,6 +370,7 @@ export function ExpenseDialog({
     setClockOut("");
     setLaborCost("");
     setWorkerPaymentChoice("none");
+    setWorkerAccountId("");
     setWorkerPaidAmount("");
     setNewWorkerOpen(false);
     setNewWorkerError(null);
@@ -465,6 +474,10 @@ export function ExpenseDialog({
       setErrorMessage("יש להזין סכום ששולם לעובד.");
       return;
     }
+    if (workerPaymentChoice !== "none" && accountsList.length > 0 && !workerAccountId) {
+      setErrorMessage("יש לבחור חשבון לתשלום לעובד.");
+      return;
+    }
     const billAmountNumber = !billedToCustomer || !billToCustomerAmount.trim() ? null : Number(billToCustomerAmount);
     if (billedToCustomer && (billAmountNumber === null || !Number.isFinite(billAmountNumber) || billAmountNumber <= 0)) {
       setErrorMessage("יש להזין סכום לחיוב לקוח.");
@@ -519,6 +532,7 @@ export function ExpenseDialog({
             payment_date: payDate,
             amount: workerPaidNumber,
             payment_method: null,
+            account_id: workerAccountId || null,
             reference_number: null,
             notes: `תשלום שסומן מתוך טופס הוצאה עבור משמרת ${payDate}`,
             allocations: [{ source_type: "session", source_id: sessionId, amount: workerPaidNumber }],
@@ -591,6 +605,11 @@ export function ExpenseDialog({
       toast.error("יש לבחור נכס");
       return;
     }
+    if ((paymentStatus === "paid" || paymentStatus === "partial") && accountsList.length > 0 && !accountId) {
+      setErrorMessage("יש לבחור חשבון לתנועה.");
+      toast.error("יש לבחור חשבון");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -609,6 +628,7 @@ export function ExpenseDialog({
         payment_status: paymentStatus,
         paid_amount: paymentStatus === "partial" ? (Number(paidAmount) || null) : null,
         payment_method: (paymentStatus === "paid" || paymentStatus === "partial") ? (paymentMethod || null) : null,
+        account_id: accountId || null,
         tag_ids: tagIds,
       };
 
@@ -996,14 +1016,22 @@ export function ExpenseDialog({
                     </select>
                   </div>
                   {workerPaymentChoice !== "none" ? (
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">כמה שולם</div>
-                      <CurrencyInput
-                        value={workerPaidAmount}
-                        onChange={(e) => setWorkerPaidAmount(e.target.value)}
-                        placeholder="אם ריק, יירשם מלוא סכום המשמרת"
+                    <>
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">כמה שולם</div>
+                        <CurrencyInput
+                          value={workerPaidAmount}
+                          onChange={(e) => setWorkerPaidAmount(e.target.value)}
+                          placeholder="אם ריק, יירשם מלוא סכום המשמרת"
+                        />
+                      </div>
+                      <AccountSelect
+                        required
+                        value={workerAccountId}
+                        onChange={setWorkerAccountId}
+                        onLoaded={setAccountsList}
                       />
-                    </div>
+                    </>
                   ) : null}
                 </section>
               ) : null}
@@ -1056,7 +1084,11 @@ export function ExpenseDialog({
                     <select
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                       value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      onChange={(e) => {
+                        const m = e.target.value;
+                        setPaymentMethod(m);
+                        setAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                      }}
                     >
                       <option value="">בחר אמצעי</option>
                       {PAYMENT_METHOD_OPTIONS.map((option) => (
@@ -1064,6 +1096,15 @@ export function ExpenseDialog({
                       ))}
                     </select>
                   </div>
+                  <AccountSelect
+                    required
+                    value={accountId}
+                    onChange={setAccountId}
+                    onLoaded={(list) => {
+                      setAccountsList(list);
+                      setAccountId((prev) => prev || defaultAccountForMethod(list, paymentMethod));
+                    }}
+                  />
                   {paymentStatus === "partial" && (
                     <div className="space-y-1">
                       <div className="text-sm font-medium">סכום ששולם</div>

@@ -20,6 +20,7 @@ type CreateOrderPaymentPayload = {
   check_number?: string;
   notes?: string;
   entry_type?: string;
+  account_id?: string | null;
 };
 
 export async function POST(req: Request) {
@@ -80,6 +81,7 @@ export async function POST(req: Request) {
           checkNumber: payment.payment_method === "check" ? payment.check_number : null,
           notes: payment.notes ? (notePrefix ? `${notePrefix}: ${payment.notes}` : payment.notes) : notePrefix || null,
           recordedBy: user.id,
+          accountId: typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null,
         }),
       })
       .select(PAYMENT_SELECT)

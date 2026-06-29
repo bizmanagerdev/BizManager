@@ -4,6 +4,7 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import SettingsTabs from "@/app/(app)/settings/SettingsTabs";
 import { loadMorningSettings, type MorningSettings } from "@/lib/morning/settings";
 import { getCurrentVatRate } from "@/lib/settings/vat";
+import { loadAccounts, type Account } from "@/lib/accounts";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 
 type Row = Record<string, unknown>;
@@ -125,6 +126,9 @@ export default async function SettingsPage() {
   // ── VAT rate (admin only) ────────────────────────────────────────────────
   const vatRate = isAdmin ? await getCurrentVatRate(supabase) : 0.18;
 
+  // ── Accounts (admin only) — empty list if the table isn't deployed yet ────
+  const accounts: Account[] = isAdmin ? await loadAccounts(supabase) : [];
+
   // ── Audit-logging switch (admin only) ────────────────────────────────────
   let auditLoggingEnabled = true;
   if (isAdmin) {
@@ -150,6 +154,7 @@ export default async function SettingsPage() {
         morningSettings={morningSettings}
         vatRate={vatRate}
         auditLoggingEnabled={auditLoggingEnabled}
+        accounts={accounts}
       />
     </AppShell>
   );

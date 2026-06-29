@@ -44,6 +44,7 @@ type UpdateOrderPayload = {
     amount_total?: number | string;
     payment_date?: string | null;
     payment_method?: string | null;
+    account_id?: string | null;
     due_date?: string | null;
     reference_number?: string | null;
     check_number?: string | null;
@@ -53,6 +54,7 @@ type UpdateOrderPayload = {
     amount_total?: number | string;
     payment_date?: string | null;
     payment_method?: string | null;
+    account_id?: string | null;
     due_date?: string | null;
     reference_number?: string | null;
     check_number?: string | null;
@@ -396,6 +398,7 @@ export async function POST(req: Request) {
               checkNumber: payment.payment_method === "check" ? payment.check_number : null,
               notes: payment.notes,
               recordedBy: user.id,
+              accountId: payment.account_id,
             }),
           }))
         )
@@ -426,6 +429,7 @@ export async function POST(req: Request) {
             checkNumber: refund.payment_method === "check" ? refund.check_number : null,
             notes: refund.notes ? `Refund: ${refund.notes}` : "Refund",
             recordedBy: user.id,
+            accountId: refund.account_id,
           }),
         }))
       );

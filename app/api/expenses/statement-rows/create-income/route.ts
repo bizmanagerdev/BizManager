@@ -22,6 +22,7 @@ type Payload = {
   payment_method?: string;
   reference_number?: string | null;
   notes?: string | null;
+  account_id?: string | null;
 };
 
 function toNumber(value: unknown) {
@@ -69,6 +70,8 @@ export async function POST(req: Request) {
     const referenceNumber =
       typeof body.reference_number === "string" && body.reference_number.trim() ? body.reference_number.trim() : null;
     const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
+    const accountId =
+      typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null;
 
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
@@ -80,6 +83,7 @@ export async function POST(req: Request) {
         buildPaymentInsert({
           amountTotal: amount,
           businessDomain,
+          accountId,
           paymentDate,
           paymentMethod,
           projectId,
