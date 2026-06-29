@@ -11,10 +11,15 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "db:check": "node scripts/check-db-sql-frozen.mjs",
+    "db:refreeze": "ls db/sql/*.sql | xargs -n1 basename | sort > db/sql/.frozen-manifest",
+    "db:new": "supabase migration new",
+    "db:pull": "supabase db pull",
+    "db:diff": "supabase db diff",
+    "db:push": "supabase db push"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.100.1",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",

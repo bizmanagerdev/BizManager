@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getBusinessDomainLabel } from "@/lib/expenses";
+import { fetchAllPaged } from "@/lib/supabase/paginate";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Earned (booked) revenue, expenses and net per month, per business domain.
@@ -244,40 +245,40 @@ export async function loadEarnedRevenueByMonth(
   supabase: SupabaseClient,
   { from, to }: { from?: string | null; to?: string | null } = {}
 ): Promise<EarnedRevenueReport> {
-  const [ordersResult, projectsResult, financialsResult, expensesResult, paymentsResult] =
-    await Promise.all([
-      supabase
-        .from("order_overview_view")
-        .select("order_id,order_date,total_amount,status")
-        .range(0, 20000),
-      supabase
-        .from("projects")
-        .select("id,start_date,end_date,created_at,status")
-        .range(0, 20000),
-      supabase.from("project_financials_view").select("id,customer_total_price").range(0, 20000),
+  const [orderRows, projectRows, financialRows, expenseRows, paymentRows] = await Promise.all([
+    fetchAllPaged<Row>((lo, hi) =>
+      supabase.from("order_overview_view").select("order_id,order_date,total_amount,status").range(lo, hi)
+    ),
+    fetchAllPaged<Row>((lo, hi) =>
+      supabase.from("projects").select("id,start_date,end_date,created_at,status").range(lo, hi)
+    ),
+    fetchAllPaged<Row>((lo, hi) =>
+      supabase.from("project_financials_view").select("id,customer_total_price").range(lo, hi)
+    ),
+    fetchAllPaged<Row>((lo, hi) =>
       supabase
         .from("expenses")
         .select("expense_date,transaction_date,amount,business_domain,payment_method")
-        .range(0, 50000),
-      supabase
-        .from("payments")
-        .select("payment_date,amount_total,business_domain,payment_status")
-        .range(0, 50000),
-    ]);
+        .range(lo, hi)
+    ),
+    fetchAllPaged<Row>((lo, hi) =>
+      supabase.from("payments").select("payment_date,amount_total,business_domain,payment_status").range(lo, hi)
+    ),
+  ]);
 
   const priceById = new Map<string, number>();
-  for (const row of (financialsResult.data ?? []) as Row[]) {
+  for (const row of financialRows) {
     const id = str(row.id);
     if (id) priceById.set(id, toNum(row.customer_total_price));
   }
 
-  const orders: EarnedOrderInput[] = ((ordersResult.data ?? []) as Row[]).map((row) => ({
+  const orders: EarnedOrderInput[] = orderRows.map((row) => ({
     orderDate: str(row.order_date),
     amount: toNum(row.total_amount),
     status: str(row.status),
   }));
 
-  const projects: EarnedProjectInput[] = ((projectsResult.data ?? []) as Row[]).map((row) => ({
+  const projects: EarnedProjectInput[] = projectRows.map((row) => ({
     startDate: str(row.start_date),
     endDate: str(row.end_date),
     createdAt: str(row.created_at),
@@ -285,7 +286,7 @@ export async function loadEarnedRevenueByMonth(
     status: str(row.status),
   }));
 
-  const expenses: EarnedExpenseInput[] = ((expensesResult.data ?? []) as Row[]).map((row) => {
+  const expenses: EarnedExpenseInput[] = expenseRows.map((row) => {
     // Cost basis: a credit-card charge belongs to the month it was PURCHASED
     // (transaction_date), not the month it was billed (expense_date). Other
     // expenses keep their expense_date. (Cash-flow reports stay on billing date.)
@@ -300,7 +301,7 @@ export async function loadEarnedRevenueByMonth(
   });
 
   // Other-domain income = collected payments tagged to a non-order/project domain.
-  const otherIncome: EarnedIncomeInput[] = ((paymentsResult.data ?? []) as Row[])
+  const otherIncome: EarnedIncomeInput[] = paymentRows
     .filter((row) => {
       const domain = str(row.business_domain) ?? "";
       if (!OTHER_INCOME_DOMAINS.has(domain)) return false;

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPaged } from "@/lib/supabase/paginate";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Vehicles (רכבים) — a structured "asset" built on the generic tags backbone.
@@ -92,16 +93,22 @@ function normalizeVehicle(row: Row): Vehicle {
  */
 export async function fetchVehicles(supabase: SupabaseClient): Promise<VehicleWithRollup[]> {
   try {
-    const { data, error } = await supabase
-      .from("vehicles")
-      .select(
-        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
-      )
-      .eq("tag.kind", "vehicle")
-      .range(0, 2000);
-    if (error) return [];
+    let data: Row[];
+    try {
+      data = await fetchAllPaged<Row>((lo, hi) =>
+        supabase
+          .from("vehicles")
+          .select(
+            "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+          )
+          .eq("tag.kind", "vehicle")
+          .range(lo, hi)
+      );
+    } catch {
+      return [];
+    }
 
-    const vehicles = ((data ?? []) as Row[]).map(normalizeVehicle).filter((v) => v.tagId);
+    const vehicles = data.map(normalizeVehicle).filter((v) => v.tagId);
 
     // One global rollup call (SECURITY DEFINER → not per-role). Keyed by tag_id.
     const rollupByTag = new Map<string, VehicleRollup>();
@@ -160,6 +167,7 @@ export type VehicleExpense = {
   businessDomain: string | null;
   notes: string | null;
   paymentMethod: string | null;
+  accountId: string | null;
   paidAmount: number | null;
   projectId: string | null;
   orderId: string | null;
@@ -214,16 +222,13 @@ export async function fetchVehicleActivity(
     rollup: EMPTY_ROLLUP,
   };
   try {
-    const { data: links, error } = await supabase
-      .from("entity_tags")
-      .select("entity_type,entity_id,ref_year")
-      .eq("tag_id", tagId)
-      .range(0, 20000);
-    if (error) return empty;
+    const links = await fetchAllPaged<Row>((lo, hi) =>
+      supabase.from("entity_tags").select("entity_type,entity_id,ref_year").eq("tag_id", tagId).range(lo, hi)
+    );
 
     const idsBy = { expense: [] as string[], payment: [] as string[], task: [] as string[], document: [] as string[] };
     const refYearByDoc = new Map<string, number | null>();
-    for (const row of (links ?? []) as Row[]) {
+    for (const row of links) {
       const type = str(row.entity_type);
       const id = str(row.entity_id);
       if (!type || !id) continue;
@@ -236,7 +241,7 @@ export async function fetchVehicleActivity(
         ? supabase
             .from("expenses")
             .select(
-              "id,expense_date,amount,category,description,payment_status,paid_amount,business_domain,notes,payment_method,project_id,order_id,property_id"
+              "id,expense_date,amount,category,description,payment_status,paid_amount,business_domain,notes,payment_method,account_id,project_id,order_id,property_id"
             )
             .in("id", idsBy.expense)
         : Promise.resolve({ data: [] as Row[] }),
@@ -267,6 +272,7 @@ export async function fetchVehicleActivity(
       businessDomain: str(r.business_domain),
       notes: str(r.notes),
       paymentMethod: str(r.payment_method),
+      accountId: str(r.account_id),
       paidAmount: r.paid_amount == null ? null : num(r.paid_amount),
       projectId: str(r.project_id),
       orderId: str(r.order_id),

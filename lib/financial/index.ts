@@ -199,11 +199,13 @@ export async function loadFinancialEntries(
     resolveUserDisplayNamesForValues(supabase, recordedByValues),
   ]);
 
+  // Use the SIGNED amount so refunds (negative payments) reduce the collected
+  // total rather than inflating it (a refund is money returned to the customer).
   const paidByProjectId = paymentRows.reduce((map, row) => {
     const links = resolvePaymentLinks(row);
     if (!links.projectId) return map;
     if (!isCollectedPayment(row.payment_status)) return map;
-    map.set(links.projectId, (map.get(links.projectId) ?? 0) + Math.abs(toNumber(row.amount_total)));
+    map.set(links.projectId, (map.get(links.projectId) ?? 0) + toNumber(row.amount_total));
     return map;
   }, new Map<string, number>());
 
@@ -211,7 +213,7 @@ export async function loadFinancialEntries(
     const links = resolvePaymentLinks(row);
     if (!links.orderId) return map;
     if (!isCollectedPayment(row.payment_status)) return map;
-    map.set(links.orderId, (map.get(links.orderId) ?? 0) + Math.abs(toNumber(row.amount_total)));
+    map.set(links.orderId, (map.get(links.orderId) ?? 0) + toNumber(row.amount_total));
     return map;
   }, new Map<string, number>());
 
@@ -270,6 +272,42 @@ export async function loadFinancialEntries(
   ]);
 
   return { entries, referenceDate, loansSummary: summarizeLoans(loans) };
+}
+
+export type DomainCashPoint = {
+  domain: ExpenseBusinessDomain | null;
+  domainName: string;
+  inflow: number;
+  outflow: number;
+  net: number;
+};
+
+/**
+ * Per-domain ACTUAL cash in/out for a date window, derived from the one financial
+ * engine. "Actual" = posted only — pending (unpaid expenses, uncleared checks) and
+ * scheduled (future) entries are excluded, so this agrees with the financial page
+ * instead of the old dashboard scan that counted every recorded expense as cash out.
+ * Powers the dashboard's per-domain chart.
+ */
+export async function loadDomainCashBreakdown(
+  supabase: SupabaseClient,
+  { from, to }: { from: string; to: string }
+): Promise<DomainCashPoint[]> {
+  const { entries } = await loadFinancialEntries(supabase, { from });
+  const byDomain = new Map<string, DomainCashPoint>();
+  for (const entry of entries) {
+    if (entry.stage !== "posted") continue; // real cash only
+    if (entry.flowDate < from || entry.flowDate > to) continue;
+    const key = entry.businessDomain ?? "__unassigned__";
+    const point =
+      byDomain.get(key) ??
+      { domain: entry.businessDomain, domainName: entry.domainName, inflow: 0, outflow: 0, net: 0 };
+    if (entry.type === "inflow") point.inflow += entry.amount;
+    else point.outflow += entry.amount;
+    point.net = point.inflow - point.outflow;
+    byDomain.set(key, point);
+  }
+  return Array.from(byDomain.values()).sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
 }
 
 export async function getFinancialPageData(

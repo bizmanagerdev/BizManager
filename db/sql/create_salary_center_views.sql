@@ -36,7 +36,9 @@ select distinct on (a.user_id)
 from public.salary_agreements a
 where a.valid_from <= current_date
   and (a.valid_to is null or a.valid_to >= current_date)
-order by a.user_id, a.valid_from desc, a.created_at desc nulls last;
+-- salary_agreements has no created_at column; a.id is a stable tiebreaker so
+-- distinct on (user_id) deterministically picks the latest-starting agreement.
+order by a.user_id, a.valid_from desc, a.id desc;
 
 create or replace view public.payroll_period_summary_view as
 select

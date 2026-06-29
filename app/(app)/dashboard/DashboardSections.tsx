@@ -23,7 +23,7 @@ import { getInventoryHealth } from "@/lib/dashboard/inventory-health";
 import { getDashboardPrefs, resolveWidgets, type WidgetId } from "@/lib/dashboard/widgets";
 import { loadDeliveriesPage, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 import { getRecentAuditEvents, type AuditFeedItem } from "@/lib/audit";
-import { getCashFlowPageData } from "@/lib/cashflow";
+import { loadDomainCashBreakdown } from "@/lib/financial";
 import DomainBarChart from "@/components/charts/DomainBarChart";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
 import { Button } from "@/components/ui/button";
@@ -191,8 +191,7 @@ export async function DashboardPanels() {
       ? supabase.from("expenses").select("amount,paid_amount").in("payment_status", ["not_paid", "partial"]).gte("expense_date", todayIso).lte("expense_date", forecastHorizonIso).range(0, 999)
       : Promise.resolve({ data: null, error: null }),
     show("domainChart") && isAdminOrOffice
-      ? getCashFlowPageData(supabase, { from: monthStartIso, to: todayIso, pageSize: 1 })
-          .then((d) => d.domainBreakdown)
+      ? loadDomainCashBreakdown(supabase, { from: monthStartIso, to: todayIso })
           .catch(() => [] as { domainName: string; inflow: number; outflow: number }[])
       : Promise.resolve([] as { domainName: string; inflow: number; outflow: number }[]),
   ]);

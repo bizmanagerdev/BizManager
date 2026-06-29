@@ -391,7 +391,7 @@ export default function ProjectDetailsActions({
                   checked={editPriceIncludesVat}
                   onChange={(event) => setEditPriceIncludesVat(event.target.checked)}
                 />
-                <span>המחיר כולל מע״מ (הלקוח משלם בסיס + מע״מ)</span>
+                <span>הוסף מע״מ מעל מחיר הבסיס (הלקוח משלם בסיס + מע״מ)</span>
               </label>
               <div className="text-xs text-muted-foreground">
                 כשמסומן — היעד הוא הסכום כולל מע״מ וכל תשלום נזקף במלואו. כשלא — המחיר הוא נטו ותשלום

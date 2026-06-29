@@ -20,12 +20,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ORDER_PAYMENT_METHOD_OPTIONS } from "@/lib/orders/paymentStatus";
+import AccountSelect from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { toHebrewError } from "@/lib/error-messages";
 import {
   mapProjectTypeToExpenseDomain,
-  EXPENSE_CATEGORY_OPTIONS_WITH_WAGE,
-  EXPENSE_OTHER_CATEGORY,
-  EXPENSE_WORKER_WAGE_CATEGORY,
   EXPENSE_CARS_CATEGORY,
 } from "@/lib/expenses";
 import {
@@ -46,119 +45,22 @@ import type {
   ExpenseListItem,
   ProjectSalaryAgreement,
 } from "./ProjectTabsClient";
-
-// Helpers kept local (duplicated from ProjectTabsClient) so this module is
-// self-contained and doesn't create a runtime cross-import.
-function toNumber(value: unknown) {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function formatIls(value: number | null) {
-  if (value === null) return "—";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function getString(row: Record<string, unknown> | null, key: string) {
-  if (!row) return null;
-  const value = row[key];
-  return typeof value === "string" ? value : null;
-}
-
-function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
-  const name = attachment.file_name?.toLowerCase() ?? "";
-  return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
-}
-
-async function uploadFinancialAttachment(entityType: "expense" | "payment" | "session", entityId: string, file: File) {
-  const form = new FormData();
-  form.set("entity_type", entityType);
-  form.set("entity_id", entityId);
-  form.set("file", file);
-
-  const res = await fetch("/api/financial-attachments/upload", {
-    method: "POST",
-    body: form,
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(typeof json?.error === "string" ? json.error : "Upload failed");
-  }
-  return (json?.attachment ?? null) as FinancialAttachment | null;
-}
-
-function getErrorMessage(error: unknown) {
-  return toHebrewError(error, "");
-}
-
-// Categories come from the shared source of truth in lib/expenses.
-const PROJECT_EXPENSE_CATEGORY_OPTIONS = EXPENSE_CATEGORY_OPTIONS_WITH_WAGE;
-const OTHER_PROJECT_EXPENSE_CATEGORY = EXPENSE_OTHER_CATEGORY;
-const EMPLOYEE_WAGE_CATEGORY = EXPENSE_WORKER_WAGE_CATEGORY;
-
-function toLocalDateTimeValue(value: string | null | undefined) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function dateOnly(value: string | null | undefined) {
-  if (!value) return "";
-  const trimmed = value.trim();
-  const match = /^(\d{4}-\d{2}-\d{2})/.exec(trimmed);
-  return match ? match[1] : "";
-}
-
-function projectDateOrToday(projectStartDate: string | null | undefined) {
-  return dateOnly(projectStartDate) || new Date().toISOString().slice(0, 10);
-}
-
-function projectLocalDateTime(projectStartDate: string | null | undefined, offsetMinutes = 0) {
-  const baseDate = projectDateOrToday(projectStartDate);
-  const now = new Date();
-  const adjusted = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    now.getHours(),
-    now.getMinutes(),
-    0,
-    0
-  );
-  adjusted.setMinutes(adjusted.getMinutes() + offsetMinutes);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${baseDate}T${pad(adjusted.getHours())}:${pad(adjusted.getMinutes())}`;
-}
-
-function projectLocalDateTimeWithTemplate(
-  projectStartDate: string | null | undefined,
-  templateDateTime: string | null | undefined,
-  fallbackOffsetMinutes = 0
-) {
-  const baseDate = projectDateOrToday(projectStartDate);
-  if (!templateDateTime) return projectLocalDateTime(projectStartDate, fallbackOffsetMinutes);
-  const template = new Date(templateDateTime);
-  if (Number.isNaN(template.getTime())) {
-    return projectLocalDateTime(projectStartDate, fallbackOffsetMinutes);
-  }
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${baseDate}T${pad(template.getHours())}:${pad(template.getMinutes())}`;
-}
-
-function toIsoDateTime(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
-}
+import {
+  dateOnly,
+  EMPLOYEE_WAGE_CATEGORY,
+  formatIls,
+  getErrorMessage,
+  getString,
+  isImageAttachment,
+  OTHER_PROJECT_EXPENSE_CATEGORY,
+  PROJECT_EXPENSE_CATEGORY_OPTIONS,
+  projectDateOrToday,
+  projectLocalDateTimeWithTemplate,
+  toIsoDateTime,
+  toLocalDateTimeValue,
+  toNumber,
+  uploadFinancialAttachment,
+} from "./ProjectExpenseDialogs.helpers";
 
 export function AddExpenseDialog({
   open,
@@ -221,6 +123,8 @@ export function AddExpenseDialog({
   const [expensePaymentStatus, setExpensePaymentStatus] = useState<"paid" | "partial" | "not_paid">("not_paid");
   const [expensePaidAmount, setExpensePaidAmount] = useState("");
   const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
+  const [expenseAccountId, setExpenseAccountId] = useState("");
+  const [expenseAccountsList, setExpenseAccountsList] = useState<Account[]>([]);
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [tagIds, setTagIds] = useState<string[]>([]);
@@ -232,6 +136,8 @@ export function AddExpenseDialog({
   const [billToCustomerAmountTouched, setBillToCustomerAmountTouched] = useState(false);
   const [workerPaymentMode, setWorkerPaymentMode] = useState<"none" | "paid" | "partial">("none");
   const [workerPaymentAmount, setWorkerPaymentAmount] = useState("");
+  const [workerPaymentAccountId, setWorkerPaymentAccountId] = useState("");
+  const [workerPaymentAccountsList, setWorkerPaymentAccountsList] = useState<Account[]>([]);
   const [workerPaymentAmountTouched, setWorkerPaymentAmountTouched] = useState(false);
   const finalCategory =
     category === OTHER_PROJECT_EXPENSE_CATEGORY ? categoryOther.trim() : category.trim();
@@ -389,6 +295,14 @@ export function AddExpenseDialog({
     if (laborCostError) missing.push("עלות עבודה");
     if (billToCustomerAmountError) missing.push("סכום לחיוב לקוח");
     if (workerPaymentAmountError) missing.push("סכום ששולם לעובד");
+    if (
+      isSessionMode &&
+      workerPaymentMode !== "none" &&
+      workerPaymentAccountsList.length > 0 &&
+      !workerPaymentAccountId
+    ) {
+      missing.push("חשבון לתשלום לעובד");
+    }
     return missing.length > 0
       ? `\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05e9\u05de\u05d5\u05e8: ${missing.join(", ")}`
       : "";
@@ -493,6 +407,7 @@ export function AddExpenseDialog({
     const rawExpPaid = editingExpense ? toNumber(editingExpense["paid_amount"] as string | number | null) : null;
     setExpensePaidAmount(rawExpPaid != null && rawExpPaid > 0 ? String(rawExpPaid) : "");
     setExpensePaymentMethod(getString(editingExpense, "payment_method") ?? "");
+    setExpenseAccountId(getString(editingExpense, "account_id") ?? "");
     setAttachmentFiles([]);
     setExistingAttachments(
       isEditingSession
@@ -730,6 +645,7 @@ export function AddExpenseDialog({
                     payment_date: sessionPaymentDate,
                     amount: paymentAmount,
                     payment_method: null,
+                    account_id: workerPaymentAccountId || null,
                     reference_number: null,
                     notes: null,
                     allocations: [
@@ -781,6 +697,7 @@ export function AddExpenseDialog({
         setSessionBillableToCustomer(false);
         setBillToCustomerAmount("");
         setWorkerPaymentMode("none");
+        setWorkerPaymentAccountId("");
         setWorkerPaymentAmount("");
         setWorkerPaymentAmountTouched(false);
         lastAutoWorkerPaymentAmountRef.current = "";
@@ -807,6 +724,14 @@ export function AddExpenseDialog({
     const amountNumber = Number(amount);
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) return;
     if (!expenseDate) return;
+    if (
+      (expensePaymentStatus === "paid" || expensePaymentStatus === "partial") &&
+      expenseAccountsList.length > 0 &&
+      !expenseAccountId
+    ) {
+      toast.error("יש לבחור חשבון לתנועה.");
+      return;
+    }
 
     const includedInBase = !billedToCustomer;
 
@@ -829,6 +754,7 @@ export function AddExpenseDialog({
           payment_status: expensePaymentStatus,
           paid_amount: expensePaymentStatus === "partial" ? (Number(expensePaidAmount) || null) : null,
           payment_method: (expensePaymentStatus === "paid" || expensePaymentStatus === "partial") ? (expensePaymentMethod || null) : null,
+          account_id: expenseAccountId || null,
           tag_ids: finalCategory === EXPENSE_CARS_CATEGORY ? tagIds : [],
         }),
       });
@@ -851,6 +777,7 @@ export function AddExpenseDialog({
       setExpensePaymentStatus("not_paid");
       setExpensePaidAmount("");
       setExpensePaymentMethod("");
+      setExpenseAccountId("");
 
       const savedExpense = json?.expense as Record<string, unknown> | undefined;
       const savedExpenseId =
@@ -1285,7 +1212,11 @@ export function AddExpenseDialog({
                     <select
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                       value={expensePaymentMethod}
-                      onChange={(e) => setExpensePaymentMethod(e.target.value)}
+                      onChange={(e) => {
+                        const m = e.target.value;
+                        setExpensePaymentMethod(m);
+                        setExpenseAccountId((prev) => prev || defaultAccountForMethod(expenseAccountsList, m));
+                      }}
                     >
                       <option value="">בחר אמצעי</option>
                       {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
@@ -1295,6 +1226,15 @@ export function AddExpenseDialog({
                       ))}
                     </select>
                   </div>
+                  <AccountSelect
+                    required
+                    value={expenseAccountId}
+                    onChange={setExpenseAccountId}
+                    onLoaded={(list) => {
+                      setExpenseAccountsList(list);
+                      setExpenseAccountId((prev) => prev || defaultAccountForMethod(list, expensePaymentMethod));
+                    }}
+                  />
                   {expensePaymentStatus === "partial" && (
                     <div className="space-y-1">
                       <div className="text-sm font-medium">סכום ששולם</div>
@@ -1427,6 +1367,12 @@ export function AddExpenseDialog({
                     {showWorkerPaymentAmountError ? (
                       <div className="text-xs text-destructive">{workerPaymentAmountError}</div>
                     ) : null}
+                    <AccountSelect
+                      required
+                      value={workerPaymentAccountId}
+                      onChange={setWorkerPaymentAccountId}
+                      onLoaded={setWorkerPaymentAccountsList}
+                    />
                   </div>
                 ) : null}
               </section>
@@ -1573,6 +1519,8 @@ export function AddIncomeDialog({
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(projectDateOrToday(projectStartDate));
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentAccountId, setPaymentAccountId] = useState("");
+  const [paymentAccountsList, setPaymentAccountsList] = useState<Account[]>([]);
   const [dueDate, setDueDate] = useState("");
   const [requiresSplit, setRequiresSplit] = useState(false);
   const [referenceNumber, setReferenceNumber] = useState("");
@@ -1632,6 +1580,7 @@ export function AddIncomeDialog({
     );
     setPaymentDate(editingPayment?.payment_date ?? projectDateOrToday(projectStartDate));
     setPaymentMethod(editingPayment?.payment_method ?? "");
+    setPaymentAccountId(editingPayment?.account_id ?? "");
     setDueDate(editingPayment?.due_date ?? "");
     setRequiresSplit(Boolean(editingPayment?.requires_split));
     setReferenceNumber(editingPayment?.reference_number ?? "");
@@ -1648,6 +1597,10 @@ export function AddIncomeDialog({
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) return;
     if (!paymentDate) return;
     if (!paymentMethod.trim()) return;
+    if (paymentAccountsList.length > 0 && !paymentAccountId) {
+      toast.error("יש לבחור חשבון לתנועה.");
+      return;
+    }
     if (paymentMethod === "check" && !dueDate) return;
 
     setSubmitting(true);
@@ -1665,6 +1618,7 @@ export function AddIncomeDialog({
           // Price-includes-VAT projects always record payments in full.
           requires_split: priceIncludesVat ? false : requiresSplit,
           payment_method: paymentMethod.trim() ? paymentMethod : undefined,
+          account_id: paymentAccountId || undefined,
           reference_number: referenceNumber.trim() ? referenceNumber : undefined,
           check_number:
             paymentMethod === "check" && checkNumber.trim() ? checkNumber.trim() : undefined,
@@ -1790,8 +1744,10 @@ export function AddIncomeDialog({
               <select
                 value={paymentMethod}
                 onChange={(e) => {
-                  setPaymentMethod(e.target.value);
+                  const m = e.target.value;
+                  setPaymentMethod(m);
                   setPaymentMethodTouched(true);
+                  setPaymentAccountId((prev) => prev || defaultAccountForMethod(paymentAccountsList, m));
                 }}
                 onBlur={() => setPaymentMethodTouched(true)}
                 aria-invalid={showPaymentMethodError}
@@ -1817,6 +1773,15 @@ export function AddIncomeDialog({
                 </div>
               ) : null}
             </div>
+            <AccountSelect
+              required
+              value={paymentAccountId}
+              onChange={setPaymentAccountId}
+              onLoaded={(list) => {
+                setPaymentAccountsList(list);
+                setPaymentAccountId((prev) => prev || defaultAccountForMethod(list, paymentMethod));
+              }}
+            />
             <div className="space-y-1">
               <div className="text-sm font-medium">
                 {requiresDueDate ? "תאריך פירעון *" : "תאריך פירעון צפוי (אופציונלי)"}

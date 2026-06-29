@@ -54,6 +54,10 @@ export function mapProjectTypeToExpenseDomain(value: string | null | undefined):
 export const EXPENSE_WORKER_WAGE_CATEGORY = "שכר עובד";
 export const EXPENSE_OTHER_CATEGORY = "אחר";
 export const EXPENSE_CARS_CATEGORY = "רכבים";
+// Tax / VAT remittance. Expenses in this category are the actual tax payments
+// that drain the "tax to pay" bucket (see lib/financial/taxes.ts). Keep the value
+// stable — the tax aggregator matches on it.
+export const EXPENSE_TAX_CATEGORY = "מע״מ ומסים";
 export const DEFAULT_EXPENSE_CATEGORY = "רכישה";
 // Base picklist (no worker-wage entry — added only where sessions are supported).
 export const EXPENSE_CATEGORY_OPTIONS = [
@@ -61,6 +65,7 @@ export const EXPENSE_CATEGORY_OPTIONS = [
   "תחבורה",
   "אוכל",
   EXPENSE_CARS_CATEGORY,
+  EXPENSE_TAX_CATEGORY,
   EXPENSE_OTHER_CATEGORY,
 ] as const;
 // Full picklist including worker wage (dashboard / project forms).

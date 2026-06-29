@@ -388,7 +388,16 @@ export function aggregateProfitLoss(
         row.accrualRevenue += amount;
       }
     } else if (type === "outflow") {
-      if (origin === "expense") {
+      if (origin === "payment") {
+        // A refund (negative payment) is CONTRA-REVENUE, not an expense — it
+        // reduces revenue, mirroring the inflow side (posted → cash + accrual).
+        if (stage === "posted") {
+          row.cashRevenue -= amount;
+          row.accrualRevenue -= amount;
+        } else {
+          row.accrualRevenue -= amount;
+        }
+      } else if (origin === "expense") {
         if (stage === "posted") {
           row.cashExpense += amount;
           row.accrualExpense += amount;
@@ -630,7 +639,12 @@ export function buildPaymentEntries(args: {
       propertyCustomerIds: propertyCustomers, projectCustomerId: linkedProject?.customer_id ?? null,
     })) return [];
 
-    const amount = Math.abs(toNumber(row.amount_total));
+    // A payment with a negative amount_total is a REFUND — money leaving the
+    // business. It must read as an outflow (and as contra-revenue in the P&L,
+    // see aggregateProfitLoss), never as positive income.
+    const signedTotal = toNumber(row.amount_total);
+    const isRefund = signedTotal < 0;
+    const amount = Math.abs(signedTotal);
     const source = buildSource({
       businessDomain, projectId: links.projectId, orderId: links.orderId, propertyId: links.propertyId,
       projectName: linkedProject?.name?.trim() || null, propertyAddress: linkedProperty?.address?.trim() || null,
@@ -641,9 +655,9 @@ export function buildPaymentEntries(args: {
 
     return [{
       id: `payment:${row.id}`,
-      type: "inflow" as const,
+      type: isRefund ? ("outflow" as const) : ("inflow" as const),
       amount,
-      signedAmount: amount,
+      signedAmount: isRefund ? -amount : amount,
       businessDomain,
       domainName: getBusinessDomainLabel(businessDomain),
       flowDate: flowMeta.flowDate,
@@ -746,6 +760,7 @@ export function buildExpenseEntries(args: {
       expensePaidAmount: row.paid_amount != null ? Math.abs(toNumber(row.paid_amount)) : null,
       expensePaymentMethod: typeof row.payment_method === "string" ? row.payment_method.trim() || null : null,
       expensePaidDate: normalizeDate(row.paid_date),
+      expenseAccountId: typeof row.account_id === "string" ? row.account_id : null,
     }];
   });
 }

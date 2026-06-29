@@ -3,7 +3,6 @@ import { toHebrewError } from "@/lib/error-messages";
 
 import DomainBarChart from "@/components/charts/DomainBarChart";
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -40,13 +39,24 @@ import {
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
-import { TransferDialog } from "@/components/financial/TransferDialog";
+import AccountSelect from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import type {
   FinancialEntry,
-  FinancialEntryStage,
   FinancialPageData,
-  FinancialSourceKind,
 } from "@/lib/financial";
+import {
+  FilterLoadingDots,
+  SelectField,
+  SummaryCard,
+  sourceKindLabel,
+  sourceTypeTitle,
+  stageLabel,
+  stageVariant,
+  typeAmountClass,
+  typeLabel,
+  typeVariant,
+} from "./FinancialPage.ui";
 import { cn } from "@/lib/utils";
 import { useRevealOnScroll } from "@/hooks/useRevealOnScroll";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
@@ -114,6 +124,7 @@ type IncomeCreateFormState = {
   paymentDate: string;
   dueDate: string;
   paymentMethod: "bank_transfer" | "cash" | "check" | "credit_card" | "other";
+  accountId: string;
   referenceNumber: string;
   checkNumber: string;
   notes: string;
@@ -129,44 +140,6 @@ const currencyFormatter = new Intl.NumberFormat("he-IL", {
 
 function formatCurrency(value: number) {
   return currencyFormatter.format(value);
-}
-
-function sourceKindLabel(kind: FinancialSourceKind | null) {
-  if (kind === "project") return "פרויקט";
-  if (kind === "property") return "נכס";
-  if (kind === "order") return "הזמנה";
-  return "מקור";
-}
-
-function stageLabel(stage: FinancialEntryStage) {
-  if (stage === "scheduled") return "צפוי";
-  if (stage === "pending") return "ממתין";
-  return "בפועל";
-}
-
-function stageVariant(stage: FinancialEntryStage) {
-  if (stage === "scheduled") return "info-outline" as const;
-  if (stage === "pending") return "warning-outline" as const;
-  return "success-outline" as const;
-}
-
-function typeLabel(type: FinancialEntry["type"]) {
-  return type === "inflow" ? "כניסה" : "יציאה";
-}
-
-function typeVariant(type: FinancialEntry["type"]) {
-  return type === "inflow" ? ("success-outline" as const) : ("destructive-outline" as const);
-}
-
-function typeAmountClass(type: FinancialEntry["type"]) {
-  return type === "inflow" ? "text-success" : "text-destructive";
-}
-
-function sourceTypeTitle(kind: FinancialSourceKind) {
-  if (kind === "project") return "פרויקט";
-  if (kind === "property") return "נכס";
-  if (kind === "order") return "הזמנה";
-  return "שוטף";
 }
 
 function isEditableExpenseEntry(entry: FinancialEntry): entry is EditableExpenseEntry {
@@ -187,89 +160,13 @@ function createIncomeFormState(): IncomeCreateFormState {
     paymentDate: todayIsoDate(),
     dueDate: "",
     paymentMethod: "bank_transfer",
+    accountId: "",
     referenceNumber: "",
     checkNumber: "",
     notes: "",
     requiresSplit: false,
     tagIds: [],
   };
-}
-
-function SummaryCard({
-  title,
-  value,
-  description,
-  accent,
-}: {
-  title: string;
-  value: string;
-  description: string;
-  accent?: "success" | "destructive" | "default";
-}) {
-  return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-5 text-right">
-        <div className="text-sm text-muted-foreground">{title}</div>
-        <div
-          dir="ltr"
-          className={cn(
-            "mt-2 text-2xl font-semibold tabular-nums",
-            accent === "success" && "text-success",
-            accent === "destructive" && "text-destructive"
-          )}
-        >
-          {value}
-        </div>
-        <div className="mt-1 text-xs text-muted-foreground">{description}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function SelectField({
-  value,
-  onChange,
-  children,
-  label,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  children: ReactNode;
-  label: string;
-}) {
-  return (
-    <label className="space-y-1.5 text-sm text-right">
-      <span className="font-medium">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-xl border border-input bg-background px-3 text-right text-sm shadow-sm"
-      >
-        {children}
-      </select>
-    </label>
-  );
-}
-
-function FilterLoadingDots() {
-  return (
-    <div className="flex justify-center" aria-live="polite" aria-label="טוען נתונים פיננסיים">
-      <div className="flex items-center gap-4">
-        {[
-          { delayMs: 0, className: "bg-primary shadow-primary/35" },
-          { delayMs: 150, className: "bg-secondary shadow-secondary/35" },
-          { delayMs: 300, className: "bg-primary shadow-primary/35" },
-          { delayMs: 450, className: "bg-secondary shadow-secondary/35" },
-        ].map(({ delayMs, className }) => (
-          <span
-            key={delayMs}
-            className={cn("h-7 w-7 animate-pulse rounded-full shadow-xl", className)}
-            style={{ animationDelay: `${delayMs}ms`, animationDuration: "1s" }}
-          />
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function setOrDelete(params: URLSearchParams, key: string, value: string | number | null | undefined) {
@@ -620,11 +517,13 @@ export default function FinancialPageClient({
   const [isDeletingExpense, setIsDeletingExpense] = useState(false);
   const [markPaidExpense, setMarkPaidExpense] = useState<EditableExpenseEntry | null>(null);
   const [markPaidMethod, setMarkPaidMethod] = useState<string>("");
+  const [markPaidAccountId, setMarkPaidAccountId] = useState<string>("");
+  const [markPaidAccountsList, setMarkPaidAccountsList] = useState<Account[]>([]);
   const [markPaidDate, setMarkPaidDate] = useState<string>(todayIsoDate());
   const [isMarkingPaid, setIsMarkingPaid] = useState(false);
   const [expenseCreateOpen, setExpenseCreateOpen] = useState(false);
   const [incomeCreateOpen, setIncomeCreateOpen] = useState(false);
-  const [transferCreateOpen, setTransferCreateOpen] = useState(false);
+  const [incomeAccountsList, setIncomeAccountsList] = useState<Account[]>([]);
   const [incomeCreateForm, setIncomeCreateForm] = useState<IncomeCreateFormState>(
     () => loadDraft<IncomeCreateFormState>("income-create") ?? createIncomeFormState()
   );
@@ -692,6 +591,7 @@ export default function FinancialPageClient({
   const openMarkPaid = (entry: FinancialEntry) => {
     if (!isEditableExpenseEntry(entry)) return;
     setMarkPaidMethod(entry.expensePaymentMethod ?? "");
+    setMarkPaidAccountId(entry.expenseAccountId ?? "");
     // Default the pay date to the scheduled date if it's already due, else today.
     const scheduled = entry.recordedDate;
     setMarkPaidDate(scheduled && scheduled <= data.todayIso ? scheduled : todayIsoDate());
@@ -700,6 +600,10 @@ export default function FinancialPageClient({
 
   const confirmMarkPaid = async () => {
     if (!markPaidExpense) return;
+    if (markPaidAccountsList.length > 0 && !markPaidAccountId) {
+      toast.error("יש לבחור חשבון לתנועה.");
+      return;
+    }
     setIsMarkingPaid(true);
     try {
       const res = await fetch("/api/expenses/mark-paid", {
@@ -708,6 +612,7 @@ export default function FinancialPageClient({
         body: JSON.stringify({
           id: markPaidExpense.expenseId,
           payment_method: markPaidMethod || null,
+          account_id: markPaidAccountId || null,
           paid_date: markPaidDate || null,
         }),
       });
@@ -780,6 +685,10 @@ export default function FinancialPageClient({
       toast.error("יש להזין תאריך פירעון לצ'ק");
       return;
     }
+    if (incomeAccountsList.length > 0 && !incomeCreateForm.accountId) {
+      toast.error("יש לבחור חשבון לתנועה.");
+      return;
+    }
     // due_date is optional for non-check methods (e.g., שוטף+30 bank transfer).
 
     setIsCreatingIncome(true);
@@ -795,6 +704,7 @@ export default function FinancialPageClient({
         due_date: incomeCreateForm.dueDate.trim() || null,
         requires_split: incomeCreateForm.requiresSplit,
         payment_method: incomeCreateForm.paymentMethod,
+        account_id: incomeCreateForm.accountId || null,
         reference_number: incomeCreateForm.referenceNumber.trim() || null,
         check_number:
           incomeCreateForm.paymentMethod === "check" && incomeCreateForm.checkNumber.trim()
@@ -867,9 +777,6 @@ export default function FinancialPageClient({
         </Button>
         <Button type="button" variant="secondary" onClick={() => setExpenseCreateOpen(true)}>
           הוספת הוצאה
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => setTransferCreateOpen(true)}>
-          העברה / שיוך כפול
         </Button>
       </>
     ) : null;
@@ -2012,15 +1919,6 @@ export default function FinancialPageClient({
       </Tabs>
       )}
 
-      <TransferDialog
-        open={transferCreateOpen}
-        onOpenChange={setTransferCreateOpen}
-        projects={recurringProjects}
-        orders={recurringOrders}
-        properties={recurringProperties}
-        onSaved={() => refreshAndWait()}
-      />
-
       <ExpenseDialog
         open={expenseCreateOpen}
         onOpenChange={(open) => {
@@ -2172,19 +2070,35 @@ export default function FinancialPageClient({
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={incomeCreateForm.paymentMethod}
                   onChange={(event) =>
-                    setIncomeCreateForm((current) => ({
-                      ...current,
-                      paymentMethod: event.target.value as IncomeCreateFormState["paymentMethod"],
-                    }))
+                    setIncomeCreateForm((current) => {
+                      const paymentMethod = event.target.value as IncomeCreateFormState["paymentMethod"];
+                      return {
+                        ...current,
+                        paymentMethod,
+                        accountId: current.accountId || defaultAccountForMethod(incomeAccountsList, paymentMethod),
+                      };
+                    })
                   }
                 >
                   <option value="bank_transfer">העברה בנקאית</option>
                   <option value="cash">מזומן</option>
-                  <option value="check">?&apos;?</option>
+                  <option value="check">צ׳ק</option>
                   <option value="credit_card">כרטיס אשראי</option>
                   <option value="other">אחר</option>
                 </select>
               </div>
+              <AccountSelect
+                required
+                value={incomeCreateForm.accountId}
+                onChange={(accountId) => setIncomeCreateForm((current) => ({ ...current, accountId }))}
+                onLoaded={(list) => {
+                  setIncomeAccountsList(list);
+                  setIncomeCreateForm((current) => ({
+                    ...current,
+                    accountId: current.accountId || defaultAccountForMethod(list, current.paymentMethod),
+                  }));
+                }}
+              />
               <div className="space-y-1">
                 <div className="text-sm font-medium">
                   {incomeCreateForm.paymentMethod === "check"
@@ -2301,6 +2215,7 @@ export default function FinancialPageClient({
           payment_status: editingExpense.paymentStatus,
           paid_amount: editingExpense.expensePaidAmount ?? null,
           payment_method: editingExpense.expensePaymentMethod ?? null,
+          account_id: editingExpense.expenseAccountId ?? null,
           project_id: editingExpense.expenseProjectId,
           order_id: editingExpense.expenseOrderId,
           property_id: editingExpense.expensePropertyId,
@@ -2396,7 +2311,11 @@ export default function FinancialPageClient({
                   <select
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     value={markPaidMethod}
-                    onChange={(event) => setMarkPaidMethod(event.target.value)}
+                    onChange={(event) => {
+                      const m = event.target.value;
+                      setMarkPaidMethod(m);
+                      setMarkPaidAccountId((prev) => prev || defaultAccountForMethod(markPaidAccountsList, m));
+                    }}
                   >
                     <option value="">בחר אמצעי</option>
                     {PAYMENT_METHOD_OPTIONS.map((option) => (
@@ -2410,6 +2329,15 @@ export default function FinancialPageClient({
                   <div className="text-sm font-medium">תאריך תשלום</div>
                   <DateInput value={markPaidDate} onChange={(event) => setMarkPaidDate(event.target.value)} />
                 </div>
+                <AccountSelect
+                  required
+                  value={markPaidAccountId}
+                  onChange={setMarkPaidAccountId}
+                  onLoaded={(list) => {
+                    setMarkPaidAccountsList(list);
+                    setMarkPaidAccountId((prev) => prev || defaultAccountForMethod(list, markPaidMethod));
+                  }}
+                />
               </div>
 
               <DialogFooter className="mt-6">

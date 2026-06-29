@@ -23,9 +23,10 @@ import {
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import AccountSelect from "@/components/financial/AccountSelect";
+import type { Account } from "@/lib/accounts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { UserRole } from "@/lib/auth/requireProfile";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel, isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
 import {
@@ -35,10 +36,7 @@ import {
   payrollWorkerTypeRequiresAgreement,
   shouldShowSessionHours,
   shouldShowSessionPrice,
-  type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
-import { getPaymentStatusLabel as getSharedPaymentStatusLabel } from "@/lib/ui/status-colors";
-import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import {
   getActiveSalaryAgreementForDate,
   calculateSessionLaborCost,
@@ -52,7 +50,6 @@ import {
   monthLabelFromKey,
   sessionWorkedMinutes,
   toNumber,
-  type PayrollPeriodRow,
   type PayslipRow,
   type SalaryAgreementRow,
 } from "@/lib/payroll";
@@ -64,10 +61,8 @@ import {
   getSessionLinkLabel,
   getWorkerAccessLabel,
   isPayrollPeriodEditable,
-  normalizePayrollStatus,
   type SalaryCenterProjectOption,
   type SalaryCenterProtectedPayload,
-  type SalaryCenterUserRow,
   type SessionEffectivePaymentRow,
   type SessionPublicRow,
   type WorkerPaymentAllocationRow,
@@ -75,136 +70,47 @@ import {
   type WorkerPaymentRow,
 } from "@/lib/payroll-center";
 import { toHebrewError } from "@/lib/error-messages";
-
-type Props = {
-  viewerRole: UserRole;
-  publicUsers: SalaryCenterUserRow[];
-  publicSessions: SessionPublicRow[];
-  projectOptions: SalaryCenterProjectOption[];
-  propertyOptions: SalaryCenterProjectOption[];
-  publicPeriods: PayrollPeriodRow[];
-  initiallyUnlocked: boolean;
-  hasPasswordConfigured: boolean;
-  defaultWorkerId?: string;
-  /**
-   * "list" (default): renders the full payroll center — top tabs, worker
-   * tables, and a worker-detail dialog that opens when a row is selected.
-   * "worker-detail": renders only the worker-detail view inline (no top tabs,
-   * no worker tables, no dialog wrapper) for the `defaultWorkerId` worker.
-   * Used by /payroll/workers/[id].
-   */
-  mode?: "list" | "worker-detail";
-};
-
-type SessionFormState = {
-  session_id: string;
-  user_id: string;
-  business_domain: string;
-  project_id: string;
-  property_id: string;
-  notes: string;
-  clock_in: string;
-  clock_out: string;
-  labor_cost: string;
-  original_user_id: string;
-  original_clock_in: string;
-  original_clock_out: string;
-  original_labor_cost: string;
-  is_billable_to_customer: boolean;
-  bill_to_customer_amount: string;
-  billing_status: string;
-  mark_paid_now: boolean;
-  paid_amount_now: string;
-};
-
-type WorkerFormState = {
-  full_name: string;
-  email: string;
-  phone: string;
-  role: "admin" | "office" | "worker" | "worker_no_access";
-  active: boolean;
-  system_access: boolean;
-  payroll_worker_type: PayrollWorkerType;
-};
-
-type CreateUserFormState = {
-  full_name: string;
-  email: string;
-  phone: string;
-  password: string;
-  role: "admin" | "office" | "worker" | "worker_no_access";
-  active: boolean;
-  system_access: boolean;
-  payroll_worker_type: PayrollWorkerType;
-};
-
-type AgreementFormState = {
-  agreement_id: string;
-  user_id: string;
-  salary_type: "hourly" | "monthly";
-  hourly_rate: string;
-  monthly_salary: string;
-  overtime_rate: string;
-  standard_daily_hours: string;
-  due_day_of_next_month: string;
-  valid_from: string;
-  notes: string;
-};
-
-type OverrideFormState = {
-  override_hourly_rate: string;
-  start_time: string;
-  end_time: string;
-  reason: string;
-  notes: string;
-};
-
-type PayslipItemFormState = {
-  payslip_id: string;
-  item_type: string;
-  amount: string;
-  notes: string;
-};
-
-type WorkerPaymentAllocationFormState = {
-  source_type: "session" | "payslip";
-  source_id: string;
-  amount: string;
-  max_amount: number;
-  title: string;
-  subtitle: string;
-};
-
-type WorkerPaymentFormState = {
-  payment_id: string;
-  user_id: string;
-  payment_date: string;
-  amount: string;
-  payment_method: string;
-  reference_number: string;
-  notes: string;
-  allocations: WorkerPaymentAllocationFormState[];
-};
-
-type SplitPartDraft = {
-  id: string;
-  minutes: string;
-  domain: ExpenseBusinessDomain;
-  projectId: string;
-  propertyId: string;
-};
-
-type PendingSalaryDeletion =
-  | { kind: "session"; sessionId: string; workerLabel: string }
-  | { kind: "worker"; userId: string; workerLabel: string }
-  | { kind: "agreement"; agreementId: string; userId: string; workerLabel: string }
-  | { kind: "payment"; paymentId: string; userId: string; amountLabel: string };
-
-type WorkerPrintFilters = {
-  projectId: string;
-  month: string;
-  year: string;
-};
+import type {
+  Props,
+  SessionFormState,
+  WorkerFormState,
+  CreateUserFormState,
+  AgreementFormState,
+  OverrideFormState,
+  PayslipItemFormState,
+  WorkerPaymentAllocationFormState,
+  WorkerPaymentFormState,
+  SplitPartDraft,
+  PendingSalaryDeletion,
+  WorkerPrintFilters,
+} from "./SalaryCenter.types";
+import {
+  PAYSLIP_ITEM_TYPES,
+  AccessBadge,
+  Field,
+  MiniStat,
+  PaymentStatusBadge,
+  RoleBadge,
+  StatusPill,
+  SummaryCard,
+  Tag,
+  WorkerTypeBadge,
+  escapePrintHtml,
+  formatLocalDate,
+  formatLocalTime,
+  formatMonthYearLabel,
+  formatPrintPeriodLabel,
+  formatSessionRange,
+  formatWorkerPaymentMethodLabel,
+  getBillingStatusLabel,
+  getPayrollPeriodLabel,
+  getPayslipItemTypeLabel,
+  getRoleLabel,
+  isExceptionItemType,
+  selectClassName,
+  sharedPaymentStatusLabel,
+  toDateTimeLocalValue,
+} from "./SalaryCenterUi";
 
 const DEFAULT_SESSION_FORM: SessionFormState = {
   session_id: "",
@@ -255,26 +161,6 @@ const DEFAULT_PAYSLIP_ITEM_FORM: PayslipItemFormState = {
   notes: "",
 };
 
-const PAYSLIP_ITEM_TYPES = [
-  { value: "bonus", label: "בונוס" },
-  { value: "overtime_extra", label: "תוספת שעות נוספות" },
-  { value: "travel_allowance", label: "דמי נסיעה" },
-  { value: "meal_allowance", label: "דמי אוכל" },
-  { value: "advance", label: "מקדמה" },
-  { value: "deduction", label: "ניכוי" },
-  { value: "exception_absence", label: "היעדרות" },
-  { value: "exception_partial_month", label: "חודש חלקי" },
-  { value: "manual_adjustment", label: "התאמה ידנית" },
-] as const;
-
-function getPayslipItemTypeLabel(value: string | null | undefined) {
-  return PAYSLIP_ITEM_TYPES.find((t) => t.value === value)?.label ?? value ?? "פריט";
-}
-
-function isExceptionItemType(value: string | null | undefined) {
-  return value === "exception_absence" || value === "exception_partial_month";
-}
-
 const DEFAULT_CREATE_USER_FORM: CreateUserFormState = {
   full_name: "",
   email: "",
@@ -292,6 +178,7 @@ const DEFAULT_WORKER_PAYMENT_FORM: WorkerPaymentFormState = {
   payment_date: new Date().toISOString().slice(0, 10),
   amount: "",
   payment_method: "",
+  account_id: "",
   reference_number: "",
   notes: "",
   allocations: [],
@@ -362,6 +249,7 @@ export default function SalaryCenterClient({
   const [sessionMode, setSessionMode] = useState<"create" | "edit">("create");
   const [workerPaymentDialogOpen, setWorkerPaymentDialogOpen] = useState(false);
   const [workerPaymentForm, setWorkerPaymentForm] = useState<WorkerPaymentFormState>(DEFAULT_WORKER_PAYMENT_FORM);
+  const [workerPaymentAccountsList, setWorkerPaymentAccountsList] = useState<Account[]>([]);
   const [workerPaymentError, setWorkerPaymentError] = useState("");
   const [pendingDeletion, setPendingDeletion] = useState<PendingSalaryDeletion | null>(null);
   const [locallyDeletedSessionIds, setLocallyDeletedSessionIds] = useState<string[]>([]);
@@ -1535,6 +1423,7 @@ export default function SalaryCenterClient({
       amount:
         typeof payment.amount === "number" || typeof payment.amount === "string" ? String(payment.amount) : "",
       payment_method: payment.payment_method ?? "",
+      account_id: payment.account_id ?? "",
       reference_number: payment.reference_number ?? "",
       notes: payment.notes ?? "",
       allocations,
@@ -1601,6 +1490,10 @@ export default function SalaryCenterClient({
       setWorkerPaymentError("יש לבחור תאריך תשלום.");
       return;
     }
+    if (workerPaymentAccountsList.length > 0 && !workerPaymentForm.account_id) {
+      setWorkerPaymentError("יש לבחור חשבון לתנועה.");
+      return;
+    }
     // Allocations are optional: a payment can be recorded even when the worker has
     // no open debt (an advance / general payment). Only block allocating MORE than
     // was actually paid; an unallocated remainder is allowed.
@@ -1620,6 +1513,7 @@ export default function SalaryCenterClient({
           payment_date: workerPaymentForm.payment_date,
           amount,
           payment_method: workerPaymentForm.payment_method.trim() || null,
+          account_id: workerPaymentForm.account_id || null,
           reference_number: workerPaymentForm.reference_number.trim() || null,
           notes: workerPaymentForm.notes.trim() || null,
           allocations: activeAllocations.map((allocation) => ({
@@ -4925,6 +4819,14 @@ export default function SalaryCenterClient({
                 placeholder="מזומן, העברה, צ׳ק..."
               />
             </Field>
+            <AccountSelect
+              required
+              value={workerPaymentForm.account_id}
+              onChange={(accountId) =>
+                setWorkerPaymentForm((current) => ({ ...current, account_id: accountId }))
+              }
+              onLoaded={setWorkerPaymentAccountsList}
+            />
             <Field label="אסמכתא / רפרנס">
               <Input
                 value={workerPaymentForm.reference_number}
@@ -5484,217 +5386,3 @@ export default function SalaryCenterClient({
     </div>
   );
 }
-
-function SummaryCard({
-  title,
-  value,
-  protectedValue = false,
-}: {
-  title: string;
-  value: string;
-  protectedValue?: boolean;
-}) {
-  return (
-    <Card>
-      <CardContent className="space-y-1 py-4 text-center">
-        <div className="text-sm text-muted-foreground">{title}</div>
-        <div className={`text-xl font-semibold ${protectedValue ? "tracking-tight" : ""}`}>{value}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function WorkerTypeBadge({ workerType }: { workerType: PayrollWorkerType }) {
-  // Worker descriptor badges are all blue (info) so they read as one group and never
-  // get confused with the green/orange/red payment-status badge.
-  return <StatusPill tone="info">{getPayrollWorkerTypeLabel(workerType)}</StatusPill>;
-}
-
-function MiniStat({
-  label,
-  value,
-  loading = false,
-}: {
-  label: string;
-  value: React.ReactNode;
-  loading?: boolean;
-}) {
-  return (
-    <div className="rounded-xl border bg-muted/10 p-2.5 text-center">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-0.5 font-semibold">{loading ? <LoadingDots /> : value}</div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="space-y-1 text-right text-sm">
-      <div className="font-medium">{label}</div>
-      {children}
-    </label>
-  );
-}
-
-function Tag({ children }: { children: React.ReactNode }) {
-  return <Badge variant="outline">{children}</Badge>;
-}
-
-function StatusPill({
-  children,
-  tone,
-}: {
-  children: React.ReactNode;
-  tone: "muted" | "success" | "warning" | "danger" | "info";
-}) {
-  const className = getStatusColorClasses(tone === "muted" ? "neutral" : tone);
-
-  return <Badge className={className}>{children}</Badge>;
-}
-
-function PaymentStatusBadge({
-  status,
-  owedAmount,
-}: {
-  status: string | null | undefined;
-  owedAmount?: number | string | null;
-}) {
-  if (toNumber(owedAmount) <= 0.009) {
-    return <StatusBadge value="paid" type="payment" />;
-  }
-
-  const normalized =
-    status === "paid" ||
-    status === "partial" ||
-    status === "overpaid" ||
-    status === "pending" ||
-    status === "not_due"
-      ? status
-      : "unpaid";
-  return <StatusBadge value={normalized} type="payment" />;
-}
-
-function paymentStatusLabel(status: string | null | undefined) {
-  if (status === "paid") return "שולם";
-  if (status === "partial") return "שולם חלקית";
-  if (status === "overpaid") return "שולם יתר";
-  if (status === "not_due") return "טרם הגיע מועד התשלום";
-  if (status === "pending") return "ממתין לתשלום";
-  return "לא שולם";
-}
-
-function sharedPaymentStatusLabel(status: string | null | undefined) {
-  if (status === "overpaid") return paymentStatusLabel(status);
-  return getSharedPaymentStatusLabel(status ?? "unpaid");
-}
-
-function formatWorkerPaymentMethodLabel(value: string | null | undefined) {
-  const normalized = value?.trim();
-  if (!normalized) return "";
-
-  const lowered = normalized.toLowerCase();
-  if (lowered === "cash") return "מזומן";
-  if (lowered === "transfer" || lowered === "bank transfer" || lowered === "wire") return "העברה";
-  if (lowered === "check" || lowered === "cheque") return "צ׳ק";
-  if (lowered === "credit" || lowered === "credit card") return "אשראי";
-  if (lowered === "bit") return "ביט";
-  if (lowered === "paybox") return "פייבוקס";
-
-  return normalized;
-}
-
-function escapePrintHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function RoleBadge({ role }: { role: string | null | undefined }) {
-  // All role badges (עובד / פועל / מנהל / משרד …) share the same blue (info) tone so
-  // they group visually and don't clash with the payment-status colours.
-  return <StatusPill tone="info">{getRoleLabel(role)}</StatusPill>;
-}
-
-function AccessBadge({ hasAccess }: { hasAccess: boolean }) {
-  return <StatusPill tone={hasAccess ? "success" : "muted"}>{hasAccess ? "עם גישה" : "ללא גישה"}</StatusPill>;
-}
-
-function getRoleLabel(value: string | null | undefined) {
-  if (value === "worker") return "עובד";
-  if (value === "worker_no_access") return "עובד ללא גישה";
-  if (value === "office") return "משרד";
-  if (value === "admin") return "מנהל";
-  return value || "-";
-}
-
-function getPayrollPeriodLabel(value: string | null | undefined) {
-  const normalized = normalizePayrollStatus(value);
-  if (normalized === "paid") return "שולם";
-  if (normalized === "locked") return "נעול";
-  return "פתוח";
-}
-
-function getBillingStatusLabel(value: string | null | undefined) {
-  if (value === "paid") return "שולם";
-  if (value === "billable") return "לחיוב";
-  if (value === "not_billable") return "לא לחיוב";
-  if (value === "pending") return "ממתין";
-  return value || "-";
-}
-
-function formatSessionRange(clockIn: string, clockOut: string | null) {
-  const start = new Date(clockIn);
-  const end = clockOut ? new Date(clockOut) : null;
-  if (Number.isNaN(start.getTime())) return formatDateTime(clockIn);
-  if (!end || Number.isNaN(end.getTime())) {
-    return `${formatLocalDate(start)} • ${formatLocalTime(start)} - פתוח`;
-  }
-
-  const sameDay =
-    start.getFullYear() === end.getFullYear() &&
-    start.getMonth() === end.getMonth() &&
-    start.getDate() === end.getDate();
-
-  if (sameDay) {
-    return `${formatLocalDate(start)} • ${formatLocalTime(start)}-${formatLocalTime(end)}`;
-  }
-
-  return `${formatLocalDate(start)} ${formatLocalTime(start)} → ${formatLocalDate(end)} ${formatLocalTime(end)}`;
-}
-
-function formatLocalDate(date: Date) {
-  return `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getFullYear()).slice(-2)}`;
-}
-
-function formatLocalTime(date: Date) {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-function formatPrintPeriodLabel(year: string, month: string) {
-  if (!month && !year) return "כל החודשים והשנים";
-  if (year && !month) return `כל החודשים בשנת ${year}`;
-  if (month && !year) return `${formatMonthYearLabel(String(new Date().getFullYear()), month, false)} בכל השנים`;
-  return formatMonthYearLabel(year, month);
-}
-
-function formatMonthYearLabel(year: string, month: string, includeYear = true) {
-  const normalizedYear = Number(year);
-  const normalizedMonth = Number(month);
-  if (!Number.isFinite(normalizedYear) || !Number.isFinite(normalizedMonth) || normalizedMonth < 1 || normalizedMonth > 12) {
-    return includeYear ? `${month}/${year}` : month;
-  }
-  return new Intl.DateTimeFormat("he-IL", includeYear ? { month: "long", year: "numeric" } : { month: "long" }).format(
-    new Date(normalizedYear, normalizedMonth - 1, 1)
-  );
-}
-
-function toDateTimeLocalValue(date: Date) {
-  const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return adjusted.toISOString().slice(0, 16);
-}
-
-const selectClassName =
-  "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-right text-sm shadow-sm";

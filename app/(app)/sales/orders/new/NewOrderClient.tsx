@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Check,
@@ -24,6 +24,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DateInput } from "@/components/ui/date-input";
+import AccountSelect from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +41,23 @@ import {
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
+import {
+  type CustomerOption,
+  type Step,
+  ORDER_STATUS_OPTIONS,
+  STEP_HEADINGS,
+  SummaryRow,
+  WizardStepper,
+  extractCityFromAddress,
+  formatCurrency,
+  getNumber,
+  getString,
+  getTodayDate,
+  mapCustomerSearchResult,
+  termsLabel,
+  toNonNegativeInt,
+  toPositiveInt,
+} from "./NewOrderClient.ui";
 
 type Row = Record<string, unknown>;
 
@@ -49,19 +68,6 @@ type OrderLine = {
   unit_price: number;
   discount_amount: number;
   notes: string;
-};
-
-type CustomerOption = {
-  id: string;
-  name: string;
-  nameForInvoice: string | null;
-  phone: string | null;
-  whatsapp: string | null;
-  email: string | null;
-  city: string | null;
-  address: string | null;
-  requiresPrepayment: boolean;
-  contacts?: Array<{ full_name: string; phone: string | null; email: string | null }>;
 };
 
 type ProductOption = {
@@ -100,6 +106,7 @@ type PaymentDraft = {
   payment_date: string;
   amount_total: string;
   payment_method: string;
+  account_id: string;
   due_date: string;
   reference_number: string;
   check_number: string;
@@ -107,179 +114,6 @@ type PaymentDraft = {
   notes: string;
 };
 
-type Step = 1 | 2 | 3 | 4;
-
-function getString(row: Row, keys: string[]) {
-  for (const key of keys) {
-    const value = row[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return null;
-}
-
-function getNumber(row: Row, keys: string[]) {
-  for (const key of keys) {
-    const value = row[key];
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string") {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return null;
-}
-
-function toPositiveInt(value: number) {
-  if (!Number.isFinite(value)) return 1;
-  return Math.max(1, Math.round(value));
-}
-
-function toNonNegativeInt(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.round(value));
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function getTodayDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function mapCustomerSearchResult(row: Record<string, unknown>): CustomerOption | null {
-  const id = typeof row.id === "string" ? row.id : "";
-  if (!id) return null;
-
-  const contacts = Array.isArray(row.contacts)
-    ? (row.contacts as Array<Record<string, unknown>>).map((c) => ({
-        full_name: typeof c.full_name === "string" ? c.full_name : "",
-        phone: typeof c.phone === "string" ? c.phone : null,
-        email: typeof c.email === "string" ? c.email : null,
-      }))
-    : undefined;
-
-  return {
-    id,
-    name: (typeof row.name === "string" && row.name.trim() ? row.name.trim() : null) ?? "לקוח",
-    nameForInvoice: typeof row.name_for_invoice === "string" && row.name_for_invoice.trim() ? row.name_for_invoice.trim() : null,
-    phone: typeof row.phone === "string" ? row.phone : null,
-    whatsapp: typeof row.whatsapp === "string" ? row.whatsapp : null,
-    email: typeof row.email === "string" ? row.email : null,
-    address: typeof row.address === "string" ? row.address : null,
-    city: typeof row.address === "string" ? extractCityFromAddress(row.address) : null,
-    requiresPrepayment: row.requires_prepayment === true,
-    contacts,
-  };
-}
-
-function extractCityFromAddress(address: string | null) {
-  if (!address) return null;
-  const normalized = address.trim();
-  if (!normalized) return null;
-  const first = normalized.split("|")[0]?.trim() ?? "";
-  return first || null;
-}
-
-const ORDER_STATUS_OPTIONS = [
-  { value: "draft", label: "פתוח" },
-  { value: "confirmed", label: "מאושר" },
-  { value: "processing", label: "בטיפול" },
-  { value: "out_for_delivery", label: "במשלוח" },
-  { value: "delivered", label: "סופק" },
-  { value: "completed", label: "הושלם" },
-  { value: "closed", label: "סגור" },
-  { value: "cancelled", label: "בוטל" },
-] as const;
-
-const WIZARD_STEPS: { n: Step; label: string }[] = [
-  { n: 1, label: "לקוח" },
-  { n: 2, label: "מוצרים" },
-  { n: 3, label: "תשלום ופרטים" },
-  { n: 4, label: "סקירה" },
-];
-
-const STEP_HEADINGS: Record<Step, { title: string; subtitle: string }> = {
-  1: { title: "למי ההזמנה?", subtitle: "חיפוש ברשימת הלקוחות הקיימים או הוספת לקוח חדש." },
-  2: { title: "בניית ההזמנה", subtitle: "הוספת מוצרים, עדכון כמות, מחיר והנחות בעגלה." },
-  3: { title: "תשלום ופרטים", subtitle: "חשבונית, תאריך, אופן התשלום והתשלומים בפועל." },
-  4: { title: "סקירה וסיכום", subtitle: "בדיקת הסכומים והפרטים לפני יצירת ההזמנה." },
-};
-
-function termsLabel(value: string) {
-  return PAYMENT_TERMS_OPTIONS.find((option) => option.value === value)?.label ?? value;
-}
-
-/** Top progress indicator: numbered steps with labels, connected by a track. RTL-aware. */
-function WizardStepper({
-  current,
-  canClick,
-  onStepClick,
-}: {
-  current: Step;
-  canClick: (n: Step) => boolean;
-  onStepClick: (n: Step) => void;
-}) {
-  return (
-    <div className="flex items-start">
-      {WIZARD_STEPS.map((s, i) => {
-        const done = s.n < current;
-        const active = s.n === current;
-        const clickable = canClick(s.n);
-        return (
-          <Fragment key={s.n}>
-            <div className="flex shrink-0 flex-col items-center gap-1">
-              <button
-                type="button"
-                aria-current={active ? "step" : undefined}
-                disabled={!clickable}
-                onClick={() => clickable && onStepClick(s.n)}
-                className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors",
-                  active && "border-primary text-primary",
-                  done && "border-primary bg-primary text-primary-foreground",
-                  !active && !done && "border-border text-muted-foreground",
-                  clickable && !active ? "cursor-pointer hover:border-primary/60" : "cursor-default"
-                )}
-              >
-                {done ? <Check className="h-3.5 w-3.5" /> : s.n}
-              </button>
-              <div
-                className={cn(
-                  "w-14 text-center text-[10px] font-medium leading-tight",
-                  active || done ? "text-foreground" : "text-muted-foreground"
-                )}
-              >
-                {s.label}
-              </div>
-            </div>
-            {i < WIZARD_STEPS.length - 1 ? (
-              <div
-                className={cn(
-                  "mx-1 mt-[14px] h-0.5 flex-1 rounded-full sm:mx-2",
-                  done ? "bg-primary" : "bg-border"
-                )}
-              />
-            ) : null}
-          </Fragment>
-        );
-      })}
-    </div>
-  );
-}
-
-function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 py-1.5 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-end font-medium text-foreground">{value}</span>
-    </div>
-  );
-}
 
 export default function NewOrderClient({
   customers,
@@ -378,6 +212,7 @@ export default function NewOrderClient({
   const [productQuery, setProductQuery] = useState("");
   const [lines, setLines] = useState<OrderLine[]>(initialOrder?.items ?? []);
   const [newPayments, setNewPayments] = useState<PaymentDraft[]>([]);
+  const [paymentAccountsList, setPaymentAccountsList] = useState<Account[]>([]);
   // Editable notes for already-saved payments (edit mode). Keyed by payment id,
   // seeded from the loaded values; changed entries are sent back on save.
   const [existingPaymentNotes, setExistingPaymentNotes] = useState<Record<string, string>>(() =>
@@ -703,6 +538,7 @@ export default function NewOrderClient({
           payment_date: getTodayDate(),
           amount_total: prefillAmount,
           payment_method: "",
+          account_id: "",
           due_date: "",
           reference_number: "",
           check_number: "",
@@ -779,6 +615,12 @@ export default function NewOrderClient({
       return;
     }
 
+    const paymentWithoutAccount = paymentsToSubmit.find((payment) => !payment.account_id);
+    if (paymentAccountsList.length > 0 && paymentWithoutAccount) {
+      setSubmitError("יש לבחור חשבון לכל תשלום חדש.");
+      return;
+    }
+
     if (selectedCustomer?.requiresPrepayment && remainingBalance > 0.009) {
       setSubmitError("לקוח זה מוגדר לתשלום מראש. יש להשלים את מלוא התשלום לפני שמירת ההזמנה.");
       return;
@@ -805,6 +647,7 @@ export default function NewOrderClient({
             amount_total: Number(payment.amount_total || 0),
             payment_date: payment.payment_date,
             payment_method: payment.payment_method,
+            account_id: payment.account_id || null,
             due_date: payment.due_date.trim() || null,
             reference_number: payment.reference_number.trim() || null,
             check_number:
@@ -1728,7 +1571,13 @@ export default function NewOrderClient({
                       <select
                         value={payment.payment_method}
                         disabled={actionLocked}
-                        onChange={(e) => updatePaymentDraft(index, { payment_method: e.target.value })}
+                        onChange={(e) => {
+                          const m = e.target.value;
+                          updatePaymentDraft(index, {
+                            payment_method: m,
+                            account_id: payment.account_id || defaultAccountForMethod(paymentAccountsList, m),
+                          });
+                        }}
                         className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                       >
                         <option value="">בחר אמצעי תשלום...</option>
@@ -1739,6 +1588,18 @@ export default function NewOrderClient({
                         ))}
                       </select>
                     </div>
+                    <AccountSelect
+                      required
+                      value={payment.account_id}
+                      disabled={actionLocked}
+                      onChange={(accountId) => updatePaymentDraft(index, { account_id: accountId })}
+                      onLoaded={(list) => {
+                        setPaymentAccountsList(list);
+                        if (!payment.account_id) {
+                          updatePaymentDraft(index, { account_id: defaultAccountForMethod(list, payment.payment_method) });
+                        }
+                      }}
+                    />
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">
                         {payment.payment_method === "check" ? "תאריך פירעון *" : "תאריך פירעון צפוי (אופציונלי)"}

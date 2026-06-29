@@ -971,7 +971,7 @@ export default function NewProjectClient({
                   checked={priceIncludesVat}
                   onChange={(e) => setPriceIncludesVat(e.target.checked)}
                 />
-                <span>המחיר כולל מע״מ (הלקוח משלם בסיס + מע״מ)</span>
+                <span>הוסף מע״מ מעל מחיר הבסיס (הלקוח משלם בסיס + מע״מ)</span>
               </label>
             </div>
 

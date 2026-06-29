@@ -46,6 +46,7 @@ import {
   LayoutDashboard,
   ListTodo,
   MessagesSquare,
+  Receipt,
   Settings,
   ShoppingCart,
   Users,
@@ -76,7 +77,8 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
     children: [
       { title: "תזרים", url: "/financial", icon: Landmark },
       { title: "דוחות (רווח והפסד)", url: "/financial/reports", icon: FileBarChart },
-      { title: "בנק (העברות)", url: "/financial/bank", icon: ArrowLeftRight },
+      { title: "חשבונות", url: "/financial/bank", icon: ArrowLeftRight },
+      { title: "מע״מ ומסים", url: "/financial/taxes", icon: Receipt },
       { title: "צ׳קים", url: "/checks", icon: Banknote },
       { title: "הלוואות והחזרים", url: "/financial/loans", icon: HandCoins },
       { title: "כרטיסי אשראי", url: "/financial/statements", icon: CreditCard },
@@ -103,7 +105,8 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "רכבים", url: "/vehicles", icon: Car },
   { title: "פיננסי", url: "/financial", icon: Landmark },
   { title: "דוחות (רווח והפסד)", url: "/financial/reports", icon: FileBarChart },
-  { title: "בנק (העברות)", url: "/financial/bank", icon: ArrowLeftRight },
+  { title: "חשבונות", url: "/financial/bank", icon: ArrowLeftRight },
+  { title: "מע״מ ומסים", url: "/financial/taxes", icon: Receipt },
   { title: "צ׳קים", url: "/checks", icon: Banknote },
   { title: "הלוואות והחזרים", url: "/financial/loans", icon: HandCoins },
   { title: "כרטיסי אשראי", url: "/financial/statements", icon: CreditCard },
@@ -114,7 +117,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
 ];
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports"]);
-const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/checks", "/financial/statements", "/financial/bank", "/vehicles"]);
+const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/checks", "/financial/statements", "/financial/bank", "/financial/taxes", "/vehicles"]);
 
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean): SidebarNavItem[] {
   return items.flatMap((item) => {

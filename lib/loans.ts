@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPaged } from "@/lib/supabase/paginate";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Loans & repayments (הלוואות והחזרות). Shared between the loans UI and the
@@ -21,6 +22,7 @@ export type LoanRepayment = {
   amount: number;
   interest_amount: number;
   method: string | null;
+  account_id: string | null;
   notes: string | null;
   created_at: string | null;
 };
@@ -33,6 +35,7 @@ export type Loan = {
   loan_date: string;
   loan_method: string | null;
   repayment_method: string | null;
+  account_id: string | null;
   documentation: string | null;
   amount: number;
   due_date: string | null;
@@ -84,6 +87,7 @@ function normalizeRepayment(row: Row): LoanRepayment {
     amount: num(row.amount),
     interest_amount: num(row.interest_amount),
     method: str(row.method),
+    account_id: str(row.account_id),
     notes: str(row.notes),
     created_at: str(row.created_at),
   };
@@ -117,6 +121,7 @@ export function deriveLoan(row: Row, repayments: LoanRepayment[]): Loan {
     loan_date: str(row.loan_date) ?? "",
     loan_method: str(row.loan_method),
     repayment_method: str(row.repayment_method),
+    account_id: str(row.account_id),
     documentation: str(row.documentation),
     amount,
     due_date: str(row.due_date),
@@ -142,25 +147,27 @@ export function deriveLoan(row: Row, repayments: LoanRepayment[]): Loan {
  */
 export async function fetchLoans(supabase: SupabaseClient): Promise<Loan[]> {
   try {
-    const [loansResult, repaymentsResult] = await Promise.all([
-      supabase
-        .from("loans")
-        .select(
-          "id,direction,lender,borrower,loan_date,loan_method,repayment_method,documentation,amount,due_date,interest_amount,business_domain,counterparty_customer_id,status,notes,created_at"
-        )
-        .order("loan_date", { ascending: false })
-        .range(0, 5000),
-      supabase
-        .from("loan_repayments")
-        .select("id,loan_id,repayment_date,amount,interest_amount,method,notes,created_at")
-        .order("repayment_date", { ascending: true })
-        .range(0, 20000),
+    const [loanRows, repaymentRows] = await Promise.all([
+      fetchAllPaged<Row>((from, to) =>
+        supabase
+          .from("loans")
+          .select(
+            "id,direction,lender,borrower,loan_date,loan_method,repayment_method,documentation,amount,due_date,interest_amount,business_domain,counterparty_customer_id,status,notes,account_id,created_at"
+          )
+          .order("loan_date", { ascending: false })
+          .range(from, to)
+      ),
+      fetchAllPaged<Row>((from, to) =>
+        supabase
+          .from("loan_repayments")
+          .select("id,loan_id,repayment_date,amount,interest_amount,method,account_id,notes,created_at")
+          .order("repayment_date", { ascending: true })
+          .range(from, to)
+      ),
     ]);
 
-    if (loansResult.error) return [];
-
     const repaymentsByLoan = new Map<string, LoanRepayment[]>();
-    for (const row of (repaymentsResult.data ?? []) as Row[]) {
+    for (const row of repaymentRows) {
       const repayment = normalizeRepayment(row);
       if (!repayment.loan_id) continue;
       const list = repaymentsByLoan.get(repayment.loan_id) ?? [];
@@ -168,7 +175,7 @@ export async function fetchLoans(supabase: SupabaseClient): Promise<Loan[]> {
       repaymentsByLoan.set(repayment.loan_id, list);
     }
 
-    return ((loansResult.data ?? []) as Row[]).map((row) =>
+    return loanRows.map((row) =>
       deriveLoan(row, repaymentsByLoan.get(str(row.id) ?? "") ?? [])
     );
   } catch {

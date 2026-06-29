@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPaged } from "@/lib/supabase/paginate";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Per-credit-card cost, per month. Source of truth = the `expenses` table
@@ -52,18 +53,23 @@ export async function loadCardCostsByMonth(
   supabase: SupabaseClient,
   { monthsBack = 12 }: { monthsBack?: number } = {}
 ): Promise<CardCostsReport> {
-  const { data, error } = await supabase
-    .from("expenses")
-    .select("amount,category,expense_date,transaction_date,payment_method,description")
-    .eq("payment_method", "credit_card")
-    .range(0, 50000);
-
-  if (error) return { cards: [], months: [], totals: { byCard: {}, grand: 0 }, items: [] };
+  let cardRows: Row[];
+  try {
+    cardRows = await fetchAllPaged<Row>((lo, hi) =>
+      supabase
+        .from("expenses")
+        .select("amount,category,expense_date,transaction_date,payment_method,description")
+        .eq("payment_method", "credit_card")
+        .range(lo, hi)
+    );
+  } catch {
+    return { cards: [], months: [], totals: { byCard: {}, grand: 0 }, items: [] };
+  }
 
   // month -> card -> total
   const acc = new Map<string, Map<string, number>>();
   const allItems: CardExpenseItem[] = [];
-  for (const row of (data ?? []) as Row[]) {
+  for (const row of cardRows) {
     const card = str(row.category)?.trim() || FALLBACK_CARD;
     const date = str(row.transaction_date) || str(row.expense_date);
     if (!date) continue;

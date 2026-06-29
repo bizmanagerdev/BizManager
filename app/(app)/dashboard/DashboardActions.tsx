@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowDownCircle,
-  ArrowLeftRight,
   ArrowUpCircle,
   Clock3,
   FolderKanban,
@@ -19,6 +18,7 @@ import {
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
 import NewProjectClient, { mapProjectCustomer, type ProjectCustomerOption } from "@/app/(app)/projects/NewProjectClient";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
+import { HEBREW } from "./DashboardActions.constants";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
@@ -46,6 +46,26 @@ import {
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
 import { PAYMENT_METHOD_OPTIONS, type FinancialAttachment } from "@/lib/payments";
+import {
+  WEEK_PALETTE,
+  addDays,
+  durationHours,
+  formatIls,
+  formatWeekRangeLabel,
+  getString,
+  getTodayDate,
+  isImageAttachment,
+  isSameDay,
+  normalizeDateOnly,
+  nowLocal,
+  shortWeekDay,
+  startOfWeek,
+  toDateOnly,
+  toIso,
+  uploadFinancialAttachment,
+} from "./DashboardActions.helpers";
+import AccountSelect from "@/components/financial/AccountSelect";
+import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { offlineFetch } from "@/lib/offline-queue";
 import type { CalendarEntry } from "@/lib/projectSchedule";
 import { Button } from "@/components/ui/button";
@@ -61,7 +81,6 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import { ProjectPicker, type ProjectPickerOption } from "@/components/projects/ProjectPicker";
-import { TransferDialog } from "@/components/financial/TransferDialog";
 import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
 import { TagPicker } from "@/components/tags/TagPicker";
 
@@ -97,130 +116,6 @@ export type OpenSessionInfo = {
 
 type PaymentChoice = "none" | "paid" | "partial";
 
-function getString(row: Row, key: string) {
-  const value = row[key];
-  return typeof value === "string" ? value : "";
-}
-
-function getTodayDate() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function normalizeDateOnly(value: string | null | undefined) {
-  if (!value) return "";
-  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
-  return match ? match[1] : "";
-}
-
-function nowLocal(offsetMinutes = 0) {
-  const value = new Date();
-  value.setSeconds(0, 0);
-  value.setMinutes(value.getMinutes() + offsetMinutes);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
-}
-
-function toIso(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
-}
-
-function durationHours(clockIn: string, clockOut: string) {
-  const start = new Date(clockIn).getTime();
-  const end = new Date(clockOut).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return "";
-  const hours = (end - start) / 3600000;
-  return Number.isInteger(hours) ? String(hours) : String(Math.round(hours * 100) / 100);
-}
-
-function toDateOnly(value: string | null | undefined) {
-  if (!value) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  if (match) {
-    const [, year, month, day] = match;
-    return new Date(Number(year), Number(month) - 1, Number(day));
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function startOfWeek(date: Date) {
-  const value = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  value.setDate(value.getDate() - value.getDay());
-  return value;
-}
-
-function addDays(date: Date, days: number) {
-  const value = new Date(date);
-  value.setDate(value.getDate() + days);
-  return value;
-}
-
-function isSameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-
-function formatWeekRangeLabel(start: Date, end: Date) {
-  return `${new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long" }).format(start)} - ${new Intl.DateTimeFormat(
-    "he-IL",
-    { day: "numeric", month: "long", year: "numeric" }
-  ).format(end)}`;
-}
-
-function shortWeekDay(date: Date) {
-  return new Intl.DateTimeFormat("he-IL", { weekday: "short" }).format(date);
-}
-
-const WEEK_PALETTE = [
-  { bar: "bg-info", chip: "bg-info-soft text-info-soft-foreground" },
-  { bar: "bg-success", chip: "bg-success-soft text-success-soft-foreground" },
-  { bar: "bg-warning", chip: "bg-warning-soft text-warning-soft-foreground" },
-  { bar: "bg-secondary", chip: "bg-accent text-accent-foreground" },
-  { bar: "bg-destructive", chip: "bg-destructive-soft text-destructive-soft-foreground" },
-  { bar: "bg-info/70", chip: "bg-info-soft/70 text-info-soft-foreground" },
-  { bar: "bg-palette-orange-4", chip: "bg-palette-orange-10 text-primary-1" },
-] as const;
-
-function formatIls(value: number | null) {
-  if (value === null) return "—";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
-  const name = attachment.file_name?.toLowerCase() ?? "";
-  return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
-}
-
-async function uploadFinancialAttachment(
-  entityType: "expense" | "payment" | "session",
-  entityId: string,
-  file: File
-) {
-  const form = new FormData();
-  form.set("entity_type", entityType);
-  form.set("entity_id", entityId);
-  form.set("file", file);
-
-  const res = await fetch("/api/financial-attachments/upload", {
-    method: "POST",
-    body: form,
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(typeof json?.error === "string" ? json.error : "Upload failed");
-  }
-  return (json?.attachment ?? null) as FinancialAttachment | null;
-}
-
 const fieldClass =
   "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
@@ -229,129 +124,6 @@ const DASHBOARD_EXPENSE_CATEGORY_OPTIONS = EXPENSE_CATEGORY_OPTIONS_WITH_WAGE;
 const OTHER_EXPENSE_CATEGORY = EXPENSE_OTHER_CATEGORY;
 const EMPLOYEE_WAGE_CATEGORY = EXPENSE_WORKER_WAGE_CATEGORY;
 const CARS_EXPENSE_CATEGORY = EXPENSE_CARS_CATEGORY;
-const HEBREW = {
-  saveErrorUnknown: "\u05e9\u05d2\u05d9\u05d0\u05d4 \u05dc\u05d0 \u05d9\u05d3\u05d5\u05e2\u05d4",
-  cancel: "\u05d1\u05d9\u05d8\u05d5\u05dc",
-  saving: "\u05e9\u05d5\u05de\u05e8...",
-  customerFallback: "\u05dc\u05e7\u05d5\u05d7",
-  selectCustomer: "\u05d1\u05d7\u05e8\u05d5 \u05dc\u05e7\u05d5\u05d7",
-  selectProject: "\u05d1\u05d7\u05e8\u05d5 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
-  orderNew: "\u05d4\u05d6\u05de\u05e0\u05d4 \u05d7\u05d3\u05e9\u05d4",
-  orderQuickOpen: "\u05e4\u05ea\u05d9\u05d7\u05ea \u05d8\u05d5\u05e4\u05e1 \u05d4\u05d6\u05de\u05e0\u05d4 \u05de\u05d4\u05d9\u05e8\u05d4",
-  orderDialogDescription:
-    "\u05e4\u05ea\u05d9\u05d7\u05ea \u05d4\u05d6\u05de\u05e0\u05d4 \u05de\u05ea\u05d5\u05da \u05d4\u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05d1\u05dc\u05d9 \u05de\u05e2\u05d1\u05e8 \u05dc\u05de\u05e1\u05da \u05d4\u05de\u05db\u05d9\u05e8\u05d5\u05ea.",
-  orderSaved: "\u05d4\u05d4\u05d6\u05de\u05e0\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
-  projectNew: "\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d7\u05d3\u05e9",
-  projectQuickCreate:
-    "\u05d9\u05e6\u05d9\u05e8\u05d4 \u05de\u05d4\u05d9\u05e8\u05d4 \u05d1\u05dc\u05d9 \u05dc\u05e2\u05d6\u05d5\u05d1 \u05d0\u05ea \u05d4\u05d3\u05e9\u05d1\u05d5\u05e8\u05d3",
-  projectDialogDescription:
-    "\u05d8\u05d5\u05e4\u05e1 \u05e7\u05e6\u05e8 \u05dc\u05e4\u05ea\u05d9\u05d7\u05d4 \u05de\u05d4\u05d9\u05e8\u05d4 \u05e9\u05dc \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05d7\u05d3\u05e9.",
-  projectName: "\u05e9\u05dd \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
-  customer: "\u05dc\u05e7\u05d5\u05d7",
-  projectType: "\u05e1\u05d5\u05d2 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
-  logistics: "\u05dc\u05d5\u05d2\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4",
-  moving: "\u05d4\u05d5\u05d1\u05dc\u05d4",
-  construction: "\u05e9\u05d9\u05e4\u05d5\u05e6\u05d9\u05dd",
-  status: "\u05e1\u05d8\u05d8\u05d5\u05e1",
-  statusQuote: "\u05d4\u05e6\u05e2\u05ea \u05de\u05d7\u05d9\u05e8",
-  statusPlanned: "\u05de\u05ea\u05d5\u05db\u05e0\u05df",
-  statusActive: "\u05e4\u05e2\u05d9\u05dc",
-  statusOnHold: "\u05d1\u05d4\u05de\u05ea\u05e0\u05d4",
-  statusCompleted: "\u05d4\u05d5\u05e9\u05dc\u05dd",
-  statusCancelled: "\u05d1\u05d5\u05d8\u05dc",
-  basePrice: "\u05de\u05d7\u05d9\u05e8 \u05d1\u05e1\u05d9\u05e1",
-  projectManager: "\u05de\u05e0\u05d4\u05dc \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
-  unassigned: "\u05dc\u05dc\u05d0 \u05e9\u05d9\u05d5\u05da",
-  startDate: "\u05ea\u05d0\u05e8\u05d9\u05da \u05d4\u05ea\u05d7\u05dc\u05d4",
-  endDate: "\u05ea\u05d0\u05e8\u05d9\u05da \u05e1\u05d9\u05d5\u05dd",
-  notes: "\u05d4\u05e2\u05e8\u05d5\u05ea",
-  saveProject: "\u05e9\u05de\u05d9\u05e8\u05ea \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
-  projectRequired:
-    "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05dc\u05e7\u05d5\u05d7 \u05d5\u05dc\u05de\u05dc\u05d0 \u05e9\u05dd \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8.",
-  projectCreateFailed: "\u05d9\u05e6\u05d9\u05e8\u05ea \u05d4\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05e0\u05db\u05e9\u05dc\u05d4.",
-  projectSaved: "\u05d4\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05e0\u05e9\u05de\u05e8",
-  taskNew: "\u05de\u05e9\u05d9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4",
-  taskQuickAssign:
-    "\u05e9\u05d9\u05d5\u05da \u05de\u05d4\u05d9\u05e8 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05e7\u05d9\u05d9\u05dd",
-  taskDialogDescription:
-    "\u05e4\u05ea\u05d9\u05d7\u05d4 \u05de\u05d4\u05d9\u05e8\u05d4 \u05e9\u05dc \u05de\u05e9\u05d9\u05de\u05d4 \u05d5\u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05e7\u05d9\u05d9\u05dd.",
-  project: "\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8",
-  subject: "\u05e0\u05d5\u05e9\u05d0",
-  dueDate: "\u05ea\u05d0\u05e8\u05d9\u05da \u05d9\u05e2\u05d3",
-  assignee: "\u05d0\u05d7\u05e8\u05d0\u05d9",
-  selectAssignee: "\u05d1\u05d7\u05e8\u05d5 \u05d0\u05d7\u05e8\u05d0\u05d9",
-  saveTask: "\u05e9\u05de\u05d9\u05e8\u05ea \u05de\u05e9\u05d9\u05de\u05d4",
-  taskRequired:
-    "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05d0\u05d7\u05e8\u05d0\u05d9, \u05ea\u05d0\u05e8\u05d9\u05da \u05d9\u05e2\u05d3 \u05d5\u05e0\u05d5\u05e9\u05d0.",
-  taskCreateFailed: "\u05d9\u05e6\u05d9\u05e8\u05ea \u05d4\u05de\u05e9\u05d9\u05de\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
-  taskSaved: "\u05d4\u05de\u05e9\u05d9\u05de\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
-  thisWeek: "\u05de\u05d4 \u05d9\u05e9 \u05d4\u05e9\u05d1\u05d5\u05e2",
-  thisWeekOpen:
-    "\u05de\u05e2\u05d1\u05e8 \u05de\u05d4\u05d9\u05e8 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8\u05d9\u05dd \u05d5\u05dc\u05e2\u05d1\u05d5\u05d3\u05d4 \u05d4\u05e7\u05e8\u05d5\u05d1\u05d4",
-  ordersByCity: "\u05d0\u05e1\u05e4\u05e7\u05ea \u05d4\u05d6\u05de\u05e0\u05d4",
-  ordersByCityOpen:
-    "\u05de\u05e2\u05d1\u05e8 \u05dc\u05e8\u05e9\u05d9\u05de\u05ea \u05de\u05e9\u05dc\u05d5\u05d7\u05d9\u05dd \u05db\u05d3\u05d9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05d4\u05d6\u05de\u05e0\u05d4 \u05dc\u05d0\u05d9\u05e9\u05d5\u05e8",
-  expenseNew: "\u05d4\u05d5\u05e6\u05d0\u05d4 \u05d7\u05d3\u05e9\u05d4",
-  expenseQuickRegister: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05dc\u05e4\u05d9 \u05ea\u05d7\u05d5\u05dd",
-  expenseDialogDescription:
-    "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05d7\u05d3\u05e9\u05d4 \u05dc\u05e4\u05d9 \u05ea\u05d7\u05d5\u05dd, \u05e2\u05dd \u05e9\u05d9\u05d5\u05da \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05d4\u05d6\u05de\u05e0\u05d4 \u05d0\u05d5 \u05e0\u05db\u05e1 \u05dc\u05e4\u05d9 \u05d4\u05e6\u05d5\u05e8\u05da.",
-  amount: "\u05e1\u05db\u05d5\u05dd",
-  date: "\u05ea\u05d0\u05e8\u05d9\u05da",
-  category: "\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4",
-  selectCategory: "\u05d1\u05d7\u05e8\u05d5 \u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4",
-  otherCategoryPrompt: "\u05de\u05d4 \u05d4\u05e7\u05d8\u05d2\u05d5\u05e8\u05d9\u05d4?",
-  description: "\u05ea\u05d9\u05d0\u05d5\u05e8",
-  includedInBase: "\u05e0\u05db\u05dc\u05dc \u05d1\u05d1\u05e1\u05d9\u05e1",
-  billedToCustomer: "\u05dc\u05d7\u05d9\u05d5\u05d1 \u05dc\u05e7\u05d5\u05d7",
-  includesVat: "\u05db\u05d5\u05dc\u05dc \u05de\u05e2\u05f4\u05de 18%",
-  saveExpense: "\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05d5\u05e6\u05d0\u05d4",
-  expenseRequired:
-    "\u05d9\u05e9 \u05dc\u05de\u05dc\u05d0 \u05d0\u05ea \u05db\u05dc \u05e9\u05d3\u05d5\u05ea \u05d4\u05d7\u05d5\u05d1\u05d4.",
-  expenseInvalidAmount: "\u05d9\u05e9 \u05dc\u05d4\u05d6\u05d9\u05df \u05e1\u05db\u05d5\u05dd \u05d4\u05d5\u05e6\u05d0\u05d4 \u05ea\u05e7\u05d9\u05df.",
-  expenseCreateFailed: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
-  expenseSaved: "\u05d4\u05d4\u05d5\u05e6\u05d0\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
-  incomeNew: "\u05d4\u05db\u05e0\u05e1\u05d4 \u05d7\u05d3\u05e9\u05d4",
-  transferNew: "\u05d4\u05e2\u05d1\u05e8\u05d4 / \u05e9\u05d9\u05d5\u05da \u05db\u05e4\u05d5\u05dc",
-  incomeQuickRegister: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4",
-  incomeDialogDescription:
-    "\u05e8\u05d9\u05e9\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4 \u05d7\u05d3\u05e9\u05d4 \u05dc\u05ea\u05d6\u05e8\u05d9\u05dd, \u05e2\u05dd \u05d0\u05e4\u05e9\u05e8\u05d5\u05ea \u05dc\u05e7\u05e9\u05e8 \u05dc\u05e4\u05e8\u05d5\u05d9\u05e7\u05d8, \u05d4\u05d6\u05de\u05e0\u05d4 \u05d0\u05d5 \u05e0\u05db\u05e1.",
-  paymentMethod: "\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd",
-  paymentDueDate: "\u05ea\u05d0\u05e8\u05d9\u05da \u05e4\u05d9\u05e8\u05e2\u05d5\u05df",
-  bankTransfer: "\u05d4\u05e2\u05d1\u05e8\u05d4 \u05d1\u05e0\u05e7\u05d0\u05d9\u05ea",
-  cash: "\u05de\u05d6\u05d5\u05de\u05df",
-  check: "\u05e6'\u05e7",
-  creditCard: "\u05db\u05e8\u05d8\u05d9\u05e1 \u05d0\u05e9\u05e8\u05d0\u05d9",
-  other: "\u05d0\u05d7\u05e8",
-  reference: "\u05d0\u05e1\u05de\u05db\u05ea\u05d0",
-  saveIncome: "\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05db\u05e0\u05e1\u05d4",
-  incomeRequired:
-    "\u05d9\u05e9 \u05dc\u05de\u05dc\u05d0 \u05ea\u05d0\u05e8\u05d9\u05da \u05d5\u05d0\u05de\u05e6\u05e2\u05d9 \u05ea\u05e9\u05dc\u05d5\u05dd.",
-  incomeInvalidAmount: "\u05d9\u05e9 \u05dc\u05d4\u05d6\u05d9\u05df \u05e1\u05db\u05d5\u05dd \u05d4\u05db\u05e0\u05e1\u05d4 \u05ea\u05e7\u05d9\u05df.",
-  incomeCreateFailed: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05db\u05e9\u05dc\u05d4.",
-  incomeSaved: "\u05d4\u05d4\u05db\u05e0\u05e1\u05d4 \u05e0\u05e9\u05de\u05e8\u05d4",
-  selfSessionStart: "\u05e4\u05ea\u05d9\u05d7\u05ea \u05de\u05e9\u05de\u05e8\u05ea",
-  selfSessionHint: "\u05e4\u05ea\u05d9\u05d7\u05d4 \u05de\u05d9\u05d9\u05d3\u05d9\u05ea \u05dc\u05e2\u05e6\u05de\u05da",
-  selfSessionOpenExists: "\u05db\u05d1\u05e8 \u05d9\u05e9 \u05de\u05e9\u05de\u05e8\u05ea \u05e4\u05ea\u05d5\u05d7\u05d4",
-  selfSessionStarted: "\u05d4\u05de\u05e9\u05de\u05e8\u05ea \u05e0\u05e4\u05ea\u05d7\u05d4",
-  selfSessionStartFailed: "\u05e4\u05ea\u05d9\u05d7\u05ea \u05d4\u05de\u05e9\u05de\u05e8\u05ea \u05e0\u05db\u05e9\u05dc\u05d4.",
-  manualSessionNew: "\u05d4\u05d5\u05e1\u05e4\u05ea \u05de\u05e9\u05de\u05e8\u05ea \u05d9\u05d3\u05e0\u05d9\u05ea",
-  manualSessionHint: "\u05e8\u05d9\u05e9\u05d5\u05dd \u05de\u05e9\u05de\u05e8\u05ea \u05e1\u05d2\u05d5\u05e8\u05d4 \u05de\u05d4\u05d3\u05e9\u05d1\u05d5\u05e8\u05d3",
-  manualSessionDescription:
-    "\u05d4\u05d6\u05e0\u05ea \u05de\u05e9\u05de\u05e8\u05ea \u05d9\u05d3\u05e0\u05d9\u05ea \u05e2\u05dd \u05e9\u05e2\u05ea \u05d4\u05ea\u05d7\u05dc\u05d4 \u05d5\u05e1\u05d9\u05d5\u05dd.",
-  worker: "\u05e2\u05d5\u05d1\u05d3",
-  selectWorker: "\u05d1\u05d7\u05e8\u05d5 \u05e2\u05d5\u05d1\u05d3",
-  domain: "\u05ea\u05d7\u05d5\u05dd",
-  clockIn: "\u05e9\u05e2\u05ea \u05d4\u05ea\u05d7\u05dc\u05d4",
-  totalHours: "\u05e1\u05d4\u05f4\u05db \u05e9\u05e2\u05d5\u05ea",
-  clockOut: "\u05e9\u05e2\u05ea \u05e1\u05d9\u05d5\u05dd",
-  saveManualSession: "\u05e9\u05de\u05d9\u05e8\u05ea \u05de\u05e9\u05de\u05e8\u05ea",
-  manualSessionSaved: "\u05d4\u05de\u05e9\u05de\u05e8\u05ea \u05e0\u05e9\u05de\u05e8\u05d4",
-  manualSessionFailed: "\u05e9\u05de\u05d9\u05e8\u05ea \u05d4\u05de\u05e9\u05de\u05e8\u05ea \u05e0\u05db\u05e9\u05dc\u05d4.",
-  sessionInvalidWorker: "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e2\u05d5\u05d1\u05d3.",
-  sessionInvalidProject: "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8 \u05dc\u05ea\u05d7\u05d5\u05dd \u05e4\u05e8\u05d5\u05d9\u05e7\u05d8\u05d9\u05dd.",
-  sessionInvalidProperty: "\u05d9\u05e9 \u05dc\u05d1\u05d7\u05d5\u05e8 \u05e0\u05db\u05e1 \u05dc\u05ea\u05d7\u05d5\u05dd \u05e0\u05d9\u05d4\u05d5\u05dc \u05e0\u05db\u05e1\u05d9\u05dd.",
-  sessionInvalidTimes: "\u05e9\u05e2\u05ea \u05d4\u05e1\u05d9\u05d5\u05dd \u05d7\u05d9\u05d9\u05d1\u05ea \u05dc\u05d4\u05d9\u05d5\u05ea \u05d0\u05d7\u05e8\u05d9 \u05e9\u05e2\u05ea \u05d4\u05d4\u05ea\u05d7\u05dc\u05d4.",
-} as const;
 
 export default function DashboardActions({
   customers,
@@ -389,7 +161,6 @@ export default function DashboardActions({
   const [taskOpen, setTaskOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [incomeOpen, setIncomeOpen] = useState(false);
-  const [transferOpen, setTransferOpen] = useState(false);
   const [manualSessionOpen, setManualSessionOpen] = useState(false);
   const [availableUsers, setAvailableUsers] = useState(users);
   // The dropdown data may stream in AFTER the buttons first render (so the
@@ -438,9 +209,12 @@ export default function DashboardActions({
   const [expenseLaborCost, setExpenseLaborCost] = useState("");
   const [expenseWorkerPaymentChoice, setExpenseWorkerPaymentChoice] = useState<PaymentChoice>("none");
   const [expenseWorkerPaidAmount, setExpenseWorkerPaidAmount] = useState("");
+  const [expenseWorkerAccountId, setExpenseWorkerAccountId] = useState("");
   const [expenseBillToCustomerAmount, setExpenseBillToCustomerAmount] = useState("");
   const [expensePaymentStatus, setExpensePaymentStatus] = useState<"paid" | "partial" | "not_paid">("not_paid");
   const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
+  const [expenseAccountId, setExpenseAccountId] = useState("");
+  const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [expenseAttachmentFiles, setExpenseAttachmentFiles] = useState<File[]>([]);
   const [expenseExistingAttachments, setExpenseExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [expenseTagIds, setExpenseTagIds] = useState<string[]>([]);
@@ -460,6 +234,7 @@ export default function DashboardActions({
   const [incomeAmount, setIncomeAmount] = useState("");
   const [incomeDate, setIncomeDate] = useState(getTodayDate());
   const [incomeMethod, setIncomeMethod] = useState("");
+  const [incomeAccountId, setIncomeAccountId] = useState("");
   const [incomeDueDate, setIncomeDueDate] = useState("");
   const [incomeRequiresSplit, setIncomeRequiresSplit] = useState(false);
   const [incomeReference, setIncomeReference] = useState("");
@@ -708,6 +483,8 @@ export default function DashboardActions({
     setExpenseBilledToCustomer(false);
     setExpensePaymentStatus("not_paid");
     setExpensePaymentMethod("");
+    setExpenseAccountId("");
+    setExpenseWorkerAccountId("");
     setExpenseWorkerUserId("");
     setExpenseClockIn("");
     setExpenseClockOut("");
@@ -735,6 +512,7 @@ export default function DashboardActions({
     setIncomeAmount("");
     setIncomeDate(getTodayDate());
     setIncomeMethod("");
+    setIncomeAccountId("");
     setIncomeDueDate("");
     setIncomeRequiresSplit(false);
     setIncomeReference("");
@@ -820,6 +598,14 @@ export default function DashboardActions({
         setExpenseError("יש להזין סכום ששולם לעובד.");
         return;
       }
+      if (
+        expenseWorkerPaymentChoice !== "none" &&
+        accountsList.length > 0 &&
+        !expenseWorkerAccountId
+      ) {
+        setExpenseError("יש לבחור חשבון לתשלום לעובד.");
+        return;
+      }
 
       const billToCustomerAmountNumber =
         !expenseBilledToCustomer || !expenseBillToCustomerAmount.trim()
@@ -880,6 +666,7 @@ export default function DashboardActions({
               payment_date: paymentDateSource.slice(0, 10),
               amount: workerPaidAmountNumber,
               payment_method: null,
+              account_id: expenseWorkerAccountId || null,
               reference_number: null,
               notes: `תשלום שסומן מתוך הדשבורד עבור משמרת ${paymentDateSource.slice(0, 10)}`,
               allocations: [
@@ -930,6 +717,12 @@ export default function DashboardActions({
       return;
     }
 
+    const expenseMoneyMoving = expensePaymentStatus === "paid" || expensePaymentStatus === "partial";
+    if (expenseMoneyMoving && accountsList.length > 0 && !expenseAccountId) {
+      setExpenseError("יש לבחור חשבון לתנועה.");
+      return;
+    }
+
     setExpenseSubmitting(true);
     try {
       const result = await offlineFetch(
@@ -951,6 +744,7 @@ export default function DashboardActions({
             expensePaymentStatus === "paid" || expensePaymentStatus === "partial"
               ? expensePaymentMethod || null
               : null,
+          account_id: expenseAccountId || null,
           tag_ids: expenseCategory === CARS_EXPENSE_CATEGORY ? expenseTagIds : [],
         },
         HEBREW.expenseNew,
@@ -1079,6 +873,11 @@ export default function DashboardActions({
       return;
     }
 
+    if (accountsList.length > 0 && !incomeAccountId) {
+      setIncomeError("יש לבחור חשבון לתנועה.");
+      return;
+    }
+
     setIncomeSubmitting(true);
     try {
       const result = await offlineFetch(
@@ -1096,6 +895,7 @@ export default function DashboardActions({
           due_date: incomeDueDate.trim() || null,
           requires_split: incomeRequiresSplit,
           payment_method: incomeMethod,
+          account_id: incomeAccountId || null,
           reference_number: incomeReference.trim() || null,
           check_number:
             incomeMethod === "check" && incomeCheckNumber.trim() ? incomeCheckNumber.trim() : null,
@@ -1294,6 +1094,7 @@ export default function DashboardActions({
             payment_date: paymentDateSource.slice(0, 10),
             amount: paidAmountNumber,
             payment_method: null,
+            account_id: expenseWorkerAccountId || null,
             reference_number: null,
             notes: `תשלום שסומן מתוך הדשבורד עבור משמרת ${paymentDateSource.slice(0, 10)}`,
             allocations: [
@@ -1400,16 +1201,6 @@ export default function DashboardActions({
           type="button"
           variant="outline"
           className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
-          onClick={() => setTransferOpen(true)}
-        >
-          <ArrowLeftRight className="!h-9 !w-9" strokeWidth={2.2} />
-          <span className="font-semibold">{HEBREW.transferNew}</span>
-        </Button>
-
-        <Button
-          type="button"
-          variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
           onClick={() => setCreateCustomerOpen(true)}
         >
           <UserPlus className="!h-9 !w-9" strokeWidth={2.2} />
@@ -1452,15 +1243,6 @@ export default function DashboardActions({
           <span className="font-semibold">{HEBREW.manualSessionNew}</span>
         </Button>
       </AdaptiveGrid>
-
-      <TransferDialog
-        open={transferOpen}
-        onOpenChange={setTransferOpen}
-        projects={projects.map((p) => ({ id: p.id, label: p.name }))}
-        orders={orders.map((o) => ({ id: o.id, label: o.name }))}
-        properties={properties.map((p) => ({ id: p.id, label: p.name }))}
-        onSaved={() => router.refresh()}
-      />
 
       <Dialog open={weekOverviewOpen} onOpenChange={setWeekOverviewOpen}>
         <AdaptiveDialog size="form2xl">
@@ -2260,14 +2042,22 @@ export default function DashboardActions({
                         </select>
                       </label>
                       {expenseWorkerPaymentChoice !== "none" ? (
-                        <label className="space-y-2 text-sm block">
-                          <span>כמה שולם</span>
-                          <CurrencyInput
-                            value={expenseWorkerPaidAmount}
-                            onChange={(e) => setExpenseWorkerPaidAmount(e.target.value)}
-                            placeholder="אם ריק, יירשם מלוא סכום המשמרת"
+                        <>
+                          <label className="space-y-2 text-sm block">
+                            <span>כמה שולם</span>
+                            <CurrencyInput
+                              value={expenseWorkerPaidAmount}
+                              onChange={(e) => setExpenseWorkerPaidAmount(e.target.value)}
+                              placeholder="אם ריק, יירשם מלוא סכום המשמרת"
+                            />
+                          </label>
+                          <AccountSelect
+                            required
+                            value={expenseWorkerAccountId}
+                            onChange={setExpenseWorkerAccountId}
+                            onLoaded={setAccountsList}
                           />
-                        </label>
+                        </>
                       ) : null}
                     </section>
                   ) : null}
@@ -2301,21 +2091,36 @@ export default function DashboardActions({
                   </AdaptiveGrid>
 
                   {expensePaymentStatus === "paid" || expensePaymentStatus === "partial" ? (
-                    <label className="space-y-2 text-sm">
-                      <span>{HEBREW.paymentMethod}</span>
-                      <select
-                        className={fieldClass}
-                        value={expensePaymentMethod}
-                        onChange={(e) => setExpensePaymentMethod(e.target.value)}
-                      >
-                        <option value="">בחרו אמצעי תשלום</option>
-                        {PAYMENT_METHOD_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="space-y-2 text-sm">
+                        <span>{HEBREW.paymentMethod}</span>
+                        <select
+                          className={fieldClass}
+                          value={expensePaymentMethod}
+                          onChange={(e) => {
+                            const m = e.target.value;
+                            setExpensePaymentMethod(m);
+                            setExpenseAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                          }}
+                        >
+                          <option value="">בחרו אמצעי תשלום</option>
+                          {PAYMENT_METHOD_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <AccountSelect
+                        required
+                        value={expenseAccountId}
+                        onChange={setExpenseAccountId}
+                        onLoaded={(list) => {
+                          setAccountsList(list);
+                          setExpenseAccountId((prev) => prev || defaultAccountForMethod(list, expensePaymentMethod));
+                        }}
+                      />
+                    </div>
                   ) : null}
 
                   <label className="space-y-2 text-sm">
@@ -2587,7 +2392,11 @@ export default function DashboardActions({
                       <select
                         className={fieldClass}
                         value={incomeMethod}
-                        onChange={(e) => setIncomeMethod(e.target.value)}
+                        onChange={(e) => {
+                          const m = e.target.value;
+                          setIncomeMethod(m);
+                          setIncomeAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                        }}
                       >
                         <option value="">בחרו אמצעי תשלום</option>
                         <option value="bank_transfer">{HEBREW.bankTransfer}</option>
@@ -2602,6 +2411,15 @@ export default function DashboardActions({
                         </span>
                       ) : null}
                     </label>
+                    <AccountSelect
+                      required
+                      value={incomeAccountId}
+                      onChange={setIncomeAccountId}
+                      onLoaded={(list) => {
+                        setAccountsList(list);
+                        setIncomeAccountId((prev) => prev || defaultAccountForMethod(list, incomeMethod));
+                      }}
+                    />
                   </AdaptiveGrid>
 
                   <label className="space-y-2 text-sm">

@@ -5,6 +5,7 @@ import {
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
 import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { fetchAllPagedResult } from "@/lib/supabase/paginate";
 import {
   calculateSessionLaborCost,
   getActiveSalaryAgreementForDate,
@@ -93,6 +94,7 @@ export type WorkerPaymentRow = {
   payment_method: string | null;
   reference_number: string | null;
   notes: string | null;
+  account_id: string | null;
   recorded_by: string | null;
   created_at: string | null;
 };
@@ -482,52 +484,64 @@ export async function fetchSalaryCenterProtectedPayload(
       .select("id,period_month,start_date,end_date,status")
       .order("period_month", { ascending: false })
       .range(0, 119),
-    query(supabase.from("payslips"))
-      .select(
-        "id,payroll_period_id,user_id,calculated_salary_type,total_work_minutes,calculated_base_salary,manual_adjustments,gross_salary,notes"
-      )
-      .in("user_id", safeSalaryTrackedUserIds)
-      .range(0, 1999),
+    fetchAllPagedResult((lo, hi) =>
+      query(supabase.from("payslips"))
+        .select(
+          "id,payroll_period_id,user_id,calculated_salary_type,total_work_minutes,calculated_base_salary,manual_adjustments,gross_salary,notes"
+        )
+        .in("user_id", safeSalaryTrackedUserIds)
+        .range(lo, hi)
+    ),
     query(supabase.from("hourly_salary_overrides"))
       .select("id,user_id,start_time,end_time,override_hourly_rate,reason,notes,created_at,updated_at")
       .in("user_id", safeUserIds)
       .order("created_at", { ascending: false })
       .range(0, 999),
-    query(supabase.from("attendance_sessions"))
-      .select("id,labor_cost,clock_in,user_id")
-      .in("user_id", safeUserIds)
-      .range(0, 4999),
+    fetchAllPagedResult((lo, hi) =>
+      query(supabase.from("attendance_sessions"))
+        .select("id,labor_cost,clock_in,user_id")
+        .in("user_id", safeUserIds)
+        .range(lo, hi)
+    ),
     query(supabase.from("worker_balance_summary_view"))
       .select("user_id,item_count,open_item_count,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date")
       .in("user_id", safeUserIds)
       .range(0, 1999),
-    query(supabase.from("worker_payments"))
-      .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,recorded_by,created_at")
-      .in("user_id", safeUserIds)
-      .order("payment_date", { ascending: false })
-      .range(0, 1999),
+    fetchAllPagedResult((lo, hi) =>
+      query(supabase.from("worker_payments"))
+        .select("id,user_id,payment_date,amount,payment_method,reference_number,notes,account_id,recorded_by,created_at")
+        .in("user_id", safeUserIds)
+        .order("payment_date", { ascending: false })
+        .range(lo, hi)
+    ),
     // These two views depend only on safeUserIds, so they run with the first batch instead
     // of after it. The debt view's missing-column fallback is handled below, post-await.
-    query(supabase.from("worker_debt_items_view"))
-      .select(
-        "source_type,source_id,user_id,project_id,payslip_id,payroll_period_id,source_date,due_date,period_month,worked_minutes,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date"
-      )
-      .in("user_id", safeUserIds)
-      .range(0, 4999),
-    query(supabase.from("session_effective_payment_view"))
-      .select("session_id,user_id,payment_status,paid_amount,owed_amount,last_payment_date,is_payslip_covered")
-      .in("user_id", safeUserIds)
-      .range(0, 4999),
+    fetchAllPagedResult((lo, hi) =>
+      query(supabase.from("worker_debt_items_view"))
+        .select(
+          "source_type,source_id,user_id,project_id,payslip_id,payroll_period_id,source_date,due_date,period_month,worked_minutes,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date"
+        )
+        .in("user_id", safeUserIds)
+        .range(lo, hi)
+    ),
+    fetchAllPagedResult((lo, hi) =>
+      query(supabase.from("session_effective_payment_view"))
+        .select("session_id,user_id,payment_status,paid_amount,owed_amount,last_payment_date,is_payslip_covered")
+        .in("user_id", safeUserIds)
+        .range(lo, hi)
+    ),
   ]);
 
   let workerDebtItemsResult = workerDebtItemsInitialResult;
   if (workerDebtItemsResult.error && isMissingColumnError(workerDebtItemsResult.error, "due_date")) {
-    workerDebtItemsResult = await query(supabase.from("worker_debt_items_view"))
-      .select(
-        "source_type,source_id,user_id,project_id,payslip_id,payroll_period_id,source_date,period_month,worked_minutes,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date"
-      )
-      .in("user_id", safeUserIds)
-      .range(0, 4999);
+    workerDebtItemsResult = await fetchAllPagedResult((lo, hi) =>
+      query(supabase.from("worker_debt_items_view"))
+        .select(
+          "source_type,source_id,user_id,project_id,payslip_id,payroll_period_id,source_date,period_month,worked_minutes,earned_amount,paid_amount,owed_amount,payment_status,last_payment_date"
+        )
+        .in("user_id", safeUserIds)
+        .range(lo, hi)
+    );
   }
 
   // Single source for per-session paid status (folds in payslip coverage). Tolerant:
@@ -551,16 +565,20 @@ export async function fetchSalaryCenterProtectedPayload(
   const workerPayments = ((workerPaymentsResult.data ?? []) as WorkerPaymentRow[]).filter((row) => row.id);
   const workerPaymentIds = workerPayments.map((row) => row.id);
   const payslipItemsResult = payslipIds.length
-    ? await query(supabase.from("payslip_items"))
-        .select("id,payslip_id,item_type,amount,notes")
-        .in("payslip_id", payslipIds)
-        .range(0, 3999)
+    ? await fetchAllPagedResult((lo, hi) =>
+        query(supabase.from("payslip_items"))
+          .select("id,payslip_id,item_type,amount,notes")
+          .in("payslip_id", payslipIds)
+          .range(lo, hi)
+      )
     : { data: [], error: null };
   const workerPaymentAllocationsResult = workerPaymentIds.length
-    ? await query(supabase.from("worker_payment_allocations"))
-        .select("id,worker_payment_id,source_type,attendance_session_id,payslip_id,amount,created_at")
-        .in("worker_payment_id", workerPaymentIds)
-        .range(0, 4999)
+    ? await fetchAllPagedResult((lo, hi) =>
+        query(supabase.from("worker_payment_allocations"))
+          .select("id,worker_payment_id,source_type,attendance_session_id,payslip_id,amount,created_at")
+          .in("worker_payment_id", workerPaymentIds)
+          .range(lo, hi)
+      )
     : { data: [], error: null };
 
   if (payslipItemsResult.error) throw new Error(payslipItemsResult.error.message);

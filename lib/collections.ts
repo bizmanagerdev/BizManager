@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPaged } from "@/lib/supabase/paginate";
 import { getCollectionActivityByCustomer } from "@/lib/communications";
 import { fetchLoans } from "@/lib/loans";
 
@@ -320,12 +321,13 @@ async function enrichCollectionTitles(
     }
 
     if (orderIds.length > 0) {
-      const { data: items } = await supabase
-        .from("order_items")
-        .select("order_id,product_id,quantity_ordered,notes")
-        .in("order_id", orderIds)
-        .range(0, 4999);
-      const itemRows = (items ?? []) as Row[];
+      const itemRows = await fetchAllPaged<Row>((lo, hi) =>
+        supabase
+          .from("order_items")
+          .select("order_id,product_id,quantity_ordered,notes")
+          .in("order_id", orderIds)
+          .range(lo, hi)
+      );
 
       const productIds = Array.from(
         new Set(itemRows.map((r) => str(r, "product_id")).filter((v): v is string => Boolean(v)))
@@ -451,25 +453,27 @@ async function buildLoanSourceRows(
 }
 
 export async function getCollectionsData(supabase: SupabaseClient): Promise<CollectionsData> {
-  const { data, error } = await supabase
-    .from("collections_view")
-    .select(
-      "source_type,source_id,collection_key,customer_id,customer_name,customer_phone,customer_whatsapp,business_domain,reference_date,total_amount,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,last_payment_date,collection_status"
-    )
-    .order("overdue_amount", { ascending: false })
-    .range(0, 999);
-
-  if (error) {
+  let rawRows: Row[];
+  try {
+    rawRows = await fetchAllPaged<Row>((lo, hi) =>
+      supabase
+        .from("collections_view")
+        .select(
+          "source_type,source_id,collection_key,customer_id,customer_name,customer_phone,customer_whatsapp,business_domain,reference_date,total_amount,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,last_payment_date,collection_status"
+        )
+        .order("overdue_amount", { ascending: false })
+        .range(lo, hi)
+    );
+  } catch (error) {
     return {
       rows: [],
       customers: [],
       totals: { outstanding: 0, pending: 0, overdue: 0, customerCount: 0 },
-      loadError: error.message,
+      loadError: error instanceof Error ? error.message : "load failed",
     };
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const rawRows = (data ?? []) as Row[];
   // Per-source effective due dates (from payment terms / override) drive the late calc.
   const [orderDueById, projectDueById] = await Promise.all([
     fetchOrderDueDates(

@@ -3,13 +3,71 @@ import {
   buildPaymentFlowMeta,
   buildExpenseFlowMeta,
   buildWorkerPaymentFlowMeta,
+  buildPaymentEntries,
+  aggregateProfitLoss,
   isClosedProjectStatus,
   isExcludedProjectStatus,
   isClosedOrderStatus,
   isExcludedOrderStatus,
   matchesEntryFilters,
 } from "@/lib/financial/entries";
-import type { FinancialEntry } from "@/lib/financial/types";
+import type { FinancialEntry, PaymentRow } from "@/lib/financial/types";
+
+// ─── Refund handling (regression: refunds must NOT count as income) ───────────
+
+function makePayment(overrides: Partial<PaymentRow> = {}): PaymentRow {
+  return {
+    id: "p1", payment_date: "2024-05-01", due_date: null, amount_total: 1000,
+    payment_method: "bank_transfer", payment_status: "cleared", reference_number: null,
+    business_domain: "sales", notes: null, project_id: null, order_id: null,
+    property_id: null, target_type: null, target_id: null, recorded_by: null, ...overrides,
+  };
+}
+
+function paymentArgs(rows: PaymentRow[]) {
+  return {
+    paymentRows: rows,
+    projectsById: new Map(),
+    ordersById: new Map(),
+    propertiesById: new Map(),
+    propertyCustomersById: new Map(),
+    recordedByNames: {},
+    customerId: null,
+    customerProjectSet: new Set<string>(),
+    referenceDate: "2024-06-15",
+  };
+}
+
+describe("buildPaymentEntries — refund sign", () => {
+  it("a positive payment is an inflow with positive signedAmount", () => {
+    const [entry] = buildPaymentEntries(paymentArgs([makePayment({ amount_total: 1000 })]));
+    expect(entry.type).toBe("inflow");
+    expect(entry.amount).toBe(1000);
+    expect(entry.signedAmount).toBe(1000);
+  });
+
+  it("a negative payment (refund) is an OUTFLOW with negative signedAmount", () => {
+    const [entry] = buildPaymentEntries(paymentArgs([makePayment({ id: "r1", amount_total: -300 })]));
+    expect(entry.type).toBe("outflow");
+    expect(entry.amount).toBe(300);
+    expect(entry.signedAmount).toBe(-300);
+  });
+});
+
+describe("aggregateProfitLoss — refunds are contra-revenue", () => {
+  it("a posted refund reduces revenue (not booked as expense)", () => {
+    const entries = buildPaymentEntries(
+      paymentArgs([
+        makePayment({ id: "p1", amount_total: 1000 }),
+        makePayment({ id: "r1", amount_total: -300 }),
+      ])
+    );
+    const [pl] = aggregateProfitLoss(entries);
+    expect(pl.cashRevenue).toBe(700); // 1000 − 300, NOT 1300
+    expect(pl.accrualRevenue).toBe(700);
+    expect(pl.cashExpense).toBe(0); // a refund is not an expense
+  });
+});
 
 // ─── buildPaymentFlowMeta ─────────────────────────────────────────────────────
 

@@ -20,14 +20,12 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, ListChecks, Wallet } from "lucide-react";
 import { ClientOnly } from "@/components/ClientOnly";
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import {
   paymentMethodLabel,
-  paymentStatusClasses,
-  paymentStatusLabel,
   splitPaymentAmounts,
   collectionStatusClasses,
   collectionStatusLabel,
@@ -40,7 +38,6 @@ import {
   type PaymentRow,
   type FinancialAttachment,
 } from "@/lib/payments";
-import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
   formatMinutes,
   sessionWorkedMinutes,
@@ -55,6 +52,28 @@ import {
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import dynamic from "next/dynamic";
+import {
+  customerPaymentStatusBadgeClasses,
+  customerPaymentStatusLabel,
+  deriveCustomerPaymentStatus,
+  expenseRecordedByLabel,
+  formatDate,
+  formatDateTime,
+  formatIls,
+  formatTimeOnly,
+  getFirstDate,
+  getFirstString,
+  getString,
+  isImageAttachment,
+  isSameDay,
+  isSessionBillable,
+  LtrInline,
+  paymentRecordedByLabel,
+  sessionBillToCustomerAmount,
+  sessionLaborCost,
+  sessionPaymentStatus,
+  toNumber,
+} from "./ProjectTabsClient.helpers";
 
 // Heavy financial-entry dialogs are lazy-loaded — their code only downloads when
 // the user opens "add expense" / "add income", keeping the initial bundle smaller.
@@ -146,188 +165,10 @@ export type AssignableUser = {
 
 export type ProjectSalaryAgreement = SalaryAgreementRow;
 
-type CustomerPaymentStatus = "paid" | "partial" | "unpaid" | "unpriced";
 type PendingProjectDeletion =
   | { kind: "expense"; item: ExpenseListItem }
   | { kind: "session"; item: ExpenseListItem }
   | { kind: "payment"; payment: PaymentRow };
-
-function toNumber(value: unknown) {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function formatIls(value: number | null) {
-  if (value === null) return "—";
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatDate(value: string | null) {
-  return formatShortDate(value, "—");
-}
-
-function formatDateTime(value: string | null) {
-  return formatShortDateTime(value, "—");
-}
-
-function formatTimeOnly(value: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function isSameDay(a: string | null, b: string | null) {
-  if (!a || !b) return false;
-  const da = new Date(a);
-  const db = new Date(b);
-  if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false;
-  return (
-    da.getFullYear() === db.getFullYear() &&
-    da.getMonth() === db.getMonth() &&
-    da.getDate() === db.getDate()
-  );
-}
-
-function LtrInline({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <span
-      dir="ltr"
-      className={["inline-block text-left tabular-nums", className].filter(Boolean).join(" ")}
-    >
-      {children}
-    </span>
-  );
-}
-
-function paymentRecordedByLabel(payment: PaymentRow, {
-  paymentRecordedByNameByValue,
-  paymentAuditById,
-}: {
-  paymentRecordedByNameByValue: Record<string, string>;
-  paymentAuditById: Record<string, AuditRecordInfo>;
-}) {
-  const recordedByValue = typeof payment.recorded_by === "string" ? payment.recorded_by : null;
-  if (recordedByValue && paymentRecordedByNameByValue[recordedByValue]) {
-    return `הוזן ע״י ${paymentRecordedByNameByValue[recordedByValue]}`;
-  }
-
-  const audit = paymentAuditById[payment.id];
-  if (audit?.action === "create") {
-    return `הוזן ע״י ${audit.actorName}`;
-  }
-
-  return null;
-}
-
-function expenseRecordedByLabel(item: ExpenseListItem, {
-  expenseRecordedByNameByValue,
-  expenseAuditById,
-}: {
-  expenseRecordedByNameByValue: Record<string, string>;
-  expenseAuditById: Record<string, AuditRecordInfo>;
-}) {
-  if (item.source_type !== "expense") return null;
-
-  const expenseId = getString(item.expense, "id");
-  const recordedByValue = getString(item.expense, "recorded_by");
-
-  if (recordedByValue && expenseRecordedByNameByValue[recordedByValue]) {
-    return `הוזן ע״י ${expenseRecordedByNameByValue[recordedByValue]}`;
-  }
-
-  if (expenseId) {
-    const audit = expenseAuditById[expenseId];
-    if (audit?.action === "create") {
-      return `הוזן ע״י ${audit.actorName}`;
-    }
-  }
-
-  return null;
-}
-
-function deriveCustomerPaymentStatus(totalDue: number | null, paidTotal: number): CustomerPaymentStatus {
-  if (totalDue === null || totalDue <= 0) return "unpriced";
-  if (paidTotal + 0.009 >= totalDue) return "paid";
-  if (paidTotal > 0) return "partial";
-  return "unpaid";
-}
-
-function customerPaymentStatusLabel(status: CustomerPaymentStatus) {
-  if (status === "unpriced") return "לא סוכם תשלום";
-  return paymentStatusLabel(status);
-}
-
-function customerPaymentStatusBadgeClasses(status: CustomerPaymentStatus) {
-  if (status === "unpriced") return "border-border bg-background text-muted-foreground";
-  return paymentStatusClasses(status);
-}
-
-function sessionPaymentStatus(session: WorkSessionRow | null | undefined) {
-  const explicitStatus = typeof session?.payment_status === "string" ? session.payment_status : "";
-  if (explicitStatus) return explicitStatus;
-
-  const paidAmount = Math.max(0, toNumber(session?.paid_amount) ?? 0);
-  const laborCost = Math.max(0, toNumber(session?.labor_cost) ?? 0);
-  if (!(paidAmount > 0)) return "unpaid";
-  if (laborCost > 0 && paidAmount + 0.009 < laborCost) return "partial";
-  return "paid";
-}
-
-function getString(row: Record<string, unknown> | null, key: string) {
-  if (!row) return null;
-  const value = row[key];
-  return typeof value === "string" ? value : null;
-}
-
-function getFirstString(row: Record<string, unknown> | null, keys: string[]) {
-  for (const key of keys) {
-    const value = getString(row, key);
-    if (value) return value;
-  }
-  return null;
-}
-
-function getFirstDate(row: Record<string, unknown> | null, keys: string[]) {
-  for (const key of keys) {
-    const value = getString(row, key);
-    if (value) return value;
-  }
-  return null;
-}
-
-function sessionLaborCost(session: WorkSessionRow | null | undefined) {
-  return Math.max(0, toNumber(session?.labor_cost) ?? 0);
-}
-
-function isSessionBillable(session: WorkSessionRow | null | undefined) {
-  return session?.is_billable_to_customer === true;
-}
-
-function sessionBillToCustomerAmount(session: WorkSessionRow | null | undefined) {
-  if (!isSessionBillable(session)) return 0;
-  return Math.max(0, toNumber(session?.bill_to_customer_amount) ?? 0);
-}
-
-function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
-  const name = attachment.file_name?.toLowerCase() ?? "";
-  return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
-}
 
 type CashFlowEvent =
   | {

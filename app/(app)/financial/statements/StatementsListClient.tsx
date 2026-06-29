@@ -65,9 +65,9 @@ export default function StatementsListClient({ statements }: { statements: State
               <th className="px-3 py-2 font-medium">מקור</th>
               <th className="px-3 py-2 font-medium">סטטוס</th>
               <th className="px-3 py-2 font-medium">הוצאות שנוצרו</th>
-              <th className="px-3 py-2 font-medium">סה"כ הוצאות</th>
-              <th className="px-3 py-2 font-medium">סה"כ הכנסות</th>
-              <th className="px-3 py-2 font-medium">סה"כ חיובים</th>
+              <th className="px-3 py-2 font-medium">סה״כ הוצאות</th>
+              <th className="px-3 py-2 font-medium">סה״כ הכנסות</th>
+              <th className="px-3 py-2 font-medium">סה״כ חיובים</th>
             </tr>
           </thead>
           <tbody className="divide-y">
