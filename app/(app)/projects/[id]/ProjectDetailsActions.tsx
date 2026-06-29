@@ -19,6 +19,7 @@ import {
 import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { CustomerPicker } from "@/components/customers/CustomerPicker";
 import { Textarea } from "@/components/ui/textarea";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
 
@@ -190,9 +191,10 @@ export default function ProjectDetailsActions({
   }, [projectDocumentsError]);
 
   const mergedCustomerOptions = useMemo(() => {
-    const selectedMissing = editCustomerId && !customerOptions.some((customer) => customer.id === editCustomerId);
-    if (!selectedMissing) return customerOptions;
-    return [{ id: editCustomerId, label: "לקוח נוכחי" }, ...customerOptions];
+    const sorted = [...customerOptions].sort((a, b) => a.label.localeCompare(b.label, "he"));
+    const selectedMissing = editCustomerId && !sorted.some((customer) => customer.id === editCustomerId);
+    if (!selectedMissing) return sorted;
+    return [{ id: editCustomerId, label: "לקוח נוכחי" }, ...sorted];
   }, [customerOptions, editCustomerId]);
 
   async function deleteProjectDocument(documentId: string) {
@@ -330,18 +332,19 @@ export default function ProjectDetailsActions({
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">לקוח *</label>
-                <select
-                  value={editCustomerId}
-                  onChange={(event) => setEditCustomerId(event.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="">בחירת לקוח...</option>
-                  {mergedCustomerOptions.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.label}
-                    </option>
-                  ))}
-                </select>
+                <CustomerPicker
+                  placeholder="בחירת לקוח..."
+                  value={
+                    editCustomerId
+                      ? {
+                          id: editCustomerId,
+                          name: mergedCustomerOptions.find((c) => c.id === editCustomerId)?.label ?? "",
+                          phone: null,
+                        }
+                      : null
+                  }
+                  onChange={(customer) => setEditCustomerId(customer?.id ?? "")}
+                />
               </div>
             </AdaptiveGrid>
 

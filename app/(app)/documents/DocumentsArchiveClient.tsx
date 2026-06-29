@@ -37,6 +37,9 @@ import {
 } from "@/components/ui/dialog";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Input } from "@/components/ui/input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { CustomerPicker } from "@/components/customers/CustomerPicker";
+import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { formatShortDateTime } from "@/lib/date";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
@@ -730,41 +733,46 @@ export default function DocumentsArchiveClient({
 
             <div className="space-y-1">
               <div className="text-sm font-medium">לקוח</div>
-              <SelectField value={customerId} onChange={setCustomerId} ariaLabel="סינון לפי לקוח">
-                <option value="">כל הלקוחות</option>
-                {customerOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </SelectField>
+              <CustomerPicker
+                showCreate={false}
+                placeholder="כל הלקוחות"
+                value={
+                  customerId
+                    ? {
+                        id: customerId,
+                        name: customerOptions.find((o) => o.id === customerId)?.label ?? customerName ?? "",
+                        phone: null,
+                      }
+                    : null
+                }
+                onChange={(customer) => setCustomerId(customer?.id ?? "")}
+              />
             </div>
 
             {showProjectFilter ? (
               <div className="space-y-1">
                 <div className="text-sm font-medium">פרויקט</div>
-                <SelectField value={projectId} onChange={setProjectId} ariaLabel="סינון לפי פרויקט">
-                  <option value="">כל הפרויקטים</option>
-                  {projectFilterOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </SelectField>
+                <ProjectPicker
+                  value={projectId}
+                  onChange={setProjectId}
+                  emptyLabel="כל הפרויקטים"
+                  searchPlaceholder="חיפוש פרויקט..."
+                  projects={projectFilterOptions.map((option) => ({ id: option.id, label: option.label }))}
+                />
               </div>
             ) : null}
 
             {showPropertyFilter ? (
               <div className="space-y-1">
                 <div className="text-sm font-medium">נכס</div>
-                <SelectField value={propertyId} onChange={setPropertyId} ariaLabel="סינון לפי נכס">
-                  <option value="">כל הנכסים</option>
-                  {propertyFilterOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </SelectField>
+                <SearchableSelect
+                  value={propertyId}
+                  onChange={setPropertyId}
+                  ariaLabel="סינון לפי נכס"
+                  emptyOptionLabel="כל הנכסים"
+                  searchPlaceholder="חיפוש נכס..."
+                  options={propertyFilterOptions.map((option) => ({ value: option.id, label: option.label }))}
+                />
               </div>
             ) : null}
           </AdaptiveGrid>
@@ -1002,18 +1010,14 @@ export default function DocumentsArchiveClient({
             {showUploadProjectField ? (
               <div className="space-y-1">
                 <div className="text-sm font-medium">פרויקט</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <ProjectPicker
                   value={uploadProjectId}
-                  onChange={(event) => setUploadProjectId(event.target.value)}
-                >
-                  <option value="">בחר פרויקט</option>
-                  {uploadProjectOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setUploadProjectId}
+                  allowClear={false}
+                  placeholder="בחר פרויקט"
+                  searchPlaceholder="חיפוש פרויקט..."
+                  projects={uploadProjectOptions.map((option) => ({ id: option.id, label: option.label }))}
+                />
                 {!uploadProjectId.trim() ? (
                   <div className="text-xs text-destructive">יש לבחור פרויקט לקישור הקבצים</div>
                 ) : null}
@@ -1023,18 +1027,14 @@ export default function DocumentsArchiveClient({
             {showUploadPropertyField ? (
               <div className="space-y-1">
                 <div className="text-sm font-medium">נכס</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <SearchableSelect
                   value={uploadPropertyId}
-                  onChange={(event) => setUploadPropertyId(event.target.value)}
-                >
-                  <option value="">בחר נכס</option>
-                  {propertyFilterOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setUploadPropertyId}
+                  ariaLabel="בחירת נכס"
+                  placeholder="בחר נכס"
+                  searchPlaceholder="חיפוש נכס..."
+                  options={propertyFilterOptions.map((option) => ({ value: option.id, label: option.label }))}
+                />
                 {!uploadPropertyId.trim() ? (
                   <div className="text-xs text-destructive">יש לבחור נכס לקישור הקבצים</div>
                 ) : null}

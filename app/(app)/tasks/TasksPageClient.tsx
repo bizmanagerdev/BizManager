@@ -31,6 +31,8 @@ import { Input } from "@/components/ui/input";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { TaskUpsertDialog, type TaskOption, type TaskStatus, type UserOption } from "@/components/tasks/TaskUpsertDialog";
@@ -653,18 +655,26 @@ export default function TasksPageClient(props: Props) {
           {linkedTarget ? (
             <div className="w-[200px] space-y-1">
               <div className="text-[11px] text-muted-foreground">{linkedTarget === "project" ? "פרויקט" : "נכס"}</div>
-              <select
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={urlLinkedId}
-                onChange={(e) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId: e.target.value, scope: urlScope })}
-              >
-                <option value="">{linkedTarget === "project" ? "כל הפרויקטים" : "כל הנכסים"}</option>
-                {linkedOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              {linkedTarget === "project" ? (
+                <ProjectPicker
+                  className="h-9"
+                  value={urlLinkedId}
+                  onChange={(linkedId) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId, scope: urlScope })}
+                  emptyLabel="כל הפרויקטים"
+                  searchPlaceholder="חיפוש פרויקט..."
+                  projects={linkedOptions.map((option) => ({ id: option.id, label: option.label }))}
+                />
+              ) : (
+                <SearchableSelect
+                  className="h-9"
+                  value={urlLinkedId}
+                  onChange={(linkedId) => pushFilters({ q: urlQ, priority: urlPriority, domain: urlDomain, linkedId, scope: urlScope })}
+                  ariaLabel="סינון לפי נכס"
+                  emptyOptionLabel="כל הנכסים"
+                  searchPlaceholder="חיפוש נכס..."
+                  options={linkedOptions.map((option) => ({ value: option.id, label: option.label }))}
+                />
+              )}
             </div>
           ) : null}
           <Button

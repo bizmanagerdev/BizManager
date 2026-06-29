@@ -9,6 +9,8 @@ import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
@@ -935,33 +937,26 @@ export default function StatementDetailClient({
                       {/* Project / property */}
                       <td className="px-3 py-2">
                         {mode === "draft" && row.businessDomain === "logistics_projects" ? (
-                          <select
+                          <ProjectPicker
                             value={row.projectId}
                             disabled={savingRowId === row.id || !row.include}
-                            onChange={(e) => void saveRowInline(row.id, { projectId: e.target.value })}
-                            className="h-8 w-full min-w-[9rem] rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-                          >
-                            <option value="">— ללא פרויקט —</option>
-                            {projects.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(projectId) => void saveRowInline(row.id, { projectId })}
+                            emptyLabel="— ללא פרויקט —"
+                            searchPlaceholder="חיפוש פרויקט..."
+                            className="h-8 min-w-[9rem] rounded-md px-2 shadow-none"
+                            projects={projects.map((p) => ({ id: p.id, label: p.name }))}
+                          />
                         ) : mode === "draft" && row.businessDomain === "property_management" ? (
-                          <select
+                          <SearchableSelect
                             value={row.propertyId}
                             disabled={savingRowId === row.id || !row.include}
-                            onChange={(e) => void saveRowInline(row.id, { propertyId: e.target.value })}
-                            className="h-8 w-full min-w-[9rem] rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-                          >
-                            <option value="">— ללא נכס —</option>
-                            {properties.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(propertyId) => void saveRowInline(row.id, { propertyId })}
+                            ariaLabel="שיוך נכס"
+                            emptyOptionLabel="— ללא נכס —"
+                            searchPlaceholder="חיפוש נכס..."
+                            className="h-8 min-w-[9rem] rounded-md px-2 shadow-none"
+                            options={properties.map((p) => ({ value: p.id, label: p.name }))}
+                          />
                         ) : (
                           <span className="text-xs text-muted-foreground">
                             {row.projectId ? projectName(row.projectId) : row.propertyId ? propertyName(row.propertyId) : "—"}
@@ -1133,33 +1128,26 @@ export default function StatementDetailClient({
               </Field>
               {draft.businessDomain === "logistics_projects" ? (
                 <Field label="פרויקט">
-                  <select
+                  <ProjectPicker
                     value={draft.projectId}
-                    onChange={(e) => patchDraft({ projectId: e.target.value })}
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                  >
-                    <option value="">— ללא פרויקט —</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(projectId) => patchDraft({ projectId })}
+                    emptyLabel="— ללא פרויקט —"
+                    searchPlaceholder="חיפוש פרויקט..."
+                    className="h-9 rounded-md px-2"
+                    projects={projects.map((p) => ({ id: p.id, label: p.name }))}
+                  />
                 </Field>
               ) : draft.businessDomain === "property_management" ? (
                 <Field label="נכס">
-                  <select
+                  <SearchableSelect
                     value={draft.propertyId}
-                    onChange={(e) => patchDraft({ propertyId: e.target.value })}
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                  >
-                    <option value="">— ללא נכס —</option>
-                    {properties.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(propertyId) => patchDraft({ propertyId })}
+                    ariaLabel="שיוך נכס"
+                    emptyOptionLabel="— ללא נכס —"
+                    searchPlaceholder="חיפוש נכס..."
+                    className="h-9 rounded-md px-2"
+                    options={properties.map((p) => ({ value: p.id, label: p.name }))}
+                  />
                 </Field>
               ) : null}
               <Field label="הערה">
@@ -1209,18 +1197,14 @@ export default function StatementDetailClient({
 
               {incomeForm.businessDomain === "logistics_projects" ? (
                 <Field label="פרויקט">
-                  <select
+                  <ProjectPicker
                     value={incomeForm.projectId}
-                    onChange={(e) => patchIncome({ projectId: e.target.value })}
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                  >
-                    <option value="">— ללא פרויקט —</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(projectId) => patchIncome({ projectId })}
+                    emptyLabel="— ללא פרויקט —"
+                    searchPlaceholder="חיפוש פרויקט..."
+                    className="h-9 rounded-md px-2"
+                    projects={projects.map((p) => ({ id: p.id, label: p.name }))}
+                  />
                 </Field>
               ) : incomeForm.businessDomain === "sales" ? (
                 <Field label="הזמנה (אופציונלי)">
@@ -1239,18 +1223,15 @@ export default function StatementDetailClient({
                 </Field>
               ) : incomeForm.businessDomain === "property_management" ? (
                 <Field label="נכס">
-                  <select
+                  <SearchableSelect
                     value={incomeForm.propertyId}
-                    onChange={(e) => patchIncome({ propertyId: e.target.value })}
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                  >
-                    <option value="">— ללא נכס —</option>
-                    {properties.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(propertyId) => patchIncome({ propertyId })}
+                    ariaLabel="שיוך נכס"
+                    emptyOptionLabel="— ללא נכס —"
+                    searchPlaceholder="חיפוש נכס..."
+                    className="h-9 rounded-md px-2"
+                    options={properties.map((p) => ({ value: p.id, label: p.name }))}
+                  />
                 </Field>
               ) : null}
 

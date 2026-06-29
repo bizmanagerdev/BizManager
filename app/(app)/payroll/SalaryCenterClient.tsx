@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { LoadingDots } from "@/components/ui/loading-dots";
+import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Dialog,
@@ -4065,18 +4066,13 @@ export default function SalaryCenterClient({
                   <CardContent className="space-y-5 py-5">
                     <div className="text-lg font-semibold">{"נוכחות"}</div>
                     <Field label="פרויקט">
-                      <select
+                      <ProjectPicker
                         value={sessionsProjectId}
-                        onChange={(event) => setSessionsProjectId(event.target.value)}
-                        className={selectClassName}
-                      >
-                        <option value="">כל הפרויקטים</option>
-                        {selectedWorkerProjectOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setSessionsProjectId}
+                        emptyLabel="כל הפרויקטים"
+                        searchPlaceholder="חיפוש פרויקט..."
+                        projects={selectedWorkerProjectOptions.map((option) => ({ id: option.id, label: option.label }))}
+                      />
                     </Field>
                     <div className={`grid gap-3 ${shouldShowSessionHours(selectedWorkerType) ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
                       {shouldShowSessionHours(selectedWorkerType) ? (
@@ -4311,20 +4307,15 @@ export default function SalaryCenterClient({
                           </Button>
                         </div>
                         <Field label="פרויקט">
-                          <select
+                          <ProjectPicker
                             value={workerPrintFilters.projectId}
-                            onChange={(event) =>
-                              setWorkerPrintFilters((current) => ({ ...current, projectId: event.target.value }))
+                            onChange={(projectId) =>
+                              setWorkerPrintFilters((current) => ({ ...current, projectId }))
                             }
-                            className={selectClassName}
-                          >
-                            <option value="">כל הפרויקטים</option>
-                            {selectedWorkerProjectOptions.map((option) => (
-                              <option key={option.id} value={option.id}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
+                            emptyLabel="כל הפרויקטים"
+                            searchPlaceholder="חיפוש פרויקט..."
+                            projects={selectedWorkerProjectOptions.map((option) => ({ id: option.id, label: option.label }))}
+                          />
                         </Field>
                         <div className="text-sm text-muted-foreground">
                           {`בהדפסה יופיעו ${selectedWorkerPrintSessions.length} משמרות ו-${selectedWorkerPrintPayments.length} תשלומים עבור ${selectedWorkerProjectOptions.find((option) => option.id === workerPrintFilters.projectId)?.label ?? "כל הפרויקטים"}, ${formatPrintPeriodLabel(workerPrintFilters.year, workerPrintFilters.month)}.`}

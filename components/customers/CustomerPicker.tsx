@@ -24,23 +24,30 @@ export function CustomerPicker({
   onChange,
   placeholder = "חיפוש לקוח...",
   disabled = false,
+  showCreate = true,
 }: {
   value: PickedCustomer | null;
   onChange: (customer: PickedCustomer | null) => void;
   placeholder?: string;
   disabled?: boolean;
+  /** Show the inline "add new customer" action. Off for filter-style use. */
+  showCreate?: boolean;
 }) {
   const { search, loading } = useCustomerSearchIndex();
-  const [query, setQuery] = useState(value?.name ?? "");
+  // `query` holds the active search text while the dropdown is open. When it is
+  // closed the field shows the selected customer's name derived from `value`, so
+  // external resets (e.g. a "clear filters" button) reflect automatically.
+  const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const displayValue = open ? query : value?.name ?? "";
   const results = useMemo(() => (open ? search(query, 30) : []), [open, query, search]);
 
   function pick(customer: { id: string; name: string; phone: string | null }) {
     onChange({ id: customer.id, name: customer.name, phone: customer.phone });
-    setQuery(customer.name);
+    setQuery("");
     setOpen(false);
   }
 
@@ -54,21 +61,24 @@ export function CustomerPicker({
     <div className="relative">
       <div className="relative">
         <Input
-          value={query}
+          value={displayValue}
           disabled={disabled}
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
             if (value) onChange(null);
           }}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            setQuery(value?.name ?? "");
+            setOpen(true);
+          }}
           onBlur={() => {
             blurTimer.current = setTimeout(() => setOpen(false), 150);
           }}
           placeholder={placeholder}
           className="pe-9"
         />
-        {query ? (
+        {displayValue ? (
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
@@ -119,22 +129,24 @@ export function CustomerPicker({
               ))
             )}
           </div>
-          <div className="border-t p-1">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="w-full justify-center"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                setOpen(false);
-                setCreateOpen(true);
-              }}
-            >
-              <UserPlus className="h-4 w-4" />
-              לקוח חדש
-            </Button>
-          </div>
+          {showCreate ? (
+            <div className="border-t p-1">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="w-full justify-center"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setOpen(false);
+                  setCreateOpen(true);
+                }}
+              >
+                <UserPlus className="h-4 w-4" />
+                לקוח חדש
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -149,12 +161,12 @@ export function CustomerPicker({
             onSaved={({ customer }) => {
               invalidateCustomerSearchIndex();
               onChange({ id: customer.id, name: customer.name, phone: customer.phone });
-              setQuery(customer.name);
+              setQuery("");
               setCreateOpen(false);
             }}
             onUseExisting={({ customer }) => {
               onChange({ id: customer.id, name: customer.name, phone: customer.phone });
-              setQuery(customer.name);
+              setQuery("");
               setCreateOpen(false);
             }}
           />
