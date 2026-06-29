@@ -95,6 +95,8 @@ export function entityLabel(tableName: string) {
     case "products": return "מוצר";
     case "product_categories": return "קטגוריית מוצר";
     case "inventory_movements": return "תנועת מלאי";
+    case "vehicles": return "רכב";
+    case "tags": return "תגית";
     case "inquiries": return "פנייה";
     case "recurring_expense_templates": return "הוצאה קבועה";
     case "recurring_task_templates": return "משימה קבועה";
@@ -223,6 +225,19 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
     }
     case "properties": {
       const name = str(d.name) ?? str(d.address);
+      if (name) parts.push(name);
+      break;
+    }
+    case "vehicles": {
+      // the car's name lives on the tag row; here show plate / make-model / owner
+      const desc = [str(d.make_model), str(d.license_plate)].filter(Boolean).join(" · ");
+      if (desc) parts.push(desc);
+      const owner = str(d.owner_name);
+      if (owner) parts.push(`רשום על שם ${owner}`);
+      break;
+    }
+    case "tags": {
+      const name = str(d.name);
       if (name) parts.push(name);
       break;
     }
@@ -681,6 +696,14 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   due_date: "לתשלום עד",
   start_date: "תאריך התחלה",
   end_date: "תאריך סיום",
+  // vehicles (רכבים)
+  license_plate: "מספר רישוי",
+  make_model: "יצרן / דגם",
+  year: "שנת ייצור",
+  test_due_date: "טסט",
+  insurance_due_date: "ביטוח",
+  license_due_date: "רישוי",
+  owner_name: "רשום על שם",
   notes: "הערות",
 };
 
@@ -886,6 +909,8 @@ export const TRIGGER_AUDITED_TABLES = new Set([
   "documents",
   "attendance_sessions",
   "worker_payments",
+  "vehicles",
+  "tags",
 ]);
 
 // Plain row-CRUD actions the DB trigger already records. Distinct semantic

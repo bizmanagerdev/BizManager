@@ -26,6 +26,7 @@ const EMPTY_FORM: VehicleInput = {
   test_due_date: "",
   insurance_due_date: "",
   license_due_date: "",
+  owner_name: "",
   color: "",
   notes: "",
 };
@@ -39,6 +40,7 @@ function toForm(v: VehicleWithRollup): VehicleInput {
     test_due_date: v.testDueDate ?? "",
     insurance_due_date: v.insuranceDueDate ?? "",
     license_due_date: v.licenseDueDate ?? "",
+    owner_name: v.ownerName ?? "",
     color: v.color ?? "",
     notes: v.notes ?? "",
   };
@@ -153,6 +155,9 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
                       <div className="truncate text-sm text-muted-foreground">
                         {[v.makeModel, v.licensePlate, v.year].filter(Boolean).join(" · ") || "—"}
                       </div>
+                      {v.ownerName ? (
+                        <div className="truncate text-xs text-muted-foreground">רשום על שם: {v.ownerName}</div>
+                      ) : null}
                     </Link>
                     <div className="flex shrink-0 gap-1">
                       <Button variant="secondary" size="icon" onClick={() => openEdit(v)} aria-label="עריכה">
@@ -257,6 +262,10 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
                   value={form.license_due_date}
                   onChange={(e) => set("license_due_date", e.target.value)}
                 />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="font-medium">רשום על שם</span>
+                <Input value={form.owner_name} onChange={(e) => set("owner_name", e.target.value)} />
               </label>
             </div>
             <label className="block space-y-1 text-sm">

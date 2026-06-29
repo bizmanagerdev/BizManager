@@ -43,10 +43,14 @@ create table if not exists public.vehicles (
   test_due_date date null,            -- טסט הבא
   insurance_due_date date null,       -- ביטוח עד
   license_due_date date null,         -- רישוי עד
+  owner_name text null,               -- רשום על שם (on whose name the car is registered)
   notes text null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- additive column for DBs created before owner_name existed (safe to re-run)
+alter table public.vehicles add column if not exists owner_name text null;
 
 -- ── 3. entity_tags: the polymorphic cross-cut (many-to-many) ─────────────────
 create table if not exists public.entity_tags (

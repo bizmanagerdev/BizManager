@@ -123,6 +123,9 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
           <p className="text-sm text-muted-foreground">
             {[vehicle.makeModel, vehicle.licensePlate, vehicle.year].filter(Boolean).join(" · ") || "—"}
           </p>
+          {vehicle.ownerName ? (
+            <p className="text-sm text-muted-foreground">רשום על שם: {vehicle.ownerName}</p>
+          ) : null}
         </div>
 
         <div className="grid gap-2 sm:grid-cols-3">

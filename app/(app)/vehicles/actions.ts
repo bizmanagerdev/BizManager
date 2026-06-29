@@ -14,6 +14,7 @@ export type VehicleInput = {
   test_due_date: string;
   insurance_due_date: string;
   license_due_date: string;
+  owner_name: string;
   color: string;
   notes: string;
 };
@@ -49,6 +50,7 @@ function vehicleFields(input: VehicleInput) {
     test_due_date: clean(input.test_due_date),
     insurance_due_date: clean(input.insurance_due_date),
     license_due_date: clean(input.license_due_date),
+    owner_name: clean(input.owner_name),
     notes: clean(input.notes),
   };
 }

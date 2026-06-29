@@ -22,6 +22,7 @@ export type Vehicle = {
   testDueDate: string | null; // טסט
   insuranceDueDate: string | null; // ביטוח
   licenseDueDate: string | null; // רישוי
+  ownerName: string | null; // רשום על שם
   createdAt: string | null;
 };
 
@@ -80,6 +81,7 @@ function normalizeVehicle(row: Row): Vehicle {
     testDueDate: str(row.test_due_date),
     insuranceDueDate: str(row.insurance_due_date),
     licenseDueDate: str(row.license_due_date),
+    ownerName: str(row.owner_name),
     createdAt: str(tag.created_at),
   };
 }
@@ -93,7 +95,7 @@ export async function fetchVehicles(supabase: SupabaseClient): Promise<VehicleWi
     const { data, error } = await supabase
       .from("vehicles")
       .select(
-        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
       )
       .eq("tag.kind", "vehicle")
       .range(0, 2000);
@@ -133,7 +135,7 @@ export async function fetchVehicle(
     const { data, error } = await supabase
       .from("vehicles")
       .select(
-        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
+        "license_plate,make_model,year,test_due_date,insurance_due_date,license_due_date,owner_name,notes,tag:tags!inner(id,name,color,is_active,notes,created_at)"
       )
       .eq("tag_id", tagId)
       .maybeSingle();
