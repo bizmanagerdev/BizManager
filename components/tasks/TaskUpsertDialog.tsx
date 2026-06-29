@@ -93,7 +93,7 @@ type Props = {
 
 // Step order for the guided create flow — must match the action-chip order below
 // (תיאור · תחום · תאריך · אחראי וחברים · עדיפות וסטטוס · מיקום).
-const WIZARD_STEPS = ["description", "domain", "dates", "people", "labels", "location"] as const;
+const WIZARD_STEPS = ["description", "domain", "dates", "people", "labels", "location", "reminders"] as const;
 function nextWizardStep(current: string | null): string | null {
   const list = WIZARD_STEPS as readonly string[];
   const i = current ? list.indexOf(current) : -1;
@@ -251,6 +251,10 @@ export function TaskUpsertDialog(props: Props) {
   const [reminderAt, setReminderAt] = useState("");
   const [reminderNote, setReminderNote] = useState("");
   const [addingReminder, setAddingReminder] = useState(false);
+  // Reminders staged before the task exists (create mode). They ride along on the
+  // create payload and are inserted server-side once the task id is known —
+  // mirrors how member_ids / tag_ids are threaded through creation.
+  const [pendingReminders, setPendingReminders] = useState<{ remind_at: string; content: string }[]>([]);
 
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
@@ -401,6 +405,7 @@ export function TaskUpsertDialog(props: Props) {
     setComments([]);
     setLegacyNotes([]);
     setReminders([]);
+    setPendingReminders([]);
     setAttachments([]);
     setNewComment("");
     setReminderAt("");
@@ -554,6 +559,12 @@ export function TaskUpsertDialog(props: Props) {
       assigned_user_id: assignedUserId || null,
       member_ids: memberIds,
       tag_ids: tagIds,
+      // Staged on create only; in edit mode reminders are added immediately and
+      // this stays empty (the update route ignores it).
+      reminders: pendingReminders.map((r) => ({
+        remind_at: new Date(r.remind_at).toISOString(),
+        content: r.content.trim() ? r.content.trim() : null,
+      })),
       priority,
       status,
       is_private: isPrivate,
@@ -690,6 +701,19 @@ export function TaskUpsertDialog(props: Props) {
       emitProgressActivityEnd();
       setAddingReminder(false);
     }
+  }
+
+  // Create mode: just stage the reminder locally (no task id yet). It's sent with
+  // the create payload and inserted server-side after the task is created.
+  function stageReminder() {
+    if (!reminderAt) return;
+    setPendingReminders((prev) => [...prev, { remind_at: reminderAt, content: reminderNote.trim() }]);
+    setReminderAt("");
+    setReminderNote("");
+  }
+
+  function removePendingReminder(index: number) {
+    setPendingReminders((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function setReminderStatus(id: string, nextStatus: "done" | "cancelled") {
@@ -958,6 +982,11 @@ export function TaskUpsertDialog(props: Props) {
             <ActionChip icon={Users} label="אחראי וחברים" active={isOpen("people")} onClick={() => toggleSection("people")} />
             <ActionChip icon={Tag} label="עדיפות וסטטוס" active={isOpen("labels")} onClick={() => toggleSection("labels")} />
             <ActionChip icon={MapPin} label="מיקום" active={isOpen("location")} onClick={() => toggleSection("location")} />
+            {/* Reminders during creation — once the task exists they live in the
+                right-hand card column with immediate add/done/cancel. */}
+            {!isEditing ? (
+              <ActionChip icon={Bell} label="תזכורות" active={isOpen("reminders")} onClick={() => toggleSection("reminders")} />
+            ) : null}
             {/* Files need a saved task — only offer the section once one exists. */}
             {targetTaskId ? (
               <ActionChip icon={Paperclip} label="קבצים ותמונות" active={isOpen("files")} onClick={() => toggleSection("files")} />
@@ -1296,6 +1325,57 @@ export function TaskUpsertDialog(props: Props) {
                   </select>
                 </div>
               </AdaptiveGrid>
+              </div>
+              ) : null}
+
+              {isOpen("reminders") && !isEditing ? (
+              <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+                  תזכורות
+                </div>
+                {pendingReminders.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {pendingReminders.map((reminder, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium">{formatShortDateTime(reminder.remind_at)}</div>
+                          {reminder.content ? (
+                            <div className="truncate text-xs text-muted-foreground">{reminder.content}</div>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removePendingReminder(index)}
+                          aria-label="הסרת תזכורת"
+                          className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">אפשר להוסיף תזכורות כבר עכשיו — הן ייווצרו עם המשימה.</div>
+                )}
+                <AdaptiveGrid variant="formTwo">
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">מועד התזכורת</div>
+                    <DateTimeInput value={reminderAt} onChange={(e) => setReminderAt(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">הערה (אופציונלי)</div>
+                    <Input value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} />
+                  </div>
+                </AdaptiveGrid>
+                <div className="flex justify-end">
+                  <Button type="button" size="sm" variant="secondary" disabled={!reminderAt} onClick={stageReminder}>
+                    הוספת תזכורת
+                  </Button>
+                </div>
               </div>
               ) : null}
 

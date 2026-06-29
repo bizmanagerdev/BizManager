@@ -53,6 +53,7 @@ export async function POST(req: Request) {
       status?: string | null;
       is_private?: boolean | null;
       tag_ids?: unknown;
+      reminders?: Array<{ remind_at?: string | null; content?: string | null }> | null;
     };
 
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
@@ -142,6 +143,32 @@ export async function POST(req: Request) {
       await syncEntityTags(supabase, "task", data.id, parseTagIds(body.tag_ids), {
         createdBy: profile.id,
       });
+
+      // Reminders staged in the create dialog — insert now that the task id exists.
+      // Mirrors /api/tasks/reminders/create (content "" for the legacy NOT-NULL,
+      // category 'task', assignee defaults to the task owner).
+      const reminders = Array.isArray(body.reminders)
+        ? body.reminders
+            .map((r) => ({
+              remind_at: typeof r?.remind_at === "string" ? r.remind_at.trim() : "",
+              content: typeof r?.content === "string" ? r.content.trim() : "",
+            }))
+            .filter((r) => r.remind_at)
+        : [];
+      if (reminders.length > 0) {
+        await supabase.from("reminders").insert(
+          reminders.map((r) => ({
+            task_id: data.id,
+            remind_at: r.remind_at,
+            content: r.content || "",
+            action_type: "other",
+            category: "task",
+            assigned_to: assignedUserId,
+            created_by: profile.id,
+            updated_by: profile.id,
+          }))
+        );
+      }
     }
 
     return NextResponse.json({ task: data });
