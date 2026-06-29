@@ -2,6 +2,19 @@
 -- Atomic RPC used by POST /api/orders/create.
 -- Aligned to inventory_movements schema:
 -- product_id, movement_type, quantity, source_type, source_id, performed_by, notes, created_at
+--
+-- The order's payment_terms / due_date / needs_invoice are set HERE at INSERT
+-- time (not via a follow-up UPDATE in the route). That follow-up UPDATE fired
+-- the audit trigger and made every brand-new order show a spurious "עודכן" row
+-- in /activity right after "נוצר". Setting them inline keeps creation to a
+-- single orders INSERT. (collect_payment_on_delivery stays in the route as a
+-- best-effort write — its column only exists after add_collect_payment_on_delivery.sql.)
+
+-- Drop the previous 10-arg signature so adding the new args doesn't leave a
+-- second overload (which would make PostgREST ambiguous).
+drop function if exists public.create_sales_order(
+  uuid, timestamptz, text, numeric, numeric, numeric, text, uuid, text, jsonb
+);
 
 create or replace function public.create_sales_order(
   p_customer_id uuid,
@@ -13,7 +26,10 @@ create or replace function public.create_sales_order(
   p_payment_status text,
   p_created_by uuid,
   p_notes text,
-  p_items jsonb
+  p_items jsonb,
+  p_payment_terms text default null,
+  p_due_date date default null,
+  p_needs_invoice boolean default null
 )
 returns uuid
 language plpgsql
@@ -47,6 +63,12 @@ begin
 
   v_normalized_status := lower(coalesce(nullif(trim(p_status), ''), 'draft'));
 
+  -- Silence recalculate_order_totals() for this transaction: this RPC sets the
+  -- order totals itself, so the per-item trigger would only re-derive the same
+  -- values and emit redundant "עודכן · סכום" audit rows. See
+  -- db/sql/fix_order_line_total_pricing.sql.
+  perform set_config('app.skip_order_total_recalc', 'on', true);
+
   insert into public.orders (
     customer_id,
     order_date,
@@ -56,7 +78,10 @@ begin
     total_amount,
     payment_status,
     created_by,
-    notes
+    notes,
+    payment_terms,
+    due_date,
+    needs_invoice
   ) values (
     p_customer_id,
     p_order_date,
@@ -66,7 +91,10 @@ begin
     coalesce(p_total_amount, 0),
     coalesce(nullif(trim(p_payment_status), ''), 'unpaid'),
     p_created_by,
-    nullif(trim(coalesce(p_notes, '')), '')
+    nullif(trim(coalesce(p_notes, '')), ''),
+    nullif(trim(coalesce(p_payment_terms, '')), ''),
+    p_due_date,
+    p_needs_invoice
   )
   returning id into v_order_id;
 
@@ -171,5 +199,8 @@ grant execute on function public.create_sales_order(
   text,
   uuid,
   text,
-  jsonb
+  jsonb,
+  text,
+  date,
+  boolean
 ) to authenticated;

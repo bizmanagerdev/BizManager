@@ -159,8 +159,13 @@ type Props = {
   error: string | null;
   tableOptions: readonly { value: string; label: string }[];
   actionOptions: readonly { value: string; label: string }[];
+  workerOptions: readonly { value: string; label: string }[];
   currentTable: string;
   currentAction: string;
+  currentWorker: string;
+  // The selected worker's changed_by values (users.id + auth_user_id), so the
+  // live feed and infinite scroll can honor the worker filter too.
+  actorFilterValues: string[];
 };
 
 export default function ActivityClient({
@@ -169,13 +174,18 @@ export default function ActivityClient({
   error,
   tableOptions,
   actionOptions,
+  workerOptions,
   currentTable,
   currentAction,
+  currentWorker,
+  actorFilterValues,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  // Stable dependency for the filter effects (arrays are new references each render).
+  const actorFilterKey = actorFilterValues.join(",");
 
   // Server-loaded rows accumulated so far. Seeded with the first page rendered
   // on the server, then grown as the bottom sentinel scrolls into view — no
@@ -221,6 +231,7 @@ export default function ActivityClient({
           page: nextPage,
           tableName: currentTable || null,
           action: currentAction || null,
+          changedByValues: actorFilterValues.length ? actorFilterValues : null,
         });
         if (result.error) {
           setLoadMoreError(result.error);
@@ -246,7 +257,7 @@ export default function ActivityClient({
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [hasMore, loadingMore, nextPage, currentTable, currentAction]);
+  }, [hasMore, loadingMore, nextPage, currentTable, currentAction, actorFilterKey]);
 
   // Realtime: prepend new rows instantly. The realtime socket must carry the
   // user's auth token — otherwise RLS on audit_logs silently drops the events
@@ -273,6 +284,11 @@ export default function ActivityClient({
             // Respect the active filters.
             if (currentTable && row.table_name !== currentTable) return;
             if (currentAction && row.action !== currentAction) return;
+            if (
+              actorFilterValues.length &&
+              !(row.changed_by && actorFilterValues.includes(row.changed_by))
+            )
+              return;
 
             let actorName: string | null = null;
             if (row.changed_by) {
@@ -295,7 +311,7 @@ export default function ActivityClient({
       cancelled = true;
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [currentTable, currentAction]);
+  }, [currentTable, currentAction, actorFilterKey]);
 
   // Safety net: refresh the server data on an interval so the feed stays current
   // even if realtime is ever blocked — no manual refresh required.
@@ -355,6 +371,16 @@ export default function ActivityClient({
             className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
           >
             {actionOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <select
+            value={currentWorker}
+            onChange={(e) => updateParams({ worker: e.target.value })}
+            disabled={isPending}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            {workerOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>

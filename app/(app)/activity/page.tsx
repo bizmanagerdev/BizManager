@@ -4,7 +4,9 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import {
   AUDIT_ACTION_OPTIONS,
   AUDIT_TABLE_OPTIONS,
+  getAuditActorOptions,
   getAuditFeedPaginated,
+  resolveActorFilterValues,
 } from "@/lib/audit";
 import ActivityClient from "./ActivityClient";
 
@@ -25,17 +27,24 @@ export default async function ActivityPage({
   const page = Math.max(1, Number(params.page) || 1);
   const tableName = typeof params.table === "string" ? params.table : "";
   const action = typeof params.action === "string" ? params.action : "";
+  const worker = typeof params.worker === "string" ? params.worker : "";
 
-  const result = await getAuditFeedPaginated(supabase, {
-    page,
-    tableName: tableName || null,
-    action: action || null,
-  });
+  const actorFilterValues = worker ? await resolveActorFilterValues(supabase, worker) : [];
+
+  const [result, workerOptions] = await Promise.all([
+    getAuditFeedPaginated(supabase, {
+      page,
+      tableName: tableName || null,
+      action: action || null,
+      changedByValues: actorFilterValues.length ? actorFilterValues : null,
+    }),
+    getAuditActorOptions(supabase),
+  ]);
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <ActivityClient
-        key={`${tableName}|${action}|${result.page}`}
+        key={`${tableName}|${action}|${worker}|${result.page}`}
         items={result.items}
         totalCount={result.totalCount}
         page={result.page}
@@ -43,8 +52,11 @@ export default async function ActivityPage({
         error={result.error}
         tableOptions={[...AUDIT_TABLE_OPTIONS]}
         actionOptions={[...AUDIT_ACTION_OPTIONS]}
+        workerOptions={[{ value: "", label: "כל המשתמשים" }, ...workerOptions]}
         currentTable={tableName}
         currentAction={action}
+        currentWorker={worker}
+        actorFilterValues={actorFilterValues}
       />
     </AppShell>
   );

@@ -299,6 +299,19 @@ export async function POST(req: Request) {
       );
     }
 
+    // Payment terms + due date + delivery date go INTO the RPC's single orders
+    // UPDATE (no follow-up UPDATE that would log an extra "עודכן" audit row).
+    const paymentTerms = normalizePaymentTerms(body.payment_terms);
+    const dueDate =
+      typeof body.due_date === "string" && body.due_date.trim()
+        ? body.due_date.trim()
+        : computeDueDate(orderDate, paymentTerms);
+    // The delivery-confirmation date is only sent by the "אישור אספקה" flow.
+    const deliveryDate =
+      typeof body.delivery_date === "string" && body.delivery_date.trim()
+        ? body.delivery_date.trim()
+        : null;
+
     const { data, error } = await supabase.rpc("update_sales_order", {
       p_order_id: orderId,
       p_customer_id: customerId,
@@ -311,6 +324,9 @@ export async function POST(req: Request) {
       p_updated_by: user.id,
       p_notes: notes,
       p_items: normalizedItems,
+      p_payment_terms: paymentTerms,
+      p_due_date: dueDate,
+      p_delivery_date: deliveryDate,
     });
 
     if (error) {
@@ -426,30 +442,9 @@ export async function POST(req: Request) {
       }
     }
 
-    const derivedPaymentStatus = derivePaymentStatus(totalAmount, totalPaidAfterSave);
-    const paymentTerms = normalizePaymentTerms(body.payment_terms);
-    const dueDate =
-      typeof body.due_date === "string" && body.due_date.trim()
-        ? body.due_date.trim()
-        : computeDueDate(orderDate, paymentTerms);
-    // The delivery-confirmation date is only sent by the "אישור אספקה" flow.
-    const orderUpdate: Record<string, unknown> = {
-      payment_status: derivedPaymentStatus,
-      payment_terms: paymentTerms,
-      due_date: dueDate,
-    };
-    if (typeof body.delivery_date === "string" && body.delivery_date.trim()) {
-      orderUpdate.delivery_confirmed_at = body.delivery_date.trim();
-    }
-    const { error: updateError } = await supabase
-      .from("orders")
-      .update(orderUpdate)
-      .eq("id", orderId);
-
-    if (updateError) {
-      await cleanupUploadedDocument(supabase, uploadedDocuments);
-      return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
-    }
+    // payment_status / payment_terms / due_date / delivery_confirmed_at are now
+    // written inside update_sales_order's single UPDATE above.
+    const derivedPaymentStatus = paymentStatus;
 
     // Best-effort: the column only exists after db/sql/add_collect_payment_on_delivery.sql.
     if (typeof body.collect_payment_on_delivery === "boolean") {

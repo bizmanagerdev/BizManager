@@ -373,6 +373,31 @@ export function buildHref(
 // positions in the (newest-first) input; unattached children stand alone.
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 
+// Creating OR deleting one entity is several DB writes (e.g. for an order: the
+// orders INSERT + its payment INSERT + an optional Morning/collect-on-delivery
+// UPDATE; or on delete: the orders DELETE + its payments + inventory_movements
+// DELETEs) and the audit trigger logs each — so a brand-new or just-removed
+// order looked like a header plus several stray "תשלום"/"עודכן"/"נמחק" rows even
+// though it was one action. We fold those follow-up headers under the
+// create/delete header when they belong to the same entity and land within this
+// window of it. The window is tight so a genuine human edit minutes later still
+// stands on its own.
+const CASCADE_WINDOW_MS = 60 * 1000;
+
+// A header that anchors a cascade: the INSERT or DELETE of a top-level entity
+// whose parentKey is its own (orders/projects/customers). Follow-up writes on
+// the same entity (its payments, the same-entity UPDATEs, …) fold under it.
+function isCascadeAnchor(it: AuditFeedItem): boolean {
+  const isCreate = it.action === "create" || it.action === "INSERT";
+  const isDelete = it.action === "delete" || it.action === "DELETE";
+  if (!isCreate && !isDelete) return false;
+  return (
+    it.tableName === "orders" ||
+    it.tableName === "projects" ||
+    it.tableName === "customers"
+  );
+}
+
 export function groupAuditFeedItems(items: AuditFeedItem[]): AuditGroup[] {
   const timeOf = (it: AuditFeedItem) =>
     it.createdAt ? new Date(it.createdAt).getTime() : 0;
@@ -413,9 +438,36 @@ export function groupAuditFeedItems(items: AuditFeedItem[]): AuditGroup[] {
     }
   }
 
+  // Fold the cascade: each non-anchor header sharing a create/delete anchor's
+  // parentKey within the tight window collapses under that anchor (along with
+  // any side-effect children it had already gathered).
+  const folded = new Set<string>();
+  for (const it of items) {
+    if (it.isChild || !it.parentKey || isCascadeAnchor(it)) continue;
+    const candidates = byParentKey.get(it.parentKey);
+    if (!candidates) continue;
+    const t = timeOf(it);
+    let anchor: Bucket | null = null;
+    let bestDiff = Infinity;
+    for (const c of candidates) {
+      if (c.header.id === it.id || !isCascadeAnchor(c.header)) continue;
+      const diff = Math.abs(c.time - t);
+      if (diff <= CASCADE_WINDOW_MS && diff < bestDiff) {
+        anchor = c;
+        bestDiff = diff;
+      }
+    }
+    if (anchor) {
+      const own = byHeaderId.get(it.id);
+      anchor.children.push(it, ...(own ? own.children : []));
+      folded.add(it.id);
+    }
+  }
+
   const result: AuditGroup[] = [];
   for (const it of items) {
     if (!it.isChild) {
+      if (folded.has(it.id)) continue;
       const bucket = byHeaderId.get(it.id);
       if (bucket) result.push({ header: bucket.header, children: bucket.children });
     } else if (!attached.has(it.id)) {
@@ -728,6 +780,40 @@ export async function resolveUserDisplayNamesForValues(
 async function getActorNames(supabase: SupabaseClient, actorIds: string[]) {
   const resolved = await resolveUserDisplayNamesForValues(supabase, actorIds);
   return new Map(Object.entries(resolved));
+}
+
+// The audit_logs.changed_by column holds a MIX of identifiers: the DB trigger
+// writes auth.uid() (a users.auth_user_id) while app-side events write users.id.
+// So filtering the feed by one person means matching BOTH of their ids.
+export async function resolveActorFilterValues(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<string[]> {
+  if (!userId) return [];
+  const { data } = await supabase
+    .from("users")
+    .select("id,auth_user_id")
+    .eq("id", userId)
+    .maybeSingle();
+  const values = new Set<string>([userId]);
+  const authId = (data as { auth_user_id?: string | null } | null)?.auth_user_id;
+  if (typeof authId === "string" && authId) values.add(authId);
+  return Array.from(values);
+}
+
+// People who can appear as actors in the feed, for the "filter by worker"
+// dropdown. value = users.id (resolved to both ids at query time).
+export async function getAuditActorOptions(
+  supabase: SupabaseClient
+): Promise<{ value: string; label: string }[]> {
+  const { data } = await supabase
+    .from("users")
+    .select("id,auth_user_id,full_name,email")
+    .order("full_name", { ascending: true });
+  const rows = (data ?? []) as AuditActorRow[];
+  return rows
+    .filter((r) => typeof r.id === "string" && r.id)
+    .map((r) => ({ value: r.id, label: actorDisplayName(r) }));
 }
 
 export function buildAuditFeedItem(
@@ -1075,10 +1161,18 @@ export async function getAuditFeedPaginated(
     page = 1,
     tableName,
     action,
+    changedBy,
+    changedByValues,
   }: {
     page?: number;
     tableName?: string | null;
     action?: string | null;
+    // A users.id to filter by. Resolved to its (id + auth_user_id) pair here when
+    // changedByValues isn't already supplied by the caller.
+    changedBy?: string | null;
+    // Pre-resolved changed_by values (id + auth_user_id) — pass these to avoid a
+    // per-page lookup (the infinite-scroll caller already has them).
+    changedByValues?: string[] | null;
   } = {}
 ) {
   const safePage = Math.max(1, Math.floor(page));
@@ -1092,6 +1186,13 @@ export async function getAuditFeedPaginated(
 
   if (tableName) query = query.eq("table_name", tableName);
   if (action) query = query.eq("action", action);
+  const actorValues =
+    changedByValues && changedByValues.length
+      ? changedByValues
+      : changedBy
+        ? await resolveActorFilterValues(supabase, changedBy)
+        : [];
+  if (actorValues.length) query = query.in("changed_by", actorValues);
 
   const { data, error, count } = await query;
 

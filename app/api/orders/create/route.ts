@@ -139,6 +139,16 @@ export async function POST(req: Request) {
 
     const paymentStatus = derivePaymentStatus(totalAmount, totalPaid);
 
+    // Payment terms + the resulting due date are set inline at INSERT (passed to
+    // the RPC) so a brand-new order is a single write — no follow-up UPDATE that
+    // would log a spurious "order updated" audit row right after the create. An
+    // explicit due_date overrides the term-computed one.
+    const paymentTerms = normalizePaymentTerms(body.payment_terms);
+    const dueDate =
+      typeof body.due_date === "string" && body.due_date.trim()
+        ? body.due_date.trim()
+        : computeDueDate(orderDate, paymentTerms);
+
     const { data, error } = await supabase.rpc("create_sales_order", {
       p_customer_id: customerId,
       p_order_date: orderDate,
@@ -150,6 +160,9 @@ export async function POST(req: Request) {
       p_created_by: user.id,
       p_notes: notes,
       p_items: normalizedItems,
+      p_payment_terms: paymentTerms,
+      p_due_date: dueDate,
+      p_needs_invoice: needsInvoice,
     });
 
     if (error) {
@@ -195,34 +208,16 @@ export async function POST(req: Request) {
       }
     }
 
-    const derivedPaymentStatus = derivePaymentStatus(totalAmount, totalPaid);
-    // Payment terms + the resulting due date. An explicit due_date overrides the
-    // term-computed one; otherwise it's computed from order_date + the term.
-    const paymentTerms = normalizePaymentTerms(body.payment_terms);
-    const dueDate =
-      typeof body.due_date === "string" && body.due_date.trim()
-        ? body.due_date.trim()
-        : computeDueDate(orderDate, paymentTerms);
-    const { error: updateError } = await supabase
-      .from("orders")
-      .update({
-        payment_status: derivedPaymentStatus,
-        payment_terms: paymentTerms,
-        due_date: dueDate,
-        needs_invoice: needsInvoice,
-      })
-      .eq("id", orderId);
+    const derivedPaymentStatus = paymentStatus;
 
-    // Best-effort: the column only exists after db/sql/add_collect_payment_on_delivery.sql.
-    if (typeof body.collect_payment_on_delivery === "boolean") {
+    // Best-effort, and only when explicitly turned ON: the column only exists
+    // after db/sql/add_collect_payment_on_delivery.sql and defaults to false, so
+    // there's nothing to write (and no extra audit row) for the common case.
+    if (body.collect_payment_on_delivery === true) {
       await supabase
         .from("orders")
-        .update({ collect_payment_on_delivery: body.collect_payment_on_delivery })
+        .update({ collect_payment_on_delivery: true })
         .eq("id", orderId);
-    }
-
-    if (updateError) {
-      return NextResponse.json({ error: toHebrewError(updateError.message) }, { status: 400 });
     }
 
     // Best-effort Morning auto-issue on new order: invoice for the order, plus a

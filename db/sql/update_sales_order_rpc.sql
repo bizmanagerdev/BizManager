@@ -1,5 +1,17 @@
 -- Run this script in Supabase SQL Editor.
 -- Atomic RPC used by POST /api/orders/update.
+--
+-- payment_terms / due_date / delivery_confirmed_at are set HERE in the single
+-- orders UPDATE (not via a follow-up UPDATE in the route) so one edit = one
+-- "עודכן" audit row instead of several. The recalc trigger is also silenced for
+-- this transaction (see fix_order_line_total_pricing.sql) so rewriting the
+-- order_items doesn't emit a stray "עודכן · סכום" row per line.
+
+-- Drop the previous 11-arg signature so the new args don't leave a second
+-- overload (which would make PostgREST ambiguous).
+drop function if exists public.update_sales_order(
+  uuid, uuid, timestamptz, text, numeric, numeric, numeric, text, uuid, text, jsonb
+);
 
 create or replace function public.update_sales_order(
   p_order_id uuid,
@@ -12,7 +24,10 @@ create or replace function public.update_sales_order(
   p_payment_status text,
   p_updated_by uuid,
   p_notes text,
-  p_items jsonb
+  p_items jsonb,
+  p_payment_terms text default null,
+  p_due_date date default null,
+  p_delivery_date timestamptz default null
 )
 returns uuid
 language plpgsql
@@ -57,6 +72,12 @@ begin
   if not found then
     raise exception 'order not found';
   end if;
+
+  -- Silence recalculate_order_totals() for this transaction: this RPC sets the
+  -- order totals itself, so the per-item trigger would only emit redundant
+  -- "עודכן · סכום" audit rows as the items are rewritten. See
+  -- db/sql/fix_order_line_total_pricing.sql.
+  perform set_config('app.skip_order_total_recalc', 'on', true);
 
   for v_item in
     select value
@@ -112,7 +133,11 @@ begin
       discount_amount = coalesce(p_discount_amount, 0),
       total_amount = coalesce(p_total_amount, 0),
       payment_status = coalesce(nullif(trim(p_payment_status), ''), 'unpaid'),
-      notes = nullif(trim(coalesce(p_notes, '')), '')
+      notes = nullif(trim(coalesce(p_notes, '')), ''),
+      payment_terms = nullif(trim(coalesce(p_payment_terms, '')), ''),
+      due_date = p_due_date,
+      -- only the "אישור אספקה" flow sends a delivery date; never wipe an existing one
+      delivery_confirmed_at = coalesce(p_delivery_date, delivery_confirmed_at)
   where id = p_order_id;
 
   for v_item in
@@ -195,5 +220,8 @@ grant execute on function public.update_sales_order(
   text,
   uuid,
   text,
-  jsonb
+  jsonb,
+  text,
+  date,
+  timestamptz
 ) to authenticated;
