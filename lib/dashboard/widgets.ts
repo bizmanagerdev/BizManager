@@ -46,10 +46,11 @@ const ADMIN_ONLY: UserRole[] = ["admin"];
  * an explicit order.
  */
 export const DASHBOARD_WIDGETS: WidgetMeta[] = [
+  // "מבט על היום" leads the dashboard for everyone by default (users can reorder).
+  { id: "week", label: "מבט על היום", roles: ALL, span: 2 },
   { id: "alerts", label: "התראות", roles: ALL, span: 2 },
   { id: "finance", label: "גבייה ותשלומים", roles: BACK_OFFICE, span: 2 },
   { id: "myTasks", label: "המשימות שלי", roles: ALL, span: 2 },
-  { id: "week", label: "השבוע שלי", roles: ALL, span: 2 },
   { id: "projects", label: "סטטוס פרויקטים", roles: BACK_OFFICE, span: 2 },
   { id: "deliveries", label: "אספקות קרובות", roles: BACK_OFFICE, span: 1 },
   { id: "taskDonut", label: "פילוח משימות", roles: BACK_OFFICE, span: 1 },

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getOpenReminders } from "@/lib/communications";
+import { getOpenReminders, actionTypeLabel } from "@/lib/communications";
 
 type Row = Record<string, unknown>;
 
@@ -144,12 +144,27 @@ export async function getScheduleEntries(
   const reminderEntries: CalendarEntry[] = reminders
     .map((r) => {
       const day = r.remind_at ? r.remind_at.slice(0, 10) : null;
+      // Same detail the תזכורות panel shows: a task-linked reminder reads as its
+      // task subject (+ "משימה"), otherwise the content / customer with the
+      // action-type label — never a bare "תזכורת — ללא לקוח".
+      const timeMatch = r.remind_at ? /T(\d{2}:\d{2})/.exec(r.remind_at) : null;
+      const time = timeMatch ? timeMatch[1] : null;
+      const title = r.task_subject?.trim() || r.content?.trim() || r.customer_name?.trim() || "תזכורת";
+      const typeLabel = r.task_subject ? "משימה" : actionTypeLabel(r.action_type);
+      const subtitle = [
+        typeLabel,
+        time,
+        // only add the customer if it isn't already the title
+        r.customer_name && r.customer_name.trim() !== title ? r.customer_name.trim() : null,
+      ]
+        .filter((value): value is string => Boolean(value && value.trim()))
+        .join(" • ");
       return {
         id: r.id,
         kind: "reminder" as const,
-        title: r.content?.trim() || "תזכורת",
-        subtitle: r.customer_name ?? "ללא לקוח",
-        href: "/collections",
+        title,
+        subtitle,
+        href: r.task_id ? `/tasks/${r.task_id}` : "/collections",
         startDate: day,
         endDate: day,
         status: r.status,
