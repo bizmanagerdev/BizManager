@@ -99,7 +99,33 @@ type OrderView = {
   invoiceSentAt: string | null;
   deliveryConfirmedAt: string | null;
   outOfStock: boolean;
+  products: { name: string; quantity: number }[];
 };
+
+const PRODUCTS_PREVIEW_LIMIT = 3;
+
+function OrderProductList({
+  products,
+  className,
+}: {
+  products: { name: string; quantity: number }[];
+  className?: string;
+}) {
+  if (products.length === 0) return null;
+  const shown = products.slice(0, PRODUCTS_PREVIEW_LIMIT);
+  const remaining = products.length - shown.length;
+  return (
+    <ul className={`space-y-0.5 text-xs text-muted-foreground ${className ?? ""}`}>
+      {shown.map((product, idx) => (
+        <li key={`${product.name}-${idx}`} className="truncate">
+          {product.quantity > 0 ? `${product.quantity}× ` : ""}
+          {product.name}
+        </li>
+      ))}
+      {remaining > 0 ? <li className="text-muted-foreground/80">ועוד {remaining}…</li> : null}
+    </ul>
+  );
+}
 
 function getString(row: Row, keys: string[]) {
   for (const key of keys) {
@@ -353,6 +379,17 @@ export default function SalesOrdersClient({
         invoiceSentAt: getString(row, ["invoice_sent_at"]),
         deliveryConfirmedAt: getString(row, ["delivery_confirmed_at"]),
         outOfStock: row.out_of_stock === true,
+        products: Array.isArray(row.products)
+          ? (row.products as unknown[])
+              .map((p) => {
+                const item = p as Record<string, unknown>;
+                const name = typeof item.name === "string" ? item.name : null;
+                if (!name) return null;
+                const quantity = Number(item.quantity ?? 0) || 0;
+                return { name, quantity };
+              })
+              .filter((p): p is { name: string; quantity: number } => p !== null)
+          : [],
       };
     });
 
@@ -418,6 +455,7 @@ export default function SalesOrdersClient({
                   <tr className="border-b border-border/70 text-right">
                     <th className="px-4 py-3 font-medium">לקוח</th>
                     <th className="px-4 py-3 font-medium">עיר ותאריך</th>
+                    <th className="px-4 py-3 font-medium">מוצרים</th>
                     <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
                     {anyOutOfStock ? <th className="px-4 py-3 font-medium">מלאי</th> : null}
                     <th className="px-4 py-3 font-medium">
@@ -520,6 +558,13 @@ export default function SalesOrdersClient({
                         </div>
                       </td>
                       <td className="px-4 py-4">
+                        {row.products.length > 0 ? (
+                          <OrderProductList products={row.products} className="max-w-[12rem]" />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
                         <StatusBadge value={row.status} type="order" className={orderStatusBadgeClasses(row.status)} />
                       </td>
                       {anyOutOfStock ? (
@@ -617,6 +662,13 @@ export default function SalesOrdersClient({
                         </span>
                       </div>
                     </div>
+
+                    {row.products.length > 0 ? (
+                      <div className="rounded-md bg-muted/40 px-2 py-1.5">
+                        <div className="mb-0.5 text-[10px] font-medium text-muted-foreground">מוצרים</div>
+                        <OrderProductList products={row.products} />
+                      </div>
+                    ) : null}
 
                     <div className="flex items-center justify-between gap-2">
                       <InvoiceQuickMenu orderId={row.id} needsInvoice={row.needsInvoice} invoiceSentAt={row.invoiceSentAt} />

@@ -91,6 +91,62 @@ async function computeOutOfStockOrderIds(
   return oos;
 }
 
+export type OrderProductSummary = { name: string; quantity: number };
+
+/**
+ * For a set of order ids, return a compact per-order product list
+ * (product name + ordered quantity) so the list view can show what's in each
+ * order without opening it. Ordered by line position for stable display.
+ */
+async function fetchOrderProductSummaries(
+  supabase: SupabaseClient,
+  orderIds: string[]
+): Promise<Map<string, OrderProductSummary[]>> {
+  const result = new Map<string, OrderProductSummary[]>();
+  if (orderIds.length === 0) return result;
+
+  const { data: items } = await supabase
+    .from("order_items")
+    .select("id,order_id,product_id,quantity_ordered")
+    .in("order_id", orderIds)
+    .order("id", { ascending: true });
+  const itemRows = (items ?? []) as Row[];
+  if (itemRows.length === 0) return result;
+
+  const productIds = Array.from(
+    new Set(
+      itemRows
+        .map((r) => (typeof r.product_id === "string" ? r.product_id : null))
+        .filter((v): v is string => Boolean(v))
+    )
+  );
+
+  const nameByProduct = new Map<string, string>();
+  if (productIds.length > 0) {
+    const { data: products } = await supabase
+      .from("products")
+      .select("id,name")
+      .in("id", productIds);
+    for (const p of (products ?? []) as Row[]) {
+      const pid = typeof p.id === "string" ? p.id : null;
+      const name = typeof p.name === "string" ? p.name : null;
+      if (pid && name) nameByProduct.set(pid, name);
+    }
+  }
+
+  for (const it of itemRows) {
+    const orderId = typeof it.order_id === "string" ? it.order_id : null;
+    if (!orderId) continue;
+    const pid = typeof it.product_id === "string" ? it.product_id : null;
+    const name = (pid && nameByProduct.get(pid)) || "פריט";
+    const quantity = Number(it.quantity_ordered ?? 0) || 0;
+    const list = result.get(orderId) ?? [];
+    list.push({ name, quantity });
+    result.set(orderId, list);
+  }
+  return result;
+}
+
 /**
  * Load one page of the orders list (open or closed), with each order's effective
  * due date attached for the late-status badge. Shared by the initial server
@@ -171,11 +227,20 @@ export async function loadOrdersPage(
     .filter(Boolean);
   const outOfStockIds = await computeOutOfStockOrderIds(supabase, openOrderIds);
 
-  const rowsWithDue = rows.map((r) => ({
-    ...r,
-    due_date: orderDueById.get(typeof r.order_id === "string" ? r.order_id : "")?.dueDate ?? null,
-    out_of_stock: outOfStockIds.has(typeof r.order_id === "string" ? r.order_id : ""),
-  }));
+  const allOrderIds = rows
+    .map((r) => (typeof r.order_id === "string" ? r.order_id : ""))
+    .filter(Boolean);
+  const productsByOrder = await fetchOrderProductSummaries(supabase, allOrderIds);
+
+  const rowsWithDue = rows.map((r) => {
+    const orderId = typeof r.order_id === "string" ? r.order_id : "";
+    return {
+      ...r,
+      due_date: orderDueById.get(orderId)?.dueDate ?? null,
+      out_of_stock: outOfStockIds.has(orderId),
+      products: productsByOrder.get(orderId) ?? [],
+    };
+  });
 
   const totalCount = typeof count === "number" ? count : rows.length;
   // Drive "has more" off page fullness, not the estimated count.
