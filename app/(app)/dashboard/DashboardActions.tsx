@@ -1,7 +1,6 @@
 ﻿"use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -28,7 +27,6 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import {
-  mapProjectTypeToExpenseDomain,
   EXPENSE_CATEGORY_OPTIONS_WITH_WAGE,
   EXPENSE_OTHER_CATEGORY,
   EXPENSE_WORKER_WAGE_CATEGORY,
@@ -38,9 +36,7 @@ import {
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import {
   calculateSessionLaborCost,
-  formatCurrency,
   getActiveSalaryAgreementForDate,
-  toNumber,
   type SalaryAgreementRow,
 } from "@/lib/payroll";
 import type { WorkerDebtItemRow } from "@/lib/payroll-center";
@@ -52,23 +48,28 @@ import {
 } from "@/lib/payroll-worker-type";
 import { PAYMENT_METHOD_OPTIONS, type FinancialAttachment } from "@/lib/payments";
 import {
-  WEEK_PALETTE,
-  addDays,
   durationHours,
   formatIls,
-  formatWeekRangeLabel,
   getString,
   getTodayDate,
   isImageAttachment,
-  isSameDay,
   normalizeDateOnly,
   nowLocal,
-  shortWeekDay,
-  startOfWeek,
-  toDateOnly,
   toIso,
   uploadFinancialAttachment,
 } from "./DashboardActions.helpers";
+import { buildWeekView } from "@/lib/dashboard/week";
+import {
+  buildIncomePayload,
+  buildRegularExpensePayload,
+  buildWorkerPaymentAllocations,
+  sortOpenWorkerDebt,
+  sumOpenOwed,
+  validateIncomeForm,
+  validateRegularExpense,
+  validateWorkerPaymentForm,
+} from "./DashboardActions.forms";
+import { WeekOverviewDialog, WorkerPaymentDialog } from "./DashboardActions.dialogs";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -83,7 +84,6 @@ import {
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import { ProjectPicker, type ProjectPickerOption } from "@/components/projects/ProjectPicker";
@@ -257,8 +257,11 @@ export default function DashboardActions({
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), now.getDate());
   }, []);
-  const weekStart = useMemo(() => startOfWeek(today), [today]);
-  const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
+  // Single source of truth for week bucketing — shared with the inline WeekOverview
+  // (was duplicated inline here; see lib/dashboard/week.buildWeekView).
+  const weekView = useMemo(() => buildWeekView(scheduleEntries, today), [scheduleEntries, today]);
+  const weekStart = weekView.weekStart;
+  const weekEnd = weekView.weekEnd;
 
   // ── Worker payment (pay an hourly / monthly / contract worker) ──────────────
   // Unlike the session flows above, this records a direct worker payment and
@@ -300,45 +303,10 @@ export default function DashboardActions({
       return name.includes(q) || customer.includes(q);
     });
   }, [incomeProjectQuery, projects]);
-  const weeklyGeneralEntries = useMemo(() => {
-    // Projects active this week that started before it AND span 15+ days total
-    return scheduleEntries.filter((entry) => {
-      if (entry.kind !== "project") return false;
-      const start = toDateOnly(entry.startDate);
-      const end = toDateOnly(entry.endDate) ?? start;
-      if (!start || !end) return false;
-      const durationDays = (end.getTime() - start.getTime()) / 86_400_000;
-      return start < weekStart && end >= weekStart && durationDays >= 15;
-    });
-  }, [scheduleEntries, weekStart]);
-
-  const weeklyBuckets = useMemo(() => {
-    const generalIds = new Set(weeklyGeneralEntries.map((e) => e.id));
-
-    return Array.from({ length: 7 }).map((_, index) => {
-      const day = addDays(weekStart, index);
-      const entries = scheduleEntries.filter((entry) => {
-        if (generalIds.has(entry.id)) return false;
-        const start = toDateOnly(entry.startDate);
-        const end = toDateOnly(entry.endDate) ?? start;
-        if (!start || !end) return false;
-        if (entry.kind === "task") {
-          // Tasks: only on their due date
-          return isSameDay(day, start);
-        }
-        // Projects: every day they are active within this week
-        const effectiveStart = start < weekStart ? weekStart : start;
-        return day >= effectiveStart && day <= end && day <= weekEnd;
-      });
-      return { day, entries };
-    });
-  }, [scheduleEntries, weekStart, weekEnd, weeklyGeneralEntries]);
-  const weeklyEntryCount = useMemo(
-    () =>
-      weeklyGeneralEntries.length +
-      weeklyBuckets.reduce((sum, bucket) => sum + bucket.entries.length, 0),
-    [weeklyBuckets, weeklyGeneralEntries]
-  );
+  // Buckets derived from the shared weekView (logic now lives in lib/dashboard/week).
+  const weeklyGeneralEntries = weekView.generalEntries;
+  const weeklyBuckets = weekView.days;
+  const weeklyEntryCount = weekView.totalCount;
   const workerUsers = useMemo(
     () => availableUsers.filter((user) => user.role === "worker" || user.role === "worker_no_access"),
     [availableUsers]
@@ -354,7 +322,7 @@ export default function DashboardActions({
     });
   }, [availableUsers, currentUserRole]);
   const workerPaymentOpenOwed = useMemo(
-    () => workerPaymentDebtItems.reduce((sum, item) => sum + Math.max(0, toNumber(item.owed_amount)), 0),
+    () => sumOpenOwed(workerPaymentDebtItems),
     [workerPaymentDebtItems]
   );
   // ── Shared <SessionEditorDialog/> data (manual "add shift" quick action) ─────
@@ -719,70 +687,46 @@ export default function DashboardActions({
       return;
     }
 
-    if (!expenseDate) {
-      setExpenseError(HEBREW.expenseRequired);
-      return;
-    }
-
-    const amount = Number(expenseAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setExpenseError(HEBREW.expenseInvalidAmount);
-      return;
-    }
-
-    const expenseMoneyMoving = expensePaymentStatus === "paid" || expensePaymentStatus === "partial";
-    if (expenseMoneyMoving && !expensePaymentMethod) {
-      setExpenseError("יש לבחור אמצעי תשלום.");
-      return;
-    }
-    if (expenseMoneyMoving && accountsList.length > 0 && !expenseAccountId) {
-      setExpenseError("יש לבחור חשבון לתנועה.");
-      return;
-    }
-
-    // Bill-to-customer (project domain only): when on, an amount is required and
-    // the expense is carved out of the base price (mirrors the project page).
     const isProjectExpense = expenseBusinessDomain === "logistics_projects";
-    let regularBillToCustomerAmount: number | null = null;
-    if (isProjectExpense && expenseBilledToCustomer) {
-      regularBillToCustomerAmount = expenseBillToCustomerAmount.trim()
-        ? Number(expenseBillToCustomerAmount)
-        : null;
-      if (
-        regularBillToCustomerAmount === null ||
-        !Number.isFinite(regularBillToCustomerAmount) ||
-        regularBillToCustomerAmount <= 0
-      ) {
-        setExpenseError("יש להזין סכום לחיוב לקוח.");
-        return;
-      }
+    const regularExpenseError = validateRegularExpense({
+      expenseDate,
+      expenseAmount,
+      expensePaymentStatus,
+      expensePaymentMethod,
+      accountsCount: accountsList.length,
+      expenseAccountId,
+      isProjectExpense,
+      expenseBilledToCustomer,
+      expenseBillToCustomerAmount,
+    });
+    if (regularExpenseError) {
+      setExpenseError(regularExpenseError);
+      return;
     }
 
     setExpenseSubmitting(true);
     try {
       const result = await offlineFetch(
         "/api/expenses/create",
-        {
-          business_domain: expenseBusinessDomain,
-          project_id: linkedProjectId || null,
-          order_id: linkedOrderId || null,
-          property_id: linkedPropertyId || null,
-          amount,
-          category: finalExpenseCategory,
-          expense_date: expenseDate,
-          description: expenseDescription.trim() || null,
-          notes: expenseNotes.trim() || null,
-          included_in_base_price: isProjectExpense ? !expenseBilledToCustomer : false,
-          billed_to_customer: isProjectExpense ? expenseBilledToCustomer : false,
-          bill_to_customer_amount: regularBillToCustomerAmount,
-          payment_status: expensePaymentStatus,
-          payment_method:
-            expensePaymentStatus === "paid" || expensePaymentStatus === "partial"
-              ? expensePaymentMethod || null
-              : null,
-          account_id: expenseAccountId || null,
-          tag_ids: expenseCategory === CARS_EXPENSE_CATEGORY ? expenseTagIds : [],
-        },
+        buildRegularExpensePayload({
+          expenseBusinessDomain,
+          linkedProjectId,
+          linkedOrderId,
+          linkedPropertyId,
+          expenseAmount,
+          finalExpenseCategory,
+          expenseDate,
+          expenseDescription,
+          expenseNotes,
+          expenseBilledToCustomer,
+          expenseBillToCustomerAmount,
+          expensePaymentStatus,
+          expensePaymentMethod,
+          expenseAccountId,
+          expenseCategory,
+          carsCategory: CARS_EXPENSE_CATEGORY,
+          expenseTagIds,
+        }),
         HEBREW.expenseNew,
         { idempotent: true }
       );
@@ -878,66 +822,48 @@ export default function DashboardActions({
 
   async function createIncome() {
     setIncomeError(null);
-    if (!incomeBusinessDomain) {
-      setIncomeError("יש לבחור תחום.");
-      return;
-    }
     const linkedProjectId = incomeBusinessDomain === "logistics_projects" ? incomeProjectId : "";
     const linkedOrderId = incomeBusinessDomain === "sales" ? incomeOrderId : "";
     const linkedPropertyId = incomeBusinessDomain === "property_management" ? incomePropertyId : "";
 
-    if (incomeBusinessDomain === "logistics_projects" && !linkedProjectId) {
-      setIncomeError(HEBREW.sessionInvalidProject);
+    const validationError = validateIncomeForm({
+      incomeBusinessDomain,
+      linkedProjectId,
+      linkedPropertyId,
+      incomeDate,
+      incomeMethod,
+      incomeDueDate,
+      incomeAmount,
+      accountsCount: accountsList.length,
+      incomeAccountId,
+    });
+    if (validationError) {
+      setIncomeError(validationError);
       return;
     }
-    if (incomeBusinessDomain === "property_management" && !linkedPropertyId) {
-      setIncomeError(HEBREW.sessionInvalidProperty);
-      return;
-    }
-    if (!incomeDate || !incomeMethod.trim()) {
-      setIncomeError(HEBREW.incomeRequired);
-      return;
-    }
-    if (incomeMethod === "check" && !incomeDueDate) {
-      setIncomeError(`${HEBREW.incomeRequired} (${HEBREW.paymentDueDate})`);
-      return;
-    }
-
     const amount = Number(incomeAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setIncomeError(HEBREW.incomeInvalidAmount);
-      return;
-    }
-
-    if (accountsList.length > 0 && !incomeAccountId) {
-      setIncomeError("יש לבחור חשבון לתנועה.");
-      return;
-    }
 
     setIncomeSubmitting(true);
     try {
       const result = await offlineFetch(
         "/api/payments/create",
-        {
-          business_domain:
-            incomeBusinessDomain === "logistics_projects"
-              ? mapProjectTypeToExpenseDomain(projectById.get(linkedProjectId)?.type ?? null)
-              : incomeBusinessDomain,
-          project_id: linkedProjectId || null,
-          order_id: linkedOrderId || null,
-          property_id: linkedPropertyId || null,
-          amount_total: amount,
-          payment_date: incomeDate,
-          due_date: incomeDueDate.trim() || null,
-          requires_split: incomeRequiresSplit,
-          payment_method: incomeMethod,
-          account_id: incomeAccountId || null,
-          reference_number: incomeReference.trim() || null,
-          check_number:
-            incomeMethod === "check" && incomeCheckNumber.trim() ? incomeCheckNumber.trim() : null,
-          notes: incomeNotes.trim() || null,
-          tag_ids: incomeBusinessDomain === "general_business" ? incomeTagIds : [],
-        },
+        buildIncomePayload({
+          incomeBusinessDomain,
+          linkedProjectId,
+          linkedOrderId,
+          linkedPropertyId,
+          projectType: projectById.get(linkedProjectId)?.type ?? null,
+          amount,
+          incomeDate,
+          incomeDueDate,
+          incomeRequiresSplit,
+          incomeMethod,
+          incomeAccountId,
+          incomeReference,
+          incomeCheckNumber,
+          incomeNotes,
+          incomeTagIds,
+        }),
         HEBREW.incomeNew,
         { idempotent: true }
       );
@@ -1051,14 +977,9 @@ export default function DashboardActions({
         setWorkerPaymentDebtItems([]);
         return;
       }
-      const openItems = (json.workerDebtItems ?? [])
-        .filter((item) => item.user_id === userId && toNumber(item.owed_amount) > 0.009)
-        // Oldest first, so a partial payment clears the earliest debt first.
-        .sort((a, b) =>
-          (a.due_date ?? a.source_date ?? "").localeCompare(b.due_date ?? b.source_date ?? "")
-        );
+      const openItems = sortOpenWorkerDebt(json.workerDebtItems ?? [], userId);
       setWorkerPaymentDebtItems(openItems);
-      const owed = openItems.reduce((sum, item) => sum + Math.max(0, toNumber(item.owed_amount)), 0);
+      const owed = sumOpenOwed(openItems);
       // Default the amount to the full open balance (common "pay them what they're owed" case).
       if (owed > 0) setWorkerPaymentAmount(String(Math.round(owed * 100) / 100));
     } catch (error: unknown) {
@@ -1077,39 +998,21 @@ export default function DashboardActions({
 
   async function saveWorkerPayment() {
     setWorkerPaymentError(null);
-    if (!workerPaymentUserId) {
-      setWorkerPaymentError("יש לבחור עובד.");
-      return;
-    }
-    if (!workerPaymentDate) {
-      setWorkerPaymentError("יש לבחור תאריך תשלום.");
+    const validationError = validateWorkerPaymentForm({
+      workerPaymentUserId,
+      workerPaymentDate,
+      workerPaymentAmount,
+      accountsCount: accountsList.length,
+      workerPaymentAccountId,
+    });
+    if (validationError) {
+      setWorkerPaymentError(validationError);
       return;
     }
     const amount = Number(workerPaymentAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setWorkerPaymentError("יש להזין סכום תשלום תקין.");
-      return;
-    }
-    if (accountsList.length > 0 && !workerPaymentAccountId) {
-      setWorkerPaymentError("יש לבחור חשבון לתנועה.");
-      return;
-    }
 
-    // Auto-allocate the amount across open debt items, oldest first, never exceeding
-    // each item's owed amount. Any remainder stays unallocated (an advance).
-    let remaining = amount;
-    const allocations = workerPaymentDebtItems
-      .map((item) => {
-        const owed = Math.max(0, toNumber(item.owed_amount));
-        const applied = Math.min(owed, remaining);
-        remaining -= applied;
-        return applied > 0.009
-          ? { source_type: item.source_type, source_id: item.source_id, amount: Math.round(applied * 100) / 100 }
-          : null;
-      })
-      .filter((allocation): allocation is { source_type: "session" | "payslip"; source_id: string; amount: number } =>
-        allocation !== null
-      );
+    // Auto-allocate across open debts oldest-first; any remainder stays an advance.
+    const allocations = buildWorkerPaymentAllocations(amount, workerPaymentDebtItems);
 
     setWorkerPaymentSubmitting(true);
     try {
@@ -1273,105 +1176,15 @@ export default function DashboardActions({
         ) : null}
       </AdaptiveGrid>
 
-      <Dialog open={weekOverviewOpen} onOpenChange={setWeekOverviewOpen}>
-        <AdaptiveDialog size="form2xl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{HEBREW.thisWeek}</DialogTitle>
-            <DialogDescription>{`${formatWeekRangeLabel(weekStart, weekEnd)} • ${weeklyEntryCount} פריטים השבוע`}</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {/* Ongoing projects legend */}
-            {weeklyGeneralEntries.length > 0 && (
-              <div className="space-y-2 text-right">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">פרויקטים שוטפים השבוע</div>
-                <div className="flex flex-wrap justify-end gap-2">
-                  {weeklyGeneralEntries.map((entry, i) => {
-                    const color = WEEK_PALETTE[i % WEEK_PALETTE.length];
-                    return (
-                      <Link
-                        key={entry.id}
-                        href={entry.href}
-                        onClick={() => setWeekOverviewOpen(false)}
-                        className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition hover:opacity-80 ${color.chip}`}
-                      >
-                        <span className={`h-2 w-2 shrink-0 rounded-full ${color.bar}`} />
-                        <span>{entry.title}</span>
-                        {entry.subtitle ? <span className="opacity-60">· {entry.subtitle}</span> : null}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* 7-day calendar grid */}
-            <div className="overflow-x-auto rounded-xl border">
-              <div className="flex min-w-[500px]">
-                {weeklyBuckets.map(({ day, entries }) => {
-                  const isToday = isSameDay(day, today);
-                  return (
-                    <div
-                      key={day.toISOString()}
-                      className={`flex flex-1 flex-col border-r last:border-r-0 ${isToday ? "bg-primary/5" : "bg-background"}`}
-                    >
-                      {/* Day header */}
-                      <div className={`border-b px-1 py-2 text-center ${isToday ? "bg-primary/10" : ""}`}>
-                        <div className="text-xs text-muted-foreground">{shortWeekDay(day)}</div>
-                        <div
-                          className={`mx-auto mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold ${
-                            isToday ? "bg-primary text-primary-foreground" : ""
-                          }`}
-                        >
-                          {day.getDate()}
-                        </div>
-                      </div>
-
-                      {/* Ongoing project color bars */}
-                      {weeklyGeneralEntries.length > 0 && (
-                        <div className="flex flex-col gap-px px-1 pt-1.5">
-                          {weeklyGeneralEntries.map((entry, i) => (
-                            <div
-                              key={entry.id}
-                              title={entry.title}
-                              className={`h-1.5 rounded-sm opacity-75 ${WEEK_PALETTE[i % WEEK_PALETTE.length].bar}`}
-                            />
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Day-specific entries */}
-                      <div className="flex flex-1 flex-col gap-1 p-1 pt-1.5">
-                        {entries.length === 0 ? (
-                          <div className="flex flex-1 items-center justify-center py-2">
-                            <span className="text-[10px] text-muted-foreground/40">—</span>
-                          </div>
-                        ) : (
-                          entries.map((entry) => (
-                            <Link
-                              key={entry.id}
-                              href={entry.href}
-                              onClick={() => setWeekOverviewOpen(false)}
-                              className={`block rounded-md border px-1.5 py-1 text-[11px] leading-tight transition hover:border-primary/40 hover:bg-primary/5 ${
-                                entry.kind === "task" ? "border-warning/40 bg-warning-soft" : "bg-background"
-                              }`}
-                            >
-                              <div className="truncate font-medium" title={entry.title}>{entry.title}</div>
-                              {entry.subtitle ? (
-                                <div className="truncate text-muted-foreground" title={entry.subtitle}>{entry.subtitle}</div>
-                              ) : null}
-                            </Link>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </AdaptiveDialog>
-      </Dialog>
+      <WeekOverviewDialog
+        open={weekOverviewOpen}
+        onOpenChange={setWeekOverviewOpen}
+        weekStart={weekStart}
+        weekEnd={weekEnd}
+        weeklyEntryCount={weeklyEntryCount}
+        weeklyGeneralEntries={weeklyGeneralEntries}
+        weeklyBuckets={weeklyBuckets}
+      />
 
       <SessionEditorDialog
         open={manualSessionOpen}
@@ -1392,131 +1205,38 @@ export default function DashboardActions({
         }}
       />
 
-      <Dialog
+      <WorkerPaymentDialog
         open={workerPaymentOpen}
         onOpenChange={(open) => {
           if (!open && workerPaymentSubmitting) return;
           setWorkerPaymentOpen(open);
           if (!open) resetWorkerPaymentForm();
         }}
-      >
-        <AdaptiveDialog size="form2xl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{"תשלום לעובד"}</DialogTitle>
-            <DialogDescription>{"רישום תשלום לעובד שעתי / חודשי / קבלן. התשלום יקוזז מהיתרה הפתוחה (תלושים / משמרות)."}</DialogDescription>
-          </DialogHeader>
-
-          <fieldset disabled={workerPaymentSubmitting} className="contents">
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="space-y-2 text-right text-sm md:col-span-2">
-                <span className="font-medium">{"עובד *"}</span>
-                <SearchableSelect
-                  ariaLabel="בחירת עובד"
-                  placeholder="בחרו עובד"
-                  searchPlaceholder="חיפוש עובד..."
-                  options={payableWorkers.map((user) => ({ value: user.id, label: user.label }))}
-                  value={workerPaymentUserId}
-                  onChange={selectWorkerPaymentWorker}
-                />
-              </label>
-
-              {workerPaymentUserId ? (
-                <div className="md:col-span-2 rounded-xl border bg-muted/30 p-3 text-right text-sm">
-                  {workerPaymentDebtLoading ? (
-                    <span className="text-muted-foreground">{"טוען יתרה..."}</span>
-                  ) : workerPaymentOpenOwed > 0 ? (
-                    <span>
-                      {"יתרה פתוחה: "}
-                      <span className="font-semibold">{formatCurrency(workerPaymentOpenOwed)}</span>
-                      <span className="text-muted-foreground">{` • ${workerPaymentDebtItems.length} פריטים פתוחים`}</span>
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {"אין יתרה פתוחה לעובד זה. תשלום שיירשם יישמר כמקדמה ללא קיזוז."}
-                    </span>
-                  )}
-                </div>
-              ) : null}
-
-              <label className="space-y-2 text-right text-sm">
-                <span className="font-medium">{"סכום *"}</span>
-                <CurrencyInput
-                  value={workerPaymentAmount}
-                  onChange={(e) => setWorkerPaymentAmount(e.target.value)}
-                />
-              </label>
-
-              <label className="space-y-2 text-right text-sm">
-                <span className="font-medium">{"תאריך תשלום *"}</span>
-                <DateInput
-                  value={workerPaymentDate}
-                  onChange={(e) => setWorkerPaymentDate(e.target.value)}
-                />
-              </label>
-
-              <label className="space-y-2 text-right text-sm">
-                <span className="font-medium">{HEBREW.paymentMethod}</span>
-                <select
-                  className={`${fieldClass} text-right`}
-                  value={workerPaymentMethod}
-                  onChange={(e) => {
-                    const m = e.target.value;
-                    setWorkerPaymentMethod(m);
-                    setWorkerPaymentAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
-                  }}
-                >
-                  <option value=""></option>
-                  {PAYMENT_METHOD_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <AccountSelect
-                required
-                value={workerPaymentAccountId}
-                onChange={setWorkerPaymentAccountId}
-                onLoaded={(list) => {
-                  setAccountsList(list);
-                  setWorkerPaymentAccountId((prev) => prev || defaultAccountForMethod(list, workerPaymentMethod));
-                }}
-              />
-
-              <label className="space-y-2 text-right text-sm">
-                <span className="font-medium">{"אסמכתא"}</span>
-                <Input
-                  value={workerPaymentReference}
-                  onChange={(e) => setWorkerPaymentReference(e.target.value)}
-                />
-              </label>
-
-              <label className="space-y-2 text-right text-sm md:col-span-2">
-                <span className="font-medium">{HEBREW.notes}</span>
-                <Textarea
-                  value={workerPaymentNotes}
-                  onChange={(e) => setWorkerPaymentNotes(e.target.value)}
-                  rows={2}
-                />
-              </label>
-            </div>
-          </fieldset>
-
-          {workerPaymentError ? (
-            <p className="text-right text-sm text-destructive">{workerPaymentError}</p>
-          ) : null}
-
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setWorkerPaymentOpen(false)} disabled={workerPaymentSubmitting}>
-              {HEBREW.cancel}
-            </Button>
-            <Button type="button" onClick={() => void saveWorkerPayment()} disabled={workerPaymentSubmitting || workerPaymentDebtLoading}>
-              {workerPaymentSubmitting ? HEBREW.saving : "שמירת תשלום"}
-            </Button>
-          </div>
-        </AdaptiveDialog>
-      </Dialog>
+        submitting={workerPaymentSubmitting}
+        payableWorkers={payableWorkers.map((u) => ({ id: u.id, label: u.label }))}
+        workerPaymentUserId={workerPaymentUserId}
+        onSelectWorker={selectWorkerPaymentWorker}
+        debtLoading={workerPaymentDebtLoading}
+        openOwed={workerPaymentOpenOwed}
+        debtItemCount={workerPaymentDebtItems.length}
+        amount={workerPaymentAmount}
+        onAmountChange={setWorkerPaymentAmount}
+        date={workerPaymentDate}
+        onDateChange={setWorkerPaymentDate}
+        method={workerPaymentMethod}
+        onMethodChange={setWorkerPaymentMethod}
+        accountId={workerPaymentAccountId}
+        onAccountIdChange={setWorkerPaymentAccountId}
+        accountsList={accountsList}
+        onAccountsLoaded={setAccountsList}
+        reference={workerPaymentReference}
+        onReferenceChange={setWorkerPaymentReference}
+        notes={workerPaymentNotes}
+        onNotesChange={setWorkerPaymentNotes}
+        error={workerPaymentError}
+        onSave={() => void saveWorkerPayment()}
+        onCancel={() => setWorkerPaymentOpen(false)}
+      />
 
       <Dialog
         open={orderOpen}

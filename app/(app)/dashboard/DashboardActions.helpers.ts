@@ -45,33 +45,8 @@ export function durationHours(clockIn: string, clockOut: string) {
   return Number.isInteger(hours) ? String(hours) : String(Math.round(hours * 100) / 100);
 }
 
-export function toDateOnly(value: string | null | undefined) {
-  if (!value) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  if (match) {
-    const [, year, month, day] = match;
-    return new Date(Number(year), Number(month) - 1, Number(day));
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-export function startOfWeek(date: Date) {
-  const value = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  value.setDate(value.getDate() - value.getDay());
-  return value;
-}
-
-export function addDays(date: Date, days: number) {
-  const value = new Date(date);
-  value.setDate(value.getDate() + days);
-  return value;
-}
-
-export function isSameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
+// Note: week-bucketing date helpers (toDateOnly / startOfWeek / addDays / isSameDay)
+// live in lib/dashboard/week.ts — the single source of truth shared with buildWeekView.
 
 export function formatWeekRangeLabel(start: Date, end: Date) {
   return `${new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long" }).format(start)} - ${new Intl.DateTimeFormat(

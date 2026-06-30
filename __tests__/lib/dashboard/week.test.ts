@@ -1,0 +1,85 @@
+import { describe, it, expect } from "vitest";
+import {
+  toDateOnly,
+  startOfWeek,
+  addDays,
+  isSameDay,
+  addWorkingDays,
+  buildWeekView,
+} from "@/lib/dashboard/week";
+import type { CalendarEntry } from "@/lib/projectSchedule";
+
+// Characterization tests for the shared week-bucketing logic (used by the inline
+// WeekOverview and the dashboard "מה קורה השבוע" quick action). Previously untested.
+
+function entry(over: Partial<CalendarEntry> & { id: string; kind: "project" | "task" }): CalendarEntry {
+  return { startDate: null, endDate: null, ...over } as unknown as CalendarEntry;
+}
+
+describe("date helpers", () => {
+  it("toDateOnly parses a YYYY-MM-DD prefix and rejects junk", () => {
+    expect(toDateOnly("2024-05-15T09:00")).toEqual(new Date(2024, 4, 15));
+    expect(toDateOnly(null)).toBeNull();
+    expect(toDateOnly("nope")).toBeNull();
+  });
+  it("startOfWeek snaps to the Sunday of that week", () => {
+    expect(startOfWeek(new Date(2024, 4, 15))).toEqual(new Date(2024, 4, 12)); // Wed → Sun
+  });
+  it("addDays / isSameDay", () => {
+    expect(addDays(new Date(2024, 4, 12), 6)).toEqual(new Date(2024, 4, 18));
+    expect(isSameDay(new Date(2024, 4, 15, 9), new Date(2024, 4, 15, 23))).toBe(true);
+    expect(isSameDay(new Date(2024, 4, 15), new Date(2024, 4, 16))).toBe(false);
+  });
+  it("addWorkingDays skips Friday and Saturday", () => {
+    // Thu 2024-05-16 + 1 working day → Sun 2024-05-19 (skips Fri 17, Sat 18).
+    expect(addWorkingDays(new Date(2024, 4, 16), 1)).toEqual(new Date(2024, 4, 19));
+  });
+});
+
+describe("buildWeekView", () => {
+  const today = new Date(2024, 4, 15); // Wed 2024-05-15 → week Sun 12 … Sat 18
+
+  it("sets the Sun–Sat span and marks today", () => {
+    const view = buildWeekView([], today);
+    expect(view.weekStart).toEqual(new Date(2024, 4, 12));
+    expect(view.weekEnd).toEqual(new Date(2024, 4, 18));
+    expect(view.days).toHaveLength(7);
+    expect(view.days.find((d) => d.isToday)?.day).toEqual(new Date(2024, 4, 15));
+  });
+
+  it("places a task only on its due day", () => {
+    const view = buildWeekView([entry({ id: "t1", kind: "task", startDate: "2024-05-14" })], today);
+    const onDay = view.days.filter((d) => d.entries.some((e) => e.id === "t1"));
+    expect(onDay).toHaveLength(1);
+    expect(onDay[0].day).toEqual(new Date(2024, 4, 14));
+  });
+
+  it("spreads a short project across each active day within the week", () => {
+    const view = buildWeekView(
+      [entry({ id: "p1", kind: "project", startDate: "2024-05-13", endDate: "2024-05-15" })],
+      today
+    );
+    const days = view.days.filter((d) => d.entries.some((e) => e.id === "p1")).map((d) => d.day.getDate());
+    expect(days).toEqual([13, 14, 15]);
+  });
+
+  it("treats a long (15+ day) project that started earlier as a general legend, not per-day", () => {
+    const view = buildWeekView(
+      [entry({ id: "big", kind: "project", startDate: "2024-04-01", endDate: "2024-06-01" })],
+      today
+    );
+    expect(view.generalEntries.map((e) => e.id)).toEqual(["big"]);
+    expect(view.days.every((d) => d.entries.length === 0)).toBe(true);
+  });
+
+  it("totalCount sums the legend and per-day entries", () => {
+    const view = buildWeekView(
+      [
+        entry({ id: "big", kind: "project", startDate: "2024-04-01", endDate: "2024-06-01" }),
+        entry({ id: "t1", kind: "task", startDate: "2024-05-14" }),
+      ],
+      today
+    );
+    expect(view.totalCount).toBe(2); // 1 general + 1 task day
+  });
+});

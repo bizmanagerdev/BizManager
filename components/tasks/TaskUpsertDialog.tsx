@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
@@ -10,34 +9,27 @@ import {
   AlignLeft,
   Bell,
   Briefcase,
-  Check,
   CheckCircle2,
   Circle,
   Clock,
   Loader2,
   Lock,
   MapPin,
-  MessageSquare,
   Paperclip,
-  Plus,
   Tag,
   Trash2,
   Unlock,
   Users,
-  X,
 } from "lucide-react";
 import {
   emitProgressActivityEnd,
   emitProgressActivityStart,
 } from "@/components/layout/TopNavigationProgress";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { TaskVoiceFillButton, type ParsedTaskFields } from "@/components/tasks/TaskVoiceFillButton";
-import { DateInput, DateTimeInput } from "@/components/ui/date-input";
-import { DomainSelect } from "@/components/financial/DomainSelect";
 import {
   Dialog,
   DialogDescription,
@@ -46,27 +38,53 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
-import { ProjectPicker } from "@/components/projects/ProjectPicker";
-import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
-import { formatShortDateTime } from "@/lib/date";
+import { buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
+import { fetchExistingTagIds } from "@/components/tags/TagPicker";
 import {
-  EXPENSE_BUSINESS_DOMAINS,
-  getBusinessDomainLabel,
   isExpenseBusinessDomain,
   mapProjectTypeToExpenseDomain,
+  getBusinessDomainLabel,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
-import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
+import {
+  nextWizardStep,
+  parseLegacyNotes,
+  targetTypeForDomain,
+  allowedDomainsForFixedTarget,
+  resolveEffectiveDomain,
+  computeTargetOk,
+  canSubmitTask,
+  normalizeTaskStatus,
+  normalizeTaskPriority,
+  buildTaskPayload,
+  buildTaskFormSnapshot,
+  type LegacyNote,
+  type TaskStatus,
+  type TaskPriority,
+  type TaskTargetType,
+} from "@/components/tasks/TaskUpsertDialog.helpers";
+import {
+  ActionChip,
+  TaskAttachmentsSection,
+  TaskCardSidebar,
+  TaskDatesSection,
+  TaskDescriptionSection,
+  TaskDomainSection,
+  TaskLabelsSection,
+  TaskLocationSection,
+  TaskPeopleSection,
+  TaskRemindersStagingSection,
+  type AttachmentItem,
+  type CommentItem,
+  type ReminderItem,
+  type TaskOption,
+  type UserOption,
+} from "@/components/tasks/TaskUpsertDialog.ui";
 
-export type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
-export type TaskPriority = "low" | "medium" | "high" | "urgent";
-export type TaskTargetType = "project" | "property";
-
-export type TaskOption = { id: string; label: string };
-export type UserOption = { id: string; label: string; color?: string | null };
+// Re-exported for back-compat: several files import these types from this module.
+export type { TaskStatus, TaskPriority, TaskTargetType };
+export type { TaskOption, UserOption };
 
 type Mode = "create" | "edit";
 
@@ -92,107 +110,8 @@ type Props = {
   onSaved?: () => void;
 };
 
-// Step order for the guided create flow — must match the action-chip order below
-// (תיאור · תחום · תאריך · אחראי וחברים · עדיפות וסטטוס · מיקום).
-const WIZARD_STEPS = ["description", "domain", "dates", "people", "labels", "location", "reminders"] as const;
-function nextWizardStep(current: string | null): string | null {
-  const list = WIZARD_STEPS as readonly string[];
-  const i = current ? list.indexOf(current) : -1;
-  if (i === -1) return list[0];
-  return i < list.length - 1 ? list[i + 1] : null;
-}
-
-type CommentItem = {
-  id: string;
-  author_id: string | null;
-  author_name: string | null;
-  body: string;
-  created_at: string;
-};
-
-type ReminderItem = {
-  id: string;
-  remind_at: string;
-  content: string | null;
-  status: string;
-  assigned_to: string | null;
-  assigned_to_name: string | null;
-};
-
-type AttachmentItem = {
-  id: string;
-  kind: "image" | "video" | "file";
-  original_name: string | null;
-  created_at: string | null;
-  uploader_name: string | null;
-  url: string | null;
-};
-
-type LegacyNote = { stamp: string | null; author: string | null; message: string | null; raw: string };
-
-// Old tasks stored comments in a single tasks.notes blob ("[stamp] author: message",
-// separated by blank lines). Parse them so that history stays visible on the card.
-function parseLegacyNotes(raw: string | null | undefined): LegacyNote[] {
-  const text = (raw ?? "").trim();
-  if (!text) return [];
-  return text
-    .split("\n\n")
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .map((t) => {
-      const m = t.match(/^\[(.+?)\]\s(.+?):\s([\s\S]*)$/);
-      if (!m) return { raw: t, stamp: null, author: null, message: null };
-      return { raw: t, stamp: m[1] ?? null, author: m[2] ?? null, message: m[3] ?? null };
-    });
-}
-
 function getErrorMessage(err: unknown) {
   return toHebrewError(err, "Unknown error");
-}
-
-const STATUS_OPTIONS: TaskStatus[] = ["todo", "in_progress", "blocked", "done", "cancelled"];
-const PRIORITY_OPTIONS: TaskPriority[] = ["low", "medium", "high", "urgent"];
-
-function targetTypeForDomain(domain: ExpenseBusinessDomain): TaskTargetType | null {
-  if (domain === "logistics_projects") return "project";
-  if (domain === "property_management") return "property";
-  return null;
-}
-
-function allowedDomainsForFixedTarget(
-  fixedTarget: Props["fixedTarget"] | undefined,
-  defaultDomain: ExpenseBusinessDomain
-) {
-  if (!fixedTarget) return [...EXPENSE_BUSINESS_DOMAINS];
-  if (fixedTarget.type === "property") return ["property_management"] as ExpenseBusinessDomain[];
-  if (fixedTarget.type === "project") return ["logistics_projects"] as ExpenseBusinessDomain[];
-  return [defaultDomain];
-}
-
-// Trello-style "add detail" button that toggles an editor section.
-function ActionChip({
-  icon: Icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: typeof Bell;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors ${
-        active ? "border-primary/40 bg-primary/10 text-primary" : "bg-background hover:bg-muted"
-      }`}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      {label}
-    </button>
-  );
 }
 
 export function TaskUpsertDialog(props: Props) {
@@ -272,27 +191,16 @@ export function TaskUpsertDialog(props: Props) {
     () => allowedDomainsForFixedTarget(props.fixedTarget, defaultDomain),
     [defaultDomain, props.fixedTarget]
   );
-  const effectiveDomain: ExpenseBusinessDomain | "" =
-    businessDomain === ""
-      ? ""
-      : allowedDomains.includes(businessDomain)
-        ? businessDomain
-        : allowedDomains[0] ?? defaultDomain;
+  const effectiveDomain = resolveEffectiveDomain(businessDomain, allowedDomains, defaultDomain);
   const derivedTargetType = effectiveDomain ? targetTypeForDomain(effectiveDomain) : null;
   const showTargetPicker = !effectiveTarget;
 
-  const targetOk = effectiveTarget
-    ? Boolean(effectiveTarget.id)
-    : derivedTargetType === "project"
-      ? Boolean(projectId)
-      : derivedTargetType === "property"
-        ? Boolean(propertyId)
-        : true;
+  const targetOk = computeTargetOk({ effectiveTarget, derivedTargetType, projectId, propertyId });
 
   // Only the task name is required. Everything else is optional and can be added
   // later by reopening the card. (targetOk still applies: once a domain that needs
   // a project/property is chosen, that link must be filled in.)
-  const canSubmit = Boolean(subject.trim()) && targetOk;
+  const canSubmit = canSubmitTask(subject, targetOk);
 
   // Same color map as the board (built from the same user list) so a person's
   // bold color matches between the card, the picker and their comments.
@@ -365,10 +273,8 @@ export function TaskUpsertDialog(props: Props) {
         setAddress(typeof task.address === "string" ? task.address : "");
         setAssignedUserId(typeof task.assigned_user_id === "string" ? task.assigned_user_id : "");
 
-        const priorityRaw = typeof task.priority === "string" ? task.priority : null;
-        setPriority((PRIORITY_OPTIONS.includes(priorityRaw as TaskPriority) ? priorityRaw : "medium") as TaskPriority);
-        const statusRaw = typeof task.status === "string" ? task.status : null;
-        setStatus((STATUS_OPTIONS.includes(statusRaw as TaskStatus) ? statusRaw : "todo") as TaskStatus);
+        setPriority(normalizeTaskPriority(typeof task.priority === "string" ? task.priority : null));
+        setStatus(normalizeTaskStatus(typeof task.status === "string" ? task.status : null));
         setIsPrivate(task.is_private === true);
         setViewerIsCreator(json?.viewer_is_creator === true);
 
@@ -545,31 +451,26 @@ export function TaskUpsertDialog(props: Props) {
   }
 
   function buildPayload() {
-    const linkType = effectiveTarget?.type ?? derivedTargetType;
-    return {
-      // No domain chosen → default to general business (no project/property link).
-      business_domain: effectiveDomain || "general_business",
-      project_id: linkType === "project" ? effectiveTarget?.id ?? projectId : null,
-      property_id: linkType === "property" ? effectiveTarget?.id ?? propertyId : null,
-      subject: subject.trim(),
-      description: description.trim() ? description.trim() : null,
-      due_date: dueDate || null,
-      due_time: dueTime || null,
-      city: city.trim() ? city.trim() : null,
-      address: address.trim() ? address.trim() : null,
-      assigned_user_id: assignedUserId || null,
-      member_ids: memberIds,
-      tag_ids: tagIds,
-      // Staged on create only; in edit mode reminders are added immediately and
-      // this stays empty (the update route ignores it).
-      reminders: pendingReminders.map((r) => ({
-        remind_at: new Date(r.remind_at).toISOString(),
-        content: r.content.trim() ? r.content.trim() : null,
-      })),
+    return buildTaskPayload({
+      effectiveTarget,
+      derivedTargetType,
+      effectiveDomain,
+      projectId,
+      propertyId,
+      subject,
+      description,
+      dueDate,
+      dueTime,
+      city,
+      address,
+      assignedUserId,
+      memberIds,
+      tagIds,
+      pendingReminders,
       priority,
       status,
-      is_private: isPrivate,
-    };
+      isPrivate,
+    });
   }
 
   async function submit() {
@@ -812,18 +713,18 @@ export function TaskUpsertDialog(props: Props) {
   const targetTaskId = activeTaskId ?? props.taskId ?? null;
 
   // Track unsaved edits so (in edit mode) Save only appears once something changed.
-  const formSnapshot = JSON.stringify({
-    businessDomain: effectiveDomain,
+  const formSnapshot = buildTaskFormSnapshot({
+    effectiveDomain,
     projectId,
     propertyId,
-    subject: subject.trim(),
-    description: description.trim(),
+    subject,
+    description,
     dueDate,
     dueTime,
-    city: city.trim(),
-    address: address.trim(),
+    city,
+    address,
     assignedUserId,
-    memberIds: [...memberIds].sort(),
+    memberIds,
     priority,
     status,
     isPrivate,
@@ -995,382 +896,93 @@ export function TaskUpsertDialog(props: Props) {
           </div>
 
           {isOpen("description") ? (
-            <div className="space-y-1 rounded-md border bg-muted/20 p-3">
-              <div className="text-sm font-medium">תיאור</div>
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
-            </div>
+            <TaskDescriptionSection description={description} onChange={setDescription} />
           ) : null}
 
           {isOpen("domain") ? (
-            <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">תחום עסקי</div>
-                <DomainSelect
-                  domains={allowedDomains}
-                  value={effectiveDomain}
-                  onChange={(value) => handleBusinessDomainChange(value as ExpenseBusinessDomain | "")}
-                />
-              </div>
-
-              {effectiveDomain === "general_business" ? (
-                <TagPicker value={tagIds} onChange={setTagIds} />
-              ) : null}
-
-              {showTargetPicker && derivedTargetType === "project" ? (
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">פרויקט *</div>
-                  <ProjectPicker
-                    projects={projects}
-                    value={projectId}
-                    onChange={setProjectId}
-                    emptyLabel="בחר פרויקט..."
-                    allowClear={false}
-                  />
-                </div>
-              ) : null}
-
-              {showTargetPicker && derivedTargetType === "property" ? (
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">נכס *</div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={propertyId}
-                    onChange={(e) => setPropertyId(e.target.value)}
-                  >
-                    <option value="">בחר נכס...</option>
-                    {properties.map((property) => (
-                      <option key={property.id} value={property.id}>
-                        {property.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
-            </div>
+            <TaskDomainSection
+              allowedDomains={allowedDomains}
+              effectiveDomain={effectiveDomain}
+              onDomainChange={handleBusinessDomainChange}
+              tagIds={tagIds}
+              onTagIdsChange={setTagIds}
+              showTargetPicker={showTargetPicker}
+              derivedTargetType={derivedTargetType}
+              projects={projects}
+              projectId={projectId}
+              onProjectIdChange={setProjectId}
+              properties={properties}
+              propertyId={propertyId}
+              onPropertyIdChange={setPropertyId}
+            />
           ) : null}
 
               {isOpen("dates") ? (
-              <div className="rounded-md border bg-muted/20 p-3">
-              <AdaptiveGrid variant="formTwo">
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">תאריך יעד</div>
-                  <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1 text-sm font-medium">
-                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                    שעה
-                  </div>
-                  <Input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} dir="ltr" />
-                </div>
-              </AdaptiveGrid>
-              </div>
+                <TaskDatesSection
+                  dueDate={dueDate}
+                  onDueDateChange={setDueDate}
+                  dueTime={dueTime}
+                  onDueTimeChange={setDueTime}
+                />
               ) : null}
 
               {isOpen("people") ? (
-              <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">אחראי</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={assignedUserId}
-                  onChange={(e) => {
-                    setAssignedUserId(e.target.value);
-                    setMemberIds((prev) => prev.filter((id) => id !== e.target.value));
+                <TaskPeopleSection
+                  users={props.users}
+                  assignedUserId={assignedUserId}
+                  onAssignedChange={(id) => {
+                    setAssignedUserId(id);
+                    setMemberIds((prev) => prev.filter((m) => m !== id));
                   }}
-                >
-                  <option value="">בחר משתמש...</option>
-                  {props.users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {canAddSelf ? (
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4"
-                    checked={memberIds.includes(meId)}
-                    onChange={() => toggleMember(meId)}
-                  />
-                  הוסף גם אותי כחבר במשימה
-                </label>
-              ) : null}
-
-              <div className="space-y-1">
-                <div className="text-sm font-medium">חברים נוספים</div>
-                {selectedMembers.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedMembers.map((member) => (
-                      <span
-                        key={member.id}
-                        className="inline-flex items-center gap-1 rounded-full border bg-secondary/40 py-0.5 ps-1 pe-2 text-xs"
-                      >
-                        <InitialsAvatar name={member.label} color={member.color} colorKey={member.id} colorIndex={colorIndexById.get(member.id)} size="sm" />
-                        {member.label}
-                        <button
-                          type="button"
-                          onClick={() => toggleMember(member.id)}
-                          className="text-muted-foreground hover:text-destructive"
-                          aria-label={`הסר ${member.label}`}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-                <details className="rounded-md border bg-background">
-                  <summary className="cursor-pointer list-none px-3 py-2 text-sm text-muted-foreground">
-                    <Plus className="ms-0 me-1 inline h-3.5 w-3.5" />
-                    הוספת חברים
-                  </summary>
-                  <div className="max-h-40 overflow-auto border-t p-1">
-                    {memberOptions.length === 0 ? (
-                      <div className="px-2 py-1.5 text-xs text-muted-foreground">אין משתמשים זמינים.</div>
-                    ) : (
-                      memberOptions.map((user) => {
-                        const checked = memberIds.includes(user.id);
-                        return (
-                          <button
-                            key={user.id}
-                            type="button"
-                            onClick={() => toggleMember(user.id)}
-                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-muted/40"
-                          >
-                            <span
-                              className={`flex h-4 w-4 items-center justify-center rounded border ${
-                                checked ? "border-primary bg-primary text-primary-foreground" : "border-input"
-                              }`}
-                            >
-                              {checked ? <Check className="h-3 w-3" /> : null}
-                            </span>
-                            <InitialsAvatar name={user.label} color={user.color} colorKey={user.id} colorIndex={colorIndexById.get(user.id)} size="sm" />
-                            {user.label}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </details>
-              </div>
-              </div>
+                  canAddSelf={canAddSelf}
+                  meId={meId}
+                  memberIds={memberIds}
+                  onToggleMember={toggleMember}
+                  selectedMembers={selectedMembers}
+                  memberOptions={memberOptions}
+                  colorIndexById={colorIndexById}
+                />
               ) : null}
 
               {isOpen("location") ? (
-              <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-              <AdaptiveGrid variant="formTwo">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1 text-sm font-medium">
-                    <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                    עיר
-                  </div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={cityOther ? "אחר" : city}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value === "אחר") {
-                        setCityOther(true);
-                        setCity("");
-                      } else {
-                        setCityOther(false);
-                        setCity(value);
-                      }
-                    }}
-                  >
-                    <option value="">בחר עיר...</option>
-                    {CITY_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">כתובת</div>
-                  <Input value={address} onChange={(e) => setAddress(e.target.value)} />
-                </div>
-              </AdaptiveGrid>
-
-              {cityOther ? (
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">עיר (הקלדה חופשית)</div>
-                  <Input value={city} onChange={(e) => setCity(e.target.value)} />
-                </div>
-              ) : null}
-              </div>
+                <TaskLocationSection
+                  city={city}
+                  setCity={setCity}
+                  cityOther={cityOther}
+                  setCityOther={setCityOther}
+                  address={address}
+                  onAddressChange={setAddress}
+                />
               ) : null}
 
               {isOpen("files") && targetTaskId ? (
-              <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 text-sm font-medium">
-                    <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
-                    קבצים ותמונות
-                  </div>
-                  <FileUploadActions
-                    files={[]}
-                    accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
-                    multiple
-                    size="sm"
-                    disabled={uploadingFiles}
-                    onFilesSelected={(files) => void uploadAttachments(files)}
-                    chooseLabel={uploadingFiles ? "מעלה..." : "צירוף קובץ"}
-                    takePhotoLabel="צילום"
-                    showPreview={false}
-                    notifyOnAdd={false}
-                  />
-                </div>
-                {attachments.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">אין קבצים מצורפים.</div>
-                ) : (
-                  <div className="space-y-1.5">
-                    {attachments.map((attachment) => (
-                      <div
-                        key={attachment.id}
-                        className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5"
-                      >
-                        <a
-                          href={attachment.url ?? "#"}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex min-w-0 items-center gap-2"
-                        >
-                          {attachment.url && attachment.kind === "image" ? (
-                            <Image
-                              src={attachment.url}
-                              alt={attachment.original_name ?? "image"}
-                              width={64}
-                              height={64}
-                              unoptimized
-                              className="h-9 w-9 shrink-0 rounded object-cover"
-                            />
-                          ) : (
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground">
-                              {attachment.kind === "video" ? "וידאו" : "קובץ"}
-                            </span>
-                          )}
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm text-primary hover:underline">
-                              {attachment.original_name ?? "קובץ"}
-                            </span>
-                            {attachment.created_at || attachment.uploader_name ? (
-                              <span className="block truncate text-[11px] text-muted-foreground">
-                                {[
-                                  attachment.created_at ? formatShortDateTime(attachment.created_at) : null,
-                                  attachment.uploader_name ? `הועלה ע"י ${attachment.uploader_name}` : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" • ")}
-                              </span>
-                            ) : null}
-                          </span>
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setAttachmentToDelete({ id: attachment.id, name: attachment.original_name })
-                          }
-                          aria-label="מחיקת קובץ"
-                          className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                <TaskAttachmentsSection
+                  attachments={attachments}
+                  uploadingFiles={uploadingFiles}
+                  onUpload={(files) => void uploadAttachments(files)}
+                  onRequestDelete={setAttachmentToDelete}
+                />
               ) : null}
 
               {isOpen("labels") ? (
-              <div className="rounded-md border bg-muted/20 p-3">
-              <AdaptiveGrid variant="formTwo">
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">עדיפות</div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value as TaskPriority)}
-                  >
-                    {PRIORITY_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {getTaskPriorityLabel(option)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">סטטוס</div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                  >
-                    {STATUS_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {getTaskStatusLabel(option)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </AdaptiveGrid>
-              </div>
+                <TaskLabelsSection
+                  priority={priority}
+                  onPriorityChange={setPriority}
+                  status={status}
+                  onStatusChange={setStatus}
+                />
               ) : null}
 
               {isOpen("reminders") && !isEditing ? (
-              <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-                <div className="flex items-center gap-1.5 text-sm font-medium">
-                  <Bell className="h-3.5 w-3.5 text-muted-foreground" />
-                  תזכורות
-                </div>
-                {pendingReminders.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {pendingReminders.map((reminder, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-sm"
-                      >
-                        <div className="min-w-0">
-                          <div className="font-medium">{formatShortDateTime(reminder.remind_at)}</div>
-                          {reminder.content ? (
-                            <div className="truncate text-xs text-muted-foreground">{reminder.content}</div>
-                          ) : null}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removePendingReminder(index)}
-                          aria-label="הסרת תזכורת"
-                          className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground">אפשר להוסיף תזכורות כבר עכשיו — הן ייווצרו עם המשימה.</div>
-                )}
-                <AdaptiveGrid variant="formTwo">
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">מועד התזכורת</div>
-                    <DateTimeInput value={reminderAt} onChange={(e) => setReminderAt(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">הערה (אופציונלי)</div>
-                    <Input value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} />
-                  </div>
-                </AdaptiveGrid>
-                <div className="flex justify-end">
-                  <Button type="button" size="sm" variant="secondary" disabled={!reminderAt} onClick={stageReminder}>
-                    הוספת תזכורת
-                  </Button>
-                </div>
-              </div>
+                <TaskRemindersStagingSection
+                  pendingReminders={pendingReminders}
+                  reminderAt={reminderAt}
+                  setReminderAt={setReminderAt}
+                  reminderNote={reminderNote}
+                  setReminderNote={setReminderNote}
+                  onStage={stageReminder}
+                  onRemove={removePendingReminder}
+                />
               ) : null}
 
           {wizard && nextWizardStep(openSection) ? (
@@ -1395,110 +1007,24 @@ export function TaskUpsertDialog(props: Props) {
 
         {/* Card extras — left column beside the form (stacks on mobile). */}
         {isEditing && targetTaskId ? (
-          <div className="space-y-4 rounded-lg bg-muted/40 p-4 lg:p-5">
-            {/* Reminders */}
-            <section className="space-y-2">
-              <div className="flex items-center gap-1.5 text-sm font-semibold">
-                <Bell className="h-4 w-4 text-muted-foreground" />
-                תזכורות
-              </div>
-              {reminders.filter((r) => r.status === "pending").length === 0 ? (
-                <div className="text-xs text-muted-foreground">אין תזכורות פעילות.</div>
-              ) : (
-                <div className="space-y-1.5">
-                  {reminders
-                    .filter((r) => r.status === "pending")
-                    .map((reminder) => (
-                      <div
-                        key={reminder.id}
-                        className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
-                      >
-                        <div className="min-w-0">
-                          <div className="font-medium">{formatShortDateTime(reminder.remind_at)}</div>
-                          {reminder.content ? (
-                            <div className="truncate text-xs text-muted-foreground">{reminder.content}</div>
-                          ) : null}
-                        </div>
-                        <div className="flex shrink-0 gap-1">
-                          <Button type="button" size="sm" variant="secondary" onClick={() => void setReminderStatus(reminder.id, "done")}>
-                            בוצע
-                          </Button>
-                          <Button type="button" size="sm" variant="outline" onClick={() => void setReminderStatus(reminder.id, "cancelled")}>
-                            ביטול
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-              <AdaptiveGrid variant="formTwo">
-                <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">מועד התזכורת</div>
-                  <DateTimeInput value={reminderAt} onChange={(e) => setReminderAt(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">הערה (אופציונלי)</div>
-                  <Input value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} />
-                </div>
-              </AdaptiveGrid>
-              <div className="flex justify-end">
-                <Button type="button" size="sm" disabled={!reminderAt || addingReminder} onClick={() => void addReminder()}>
-                  {addingReminder ? "מוסיף..." : "הוספת תזכורת"}
-                </Button>
-              </div>
-            </section>
-
-            {/* Comments */}
-            <section className="space-y-2">
-              <div className="flex items-center gap-1.5 text-sm font-semibold">
-                <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                תגובות
-              </div>
-              {comments.length === 0 && legacyNotes.length === 0 ? (
-                <div className="text-xs text-muted-foreground">אין תגובות עדיין.</div>
-              ) : (
-                <div className="space-y-2">
-                  {/* Legacy comments stored in tasks.notes (read-only history). */}
-                  {legacyNotes.map((note, index) => (
-                    <div key={`legacy-${index}`} className="rounded-md border bg-muted/20 px-3 py-2">
-                      {note.stamp && note.author ? (
-                        <div className="flex flex-wrap items-baseline gap-x-2">
-                          <span className="text-sm font-medium">{note.author}</span>
-                          <span className="text-[11px] text-muted-foreground">{note.stamp}</span>
-                        </div>
-                      ) : null}
-                      <div className="mt-0.5 whitespace-pre-wrap text-sm">{note.message ?? note.raw}</div>
-                    </div>
-                  ))}
-                  {comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-2">
-                      <InitialsAvatar name={comment.author_name} color={comment.author_id ? chosenColorById.get(comment.author_id) : undefined} colorKey={comment.author_id} colorIndex={comment.author_id ? colorIndexById.get(comment.author_id) : undefined} size="sm" />
-                      <div className="min-w-0 flex-1 rounded-md border bg-muted/20 px-3 py-2">
-                        <div className="flex flex-wrap items-baseline gap-x-2">
-                          <span className="text-sm font-medium">{comment.author_name ?? "משתמש"}</span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {formatShortDateTime(comment.created_at)}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 whitespace-pre-wrap text-sm">{comment.body}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <Textarea
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="כתבו תגובה..."
-                className="min-h-16"
-              />
-              <div className="flex justify-end">
-                <Button type="button" size="sm" disabled={addingComment || !newComment.trim()} onClick={() => void addComment()}>
-                  {addingComment ? "שומר..." : "הוספת תגובה"}
-                </Button>
-              </div>
-            </section>
-          </div>
+          <TaskCardSidebar
+            reminders={reminders}
+            reminderAt={reminderAt}
+            setReminderAt={setReminderAt}
+            reminderNote={reminderNote}
+            setReminderNote={setReminderNote}
+            addingReminder={addingReminder}
+            onAddReminder={() => void addReminder()}
+            onSetReminderStatus={(id, nextStatus) => void setReminderStatus(id, nextStatus)}
+            comments={comments}
+            legacyNotes={legacyNotes}
+            newComment={newComment}
+            setNewComment={setNewComment}
+            addingComment={addingComment}
+            onAddComment={() => void addComment()}
+            colorIndexById={colorIndexById}
+            chosenColorById={chosenColorById}
+          />
         ) : null}
         </div>
         )}
