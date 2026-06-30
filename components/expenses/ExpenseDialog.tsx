@@ -215,7 +215,7 @@ export function ExpenseDialog({
   const [propertyId, setPropertyId] = useState("");
   const [amount, setAmount] = useState("");
   const [expenseDate, setExpenseDate] = useState(todayIso());
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("not_paid");
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("paid");
   const [paidAmount, setPaidAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [accountId, setAccountId] = useState("");
@@ -347,7 +347,7 @@ export function ExpenseDialog({
     } else {
       setAmount("");
       setExpenseDate(todayIso());
-      setPaymentStatus("not_paid");
+      setPaymentStatus("paid");
       setPaidAmount("");
       setPaymentMethod("");
       setAccountId("");

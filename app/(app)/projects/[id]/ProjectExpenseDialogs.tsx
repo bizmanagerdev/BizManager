@@ -120,7 +120,7 @@ export function AddExpenseDialog({
   const [notes, setNotes] = useState("");
   const [billedToCustomer, setBilledToCustomer] = useState(false);
   const [expenseBillToCustomerAmount, setExpenseBillToCustomerAmount] = useState("");
-  const [expensePaymentStatus, setExpensePaymentStatus] = useState<"paid" | "partial" | "not_paid">("not_paid");
+  const [expensePaymentStatus, setExpensePaymentStatus] = useState<"paid" | "partial" | "not_paid">("paid");
   const [expensePaidAmount, setExpensePaidAmount] = useState("");
   const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
   const [expenseAccountId, setExpenseAccountId] = useState("");
@@ -774,7 +774,7 @@ export function AddExpenseDialog({
       setNotes("");
       setBilledToCustomer(false);
       setExpenseBillToCustomerAmount("");
-      setExpensePaymentStatus("not_paid");
+      setExpensePaymentStatus("paid");
       setExpensePaidAmount("");
       setExpensePaymentMethod("");
       setExpenseAccountId("");

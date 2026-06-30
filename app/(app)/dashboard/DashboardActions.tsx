@@ -211,7 +211,7 @@ export default function DashboardActions({
   const [expenseWorkerPaidAmount, setExpenseWorkerPaidAmount] = useState("");
   const [expenseWorkerAccountId, setExpenseWorkerAccountId] = useState("");
   const [expenseBillToCustomerAmount, setExpenseBillToCustomerAmount] = useState("");
-  const [expensePaymentStatus, setExpensePaymentStatus] = useState<"paid" | "partial" | "not_paid">("not_paid");
+  const [expensePaymentStatus, setExpensePaymentStatus] = useState<"paid" | "partial" | "not_paid">("paid");
   const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
   const [expenseAccountId, setExpenseAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
@@ -481,7 +481,7 @@ export default function DashboardActions({
     setExpenseNotes("");
     setExpenseIncludedInBase(false);
     setExpenseBilledToCustomer(false);
-    setExpensePaymentStatus("not_paid");
+    setExpensePaymentStatus("paid");
     setExpensePaymentMethod("");
     setExpenseAccountId("");
     setExpenseWorkerAccountId("");
