@@ -124,10 +124,19 @@ export type WorkerPaymentFormState = {
 
 export type SplitPartDraft = {
   id: string;
-  minutes: string;
+  // datetime-local value ("YYYY-MM-DDTHH:MM") marking this part's clock-out boundary.
+  // Ignored for the last part, which always runs to the shift's end.
+  // Used only by the time-based split (hourly workers); ignored in money-based split.
+  endTime: string;
   domain: ExpenseBusinessDomain;
   projectId: string;
   propertyId: string;
+  // Money-based split (session/contract workers who don't track hours): the worker's
+  // cost for this part. Empty string for the time-based split.
+  amount: string;
+  // Per-part "bill the customer" toggle + amount (money-based split).
+  billToCustomer: boolean;
+  billAmount: string;
 };
 
 export type PendingSalaryDeletion =

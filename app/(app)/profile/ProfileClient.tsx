@@ -15,7 +15,7 @@ import { setAvatarColorCache } from "@/lib/ui/avatar-color";
 import type { UserProfile } from "@/lib/auth/requireProfile";
 import { EXPENSE_BUSINESS_DOMAINS, WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
-import { payrollWorkerTypeAllowsSessions, payrollWorkerTypeGeneratesPayslips, shouldShowSessionHours } from "@/lib/payroll-worker-type";
+import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions, payrollWorkerTypeGeneratesPayslips, shouldShowSessionHours } from "@/lib/payroll-worker-type";
 import {
   calculateSessionLaborCost,
   formatCurrency,
@@ -26,6 +26,7 @@ import {
   getNextMonthDueText,
   getPayrollStatusLabel,
   getSalaryTypeLabel,
+  minutesBetween,
   monthKeyFromDate,
   sessionWorkedMinutes,
   toNumber,
@@ -49,7 +50,28 @@ type Props = {
   propertyOptions: Array<{ id: string; label: string }>;
 };
 
-type SplitPartDraft = { id: string; minutes: string; domain: ExpenseBusinessDomain; projectId: string; propertyId: string };
+type SplitPartDraft = {
+  id: string;
+  // Time-based split only on self-service: datetime-local end boundary (last part runs to shift end).
+  // Money-based splitting (per-part cost / customer billing) is intentionally admin-only — see the
+  // payroll center. Workers must not be able to set their own pay here.
+  endTime: string;
+  domain: ExpenseBusinessDomain;
+  projectId: string;
+  propertyId: string;
+};
+
+// Midpoint between two datetime-local values (default split point).
+function midpointLocal(startLocal: string, endLocal: string): string {
+  const startMs = new Date(startLocal).getTime();
+  const endMs = new Date(endLocal).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return "";
+  return toLocalDateTimeValue(new Date(startMs + Math.floor((endMs - startMs) / 2)));
+}
+// "YYYY-MM-DDTHH:MM" → "HH:MM" for read-only display of a split boundary.
+function splitTimeLabel(local: string): string {
+  return local && local.length >= 16 ? local.slice(11, 16) : "—";
+}
 
 // A broad spectrum of quick-pick swatches for the personal avatar color. Any
 // color is allowed (the picker below accepts a custom hex); these are just
@@ -104,6 +126,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
   const [sessionEditBilledToCustomer, setSessionEditBilledToCustomer] = useState(false);
   const [sessionEditBillToCustomerAmount, setSessionEditBillToCustomerAmount] = useState("");
   const [splitParts, setSplitParts] = useState<SplitPartDraft[]>([]);
+  const [splitEnabled, setSplitEnabled] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(monthlySummaries[0]?.key ?? monthKeyFromDate(new Date()));
 
   // Global text-size multiplier. The whole UI is rem-based, so this scales
@@ -190,10 +213,20 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
   const latestPayslip = useMemo(() => [...payslips].sort((a, b) => (periodsById.get(b.payroll_period_id)?.period_month ?? "").localeCompare(periodsById.get(a.payroll_period_id)?.period_month ?? ""))[0] ?? null, [payslips, periodsById]);
   const latestPeriod = latestPayslip ? periodsById.get(latestPayslip.payroll_period_id) ?? null : null;
   const editorSession = useMemo(() => sessions.find((session) => session.id === sessionEditorId) ?? null, [sessionEditorId, sessions]);
+  // Self-service splitting is TIME-only and applies to hourly workers. Contract/session workers
+  // (session_only) are paid by money per part — that's an admin-only action in the payroll center,
+  // so they don't get a split option here at all (workers must not set their own pay).
+  const isContractorWorker = normalizePayrollWorkerType(profile.payroll_worker_type, "session") === "session_only";
 
   function createSplitPart(domain: ExpenseBusinessDomain, overrides?: Partial<Omit<SplitPartDraft, "id" | "domain">>): SplitPartDraft {
     splitPartIdRef.current += 1;
-    return { id: `part-${splitPartIdRef.current}`, minutes: overrides?.minutes ?? "", domain, projectId: overrides?.projectId ?? "", propertyId: overrides?.propertyId ?? "" };
+    return {
+      id: `part-${splitPartIdRef.current}`,
+      endTime: overrides?.endTime ?? "",
+      domain,
+      projectId: overrides?.projectId ?? "",
+      propertyId: overrides?.propertyId ?? "",
+    };
   }
   function clearEditor() {
     setSessionEditorId("");
@@ -273,7 +306,6 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
     });
   }
   function openSessionEditor(session: WorkSessionRow) {
-    const totalMinutes = sessionWorkedMinutes(session);
     const currentDomain = EXPENSE_BUSINESS_DOMAINS.includes(session.business_domain as ExpenseBusinessDomain) ? (session.business_domain as ExpenseBusinessDomain) : "general_business";
     setManualEditorOpen(false);
     setSessionEditorId(session.id);
@@ -289,7 +321,8 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
         ? String(session.bill_to_customer_amount)
         : ""
     );
-    setSplitParts(session.clock_out ? [createSplitPart(currentDomain, { minutes: String(Math.max(1, Math.floor(totalMinutes / 2))), projectId: session.project_id ?? "", propertyId: session.property_id ?? "" }), createSplitPart(currentDomain, { projectId: session.project_id ?? "", propertyId: session.property_id ?? "" })] : []);
+    setSplitParts([]);
+    setSplitEnabled(false);
     setActionError("");
   }
   function openManualEditor() {
@@ -305,6 +338,7 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
     setSessionEditBilledToCustomer(false);
     setSessionEditBillToCustomerAmount("");
     setSplitParts([]);
+    setSplitEnabled(false);
   }
   function closeEditor() {
     setActionError("");
@@ -354,50 +388,75 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
       return next;
     }));
   }
-  function updateSplitMinutes(partId: string, rawMinutes: string, totalMinutes: number) {
-    setSplitParts((current) => {
-      const index = current.findIndex((part) => part.id === partId);
-      if (index < 0) return current;
-      const maxForPart = Math.max(1, totalMinutes - (current.length - index - 1));
-      const trimmed = rawMinutes.trim();
-      if (trimmed === "") return current.map((part) => part.id === partId ? { ...part, minutes: "" } : part);
-      const parsed = Math.floor(Number(trimmed));
-      const clamped = Number.isFinite(parsed) ? Math.max(1, Math.min(maxForPart, parsed)) : 1;
-      return current.map((part) => part.id === partId ? { ...part, minutes: String(clamped) } : part);
-    });
+  function updateSplitEndTime(partId: string, value: string) {
+    setSplitParts((current) => current.map((part) => (part.id === partId ? { ...part, endTime: value } : part)));
   }
-  function addSplitPart(defaultDomain: ExpenseBusinessDomain, totalMinutes: number) {
-    setSplitParts((current) => current.length >= Math.min(5, totalMinutes) ? current : [...current, createSplitPart(defaultDomain)]);
+  // Default 2-part time split: first part ends at the midpoint, second runs to the shift end.
+  function buildInitialSplitParts(session: WorkSessionRow): SplitPartDraft[] {
+    const domain = EXPENSE_BUSINESS_DOMAINS.includes(session.business_domain as ExpenseBusinessDomain) ? (session.business_domain as ExpenseBusinessDomain) : "general_business";
+    const shared = { projectId: session.project_id ?? "", propertyId: session.property_id ?? "" };
+    return [
+      createSplitPart(domain, { ...shared, endTime: midpointLocal(toLocalValue(session.clock_in), toLocalValue(session.clock_out)) }),
+      createSplitPart(domain, shared),
+    ];
+  }
+  function toggleSplit(session: WorkSessionRow, enabled: boolean) {
+    setSplitEnabled(enabled);
+    setSplitParts(enabled ? buildInitialSplitParts(session) : []);
+  }
+  function addSplitPart(session: WorkSessionRow) {
+    setSplitParts((current) => {
+      if (current.length >= 5) return current;
+      const domain = EXPENSE_BUSINESS_DOMAINS.includes(sessionEditDomain) ? sessionEditDomain : "general_business";
+      const startLocal = toLocalValue(session.clock_in);
+      const endLocal = toLocalValue(session.clock_out);
+      const prevBoundary = current.length >= 2 ? current[current.length - 2].endTime : startLocal;
+      const newPart = createSplitPart(domain, { endTime: midpointLocal(prevBoundary || startLocal, endLocal) });
+      const next = [...current];
+      next.splice(next.length - 1, 0, newPart);
+      return next;
+    });
   }
   function removeSplitPart(partId: string) {
     setSplitParts((current) => current.length <= 2 ? current : current.filter((part) => part.id !== partId));
   }
+  // Each part's clock boundaries + minutes (time split), derived from the saved session span.
   function splitPreview(session: WorkSessionRow) {
-    const total = sessionWorkedMinutes(session);
-    let consumed = 0;
+    const startLocal = toLocalValue(session.clock_in);
+    const endLocal = toLocalValue(session.clock_out);
     return splitParts.map((part, index) => {
       const isLast = index === splitParts.length - 1;
-      const requested = Math.max(0, Number(part.minutes) || 0);
-      const minutes = isLast ? Math.max(0, total - consumed) : Math.max(0, Math.min(total - consumed, requested));
-      consumed += minutes;
-      return { ...part, minutes };
+      const partStart = index === 0 ? startLocal : splitParts[index - 1].endTime;
+      const partEnd = isLast ? endLocal : part.endTime;
+      const minutes = partStart && partEnd ? minutesBetween(partStart, partEnd) : 0;
+      return { ...part, startLocal: partStart, endLocal: partEnd, minutes, isLast };
     });
   }
+  function computeSplitMinutes(session: WorkSessionRow): number[] {
+    const startLocal = toLocalValue(session.clock_in);
+    const endLocal = toLocalValue(session.clock_out);
+    const boundaries = [startLocal, ...splitParts.slice(0, -1).map((part) => part.endTime), endLocal];
+    return splitParts.map((_, index) => minutesBetween(boundaries[index], boundaries[index + 1]));
+  }
   function splitError(session: WorkSessionRow) {
-    const totalMinutes = sessionWorkedMinutes(session);
+    const startLocal = toLocalValue(session.clock_in);
+    const endLocal = toLocalValue(session.clock_out);
+    const shiftStartMs = new Date(startLocal).getTime();
+    const shiftEndMs = new Date(endLocal).getTime();
+    if (!endLocal || !Number.isFinite(shiftEndMs) || shiftEndMs <= shiftStartMs) return "צריך משמרת עם שעת התחלה וסיום כדי לפצל.";
     if (splitParts.length < 2) return "צריך לפחות שני חלקים.";
-    if (splitParts.length > Math.min(5, totalMinutes)) return "אי אפשר לפצל ליותר חלקים ממספר הדקות במשמרת.";
-    let consumed = 0;
+    if (splitParts.length > 5) return "אפשר לפצל לכל היותר לחמישה חלקים.";
+    let prevMs = shiftStartMs;
     for (let index = 0; index < splitParts.length; index += 1) {
       const part = splitParts[index];
       const isLast = index === splitParts.length - 1;
-      const remainingParts = splitParts.length - index - 1;
       if (!isLast) {
-        const minutes = Math.floor(Number(part.minutes));
-        if (!Number.isFinite(minutes) || minutes <= 0) return `יש להזין מספר דקות תקין בחלק ${index + 1}.`;
-        if (consumed + minutes > totalMinutes - remainingParts) return "סכום הדקות גדול ממשך המשמרת.";
-        consumed += minutes;
-      } else if (totalMinutes - consumed <= 0) return "לא נשאר זמן לחלק האחרון.";
+        const boundaryMs = new Date(part.endTime).getTime();
+        if (!part.endTime || !Number.isFinite(boundaryMs)) return `יש להזין שעת יציאה לחלק ${index + 1}.`;
+        if (boundaryMs <= prevMs) return `שעת היציאה של חלק ${index + 1} חייבת להיות אחרי תחילת החלק.`;
+        if (boundaryMs >= shiftEndMs) return `שעת היציאה של חלק ${index + 1} חייבת להיות לפני סוף המשמרת.`;
+        prevMs = boundaryMs;
+      } else if (shiftEndMs - prevMs <= 0) return "לא נשאר זמן לחלק האחרון.";
       if (part.domain === "logistics_projects" && !part.projectId) return `יש לבחור פרויקט בחלק ${index + 1}.`;
       if (part.domain === "property_management" && !part.propertyId) return `יש לבחור נכס בחלק ${index + 1}.`;
     }
@@ -410,7 +469,9 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
     setActionError("");
     startTransition(async () => {
       try {
-        const response = await fetch("/api/profile/session/split", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sessionId, parts: splitParts.map((part) => ({ minutes: part.minutes, business_domain: part.domain, project_id: part.projectId || null, property_id: part.propertyId || null })) }) });
+        // Self-service split is time-only: each part is a minutes slice of the shift.
+        const minutesByPart = computeSplitMinutes(editorSession);
+        const response = await fetch("/api/profile/session/split", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: sessionId, parts: splitParts.map((part, index) => ({ minutes: minutesByPart[index], business_domain: part.domain, project_id: part.projectId || null, property_id: part.propertyId || null })) }) });
         const json = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) return setActionError(toHebrewError(json.error, "פיצול המשמרת נכשל."));
         closeEditor();
@@ -523,30 +584,37 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
         ) : null}
         <div className="flex flex-row-reverse flex-wrap gap-3 text-xs text-muted-foreground">{duration ? <div className="rounded-full border px-3 py-1">משך: {duration}</div> : null}{session?.clock_out ? <div className="rounded-full border px-3 py-1">משך מקורי: {formatMinutes(sessionWorkedMinutes(session))}</div> : null}{suggestedAmount !== null ? <div className="rounded-full border px-3 py-1">{`מגיע לפי המשמרת: ${formatCurrency(suggestedAmount)}`}</div> : null}</div>
         {saveError ? <div className="text-sm text-destructive">{saveError}</div> : null}
-        {session?.clock_out ? <div className="space-y-3 border-t pt-4">
-          <div className="flex flex-row-reverse flex-wrap items-center justify-between gap-2">
-            <div className="font-medium">פיצול משמרת</div>
-            <div className="flex flex-row-reverse flex-wrap gap-2">
-              <Button type="button" size="sm" variant="outline" disabled={splitParts.length >= Math.min(5, sessionWorkedMinutes(session))} onClick={() => addSplitPart(sessionEditDomain, sessionWorkedMinutes(session))}>הוספת חלק</Button>
-              <Button type="button" size="sm" disabled={isPending || Boolean(currentSplitError)} onClick={() => void splitSavedSession(session.id)}>שמירת פיצול</Button>
-            </div>
-          </div>
-          <div className="space-y-3">{splitPreview(session).map((part, index) => {
-            const isLast = index === splitParts.length - 1;
-            return <div key={part.id} className="rounded-xl border bg-background/70 p-3">
-              <div className="mb-2 flex flex-row-reverse flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-medium">חלק {index + 1}</div>
-                <div className="flex flex-row-reverse flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{formatMinutes(part.minutes)}</span>{!isLast && splitParts.length > 2 ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => removeSplitPart(part.id)}>הסרה</Button> : null}</div>
+        {session?.clock_out && !isContractorWorker ? <div className="space-y-3 border-t pt-4">
+          <label className="flex cursor-pointer flex-row-reverse items-center justify-end gap-3">
+            <span className="font-medium">פיצול המשמרת לחלקים</span>
+            <input type="checkbox" className="h-4 w-4 accent-primary" checked={splitEnabled} onChange={(event) => toggleSplit(session, event.target.checked)} />
+          </label>
+          {splitEnabled ? (
+            <>
+              <p className="text-xs text-muted-foreground">כל חלק מתחיל בשעת היציאה של החלק הקודם. בחרו שעת יציאה לכל חלק — החלק האחרון נמשך עד סוף המשמרת.</p>
+              <div className="flex flex-row-reverse">
+                <Button type="button" size="sm" variant="outline" disabled={splitParts.length >= 5} onClick={() => addSplitPart(session)}>הוספת חלק</Button>
               </div>
-              <div className="flex flex-row-reverse flex-wrap items-end justify-end gap-2">
-                {!isLast ? <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">דקות</span><Input type="number" min="1" className="h-9 w-24 text-right" value={splitParts[index]?.minutes ?? ""} onChange={(event) => updateSplitMinutes(part.id, event.target.value, sessionWorkedMinutes(session))} /></label> : <div className="min-w-20 rounded-md border border-dashed px-3 py-2 text-center text-xs text-muted-foreground">יתרה</div>}
-                <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">תחום</span><DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={splitParts[index]?.domain ?? "general_business"} onChange={(value) => updateSplitPart(part.id, { domain: value as ExpenseBusinessDomain })} className="w-40 text-right" /></label>
-                {splitParts[index]?.domain === "logistics_projects" ? linkField("פרויקט", splitParts[index]?.projectId ?? "", (value) => updateSplitPart(part.id, { projectId: value }), projectOptions, true) : null}
-                {splitParts[index]?.domain === "property_management" ? linkField("נכס", splitParts[index]?.propertyId ?? "", (value) => updateSplitPart(part.id, { propertyId: value }), propertyOptions, true) : null}
-              </div>
-            </div>;
-          })}</div>
-          {currentSplitError ? <div className="text-sm text-destructive">{currentSplitError}</div> : null}
+              <div className="space-y-3">{splitPreview(session).map((part, index) => {
+                const isLast = part.isLast;
+                return <div key={part.id} className="rounded-xl border bg-background/70 p-3">
+                  <div className="mb-2 flex flex-row-reverse flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-medium">חלק {index + 1}</div>
+                    <div className="flex flex-row-reverse flex-wrap items-center gap-2 text-xs text-muted-foreground"><span>{formatMinutes(part.minutes)}</span>{!isLast && splitParts.length > 2 ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => removeSplitPart(part.id)}>הסרה</Button> : null}</div>
+                  </div>
+                  <div className="flex flex-row-reverse flex-wrap items-end justify-end gap-2">
+                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">כניסה</span><div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">{splitTimeLabel(part.startLocal)}</div></label>
+                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">יציאה</span>{!isLast ? <Input type="datetime-local" className="h-9 w-44 text-right" min={part.startLocal || undefined} max={toLocalValue(session.clock_out) || undefined} value={splitParts[index]?.endTime ?? ""} onChange={(event) => updateSplitEndTime(part.id, event.target.value)} /> : <div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">{`עד סוף המשמרת (${splitTimeLabel(toLocalValue(session.clock_out))})`}</div>}</label>
+                    <label className="space-y-1 text-right"><span className="block text-xs text-muted-foreground">תחום</span><DomainSelect domains={WORK_SESSION_BUSINESS_DOMAINS} value={splitParts[index]?.domain ?? "general_business"} onChange={(value) => updateSplitPart(part.id, { domain: value as ExpenseBusinessDomain })} className="w-40 text-right" /></label>
+                    {splitParts[index]?.domain === "logistics_projects" ? linkField("פרויקט", splitParts[index]?.projectId ?? "", (value) => updateSplitPart(part.id, { projectId: value }), projectOptions, true) : null}
+                    {splitParts[index]?.domain === "property_management" ? linkField("נכס", splitParts[index]?.propertyId ?? "", (value) => updateSplitPart(part.id, { propertyId: value }), propertyOptions, true) : null}
+                  </div>
+                </div>;
+              })}</div>
+              {currentSplitError ? <div className="text-sm text-destructive">{currentSplitError}</div> : null}
+              <div className="flex flex-row-reverse"><Button type="button" size="sm" disabled={isPending || Boolean(currentSplitError)} onClick={() => void splitSavedSession(session.id)}>שמירת פיצול</Button></div>
+            </>
+          ) : null}
         </div> : null}
       </div>
     );

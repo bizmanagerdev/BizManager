@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
+  Banknote,
   Clock3,
   FolderKanban,
   ListTodo,
@@ -34,9 +35,12 @@ import {
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import {
   calculateSessionLaborCost,
+  formatCurrency,
   getActiveSalaryAgreementForDate,
+  toNumber,
   type SalaryAgreementRow,
 } from "@/lib/payroll";
+import type { WorkerDebtItemRow } from "@/lib/payroll-center";
 import {
   payrollWorkerTypeAllowsSessions,
   shouldShowSessionHours,
@@ -76,6 +80,7 @@ import {
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import { ProjectPicker, type ProjectPickerOption } from "@/components/projects/ProjectPicker";
@@ -263,6 +268,23 @@ export default function DashboardActions({
   const [manualSessionBilledToCustomer, setManualSessionBilledToCustomer] = useState(false);
   const [manualSessionBillToCustomerAmount, setManualSessionBillToCustomerAmount] = useState("");
 
+  // ── Worker payment (pay an hourly / monthly / contract worker) ──────────────
+  // Unlike the session flows above, this records a direct worker payment and
+  // auto-allocates it to the worker's OPEN debt items (payslips for hourly/monthly
+  // workers, sessions for contract workers) so payslip workers can be paid here too.
+  const [workerPaymentOpen, setWorkerPaymentOpen] = useState(false);
+  const [workerPaymentUserId, setWorkerPaymentUserId] = useState("");
+  const [workerPaymentDate, setWorkerPaymentDate] = useState(getTodayDate());
+  const [workerPaymentAmount, setWorkerPaymentAmount] = useState("");
+  const [workerPaymentMethod, setWorkerPaymentMethod] = useState("");
+  const [workerPaymentAccountId, setWorkerPaymentAccountId] = useState("");
+  const [workerPaymentReference, setWorkerPaymentReference] = useState("");
+  const [workerPaymentNotes, setWorkerPaymentNotes] = useState("");
+  const [workerPaymentDebtItems, setWorkerPaymentDebtItems] = useState<WorkerDebtItemRow[]>([]);
+  const [workerPaymentDebtLoading, setWorkerPaymentDebtLoading] = useState(false);
+  const [workerPaymentSubmitting, setWorkerPaymentSubmitting] = useState(false);
+  const [workerPaymentError, setWorkerPaymentError] = useState<string | null>(null);
+
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
@@ -330,6 +352,19 @@ export default function DashboardActions({
     [availableUsers]
   );
   const canManageWorkerSessions = currentUserRole === "admin" || currentUserRole === "office";
+  // Workers that can be paid from the dashboard. Admin can pay anyone payroll-tracked;
+  // office may only pay workers below them (matches the protected endpoint's scoping).
+  const payableWorkers = useMemo(() => {
+    const adminPayable = currentUserRole === "admin";
+    return availableUsers.filter((user) => {
+      if (user.role === "worker" || user.role === "worker_no_access") return true;
+      return adminPayable && (user.role === "admin" || user.role === "office");
+    });
+  }, [availableUsers, currentUserRole]);
+  const workerPaymentOpenOwed = useMemo(
+    () => workerPaymentDebtItems.reduce((sum, item) => sum + Math.max(0, toNumber(item.owed_amount)), 0),
+    [workerPaymentDebtItems]
+  );
   const manualSessionTargetId = canManageWorkerSessions ? manualSessionUserId : currentUserId ?? "";
   const selectedManualSessionWorkerType = useMemo<PayrollWorkerType | null>(() => {
     if (!manualSessionTargetId) return null;
@@ -1154,6 +1189,133 @@ export default function DashboardActions({
     }
   }
 
+  function resetWorkerPaymentForm() {
+    setWorkerPaymentError(null);
+    setWorkerPaymentUserId("");
+    setWorkerPaymentDate(getTodayDate());
+    setWorkerPaymentAmount("");
+    setWorkerPaymentMethod("");
+    setWorkerPaymentAccountId("");
+    setWorkerPaymentReference("");
+    setWorkerPaymentNotes("");
+    setWorkerPaymentDebtItems([]);
+    setWorkerPaymentDebtLoading(false);
+  }
+
+  // Load the chosen worker's OPEN debt items (so the payment can be allocated and the
+  // open balance shown). Scoped server-side to this one worker via the protected endpoint.
+  async function loadWorkerPaymentDebt(userId: string) {
+    if (!userId) {
+      setWorkerPaymentDebtItems([]);
+      return;
+    }
+    setWorkerPaymentDebtLoading(true);
+    setWorkerPaymentError(null);
+    try {
+      const res = await fetch(`/api/payroll/center/protected?userId=${encodeURIComponent(userId)}&fresh=1`, {
+        cache: "no-store",
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        workerDebtItems?: WorkerDebtItemRow[];
+      };
+      if (!res.ok) {
+        setWorkerPaymentError(toHebrewError(json.error, "טעינת יתרת העובד נכשלה."));
+        setWorkerPaymentDebtItems([]);
+        return;
+      }
+      const openItems = (json.workerDebtItems ?? [])
+        .filter((item) => item.user_id === userId && toNumber(item.owed_amount) > 0.009)
+        // Oldest first, so a partial payment clears the earliest debt first.
+        .sort((a, b) =>
+          (a.due_date ?? a.source_date ?? "").localeCompare(b.due_date ?? b.source_date ?? "")
+        );
+      setWorkerPaymentDebtItems(openItems);
+      const owed = openItems.reduce((sum, item) => sum + Math.max(0, toNumber(item.owed_amount)), 0);
+      // Default the amount to the full open balance (common "pay them what they're owed" case).
+      if (owed > 0) setWorkerPaymentAmount(String(Math.round(owed * 100) / 100));
+    } catch (error: unknown) {
+      setWorkerPaymentError(toHebrewError(error, "טעינת יתרת העובד נכשלה."));
+      setWorkerPaymentDebtItems([]);
+    } finally {
+      setWorkerPaymentDebtLoading(false);
+    }
+  }
+
+  function selectWorkerPaymentWorker(userId: string) {
+    setWorkerPaymentUserId(userId);
+    setWorkerPaymentAmount("");
+    void loadWorkerPaymentDebt(userId);
+  }
+
+  async function saveWorkerPayment() {
+    setWorkerPaymentError(null);
+    if (!workerPaymentUserId) {
+      setWorkerPaymentError("יש לבחור עובד.");
+      return;
+    }
+    if (!workerPaymentDate) {
+      setWorkerPaymentError("יש לבחור תאריך תשלום.");
+      return;
+    }
+    const amount = Number(workerPaymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setWorkerPaymentError("יש להזין סכום תשלום תקין.");
+      return;
+    }
+    if (accountsList.length > 0 && !workerPaymentAccountId) {
+      setWorkerPaymentError("יש לבחור חשבון לתנועה.");
+      return;
+    }
+
+    // Auto-allocate the amount across open debt items, oldest first, never exceeding
+    // each item's owed amount. Any remainder stays unallocated (an advance).
+    let remaining = amount;
+    const allocations = workerPaymentDebtItems
+      .map((item) => {
+        const owed = Math.max(0, toNumber(item.owed_amount));
+        const applied = Math.min(owed, remaining);
+        remaining -= applied;
+        return applied > 0.009
+          ? { source_type: item.source_type, source_id: item.source_id, amount: Math.round(applied * 100) / 100 }
+          : null;
+      })
+      .filter((allocation): allocation is { source_type: "session" | "payslip"; source_id: string; amount: number } =>
+        allocation !== null
+      );
+
+    setWorkerPaymentSubmitting(true);
+    try {
+      const res = await fetch("/api/payroll/worker-payments", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          user_id: workerPaymentUserId,
+          payment_date: workerPaymentDate,
+          amount,
+          payment_method: workerPaymentMethod.trim() || null,
+          account_id: workerPaymentAccountId || null,
+          reference_number: workerPaymentReference.trim() || null,
+          notes: workerPaymentNotes.trim() || null,
+          allocations,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setWorkerPaymentError(toHebrewError(json.error, "שמירת התשלום לעובד נכשלה."));
+        return;
+      }
+      setWorkerPaymentOpen(false);
+      resetWorkerPaymentForm();
+      router.refresh();
+      toast.success("התשלום לעובד נרשם.");
+    } catch (error: unknown) {
+      setWorkerPaymentError(toHebrewError(error, HEBREW.saveErrorUnknown));
+    } finally {
+      setWorkerPaymentSubmitting(false);
+    }
+  }
+
   return (
     <>
       <AdaptiveGrid variant="quickActions">
@@ -1268,6 +1430,21 @@ export default function DashboardActions({
           <Clock3 className="!h-9 !w-9" strokeWidth={2.2} />
           <span className="font-semibold">{HEBREW.manualSessionNew}</span>
         </Button>
+
+        {canManageWorkerSessions ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+            onClick={() => {
+              resetWorkerPaymentForm();
+              setWorkerPaymentOpen(true);
+            }}
+          >
+            <Banknote className="!h-9 !w-9" strokeWidth={2.2} />
+            <span className="font-semibold">תשלום לעובד</span>
+          </Button>
+        ) : null}
       </AdaptiveGrid>
 
       <Dialog open={weekOverviewOpen} onOpenChange={setWeekOverviewOpen}>
@@ -1623,6 +1800,132 @@ export default function DashboardActions({
             </Button>
             <Button type="button" onClick={() => void saveManualSession()} disabled={manualSessionSubmitting}>
               {manualSessionSubmitting ? HEBREW.saving : HEBREW.saveManualSession}
+            </Button>
+          </div>
+        </AdaptiveDialog>
+      </Dialog>
+
+      <Dialog
+        open={workerPaymentOpen}
+        onOpenChange={(open) => {
+          if (!open && workerPaymentSubmitting) return;
+          setWorkerPaymentOpen(open);
+          if (!open) resetWorkerPaymentForm();
+        }}
+      >
+        <AdaptiveDialog size="form2xl">
+          <DialogHeader className="text-right">
+            <DialogTitle>{"תשלום לעובד"}</DialogTitle>
+            <DialogDescription>{"רישום תשלום לעובד שעתי / חודשי / קבלן. התשלום יקוזז מהיתרה הפתוחה (תלושים / משמרות)."}</DialogDescription>
+          </DialogHeader>
+
+          <fieldset disabled={workerPaymentSubmitting} className="contents">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-2 text-right text-sm md:col-span-2">
+                <span className="font-medium">{"עובד *"}</span>
+                <SearchableSelect
+                  ariaLabel="בחירת עובד"
+                  placeholder="בחרו עובד"
+                  searchPlaceholder="חיפוש עובד..."
+                  options={payableWorkers.map((user) => ({ value: user.id, label: user.label }))}
+                  value={workerPaymentUserId}
+                  onChange={selectWorkerPaymentWorker}
+                />
+              </label>
+
+              {workerPaymentUserId ? (
+                <div className="md:col-span-2 rounded-xl border bg-muted/30 p-3 text-right text-sm">
+                  {workerPaymentDebtLoading ? (
+                    <span className="text-muted-foreground">{"טוען יתרה..."}</span>
+                  ) : workerPaymentOpenOwed > 0 ? (
+                    <span>
+                      {"יתרה פתוחה: "}
+                      <span className="font-semibold">{formatCurrency(workerPaymentOpenOwed)}</span>
+                      <span className="text-muted-foreground">{` • ${workerPaymentDebtItems.length} פריטים פתוחים`}</span>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {"אין יתרה פתוחה לעובד זה. תשלום שיירשם יישמר כמקדמה ללא קיזוז."}
+                    </span>
+                  )}
+                </div>
+              ) : null}
+
+              <label className="space-y-2 text-right text-sm">
+                <span className="font-medium">{"סכום *"}</span>
+                <CurrencyInput
+                  value={workerPaymentAmount}
+                  onChange={(e) => setWorkerPaymentAmount(e.target.value)}
+                />
+              </label>
+
+              <label className="space-y-2 text-right text-sm">
+                <span className="font-medium">{"תאריך תשלום *"}</span>
+                <DateInput
+                  value={workerPaymentDate}
+                  onChange={(e) => setWorkerPaymentDate(e.target.value)}
+                />
+              </label>
+
+              <label className="space-y-2 text-right text-sm">
+                <span className="font-medium">{HEBREW.paymentMethod}</span>
+                <select
+                  className={`${fieldClass} text-right`}
+                  value={workerPaymentMethod}
+                  onChange={(e) => {
+                    const m = e.target.value;
+                    setWorkerPaymentMethod(m);
+                    setWorkerPaymentAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                  }}
+                >
+                  <option value=""></option>
+                  {PAYMENT_METHOD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <AccountSelect
+                required
+                value={workerPaymentAccountId}
+                onChange={setWorkerPaymentAccountId}
+                onLoaded={(list) => {
+                  setAccountsList(list);
+                  setWorkerPaymentAccountId((prev) => prev || defaultAccountForMethod(list, workerPaymentMethod));
+                }}
+              />
+
+              <label className="space-y-2 text-right text-sm">
+                <span className="font-medium">{"אסמכתא"}</span>
+                <Input
+                  value={workerPaymentReference}
+                  onChange={(e) => setWorkerPaymentReference(e.target.value)}
+                />
+              </label>
+
+              <label className="space-y-2 text-right text-sm md:col-span-2">
+                <span className="font-medium">{HEBREW.notes}</span>
+                <Textarea
+                  value={workerPaymentNotes}
+                  onChange={(e) => setWorkerPaymentNotes(e.target.value)}
+                  rows={2}
+                />
+              </label>
+            </div>
+          </fieldset>
+
+          {workerPaymentError ? (
+            <p className="text-right text-sm text-destructive">{workerPaymentError}</p>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setWorkerPaymentOpen(false)} disabled={workerPaymentSubmitting}>
+              {HEBREW.cancel}
+            </Button>
+            <Button type="button" onClick={() => void saveWorkerPayment()} disabled={workerPaymentSubmitting || workerPaymentDebtLoading}>
+              {workerPaymentSubmitting ? HEBREW.saving : "שמירת תשלום"}
             </Button>
           </div>
         </AdaptiveDialog>

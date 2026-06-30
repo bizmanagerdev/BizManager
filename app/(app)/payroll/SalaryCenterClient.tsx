@@ -47,6 +47,7 @@ import {
   formatMinutes,
   getCurrentSalaryAgreement,
   getSalaryTypeLabel,
+  minutesBetween,
   monthKeyFromDate,
   monthLabelFromKey,
   sessionWorkedMinutes,
@@ -198,11 +199,27 @@ function createSessionSplitPart(
 ): SplitPartDraft {
   return {
     id: `split-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    minutes: overrides?.minutes ?? "",
+    endTime: overrides?.endTime ?? "",
     domain,
     projectId: overrides?.projectId ?? "",
     propertyId: overrides?.propertyId ?? "",
+    amount: overrides?.amount ?? "",
+    billToCustomer: overrides?.billToCustomer ?? false,
+    billAmount: overrides?.billAmount ?? "",
   };
+}
+
+// Boundary in the middle of two datetime-local values (used to seed default split points).
+function midpointDateTimeLocal(startLocal: string, endLocal: string): string {
+  const startMs = new Date(startLocal).getTime();
+  const endMs = new Date(endLocal).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return "";
+  return toDateTimeLocalValue(new Date(startMs + Math.floor((endMs - startMs) / 2)));
+}
+
+// "YYYY-MM-DDTHH:MM" → "HH:MM" for read-only display of a split boundary.
+function splitTimeLabel(local: string): string {
+  return local && local.length >= 16 ? local.slice(11, 16) : "—";
 }
 
 const SOLID_EDIT_BUTTON_CLASS =
@@ -247,6 +264,7 @@ export default function SalaryCenterClient({
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [sessionForm, setSessionForm] = useState<SessionFormState>(DEFAULT_SESSION_FORM);
   const [sessionSplitParts, setSessionSplitParts] = useState<SplitPartDraft[]>([]);
+  const [sessionSplitEnabled, setSessionSplitEnabled] = useState(false);
   const [sessionMode, setSessionMode] = useState<"create" | "edit">("create");
   const [workerPaymentDialogOpen, setWorkerPaymentDialogOpen] = useState(false);
   const [workerPaymentForm, setWorkerPaymentForm] = useState<WorkerPaymentFormState>(DEFAULT_WORKER_PAYMENT_FORM);
@@ -801,6 +819,7 @@ export default function SalaryCenterClient({
     setSessionMode("create");
     setSessionError("");
     setSessionSplitParts([]);
+    setSessionSplitEnabled(false);
     setSessionForm({
       ...DEFAULT_SESSION_FORM,
       user_id: userId,
@@ -814,23 +833,8 @@ export default function SalaryCenterClient({
     setSessionMode("edit");
     setSessionError("");
     const currentLaborCost = session.labor_cost ? String(session.labor_cost) : "";
-    const currentDomain = isExpenseBusinessDomain(session.business_domain) ? session.business_domain : "general_business";
-    const totalMinutes = sessionWorkedMinutes(session);
-    setSessionSplitParts(
-      session.clock_out
-        ? [
-            createSessionSplitPart(currentDomain, {
-              minutes: String(Math.max(1, Math.floor(totalMinutes / 2))),
-              projectId: session.project_id ?? "",
-              propertyId: session.property_id ?? "",
-            }),
-            createSessionSplitPart(currentDomain, {
-              projectId: session.project_id ?? "",
-              propertyId: session.property_id ?? "",
-            }),
-          ]
-        : []
-    );
+    setSessionSplitParts([]);
+    setSessionSplitEnabled(false);
     setSessionForm({
       session_id: session.id,
       user_id: session.user_id,
@@ -899,6 +903,16 @@ export default function SalaryCenterClient({
 
   function saveSession() {
     setSessionError("");
+    const saveWorkerType = normalizePayrollWorkerType(
+      usersById.get(sessionForm.user_id)?.payroll_worker_type ?? null,
+      usersById.get(sessionForm.user_id)?.pay_tracking_mode ?? "session"
+    );
+    // Session/contract workers have no hourly rule to derive cost from — the price is
+    // mandatory (unless splitting, where each part carries its own amount).
+    if (saveWorkerType === "session_only" && !sessionSplitEnabled && !sessionForm.labor_cost.trim()) {
+      setSessionError("יש להזין מחיר.");
+      return;
+    }
     runAction(async () => {
       const path =
         sessionMode === "create" ? "/api/payroll/sessions/create" : "/api/payroll/sessions/update";
@@ -942,32 +956,70 @@ export default function SalaryCenterClient({
           ? (response.session as SessionPublicRow | null | undefined)
           : null;
 
-      const shouldCreatePayment =
-        sessionForm.mark_paid_now &&
-        savedSession?.id &&
-        savedSession.user_id &&
-        normalizePayrollWorkerType(
-          usersById.get(savedSession.user_id)?.payroll_worker_type ?? null,
-          usersById.get(savedSession.user_id)?.pay_tracking_mode ?? "session"
-        ) === "session_only";
+      // Hand off to edit mode right after a successful create, so if a later step (split/payment)
+      // fails and the user retries, the retry UPDATES this same session instead of creating a
+      // duplicate shift.
+      if (sessionMode === "create" && savedSession?.id) {
+        setSessionForm((current) => ({
+          ...current,
+          session_id: savedSession.id,
+          original_user_id: savedSession.user_id ?? current.user_id,
+          original_clock_in: savedSession.clock_in ?? clockInIso,
+          original_clock_out: savedSession.clock_out ?? (clockOutIso ?? ""),
+          original_labor_cost: savedSession.labor_cost != null ? String(savedSession.labor_cost) : "",
+        }));
+        setSessionMode("edit");
+      }
 
-      if (shouldCreatePayment) {
+      const markPaid = Boolean(
+        sessionForm.mark_paid_now &&
+          savedSession?.id &&
+          savedSession.user_id &&
+          normalizePayrollWorkerType(
+            usersById.get(savedSession.user_id)?.payroll_worker_type ?? null,
+            usersById.get(savedSession.user_id)?.pay_tracking_mode ?? "session"
+          ) === "session_only"
+      );
+
+      // If splitting, slice the saved session into parts. For a contractor (money) split with
+      // "mark paid", the payment is recorded in the SAME request and rolled back together with the
+      // split if it fails — so you can never end up split-but-unpaid.
+      const didSplit = sessionSplitEnabled && sessionSplitParts.length >= 2 && Boolean(savedSession?.id);
+      if (didSplit && savedSession?.id) {
+        const minutesByPart = isMoneySplit ? [] : computeSessionSplitMinutes();
+        await postJson("/api/payroll/sessions/split", {
+          session_id: savedSession.id,
+          parts: sessionSplitParts.map((part, index) => ({
+            amount: isMoneySplit ? Number(part.amount) : undefined,
+            minutes: isMoneySplit ? undefined : minutesByPart[index],
+            business_domain: part.domain,
+            project_id: part.projectId || null,
+            property_id: part.propertyId || null,
+            is_billable_to_customer: part.billToCustomer,
+            bill_to_customer_amount: part.billToCustomer ? Number(part.billAmount) : null,
+          })),
+          payment:
+            markPaid && isMoneySplit
+              ? { mark_paid: true, amount: sessionForm.paid_amount_now.trim() ? Number(sessionForm.paid_amount_now) : null }
+              : undefined,
+        });
+      }
+
+      // Non-split mark-paid: a single payment allocated to the one saved session.
+      if (markPaid && !didSplit && savedSession?.id && savedSession.user_id) {
+        const paymentDateSource = savedSession.clock_out || savedSession.clock_in || new Date().toISOString();
         const derivedEarnedAmount =
           typeof savedSession?.labor_cost === "number" || typeof savedSession?.labor_cost === "string"
             ? toNumber(savedSession.labor_cost)
             : laborCostInput
               ? Number(laborCostInput)
               : null;
-        const requestedPaidAmountRaw = sessionForm.paid_amount_now.trim()
+        const requestedPaidAmount = sessionForm.paid_amount_now.trim()
           ? Number(sessionForm.paid_amount_now)
           : derivedEarnedAmount;
-
-        if (!Number.isFinite(requestedPaidAmountRaw) || requestedPaidAmountRaw === null || requestedPaidAmountRaw <= 0) {
+        if (!Number.isFinite(requestedPaidAmount) || requestedPaidAmount === null || requestedPaidAmount <= 0) {
           throw new Error("יש להזין סכום ששולם עבור המשמרת.");
         }
-        const requestedPaidAmount = requestedPaidAmountRaw;
-
-        const paymentDateSource = savedSession.clock_out || savedSession.clock_in || new Date().toISOString();
         await postJson("/api/payroll/worker-payments", {
           user_id: savedSession.user_id,
           payment_date: paymentDateSource.slice(0, 10),
@@ -975,25 +1027,22 @@ export default function SalaryCenterClient({
           payment_method: null,
           reference_number: null,
           notes: `תשלום שסומן מתוך משמרת ${formatDate(paymentDateSource)}`,
-          allocations: [
-            {
-              source_type: "session",
-              source_id: savedSession.id,
-              amount: requestedPaidAmount,
-            },
-          ],
+          allocations: [{ source_type: "session", source_id: savedSession.id, amount: requestedPaidAmount }],
         });
       }
 
       setSessionDialogOpen(false);
+      setSessionSplitParts([]);
+      setSessionSplitEnabled(false);
+      const paidSuffix = sessionForm.mark_paid_now ? " והתשלום נרשם" : "";
       setMessage(
-        sessionMode === "create"
-          ? sessionForm.mark_paid_now
-            ? "המשמרת נוספה והתשלום נרשם."
-            : "המשמרת נוספה."
-          : sessionForm.mark_paid_now
-            ? "המשמרת עודכנה והתשלום נרשם."
-            : "המשמרת עודכנה."
+        didSplit
+          ? sessionMode === "create"
+            ? `המשמרת נוספה ופוצלה לחלקים${paidSuffix}.`
+            : `המשמרת עודכנה ופוצלה לחלקים${paidSuffix}.`
+          : sessionMode === "create"
+            ? `המשמרת נוספה${paidSuffix}.`
+            : `המשמרת עודכנה${paidSuffix}.`
       );
       await refreshAll();
     }, { onError: (message) => setSessionError(message) });
@@ -1011,53 +1060,90 @@ export default function SalaryCenterClient({
     );
   }
 
-  function updateSessionSplitMinutes(partId: string, rawMinutes: string, totalMinutes: number) {
-    setSessionSplitParts((current) => {
-      const index = current.findIndex((part) => part.id === partId);
-      if (index < 0) return current;
-      const maxForPart = Math.max(1, totalMinutes - (current.length - index - 1));
-      const trimmed = rawMinutes.trim();
-      if (trimmed === "") {
-        return current.map((part) => (part.id === partId ? { ...part, minutes: "" } : part));
-      }
-      const parsed = Math.floor(Number(trimmed));
-      const clamped = Number.isFinite(parsed) ? Math.max(1, Math.min(maxForPart, parsed)) : 1;
-      return current.map((part) => (part.id === partId ? { ...part, minutes: String(clamped) } : part));
-    });
+  function updateSessionSplitEndTime(partId: string, value: string) {
+    setSessionSplitParts((current) =>
+      current.map((part) => (part.id === partId ? { ...part, endTime: value } : part))
+    );
   }
 
-  function addSessionSplitPart(defaultDomain: ExpenseBusinessDomain, totalMinutes: number) {
-    setSessionSplitParts((current) =>
-      current.length >= Math.min(5, totalMinutes) ? current : [...current, createSessionSplitPart(defaultDomain)]
-    );
+  // Session/contract workers (session_only) don't track hours, so their split divides the
+  // MONEY (an amount per part) instead of the time. Computed from the form's selected worker
+  // so the split helpers below can branch on it.
+  const isMoneySplit =
+    normalizePayrollWorkerType(
+      usersById.get(sessionForm.user_id)?.payroll_worker_type ?? null,
+      usersById.get(sessionForm.user_id)?.pay_tracking_mode ?? "session"
+    ) === "session_only";
+
+  // Build the default 2-part split from the current form. Time split divides at the midpoint;
+  // money split seeds the first part with the price/billing already entered on the form.
+  function buildInitialSplitParts(): SplitPartDraft[] {
+    const domain = isExpenseBusinessDomain(sessionForm.business_domain)
+      ? sessionForm.business_domain
+      : "general_business";
+    const sharedLink = { projectId: sessionForm.project_id ?? "", propertyId: sessionForm.property_id ?? "" };
+    if (isMoneySplit) {
+      return [
+        createSessionSplitPart(domain, {
+          ...sharedLink,
+          amount: sessionForm.labor_cost ?? "",
+          billToCustomer: sessionForm.is_billable_to_customer,
+          billAmount: sessionForm.is_billable_to_customer ? sessionForm.bill_to_customer_amount ?? "" : "",
+        }),
+        createSessionSplitPart(domain, sharedLink),
+      ];
+    }
+    return [
+      createSessionSplitPart(domain, {
+        ...sharedLink,
+        endTime: midpointDateTimeLocal(sessionForm.clock_in, sessionForm.clock_out),
+        billToCustomer: sessionForm.is_billable_to_customer,
+        billAmount: sessionForm.is_billable_to_customer ? sessionForm.bill_to_customer_amount ?? "" : "",
+      }),
+      createSessionSplitPart(domain, sharedLink),
+    ];
+  }
+
+  function toggleSessionSplit(enabled: boolean) {
+    setSessionSplitEnabled(enabled);
+    setSessionSplitParts(enabled ? buildInitialSplitParts() : []);
+  }
+
+  // Insert a new boundary part just before the trailing remainder part, defaulting its
+  // end-time to the midpoint of whatever time is left.
+  function addSessionSplitPart() {
+    setSessionSplitParts((current) => {
+      if (current.length >= 5) return current;
+      const domain = isExpenseBusinessDomain(sessionForm.business_domain)
+        ? sessionForm.business_domain
+        : "general_business";
+      // Money split parts have no time order — just append another amount line.
+      if (isMoneySplit) {
+        return [...current, createSessionSplitPart(domain)];
+      }
+      const prevBoundary = current.length >= 2 ? current[current.length - 2].endTime : sessionForm.clock_in;
+      const newPart = createSessionSplitPart(domain, {
+        endTime: midpointDateTimeLocal(prevBoundary || sessionForm.clock_in, sessionForm.clock_out),
+      });
+      const next = [...current];
+      next.splice(next.length - 1, 0, newPart);
+      return next;
+    });
   }
 
   function removeSessionSplitPart(partId: string) {
     setSessionSplitParts((current) => (current.length <= 2 ? current : current.filter((part) => part.id !== partId)));
   }
 
-  function splitSession() {
-    if (!sessionDialogSourceSession?.id || !sessionDialogSourceSession.clock_out) return;
-    if (sessionDialogSplitError) {
-      setSessionError(sessionDialogSplitError);
-      return;
-    }
-    setSessionError("");
-    runAction(async () => {
-      await postJson("/api/payroll/sessions/split", {
-        session_id: sessionDialogSourceSession.id,
-        parts: sessionSplitParts.map((part) => ({
-          minutes: part.minutes,
-          business_domain: part.domain,
-          project_id: part.projectId || null,
-          property_id: part.propertyId || null,
-        })),
-      });
-      setSessionDialogOpen(false);
-      setSessionSplitParts([]);
-      setMessage("המשמרת פוצלה.");
-      await refreshAll();
-    }, { onError: (message) => setSessionError(message) });
+  // Minutes per part derived from the form span + each part's end-time boundary.
+  // Boundaries: [shift start, part0.endTime, part1.endTime, …, shift end].
+  function computeSessionSplitMinutes(): number[] {
+    const boundaries = [
+      sessionForm.clock_in,
+      ...sessionSplitParts.slice(0, -1).map((part) => part.endTime),
+      sessionForm.clock_out,
+    ];
+    return sessionSplitParts.map((_, index) => minutesBetween(boundaries[index], boundaries[index + 1]));
   }
 
   function renderCompactSessionLinkField(
@@ -2168,10 +2254,6 @@ export default function SalaryCenterClient({
         : null,
     [sessionDialogWorker]
   );
-  const sessionDialogSourceSession = useMemo(
-    () => (sessionMode === "edit" && sessionForm.session_id ? visibleSessions.find((session) => session.id === sessionForm.session_id) ?? null : null),
-    [sessionForm.session_id, sessionMode, visibleSessions]
-  );
   const sessionDialogDebtItem = useMemo(() => {
     if (sessionMode !== "edit" || !sessionForm.session_id) return null;
     return (
@@ -2214,41 +2296,72 @@ export default function SalaryCenterClient({
     if (sessionDialogWorkedMinutes <= 0) return null;
     return calculateSessionLaborCost(sessionDialogAgreement, sessionDialogWorkedMinutes);
   }, [sessionDialogAgreement, sessionDialogWorkedMinutes, sessionForm.labor_cost]);
+  // Each part's start/end clock boundaries + minutes, derived from the form span.
+  // Part 0 starts at the shift's start; each later part starts where the previous one ended;
+  // the last part always runs to the shift's end.
   const sessionDialogSplitPreview = useMemo(() => {
-    if (!sessionDialogSourceSession?.clock_out) return [];
-    const totalMinutes = sessionWorkedMinutes(sessionDialogSourceSession);
-    let consumed = 0;
+    if (!sessionForm.clock_in || !sessionForm.clock_out) return [];
     return sessionSplitParts.map((part, index) => {
       const isLast = index === sessionSplitParts.length - 1;
-      const requested = Math.max(0, Number(part.minutes) || 0);
-      const minutes = isLast ? Math.max(0, totalMinutes - consumed) : Math.max(0, Math.min(totalMinutes - consumed, requested));
-      consumed += minutes;
-      return { ...part, minutes };
+      const startLocal = index === 0 ? sessionForm.clock_in : sessionSplitParts[index - 1].endTime;
+      const endLocal = isLast ? sessionForm.clock_out : part.endTime;
+      const minutes = startLocal && endLocal ? minutesBetween(startLocal, endLocal) : 0;
+      return { ...part, startLocal, endLocal, minutes, isLast };
     });
-  }, [sessionDialogSourceSession, sessionSplitParts]);
+  }, [sessionForm.clock_in, sessionForm.clock_out, sessionSplitParts]);
   const sessionDialogSplitError = useMemo(() => {
-    if (!sessionDialogSourceSession?.clock_out) return "";
-    const totalMinutes = sessionWorkedMinutes(sessionDialogSourceSession);
+    if (!sessionSplitEnabled) return "";
+    if (isMoneySplit) {
+      if (sessionSplitParts.length < 2) return "צריך לפחות שני חלקים.";
+      if (sessionSplitParts.length > 5) return "אפשר לפצל לכל היותר לחמישה חלקים.";
+      for (let index = 0; index < sessionSplitParts.length; index += 1) {
+        const part = sessionSplitParts[index];
+        const amount = Number(part.amount);
+        if (!part.amount.trim() || !Number.isFinite(amount) || amount <= 0) {
+          return `יש להזין סכום תקין לחלק ${index + 1}.`;
+        }
+        if (part.domain === "logistics_projects" && !part.projectId) return `יש לבחור פרויקט בחלק ${index + 1}.`;
+        if (part.domain === "property_management" && !part.propertyId) return `יש לבחור נכס בחלק ${index + 1}.`;
+        if (part.billToCustomer) {
+          const billAmount = Number(part.billAmount);
+          if (!part.billAmount.trim() || !Number.isFinite(billAmount) || billAmount <= 0) {
+            return `יש להזין סכום חיוב ללקוח בחלק ${index + 1}.`;
+          }
+        }
+      }
+      return "";
+    }
+    const shiftStartMs = new Date(sessionForm.clock_in).getTime();
+    const shiftEndMs = new Date(sessionForm.clock_out).getTime();
+    if (!sessionForm.clock_out || !Number.isFinite(shiftEndMs) || shiftEndMs <= shiftStartMs) {
+      return "צריך משמרת עם שעת התחלה וסיום כדי לפצל.";
+    }
     if (sessionSplitParts.length < 2) return "צריך לפחות שני חלקים.";
-    if (sessionSplitParts.length > Math.min(5, totalMinutes)) return "אי אפשר לפצל ליותר חלקים ממספר הדקות במשמרת.";
-    let consumed = 0;
+    if (sessionSplitParts.length > 5) return "אפשר לפצל לכל היותר לחמישה חלקים.";
+    let prevMs = shiftStartMs;
     for (let index = 0; index < sessionSplitParts.length; index += 1) {
       const part = sessionSplitParts[index];
       const isLast = index === sessionSplitParts.length - 1;
-      const remainingParts = sessionSplitParts.length - index - 1;
       if (!isLast) {
-        const minutes = Math.floor(Number(part.minutes));
-        if (!Number.isFinite(minutes) || minutes <= 0) return `יש להזין מספר דקות תקין בחלק ${index + 1}.`;
-        if (consumed + minutes > totalMinutes - remainingParts) return "סכום הדקות גדול ממשך המשמרת.";
-        consumed += minutes;
-      } else if (totalMinutes - consumed <= 0) {
+        const boundaryMs = new Date(part.endTime).getTime();
+        if (!part.endTime || !Number.isFinite(boundaryMs)) return `יש להזין שעת יציאה לחלק ${index + 1}.`;
+        if (boundaryMs <= prevMs) return `שעת היציאה של חלק ${index + 1} חייבת להיות אחרי תחילת החלק.`;
+        if (boundaryMs >= shiftEndMs) return `שעת היציאה של חלק ${index + 1} חייבת להיות לפני סוף המשמרת.`;
+        prevMs = boundaryMs;
+      } else if (shiftEndMs - prevMs <= 0) {
         return "לא נשאר זמן לחלק האחרון.";
       }
       if (part.domain === "logistics_projects" && !part.projectId) return `יש לבחור פרויקט בחלק ${index + 1}.`;
       if (part.domain === "property_management" && !part.propertyId) return `יש לבחור נכס בחלק ${index + 1}.`;
+      if (part.billToCustomer) {
+        const billAmount = Number(part.billAmount);
+        if (!part.billAmount.trim() || !Number.isFinite(billAmount) || billAmount <= 0) {
+          return `יש להזין סכום חיוב ללקוח בחלק ${index + 1}.`;
+        }
+      }
     }
     return "";
-  }, [sessionDialogSourceSession, sessionSplitParts]);
+  }, [isMoneySplit, sessionForm.clock_in, sessionForm.clock_out, sessionSplitEnabled, sessionSplitParts]);
 
   useEffect(() => {
     if (!sessionForm.mark_paid_now || sessionDialogSuggestedAmount === null) return;
@@ -2335,7 +2448,7 @@ export default function SalaryCenterClient({
           onUnlockSuccess={loadProtectedData}
           fallback={<SummaryCard title="עלות עבודה החודש" value="מוגן" protectedValue />}
         >
-          <SummaryCard title="עלות עבודה החודש" value={formatCurrency(summary.totalLaborCost)} protectedValue />
+          <SummaryCard title="עלות עבודה החודש" value={formatCurrency(summary.totalLaborCost)} protectedValue loading={protectedLoading} />
         </SalaryProtected>
         <SalaryProtected
           unlocked={salaryUnlocked}
@@ -2344,7 +2457,7 @@ export default function SalaryCenterClient({
           onUnlockSuccess={loadProtectedData}
           fallback={<SummaryCard title="יתרה לעובדים" value="מוגן" protectedValue />}
         >
-          <SummaryCard title="יתרה לעובדים" value={formatCurrency(summary.totalWorkerOwed)} protectedValue />
+          <SummaryCard title="יתרה לעובדים" value={formatCurrency(summary.totalWorkerOwed)} protectedValue loading={protectedLoading} />
         </SalaryProtected>
       </div>
 
@@ -2363,14 +2476,17 @@ export default function SalaryCenterClient({
           <CardContent className="grid gap-3 py-4 sm:grid-cols-3">
             <MiniStat
               label="קבלנות"
+              loading={protectedLoading}
               value={`${formatMinutes(summary.sessionOnlyMinutes)} • ${formatCurrency(summary.sessionOnlyAmount)}`}
             />
             <MiniStat
               label="שעתי עם תלוש"
+              loading={protectedLoading}
               value={`${formatMinutes(summary.hourlyPayslipMinutes)} • ${formatCurrency(summary.hourlyPayslipAmount)}`}
             />
             <MiniStat
               label="חודשי גלובלי"
+              loading={protectedLoading}
               value={`${summary.monthlyPayslipWorkers} עובדים • ${formatCurrency(summary.monthlyPayslipAmount)}`}
             />
           </CardContent>
@@ -2481,13 +2597,13 @@ export default function SalaryCenterClient({
                             onUnlockSuccess={loadProtectedData}
                             fallback={<MiniStat label="יתרה כוללת" value="מוגן" />}
                           >
-                            <MiniStat label="יתרה כוללת" value={formatCurrency(balance?.owed_amount ?? 0)} />
+                            <MiniStat label="יתרה כוללת" loading={protectedLoading} value={formatCurrency(balance?.owed_amount ?? 0)} />
                           </SalaryProtected>
                           {workerType === "session_only" ? (
                             <MiniStat label="משמרות החודש" value={String(monthStats.sessionCount)} />
-                          ) : (
-                            <MiniStat label="שעות החודש" value={formatMinutes(monthStats.totalMinutes)} />
-                          )}
+                          ) : payrollWorkerTypeAllowsSessions(workerType) ? (
+                            <MiniStat label="שעות החודש" loading={protectedLoading} value={formatMinutes(monthStats.totalMinutes)} />
+                          ) : null}
                         </div>
 
                         <div className="mt-3 flex items-center justify-between gap-2">
@@ -2519,20 +2635,20 @@ export default function SalaryCenterClient({
 
               {/* Wide screens: full detail table */}
               <div className="hidden max-h-[70vh] overflow-auto lg:block">
-                <table className="w-full text-right text-xs">
+                <table className="w-full text-center text-xs">
                   <thead className="sticky top-0 z-10 bg-muted">
                     <tr className="border-b text-muted-foreground">
-                      <th className="px-2 py-2 font-medium">פעולות</th>
-                      <th className="px-2 py-2 font-medium">יתרה כוללת</th>
-                      <th className="px-2 py-2 font-medium">שולם כולל</th>
-                      <th className="px-2 py-2 font-medium">סטטוס תשלום</th>
-                      <th className="px-2 py-2 font-medium">תלוש אחרון</th>
-                      <th className="px-2 py-2 font-medium">עלות עבודה החודש</th>
-                      <th className="px-2 py-2 font-medium">משכורת נוכחית</th>
-                      <th className="px-2 py-2 font-medium">שעות החודש</th>
-                      <th className="px-2 py-2 font-medium">סוג עובד</th>
-                      <th className="px-2 py-2 font-medium">סטטוס</th>
                       <th className="px-2 py-2 font-medium">עובד</th>
+                      <th className="px-2 py-2 font-medium">סטטוס</th>
+                      <th className="px-2 py-2 font-medium">סוג עובד</th>
+                      <th className="px-2 py-2 font-medium">שעות החודש</th>
+                      <th className="px-2 py-2 font-medium">משכורת נוכחית</th>
+                      <th className="px-2 py-2 font-medium">עלות עבודה החודש</th>
+                      <th className="px-2 py-2 font-medium">תלוש אחרון</th>
+                      <th className="px-2 py-2 font-medium">סטטוס תשלום</th>
+                      <th className="px-2 py-2 font-medium">שולם כולל</th>
+                      <th className="px-2 py-2 font-medium">יתרה כוללת</th>
+                      <th className="px-2 py-2 font-medium">פעולות</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2579,14 +2695,32 @@ export default function SalaryCenterClient({
                               router.push(`/payroll/workers/${worker.id}`);
                             }}
                           >
-                            <td className="px-3 py-3">
-                              <div className="flex flex-wrap justify-end gap-2">
-                                <Button variant="outline" size="sm" onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}>
-                                  {"פרטים"}
-                                </Button>
+                            <td className="px-2 py-2 font-medium w-[180px]">
+                              <div className="flex flex-col items-center gap-1">
+                                <div>{worker.full_name ?? worker.email ?? "עובד"}</div>
+                                <div className="flex flex-col items-center text-muted-foreground break-all">
+                                  {worker.email ? <div dir="ltr">{worker.email}</div> : null}
+                                  {worker.phone ? <div dir="ltr">{worker.phone}</div> : null}
+                                  {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
+                                </div>
                               </div>
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="px-2 py-2">
+                              <div className="flex flex-col items-center gap-1">
+                                <RoleBadge role={worker.role} />
+                                <AccessBadge hasAccess={getWorkerAccessLabel(worker) === "עם גישה"} />
+                                <StatusPill tone={worker.active === false ? "muted" : "success"}>
+                                  {worker.active === false ? "לא פעיל" : "פעיל"}
+                                </StatusPill>
+                              </div>
+                            </td>
+                            <td className="px-2 py-2 whitespace-nowrap">
+                              <WorkerTypeBadge workerType={workerType} />
+                            </td>
+                            <td className="px-2 py-2 whitespace-nowrap">
+                              {payrollWorkerTypeAllowsSessions(workerType) ? formatMinutes(monthStats.totalMinutes) : "-"}
+                            </td>
+                            <td className="px-2 py-2 whitespace-nowrap">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
@@ -2594,10 +2728,18 @@ export default function SalaryCenterClient({
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
-                                {formatCurrency(balance?.owed_amount ?? 0)}
+                                {protectedLoading ? (
+                                  <LoadingDots />
+                                ) : currentAgreement ? (
+                                  currentAgreement.salary_type === "hourly"
+                                    ? `${formatCurrency(currentAgreement.hourly_rate)} / שעה`
+                                    : formatCurrency(currentAgreement.monthly_salary)
+                                ) : (
+                                  "-"
+                                )}
                               </SalaryProtected>
                             </td>
-                            <td className="px-3 py-3">
+                            <td className="px-2 py-2 whitespace-nowrap">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
@@ -2605,9 +2747,10 @@ export default function SalaryCenterClient({
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
-                                {formatCurrency(balance?.paid_amount ?? 0)}
+                                {protectedLoading ? <LoadingDots /> : formatCurrency(monthlyLaborCost)}
                               </SalaryProtected>
                             </td>
+                            <td className="px-2 py-2 whitespace-nowrap">{latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}</td>
                             <td className="px-2 py-2">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
@@ -2619,8 +2762,7 @@ export default function SalaryCenterClient({
                                 <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
                               </SalaryProtected>
                             </td>
-                            <td className="px-2 py-2 whitespace-nowrap">{latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"}</td>
-                            <td className="px-2 py-2 whitespace-nowrap">
+                            <td className="px-3 py-3">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
@@ -2628,10 +2770,10 @@ export default function SalaryCenterClient({
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
-                                {formatCurrency(monthlyLaborCost)}
+                                {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.paid_amount ?? 0)}
                               </SalaryProtected>
                             </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
+                            <td className="px-3 py-3">
                               <SalaryProtected
                                 unlocked={salaryUnlocked}
                                 hasPasswordConfigured={hasPasswordConfigured}
@@ -2639,34 +2781,14 @@ export default function SalaryCenterClient({
                                 onUnlockSuccess={loadProtectedData}
                                 fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
                               >
-                                {currentAgreement
-                                  ? currentAgreement.salary_type === "hourly"
-                                    ? `${formatCurrency(currentAgreement.hourly_rate)} / שעה`
-                                    : formatCurrency(currentAgreement.monthly_salary)
-                                  : "-"}
+                                {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.owed_amount ?? 0)}
                               </SalaryProtected>
                             </td>
-                            <td className="px-2 py-2 whitespace-nowrap">{formatMinutes(monthStats.totalMinutes)}</td>
-                            <td className="px-2 py-2 whitespace-nowrap">
-                              <WorkerTypeBadge workerType={workerType} />
-                            </td>
-                            <td className="px-2 py-2">
-                              <div className="flex flex-col items-end gap-1">
-                                <RoleBadge role={worker.role} />
-                                <AccessBadge hasAccess={getWorkerAccessLabel(worker) === "עם גישה"} />
-                                <StatusPill tone={worker.active === false ? "muted" : "success"}>
-                                  {worker.active === false ? "לא פעיל" : "פעיל"}
-                                </StatusPill>
-                              </div>
-                            </td>
-                            <td className="px-2 py-2 font-medium w-[180px]">
-                              <div className="flex flex-col items-end gap-1">
-                                <div>{worker.full_name ?? worker.email ?? "עובד"}</div>
-                                <div className="flex flex-col items-end text-muted-foreground break-all">
-                                  {worker.email ? <div>{worker.email}</div> : null}
-                                  {worker.phone ? <div>{worker.phone}</div> : null}
-                                  {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
-                                </div>
+                            <td className="px-3 py-3">
+                              <div className="flex flex-wrap justify-center gap-2">
+                                <Button variant="outline" size="sm" onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}>
+                                  {"פרטים"}
+                                </Button>
                               </div>
                             </td>
                           </tr>
@@ -2740,13 +2862,13 @@ export default function SalaryCenterClient({
                             onUnlockSuccess={loadProtectedData}
                             fallback={<MiniStat label="יתרה כוללת" value="מוגן" />}
                           >
-                            <MiniStat label="יתרה כוללת" value={formatCurrency(balance?.owed_amount ?? 0)} />
+                            <MiniStat label="יתרה כוללת" loading={protectedLoading} value={formatCurrency(balance?.owed_amount ?? 0)} />
                           </SalaryProtected>
                           {workerType === "session_only" ? (
                             <MiniStat label="משמרות החודש" value={String(monthStats.sessionCount)} />
-                          ) : (
-                            <MiniStat label="שעות החודש" value={formatMinutes(monthStats.totalMinutes)} />
-                          )}
+                          ) : payrollWorkerTypeAllowsSessions(workerType) ? (
+                            <MiniStat label="שעות החודש" loading={protectedLoading} value={formatMinutes(monthStats.totalMinutes)} />
+                          ) : null}
                         </div>
 
                         <div className="mt-3 flex items-center justify-between gap-2">
@@ -2778,17 +2900,17 @@ export default function SalaryCenterClient({
 
               {/* Wide screens: full detail table */}
               <div className="hidden max-h-[70vh] overflow-auto lg:block">
-                <table className="w-full text-right text-xs">
+                <table className="w-full text-center text-xs">
                   <thead className="sticky top-0 z-10 bg-muted">
                     <tr className="border-b text-muted-foreground">
-                      <th className="px-2 py-2 font-medium">פעולות</th>
-                      <th className="px-2 py-2 font-medium">יתרה כוללת</th>
-                      <th className="px-2 py-2 font-medium">שולם כולל</th>
-                      <th className="px-2 py-2 font-medium">סטטוס תשלום</th>
-                      <th className="px-2 py-2 font-medium">שעות החודש</th>
-                      <th className="px-2 py-2 font-medium">סוג עובד</th>
-                      <th className="px-2 py-2 font-medium">סטטוס</th>
                       <th className="px-2 py-2 font-medium">פועל</th>
+                      <th className="px-2 py-2 font-medium">סטטוס</th>
+                      <th className="px-2 py-2 font-medium">סוג עובד</th>
+                      <th className="px-2 py-2 font-medium">שעות החודש</th>
+                      <th className="px-2 py-2 font-medium">סטטוס תשלום</th>
+                      <th className="px-2 py-2 font-medium">שולם כולל</th>
+                      <th className="px-2 py-2 font-medium">יתרה כוללת</th>
+                      <th className="px-2 py-2 font-medium">פעולות</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2828,34 +2950,30 @@ export default function SalaryCenterClient({
                               router.push(`/payroll/workers/${worker.id}`);
                             }}
                           >
+                            <td className="px-2 py-2 font-medium w-[180px]">
+                              <div className="flex flex-col items-center gap-1">
+                                <div>{worker.full_name ?? worker.email ?? "פועל"}</div>
+                                <div className="flex flex-col items-center text-muted-foreground break-all">
+                                  {worker.email ? <div dir="ltr">{worker.email}</div> : null}
+                                  {worker.phone ? <div dir="ltr">{worker.phone}</div> : null}
+                                  {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
+                                </div>
+                              </div>
+                            </td>
                             <td className="px-2 py-2">
-                              <div className="flex flex-wrap justify-end gap-2">
-                                <Button variant="outline" size="sm" onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}>
-                                  {"פרטים"}
-                                </Button>
+                              <div className="flex flex-col items-center gap-1">
+                                <StatusPill tone="warning">{"פועל"}</StatusPill>
+                                <AccessBadge hasAccess={false} />
+                                <StatusPill tone={worker.active === false ? "muted" : "success"}>
+                                  {worker.active === false ? "לא פעיל" : "פעיל"}
+                                </StatusPill>
                               </div>
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap">
-                              <SalaryProtected
-                                unlocked={salaryUnlocked}
-                                hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canViewSalary}
-                                onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
-                              >
-                                {formatCurrency(balance?.owed_amount ?? 0)}
-                              </SalaryProtected>
+                              <WorkerTypeBadge workerType={workerType} />
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap">
-                              <SalaryProtected
-                                unlocked={salaryUnlocked}
-                                hasPasswordConfigured={hasPasswordConfigured}
-                                canUnlock={canViewSalary}
-                                onUnlockSuccess={loadProtectedData}
-                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
-                              >
-                                {formatCurrency(balance?.paid_amount ?? 0)}
-                              </SalaryProtected>
+                              {payrollWorkerTypeAllowsSessions(workerType) ? formatMinutes(monthStats.totalMinutes) : "-"}
                             </td>
                             <td className="px-2 py-2">
                               <SalaryProtected
@@ -2868,27 +2986,33 @@ export default function SalaryCenterClient({
                                 <PaymentStatusBadge status={balance?.payment_status} owedAmount={balance?.owed_amount} />
                               </SalaryProtected>
                             </td>
-                            <td className="px-2 py-2 whitespace-nowrap">{formatMinutes(monthStats.totalMinutes)}</td>
                             <td className="px-2 py-2 whitespace-nowrap">
-                              <WorkerTypeBadge workerType={workerType} />
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canViewSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.paid_amount ?? 0)}
+                              </SalaryProtected>
+                            </td>
+                            <td className="px-2 py-2 whitespace-nowrap">
+                              <SalaryProtected
+                                unlocked={salaryUnlocked}
+                                hasPasswordConfigured={hasPasswordConfigured}
+                                canUnlock={canViewSalary}
+                                onUnlockSuccess={loadProtectedData}
+                                fallback={<span className="text-muted-foreground">{"מוגן"}</span>}
+                              >
+                                {protectedLoading ? <LoadingDots /> : formatCurrency(balance?.owed_amount ?? 0)}
+                              </SalaryProtected>
                             </td>
                             <td className="px-2 py-2">
-                              <div className="flex flex-col items-end gap-1">
-                                <StatusPill tone="warning">{"פועל"}</StatusPill>
-                                <AccessBadge hasAccess={false} />
-                                <StatusPill tone={worker.active === false ? "muted" : "success"}>
-                                  {worker.active === false ? "לא פעיל" : "פעיל"}
-                                </StatusPill>
-                              </div>
-                            </td>
-                            <td className="px-2 py-2 font-medium w-[180px]">
-                              <div className="flex flex-col items-end gap-1">
-                                <div>{worker.full_name ?? worker.email ?? "פועל"}</div>
-                                <div className="flex flex-col items-end text-muted-foreground break-all">
-                                  {worker.email ? <div>{worker.email}</div> : null}
-                                  {worker.phone ? <div>{worker.phone}</div> : null}
-                                  {!worker.email && !worker.phone ? <div>ללא פרטי קשר</div> : null}
-                                </div>
+                              <div className="flex flex-wrap justify-center gap-2">
+                                <Button variant="outline" size="sm" onClick={() => { emitNavigationStart(); router.push(`/payroll/workers/${worker.id}`); }}>
+                                  {"פרטים"}
+                                </Button>
                               </div>
                             </td>
                           </tr>
@@ -5042,15 +5166,17 @@ export default function SalaryCenterClient({
                 />
               </Field>
             )}
-            {shouldShowSessionPrice(sessionDialogWorkerType) ? (
-              <Field label="מחיר">
+            {/* When money-split is on, each part defines its own price + customer billing,
+                so the single session-level price / bill fields are hidden. */}
+            {sessionSplitEnabled && isMoneySplit ? null : shouldShowSessionPrice(sessionDialogWorkerType) ? (
+              <Field label={sessionDialogWorkerType === "session_only" ? "מחיר *" : "מחיר"}>
                 <CurrencyInput
                   inputMode="decimal"
                   value={sessionForm.labor_cost}
                   onChange={(event) =>
                     setSessionForm((current) => ({ ...current, labor_cost: event.target.value }))
                   }
-                  placeholder="אופציונלי"
+                  placeholder={sessionDialogWorkerType === "session_only" ? undefined : "אופציונלי"}
                 />
                 <div className="mt-1 text-xs text-muted-foreground">
                   {sessionDialogSuggestedAmount !== null
@@ -5067,32 +5193,36 @@ export default function SalaryCenterClient({
                 </div>
               </Field>
             )}
-            <Field label="חיוב לקוח">
-              <select
-                value={sessionForm.is_billable_to_customer ? "yes" : "no"}
-                onChange={(event) =>
-                  setSessionForm((current) => ({
-                    ...current,
-                    is_billable_to_customer: event.target.value === "yes",
-                  }))
-                }
-                className={selectClassName}
-              >
-                <option value="no">{"לא"}</option>
-                <option value="yes">{"כן"}</option>
-              </select>
-            </Field>
-            {sessionForm.is_billable_to_customer ? (
-              <Field label="סכום לחיוב">
-                <CurrencyInput
-                  inputMode="decimal"
-                  value={sessionForm.bill_to_customer_amount}
-                  onChange={(event) =>
-                    setSessionForm((current) => ({ ...current, bill_to_customer_amount: event.target.value }))
-                  }
-                />
-              </Field>
-            ) : null}
+            {sessionSplitEnabled ? null : (
+              <>
+                <Field label="חיוב לקוח">
+                  <select
+                    value={sessionForm.is_billable_to_customer ? "yes" : "no"}
+                    onChange={(event) =>
+                      setSessionForm((current) => ({
+                        ...current,
+                        is_billable_to_customer: event.target.value === "yes",
+                      }))
+                    }
+                    className={selectClassName}
+                  >
+                    <option value="no">{"לא"}</option>
+                    <option value="yes">{"כן"}</option>
+                  </select>
+                </Field>
+                {sessionForm.is_billable_to_customer ? (
+                  <Field label="סכום לחיוב">
+                    <CurrencyInput
+                      inputMode="decimal"
+                      value={sessionForm.bill_to_customer_amount}
+                      onChange={(event) =>
+                        setSessionForm((current) => ({ ...current, bill_to_customer_amount: event.target.value }))
+                      }
+                    />
+                  </Field>
+                ) : null}
+              </>
+            )}
             {sessionDialogWorkerType === "session_only" ? (
               <>
                 <Field label="שולם עכשיו">
@@ -5118,8 +5248,15 @@ export default function SalaryCenterClient({
                       onChange={(event) =>
                         setSessionForm((current) => ({ ...current, paid_amount_now: event.target.value }))
                       }
-                      placeholder="אם ריק, יירשם מלוא סכום המשמרת"
+                      placeholder="אם ריק, יירשם הסכום המלא"
                     />
+                    {sessionSplitEnabled ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {`סכום מלא לכל החלקים: ${formatCurrency(
+                          sessionSplitParts.reduce((sum, part) => sum + (Number(part.amount) || 0), 0)
+                        )}. סכום קטן יותר יחולק בין החלקים לפי הסדר.`}
+                      </div>
+                    ) : null}
                   </Field>
                 ) : null}
               </>
@@ -5143,98 +5280,235 @@ export default function SalaryCenterClient({
             ) : null}
           </div>
 
-          {sessionMode === "edit" && sessionDialogSourceSession?.clock_out ? (
+          {sessionForm.clock_out && sessionDialogWorkerType && payrollWorkerTypeAllowsSessions(sessionDialogWorkerType) ? (
             <div className="space-y-3 border-t pt-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="font-medium">{"פיצול משמרת"}</div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={sessionSplitParts.length >= Math.min(5, sessionWorkedMinutes(sessionDialogSourceSession))}
-                    onClick={() =>
-                      addSessionSplitPart(
-                        isExpenseBusinessDomain(sessionForm.business_domain) ? sessionForm.business_domain : "general_business",
-                        sessionWorkedMinutes(sessionDialogSourceSession)
-                      )
-                    }
-                  >
-                    {"הוספת חלק"}
-                  </Button>
-                  <Button type="button" size="sm" disabled={isPending || Boolean(sessionDialogSplitError)} onClick={() => splitSession()}>
-                    {"שמירת פיצול"}
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-3">
-                {sessionDialogSplitPreview.map((part, index) => {
-                  const isLast = index === sessionDialogSplitPreview.length - 1;
-                  return (
-                    <div key={part.id} className="rounded-xl border bg-background/70 p-3">
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-sm font-medium">{`חלק ${index + 1}`}</div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <span>{formatMinutes(part.minutes)}</span>
-                          {!isLast && sessionSplitParts.length > 2 ? (
+              <label className="flex cursor-pointer items-center gap-3">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-primary"
+                  checked={sessionSplitEnabled}
+                  onChange={(event) => toggleSessionSplit(event.target.checked)}
+                />
+                <span className="font-medium">{"פיצול המשמרת לחלקים"}</span>
+              </label>
+              {sessionSplitEnabled ? (
+                isMoneySplit ? (
+                /* ── Money-based split (session/contract workers) ──────────── */
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      {"חלקו את התשלום בין החלקים — לכל חלק סכום, שיוך, וחיוב לקוח נפרד."}
+                    </p>
+                    <span className="text-xs font-medium">
+                      {`סה״כ: ${formatCurrency(sessionSplitParts.reduce((sum, p) => sum + (Number(p.amount) || 0), 0))}`}
+                    </span>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={sessionSplitParts.length >= 5}
+                      onClick={() => addSessionSplitPart()}
+                    >
+                      {"הוספת חלק"}
+                    </Button>
+                  </div>
+                  <div className="space-y-3">
+                    {sessionSplitParts.map((part, index) => (
+                      <div key={part.id} className="space-y-3 rounded-xl border bg-background/70 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-sm font-medium">{`חלק ${index + 1}`}</div>
+                          {sessionSplitParts.length > 2 ? (
                             <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => removeSessionSplitPart(part.id)}>
                               {"הסרה"}
                             </Button>
                           ) : null}
                         </div>
-                      </div>
-                      <div className="flex flex-wrap items-end justify-end gap-2">
-                        {!isLast ? (
+                        <div className="flex flex-wrap items-end justify-end gap-2">
                           <label className="space-y-1 text-right">
-                            <span className="block text-xs text-muted-foreground">{"דקות"}</span>
-                            <Input
-                              type="number"
-                              min="1"
-                              className="h-9 w-24 text-right"
-                              value={sessionSplitParts[index]?.minutes ?? ""}
-                              onChange={(event) =>
-                                updateSessionSplitMinutes(part.id, event.target.value, sessionWorkedMinutes(sessionDialogSourceSession))
-                              }
+                            <span className="block text-xs text-muted-foreground">{"סכום לעובד"}</span>
+                            <CurrencyInput
+                              inputMode="decimal"
+                              className="h-9 w-32"
+                              value={part.amount}
+                              onChange={(event) => updateSessionSplitPart(part.id, { amount: event.target.value })}
                             />
                           </label>
-                        ) : (
-                          <div className="min-w-20 rounded-md border border-dashed px-3 py-2 text-center text-xs text-muted-foreground">
-                            {"יתרה"}
-                          </div>
-                        )}
-                        <label className="space-y-1 text-right">
-                          <span className="block text-xs text-muted-foreground">{"תחום"}</span>
-                          <DomainSelect
-                            domains={WORK_SESSION_BUSINESS_DOMAINS}
-                            className="w-40 text-right"
-                            value={sessionSplitParts[index]?.domain ?? "general_business"}
-                            onChange={(value) =>
-                              updateSessionSplitPart(part.id, { domain: value as ExpenseBusinessDomain })
+                          <label className="space-y-1 text-right">
+                            <span className="block text-xs text-muted-foreground">{"תחום"}</span>
+                            <DomainSelect
+                              domains={WORK_SESSION_BUSINESS_DOMAINS}
+                              className="w-40 text-right"
+                              value={part.domain}
+                              onChange={(value) => updateSessionSplitPart(part.id, { domain: value as ExpenseBusinessDomain })}
+                            />
+                          </label>
+                          {part.domain === "logistics_projects"
+                            ? renderCompactSessionLinkField(
+                                "פרויקט",
+                                part.projectId,
+                                (value) => updateSessionSplitPart(part.id, { projectId: value }),
+                                projectOptions
+                              )
+                            : null}
+                          {part.domain === "property_management"
+                            ? renderCompactSessionLinkField(
+                                "נכס",
+                                part.propertyId,
+                                (value) => updateSessionSplitPart(part.id, { propertyId: value }),
+                                propertyOptions
+                              )
+                            : null}
+                        </div>
+                        <label className="flex cursor-pointer items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-primary"
+                            checked={part.billToCustomer}
+                            onChange={(event) =>
+                              updateSessionSplitPart(part.id, {
+                                billToCustomer: event.target.checked,
+                                billAmount: event.target.checked ? part.billAmount : "",
+                              })
                             }
                           />
+                          <span>{"חיוב לקוח"}</span>
                         </label>
-                        {sessionSplitParts[index]?.domain === "logistics_projects"
-                          ? renderCompactSessionLinkField(
-                              "פרויקט",
-                              sessionSplitParts[index]?.projectId ?? "",
-                              (value) => updateSessionSplitPart(part.id, { projectId: value }),
-                              projectOptions
-                            )
-                          : null}
-                        {sessionSplitParts[index]?.domain === "property_management"
-                          ? renderCompactSessionLinkField(
-                              "נכס",
-                              sessionSplitParts[index]?.propertyId ?? "",
-                              (value) => updateSessionSplitPart(part.id, { propertyId: value }),
-                              propertyOptions
-                            )
-                          : null}
+                        {part.billToCustomer ? (
+                          <label className="space-y-1 text-right">
+                            <span className="block text-xs text-muted-foreground">{"סכום לחיוב לקוח"}</span>
+                            <CurrencyInput
+                              inputMode="decimal"
+                              className="h-9 w-32"
+                              value={part.billAmount}
+                              onChange={(event) => updateSessionSplitPart(part.id, { billAmount: event.target.value })}
+                            />
+                          </label>
+                        ) : null}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {sessionDialogSplitError ? <div className="text-sm text-destructive">{sessionDialogSplitError}</div> : null}
+                    ))}
+                  </div>
+                  {sessionDialogSplitError ? <div className="text-sm text-destructive">{sessionDialogSplitError}</div> : null}
+                </>
+                ) : (
+                /* ── Time-based split (hourly workers) ─────────────────────── */
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    {"כל חלק מתחיל בשעת היציאה של החלק הקודם. בחרו שעת יציאה לכל חלק — החלק האחרון נמשך עד סוף המשמרת."}
+                  </p>
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={sessionSplitParts.length >= 5}
+                      onClick={() => addSessionSplitPart()}
+                    >
+                      {"הוספת חלק"}
+                    </Button>
+                  </div>
+                  <div className="space-y-3">
+                    {sessionDialogSplitPreview.map((part, index) => {
+                      const isLast = part.isLast;
+                      return (
+                        <div key={part.id} className="rounded-xl border bg-background/70 p-3">
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-sm font-medium">{`חלק ${index + 1}`}</div>
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span>{formatMinutes(part.minutes)}</span>
+                              {!isLast && sessionSplitParts.length > 2 ? (
+                                <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => removeSessionSplitPart(part.id)}>
+                                  {"הסרה"}
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-end justify-end gap-2">
+                            <label className="space-y-1 text-right">
+                              <span className="block text-xs text-muted-foreground">{"כניסה"}</span>
+                              <div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">
+                                {splitTimeLabel(part.startLocal)}
+                              </div>
+                            </label>
+                            <label className="space-y-1 text-right">
+                              <span className="block text-xs text-muted-foreground">{"יציאה"}</span>
+                              {!isLast ? (
+                                <Input
+                                  type="datetime-local"
+                                  className="h-9 w-44 text-right"
+                                  min={part.startLocal || undefined}
+                                  max={sessionForm.clock_out || undefined}
+                                  value={sessionSplitParts[index]?.endTime ?? ""}
+                                  onChange={(event) => updateSessionSplitEndTime(part.id, event.target.value)}
+                                />
+                              ) : (
+                                <div className="flex h-9 min-w-24 items-center justify-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">
+                                  {`עד סוף המשמרת (${splitTimeLabel(sessionForm.clock_out)})`}
+                                </div>
+                              )}
+                            </label>
+                            <label className="space-y-1 text-right">
+                              <span className="block text-xs text-muted-foreground">{"תחום"}</span>
+                              <DomainSelect
+                                domains={WORK_SESSION_BUSINESS_DOMAINS}
+                                className="w-40 text-right"
+                                value={sessionSplitParts[index]?.domain ?? "general_business"}
+                                onChange={(value) =>
+                                  updateSessionSplitPart(part.id, { domain: value as ExpenseBusinessDomain })
+                                }
+                              />
+                            </label>
+                            {sessionSplitParts[index]?.domain === "logistics_projects"
+                              ? renderCompactSessionLinkField(
+                                  "פרויקט",
+                                  sessionSplitParts[index]?.projectId ?? "",
+                                  (value) => updateSessionSplitPart(part.id, { projectId: value }),
+                                  projectOptions
+                                )
+                              : null}
+                            {sessionSplitParts[index]?.domain === "property_management"
+                              ? renderCompactSessionLinkField(
+                                  "נכס",
+                                  sessionSplitParts[index]?.propertyId ?? "",
+                                  (value) => updateSessionSplitPart(part.id, { propertyId: value }),
+                                  propertyOptions
+                                )
+                              : null}
+                          </div>
+                          <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-primary"
+                              checked={sessionSplitParts[index]?.billToCustomer ?? false}
+                              onChange={(event) =>
+                                updateSessionSplitPart(part.id, {
+                                  billToCustomer: event.target.checked,
+                                  billAmount: event.target.checked ? sessionSplitParts[index]?.billAmount ?? "" : "",
+                                })
+                              }
+                            />
+                            <span>{"חיוב לקוח"}</span>
+                          </label>
+                          {sessionSplitParts[index]?.billToCustomer ? (
+                            <label className="mt-2 block space-y-1 text-right">
+                              <span className="block text-xs text-muted-foreground">{"סכום לחיוב לקוח"}</span>
+                              <CurrencyInput
+                                inputMode="decimal"
+                                className="h-9 w-32"
+                                value={sessionSplitParts[index]?.billAmount ?? ""}
+                                onChange={(event) => updateSessionSplitPart(part.id, { billAmount: event.target.value })}
+                              />
+                            </label>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {sessionDialogSplitError ? <div className="text-sm text-destructive">{sessionDialogSplitError}</div> : null}
+                </>
+                )
+              ) : null}
             </div>
           ) : null}
 
@@ -5328,7 +5602,10 @@ export default function SalaryCenterClient({
             <Button variant="outline" onClick={() => setSessionDialogOpen(false)} disabled={isPending}>
               {"ביטול"}
             </Button>
-            <Button onClick={() => saveSession()} disabled={isPending}>
+            <Button
+              onClick={() => saveSession()}
+              disabled={isPending || (sessionSplitEnabled && Boolean(sessionDialogSplitError))}
+            >
               {"שמירה"}
             </Button>
           </DialogFooter>

@@ -6,6 +6,9 @@ import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
 import { normalizePayrollWorkerType, payrollWorkerTypeAllowsSessions } from "@/lib/payroll-worker-type";
 import { addMinutes, minutesBetween, WORK_SESSIONS_TABLE } from "@/lib/payroll";
 
+// Self-service splitting is TIME-only: a shift is sliced into contiguous minute ranges.
+// Money splitting (an explicit cost / customer billing per part) is an admin-only action in the
+// payroll center — workers must not be able to set their own pay here.
 type SplitPartPayload = {
   minutes?: number | string | null;
   business_domain?: string | null;
@@ -68,6 +71,13 @@ export async function POST(req: Request) {
     if (!payrollWorkerTypeAllowsSessions(workerType)) {
       return NextResponse.json({ error: "Worker type does not use sessions." }, { status: 409 });
     }
+    // Contract/session workers are split by money, which is admin-only — block it on self-service.
+    if (workerType === "session_only") {
+      return NextResponse.json(
+        { error: "פיצול משמרת לפי סכום זמין רק במרכז השכר." },
+        { status: 403 }
+      );
+    }
 
     const { data: session, error: sessionError } = await supabase
       .from(WORK_SESSIONS_TABLE)
@@ -99,15 +109,11 @@ export async function POST(req: Request) {
 
     for (let index = 0; index < rawParts.length; index += 1) {
       const part = rawParts[index];
-      const businessDomain = isExpenseBusinessDomain(part.business_domain)
-        ? part.business_domain
-        : null;
+      const businessDomain = isExpenseBusinessDomain(part.business_domain) ? part.business_domain : null;
       const projectId =
         typeof part.project_id === "string" && part.project_id.trim() ? part.project_id.trim() : null;
       const propertyId =
-        typeof part.property_id === "string" && part.property_id.trim()
-          ? part.property_id.trim()
-          : null;
+        typeof part.property_id === "string" && part.property_id.trim() ? part.property_id.trim() : null;
 
       if (!businessDomain) {
         return NextResponse.json({ error: `תחום לא תקין בחלק ${index + 1}.` }, { status: 400 });
@@ -123,7 +129,6 @@ export async function POST(req: Request) {
       if (index === rawParts.length - 1) {
         minutes = totalMinutes - consumedMinutes;
       }
-
       if (!Number.isFinite(minutes) || minutes <= 0) {
         return NextResponse.json({ error: `משך לא תקין בחלק ${index + 1}.` }, { status: 400 });
       }

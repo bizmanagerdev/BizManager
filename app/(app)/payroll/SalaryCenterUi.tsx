@@ -158,16 +158,20 @@ export function SummaryCard({
   title,
   value,
   protectedValue = false,
+  loading = false,
 }: {
   title: string;
   value: string;
   protectedValue?: boolean;
+  loading?: boolean;
 }) {
   return (
     <Card>
       <CardContent className="space-y-1 py-4 text-center">
         <div className="text-sm text-muted-foreground">{title}</div>
-        <div className={`text-xl font-semibold ${protectedValue ? "tracking-tight" : ""}`}>{value}</div>
+        <div className={`text-xl font-semibold ${protectedValue ? "tracking-tight" : ""}`}>
+          {loading ? <LoadingDots /> : value}
+        </div>
       </CardContent>
     </Card>
   );
@@ -228,7 +232,12 @@ export function PaymentStatusBadge({
   status: string | null | undefined;
   owedAmount?: number | string | null;
 }) {
-  if (toNumber(owedAmount) <= 0.009) {
+  const owed = toNumber(owedAmount);
+  // Negative balance = the worker was paid ahead (advance / overpayment) → credit, not "paid".
+  if (owed < -0.009) {
+    return <StatusBadge value="overpaid" type="payment" />;
+  }
+  if (owed <= 0.009) {
     return <StatusBadge value="paid" type="payment" />;
   }
 
