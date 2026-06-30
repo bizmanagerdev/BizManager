@@ -785,9 +785,105 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
             <SummaryCard title="שכר נוכחי" value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `סוג שכר: ${getSalaryTypeLabel(currentAgreement.salary_type)}` : "אין משכורת פעילה"} />
             <SummaryCard title="תלוש אחרון" value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? `${latestPeriod.period_month} • ${getPayrollStatusLabel(latestPeriod.status)}` : "אין תלושים זמינים"} />
           </div>
-          <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
-            <Card><CardContent className="space-y-3 py-5"><div className="text-lg font-semibold">היסטוריית שכר</div>{agreements.length === 0 ? <div className="text-sm text-muted-foreground">אין היסטוריית שכר זמינה.</div> : agreements.map((agreement) => <div key={agreement.id} className="rounded-2xl border p-4 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><div className="font-medium">{getSalaryTypeLabel(agreement.salary_type)}</div><div className="text-base font-semibold">{agreement.salary_type === "hourly" ? `${formatCurrency(agreement.hourly_rate)} לשעה` : formatCurrency(agreement.monthly_salary)}</div></div><div className="mt-2 text-muted-foreground">בתוקף: {formatDate(agreement.valid_from)} - {formatDate(agreement.valid_to)}</div><div className="mt-1 text-muted-foreground">שעות תקן: {toNumber(agreement.standard_daily_hours)} | שעות נוספות: {agreement.overtime_rate ? formatCurrency(agreement.overtime_rate) : "-"}</div>{agreement.notes ? <div className="mt-2">{agreement.notes}</div> : null}</div>)}</CardContent></Card>
-            <Card><CardContent className="space-y-3 py-5"><div className="text-lg font-semibold">תלושי שכר</div>{payslips.length === 0 ? <div className="text-sm text-muted-foreground">אין תלושי שכר זמינים כרגע.</div> : payslips.map((payslip) => { const period = periodsById.get(payslip.payroll_period_id) ?? null; return <div key={payslip.id} className="rounded-2xl border p-4 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><div className="font-medium">{period?.period_month ?? "תקופת שכר"}</div><div className="text-base font-semibold">{formatCurrency(payslip.gross_salary)}</div></div><div className="mt-2 text-muted-foreground">שעות לחישוב: {formatMinutes(payslip.total_work_minutes)} | סוג: {getSalaryTypeLabel(payslip.calculated_salary_type)}</div><div className="mt-1 text-muted-foreground">שכר בסיס: {formatCurrency(payslip.calculated_base_salary)} | התאמות: {formatCurrency(payslip.manual_adjustments)}</div>{period ? <div className="mt-1 text-muted-foreground">סטטוס: {getPayrollStatusLabel(period.status)} | טווח: {formatDate(period.start_date)} - {formatDate(period.end_date)} | צפי תשלום: {getNextMonthDueText(period.end_date)}</div> : null}{payslip.notes ? <div className="mt-2">{payslip.notes}</div> : null}</div>; })}</CardContent></Card>
+          <div className="space-y-4">
+            <Card>
+              <CardContent className="space-y-3 py-5">
+                <div className="text-lg font-semibold">היסטוריית שכר</div>
+                {agreements.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">אין היסטוריית שכר זמינה.</div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border">
+                    <table className="w-full text-right text-sm">
+                      <thead className="border-b bg-muted text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">סוג</th>
+                          <th className="px-3 py-2 font-medium">בתוקף</th>
+                          <th className="px-3 py-2 font-medium">שכר</th>
+                          {showSessionTimingForProfile ? (
+                            <>
+                              <th className="px-3 py-2 font-medium">שעות תקן</th>
+                              <th className="px-3 py-2 font-medium">נוספות</th>
+                            </>
+                          ) : null}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {agreements.map((agreement, index) => (
+                          <tr key={agreement.id} className={`border-b align-top ${index % 2 === 0 ? "bg-muted/20" : "bg-background"}`}>
+                            <td className="px-3 py-2">
+                              <div className="font-medium">{getSalaryTypeLabel(agreement.salary_type)}</div>
+                              {agreement.notes ? <div className="mt-1 text-xs text-muted-foreground">{agreement.notes}</div> : null}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                              {formatDate(agreement.valid_from)} - {formatDate(agreement.valid_to)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2 font-semibold">
+                              {agreement.salary_type === "hourly" ? `${formatCurrency(agreement.hourly_rate)} לשעה` : formatCurrency(agreement.monthly_salary)}
+                            </td>
+                            {showSessionTimingForProfile ? (
+                              <>
+                                <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{toNumber(agreement.standard_daily_hours)}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{agreement.overtime_rate ? formatCurrency(agreement.overtime_rate) : "-"}</td>
+                              </>
+                            ) : null}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="space-y-3 py-5">
+                <div className="text-lg font-semibold">תלושי שכר</div>
+                {payslips.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">אין תלושי שכר זמינים כרגע.</div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border">
+                    <table className="w-full text-right text-sm">
+                      <thead className="border-b bg-muted text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">תקופה</th>
+                          <th className="px-3 py-2 font-medium">סוג</th>
+                          {showSessionTimingForProfile ? <th className="px-3 py-2 font-medium">שעות</th> : null}
+                          <th className="px-3 py-2 font-medium">שכר בסיס</th>
+                          <th className="px-3 py-2 font-medium">התאמות</th>
+                          <th className="px-3 py-2 font-medium">סכום</th>
+                          <th className="px-3 py-2 font-medium">סטטוס</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payslips.map((payslip, index) => {
+                          const period = periodsById.get(payslip.payroll_period_id) ?? null;
+                          return (
+                            <tr key={payslip.id} className={`border-b align-top ${index % 2 === 0 ? "bg-muted/20" : "bg-background"}`}>
+                              <td className="px-3 py-2">
+                                <div className="font-medium">{period?.period_month ?? "תקופת שכר"}</div>
+                                {period ? (
+                                  <div className="mt-1 text-xs text-muted-foreground">
+                                    {formatDate(period.start_date)} - {formatDate(period.end_date)} • צפי תשלום: {getNextMonthDueText(period.end_date)}
+                                  </div>
+                                ) : null}
+                                {payslip.notes ? <div className="mt-1 text-xs text-muted-foreground">{payslip.notes}</div> : null}
+                              </td>
+                              <td className="px-3 py-2 text-muted-foreground">{getSalaryTypeLabel(payslip.calculated_salary_type)}</td>
+                              {showSessionTimingForProfile ? (
+                                <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatMinutes(payslip.total_work_minutes)}</td>
+                              ) : null}
+                              <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatCurrency(payslip.calculated_base_salary)}</td>
+                              <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatCurrency(payslip.manual_adjustments)}</td>
+                              <td className="whitespace-nowrap px-3 py-2 font-semibold">{formatCurrency(payslip.gross_salary)}</td>
+                              <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{period ? getPayrollStatusLabel(period.status) : "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </section>
       ) : null}

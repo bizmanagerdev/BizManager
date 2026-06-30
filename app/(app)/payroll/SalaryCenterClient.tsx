@@ -143,6 +143,9 @@ const DEFAULT_AGREEMENT_FORM: AgreementFormState = {
   due_day_of_next_month: "10",
   valid_from: new Date().toISOString().slice(0, 10),
   notes: "",
+  business_domain: "general_business",
+  project_id: "",
+  property_id: "",
 };
 
 const DEFAULT_OVERRIDE_FORM: OverrideFormState = {
@@ -335,6 +338,20 @@ export default function SalaryCenterClient({
   const usersById = useMemo(() => new Map(publicUsers.map((user) => [user.id, user])), [publicUsers]);
   const projectLabelsById = useMemo(() => new Map(projectOptions.map((option) => [option.id, option.label])), [projectOptions]);
   const propertyLabelsById = useMemo(() => new Map(propertyOptions.map((option) => [option.id, option.label])), [propertyOptions]);
+  // Where a monthly salary is booked in the financial flow — a specific project /
+  // property when chosen, otherwise the domain label (e.g. "שוטף" for general).
+  // Hourly agreements derive their domain per session, so there's nothing fixed to show.
+  function agreementAttributionLabel(agreement: SalaryAgreementRow): string | null {
+    if (agreement.salary_type !== "monthly") return null;
+    const domain = agreement.business_domain ?? "general_business";
+    if (domain === "logistics_projects" && agreement.project_id) {
+      return projectLabelsById.get(agreement.project_id) ?? "פרויקט";
+    }
+    if (domain === "property_management" && agreement.property_id) {
+      return propertyLabelsById.get(agreement.property_id) ?? "נכס";
+    }
+    return getBusinessDomainLabel(domain);
+  }
   const protectedPeriods = protectedData?.periods ?? [];
   const periodsForUi = protectedPeriods.length > 0 ? protectedPeriods : publicPeriods;
   const periodsById = useMemo(() => new Map(periodsForUi.map((period) => [period.id, period])), [periodsForUi]);
@@ -998,6 +1015,9 @@ export default function SalaryCenterClient({
       due_day_of_next_month: currentAgreement?.due_day_of_next_month ? String(currentAgreement.due_day_of_next_month) : "10",
       valid_from: new Date().toISOString().slice(0, 10),
       notes: currentAgreement?.notes ?? "",
+      business_domain: currentAgreement?.business_domain ?? "general_business",
+      project_id: currentAgreement?.project_id ?? "",
+      property_id: currentAgreement?.property_id ?? "",
     });
     setAgreementDialogOpen(true);
   }
@@ -1014,6 +1034,9 @@ export default function SalaryCenterClient({
       due_day_of_next_month: agreement.due_day_of_next_month ? String(agreement.due_day_of_next_month) : "10",
       valid_from: agreement.valid_from,
       notes: agreement.notes ?? "",
+      business_domain: agreement.business_domain ?? "general_business",
+      project_id: agreement.project_id ?? "",
+      property_id: agreement.property_id ?? "",
     });
     setAgreementDialogOpen(true);
   }
@@ -3595,10 +3618,22 @@ export default function SalaryCenterClient({
                   </CardContent>
                 </Card>
 
-                <Tabs defaultValue={canManageSalary ? "finances" : "attendance"} dir="rtl">
+                <Tabs
+                  defaultValue={
+                    canManageSalary
+                      ? "finances"
+                      : selectedWorkerType === "monthly_payslip"
+                        ? "print"
+                        : "attendance"
+                  }
+                  dir="rtl"
+                >
                   <TabsList variant="underline" className="sm:justify-center">
                     {canManageSalary ? <TabsTrigger value="finances"><Coins className="h-4 w-4" />כספים</TabsTrigger> : null}
-                    <TabsTrigger value="attendance"><CalendarCheck className="h-4 w-4" />נוכחות</TabsTrigger>
+                    {/* Monthly (global) workers are paid a fixed salary and don't track attendance. */}
+                    {selectedWorkerType !== "monthly_payslip" ? (
+                      <TabsTrigger value="attendance"><CalendarCheck className="h-4 w-4" />נוכחות</TabsTrigger>
+                    ) : null}
                     {canSelectedWorkerHaveAgreement && canManageSalary ? (
                       <TabsTrigger value="salary"><Banknote className="h-4 w-4" />שכר</TabsTrigger>
                     ) : null}
@@ -3797,38 +3832,92 @@ export default function SalaryCenterClient({
 
                         <div className="space-y-3">
                           <div className="font-medium">{"היסטוריית משכורות"}</div>
-                            {(agreementsByUserId.get(selectedWorker.id) ?? []).map((agreement) => (
-                              <div
-                                key={agreement.id}
-                                className="grid gap-1 rounded-lg border px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-                              >
-                                <div className="min-w-0 text-right">
-                                  <div className="flex flex-wrap items-center justify-end gap-2">
-                                    <span className="font-medium">{getSalaryTypeLabel(agreement.salary_type)}</span>
-                                    {getCurrentSalaryAgreement(agreementsByUserId.get(selectedWorker.id) ?? [])?.id === agreement.id ? (
-                                      <Tag>{"נוכחי"}</Tag>
-                                    ) : null}
-                                    <span className="text-muted-foreground">
-                                      {`${formatDate(agreement.valid_from)} - ${formatDate(agreement.valid_to)}`}
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    {`שעות תקניות: ${agreement.standard_daily_hours ?? "0"} • נוספות: ${formatCurrency(agreement.overtime_rate)}`}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {`לתשלום עד יום ${agreement.due_day_of_next_month ?? 10} בחודש הבא`}
-                                  </div>
-                                  {agreement.notes ? (
-                                    <div className="mt-1 text-xs text-muted-foreground">{agreement.notes}</div>
-                                  ) : null}
-                                </div>
-                                <div className="text-right font-semibold">
-                                  {agreement.salary_type === "hourly"
-                                    ? `${formatCurrency(agreement.hourly_rate)} / שעה`
-                                    : formatCurrency(agreement.monthly_salary)}
-                                </div>
+                            {(agreementsByUserId.get(selectedWorker.id) ?? []).length === 0 ? (
+                              <div className="text-sm text-muted-foreground">{"אין משכורות לעובד הזה."}</div>
+                            ) : (
+                              <div className="overflow-x-auto rounded-lg border">
+                                <table className="w-full text-right text-sm">
+                                  <thead className="border-b bg-muted text-muted-foreground">
+                                    <tr>
+                                      <th className="px-3 py-2 font-medium">סוג</th>
+                                      <th className="px-3 py-2 font-medium">בתוקף</th>
+                                      <th className="px-3 py-2 font-medium">משויך ל</th>
+                                      <th className="px-3 py-2 font-medium">שכר</th>
+                                      <th className="px-3 py-2 font-medium">שעות תקניות</th>
+                                      <th className="px-3 py-2 font-medium">נוספות</th>
+                                      <th className="px-3 py-2 font-medium">תשלום</th>
+                                      <th className="px-3 py-2 font-medium">פעולות</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(agreementsByUserId.get(selectedWorker.id) ?? []).map((agreement, index) => {
+                                      const isCurrent =
+                                        getCurrentSalaryAgreement(agreementsByUserId.get(selectedWorker.id) ?? [])?.id === agreement.id;
+                                      const attribution = agreementAttributionLabel(agreement);
+                                      return (
+                                        <tr
+                                          key={agreement.id}
+                                          className={`border-b align-top ${index % 2 === 0 ? "bg-muted/20" : "bg-background"}`}
+                                        >
+                                          <td className="px-3 py-2">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                              <span className="font-medium">{getSalaryTypeLabel(agreement.salary_type)}</span>
+                                              {isCurrent ? <Tag>{"נוכחי"}</Tag> : null}
+                                            </div>
+                                            {agreement.notes ? (
+                                              <div className="mt-1 text-xs text-muted-foreground">{agreement.notes}</div>
+                                            ) : null}
+                                          </td>
+                                          <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                                            {`${formatDate(agreement.valid_from)} - ${formatDate(agreement.valid_to)}`}
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            {attribution ? <Tag>{attribution}</Tag> : <span className="text-muted-foreground">—</span>}
+                                          </td>
+                                          <td className="whitespace-nowrap px-3 py-2 font-semibold">
+                                            {agreement.salary_type === "hourly"
+                                              ? `${formatCurrency(agreement.hourly_rate)} / שעה`
+                                              : formatCurrency(agreement.monthly_salary)}
+                                          </td>
+                                          <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                                            {agreement.salary_type === "hourly"
+                                              ? (agreement.standard_daily_hours ?? "0")
+                                              : "—"}
+                                          </td>
+                                          <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                                            {agreement.salary_type === "hourly" ? formatCurrency(agreement.overtime_rate) : "—"}
+                                          </td>
+                                          <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
+                                            {`עד יום ${agreement.due_day_of_next_month ?? 10}`}
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <div className="flex gap-2">
+                                              <Button
+                                                variant="outline"
+                                                size="icon"
+                                                onClick={() => openEditAgreementDialog(agreement)}
+                                                aria-label="עריכה"
+                                                className={SOLID_EDIT_BUTTON_CLASS}
+                                              >
+                                                <Pencil className="h-4 w-4" />
+                                              </Button>
+                                              <Button
+                                                variant="destructive"
+                                                size="icon"
+                                                onClick={() => deleteAgreement(agreement)}
+                                                aria-label="מחיקה"
+                                              >
+                                                <Trash2 className="h-4 w-4" />
+                                              </Button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
                               </div>
-                            ))}
+                            )}
 
                           <div className="font-medium">{"החרגות שכר שעתי"}</div>
                           {selectedWorkerOverrides.length === 0 ? (
@@ -3862,25 +3951,60 @@ export default function SalaryCenterClient({
                           {(payslipsByUserId.get(selectedWorker.id) ?? []).length === 0 ? (
                             <div className="text-sm text-muted-foreground">{"אין תלושים לעובד הזה כרגע."}</div>
                           ) : (
-                            (payslipsByUserId.get(selectedWorker.id) ?? []).map((payslip) => {
-                              const period = periodsById.get(payslip.payroll_period_id);
-                              return (
-                                <div
-                                  key={payslip.id}
-                                  className="grid gap-1 rounded-lg border px-3 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-                                >
-                                  <div className="min-w-0 text-right">
-                                    <div className="font-medium">{period ? monthLabelFromKey(period.period_month) : "תקופה"}</div>
-                                    <div className="mt-1 text-xs text-muted-foreground">
-                                      {`${formatMinutes(payslip.total_work_minutes)} • ${getSalaryTypeLabel(
-                                        payslip.calculated_salary_type
-                                      )}`}
-                                    </div>
-                                  </div>
-                                  <div className="text-right font-semibold">{formatCurrency(payslip.gross_salary)}</div>
-                                </div>
-                              );
-                            })
+                            <div className="overflow-x-auto rounded-lg border">
+                              <table className="w-full text-right text-sm">
+                                <thead className="border-b bg-muted text-muted-foreground">
+                                  <tr>
+                                    <th className="px-3 py-2 font-medium">חודש</th>
+                                    <th className="px-3 py-2 font-medium">סוג</th>
+                                    <th className="px-3 py-2 font-medium">משויך ל</th>
+                                    <th className="px-3 py-2 font-medium">שעות</th>
+                                    <th className="px-3 py-2 font-medium">סכום</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(payslipsByUserId.get(selectedWorker.id) ?? []).map((payslip, index) => {
+                                    const period = periodsById.get(payslip.payroll_period_id);
+                                    const coveringAgreement = period
+                                      ? getCurrentSalaryAgreement(
+                                          agreementsByUserId.get(selectedWorker.id) ?? [],
+                                          new Date(`${period.end_date}T23:59:59.999`)
+                                        )
+                                      : null;
+                                    const payslipAttribution = coveringAgreement
+                                      ? agreementAttributionLabel(coveringAgreement)
+                                      : null;
+                                    const isMonthlyPayslip = payslip.calculated_salary_type === "monthly";
+                                    return (
+                                      <tr
+                                        key={payslip.id}
+                                        className={`border-b ${index % 2 === 0 ? "bg-muted/20" : "bg-background"}`}
+                                      >
+                                        <td className="whitespace-nowrap px-3 py-2 font-medium">
+                                          {period ? monthLabelFromKey(period.period_month) : "תקופה"}
+                                        </td>
+                                        <td className="px-3 py-2 text-muted-foreground">
+                                          {getSalaryTypeLabel(payslip.calculated_salary_type)}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          {payslipAttribution ? (
+                                            <Tag>{payslipAttribution}</Tag>
+                                          ) : (
+                                            <span className="text-muted-foreground">—</span>
+                                          )}
+                                        </td>
+                                        <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                                          {isMonthlyPayslip ? "—" : formatMinutes(payslip.total_work_minutes)}
+                                        </td>
+                                        <td className="whitespace-nowrap px-3 py-2 font-semibold">
+                                          {formatCurrency(payslip.gross_salary)}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
                           )}
 
                           {selectedPeriodId ? (
@@ -4203,6 +4327,63 @@ export default function SalaryCenterClient({
                 />
               </Field>
             )}
+            {agreementForm.salary_type === "monthly" ? (
+              <>
+                <Field label="תחום">
+                  <DomainSelect
+                    domains={WORK_SESSION_BUSINESS_DOMAINS}
+                    value={agreementForm.business_domain}
+                    onChange={(value) =>
+                      setAgreementForm((current) => ({
+                        ...current,
+                        business_domain: value,
+                        project_id: value === "logistics_projects" ? current.project_id : "",
+                        property_id: value === "property_management" ? current.property_id : "",
+                      }))
+                    }
+                  />
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    התחום שאליו תשויך המשכורת בתזרים הכספי.
+                  </div>
+                </Field>
+                {agreementForm.business_domain === "logistics_projects" ? (
+                  <Field label="פרויקט">
+                    <ProjectPicker
+                      value={agreementForm.project_id}
+                      onChange={(value) =>
+                        setAgreementForm((current) => ({ ...current, project_id: value }))
+                      }
+                      searchPlaceholder="חיפוש פרויקט..."
+                      projects={projectOptions.map((option) => ({ id: option.id, label: option.label }))}
+                    />
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      כל המשכורת החודשית תירשם כהוצאה על הפרויקט הזה.
+                    </div>
+                  </Field>
+                ) : null}
+                {agreementForm.business_domain === "property_management" ? (
+                  <Field label="נכס">
+                    <select
+                      value={agreementForm.property_id}
+                      onChange={(event) =>
+                        setAgreementForm((current) => ({ ...current, property_id: event.target.value }))
+                      }
+                      className={selectClassName}
+                    >
+                      <option value="">{"בחירה"}</option>
+                      {propertyOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      כל המשכורת החודשית תירשם כהוצאה על הנכס הזה.
+                    </div>
+                  </Field>
+                ) : null}
+              </>
+            ) : null}
             <Field label="תעריף שעות נוספות">
               <CurrencyInput
                 inputMode="decimal"

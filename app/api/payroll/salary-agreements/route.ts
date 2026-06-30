@@ -1,4 +1,5 @@
 import { toHebrewError } from "@/lib/error-messages";
+import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { recalculateUserSessionCostsFromRules } from "@/lib/payroll-center";
@@ -23,6 +24,9 @@ type SalaryAgreementPayload = {
   overtime_rate?: number | string | null;
   standard_daily_hours?: number | string | null;
   due_day_of_next_month?: number | string | null;
+  business_domain?: string | null;
+  project_id?: string | null;
+  property_id?: string | null;
 };
 
 function toNullableNumber(value: unknown) {
@@ -106,6 +110,24 @@ export async function POST(req: Request) {
     const standardDailyHours = toNullableNumber(body.standard_daily_hours);
     const dueDayOfNextMonth = toNullableInteger(body.due_day_of_next_month);
     const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;
+    // Domain drives where monthly (payslip) salary lands in the financial engine.
+    // Hourly agreements derive their domain from sessions, so we normalize to the
+    // default there.
+    const businessDomain =
+      salaryType === "monthly" && isExpenseBusinessDomain(body.business_domain)
+        ? body.business_domain
+        : "general_business";
+    // A specific project/property can be pinned only when the domain matches
+    // ("פרויקטים" → project, "ניהול נכסים" → property); the whole monthly salary
+    // is then booked as an expense on that project/property.
+    const projectId =
+      businessDomain === "logistics_projects" && typeof body.project_id === "string" && body.project_id.trim()
+        ? body.project_id.trim()
+        : null;
+    const propertyId =
+      businessDomain === "property_management" && typeof body.property_id === "string" && body.property_id.trim()
+        ? body.property_id.trim()
+        : null;
 
     if (action === "delete") {
       if (!agreementId || !userId) {
@@ -172,7 +194,7 @@ export async function POST(req: Request) {
     const agreementsResult = await supabase
       .from("salary_agreements")
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
       )
       .eq("user_id", userId)
       .order("valid_from", { ascending: false });
@@ -231,10 +253,13 @@ export async function POST(req: Request) {
           overtime_rate: overtimeRate,
           standard_daily_hours: standardDailyHours,
           due_day_of_next_month: dueDayOfNextMonth,
+          business_domain: businessDomain,
+          project_id: projectId,
+          property_id: propertyId,
         })
         .eq("id", agreementId)
         .select(
-          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
+          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
         )
         .maybeSingle();
 
@@ -245,7 +270,7 @@ export async function POST(req: Request) {
       const refreshedAgreementsResult = await supabase
         .from("salary_agreements")
         .select(
-          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
+          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
         )
         .eq("user_id", userId)
         .order("valid_from", { ascending: false });
@@ -260,7 +285,7 @@ export async function POST(req: Request) {
       const normalizedAgreementResult = await supabase
         .from("salary_agreements")
         .select(
-          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
+          "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
         )
         .eq("id", agreementId)
         .maybeSingle();
@@ -314,9 +339,12 @@ export async function POST(req: Request) {
         overtime_rate: overtimeRate,
         standard_daily_hours: standardDailyHours,
         due_day_of_next_month: dueDayOfNextMonth,
+        business_domain: businessDomain,
+        project_id: projectId,
+        property_id: propertyId,
       })
       .select(
-        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
+        "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
       )
       .maybeSingle();
 
@@ -332,7 +360,7 @@ export async function POST(req: Request) {
       ? await supabase
           .from("salary_agreements")
           .select(
-            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
+            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month,business_domain,project_id,property_id"
           )
           .eq("id", insertedAgreement.id)
           .maybeSingle()

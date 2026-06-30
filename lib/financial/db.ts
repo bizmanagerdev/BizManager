@@ -122,6 +122,8 @@ export async function scanWorkerPaymentRows(supabase: SupabaseClient, since?: st
 
 export async function scanWorkerDebtItemRows(supabase: SupabaseClient, since?: string | null) {
   const selectVariants = [
+    "source_type,source_id,user_id,project_id,source_date,due_date,period_month,owed_amount,payment_status,business_domain,property_id",
+    "source_type,source_id,user_id,project_id,source_date,due_date,period_month,owed_amount,payment_status,business_domain",
     "source_type,source_id,user_id,project_id,source_date,due_date,period_month,owed_amount,payment_status",
     "source_type,source_id,user_id,project_id,source_date,period_month,owed_amount,payment_status",
     "source_type,source_id,user_id,project_id,source_date,due_date,owed_amount,payment_status",
@@ -158,7 +160,9 @@ export async function scanWorkerDebtItemRows(supabase: SupabaseClient, since?: s
         isMissingColumnError(error, "project_id") ||
         isMissingColumnError(error, "due_date") ||
         isMissingColumnError(error, "period_month") ||
-        isMissingColumnError(error, "payment_status")
+        isMissingColumnError(error, "payment_status") ||
+        isMissingColumnError(error, "business_domain") ||
+        isMissingColumnError(error, "property_id")
       ) {
         continue;
       }

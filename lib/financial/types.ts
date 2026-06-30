@@ -121,6 +121,8 @@ export type WorkerDebtItemRow = {
   period_month: string | null;
   owed_amount: number | string | null;
   payment_status: string | null;
+  business_domain?: string | null;
+  property_id?: string | null;
 };
 
 export type AttendanceSessionFinanceRow = {

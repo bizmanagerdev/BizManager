@@ -15,6 +15,9 @@ function makeHourlyAgreement(overrides: Partial<SalaryAgreementRow> = {}): Salar
     valid_to: null,
     notes: null,
     due_day_of_next_month: 10,
+    business_domain: "general_business",
+    project_id: null,
+    property_id: null,
     ...overrides,
   };
 }
@@ -32,6 +35,9 @@ function makeMonthlyAgreement(overrides: Partial<SalaryAgreementRow> = {}): Sala
     valid_to: null,
     notes: null,
     due_day_of_next_month: 10,
+    business_domain: "general_business",
+    project_id: null,
+    property_id: null,
     ...overrides,
   };
 }

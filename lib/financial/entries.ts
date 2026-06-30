@@ -1005,8 +1005,14 @@ export function buildWorkerOwedEntries(args: {
         ? sessionsById.get(item.source_id) ?? null
         : null;
     const projectId = item.project_id ?? session?.project_id ?? null;
-    const propertyId = session?.property_id ?? null;
-    const businessDomain = session?.business_domain ? normalizeDomain(session.business_domain) : "general_business";
+    const propertyId = session?.property_id ?? item.property_id ?? null;
+    // Hourly sessions carry their own domain; payslip (monthly) debt has no
+    // session, so fall back to the domain on the worker's salary agreement.
+    const businessDomain = session?.business_domain
+      ? normalizeDomain(session.business_domain)
+      : item.business_domain
+        ? normalizeDomain(item.business_domain)
+        : "general_business";
     const linkedProject = projectId ? projectsById.get(projectId) ?? null : null;
     const linkedProperty = propertyId ? propertiesById.get(propertyId) ?? null : null;
     const propertyCustomers = propertyId ? propertyCustomersById.get(propertyId) ?? null : null;

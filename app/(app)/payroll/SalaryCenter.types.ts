@@ -84,6 +84,9 @@ export type AgreementFormState = {
   due_day_of_next_month: string;
   valid_from: string;
   notes: string;
+  business_domain: string;
+  project_id: string;
+  property_id: string;
 };
 
 export type OverrideFormState = {
