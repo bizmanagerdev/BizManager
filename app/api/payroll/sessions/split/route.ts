@@ -29,7 +29,8 @@ type SplitSessionPayload = {
   parts?: SplitPartPayload[];
   // Optional: pay the (contractor) split shift in the SAME request. Done atomically — if the
   // payment fails, the split is rolled back so you never end up split-but-unpaid.
-  payment?: { mark_paid?: boolean; amount?: number | string | null };
+  // account_id records which bank/cash account the money left from (see accounts layer).
+  payment?: { mark_paid?: boolean; amount?: number | string | null; account_id?: string | null };
 };
 
 type NormalizedPart = {
@@ -359,6 +360,10 @@ export async function POST(req: Request) {
       const total = allocationRows.reduce((sum, allocation) => sum + allocation.amount, 0);
       if (total > 0.009) {
         const paymentDateSource = originalSession.clock_out || originalSession.clock_in;
+        const paymentAccountId =
+          typeof body.payment.account_id === "string" && body.payment.account_id.trim()
+            ? body.payment.account_id.trim()
+            : null;
         const paymentInsert = await supabase
           .from("worker_payments")
           .insert({
@@ -368,7 +373,7 @@ export async function POST(req: Request) {
             payment_method: null,
             reference_number: null,
             notes: "תשלום שסומן מתוך פיצול משמרת",
-            account_id: null,
+            account_id: paymentAccountId,
             recorded_by: profile.id,
           })
           .select("id")

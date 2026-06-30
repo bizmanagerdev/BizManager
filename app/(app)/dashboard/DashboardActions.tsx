@@ -16,6 +16,9 @@ import {
   ShoppingCart,
   UserPlus,
 } from "lucide-react";
+import SessionEditorDialog from "@/app/(app)/payroll/SessionEditorDialog";
+import type { SessionFormState } from "@/app/(app)/payroll/SalaryCenter.types";
+import type { SalaryCenterProjectOption, SalaryCenterUserRow } from "@/lib/payroll-center";
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
 import NewProjectClient, { mapProjectCustomer, type ProjectCustomerOption } from "@/app/(app)/projects/NewProjectClient";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
@@ -247,26 +250,15 @@ export default function DashboardActions({
   const [incomeExistingAttachments, setIncomeExistingAttachments] = useState<FinancialAttachment[]>([]);
   const [incomeTagIds, setIncomeTagIds] = useState<string[]>([]);
   const [selfSessionSubmitting, setSelfSessionSubmitting] = useState(false);
-  const [manualSessionSubmitting, setManualSessionSubmitting] = useState(false);
+  // Salary-unlock context for the shared <SessionEditorDialog/> (price + mark-paid sit
+  // behind <SalaryProtected/>, same as the payroll workers page). Managers can unlock.
+  const [salaryUnlocked, setSalaryUnlocked] = useState(false);
   const today = useMemo(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), now.getDate());
   }, []);
   const weekStart = useMemo(() => startOfWeek(today), [today]);
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
-  const [manualSessionError, setManualSessionError] = useState<string | null>(null);
-  const [manualSessionUserId, setManualSessionUserId] = useState("");
-  const [manualSessionDomain, setManualSessionDomain] = useState<ExpenseBusinessDomain | "">("");
-  const [manualSessionProjectId, setManualSessionProjectId] = useState("");
-  const [manualSessionPropertyId, setManualSessionPropertyId] = useState("");
-  const [manualSessionNotes, setManualSessionNotes] = useState("");
-  const [manualSessionClockIn, setManualSessionClockIn] = useState(nowLocal(-60));
-  const [manualSessionClockOut, setManualSessionClockOut] = useState(nowLocal());
-  const [manualSessionLaborCost, setManualSessionLaborCost] = useState("");
-  const [manualSessionPaymentChoice, setManualSessionPaymentChoice] = useState<PaymentChoice>("none");
-  const [manualSessionPaidAmount, setManualSessionPaidAmount] = useState("");
-  const [manualSessionBilledToCustomer, setManualSessionBilledToCustomer] = useState(false);
-  const [manualSessionBillToCustomerAmount, setManualSessionBillToCustomerAmount] = useState("");
 
   // ── Worker payment (pay an hourly / monthly / contract worker) ──────────────
   // Unlike the session flows above, this records a direct worker payment and
@@ -365,65 +357,64 @@ export default function DashboardActions({
     () => workerPaymentDebtItems.reduce((sum, item) => sum + Math.max(0, toNumber(item.owed_amount)), 0),
     [workerPaymentDebtItems]
   );
-  const manualSessionTargetId = canManageWorkerSessions ? manualSessionUserId : currentUserId ?? "";
-  const selectedManualSessionWorkerType = useMemo<PayrollWorkerType | null>(() => {
-    if (!manualSessionTargetId) return null;
-    return availableUsers.find((u) => u.id === manualSessionTargetId)?.payroll_worker_type ?? null;
-  }, [availableUsers, manualSessionTargetId]);
-  const showManualSessionTimingFields = shouldShowSessionHours(selectedManualSessionWorkerType);
-  const showManualSessionPriceField = shouldShowSessionPrice(selectedManualSessionWorkerType);
-  const manualSessionDateOnly = useMemo(() => {
-    const match = /^(\d{4}-\d{2}-\d{2})/.exec(manualSessionClockIn);
-    return match ? match[1] : new Date().toISOString().slice(0, 10);
-  }, [manualSessionClockIn]);
-  const manualSessionDuration = useMemo(
-    () => durationHours(manualSessionClockIn, manualSessionClockOut),
-    [manualSessionClockIn, manualSessionClockOut]
+  // ── Shared <SessionEditorDialog/> data (manual "add shift" quick action) ─────
+  // Map the dashboard's lighter data shapes into the shapes the shared payroll
+  // dialog expects (it owns all the session/split/payment behaviour internally).
+  const sessionEditorWorkers = useMemo<SalaryCenterUserRow[]>(
+    () =>
+      availableUsers.map((user) => ({
+        id: user.id,
+        full_name: user.label,
+        email: null,
+        phone: null,
+        role: user.role ?? null,
+        active: true,
+        system_access: true,
+        payroll_worker_type: user.payroll_worker_type ?? null,
+        pay_tracking_mode: (user.pay_tracking_mode as "session" | "payslip" | null) ?? null,
+      })),
+    [availableUsers]
   );
-  const manualSessionWorkedMinutes = useMemo(() => {
-    const start = new Date(manualSessionClockIn).getTime();
-    const end = new Date(manualSessionClockOut).getTime();
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
-    return Math.round((end - start) / 60000);
-  }, [manualSessionClockIn, manualSessionClockOut]);
-  const activeManualSessionAgreement = useMemo(() => {
-    if (!manualSessionTargetId) return null;
-    const referenceDate = toIso(manualSessionClockIn);
-    if (!referenceDate) return null;
-    return getActiveSalaryAgreementForDate(
-      salaryAgreements.filter((agreement) => agreement.user_id === manualSessionTargetId),
-      new Date(referenceDate)
-    );
-  }, [manualSessionClockIn, manualSessionTargetId, salaryAgreements]);
-  const suggestedManualSessionAmount = useMemo(() => {
-    if (manualSessionLaborCost.trim()) {
-      const parsed = Number(manualSessionLaborCost);
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-    }
-    if (manualSessionWorkedMinutes <= 0) return null;
-    return calculateSessionLaborCost(activeManualSessionAgreement, manualSessionWorkedMinutes);
-  }, [activeManualSessionAgreement, manualSessionLaborCost, manualSessionWorkedMinutes]);
-
-  useEffect(() => {
-    if (!canManageWorkerSessions || manualSessionPaymentChoice === "none" || suggestedManualSessionAmount === null) return;
-    setManualSessionPaidAmount((current) => {
-      if (manualSessionPaymentChoice === "paid") {
-        return String(Number(suggestedManualSessionAmount.toFixed(2)));
-      }
-      return current.trim()
-        ? current
-        : String(Number(suggestedManualSessionAmount.toFixed(2)));
+  const sessionEditorProjectOptions = useMemo<SalaryCenterProjectOption[]>(
+    () => projects.map((project) => ({ id: project.id, label: project.name })),
+    [projects]
+  );
+  const sessionEditorPropertyOptions = useMemo<SalaryCenterProjectOption[]>(
+    () => properties.map((property) => ({ id: property.id, label: property.name })),
+    [properties]
+  );
+  const sessionEditorAgreementsByUserId = useMemo(() => {
+    const next = new Map<string, SalaryAgreementRow[]>();
+    salaryAgreements.forEach((agreement) => {
+      const list = next.get(agreement.user_id) ?? [];
+      list.push(agreement);
+      next.set(agreement.user_id, list);
     });
-  }, [canManageWorkerSessions, manualSessionPaymentChoice, suggestedManualSessionAmount]);
-
-  useEffect(() => {
-    if (selectedManualSessionWorkerType !== "session_only") return;
-    const normIn = `${manualSessionDateOnly}T09:00`;
-    const normOut = `${manualSessionDateOnly}T10:00`;
-    if (manualSessionClockIn !== normIn) setManualSessionClockIn(normIn);
-    if (manualSessionClockOut !== normOut) setManualSessionClockOut(normOut);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedManualSessionWorkerType]);
+    return next;
+  }, [salaryAgreements]);
+  const sessionEditorInitialForm = useMemo<SessionFormState>(
+    () => ({
+      session_id: "",
+      user_id: canManageWorkerSessions ? "" : currentUserId ?? "",
+      business_domain: "general_business",
+      project_id: "",
+      property_id: "",
+      notes: "",
+      clock_in: nowLocal(-60),
+      clock_out: nowLocal(),
+      labor_cost: "",
+      original_user_id: "",
+      original_clock_in: "",
+      original_clock_out: "",
+      original_labor_cost: "",
+      is_billable_to_customer: false,
+      bill_to_customer_amount: "",
+      billing_status: "not_billable",
+      mark_paid_now: false,
+      paid_amount_now: "",
+    }),
+    [canManageWorkerSessions, currentUserId]
+  );
 
   const finalExpenseCategory =
     expenseCategory === OTHER_EXPENSE_CATEGORY ? expenseCategoryOther.trim() : expenseCategory.trim();
@@ -556,22 +547,6 @@ export default function DashboardActions({
     setIncomeAttachmentFiles([]);
     setIncomeExistingAttachments([]);
     setIncomeTagIds([]);
-  }
-
-  function resetManualSessionForm() {
-    setManualSessionError(null);
-    setManualSessionUserId(canManageWorkerSessions ? "" : currentUserId ?? "");
-    setManualSessionDomain("");
-    setManualSessionProjectId("");
-    setManualSessionPropertyId("");
-    setManualSessionNotes("");
-    setManualSessionClockIn(nowLocal(-60));
-    setManualSessionClockOut(nowLocal());
-    setManualSessionLaborCost("");
-    setManualSessionPaymentChoice("none");
-    setManualSessionPaidAmount("");
-    setManualSessionBilledToCustomer(false);
-    setManualSessionBillToCustomerAmount("");
   }
 
   async function createExpense() {
@@ -1003,12 +978,6 @@ export default function DashboardActions({
     }
   }
 
-  function validateSessionDomain(domain: ExpenseBusinessDomain, projectId: string, propertyId: string) {
-    if (domain === "logistics_projects" && !projectId) return HEBREW.sessionInvalidProject;
-    if (domain === "property_management" && !propertyId) return HEBREW.sessionInvalidProperty;
-    return "";
-  }
-
   // "Open shift" is a self-service action — only show it to workers whose pay
   // type actually tracks sessions (קבלנות / שעתי), not monthly-payslip or staff
   // with no worker type.
@@ -1044,148 +1013,6 @@ export default function DashboardActions({
       });
     } finally {
       setSelfSessionSubmitting(false);
-    }
-  }
-
-  async function saveManualSession() {
-    setManualSessionError(null);
-    if (!manualSessionTargetId) {
-      setManualSessionError(HEBREW.sessionInvalidWorker);
-      return;
-    }
-    if (!manualSessionDomain) {
-      setManualSessionError("יש לבחור תחום.");
-      return;
-    }
-    const domainError = validateSessionDomain(
-      manualSessionDomain,
-      manualSessionProjectId,
-      manualSessionPropertyId
-    );
-    if (domainError) {
-      setManualSessionError(domainError);
-      return;
-    }
-
-    const clockInIso = toIso(manualSessionClockIn);
-    const clockOutIso = toIso(manualSessionClockOut);
-    if (!clockInIso || !clockOutIso || new Date(clockOutIso) <= new Date(clockInIso)) {
-      setManualSessionError(HEBREW.sessionInvalidTimes);
-      return;
-    }
-    const laborCostNumber =
-      manualSessionLaborCost.trim() === ""
-        ? null
-        : Number(manualSessionLaborCost);
-    if (
-      manualSessionLaborCost.trim() !== "" &&
-      (laborCostNumber === null || !Number.isFinite(laborCostNumber) || laborCostNumber <= 0)
-    ) {
-      setManualSessionError("יש להזין עלות עבודה תקינה.");
-      return;
-    }
-    const paidAmountNumber =
-      manualSessionPaymentChoice === "none" || !manualSessionPaidAmount.trim()
-        ? suggestedManualSessionAmount
-        : Number(manualSessionPaidAmount);
-    if (
-      canManageWorkerSessions &&
-      manualSessionPaymentChoice !== "none" &&
-      (!Number.isFinite(paidAmountNumber) || paidAmountNumber === null || paidAmountNumber <= 0)
-    ) {
-      setManualSessionError("יש להזין סכום ששולם לעובד.");
-      return;
-    }
-    const billToCustomer = manualSessionDomain === "logistics_projects" && manualSessionBilledToCustomer;
-    const billToCustomerAmountNumber =
-      !billToCustomer || !manualSessionBillToCustomerAmount.trim()
-        ? null
-        : Number(manualSessionBillToCustomerAmount);
-    if (
-      billToCustomer &&
-      (!Number.isFinite(billToCustomerAmountNumber) ||
-        billToCustomerAmountNumber === null ||
-        billToCustomerAmountNumber <= 0)
-    ) {
-      setManualSessionError("יש להזין סכום לחיוב לקוח.");
-      return;
-    }
-
-    setManualSessionSubmitting(true);
-    try {
-      const endpoint = canManageWorkerSessions ? "/api/payroll/sessions/create" : "/api/profile/session/create";
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          user_id: manualSessionTargetId,
-          business_domain: manualSessionDomain,
-          project_id: manualSessionDomain === "logistics_projects" ? manualSessionProjectId : null,
-          property_id: manualSessionDomain === "property_management" ? manualSessionPropertyId : null,
-          notes: manualSessionNotes.trim() || null,
-          clock_in: clockInIso,
-          clock_out: clockOutIso,
-          labor_cost: laborCostNumber,
-          is_billable_to_customer: billToCustomer,
-          bill_to_customer_amount: billToCustomer ? billToCustomerAmountNumber : null,
-          billing_status: billToCustomer ? "billable" : "not_billable",
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string; session?: { id?: string; user_id?: string; clock_in?: string; clock_out?: string; labor_cost?: number | string | null } };
-      if (!res.ok || !json.session) {
-        setManualSessionError(toHebrewError(json.error, HEBREW.manualSessionFailed));
-        return;
-      }
-
-      if (
-        canManageWorkerSessions &&
-        manualSessionPaymentChoice !== "none" &&
-        json.session.id &&
-        json.session.user_id &&
-        Number.isFinite(paidAmountNumber) &&
-        paidAmountNumber !== null &&
-        paidAmountNumber > 0
-      ) {
-        const paymentDateSource = json.session.clock_out || json.session.clock_in || new Date().toISOString();
-        await fetch("/api/payroll/worker-payments", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            user_id: json.session.user_id,
-            payment_date: paymentDateSource.slice(0, 10),
-            amount: paidAmountNumber,
-            payment_method: null,
-            account_id: expenseWorkerAccountId || null,
-            reference_number: null,
-            notes: `תשלום שסומן מתוך הדשבורד עבור משמרת ${paymentDateSource.slice(0, 10)}`,
-            allocations: [
-              {
-                source_type: "session",
-                source_id: json.session.id,
-                amount: paidAmountNumber,
-              },
-            ],
-          }),
-        }).then(async (response) => {
-          const paymentJson = (await response.json().catch(() => ({}))) as { error?: string };
-          if (!response.ok) {
-            throw new Error(toHebrewError(paymentJson.error, "שמירת התשלום נכשלה."));
-          }
-        });
-      }
-
-      setManualSessionOpen(false);
-      resetManualSessionForm();
-      router.refresh();
-      toast.success(
-        canManageWorkerSessions && manualSessionPaymentChoice !== "none"
-          ? "המשמרת נשמרה והתשלום נרשם."
-          : HEBREW.manualSessionSaved
-      );
-    } catch (error: unknown) {
-      setManualSessionError(toHebrewError(error, HEBREW.saveErrorUnknown));
-    } finally {
-      setManualSessionSubmitting(false);
     }
   }
 
@@ -1418,18 +1245,17 @@ export default function DashboardActions({
           </Button>
         ) : null}
 
-        <Button
-          type="button"
-          variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
-          onClick={() => {
-            resetManualSessionForm();
-            setManualSessionOpen(true);
-          }}
-        >
-          <Clock3 className="!h-9 !w-9" strokeWidth={2.2} />
-          <span className="font-semibold">{HEBREW.manualSessionNew}</span>
-        </Button>
+        {canManageWorkerSessions ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+            onClick={() => setManualSessionOpen(true)}
+          >
+            <Clock3 className="!h-9 !w-9" strokeWidth={2.2} />
+            <span className="font-semibold">{HEBREW.manualSessionNew}</span>
+          </Button>
+        ) : null}
 
         {canManageWorkerSessions ? (
           <Button
@@ -1547,263 +1373,24 @@ export default function DashboardActions({
         </AdaptiveDialog>
       </Dialog>
 
-      <Dialog
+      <SessionEditorDialog
         open={manualSessionOpen}
-        onOpenChange={(open) => {
-          if (!open && manualSessionSubmitting) return;
-          setManualSessionOpen(open);
-          if (!open) resetManualSessionForm();
+        onOpenChange={setManualSessionOpen}
+        mode="create"
+        initialForm={sessionEditorInitialForm}
+        workers={sessionEditorWorkers}
+        projectOptions={sessionEditorProjectOptions}
+        propertyOptions={sessionEditorPropertyOptions}
+        agreementsByUserId={sessionEditorAgreementsByUserId}
+        salaryUnlocked={salaryUnlocked}
+        hasPasswordConfigured={false}
+        canViewSalary={canManageWorkerSessions}
+        onUnlockSuccess={() => setSalaryUnlocked(true)}
+        onSaved={(msg) => {
+          router.refresh();
+          toast.success(msg);
         }}
-      >
-        <AdaptiveDialog size="form2xl">
-          <DialogHeader className="text-right">
-            <DialogTitle>{"הוספת משמרת"}</DialogTitle>
-            <DialogDescription>{HEBREW.manualSessionDescription}</DialogDescription>
-          </DialogHeader>
-
-          <fieldset disabled={manualSessionSubmitting} className="contents">
-            <div className="grid gap-3 md:grid-cols-2">
-              {canManageWorkerSessions ? (
-                <label className="space-y-2 text-right text-sm">
-                  <span className="font-medium">{HEBREW.worker}</span>
-                  <select
-                    className={`${fieldClass} text-right`}
-                    value={manualSessionUserId}
-                    onChange={(e) => setManualSessionUserId(e.target.value)}
-                  >
-                    <option value="">{HEBREW.selectWorker}</option>
-                    {workerUsers.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
-              <label className="space-y-2 text-right text-sm">
-                <span className="font-medium">{HEBREW.domain} *</span>
-                <DomainSelect
-                  className="text-right"
-                  value={manualSessionDomain}
-                  onChange={(next) => {
-                    const nextDomain = next as ExpenseBusinessDomain | "";
-                    setManualSessionDomain(nextDomain);
-                    if (nextDomain !== "logistics_projects") setManualSessionProjectId("");
-                    if (nextDomain !== "property_management") setManualSessionPropertyId("");
-                  }}
-                />
-              </label>
-
-              {manualSessionDomain === "logistics_projects" ? (
-                <label className="space-y-2 text-right text-sm">
-                  <span className="font-medium">{HEBREW.project}</span>
-                  <ProjectPicker
-                    projects={projectPickerOptions}
-                    value={manualSessionProjectId}
-                    onChange={(newId) => {
-                      setManualSessionProjectId(newId);
-                      if (newId) {
-                        const startDate = normalizeDateOnly(projectById.get(newId)?.startDate);
-                        if (startDate) {
-                          const inTime = manualSessionClockIn.includes("T") ? manualSessionClockIn.split("T")[1] : "08:00";
-                          const outTime = manualSessionClockOut.includes("T") ? manualSessionClockOut.split("T")[1] : "09:00";
-                          setManualSessionClockIn(`${startDate}T${inTime}`);
-                          setManualSessionClockOut(`${startDate}T${outTime}`);
-                        }
-                      }
-                    }}
-                    emptyLabel={HEBREW.selectProject}
-                  />
-                </label>
-              ) : null}
-
-              {manualSessionDomain === "property_management" ? (
-                <label className="space-y-2 text-right text-sm">
-                  <span className="font-medium">נכס *</span>
-                  <select
-                    className={`${fieldClass} text-right`}
-                    value={manualSessionPropertyId}
-                    onChange={(e) => setManualSessionPropertyId(e.target.value)}
-                  >
-                    <option value="">בחרו נכס</option>
-                    {properties.map((property) => (
-                      <option key={property.id} value={property.id}>
-                        {property.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
-              {manualSessionDomain ? (
-                <>
-              {showManualSessionTimingFields ? (
-                <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
-                  <label className="space-y-2 text-right text-sm">
-                    <span className="font-medium">כניסה</span>
-                    <DateTimeInput
-                      value={manualSessionClockIn}
-                      onChange={(e) => setManualSessionClockIn(e.target.value)}
-                    />
-                  </label>
-
-                  <label className="space-y-2 text-right text-sm">
-                    <span className="font-medium">סה״כ שעות</span>
-                    <Input
-                      inputMode="decimal"
-                      value={manualSessionDuration}
-                      onChange={(e) => {
-                        const nextValue = e.target.value;
-                        if (!nextValue.trim()) {
-                          setManualSessionClockOut("");
-                          return;
-                        }
-                        const parsedHours = Number(nextValue);
-                        const clockInIso = toIso(manualSessionClockIn);
-                        if (!Number.isFinite(parsedHours) || parsedHours <= 0 || !clockInIso) return;
-                        const nextClockOut = new Date(new Date(clockInIso).getTime() + parsedHours * 60 * 60 * 1000);
-                        if (Number.isNaN(nextClockOut.getTime())) return;
-                        const pad = (n: number) => String(n).padStart(2, "0");
-                        setManualSessionClockOut(
-                          `${nextClockOut.getFullYear()}-${pad(nextClockOut.getMonth() + 1)}-${pad(nextClockOut.getDate())}T${pad(nextClockOut.getHours())}:${pad(nextClockOut.getMinutes())}`
-                        );
-                      }}
-                      placeholder="למשל 8"
-                    />
-                  </label>
-
-                  <label className="space-y-2 text-right text-sm">
-                    <span className="font-medium">יציאה</span>
-                    <DateTimeInput
-                      value={manualSessionClockOut}
-                      onChange={(e) => setManualSessionClockOut(e.target.value)}
-                    />
-                  </label>
-                </div>
-              ) : (
-                <label className="space-y-2 text-right text-sm md:col-span-2">
-                  <span className="font-medium">תאריך</span>
-                  <DateInput
-                    value={manualSessionDateOnly}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      if (!next) return;
-                      setManualSessionClockIn(`${next}T09:00`);
-                      setManualSessionClockOut(`${next}T10:00`);
-                    }}
-                  />
-                </label>
-              )}
-
-              {showManualSessionPriceField ? (
-                <label className="space-y-2 text-right text-sm">
-                  <span className="font-medium">מחיר</span>
-                  <CurrencyInput
-                    value={manualSessionLaborCost}
-                    onChange={(e) => setManualSessionLaborCost(e.target.value)}
-                    placeholder="אופציונלי"
-                  />
-                  <span className="block text-xs text-muted-foreground">
-                    {suggestedManualSessionAmount !== null
-                      ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedManualSessionAmount)}`
-                      : "הסכום שמגיע לעובד יוצג כאן אחרי הזנת שעות תקינות או עלות עבודה."}
-                  </span>
-                </label>
-              ) : (
-                <div className="text-xs text-muted-foreground md:col-span-2">
-                  {suggestedManualSessionAmount !== null
-                    ? `סה״כ לתשלום עבור המשמרת (חישוב אוטומטי): ${formatIls(suggestedManualSessionAmount)}`
-                    : "העלות תחושב אוטומטית לפי הסכם השכר לאחר שמירה."}
-                </div>
-              )}
-
-              {canManageWorkerSessions ? (
-                <>
-                  <label className="space-y-2 text-right text-sm">
-                    <span className="font-medium">שולם עכשיו</span>
-                    <select
-                      className={`${fieldClass} text-right`}
-                      value={manualSessionPaymentChoice === "none" ? "no" : "yes"}
-                      onChange={(e) => {
-                        if (e.target.value === "no") {
-                          setManualSessionPaymentChoice("none");
-                          setManualSessionPaidAmount("");
-                          return;
-                        }
-                        setManualSessionPaymentChoice("partial");
-                      }}
-                    >
-                      <option value="no">לא</option>
-                      <option value="yes">כן</option>
-                    </select>
-                  </label>
-
-                  {manualSessionPaymentChoice !== "none" ? (
-                    <label className="space-y-2 text-right text-sm">
-                      <span className="font-medium">כמה שולם</span>
-                      <CurrencyInput
-                        value={manualSessionPaidAmount}
-                        onChange={(e) => setManualSessionPaidAmount(e.target.value)}
-                        placeholder="אם ריק, יירשם מלוא סכום המשמרת"
-                      />
-                    </label>
-                  ) : null}
-                </>
-              ) : null}
-
-              {manualSessionDomain === "logistics_projects" ? (
-                <section className="space-y-3 rounded-xl border bg-muted/30 p-4 md:col-span-2">
-                  <h4 className="text-sm font-semibold">חיוב הלקוח</h4>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={manualSessionBilledToCustomer}
-                      onChange={(e) => {
-                        setManualSessionBilledToCustomer(e.target.checked);
-                        if (!e.target.checked) setManualSessionBillToCustomerAmount("");
-                      }}
-                    />
-                    <span>{HEBREW.billedToCustomer}</span>
-                  </label>
-                  {manualSessionBilledToCustomer ? (
-                    <label className="space-y-2 text-sm block">
-                      <span>סכום לחיוב לקוח</span>
-                      <CurrencyInput
-                        value={manualSessionBillToCustomerAmount}
-                        onChange={(e) => setManualSessionBillToCustomerAmount(e.target.value)}
-                        placeholder="למשל 650"
-                      />
-                    </label>
-                  ) : null}
-                </section>
-              ) : null}
-
-              <label className="space-y-2 text-right text-sm md:col-span-2">
-                <span className="font-medium">{HEBREW.notes}</span>
-                <Textarea
-                  value={manualSessionNotes}
-                  onChange={(e) => setManualSessionNotes(e.target.value)}
-                  placeholder="הערות פנימיות..."
-                />
-              </label>
-                </>
-              ) : null}
-            </div>
-          </fieldset>
-
-          {manualSessionError ? <p className="text-sm text-destructive">{manualSessionError}</p> : null}
-
-          <div className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setManualSessionOpen(false)} disabled={manualSessionSubmitting}>
-              {HEBREW.cancel}
-            </Button>
-            <Button type="button" onClick={() => void saveManualSession()} disabled={manualSessionSubmitting}>
-              {manualSessionSubmitting ? HEBREW.saving : HEBREW.saveManualSession}
-            </Button>
-          </div>
-        </AdaptiveDialog>
-      </Dialog>
+      />
 
       <Dialog
         open={workerPaymentOpen}
