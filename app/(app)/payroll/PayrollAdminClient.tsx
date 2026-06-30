@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { getBusinessDomainLabel, WORK_SESSION_BUSINESS_DOMAINS } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import {
   calculateSessionLaborCost,
   formatCurrency,
@@ -1374,24 +1375,18 @@ export default function PayrollAdminClient({
               </select>
             </Field>
             <Field label="תחום">
-              <select
+              <DomainSelect
+                domains={WORK_SESSION_BUSINESS_DOMAINS}
                 value={createSessionForm.business_domain}
-                onChange={(event) =>
+                onChange={(value) =>
                   setCreateSessionForm((current) => ({
                     ...current,
-                    business_domain: event.target.value,
-                    project_id: event.target.value === "logistics_projects" ? current.project_id : "",
-                    property_id: event.target.value === "property_management" ? current.property_id : "",
+                    business_domain: value,
+                    project_id: value === "logistics_projects" ? current.project_id : "",
+                    property_id: value === "property_management" ? current.property_id : "",
                   }))
                 }
-                className="h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
-              >
-                {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => (
-                  <option key={domain} value={domain}>
-                    {getBusinessDomainLabel(domain)}
-                  </option>
-                ))}
-              </select>
+              />
             </Field>
             <div className="md:col-span-2 grid gap-3 md:grid-cols-3">
               <Field label="שעת התחלה">

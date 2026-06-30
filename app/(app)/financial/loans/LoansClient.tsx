@@ -23,7 +23,8 @@ import {
 } from "@/components/ui/dialog";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
+import { getBusinessDomainLabel } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import {
   type Loan,
   type LoanDirection,
@@ -56,11 +57,6 @@ const METHOD_OPTIONS = [
   { value: "credit_card", label: "כרטיס אשראי" },
   { value: "other", label: "אחר" },
 ];
-
-const DOMAIN_OPTIONS = EXPENSE_BUSINESS_DOMAINS.map((domain) => ({
-  value: domain,
-  label: getBusinessDomainLabel(domain),
-}));
 
 function formatIls(amount: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -345,17 +341,10 @@ function LoanFormDialog({
               </select>
             </Field>
             <Field label="תחום">
-              <select
-                className={SELECT_CLASS}
+              <DomainSelect
                 value={form.business_domain}
-                onChange={(e) => set("business_domain", e.target.value)}
-              >
-                {DOMAIN_OPTIONS.map((d) => (
-                  <option key={d.value} value={d.value}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => set("business_domain", value)}
+              />
             </Field>
             <Field label="תיעוד ההלוואה">
               <Input

@@ -50,7 +50,7 @@ export function ProjectPicker({
   value,
   onChange,
   placeholder = "בחירת פרויקט...",
-  searchPlaceholder = "חיפוש פרויקט לפי שם או לקוח",
+  searchPlaceholder = "חיפוש...",
   emptyLabel = "ללא פרויקט",
   noResultsLabel = "לא נמצאו פרויקטים לחיפוש הזה.",
   allowClear = true,

@@ -29,6 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { WORK_SESSION_BUSINESS_DOMAINS, getBusinessDomainLabel, isExpenseBusinessDomain, type ExpenseBusinessDomain } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import {
   getPayrollWorkerTypeLabel,
   normalizePayrollWorkerType,
@@ -2941,20 +2942,14 @@ export default function SalaryCenterClient({
                 </select>
               </Field>
               <Field label="תחום">
-                <select
+                <DomainSelect
+                  domains={WORK_SESSION_BUSINESS_DOMAINS}
+                  emptyLabel="הכול"
                   value={attendanceFilters.businessDomain}
-                  onChange={(event) =>
-                    setAttendanceFilters((current) => ({ ...current, businessDomain: event.target.value }))
+                  onChange={(value) =>
+                    setAttendanceFilters((current) => ({ ...current, businessDomain: value }))
                   }
-                  className={selectClassName}
-                >
-                  <option value="">{"הכול"}</option>
-                  {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => (
-                    <option key={domain} value={domain}>
-                      {getBusinessDomainLabel(domain)}
-                    </option>
-                  ))}
-                </select>
+                />
               </Field>
               <Field label="פרויקט">
                 <select
@@ -4948,24 +4943,18 @@ export default function SalaryCenterClient({
               </select>
             </Field>
             <Field label="תחום">
-              <select
+              <DomainSelect
+                domains={WORK_SESSION_BUSINESS_DOMAINS}
                 value={sessionForm.business_domain}
-                onChange={(event) =>
+                onChange={(value) =>
                   setSessionForm((current) => ({
                     ...current,
-                    business_domain: event.target.value,
-                    project_id: event.target.value === "logistics_projects" ? current.project_id : "",
-                    property_id: event.target.value === "property_management" ? current.property_id : "",
+                    business_domain: value,
+                    project_id: value === "logistics_projects" ? current.project_id : "",
+                    property_id: value === "property_management" ? current.property_id : "",
                   }))
                 }
-                className={selectClassName}
-              >
-                {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => (
-                  <option key={domain} value={domain}>
-                    {getBusinessDomainLabel(domain)}
-                  </option>
-                ))}
-              </select>
+              />
             </Field>
             {sessionForm.business_domain === "logistics_projects" ? (
               <Field label="פרויקט">
@@ -5215,19 +5204,14 @@ export default function SalaryCenterClient({
                         )}
                         <label className="space-y-1 text-right">
                           <span className="block text-xs text-muted-foreground">{"תחום"}</span>
-                          <select
-                            className="h-9 w-40 rounded-md border border-input bg-background px-3 text-right text-sm"
+                          <DomainSelect
+                            domains={WORK_SESSION_BUSINESS_DOMAINS}
+                            className="w-40 text-right"
                             value={sessionSplitParts[index]?.domain ?? "general_business"}
-                            onChange={(event) =>
-                              updateSessionSplitPart(part.id, { domain: event.target.value as ExpenseBusinessDomain })
+                            onChange={(value) =>
+                              updateSessionSplitPart(part.id, { domain: value as ExpenseBusinessDomain })
                             }
-                          >
-                            {WORK_SESSION_BUSINESS_DOMAINS.map((domain) => (
-                              <option key={domain} value={domain}>
-                                {getBusinessDomainLabel(domain)}
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </label>
                         {sessionSplitParts[index]?.domain === "logistics_projects"
                           ? renderCompactSessionLinkField(

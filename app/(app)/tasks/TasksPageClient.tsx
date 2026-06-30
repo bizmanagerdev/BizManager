@@ -37,7 +37,7 @@ import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/Initi
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { TaskUpsertDialog, type TaskOption, type TaskStatus, type UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
-import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 
 type Props = {
@@ -639,18 +639,11 @@ export default function TasksPageClient(props: Props) {
           </div>
           <div className="w-[160px] space-y-1">
             <div className="text-[11px] text-muted-foreground">דומיין</div>
-            <select
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            <DomainSelect
               value={urlDomain}
-              onChange={(e) => pushFilters({ q: urlQ, priority: urlPriority, domain: e.target.value, linkedId: "", scope: urlScope })}
-            >
-              <option value="">הכל</option>
-              {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                <option key={domain} value={domain}>
-                  {getBusinessDomainLabel(domain)}
-                </option>
-              ))}
-            </select>
+              emptyLabel="הכל"
+              onChange={(value) => pushFilters({ q: urlQ, priority: urlPriority, domain: value, linkedId: "", scope: urlScope })}
+            />
           </div>
           {linkedTarget ? (
             <div className="w-[200px] space-y-1">

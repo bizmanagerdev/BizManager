@@ -21,12 +21,10 @@ import {
 } from "@/components/ui/dialog";
 import {
   EXPENSE_BUSINESS_DOMAINS,
-  getBusinessDomainLabel,
   EXPENSE_CATEGORY_OPTIONS,
   EXPENSE_WORKER_WAGE_CATEGORY,
   EXPENSE_OTHER_CATEGORY,
   EXPENSE_CARS_CATEGORY,
-  DEFAULT_EXPENSE_CATEGORY,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import { offlineFetch } from "@/lib/offline-queue";
@@ -34,6 +32,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import { PAYMENT_METHOD_OPTIONS, type FinancialAttachment } from "@/lib/payments";
 import AccountSelect from "@/components/financial/AccountSelect";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import {
   calculateSessionLaborCost,
@@ -220,7 +219,7 @@ export function ExpenseDialog({
   const [paymentMethod, setPaymentMethod] = useState("");
   const [accountId, setAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
-  const [category, setCategory] = useState(DEFAULT_EXPENSE_CATEGORY);
+  const [category, setCategory] = useState(defaultCategory ?? "");
   const [categoryOther, setCategoryOther] = useState("");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
@@ -282,6 +281,10 @@ export function ExpenseDialog({
   }, [localUsers, targetUserId]);
   const showSessionTimingFields = shouldShowSessionHours(selectedWorkerType);
   const showSessionPriceField = shouldShowSessionPrice(selectedWorkerType);
+  // Contractor/session workers have no clocked hours, so the labor cost is the
+  // only way to set what they're owed — it's mandatory for them (unlike global
+  // monthly workers, where the field stays optional and can auto-calculate).
+  const sessionPriceRequired = selectedWorkerType === "session_only";
   const sessionDateOnly = useMemo(() => {
     const match = /^(\d{4}-\d{2}-\d{2})/.exec(clockIn);
     return match ? match[1] : new Date().toISOString().slice(0, 10);
@@ -351,7 +354,7 @@ export function ExpenseDialog({
       setPaidAmount("");
       setPaymentMethod("");
       setAccountId("");
-      setCategory(defaultCategory ?? DEFAULT_EXPENSE_CATEGORY);
+      setCategory(defaultCategory ?? "");
       setCategoryOther("");
       setDescription("");
       setNotes("");
@@ -460,6 +463,10 @@ export function ExpenseDialog({
       return;
     }
     const laborCostNumber = laborCost.trim() === "" ? null : Number(laborCost);
+    if (sessionPriceRequired && laborCostNumber === null) {
+      setErrorMessage("יש להזין עלות עבודה.");
+      return;
+    }
     if (laborCost.trim() !== "" && (laborCostNumber === null || !Number.isFinite(laborCostNumber) || laborCostNumber <= 0)) {
       setErrorMessage("יש להזין עלות עבודה תקינה.");
       return;
@@ -746,22 +753,16 @@ export function ExpenseDialog({
             <>
               <div className="space-y-1">
                 <div className="text-sm font-medium">תחום עסקי *</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <DomainSelect
                   value={businessDomain}
-                  onChange={(e) => {
-                    const next = e.target.value as ExpenseBusinessDomain | "";
+                  onChange={(value) => {
+                    const next = value as ExpenseBusinessDomain | "";
                     setBusinessDomain(next);
                     setProjectId("");
                     setOrderId("");
                     setPropertyId("");
                   }}
-                >
-                  <option value="">בחרו תחום</option>
-                  {EXPENSE_BUSINESS_DOMAINS.map((d) => (
-                    <option key={d} value={d}>{getBusinessDomainLabel(d)}</option>
-                  ))}
-                </select>
+                />
               </div>
 
               {!isEditing && effectiveDomain === "logistics_projects" && recurringProjects.length > 0 && (
@@ -823,6 +824,7 @@ export function ExpenseDialog({
                 if (e.target.value !== CARS_CATEGORY) setTagIds(presetTagLabel ? tagIds : []);
               }}
             >
+              <option value="">בחרו קטגוריה</option>
               {categoryOptions.map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
@@ -861,7 +863,7 @@ export function ExpenseDialog({
                     value={workerUserId}
                     onChange={(e) => setWorkerUserId(e.target.value)}
                   >
-                    <option value="">בחרו עובד</option>
+                    <option value=""></option>
                     {workerList.map((u) => (
                       <option key={u.id} value={u.id}>{u.label}</option>
                     ))}
@@ -961,8 +963,8 @@ export function ExpenseDialog({
 
               {showSessionPriceField ? (
                 <div className="space-y-1">
-                  <div className="text-sm font-medium">עלות עבודה</div>
-                  <CurrencyInput value={laborCost} onChange={(e) => setLaborCost(e.target.value)} placeholder="אופציונלי" />
+                  <div className="text-sm font-medium">עלות עבודה{sessionPriceRequired ? " *" : ""}</div>
+                  <CurrencyInput value={laborCost} onChange={(e) => setLaborCost(e.target.value)} />
                   <span className="block text-xs text-muted-foreground">
                     {suggestedWorkerAmount !== null
                       ? `סה״כ לתשלום עבור המשמרת: ${formatIls(suggestedWorkerAmount)}`

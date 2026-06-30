@@ -13,7 +13,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
-import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
+import { getBusinessDomainLabel, isExpenseBusinessDomain } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import { findDuplicate, norm, shiftIso, type ExistingExpense } from "@/lib/financial/cardImport";
 
 type Option = { id: string; name: string };
@@ -917,19 +918,13 @@ export default function StatementDetailClient({
                       {/* Business domain */}
                       <td className="px-3 py-2">
                         {mode === "draft" ? (
-                          <select
+                          <DomainSelect
                             value={row.businessDomain}
                             disabled={savingRowId === row.id || !row.include}
-                            onChange={(e) => setRowDomain(row.id, e.target.value)}
-                            className="h-8 w-full min-w-[8rem] rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-                          >
-                            <option value="">— בחר —</option>
-                            {EXPENSE_BUSINESS_DOMAINS.map((d) => (
-                              <option key={d} value={d}>
-                                {getBusinessDomainLabel(d)}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(value) => setRowDomain(row.id, value)}
+                            placeholder="— בחר —"
+                            className="h-8 min-w-[8rem]"
+                          />
                         ) : (
                           getBusinessDomainLabel(row.businessDomain)
                         )}
@@ -1113,18 +1108,11 @@ export default function StatementDetailClient({
                 />
               </Field>
               <Field label="תחום עסקי">
-                <select
+                <DomainSelect
                   value={draft.businessDomain}
-                  onChange={(e) => patchDraft({ businessDomain: e.target.value, projectId: "", propertyId: "" })}
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="">— בחר —</option>
-                  {EXPENSE_BUSINESS_DOMAINS.map((d) => (
-                    <option key={d} value={d}>
-                      {getBusinessDomainLabel(d)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => patchDraft({ businessDomain: value, projectId: "", propertyId: "" })}
+                  placeholder="— בחר —"
+                />
               </Field>
               {draft.businessDomain === "logistics_projects" ? (
                 <Field label="פרויקט">
@@ -1181,18 +1169,11 @@ export default function StatementDetailClient({
           {incomeForm ? (
             <div className="space-y-3">
               <Field label="תחום עסקי *">
-                <select
+                <DomainSelect
                   value={incomeForm.businessDomain}
-                  onChange={(e) => patchIncome({ businessDomain: e.target.value, projectId: "", orderId: "", propertyId: "" })}
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="">— בחר —</option>
-                  {EXPENSE_BUSINESS_DOMAINS.map((d) => (
-                    <option key={d} value={d}>
-                      {getBusinessDomainLabel(d)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => patchIncome({ businessDomain: value, projectId: "", orderId: "", propertyId: "" })}
+                  placeholder="— בחר —"
+                />
               </Field>
 
               {incomeForm.businessDomain === "logistics_projects" ? (

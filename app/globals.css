@@ -351,3 +351,20 @@ aside > div:first-child > div > span {
 header.sticky > div:first-child > span {
   display: none !important;
 }
+
+/* Bigger, consistent dropdown arrow on EVERY native <select> across all pages and
+   dialogs (the styled SearchableSelect dropdowns get their larger chevron from the
+   component). Unlayered so it overrides Tailwind's appearance/padding utilities.
+   The app is RTL, so the arrow sits on the LEFT with matching left padding so the
+   selected value never runs under it — and the arrow stays inside the box (never
+   overflows). Sizes are in rem so they scale with the user's font-size multiplier. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2333427A' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 0.6rem center;
+  background-size: 1.5rem 1.5rem;
+  padding-left: 2.4rem;
+}

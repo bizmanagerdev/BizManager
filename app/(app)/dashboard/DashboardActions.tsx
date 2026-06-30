@@ -24,16 +24,14 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import {
-  EXPENSE_BUSINESS_DOMAINS,
-  getBusinessDomainLabel,
   mapProjectTypeToExpenseDomain,
   EXPENSE_CATEGORY_OPTIONS_WITH_WAGE,
   EXPENSE_OTHER_CATEGORY,
   EXPENSE_WORKER_WAGE_CATEGORY,
   EXPENSE_CARS_CATEGORY,
-  DEFAULT_EXPENSE_CATEGORY,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import {
   calculateSessionLaborCost,
   getActiveSalaryAgreementForDate,
@@ -196,12 +194,11 @@ export default function DashboardActions({
   const [expenseOrderId, setExpenseOrderId] = useState("");
   const [expensePropertyId, setExpensePropertyId] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
-  const [expenseCategory, setExpenseCategory] = useState(DEFAULT_EXPENSE_CATEGORY);
+  const [expenseCategory, setExpenseCategory] = useState("");
   const [expenseCategoryOther, setExpenseCategoryOther] = useState("");
   const [expenseDate, setExpenseDate] = useState(getTodayDate());
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseNotes, setExpenseNotes] = useState("");
-  const [expenseIncludedInBase, setExpenseIncludedInBase] = useState(false);
   const [expenseBilledToCustomer, setExpenseBilledToCustomer] = useState(false);
   const [expenseWorkerUserId, setExpenseWorkerUserId] = useState("");
   const [expenseClockIn, setExpenseClockIn] = useState("");
@@ -403,6 +400,9 @@ export default function DashboardActions({
   }, [availableUsers, expenseIsWorkerPayment, expenseTargetUserId]);
   const showExpenseSessionTimingFields = !expenseIsWorkerPayment || shouldShowSessionHours(selectedExpenseWorkerType);
   const showExpenseSessionPriceField = !expenseIsWorkerPayment || shouldShowSessionPrice(selectedExpenseWorkerType);
+  // Contractor/session workers have no clocked hours, so the labor cost is the
+  // only way to set what they're owed — it's mandatory for them.
+  const expenseSessionPriceRequired = expenseIsWorkerPayment && selectedExpenseWorkerType === "session_only";
   const expenseSessionDateOnly = useMemo(() => {
     const match = /^(\d{4}-\d{2}-\d{2})/.exec(expenseClockIn);
     return match ? match[1] : new Date().toISOString().slice(0, 10);
@@ -474,12 +474,11 @@ export default function DashboardActions({
     setExpenseOrderId("");
     setExpensePropertyId("");
     setExpenseAmount("");
-    setExpenseCategory(DEFAULT_EXPENSE_CATEGORY);
+    setExpenseCategory("");
     setExpenseCategoryOther("");
     setExpenseDate(getTodayDate());
     setExpenseDescription("");
     setExpenseNotes("");
-    setExpenseIncludedInBase(false);
     setExpenseBilledToCustomer(false);
     setExpensePaymentStatus("paid");
     setExpensePaymentMethod("");
@@ -578,6 +577,10 @@ export default function DashboardActions({
 
       const laborCostNumber =
         expenseLaborCost.trim() === "" ? null : Number(expenseLaborCost);
+      if (expenseSessionPriceRequired && laborCostNumber === null) {
+        setExpenseError("יש להזין עלות עבודה.");
+        return;
+      }
       if (
         expenseLaborCost.trim() !== "" &&
         (laborCostNumber === null || !Number.isFinite(laborCostNumber) || laborCostNumber <= 0)
@@ -718,9 +721,31 @@ export default function DashboardActions({
     }
 
     const expenseMoneyMoving = expensePaymentStatus === "paid" || expensePaymentStatus === "partial";
+    if (expenseMoneyMoving && !expensePaymentMethod) {
+      setExpenseError("יש לבחור אמצעי תשלום.");
+      return;
+    }
     if (expenseMoneyMoving && accountsList.length > 0 && !expenseAccountId) {
       setExpenseError("יש לבחור חשבון לתנועה.");
       return;
+    }
+
+    // Bill-to-customer (project domain only): when on, an amount is required and
+    // the expense is carved out of the base price (mirrors the project page).
+    const isProjectExpense = expenseBusinessDomain === "logistics_projects";
+    let regularBillToCustomerAmount: number | null = null;
+    if (isProjectExpense && expenseBilledToCustomer) {
+      regularBillToCustomerAmount = expenseBillToCustomerAmount.trim()
+        ? Number(expenseBillToCustomerAmount)
+        : null;
+      if (
+        regularBillToCustomerAmount === null ||
+        !Number.isFinite(regularBillToCustomerAmount) ||
+        regularBillToCustomerAmount <= 0
+      ) {
+        setExpenseError("יש להזין סכום לחיוב לקוח.");
+        return;
+      }
     }
 
     setExpenseSubmitting(true);
@@ -737,8 +762,9 @@ export default function DashboardActions({
           expense_date: expenseDate,
           description: expenseDescription.trim() || null,
           notes: expenseNotes.trim() || null,
-          included_in_base_price: expenseBusinessDomain === "logistics_projects" ? expenseIncludedInBase : false,
-          billed_to_customer: expenseBusinessDomain === "logistics_projects" ? expenseBilledToCustomer : false,
+          included_in_base_price: isProjectExpense ? !expenseBilledToCustomer : false,
+          billed_to_customer: isProjectExpense ? expenseBilledToCustomer : false,
+          bill_to_customer_amount: regularBillToCustomerAmount,
           payment_status: expensePaymentStatus,
           payment_method:
             expensePaymentStatus === "paid" || expensePaymentStatus === "partial"
@@ -1380,23 +1406,16 @@ export default function DashboardActions({
 
               <label className="space-y-2 text-right text-sm">
                 <span className="font-medium">{HEBREW.domain} *</span>
-                <select
-                  className={`${fieldClass} text-right`}
+                <DomainSelect
+                  className="text-right"
                   value={manualSessionDomain}
-                  onChange={(e) => {
-                    const nextDomain = e.target.value as ExpenseBusinessDomain | "";
+                  onChange={(next) => {
+                    const nextDomain = next as ExpenseBusinessDomain | "";
                     setManualSessionDomain(nextDomain);
                     if (nextDomain !== "logistics_projects") setManualSessionProjectId("");
                     if (nextDomain !== "property_management") setManualSessionPropertyId("");
                   }}
-                >
-                  <option value="">בחרו תחום</option>
-                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                    <option key={domain} value={domain}>
-                      {getBusinessDomainLabel(domain)}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
 
               {manualSessionDomain === "logistics_projects" ? (
@@ -1718,94 +1737,26 @@ export default function DashboardActions({
 
           <fieldset disabled={expenseSubmitting} className="contents">
             <div className="space-y-4">
-              <div
-                className={
-                  expenseBusinessDomain === "logistics_projects" ||
-                  (expenseBusinessDomain === "sales" && !expenseIsWorkerPayment) ||
-                  expenseBusinessDomain === "property_management"
-                    ? "grid gap-3 sm:grid-cols-2"
-                    : ""
-                }
-              >
+              {/* תחום + קטגוריה — always paired in one row */}
+              <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-2 text-sm block">
                   <span>{HEBREW.domain} *</span>
-                  <select
-                    className={fieldClass}
+                  <DomainSelect
                     value={expenseBusinessDomain}
-                    onChange={(e) => {
-                      const nextDomain = e.target.value as ExpenseBusinessDomain | "";
+                    onChange={(next) => {
+                      const nextDomain = next as ExpenseBusinessDomain | "";
                       setExpenseBusinessDomain(nextDomain);
                       if (nextDomain !== "logistics_projects") {
                         setExpenseProjectId("");
-                        setExpenseIncludedInBase(false);
                         setExpenseBilledToCustomer(false);
                         setExpenseBillToCustomerAmount("");
                       }
                       if (nextDomain !== "sales") setExpenseOrderId("");
                       if (nextDomain !== "property_management") setExpensePropertyId("");
                     }}
-                  >
-                    <option value="">בחרו תחום</option>
-                    {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                      <option key={domain} value={domain}>
-                        {getBusinessDomainLabel(domain)}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
 
-                {expenseBusinessDomain === "logistics_projects" ? (
-                  <div className="space-y-2 text-sm">
-                    <span>{HEBREW.project} *</span>
-                    <ProjectPicker
-                      projects={projectPickerOptions}
-                      value={expenseProjectId}
-                      onChange={setExpenseProjectId}
-                      allowClear={false}
-                    />
-                  </div>
-                ) : null}
-
-                {expenseBusinessDomain === "sales" && !expenseIsWorkerPayment ? (
-                  <label className="space-y-2 text-sm block">
-                    <span>הזמנה</span>
-                    <select
-                      className={fieldClass}
-                      value={expenseOrderId}
-                      onChange={(e) => setExpenseOrderId(e.target.value)}
-                    >
-                      <option value="">ללא הזמנה</option>
-                      {orders.map((order) => (
-                        <option key={order.id} value={order.id}>
-                          {order.name}
-                          {order.subtitle ? ` | ${order.subtitle}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-
-                {expenseBusinessDomain === "property_management" ? (
-                  <label className="space-y-2 text-sm block">
-                    <span>נכס *</span>
-                    <select
-                      className={fieldClass}
-                      value={expensePropertyId}
-                      onChange={(e) => setExpensePropertyId(e.target.value)}
-                    >
-                      <option value="">בחרו נכס</option>
-                      {properties.map((property) => (
-                        <option key={property.id} value={property.id}>
-                          {property.name}
-                          {property.subtitle ? ` | ${property.subtitle}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
                 {expenseBusinessDomain ? (
                   <label className="space-y-2 text-sm block">
                     <span>{HEBREW.category} *</span>
@@ -1817,6 +1768,7 @@ export default function DashboardActions({
                         if (e.target.value !== CARS_EXPENSE_CATEGORY) setExpenseTagIds([]);
                       }}
                     >
+                      <option value="" />
                       {DASHBOARD_EXPENSE_CATEGORY_OPTIONS.map((option) => (
                         <option key={option} value={option}>
                           {option}
@@ -1825,25 +1777,84 @@ export default function DashboardActions({
                     </select>
                   </label>
                 ) : null}
-
-                {expenseIsWorkerPayment && canManageWorkerSessions ? (
-                  <label className="space-y-2 text-sm block">
-                    <span>{HEBREW.worker} *</span>
-                    <select
-                      className={fieldClass}
-                      value={expenseWorkerUserId}
-                      onChange={(e) => setExpenseWorkerUserId(e.target.value)}
-                    >
-                      <option value="">{HEBREW.selectWorker}</option>
-                      {workerUsers.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
               </div>
+
+              {/* מקור (פרויקט/הזמנה/נכס) + עובד */}
+              {expenseBusinessDomain === "logistics_projects" ||
+              (expenseBusinessDomain === "sales" && !expenseIsWorkerPayment) ||
+              expenseBusinessDomain === "property_management" ||
+              (expenseIsWorkerPayment && canManageWorkerSessions) ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {expenseBusinessDomain === "logistics_projects" ? (
+                    <div className="space-y-2 text-sm">
+                      <span>{HEBREW.project} *</span>
+                      <ProjectPicker
+                        projects={projectPickerOptions}
+                        value={expenseProjectId}
+                        onChange={setExpenseProjectId}
+                        allowClear={false}
+                        placeholder=""
+                      />
+                    </div>
+                  ) : null}
+
+                  {expenseBusinessDomain === "sales" && !expenseIsWorkerPayment ? (
+                    <label className="space-y-2 text-sm block">
+                      <span>הזמנה</span>
+                      <select
+                        className={fieldClass}
+                        value={expenseOrderId}
+                        onChange={(e) => setExpenseOrderId(e.target.value)}
+                      >
+                        <option value="">ללא הזמנה</option>
+                        {orders.map((order) => (
+                          <option key={order.id} value={order.id}>
+                            {order.name}
+                            {order.subtitle ? ` | ${order.subtitle}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+
+                  {expenseBusinessDomain === "property_management" ? (
+                    <label className="space-y-2 text-sm block">
+                      <span>נכס *</span>
+                      <select
+                        className={fieldClass}
+                        value={expensePropertyId}
+                        onChange={(e) => setExpensePropertyId(e.target.value)}
+                      >
+                        <option value="">בחרו נכס</option>
+                        {properties.map((property) => (
+                          <option key={property.id} value={property.id}>
+                            {property.name}
+                            {property.subtitle ? ` | ${property.subtitle}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+
+                  {expenseIsWorkerPayment && canManageWorkerSessions ? (
+                    <label className="space-y-2 text-sm block">
+                      <span>{HEBREW.worker} *</span>
+                      <select
+                        className={fieldClass}
+                        value={expenseWorkerUserId}
+                        onChange={(e) => setExpenseWorkerUserId(e.target.value)}
+                      >
+                        <option value="" />
+                        {workerUsers.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
 
               {expenseCategory === OTHER_EXPENSE_CATEGORY ? (
                 <label className="space-y-2 text-sm block">
@@ -1979,11 +1990,10 @@ export default function DashboardActions({
 
                   {showExpenseSessionPriceField ? (
                     <label className="space-y-2 text-sm block">
-                      <span>עלות עבודה</span>
+                      <span>עלות עבודה{expenseSessionPriceRequired ? " *" : ""}</span>
                       <CurrencyInput
                         value={expenseLaborCost}
                         onChange={(e) => setExpenseLaborCost(e.target.value)}
-                        placeholder="אופציונלי"
                       />
                       <span className="block text-xs text-muted-foreground">
                         {suggestedExpenseWorkerAmount !== null
@@ -2077,7 +2087,7 @@ export default function DashboardActions({
                     </label>
 
                     <label className="space-y-2 text-sm">
-                      <span>סטטוס תשלום</span>
+                      <span>סטטוס תשלום *</span>
                       <select
                         className={fieldClass}
                         value={expensePaymentStatus}
@@ -2093,7 +2103,7 @@ export default function DashboardActions({
                   {expensePaymentStatus === "paid" || expensePaymentStatus === "partial" ? (
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="space-y-2 text-sm">
-                        <span>{HEBREW.paymentMethod}</span>
+                        <span>{HEBREW.paymentMethod} *</span>
                         <select
                           className={fieldClass}
                           value={expensePaymentMethod}
@@ -2103,7 +2113,7 @@ export default function DashboardActions({
                             setExpenseAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
                           }}
                         >
-                          <option value="">בחרו אמצעי תשלום</option>
+                          <option value=""></option>
                           {PAYMENT_METHOD_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
@@ -2140,24 +2150,36 @@ export default function DashboardActions({
                   </label>
 
                   {expenseBusinessDomain === "logistics_projects" ? (
-                    <div className="flex flex-col gap-2 text-sm">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={expenseIncludedInBase}
-                          onChange={(e) => setExpenseIncludedInBase(e.target.checked)}
-                        />
-                        <span>{HEBREW.includedInBase}</span>
-                      </label>
-                      <label className="flex items-center gap-2">
+                    <section className="space-y-3 rounded-xl border bg-muted/30 p-4">
+                      <h4 className="text-sm font-semibold">חיוב הלקוח</h4>
+                      <label className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
                           checked={expenseBilledToCustomer}
-                          onChange={(e) => setExpenseBilledToCustomer(e.target.checked)}
+                          onChange={(e) => {
+                            setExpenseBilledToCustomer(e.target.checked);
+                            if (!e.target.checked) setExpenseBillToCustomerAmount("");
+                          }}
                         />
                         <span>{HEBREW.billedToCustomer}</span>
                       </label>
-                    </div>
+                      <div className="text-xs text-muted-foreground">
+                        {expenseBilledToCustomer
+                          ? "ההוצאה תופיע ברשימת חיובי הלקוח ולא בתזרים."
+                          : "אם לא מסומן, ההוצאה נכללת בבסיס כברירת מחדל."}
+                      </div>
+                      {expenseBilledToCustomer ? (
+                        <div className="space-y-1">
+                          <span className="block text-sm font-medium">סכום לחיוב לקוח *</span>
+                          <CurrencyInput
+                            inputMode="numeric"
+                            value={expenseBillToCustomerAmount}
+                            onChange={(e) => setExpenseBillToCustomerAmount(e.target.value)}
+                            placeholder="למשל 650"
+                          />
+                        </div>
+                      ) : null}
+                    </section>
                   ) : null}
                 </>
               ) : null}
@@ -2254,11 +2276,10 @@ export default function DashboardActions({
             <div className="grid gap-4">
               <label className="space-y-2 text-sm">
                 <span>{HEBREW.domain} *</span>
-                <select
-                  className={fieldClass}
+                <DomainSelect
                   value={incomeBusinessDomain}
-                  onChange={(e) => {
-                    const nextDomain = e.target.value as ExpenseBusinessDomain | "";
+                  onChange={(next) => {
+                    const nextDomain = next as ExpenseBusinessDomain | "";
                     setIncomeBusinessDomain(nextDomain);
                     if (nextDomain !== "logistics_projects") {
                       setIncomeProjectId("");
@@ -2268,14 +2289,7 @@ export default function DashboardActions({
                     if (nextDomain !== "property_management") setIncomePropertyId("");
                     if (nextDomain !== "general_business") setIncomeTagIds([]);
                   }}
-                >
-                  <option value="">בחרו תחום</option>
-                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                    <option key={domain} value={domain}>
-                      {getBusinessDomainLabel(domain)}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
 
               {incomeBusinessDomain === "logistics_projects" ? (
@@ -2284,7 +2298,7 @@ export default function DashboardActions({
                   <Input
                     value={incomeProjectQuery}
                     onChange={(e) => setIncomeProjectQuery(e.target.value)}
-                    placeholder="חיפוש פרויקט לפי שם או לקוח"
+                    placeholder="חיפוש..."
                   />
                   <div className="max-h-56 space-y-1 overflow-auto rounded-md border p-1">
                     {filteredIncomeProjects.map((project) => (
@@ -2398,7 +2412,7 @@ export default function DashboardActions({
                           setIncomeAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
                         }}
                       >
-                        <option value="">בחרו אמצעי תשלום</option>
+                        <option value=""></option>
                         <option value="bank_transfer">{HEBREW.bankTransfer}</option>
                         <option value="cash">{HEBREW.cash}</option>
                         <option value="check">{HEBREW.check}</option>

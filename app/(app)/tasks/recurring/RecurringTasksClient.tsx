@@ -20,10 +20,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import {
-  EXPENSE_BUSINESS_DOMAINS,
   getBusinessDomainLabel,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import type { TaskOption, TaskPriority, TaskStatus, UserOption } from "@/components/tasks/TaskUpsertDialog";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
 
@@ -413,18 +413,10 @@ export default function RecurringTasksClient(props: Props) {
           >
             <div className="space-y-1">
               <div className="text-sm font-medium">דומיין *</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <DomainSelect
                 value={form.business_domain}
-                onChange={(e) => handleDomainChange(e.target.value as ExpenseBusinessDomain | "")}
-              >
-                <option value="">בחרו תחום</option>
-                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                  <option key={domain} value={domain}>
-                    {getBusinessDomainLabel(domain)}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => handleDomainChange(value as ExpenseBusinessDomain | "")}
+              />
             </div>
 
             {requirement === "project" ? (

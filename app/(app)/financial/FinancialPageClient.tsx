@@ -34,11 +34,11 @@ import PositionPanel from "@/app/(app)/financial/reports/PositionPanel";
 import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import {
-  EXPENSE_BUSINESS_DOMAINS,
   getBusinessDomainLabel,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import type {
@@ -1960,27 +1960,19 @@ export default function FinancialPageClient({
           >
             <div className="space-y-1">
               <div className="text-sm font-medium">תחום עסקי *</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <DomainSelect
                 value={incomeCreateForm.businessDomain}
-                onChange={(event) =>
+                onChange={(value) =>
                   setIncomeCreateForm((current) => ({
                     ...current,
-                    businessDomain: event.target.value as ExpenseBusinessDomain | "",
-                    projectId: event.target.value === "logistics_projects" ? current.projectId : "",
-                    orderId: event.target.value === "sales" ? current.orderId : "",
-                    propertyId: event.target.value === "property_management" ? current.propertyId : "",
-                    tagIds: event.target.value === "general_business" ? current.tagIds : [],
+                    businessDomain: value as ExpenseBusinessDomain | "",
+                    projectId: value === "logistics_projects" ? current.projectId : "",
+                    orderId: value === "sales" ? current.orderId : "",
+                    propertyId: value === "property_management" ? current.propertyId : "",
+                    tagIds: value === "general_business" ? current.tagIds : [],
                   }))
                 }
-              >
-                <option value="">בחרו תחום</option>
-                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                  <option key={domain} value={domain}>
-                    {getBusinessDomainLabel(domain)}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             {incomeCreateForm.businessDomain === "logistics_projects" ? (

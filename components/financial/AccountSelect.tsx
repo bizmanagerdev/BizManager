@@ -92,7 +92,7 @@ export default function AccountSelect({
         disabled={disabled}
         className={cn(invalid && "border-destructive focus-visible:ring-destructive", className)}
         emptyOptionLabel={required ? undefined : "ללא שיוך"}
-        placeholder="בחר חשבון..."
+        placeholder=""
         options={accounts.map((a) => ({
           value: a.id,
           label: a.name,

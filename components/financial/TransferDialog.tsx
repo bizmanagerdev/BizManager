@@ -17,11 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  EXPENSE_BUSINESS_DOMAINS,
-  getBusinessDomainLabel,
-  type ExpenseBusinessDomain,
-} from "@/lib/expenses";
+import { type ExpenseBusinessDomain } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import { toHebrewError } from "@/lib/error-messages";
 import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 import { cn } from "@/lib/utils";
@@ -87,23 +84,15 @@ function SideFields({
     <div className="space-y-3">
       <div className="space-y-1">
         <div className="text-sm font-medium">תחום עסקי *</div>
-        <select
-          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+        <DomainSelect
           value={side.businessDomain}
-          onChange={(e) =>
+          onChange={(value) =>
             setSide({
               ...createSideState(),
-              businessDomain: e.target.value as ExpenseBusinessDomain | "",
+              businessDomain: value as ExpenseBusinessDomain | "",
             })
           }
-        >
-          <option value="">בחרו תחום</option>
-          {EXPENSE_BUSINESS_DOMAINS.map((d) => (
-            <option key={d} value={d}>
-              {getBusinessDomainLabel(d)}
-            </option>
-          ))}
-        </select>
+        />
       </div>
 
       {side.businessDomain === "logistics_projects" ? (

@@ -43,6 +43,7 @@ import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { formatShortDateTime } from "@/lib/date";
 import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel, inferDefaultDocumentCategory } from "@/lib/documents";
 
 export type DocumentArchiveFilters = {
@@ -691,14 +692,7 @@ export default function DocumentsArchiveClient({
           <AdaptiveGrid variant="customersFilters">
             <div className="space-y-1">
               <div className="text-sm font-medium">תחום</div>
-              <SelectField value={businessDomain} onChange={setBusinessDomain} ariaLabel="סינון לפי תחום">
-                <option value="">כל התחומים</option>
-                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                  <option key={domain} value={domain}>
-                    {getBusinessDomainLabel(domain)}
-                  </option>
-                ))}
-              </SelectField>
+              <DomainSelect value={businessDomain} onChange={setBusinessDomain} emptyLabel="כל התחומים" ariaLabel="סינון לפי תחום" />
             </div>
 
             {vehicleTagOptions.length > 0 ? (
@@ -988,7 +982,7 @@ export default function DocumentsArchiveClient({
           <div className="mt-4 space-y-4">
             <div className="space-y-1">
               <div className="text-sm font-medium">תחום</div>
-              <SelectField
+              <DomainSelect
                 value={uploadBusinessDomain}
                 onChange={(value) => {
                   setUploadBusinessDomain(value);
@@ -998,13 +992,7 @@ export default function DocumentsArchiveClient({
                   }
                 }}
                 ariaLabel="תחום למסמך חדש"
-              >
-                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                  <option key={domain} value={domain}>
-                    {getBusinessDomainLabel(domain)}
-                  </option>
-                ))}
-              </SelectField>
+              />
             </div>
 
             {showUploadProjectField ? (
@@ -1181,13 +1169,7 @@ export default function DocumentsArchiveClient({
           </DialogHeader>
           <div className="mt-4 space-y-3">
             <div className="text-sm font-medium">{editDomainDoc?.title ?? "מסמך"}</div>
-            <SelectField value={editDomainValue} onChange={setEditDomainValue} ariaLabel="תחום המסמך">
-              {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                <option key={domain} value={domain}>
-                  {getBusinessDomainLabel(domain)}
-                </option>
-              ))}
-            </SelectField>
+            <DomainSelect value={editDomainValue} onChange={setEditDomainValue} ariaLabel="תחום המסמך" />
           </div>
           <DialogFooter className="mt-6">
             <Button

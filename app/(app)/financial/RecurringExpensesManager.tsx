@@ -22,10 +22,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import {
-  EXPENSE_BUSINESS_DOMAINS,
   getBusinessDomainLabel,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 
 type Option = {
   id: string;
@@ -486,18 +486,10 @@ export default function RecurringExpensesManager(props: Props) {
           >
             <div className="space-y-1">
               <div className="text-sm font-medium">תחום עסקי *</div>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <DomainSelect
                 value={form.business_domain}
-                onChange={(event) => handleDomainChange(event.target.value as ExpenseBusinessDomain | "")}
-              >
-                <option value="">בחרו תחום</option>
-                {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                  <option key={domain} value={domain}>
-                    {getBusinessDomainLabel(domain)}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => handleDomainChange(value as ExpenseBusinessDomain | "")}
+              />
             </div>
 
             {form.business_domain ? (

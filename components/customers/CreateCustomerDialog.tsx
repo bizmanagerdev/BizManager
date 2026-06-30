@@ -582,7 +582,7 @@ export function CreateCustomerDialog({
                     onChange={(e) => setCity(e.target.value)}
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   >
-                    <option value="">בחר עיר...</option>
+                    <option value=""></option>
                     {CREATE_CUSTOMER_CITY_OPTIONS.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}

@@ -37,6 +37,7 @@ import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { DictateButton } from "@/components/ui/dictate-button";
 import { TaskVoiceFillButton, type ParsedTaskFields } from "@/components/tasks/TaskVoiceFillButton";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import {
   Dialog,
   DialogDescription,
@@ -1004,18 +1005,11 @@ export function TaskUpsertDialog(props: Props) {
             <div className="space-y-3 rounded-md border bg-muted/20 p-3">
               <div className="space-y-1">
                 <div className="text-sm font-medium">תחום עסקי</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <DomainSelect
+                  domains={allowedDomains}
                   value={effectiveDomain}
-                  onChange={(e) => handleBusinessDomainChange(e.target.value as ExpenseBusinessDomain | "")}
-                >
-                  {allowedDomains.length > 1 ? <option value="">בחרו תחום</option> : null}
-                  {allowedDomains.map((domain) => (
-                    <option key={domain} value={domain}>
-                      {getBusinessDomainLabel(domain)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => handleBusinessDomainChange(value as ExpenseBusinessDomain | "")}
+                />
               </div>
 
               {effectiveDomain === "general_business" ? (

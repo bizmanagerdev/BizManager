@@ -10,11 +10,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { DateInput } from "@/components/ui/date-input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import {
-  EXPENSE_BUSINESS_DOMAINS,
-  getBusinessDomainLabel,
   mapProjectTypeToExpenseDomain,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
+import { DomainSelect } from "@/components/financial/DomainSelect";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -946,23 +945,16 @@ export function ProjectTasksTab({
             <AdaptiveGrid variant="formTwo">
               <div className="space-y-1">
                 <div className="text-sm font-medium">דומיין *</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <DomainSelect
                   value={businessDomain}
-                  onChange={(e) => {
-                    const nextDomain = e.target.value as ExpenseBusinessDomain;
+                  onChange={(value) => {
+                    const nextDomain = value as ExpenseBusinessDomain;
                     setBusinessDomain(nextDomain);
                     if (nextDomain !== "property_management") {
                       setPropertyTargetId("");
                     }
                   }}
-                >
-                  {EXPENSE_BUSINESS_DOMAINS.map((domain) => (
-                    <option key={domain} value={domain}>
-                      {getBusinessDomainLabel(domain)}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div className="space-y-1">
                 <div className="text-sm font-medium">עדיפות *</div>

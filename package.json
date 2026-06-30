@@ -2,6 +2,11 @@
   "name": "bizh",
   "version": "0.1.0",
   "private": true,
+  "comment:overrides": "Force a single copy of Radix's layer-coordination internals so a Popover (searchable-select menu) nested inside a Dialog shares the same dismissable-layer/focus-scope stack — otherwise clicking the menu registers as 'outside' and closes the dialog.",
+  "overrides": {
+    "@radix-ui/react-dismissable-layer": "1.1.13",
+    "@radix-ui/react-focus-scope": "1.1.10"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:insecure": "set NODE_TLS_REJECT_UNAUTHORIZED=0&& next dev",
@@ -26,6 +31,7 @@
     "@hebcal/core": "^6.5.2",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-dropdown-menu": "^2.1.15",
+    "@radix-ui/react-popover": "^1.1.17",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.12",
     "@sentry/nextjs": "^10.58.0",
