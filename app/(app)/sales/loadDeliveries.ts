@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { derivePaymentStatus, type PaymentStatus } from "@/lib/orders/paymentStatus";
 
 type Row = Record<string, unknown>;
 
@@ -27,6 +28,9 @@ export type DeliveryItem = {
   orderDate: string | null;
   status: string;
   totalAmount: number | null;
+  /** Amount already collected for the order, and the derived payment status. */
+  totalPaid: number;
+  paymentStatus: PaymentStatus;
   /** Driver collects the payment on delivery (orders.collect_payment_on_delivery). */
   collectOnDelivery: boolean;
   notes: string | null;
@@ -95,6 +99,8 @@ export async function loadDeliveriesPage(
       orderDate: getString(row, "order_date") ?? getString(row, "created_at"),
       status: getString(row, "status") ?? "-",
       totalAmount: getNumber(row, "total_amount"),
+      totalPaid: 0,
+      paymentStatus: "unpaid" as PaymentStatus,
       collectOnDelivery: false,
       notes: getString(row, "notes"),
       customerName: getString(row, "customer_name") ?? "לקוח",
@@ -164,6 +170,28 @@ export async function loadDeliveriesPage(
     );
     for (const delivery of deliveries) {
       delivery.collectOnDelivery = collectIds.has(delivery.id);
+    }
+  }
+
+  // Attach the order's payment status so the driver/dispatcher sees whether it's
+  // been paid before delivering. Read collected money from the financials view.
+  if (deliveries.length > 0) {
+    const { data: financialRows } = await supabase
+      .from("order_financials_view")
+      .select("id,total_amount,total_paid")
+      .in("id", deliveries.map((delivery) => delivery.id));
+    const financialsById = new Map(
+      ((financialRows ?? []) as Row[]).map((row) => [getString(row, "id") ?? "", row])
+    );
+    for (const delivery of deliveries) {
+      const financials = financialsById.get(delivery.id);
+      const totalAmount = financials ? getNumber(financials, "total_amount") : null;
+      const totalPaid = financials ? getNumber(financials, "total_paid") ?? 0 : 0;
+      delivery.totalPaid = totalPaid;
+      delivery.paymentStatus = derivePaymentStatus(
+        totalAmount ?? delivery.totalAmount ?? 0,
+        totalPaid
+      );
     }
   }
 

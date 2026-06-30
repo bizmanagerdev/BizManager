@@ -6,16 +6,17 @@ import { toHebrewError } from "@/lib/error-messages";
 import {
   CalendarDays,
   ChevronDown,
-  CreditCard,
   FileImage,
   FileText,
   MapPin,
+  MessageSquare,
   Package,
   ScrollText,
   UserRound,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
@@ -31,10 +32,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Textarea } from "@/components/ui/textarea";
+import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { getOrderStatusColor } from "@/lib/ui/status-colors";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import { formatRelativeDateLabel } from "@/lib/date";
+import { type OrderComment } from "@/lib/orders/comments";
 import { formatOrderDate } from "@/lib/orders/format";
 import { paymentMethodLabel, paymentStatusClasses } from "@/lib/orders/paymentStatus";
 import type { MorningLocalDocument } from "@/lib/morning/types";
@@ -56,6 +60,7 @@ type DetailsResponse = {
   deliveryImages: DeliveryImage[];
   customer: Row | null;
   products: Row[];
+  comments: OrderComment[];
   totalAmount: number;
   totalPaid: number;
   paymentStatus: string;
@@ -196,6 +201,35 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DetailsResponse | null>(null);
   const [refreshSeed, setRefreshSeed] = useState(0);
+  const [comments, setComments] = useState<OrderComment[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [addingComment, setAddingComment] = useState(false);
+
+  // Keep an editable copy of the thread so a newly posted comment appears at once.
+  useEffect(() => {
+    setComments(data?.comments ?? []);
+  }, [data?.comments]);
+
+  async function addComment() {
+    const message = newComment.trim();
+    if (!message) return;
+    setAddingComment(true);
+    try {
+      const res = await fetch("/api/orders/add-comment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: orderId, message }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { comment?: OrderComment; error?: string };
+      if (!res.ok) throw new Error(toHebrewError(json.error, "הוספת התגובה נכשלה."));
+      if (json.comment) setComments((prev) => [...prev, json.comment as OrderComment]);
+      setNewComment("");
+    } catch (err: unknown) {
+      toast.error(toHebrewError(err, "הוספת התגובה נכשלה."));
+    } finally {
+      setAddingComment(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -513,14 +547,58 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
               )}
             </ExpandableSection>
 
-            <ExpandableSection title="הערות" subtitle={orderNotes ? "קיימות הערות להזמנה" : "ללא הערות"} icon={CreditCard}>
-              {orderNotes ? (
-                <div className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm leading-6">
-                  {orderNotes}
+            <ExpandableSection
+              title="הערות ותגובות"
+              subtitle={comments.length > 0 ? `${comments.length} תגובות` : "אין תגובות עדיין"}
+              icon={MessageSquare}
+            >
+              <div className="space-y-3">
+                {orderNotes ? (
+                  <div className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm leading-6 whitespace-pre-wrap">
+                    {orderNotes}
+                  </div>
+                ) : null}
+
+                {comments.length === 0 && !orderNotes ? (
+                  <p className="text-sm text-muted-foreground">לא נוספו הערות להזמנה זו.</p>
+                ) : null}
+
+                {comments.length > 0 ? (
+                  <div className="space-y-2">
+                    {comments.map((comment, index) => (
+                      <div key={`comment-${index}`} className="flex gap-2">
+                        <InitialsAvatar name={comment.author_name} size="sm" />
+                        <div className="min-w-0 flex-1 rounded-md border bg-muted/20 px-3 py-2">
+                          <div className="flex flex-wrap items-baseline gap-x-2">
+                            <span className="text-sm font-medium">{comment.author_name ?? "משתמש"}</span>
+                            <span className="text-[11px] text-muted-foreground">{comment.created_at}</span>
+                          </div>
+                          <div className="mt-0.5 whitespace-pre-wrap text-sm">{comment.body}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="space-y-2">
+                  <Textarea
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="כתבו תגובה..."
+                    className="min-h-16"
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={addingComment || !newComment.trim()}
+                      onClick={() => void addComment()}
+                    >
+                      {addingComment ? "שומר..." : "הוספת תגובה"}
+                    </Button>
+                  </div>
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">לא נוספו הערות להזמנה זו.</p>
-              )}
+              </div>
             </ExpandableSection>
           </div>
         ) : null}

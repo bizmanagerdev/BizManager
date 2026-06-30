@@ -1030,8 +1030,8 @@ export default function NewOrderClient({
                           onSaved={({ customer }) => handleCustomerSaved(customer)}
                         />
                       ) : (
-                        /* All fields shown (even empty) so missing data is visible —
-                           empty ones are flagged "חסר" in red. */
+                        /* All fields shown (even empty); empty ones show a dash
+                           rather than calling out "missing". */
                         <div className="space-y-1 rounded-lg border border-border/60 px-3 py-2 text-sm">
                           {[
                             { label: "טלפון", value: selectedCustomer.phone, ltr: true },
@@ -1052,7 +1052,7 @@ export default function NewOrderClient({
                                   {row.ltr ? `⁦${row.value}⁩` : row.value}
                                 </span>
                               ) : (
-                                <span className="font-medium text-destructive">חסר</span>
+                                <span className="font-medium text-muted-foreground">—</span>
                               )}
                             </p>
                           ))}

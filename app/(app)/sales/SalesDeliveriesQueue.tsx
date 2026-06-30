@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { DELIVERY_REGIONS, getCityRegion } from "@/lib/ui/cities";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreDeliveries } from "@/app/(app)/sales/actions";
+import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 type CustomerGroup = {
@@ -255,6 +256,11 @@ export default function SalesDeliveriesQueue({
                                 >
                                   <div className="flex items-center gap-2">
                                     <span className="font-medium">{formatCurrency(delivery.totalAmount)}</span>
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
+                                    >
+                                      {paymentStatusLabel(delivery.paymentStatus)}
+                                    </span>
                                     {delivery.collectOnDelivery ? (
                                       <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
                                         גבייה ע&quot;י הנהג

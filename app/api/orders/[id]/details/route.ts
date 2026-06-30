@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
+import { parseOrderComments } from "@/lib/orders/comments";
 import { derivePaymentStatus } from "@/lib/orders/paymentStatus";
 import { STORAGE_BUCKET } from "@/lib/storage";
 
@@ -78,6 +79,10 @@ export async function GET(
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
+
+  // Comment thread (multiple, attributed) parsed from the order's notes log — no
+  // separate table, so no extra query or schema change.
+  const comments = parseOrderComments(getString(order as Row, "notes"));
 
   const customerId = getString(order as Row, "customer_id");
   const { data: customer, error: customerError } = customerId
@@ -314,6 +319,7 @@ export async function GET(
     deliveryImages: deliveryImages.filter((row): row is NonNullable<typeof row> => Boolean(row)),
     customer,
     products: productsWithStock,
+    comments,
     totalAmount,
     totalPaid,
     remainingBalance,
