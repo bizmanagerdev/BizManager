@@ -911,6 +911,10 @@ export const TRIGGER_AUDITED_TABLES = new Set([
   "worker_payments",
   "vehicles",
   "tags",
+  // accounts carry the trg_audit_accounts trigger (db/sql/create_accounts.sql),
+  // so the /api/financial/accounts route's create/update/delete logAuditEvent
+  // calls would otherwise double-log.
+  "accounts",
 ]);
 
 // Plain row-CRUD actions the DB trigger already records. Distinct semantic

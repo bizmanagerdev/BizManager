@@ -1,0 +1,242 @@
+import { describe, it, expect } from "vitest";
+import {
+  accountKindForMethod,
+  defaultAccountForMethod,
+  getAccountKindLabel,
+  loadAccountBalances,
+  loadAccountsOverview,
+} from "@/lib/accounts";
+
+// ─── Pure helpers ─────────────────────────────────────────────────────────────
+
+describe("accountKindForMethod", () => {
+  it("maps cash methods to the cash box", () => {
+    expect(accountKindForMethod("cash")).toBe("cash");
+    expect(accountKindForMethod("מזומן")).toBe("cash");
+  });
+  it("maps transfers, checks and bit to a bank account", () => {
+    expect(accountKindForMethod("bank_transfer")).toBe("bank");
+    expect(accountKindForMethod("check")).toBe("bank");
+    expect(accountKindForMethod("bit")).toBe("bank");
+  });
+  it("maps credit card to a card account", () => {
+    expect(accountKindForMethod("credit_card")).toBe("card");
+  });
+  it("returns null for empty/unknown methods", () => {
+    expect(accountKindForMethod("")).toBeNull();
+    expect(accountKindForMethod("frobnicate")).toBeNull();
+  });
+});
+
+describe("defaultAccountForMethod", () => {
+  const accounts = [
+    { id: "bank1", kind: "bank" as const, isActive: true },
+    { id: "cash1", kind: "cash" as const, isActive: true },
+    { id: "bank2", kind: "bank" as const, isActive: true },
+  ];
+  it("auto-picks the single active account of the matching kind", () => {
+    expect(defaultAccountForMethod(accounts, "cash")).toBe("cash1");
+  });
+  it("returns '' when the kind is ambiguous (more than one match)", () => {
+    expect(defaultAccountForMethod(accounts, "bank_transfer")).toBe("");
+  });
+  it("returns '' when nothing matches", () => {
+    expect(defaultAccountForMethod(accounts, "credit_card")).toBe("");
+  });
+});
+
+describe("getAccountKindLabel", () => {
+  it("returns Hebrew labels and a sensible fallback", () => {
+    expect(getAccountKindLabel("bank")).toBe("בנק");
+    expect(getAccountKindLabel("cash")).toBe("מזומן");
+    expect(getAccountKindLabel(null)).toBe("חשבון");
+  });
+});
+
+// ─── Balance engine (driven through a fake Supabase client) ───────────────────
+
+type Tables = Record<string, Record<string, unknown>[]>;
+
+/** Minimal chainable Supabase stub: every builder method is a no-op that returns
+ *  the builder, and awaiting it resolves to `{ data: rows, error: null }`. The
+ *  engine re-applies its own date/account filters in JS, so returning all rows
+ *  for a table is faithful. */
+function makeSupabase(tables: Tables) {
+  const builder = (rows: Record<string, unknown>[]) => {
+    const self: Record<string, unknown> = {};
+    for (const m of ["select", "eq", "not", "gte", "in", "order", "range"]) {
+      self[m] = () => self;
+    }
+    self.then = (onF: (v: { data: unknown; error: null }) => unknown, onR?: (e: unknown) => unknown) =>
+      Promise.resolve({ data: rows, error: null }).then(onF, onR);
+    return self;
+  };
+  return { from: (table: string) => builder(tables[table] ?? []) } as never;
+}
+
+function account(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "acc1",
+    name: "עו״ש",
+    kind: "bank",
+    opening_balance: 1000,
+    opening_date: "2024-01-01",
+    is_active: true,
+    sort_order: 0,
+    notes: null,
+    ...overrides,
+  };
+}
+
+async function balance(tables: Tables, accountId = "acc1") {
+  const balances = await loadAccountBalances(makeSupabase(tables));
+  return balances.find((b) => b.id === accountId)!;
+}
+
+describe("loadAccountBalances — currentBalance = opening + postedIn − postedOut", () => {
+  it("a collected payment increases the balance", async () => {
+    const b = await balance({
+      accounts: [account()],
+      payments: [{ id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: 500, payment_status: "collected" }],
+    });
+    expect(b.postedIn).toBe(500);
+    expect(b.currentBalance).toBe(1500);
+  });
+
+  it("a pending payment is reported as pendingIn and excluded from the balance", async () => {
+    const b = await balance({
+      accounts: [account()],
+      payments: [{ id: "p1", account_id: "acc1", payment_date: "2024-02-01", due_date: "2024-09-01", amount_total: 500, payment_status: "pending" }],
+    });
+    expect(b.pendingIn).toBe(500);
+    expect(b.postedIn).toBe(0);
+    expect(b.currentBalance).toBe(1000);
+  });
+
+  it("a rejected (bounced) payment moves nothing", async () => {
+    const b = await balance({
+      accounts: [account()],
+      payments: [{ id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: 500, payment_status: "rejected" }],
+    });
+    expect(b.postedIn).toBe(0);
+    expect(b.pendingIn).toBe(0);
+    expect(b.currentBalance).toBe(1000);
+  });
+
+  it("a refund (negative payment) is an outflow", async () => {
+    const b = await balance({
+      accounts: [account()],
+      payments: [{ id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: -300, payment_status: "collected" }],
+    });
+    expect(b.postedOut).toBe(300);
+    expect(b.currentBalance).toBe(700);
+  });
+
+  it("rows dated before the opening date are folded into the opening figure (ignored)", async () => {
+    const b = await balance({
+      accounts: [account({ opening_date: "2024-01-01" })],
+      payments: [{ id: "p1", account_id: "acc1", payment_date: "2023-12-01", amount_total: 500, payment_status: "collected" }],
+    });
+    expect(b.postedIn).toBe(0);
+    expect(b.currentBalance).toBe(1000);
+  });
+});
+
+describe("loadAccountBalances — expenses", () => {
+  it("a paid expense is a posted outflow", async () => {
+    const b = await balance({
+      accounts: [account()],
+      expenses: [{ id: "e1", account_id: "acc1", expense_date: "2024-02-01", amount: 200, payment_status: "paid" }],
+    });
+    expect(b.postedOut).toBe(200);
+    expect(b.currentBalance).toBe(800);
+  });
+
+  it("a not-paid expense is pending only", async () => {
+    const b = await balance({
+      accounts: [account()],
+      expenses: [{ id: "e1", account_id: "acc1", expense_date: "2024-02-01", amount: 200, payment_status: "not_paid" }],
+    });
+    expect(b.pendingOut).toBe(200);
+    expect(b.postedOut).toBe(0);
+    expect(b.currentBalance).toBe(1000);
+  });
+
+  it("a partial expense posts the paid portion and pends the remainder", async () => {
+    const b = await balance({
+      accounts: [account()],
+      expenses: [{ id: "e1", account_id: "acc1", expense_date: "2024-02-01", amount: 400, paid_amount: 150, payment_status: "partial" }],
+    });
+    expect(b.postedOut).toBe(150);
+    expect(b.pendingOut).toBe(250);
+    expect(b.currentBalance).toBe(850);
+  });
+
+  it("a status-less legacy expense is treated as paid", async () => {
+    const b = await balance({
+      accounts: [account()],
+      expenses: [{ id: "e1", account_id: "acc1", expense_date: "2024-02-01", amount: 200, payment_status: null }],
+    });
+    expect(b.postedOut).toBe(200);
+  });
+});
+
+describe("loadAccountBalances — worker payments & loans", () => {
+  it("a worker payment is always a posted outflow", async () => {
+    const b = await balance({
+      accounts: [account()],
+      worker_payments: [{ id: "w1", account_id: "acc1", payment_date: "2024-02-01", amount: 250 }],
+    });
+    expect(b.postedOut).toBe(250);
+    expect(b.currentBalance).toBe(750);
+  });
+
+  it("a taken loan brings cash in; repaying it takes cash out (full amount)", async () => {
+    const b = await balance({
+      accounts: [account({ opening_balance: 0 })],
+      loans: [{ id: "L1", account_id: "acc1", direction: "taken", loan_date: "2024-02-01", amount: 10000 }],
+      loan_repayments: [{ id: "lr1", account_id: "acc1", loan_id: "L1", repayment_date: "2024-03-01", amount: 1100 }],
+    });
+    expect(b.postedIn).toBe(10000);
+    expect(b.postedOut).toBe(1100);
+    expect(b.currentBalance).toBe(8900);
+  });
+
+  it("a given loan takes cash out; being repaid brings cash in", async () => {
+    const b = await balance({
+      accounts: [account({ opening_balance: 0 })],
+      loans: [{ id: "L2", account_id: "acc1", direction: "given", loan_date: "2024-02-01", amount: 5000 }],
+      loan_repayments: [{ id: "lr2", account_id: "acc1", loan_id: "L2", repayment_date: "2024-03-01", amount: 550 }],
+    });
+    expect(b.postedOut).toBe(5000);
+    expect(b.postedIn).toBe(550);
+    expect(b.currentBalance).toBe(-4450);
+  });
+});
+
+describe("loadAccountsOverview — running balance & register", () => {
+  it("rolls the running balance chronologically and lists newest-first", async () => {
+    const [overview] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account({ opening_balance: 1000 })],
+        payments: [{ id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: 500, payment_status: "collected" }],
+        expenses: [
+          { id: "e1", account_id: "acc1", expense_date: "2024-03-01", amount: 200, payment_status: "paid" },
+          { id: "e2", account_id: "acc1", expense_date: "2024-04-01", amount: 100, payment_status: "not_paid" },
+        ],
+      })
+    );
+
+    expect(overview.currentBalance).toBe(1300); // 1000 + 500 − 200
+    expect(overview.pendingOut).toBe(100);
+
+    // Ledger is newest-first; the pending row carries a null running balance.
+    expect(overview.ledger.map((l) => l.runningBalance)).toEqual([null, 1300, 1500]);
+    const posted = overview.ledger.filter((l) => l.posted);
+    expect(posted.map((l) => l.runningBalance)).toEqual([1300, 1500]);
+  });
+
+  it("returns an empty list when there are no accounts", async () => {
+    expect(await loadAccountsOverview(makeSupabase({ accounts: [] }))).toEqual([]);
+  });
+});
