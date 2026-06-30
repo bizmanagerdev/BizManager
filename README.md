@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BizManager
 
-## Getting Started
+Hebrew (RTL) business-management system for an Israeli business: projects, sales
+orders, customers, financials, payroll, collections, documents and more.
 
-First, run the development server:
+**Stack:** Next.js 16 (App Router) · React 19 · TypeScript (strict) · Supabase
+(Postgres + Auth + RLS + Storage) · Tailwind v4 + Radix · Vitest.
+Hosting: Vercel (`fra1`) · DB region: `eu-central-1` (Frankfurt).
+
+## Bootstrap (from zero)
+
+Prerequisites: **Node 20+** and **npm**. Get the project secrets from the owner.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env     # then fill in real values (see below)
+npm run dev              # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`.env.example` is the source of truth for what's required — copy it and fill in
+each value. Real `.env*` files are gitignored; never commit secrets.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Where to get it |
+|----------|-----------------|
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API (server-only; needed for cron + payroll) |
+| `OPENAI_API_KEY` | platform.openai.com — all AI (voice, transcription, PDF extract) |
+| `MORNING_*` | Morning/GreenInvoice invoicing credentials |
+| `VAPID_*`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | `npx web-push generate-vapid-keys` |
+| `CRON_SECRET` | `openssl rand -hex 32` |
+| `DEFAULT_PRODUCT_CATEGORY_ID`, `PAYROLL_ADMIN_PASSWORD` | app config |
+| `NEXT_PUBLIC_SENTRY_DSN` | Sentry (optional; blank disables locally) |
 
-## Learn More
+## Quality gate (must pass before merge)
 
-To learn more about Next.js, take a look at the following resources:
+CI (`.github/workflows/ci.yml`) runs these on every push/PR — run them locally first:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run typecheck   # tsc --noEmit
+npm run lint        # eslint
+npm test            # vitest run
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Database changes
 
-## Deploy on Vercel
+Schema changes go through versioned migrations in `supabase/migrations/` only;
+`db/sql/` is frozen (CI enforces it). See
+[`supabase/migrations/README.md`](supabase/migrations/README.md).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run db:new <name>   # create a migration
+npm run db:push         # apply pending migrations
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## More
+
+- Engineering process, money-code rules, code style, directory map →
+  [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Morning integration → [`docs/morning-integration.md`](docs/morning-integration.md)
