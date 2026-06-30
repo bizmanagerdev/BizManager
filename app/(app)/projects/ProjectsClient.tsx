@@ -247,8 +247,8 @@ function currentMonthIso() {
   return new Date().toISOString().slice(0, 7);
 }
 
-function defaultSortForTab(tab: ProjectsView): SortMode {
-  return tab === "closed" ? "start_date_desc" : "start_date";
+function defaultSortForTab(_tab: ProjectsView): SortMode {
+  return "start_date_desc";
 }
 
 
@@ -339,7 +339,7 @@ export default function ProjectsClient({
       if (currentCustomerPage) params.set("customer_page", currentCustomerPage);
       if (merged.view !== "projects") params.set("view", merged.view);
       if (merged.status && merged.status !== "all") params.set("status", merged.status);
-      const defaultSort = merged.view === "closed" ? "start_date_desc" : "start_date";
+      const defaultSort: SortMode = "start_date_desc";
       if (merged.sort !== defaultSort) params.set("sort", merged.sort);
       if (merged.q.trim()) params.set("q", merged.q.trim());
       const qs = params.toString();

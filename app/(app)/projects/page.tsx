@@ -15,11 +15,11 @@ function parseView(value: string | undefined): ProjectsView {
   return value === "quotes" || value === "closed" ? value : "projects";
 }
 
-function parseSort(value: string | undefined, view: ProjectsView): ProjectsSort {
+function parseSort(value: string | undefined, _view: ProjectsView): ProjectsSort {
   if (value === "recent" || value === "start_date" || value === "start_date_desc" || value === "profit_desc") {
     return value;
   }
-  return view === "closed" ? "start_date_desc" : "start_date";
+  return "start_date_desc";
 }
 
 const CLOSED_STATUSES = ["quote", "completed"];
