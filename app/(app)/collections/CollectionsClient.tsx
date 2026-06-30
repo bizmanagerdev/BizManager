@@ -659,6 +659,11 @@ function CustomerActions({
   );
 }
 
+/** Does this debtor have an expected payment that's a check? (so: no cash to chase) */
+function groupHasPendingCheck(group: CollectionCustomerGroup): boolean {
+  return group.sources.some((s) => s.pending_payments.some((p) => p.payment_method === "check"));
+}
+
 // One open debt (order/project) — shared by the desktop expanded row and the
 // mobile card. Offers inline "סמן כנגבה" when the debt has pending payments.
 function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][number] }) {
@@ -677,6 +682,7 @@ function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][n
       ? `הזמנה #${source.source_id.slice(0, 8)}`
       : source.title ?? `פרויקט #${source.source_id.slice(0, 8)}`;
   const pendingIds = source.pending_payments.map((p) => p.id);
+  const checkPayment = source.pending_payments.find((p) => p.payment_method === "check");
   const methods = Array.from(
     new Set(source.pending_payments.filter((p) => p.payment_method).map((p) => paymentMethodLabel(p.payment_method)))
   );
@@ -694,6 +700,11 @@ function SourceDetail({ source }: { source: CollectionCustomerGroup["sources"][n
         <Badge className={collectionStatusClasses(source.collection_status)}>
           {collectionStatusLabel(source.collection_status)}
         </Badge>
+        {checkPayment ? (
+          <Badge variant="info" className="gap-1 text-[10px]">
+            צ׳ק{checkPayment.check_number ? ` מס׳ ${checkPayment.check_number}` : ""}
+          </Badge>
+        ) : null}
         <span className="text-muted-foreground">תאריך: {formatDate(source.reference_date)}</span>
         <span className="font-semibold text-foreground">{formatCurrency(source.outstanding_amount)}</span>
         {source.payment_terms ? (
@@ -763,6 +774,9 @@ function CustomerCard({
               />
               <span className="font-semibold">{group.customer_name}</span>
               <Badge className={collectionStatusClasses(group.status)}>{collectionStatusLabel(group.status)}</Badge>
+              {groupHasPendingCheck(group) ? (
+                <Badge variant="info" className="gap-1 text-[10px]">צ׳ק</Badge>
+              ) : null}
             </div>
             {group.customer_phone ? (
               <div className="mt-1 text-sm text-muted-foreground">☎ {group.customer_phone}</div>
@@ -1339,9 +1353,14 @@ function FragmentRow({
           )}
         </td>
         <td className="px-3 py-2">
-          <Badge className={collectionStatusClasses(group.status)}>
-            {collectionStatusLabel(group.status)}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-1">
+            <Badge className={collectionStatusClasses(group.status)}>
+              {collectionStatusLabel(group.status)}
+            </Badge>
+            {groupHasPendingCheck(group) ? (
+              <Badge variant="info" className="gap-1 text-[10px]">צ׳ק</Badge>
+            ) : null}
+          </div>
           {group.oldest_days_late > 0 ? (
             <div className="mt-0.5 text-[11px] text-destructive">
               {group.oldest_days_late} ימים באיחור

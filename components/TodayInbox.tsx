@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatShortDate } from "@/lib/date";
 import { actionTypeLabel } from "@/lib/communications";
+import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import type { TodayInboxData } from "@/lib/today-inbox";
 
 function formatCurrency(value: number) {
@@ -205,6 +206,13 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
                 </a>
               ) : null}
               <span className="font-semibold">{formatCurrency(p.amount)}</span>
+              {p.payment_method === "check" ? (
+                <Badge variant="info" className="gap-1 text-[10px]">
+                  צ׳ק{p.check_number ? ` מס׳ ${p.check_number}` : ""} — להפקדה
+                </Badge>
+              ) : p.payment_method ? (
+                <span className="text-xs text-muted-foreground">{paymentMethodLabel(p.payment_method)}</span>
+              ) : null}
             </div>
             <Button
               type="button"

@@ -100,6 +100,8 @@ type OrderView = {
   deliveryConfirmedAt: string | null;
   outOfStock: boolean;
   products: { name: string; quantity: number }[];
+  pendingMethods: string[];
+  pendingCheckNumber: string | null;
 };
 
 const PRODUCTS_PREVIEW_LIMIT = 3;
@@ -390,6 +392,10 @@ export default function SalesOrdersClient({
               })
               .filter((p): p is { name: string; quantity: number } => p !== null)
           : [],
+        pendingMethods: Array.isArray(row.pending_payment_methods)
+          ? (row.pending_payment_methods as unknown[]).filter((m): m is string => typeof m === "string")
+          : [],
+        pendingCheckNumber: getString(row, ["pending_check_number"]),
       };
     });
 
@@ -578,9 +584,16 @@ export default function SalesOrdersClient({
                         <InvoiceQuickMenu orderId={row.id} needsInvoice={row.needsInvoice} invoiceSentAt={row.invoiceSentAt} />
                       </td>
                       <td className="px-4 py-4">
-                        <Badge className={collectionStatusClasses(row.collectionStatus)}>
-                          {orderCollectionStatusLabel(row.collectionStatus)}
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Badge className={collectionStatusClasses(row.collectionStatus)}>
+                            {orderCollectionStatusLabel(row.collectionStatus)}
+                          </Badge>
+                          {row.pendingMethods.includes("check") ? (
+                            <Badge variant="info" className="gap-1 text-[10px]">
+                              צ׳ק{row.pendingCheckNumber ? ` מס׳ ${row.pendingCheckNumber}` : ""}
+                            </Badge>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-4">
                         <div className="space-y-0.5">
@@ -635,6 +648,11 @@ export default function SalesOrdersClient({
                           <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-1.5 py-0 text-[10px]`}>
                             {orderCollectionStatusLabel(row.collectionStatus)}
                           </Badge>
+                          {row.pendingMethods.includes("check") ? (
+                            <Badge variant="info" className="gap-1 px-1.5 py-0 text-[10px]">
+                              צ׳ק{row.pendingCheckNumber ? ` מס׳ ${row.pendingCheckNumber}` : ""}
+                            </Badge>
+                          ) : null}
                           {row.outOfStock ? (
                             <Badge className={`${outOfStockBadgeClasses} px-1.5 py-0 text-[10px]`}>חוסר במלאי</Badge>
                           ) : null}

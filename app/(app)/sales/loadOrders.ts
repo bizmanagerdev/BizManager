@@ -148,6 +148,37 @@ async function fetchOrderProductSummaries(
 }
 
 /**
+ * For a set of order ids, return each order's PENDING (not-yet-collected) payment
+ * methods + first pending check number. Lets the list flag "this expected payment
+ * is a check" so you know not to chase cash.
+ */
+async function fetchOrderPendingMethods(
+  supabase: SupabaseClient,
+  orderIds: string[]
+): Promise<Map<string, { methods: string[]; checkNumber: string | null }>> {
+  const result = new Map<string, { methods: string[]; checkNumber: string | null }>();
+  if (orderIds.length === 0) return result;
+
+  const { data } = await supabase
+    .from("payments")
+    .select("order_id,payment_method,check_number,payment_status")
+    .in("order_id", orderIds)
+    .eq("payment_status", "pending");
+
+  for (const row of (data ?? []) as Row[]) {
+    const orderId = typeof row.order_id === "string" ? row.order_id : "";
+    if (!orderId) continue;
+    const method = typeof row.payment_method === "string" ? row.payment_method : null;
+    const checkNumber = typeof row.check_number === "string" ? row.check_number : null;
+    const entry = result.get(orderId) ?? { methods: [], checkNumber: null };
+    if (method && !entry.methods.includes(method)) entry.methods.push(method);
+    if (!entry.checkNumber && checkNumber) entry.checkNumber = checkNumber;
+    result.set(orderId, entry);
+  }
+  return result;
+}
+
+/**
  * Load one page of the orders list (open or closed), with each order's effective
  * due date attached for the late-status badge. Shared by the initial server
  * render (page 1) and the fetch-on-scroll server action (page >= 2).
@@ -230,15 +261,21 @@ export async function loadOrdersPage(
   const allOrderIds = rows
     .map((r) => (typeof r.order_id === "string" ? r.order_id : ""))
     .filter(Boolean);
-  const productsByOrder = await fetchOrderProductSummaries(supabase, allOrderIds);
+  const [productsByOrder, pendingMethodsByOrder] = await Promise.all([
+    fetchOrderProductSummaries(supabase, allOrderIds),
+    fetchOrderPendingMethods(supabase, allOrderIds),
+  ]);
 
   const rowsWithDue = rows.map((r) => {
     const orderId = typeof r.order_id === "string" ? r.order_id : "";
+    const pending = pendingMethodsByOrder.get(orderId);
     return {
       ...r,
       due_date: orderDueById.get(orderId)?.dueDate ?? null,
       out_of_stock: outOfStockIds.has(orderId),
       products: productsByOrder.get(orderId) ?? [],
+      pending_payment_methods: pending?.methods ?? [],
+      pending_check_number: pending?.checkNumber ?? null,
     };
   });
 
