@@ -189,6 +189,7 @@ export default async function SettingsPage() {
       connectedDevices = subRows.map((r) => {
         const info = describeDevice(getString(r, "endpoint") ?? "", getString(r, "user_agent"));
         return {
+          userId: getString(r, "user_id") ?? "",
           userLabel: nameMap.get(getString(r, "user_id") ?? "") ?? "משתמש לא ידוע",
           os: info.os,
           browser: info.browser,

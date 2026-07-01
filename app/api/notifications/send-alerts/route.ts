@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendPushToAll } from "@/lib/push";
 
 type Row = Record<string, unknown>;
@@ -24,7 +25,15 @@ function getNumber(row: Row, key: string) {
 export async function POST() {
   const access = await requireRouteAccess({ allowedRoles: ["admin"] });
   if (!access.ok) return access.response;
-  const { supabase } = access.value;
+
+  // Use the service-role client: RLS on push_subscriptions (auth.uid() = user_id)
+  // would otherwise limit the send to the admin's own devices, so no other user
+  // would ever receive the manually-triggered alerts. Data views are read with
+  // the same client (service role sees everything an admin would).
+  const supabase = createSupabaseAdminClient();
+  if (!supabase) {
+    return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 500 });
+  }
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
