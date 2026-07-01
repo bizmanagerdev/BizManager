@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import NotificationSettings from "@/components/notifications/NotificationSettings";
+import ConnectedDevicesCard, { type ConnectedDevice } from "@/components/notifications/ConnectedDevicesCard";
 import RecurringExpensesManager from "@/app/(app)/financial/RecurringExpensesManager";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import MorningAutoIssueForm from "@/app/(app)/settings/integrations/morning/MorningAutoIssueForm";
@@ -36,6 +37,9 @@ type Props = {
   auditLoggingEnabled: boolean;
   // Bank/cash accounts (חשבונות) — admin only
   accounts: Account[];
+  // Connected push devices across all users — admin only
+  connectedDevices: ConnectedDevice[];
+  devicesUnavailable: boolean;
 };
 
 const ALL_TABS = [
@@ -96,6 +100,13 @@ export default function SettingsTabs(props: Props) {
                 <NotificationSettings users={props.users} />
               </CardContent>
             </Card>
+          )}
+
+          {props.isAdmin && (
+            <ConnectedDevicesCard
+              devices={props.connectedDevices}
+              unavailable={props.devicesUnavailable}
+            />
           )}
         </div>
       )}

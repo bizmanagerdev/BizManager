@@ -23,6 +23,8 @@ export async function POST(req: Request) {
       endpoint: body.endpoint,
       p256dh: body.p256dh,
       auth: body.auth,
+      user_agent: req.headers.get("user-agent"),
+      last_seen_at: new Date().toISOString(),
     },
     { onConflict: "user_id,endpoint" }
   );

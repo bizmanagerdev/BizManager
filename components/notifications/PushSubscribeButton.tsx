@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 type Status = "loading" | "unsupported" | "denied" | "subscribed" | "unsubscribed";
@@ -20,12 +21,49 @@ async function getCurrentSubscription(): Promise<PushSubscription | null> {
   return reg.pushManager.getSubscription();
 }
 
+function detectIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  // iPadOS 13+ reports as "Macintosh" but is touch-capable — cover that too.
+  return (
+    /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (/macintosh/i.test(navigator.userAgent) && "ontouchend" in document)
+  );
+}
+
+function isInstalledPWA(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+}
+
+// Prominent, unmissable box telling an iPhone user they must install the app to
+// the home screen before web push can work at all (iOS platform limitation).
+function IOSInstallWarning() {
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+      <p className="font-semibold">כדי לקבל התראות באייפון צריך להתקין את האפליקציה למסך הבית</p>
+      <p className="mt-1 leading-relaxed">
+        באייפון, התראות עובדות רק כשהאתר מותקן כאפליקציה. פתחו את BizManager בדפדפן Safari, לחצו על
+        כפתור השיתוף <span className="font-semibold">⬆️</span> ← בחרו{" "}
+        <span className="font-semibold">״הוסף למסך הבית״</span>, ואז פתחו את האפליקציה מסמל שנוצר —
+        ורק אז הפעילו התראות.
+      </p>
+    </div>
+  );
+}
+
 export default function PushSubscribeButton() {
   const [status, setStatus] = useState<Status>("loading");
+  const [showIOSHelp, setShowIOSHelp] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      const iosNotInstalled = detectIOS() && !isInstalledPWA();
+      if (!cancelled) setShowIOSHelp(iosNotInstalled);
+
       if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
         if (!cancelled) setStatus("unsupported");
         return;
@@ -57,7 +95,7 @@ export default function PushSubscribeButton() {
       });
       const json = sub.toJSON();
       const keys = json.keys as { p256dh?: string; auth?: string } | undefined;
-      await fetch("/api/notifications/subscribe", {
+      const res = await fetch("/api/notifications/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -66,9 +104,19 @@ export default function PushSubscribeButton() {
           auth: keys?.auth ?? "",
         }),
       });
+      // The save to the server MUST succeed — otherwise the cron has no record
+      // and the "subscribed" button would be lying. Roll back on failure.
+      if (!res.ok) {
+        await sub.unsubscribe().catch(() => {});
+        setStatus("unsubscribed");
+        toast.error("שמירת ההתראות נכשלה. בדקו את החיבור ונסו שוב.");
+        return;
+      }
       setStatus("subscribed");
+      toast.success("ההתראות הופעלו למכשיר זה");
     } catch {
       setStatus("unsubscribed");
+      toast.error("הפעלת ההתראות נכשלה. נסו שוב.");
     }
   }
 
@@ -85,9 +133,16 @@ export default function PushSubscribeButton() {
         await sub.unsubscribe();
       }
       setStatus("unsubscribed");
+      toast.success("ההתראות כובו למכשיר זה");
     } catch {
       setStatus("unsubscribed");
     }
+  }
+
+  // On an iPhone that isn't installed, push can never work — show the install
+  // guide instead of a dead/hidden button.
+  if (showIOSHelp && (status === "unsupported" || status === "unsubscribed")) {
+    return <IOSInstallWarning />;
   }
 
   if (status === "loading") {
@@ -98,13 +153,22 @@ export default function PushSubscribeButton() {
     );
   }
 
-  if (status === "unsupported") return null;
+  if (status === "unsupported") {
+    return (
+      <p className="text-sm text-muted-foreground">הדפדפן הזה לא תומך בהתראות.</p>
+    );
+  }
 
   if (status === "denied") {
     return (
-      <Button variant="outline" size="sm" disabled>
-        התראות חסומות בדפדפן
-      </Button>
+      <div className="space-y-2">
+        <Button variant="outline" size="sm" disabled>
+          התראות חסומות בדפדפן
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          ההתראות חסומות בהגדרות המכשיר. יש לאפשר אותן בהגדרות הדפדפן/המכשיר ואז לרענן.
+        </p>
+      </div>
     );
   }
 
