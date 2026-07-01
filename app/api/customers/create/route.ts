@@ -58,6 +58,7 @@ export async function POST(req: Request) {
         registration_number: registrationNumber,
         phone,
         whatsapp,
+        city,
         email: email || null,
         address: fullAddress || null,
         active: true,

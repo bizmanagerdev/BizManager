@@ -326,6 +326,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
             phone: trimPhone || null,
             whatsapp: whatsapp.trim() || null,
             email: email.trim() || null,
+            city: finalCity || null,
             address: combinedAddress,
             notes: notes.trim() || null,
             active,

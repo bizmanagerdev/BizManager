@@ -10,6 +10,7 @@ type UpdateCustomerPayload = {
   phone?: string | null;
   whatsapp?: string | null;
   email?: string | null;
+  city?: string | null;
   address?: string | null;
   notes?: string | null;
   active?: boolean;
@@ -50,6 +51,12 @@ export async function POST(req: Request) {
     if ("phone" in body) patch.phone = trimOrNull(body.phone);
     if ("whatsapp" in body) patch.whatsapp = trimOrNull(body.whatsapp);
     if ("email" in body) patch.email = trimOrNull(body.email);
+    // city is NOT NULL — only overwrite when a non-empty value is supplied, so an
+    // edit that omits/blanks the city never violates the constraint.
+    if ("city" in body) {
+      const city = trimOrNull(body.city);
+      if (city) patch.city = city;
+    }
     if ("address" in body) patch.address = trimOrNull(body.address);
     if ("notes" in body) patch.notes = trimOrNull(body.notes);
     if ("active" in body) patch.active = body.active === true;
