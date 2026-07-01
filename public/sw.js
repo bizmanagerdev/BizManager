@@ -1,4 +1,4 @@
-const V = "v11";
+const V = "v12";
 const STATIC_CACHE = `bizh-static-${V}`;   // immutable _next/static chunks
 const PAGES_CACHE  = `bizh-pages-${V}`;    // navigation responses
 const API_CACHE    = `bizh-api-${V}`;      // /api GET responses
@@ -97,6 +97,15 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(payload.title, {
       body: payload.body,
       tag: payload.tag,
+      // Without renotify, a second notification that reuses the same tag
+      // (e.g. a repeated test, or a daily alert of the same type) silently
+      // updates the existing one — no banner, no sound — so it only appears
+      // in the tray. renotify forces a fresh heads-up alert every time.
+      renotify: true,
+      // Keep the banner on screen until the user acts, instead of it flashing
+      // by and dropping straight into the notification list.
+      requireInteraction: true,
+      vibrate: [200, 100, 200],
       icon: "/icon-192.png",
       badge: "/icon-192.png",
       dir: "rtl",
