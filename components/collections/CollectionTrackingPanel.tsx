@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DateTimeInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
-import { formatShortDate } from "@/lib/date";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { collectionStatusClasses, collectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import type { CustomerReceivable } from "@/lib/collections";
@@ -535,7 +535,7 @@ export default function CollectionTrackingPanel({
                     <div className="min-w-0">
                       <div className="font-semibold">{r.content || actionTypeLabel(r.action_type)}</div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
-                        {actionTypeLabel(r.action_type)} · מתוזמן ל-{formatShortDate(r.remind_at)}
+                        {actionTypeLabel(r.action_type)} · מתוזמן ל-{formatShortDateTime(r.remind_at)}
                         {overdue ? <span className="text-destructive"> (באיחור)</span> : null}
                         {r.assigned_to_name ? ` · ${r.assigned_to_name}` : ""}
                       </div>

@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
-import { formatShortDate } from "@/lib/date";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import {
   collectionStatusClasses,
   collectionStatusLabel,
@@ -142,7 +142,7 @@ export function TodayOverview({
                     {r.content ? <span className="text-muted-foreground">· {r.content}</span> : null}
                     <span className={overdue ? "font-medium text-destructive" : "text-muted-foreground"}>
                       {overdue ? "באיחור · " : ""}
-                      {formatShortDate(r.remind_at)}
+                      {formatShortDateTime(r.remind_at)}
                     </span>
                   </div>
                   <Button
@@ -1099,7 +1099,7 @@ function ReminderGroup({
                   <span className="font-medium">{r.customer_name ?? "כללי"}</span>
                 )}
                 <span className="text-xs text-muted-foreground">
-                  {r.task_subject ? "משימה" : actionTypeLabel(r.action_type)} · {formatShortDate(r.remind_at)}
+                  {r.task_subject ? "משימה" : actionTypeLabel(r.action_type)} · {formatShortDateTime(r.remind_at)}
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 text-muted-foreground">
