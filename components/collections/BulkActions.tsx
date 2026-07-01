@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DateInput } from "@/components/ui/date-input";
+import { DateTimeInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
@@ -65,7 +65,7 @@ export default function BulkActions({
   async function createReminders() {
     if (busy) return;
     if (!remindAt) {
-      setError("יש לבחור תאריך לתזכורת.");
+      setError("יש לבחור תאריך ושעה לתזכורת.");
       return;
     }
     setBusy(true);
@@ -78,7 +78,7 @@ export default function BulkActions({
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               customer_id: g.customer_id,
-              remind_at: remindAt,
+              remind_at: new Date(remindAt).toISOString(),
               action_type: actionType,
               content: content.trim() || undefined,
               category: "collection",
@@ -125,7 +125,7 @@ export default function BulkActions({
           </DialogHeader>
           <div className="space-y-2 text-right">
             <div className="grid gap-2 sm:grid-cols-2">
-              <DateInput value={remindAt} onChange={(e) => setRemindAt(e.target.value)} />
+              <DateTimeInput value={remindAt} onChange={(e) => setRemindAt(e.target.value)} />
               <select
                 value={actionType}
                 onChange={(e) => setActionType(e.target.value)}

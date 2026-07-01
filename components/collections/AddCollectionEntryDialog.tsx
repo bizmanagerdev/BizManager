@@ -4,7 +4,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { DateInput } from "@/components/ui/date-input";
+import { DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -115,7 +115,7 @@ export default function AddCollectionEntryDialog({
       return;
     }
     if (mode === "reminder" && !reminderDate) {
-      setError("יש לבחור תאריך לתזכורת.");
+      setError("יש לבחור תאריך ושעה לתזכורת.");
       return;
     }
     if (mode === "call" && !content.trim() && !withFollowUp) {
@@ -123,7 +123,7 @@ export default function AddCollectionEntryDialog({
       return;
     }
     if (mode === "call" && withFollowUp && !followUpDate) {
-      setError("יש לבחור תאריך לתזכורת ההמשך.");
+      setError("יש לבחור תאריך ושעה לתזכורת ההמשך.");
       return;
     }
 
@@ -135,7 +135,7 @@ export default function AddCollectionEntryDialog({
               "/api/reminders/create",
               {
                 customer_id: customer?.id ?? null,
-                remind_at: reminderDate,
+                remind_at: new Date(reminderDate).toISOString(),
                 content: reminderNote.trim() || undefined,
                 action_type: "call",
                 category: "collection",
@@ -154,7 +154,7 @@ export default function AddCollectionEntryDialog({
                 category: "collection",
                 follow_up: withFollowUp
                   ? {
-                      remind_at: followUpDate,
+                      remind_at: new Date(followUpDate).toISOString(),
                       content: followUpContent.trim() || undefined,
                       assigned_to: assignee || undefined,
                     }
@@ -255,8 +255,8 @@ export default function AddCollectionEntryDialog({
           {mode === "reminder" ? (
             <>
               <div className="space-y-1">
-                <label className="text-sm font-medium">תאריך תזכורת *</label>
-                <DateInput value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
+                <label className="text-sm font-medium">תאריך ושעה לתזכורת *</label>
+                <DateTimeInput value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">על מה להזכיר?</label>
@@ -311,7 +311,7 @@ export default function AddCollectionEntryDialog({
               {withFollowUp ? (
                 <>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <DateInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
+                    <DateTimeInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
                     <Input
                       value={followUpContent}
                       onChange={(e) => setFollowUpContent(e.target.value)}

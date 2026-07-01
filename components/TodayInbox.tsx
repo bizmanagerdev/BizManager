@@ -9,7 +9,7 @@ import { Bell, ListTodo, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatShortDate } from "@/lib/date";
+import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { actionTypeLabel } from "@/lib/communications";
 import { paymentMethodLabel } from "@/lib/orders/paymentStatus";
 import type { TodayInboxData } from "@/lib/today-inbox";
@@ -158,7 +158,7 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
                 {r.content ? <span className="text-muted-foreground">· {r.content}</span> : null}
                 <span className={overdue ? "font-medium text-destructive" : "text-muted-foreground"}>
                   {overdue ? "באיחור · " : ""}
-                  {formatShortDate(r.remind_at)}
+                  {formatShortDateTime(r.remind_at)}
                 </span>
               </div>
               <Button

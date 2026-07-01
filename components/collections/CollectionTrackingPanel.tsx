@@ -7,7 +7,7 @@ import { BellRing, Check, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DateInput } from "@/components/ui/date-input";
+import { DateTimeInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatShortDate } from "@/lib/date";
 import { collectionStatusClasses, collectionStatusLabel, paymentMethodLabel } from "@/lib/orders/paymentStatus";
@@ -134,7 +134,7 @@ export default function CollectionTrackingPanel({
       return;
     }
     if (withFollowUp && !followUpDate) {
-      setError("יש לבחור תאריך לתזכורת ההמשך.");
+      setError("יש לבחור תאריך ושעה לתזכורת ההמשך.");
       return;
     }
     function resetCallForm() {
@@ -158,7 +158,7 @@ export default function CollectionTrackingPanel({
           content: content.trim() || undefined,
           follow_up: withFollowUp
             ? {
-                remind_at: followUpDate,
+                remind_at: new Date(followUpDate).toISOString(),
                 content: followUpContent.trim() || undefined,
                 assigned_to: followUpAssignee || undefined,
               }
@@ -188,7 +188,7 @@ export default function CollectionTrackingPanel({
   async function addReminder() {
     if (submitting) return;
     if (!reminderDate) {
-      setError("יש לבחור תאריך לתזכורת.");
+      setError("יש לבחור תאריך ושעה לתזכורת.");
       return;
     }
     function resetReminderForm() {
@@ -205,7 +205,7 @@ export default function CollectionTrackingPanel({
         "/api/reminders/create",
         {
           customer_id: customerId,
-          remind_at: reminderDate,
+          remind_at: new Date(reminderDate).toISOString(),
           content: reminderNote.trim() || undefined,
           action_type: "call",
           category: "collection",
@@ -324,7 +324,7 @@ export default function CollectionTrackingPanel({
       {withFollowUp ? (
         <div className="mt-2 space-y-2">
           <div className="grid gap-2 sm:grid-cols-2">
-            <DateInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
+            <DateTimeInput value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
             <input
               value={followUpContent}
               onChange={(e) => setFollowUpContent(e.target.value)}
@@ -364,7 +364,7 @@ export default function CollectionTrackingPanel({
     <div className="rounded-xl border border-border/70 bg-background/60 p-3">
       <div className="mb-2 text-sm font-semibold">קביעת תזכורת</div>
       <div className="grid gap-2 sm:grid-cols-2">
-        <DateInput value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
+        <DateTimeInput value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
         <input
           value={reminderNote}
           onChange={(e) => setReminderNote(e.target.value)}

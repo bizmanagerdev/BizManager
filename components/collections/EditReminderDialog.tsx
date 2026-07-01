@@ -4,7 +4,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { DateInput } from "@/components/ui/date-input";
+import { DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -17,6 +17,15 @@ import {
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import type { Reminder } from "@/lib/communications";
 import { offlineFetch } from "@/lib/offline-queue";
+
+// Convert a stored ISO timestamp to the local "YYYY-MM-DDTHH:mm" value that
+// DateTimeInput expects, so an existing reminder's date AND hour prefill.
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 // Reusable "edit reminder" — reschedule, edit content, and reassign (אחראי).
 // Used wherever reminders are managed (collections list, per-customer panel).
@@ -39,7 +48,7 @@ export default function EditReminderDialog({
 
   useEffect(() => {
     if (!open || !reminder) return;
-    setRemindAt(reminder.remind_at ? reminder.remind_at.slice(0, 10) : "");
+    setRemindAt(reminder.remind_at ? toLocalInput(reminder.remind_at) : "");
     setContent(reminder.content ?? "");
     setAssignee(reminder.assigned_to ?? "");
     setError(null);
@@ -48,7 +57,7 @@ export default function EditReminderDialog({
   async function save() {
     if (!reminder || submitting) return;
     if (!remindAt) {
-      setError("יש לבחור תאריך.");
+      setError("יש לבחור תאריך ושעה.");
       return;
     }
     setSubmitting(true);
@@ -58,7 +67,7 @@ export default function EditReminderDialog({
         "/api/reminders/update",
         {
           id: reminder.id,
-          remind_at: remindAt,
+          remind_at: new Date(remindAt).toISOString(),
           content: content.trim() || null,
           assigned_to: assignee || null,
         },
@@ -92,8 +101,8 @@ export default function EditReminderDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
-            <label className="text-sm font-medium">תאריך *</label>
-            <DateInput value={remindAt} onChange={(e) => setRemindAt(e.target.value)} />
+            <label className="text-sm font-medium">תאריך ושעה *</label>
+            <DateTimeInput value={remindAt} onChange={(e) => setRemindAt(e.target.value)} />
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium">תוכן</label>
