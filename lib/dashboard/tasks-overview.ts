@@ -53,7 +53,9 @@ export async function getMyTasks(
     .from("tasks")
     .select("id,subject,due_date,priority,status,project_id")
     .in("status", OPEN_TASK_STATUSES)
-    .order("due_date", { ascending: true, nullsFirst: false })
+    // Newest tasks first, so a task just added from the dashboard lands at the top
+    // of "המשימות שלי" rather than being buried at the end.
+    .order("created_at", { ascending: false })
     .range(0, 299);
   tasksQuery =
     memberTaskIds.length > 0
