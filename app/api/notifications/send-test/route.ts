@@ -1,19 +1,25 @@
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { sendPushToAll } from "@/lib/push";
 
-export async function POST(req: Request) {
+// Admin-only manual trigger. Sends a single guaranteed, visible test
+// notification to every subscribed device so the full push pipeline
+// (subscription → VAPID → service worker → display) can be verified on a
+// real phone. Unlike the scheduled cron, this does NOT depend on any alert
+// being due this hour or on there being real data to report.
+export async function POST() {
   const access = await requireRouteAccess({ allowedRoles: ["admin"] });
   if (!access.ok) return access.response;
+  const { supabase, profile } = access.value;
 
-  // Forward to the cron route (server-to-server, same process)
-  const host = req.headers.get("host") ?? "localhost:3000";
-  const proto = host.startsWith("localhost") ? "http" : "https";
-  const cronSecret = process.env.CRON_SECRET ?? "";
+  const by = profile.full_name?.trim() || profile.email || "מנהל";
 
-  const res = await fetch(`${proto}://${host}/api/cron/daily-alerts?period=morning`, {
-    headers: { Authorization: `Bearer ${cronSecret}` },
+  const result = await sendPushToAll(supabase, {
+    title: "✅ בדיקת התראות",
+    body: `זוהי התראת בדיקה שנשלחה על ידי ${by}. אם קיבלת אותה — ההתראות עובדות!`,
+    url: "/alerts",
+    tag: "bizh-test",
   });
 
-  const data = await res.json();
-  return NextResponse.json(data, { status: res.status });
+  return NextResponse.json({ ok: true, ...result });
 }
