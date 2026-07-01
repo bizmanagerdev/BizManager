@@ -14,11 +14,13 @@ export async function POST() {
 
   const by = profile.full_name?.trim() || profile.email || "מנהל";
 
+  // Unique tag per send so each test is a fresh notification that re-alerts,
+  // instead of Android silently coalescing it into the previous test.
   const result = await sendPushToAll(supabase, {
     title: "✅ בדיקת התראות",
     body: `זוהי התראת בדיקה שנשלחה על ידי ${by}. אם קיבלת אותה — ההתראות עובדות!`,
     url: "/alerts",
-    tag: "bizh-test",
+    tag: `bizh-test-${Date.now()}`,
   });
 
   return NextResponse.json({ ok: true, ...result });

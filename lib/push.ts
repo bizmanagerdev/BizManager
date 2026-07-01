@@ -101,7 +101,11 @@ async function sendToRows(
       try {
         await webpush.sendNotification(
           { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
-          JSON.stringify(payload)
+          JSON.stringify(payload),
+          // High urgency → the push service (FCM) delivers as a high-priority
+          // message, which wakes the device immediately and makes Android more
+          // willing to show a heads-up banner rather than a silent tray entry.
+          { urgency: "high" }
         );
         sent++;
       } catch (err: unknown) {

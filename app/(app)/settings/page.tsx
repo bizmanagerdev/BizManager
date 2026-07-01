@@ -37,7 +37,11 @@ export default async function SettingsPage() {
 
   // ── Shared lookups ──────────────────────────────────────────────────────
   const [usersResult, projectsResult, propertiesResult] = await Promise.all([
+    // Only users who can actually log in and use the system are valid alert
+    // recipients — match the access rule used in requireProfile / requireRouteAccess
+    // (active AND system_access AND role != worker_no_access).
     supabase.from("users").select("id,full_name,email").eq("active", true)
+      .eq("system_access", true).neq("role", "worker_no_access")
       .order("full_name", { ascending: true }).range(0, 499),
     supabase.from("project_dashboard_view").select("id,name,customer_name")
       .order("updated_at", { ascending: false }).range(0, 999),
