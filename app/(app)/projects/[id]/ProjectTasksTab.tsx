@@ -1076,7 +1076,9 @@ export function ProjectTasksTab({
         mode="edit"
         taskId={editId}
         users={assignableUsers
-          .filter((u) => u.active !== false)
+          // Only offer workers with system access — no payroll-only (no-access)
+          // workers, who can't log in or act on tasks.
+          .filter((u) => u.active !== false && u.role !== "worker_no_access")
           .map((u) => ({ id: u.id, label: u.full_name ?? u.email }))}
         fixedTarget={{ type: "project", id: projectId }}
         defaultProjectType={projectType}

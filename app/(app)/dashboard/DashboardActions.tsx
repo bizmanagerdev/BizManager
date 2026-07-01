@@ -1322,7 +1322,9 @@ export default function DashboardActions({
         mode="create"
         wizard
         currentUserId={currentUserId}
-        users={users}
+        // Only workers with system access can be assigned / added to a task;
+        // no-access (payroll-only) workers are excluded from the task pickers.
+        users={users.filter((u) => u.role !== "worker_no_access")}
         projects={projectPickerOptions}
         properties={properties.map((property) => ({
           id: property.id,

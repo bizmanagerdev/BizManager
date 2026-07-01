@@ -72,6 +72,8 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
       .from("users")
       .select("id,full_name,email,avatar_color,active")
       .eq("active", true)
+      // Task pickers only offer workers with system access (no payroll-only workers).
+      .neq("role", "worker_no_access")
       .order("full_name", { ascending: true }),
     supabase.from("project_dashboard_view").select("id,name").order("name", { ascending: true }).range(0, 999),
     supabase

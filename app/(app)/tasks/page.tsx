@@ -64,6 +64,9 @@ export default async function TasksPage({
     supabase
       .from("users")
       .select("id,full_name,email,active")
+      // Only workers with system access can be assigned / added as task members;
+      // no-access workers (payroll-only, can't log in) are excluded from the pickers.
+      .neq("role", "worker_no_access")
       .order("full_name", { ascending: true })
       .range(0, 499),
   ]);

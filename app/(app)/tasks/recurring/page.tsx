@@ -55,6 +55,8 @@ export default async function RecurringTasksPage() {
     supabase
       .from("users")
       .select("id,full_name,email,active")
+      // Task pickers only offer workers with system access (no payroll-only workers).
+      .neq("role", "worker_no_access")
       .order("full_name", { ascending: true })
       .range(0, 499),
   ]);
