@@ -146,6 +146,19 @@ function isEditableExpenseEntry(entry: FinancialEntry): entry is EditableExpense
   return entry.origin === "expense" && typeof entry.expenseId === "string" && entry.expenseId.length > 0;
 }
 
+// Ledger/History tab search. Match on the entry's full searchText (notes,
+// category, payment method/status, domain, payer — the same rich field the
+// server-side filter uses), falling back to the display fields if it's absent.
+// `q` is expected already trimmed + lowercased.
+function entryMatchesQuery(entry: FinancialEntry, q: string): boolean {
+  if (typeof entry.searchText === "string" && entry.searchText) {
+    return entry.searchText.includes(q);
+  }
+  return [entry.description, entry.domainName, entry.sourceLabel, entry.reference, entry.recordedByName].some(
+    (v) => typeof v === "string" && v.toLowerCase().includes(q)
+  );
+}
+
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -296,13 +309,7 @@ export default function FinancialPageClient({
     const q = ledgerSearch.trim().toLowerCase();
     let list = ledgerEntries;
     if (ledgerMonth) list = list.filter((e) => (e.flowDate ?? "").slice(0, 7) === ledgerMonth);
-    if (q) {
-      list = list.filter((e) =>
-        [e.description, e.domainName, e.sourceLabel, e.reference, e.recordedByName].some(
-          (v) => typeof v === "string" && v.toLowerCase().includes(q)
-        )
-      );
-    }
+    if (q) list = list.filter((e) => entryMatchesQuery(e, q));
     const { key, dir } = ledgerSort;
     const sorted = [...list].sort((a, b) => {
       let cmp = 0;
@@ -320,13 +327,7 @@ export default function FinancialPageClient({
   const displayHistory = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
     let list = ledgerEntries.filter((e) => (e.flowDate ?? "") <= data.todayIso);
-    if (q) {
-      list = list.filter((e) =>
-        [e.description, e.domainName, e.sourceLabel, e.reference, e.recordedByName].some(
-          (v) => typeof v === "string" && v.toLowerCase().includes(q)
-        )
-      );
-    }
+    if (q) list = list.filter((e) => entryMatchesQuery(e, q));
     return [...list].sort((a, b) => {
       const cmp = (b.flowDate ?? "").localeCompare(a.flowDate ?? "");
       return cmp !== 0 ? cmp : b.id.localeCompare(a.id);

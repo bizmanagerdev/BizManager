@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchOrderDueDates } from "@/lib/collections";
 import { findMatchingCustomers } from "@/lib/search/findMatchingCustomers";
+import { findOrderIdsMatchingContent } from "@/lib/search/findMatchingChildIds";
 
 type Row = Record<string, unknown>;
 
@@ -227,18 +228,32 @@ export async function loadOrdersPage(
   if (q) {
     const escaped = q.replace(/[%,]/g, " ");
     // Resolve matching customers with the shared matcher (fuzzy names,
-    // phone↔whatsapp cross-match) and match orders by their IDs. The order
+    // phone↔whatsapp cross-match), and matching order line items (product
+    // name/SKU/barcode or line note), then match orders by their IDs. The order
     // snapshot fields stay in the OR so an order keeps matching even after the
     // customer record changes.
-    const { customerIds } = await findMatchingCustomers(supabase, q, { limit: 300, idsOnly: true });
+    const [{ customerIds }, orderContent] = await Promise.all([
+      findMatchingCustomers(supabase, q, { limit: 300, idsOnly: true }),
+      findOrderIdsMatchingContent(supabase, q, 300),
+    ]);
+    const itemOrderIds = orderContent.ids;
 
+    // The order's own snapshot fields (name/invoice-name/address/city/phone/email)
+    // plus its status, so "find anything on the order" works from the list too.
     const conditions: string[] = [
+      `customer_name.ilike.%${escaped}%`,
+      `customer_name_for_invoice.ilike.%${escaped}%`,
       `customer_phone.ilike.%${escaped}%`,
       `customer_email.ilike.%${escaped}%`,
       `customer_city.ilike.%${escaped}%`,
+      `customer_address.ilike.%${escaped}%`,
+      `status.ilike.%${escaped}%`,
     ];
     if (customerIds.length > 0) {
       conditions.push(`customer_id.in.(${customerIds.join(",")})`);
+    }
+    if (itemOrderIds.length > 0) {
+      conditions.push(`order_id.in.(${itemOrderIds.join(",")})`);
     }
     ordersQuery = ordersQuery.or(conditions.join(","));
   }

@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { cn } from "@/lib/utils";
+import { highlightText, MatchReason } from "@/components/search/highlightMatch";
 import type { GlobalSearchResponse } from "@/lib/global-search";
 
 type Props = {
@@ -96,9 +97,19 @@ function SearchResults({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
-                    <div className="truncate text-sm font-medium">{result.title}</div>
+                    <div className="truncate text-sm font-medium">{highlightText(result.title, trimmedQuery)}</div>
                     {result.subtitle ? (
-                      <div className="truncate text-xs text-muted-foreground">{result.subtitle}</div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {highlightText(result.subtitle, trimmedQuery)}
+                      </div>
+                    ) : null}
+                    {result.match ? (
+                      <MatchReason
+                        label={result.match.label}
+                        snippet={result.match.snippet}
+                        query={trimmedQuery}
+                        className="truncate text-xs text-muted-foreground/90"
+                      />
                     ) : null}
                   </div>
                   {!compact ? (

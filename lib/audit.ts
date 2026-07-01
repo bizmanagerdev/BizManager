@@ -21,6 +21,7 @@ type AuditActorRow = {
   auth_user_id?: string | null;
   full_name: string | null;
   email: string | null;
+  avatar_color?: string | null;
 };
 
 type LogAuditParams = {
@@ -45,6 +46,10 @@ export type AuditFeedItem = {
   details: string;
   actorName: string;
   actorRole: string | null;
+  // The actor's chosen avatar color (users.avatar_color), so the feed avatar
+  // matches the color they picked elsewhere. Null → InitialsAvatar falls back
+  // to its name-hash palette.
+  actorColor: string | null;
   createdAt: string | null;
   // Human identifier of the affected entity (customer/project/worker name),
   // resolved from foreign keys — so a row reads "הזמנה · ביאן מרקט" not just
@@ -805,6 +810,49 @@ async function getActorNames(supabase: SupabaseClient, actorIds: string[]) {
   return new Map(Object.entries(resolved));
 }
 
+// Like getActorNames but also resolves each actor's chosen avatar color, in the
+// same pair of queries. changed_by holds a mix of users.id and auth_user_id, so
+// both maps are keyed by both ids (see resolveUserDisplayNamesForValues).
+async function getActorInfo(
+  supabase: SupabaseClient,
+  actorIds: string[]
+): Promise<{ names: Map<string, string>; colors: Map<string, string> }> {
+  const names = new Map<string, string>();
+  const colors = new Map<string, string>();
+  const uniqueValues = Array.from(new Set(actorIds.filter(Boolean)));
+  if (uniqueValues.length === 0) return { names, colors };
+
+  const [byIdResult, byAuthUserIdResult] = await Promise.all([
+    supabase
+      .from("users")
+      .select("id,auth_user_id,full_name,email,avatar_color")
+      .in("id", uniqueValues),
+    supabase
+      .from("users")
+      .select("id,auth_user_id,full_name,email,avatar_color")
+      .in("auth_user_id", uniqueValues),
+  ]);
+
+  for (const row of [
+    ...((byIdResult.data ?? []) as AuditActorRow[]),
+    ...((byAuthUserIdResult.data ?? []) as AuditActorRow[]),
+  ]) {
+    const name = actorDisplayName(row);
+    const color =
+      typeof row.avatar_color === "string" && row.avatar_color.trim()
+        ? row.avatar_color.trim()
+        : null;
+    for (const key of [row.id, row.auth_user_id]) {
+      if (typeof key === "string" && key) {
+        names.set(key, name);
+        if (color) colors.set(key, color);
+      }
+    }
+  }
+
+  return { names, colors };
+}
+
 // The audit_logs.changed_by column holds a MIX of identifiers: the DB trigger
 // writes auth.uid() (a users.auth_user_id) while app-side events write users.id.
 // So filtering the feed by one person means matching BOTH of their ids.
@@ -842,7 +890,8 @@ export async function getAuditActorOptions(
 export function buildAuditFeedItem(
   row: AuditLogRow,
   actorName: string | null,
-  title: string | null = null
+  title: string | null = null,
+  actorColor: string | null = null
 ): AuditFeedItem {
   const base = buildDetails(row.table_name, row.new_data ?? null);
   const changes = isUpdateAction(row.action)
@@ -868,6 +917,7 @@ export function buildAuditFeedItem(
     details,
     actorName: row.changed_by ? actorName ?? "משתמש" : "מערכת",
     actorRole: row.user_role,
+    actorColor: row.changed_by ? actorColor : null,
     createdAt: row.created_at,
     title,
     parentKey,
@@ -879,13 +929,15 @@ export function buildAuditFeedItem(
 function normalizeAuditRows(
   rows: AuditLogRow[],
   actorNames: Map<string, string>,
-  titles?: Map<string, string>
+  titles?: Map<string, string>,
+  actorColors?: Map<string, string>
 ): AuditFeedItem[] {
   return rows.map((row) =>
     buildAuditFeedItem(
       row,
       row.changed_by ? actorNames.get(row.changed_by) ?? null : null,
-      titles?.get(row.id) ?? null
+      titles?.get(row.id) ?? null,
+      row.changed_by ? actorColors?.get(row.changed_by) ?? null : null
     )
   );
 }
@@ -1011,13 +1063,13 @@ export async function getRecentAuditEvents(supabase: SupabaseClient, limit = 8) 
         .filter((value): value is string => typeof value === "string" && Boolean(value))
     )
   );
-  const [actorNames, titles] = await Promise.all([
-    getActorNames(supabase, actorIds),
+  const [actorInfo, titles] = await Promise.all([
+    getActorInfo(supabase, actorIds),
     resolveAuditTitles(supabase, rows),
   ]);
 
   return {
-    items: normalizeAuditRows(rows, actorNames, titles),
+    items: normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors),
     error: null as string | null,
   };
 }
@@ -1147,12 +1199,12 @@ export async function getEntityAuditTrail(
   const actorIds = Array.from(
     new Set(rows.map((r) => r.changed_by).filter((v): v is string => typeof v === "string" && Boolean(v)))
   );
-  const [actorNames, titles] = await Promise.all([
-    getActorNames(supabase, actorIds),
+  const [actorInfo, titles] = await Promise.all([
+    getActorInfo(supabase, actorIds),
     resolveAuditTitles(supabase, rows),
   ]);
 
-  return { items: normalizeAuditRows(rows, actorNames, titles), error: null };
+  return { items: normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors), error: null };
 }
 
 export const AUDIT_PAGE_SIZE = 50;
@@ -1233,15 +1285,15 @@ export async function getAuditFeedPaginated(
   const actorIds = Array.from(
     new Set(rows.map((r) => r.changed_by).filter((v): v is string => typeof v === "string" && Boolean(v)))
   );
-  const [actorNames, titles] = await Promise.all([
-    getActorNames(supabase, actorIds),
+  const [actorInfo, titles] = await Promise.all([
+    getActorInfo(supabase, actorIds),
     resolveAuditTitles(supabase, rows),
   ]);
   const totalCount = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
 
   return {
-    items: normalizeAuditRows(rows, actorNames, titles),
+    items: normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors),
     totalCount,
     page: safePage,
     totalPages,

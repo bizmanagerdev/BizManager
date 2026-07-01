@@ -3,6 +3,7 @@ import AppShell from "@/components/layout/AppShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { performGlobalSearch } from "@/lib/global-search";
+import { highlightText, MatchReason } from "@/components/search/highlightMatch";
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -71,9 +72,19 @@ export default async function SearchPage({
                         href={result.href}
                         className="block rounded-2xl border border-border/70 p-4 transition-colors hover:bg-muted/40"
                       >
-                        <div className="font-medium">{result.title}</div>
+                        <div className="font-medium">{highlightText(result.title, query)}</div>
                         {result.subtitle ? (
-                          <div className="mt-1 text-sm text-muted-foreground">{result.subtitle}</div>
+                          <div className="mt-1 text-sm text-muted-foreground">
+                            {highlightText(result.subtitle, query)}
+                          </div>
+                        ) : null}
+                        {result.match ? (
+                          <MatchReason
+                            label={result.match.label}
+                            snippet={result.match.snippet}
+                            query={query}
+                            className="mt-1 text-sm text-muted-foreground"
+                          />
                         ) : null}
                         {result.meta.length > 0 ? (
                           <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">

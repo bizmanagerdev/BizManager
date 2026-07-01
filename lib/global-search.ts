@@ -2,6 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/requireProfile";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { customerMatchesQuery, fuzzyTextMatch, phoneMatchesQuery } from "@/lib/search/customerMatch";
+import {
+  findMatchingRowIds,
+  findOrderIdsMatchingContent,
+  findProjectIdsMatchingContent,
+} from "@/lib/search/findMatchingChildIds";
 
 export type GlobalSearchGroupKey =
   | "customers"
@@ -25,6 +30,10 @@ export type GlobalSearchResult = {
   subtitle: string | null;
   meta: string[];
   href: string;
+  // Why this result surfaced, when the match was on a field NOT already shown in
+  // the title (e.g. a note, a comment, a phone, a product). label is a short
+  // Hebrew field name; snippet is the matching text (highlighted in the UI).
+  match?: { label: string; snippet: string } | null;
 };
 
 export type GlobalSearchResponse = {
@@ -93,6 +102,54 @@ function num(value: unknown) {
 
 function isUuidLike(value: string) {
   return /^[0-9a-f-]{8,}$/i.test(value);
+}
+
+// A short preview of a matched field, WINDOWED around the matched term so the
+// highlight is visible even in a long note (truncating from the start could hide
+// it). Falls back to a head slice when the raw term isn't found (fuzzy match).
+function snippetAround(value: string, query: string, max = 80) {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const idx = clean.toLowerCase().indexOf(query.trim().toLowerCase());
+  if (idx < 0) return `${clean.slice(0, max - 1)}…`;
+  const pad = Math.floor((max - Math.min(query.length, max)) / 2);
+  const end = Math.min(clean.length, Math.max(idx + query.length + pad, idx - pad + max));
+  const start = Math.max(0, end - max);
+  return `${start > 0 ? "…" : ""}${clean.slice(start, end)}${end < clean.length ? "…" : ""}`;
+}
+
+function windowMatch(
+  match: { label: string; snippet: string } | null | undefined,
+  query: string
+): { label: string; snippet: string } | null {
+  return match ? { label: match.label, snippet: snippetAround(match.snippet, query) } : null;
+}
+
+// Find which of the given (label, value) fields contains the query, so the UI
+// can tell the user WHY a result surfaced. Returns the first hidden field that
+// matches (the title/name is handled separately — it's already on screen).
+function buildMatch(
+  query: string,
+  candidates: Array<[label: string, value: string | null | undefined]>
+): { label: string; snippet: string } | null {
+  const needle = normalizeHebrewText(query);
+  if (!needle) return null;
+  for (const [label, rawValue] of candidates) {
+    const value = (rawValue ?? "").trim();
+    if (!value) continue;
+    if (normalizeHebrewText(value).includes(needle)) {
+      return { label, snippet: snippetAround(value, query) };
+    }
+  }
+  return null;
+}
+
+function attachMatch(
+  result: GlobalSearchResult | null,
+  match: { label: string; snippet: string } | null
+): GlobalSearchResult | null {
+  if (result && match) result.match = match;
+  return result;
 }
 
 function normalizeHebrewText(value: string) {
@@ -395,6 +452,16 @@ function userResult(row: Row): GlobalSearchResult | null {
   };
 }
 
+const PAYMENT_COLUMNS =
+  "id,payment_date,amount_total,payment_method,reference_number,notes,business_domain,project_id,order_id,property_id";
+const EXPENSE_COLUMNS =
+  "id,expense_date,amount,category,description,notes,business_domain,project_id,order_id,property_id";
+const CUSTOMER_COLUMNS = "id,name,name_for_invoice,phone,whatsapp,email,address";
+const TAG_COLUMNS = "id,kind,name,color,is_active";
+
+type MatchContent = import("@/lib/search/findMatchingChildIds").ChildMatchResult;
+const emptyContent = (): MatchContent => ({ ids: [], contextById: new Map() });
+
 export async function performGlobalSearch(
   supabase: SupabaseClient,
   options: SearchOptions
@@ -407,6 +474,12 @@ export async function performGlobalSearch(
       ? Math.max(limitPerGroup * 4, 24)
       : Math.max(limitPerGroup * 8, 80);
   const uuidLike = isUuidLike(query);
+  // Deep cross-table reach: task comments, order notes/line-items, project tasks,
+  // and payment/expense notes. Runs for BOTH the top-bar type-ahead ("quick") and
+  // the full search page so a comment/note is findable wherever you search. Each
+  // is an indexed ilike over modest tables; the type-ahead is debounced + abort-
+  // able, so the extra round-trips don't pile up.
+  const deep = true;
 
   if (!query) {
     return { query: "", totalResults: 0, groups: [] };
@@ -450,12 +523,12 @@ export async function performGlobalSearch(
       .range(0, fetchSize - 1),
     supabase
       .from("payments")
-      .select("id,payment_date,amount_total,payment_method,reference_number,notes,business_domain,project_id,order_id,property_id")
+      .select(PAYMENT_COLUMNS)
       .order("payment_date", { ascending: false })
       .range(0, fetchSize - 1),
     supabase
       .from("expenses")
-      .select("id,expense_date,amount,category,description,notes,business_domain,project_id,order_id,property_id")
+      .select(EXPENSE_COLUMNS)
       .order("expense_date", { ascending: false })
       .range(0, fetchSize - 1),
     options.viewerRole === "admin"
@@ -473,7 +546,7 @@ export async function performGlobalSearch(
       .range(0, fetchSize - 1),
     supabase
       .from("tags")
-      .select("id,kind,name,color,is_active")
+      .select(TAG_COLUMNS)
       .eq("is_active", true)
       .order("name", { ascending: true })
       .range(0, fetchSize - 1),
@@ -512,27 +585,167 @@ export async function performGlobalSearch(
     throw new Error(errors[0]?.message ?? "Global search failed");
   }
 
+  // ── Deep, fuzzy, cross-table reach ──────────────────────────────────────────
+  // One fuzzy engine (findMatchingRowIds: indexed ILIKE across the whole table +
+  // a bounded fuzzy fallback for typos) resolves notes/free-text and child records
+  // system-wide, so a search finds a row by ANY field — a customer/project/car
+  // note, an order comment, a task comment — no matter how old. Ids resolved here
+  // are pulled into their groups below (fetching any outside the recent window),
+  // and the matching text is carried for the "why it matched" line.
+  const [
+    orderContent,
+    projectContent,
+    customerContent,
+    paymentContent,
+    expenseContent,
+    tagContent,
+    vehicleContent,
+    commentContent,
+  ] = deep
+    ? await Promise.all([
+        findOrderIdsMatchingContent(supabase, query, fetchSize),
+        findProjectIdsMatchingContent(supabase, query, fetchSize),
+        findMatchingRowIds(supabase, {
+          table: "customers",
+          columns: [
+            { name: "notes", label: "הערה" },
+            { name: "name", label: "שם" },
+            { name: "name_for_invoice", label: "שם לחשבונית" },
+            { name: "phone", label: "טלפון" },
+            { name: "email", label: "אימייל" },
+            { name: "address", label: "כתובת" },
+          ],
+          query,
+          limit: fetchSize,
+        }),
+        findMatchingRowIds(supabase, {
+          table: "payments",
+          columns: [
+            { name: "notes", label: "הערה" },
+            { name: "reference_number", label: "אסמכתא" },
+          ],
+          query,
+          limit: fetchSize,
+          scanOrderColumn: "payment_date",
+        }),
+        findMatchingRowIds(supabase, {
+          table: "expenses",
+          columns: [
+            { name: "notes", label: "הערה" },
+            { name: "description", label: "תיאור" },
+            { name: "category", label: "קטגוריה" },
+          ],
+          query,
+          limit: fetchSize,
+          scanOrderColumn: "expense_date",
+        }),
+        findMatchingRowIds(supabase, {
+          table: "tags",
+          columns: [
+            { name: "name", label: "שם" },
+            { name: "notes", label: "הערה" },
+          ],
+          query,
+          limit: fetchSize,
+          eq: { column: "is_active", value: true },
+        }),
+        findMatchingRowIds(supabase, {
+          table: "vehicles",
+          columns: [
+            { name: "license_plate", label: "מספר רישוי" },
+            { name: "make_model", label: "דגם" },
+            { name: "owner_name", label: "בעלים" },
+            { name: "notes", label: "הערה" },
+          ],
+          query,
+          idColumn: "tag_id",
+          limit: fetchSize,
+        }),
+        findMatchingRowIds(supabase, {
+          table: "task_comments",
+          columns: [{ name: "body", label: "תגובה" }],
+          query,
+          idColumn: "task_id",
+          limit: fetchSize,
+          scanOrderColumn: "created_at",
+        }),
+      ])
+    : [emptyContent(), emptyContent(), emptyContent(), emptyContent(), emptyContent(), emptyContent(), emptyContent(), emptyContent()];
+
+  const itemOrderIds = orderContent.ids;
+  const orderMatchById = orderContent.contextById;
+  const projectMatchById = projectContent.contextById;
+  const customerMatchById = customerContent.contextById;
+  const paymentMatchById = paymentContent.contextById;
+  const expenseMatchById = expenseContent.contextById;
+  // Cars and other tags share the "tags" group; a vehicle match maps to its tag id.
+  const tagMatchById = new Map(tagContent.contextById);
+  for (const [id, ctx] of vehicleContent.contextById) if (!tagMatchById.has(id)) tagMatchById.set(id, ctx);
+  const tagContentIds = [...tagMatchById.keys()];
+  // Comment → task, for the tasks group (comment → project is handled in projectContent).
+  const commentByTaskId = new Map<string, string>();
+  for (const [taskId, ctx] of commentContent.contextById) commentByTaskId.set(taskId, ctx.snippet);
+
+  // Fetch rows that matched deep but fall outside a group's recent window.
+  const fetchByIds = async (
+    table: string,
+    select: string,
+    idColumn: string,
+    ids: string[],
+    have: Set<string>
+  ): Promise<Row[]> => {
+    const missing = ids.filter((id) => id && !have.has(id));
+    if (missing.length === 0) return [];
+    const { data } = await supabase
+      .from(table)
+      .select(select)
+      .in(idColumn, missing.slice(0, fetchSize))
+      .range(0, fetchSize - 1);
+    return (data ?? []) as unknown as Row[];
+  };
+
+  // Customers (+ deep note / full-coverage field matches).
+  const customerIdMatch = new Set(customerContent.ids);
+  const customerRows = (customersResult.data ?? []) as Row[];
+  const customerHave = new Set(customerRows.map((row) => text(row.customer_id) || text(row.id)));
+  const extraCustomerRows = await fetchByIds("customers", CUSTOMER_COLUMNS, "id", customerContent.ids, customerHave);
   const customers = sortByMatch(
-    ((customersResult.data ?? []) as Row[]).filter((row) =>
-      (uuidLike && exactIdMatch(text(row.customer_id) || text(row.id), query)) ||
-      customerMatchesQuery(
-        {
-          name: text(row.name) || text(row.customer_name),
-          name_for_invoice: text(row.name_for_invoice),
-          email: text(row.email),
-          phone: text(row.phone),
-          whatsapp: text(row.whatsapp),
-          address: text(row.address),
-        },
-        query
-      )
-    ),
+    [...customerRows, ...extraCustomerRows].filter((row) => {
+      const id = text(row.customer_id) || text(row.id);
+      return (
+        customerIdMatch.has(id) ||
+        (uuidLike && exactIdMatch(id, query)) ||
+        customerMatchesQuery(
+          {
+            name: text(row.name) || text(row.customer_name),
+            name_for_invoice: text(row.name_for_invoice),
+            email: text(row.email),
+            phone: text(row.phone),
+            whatsapp: text(row.whatsapp),
+            address: text(row.address),
+          },
+          query
+        )
+      );
+    }),
     query,
     (row) => [text(row.name) || text(row.customer_name), text(row.name_for_invoice), text(row.email), text(row.phone)]
   ).slice(0, limitPerGroup);
 
+  // Projects (+ deep note / task / comment matches).
+  const projectIdMatch = new Set(projectContent.ids);
+  const projectRows = (projectsResult.data ?? []) as Row[];
+  const projectHave = new Set(projectRows.map((row) => text(row.id)));
+  const taskProjectRows = await fetchByIds(
+    "project_dashboard_view",
+    "id,name,customer_name,status,project_type,updated_at",
+    "id",
+    projectContent.ids,
+    projectHave
+  );
   const projects = sortByMatch(
-    ((projectsResult.data ?? []) as Row[]).filter((row) =>
+    [...projectRows, ...taskProjectRows].filter((row) =>
+      projectIdMatch.has(text(row.id)) ||
       (uuidLike && exactIdMatch(text(row.id), query)) ||
       includesNormalized([text(row.name), text(row.customer_name), text(row.status), text(row.project_type)], query)
     ),
@@ -540,33 +753,67 @@ export async function performGlobalSearch(
     (row) => [text(row.name), text(row.customer_name), text(row.status), text(row.project_type)]
   ).slice(0, limitPerGroup);
 
+  // Comments → parent task. task_comments has no page of its own, so a matching
+  // comment (fuzzy, any age — resolved above) surfaces the task it belongs to.
+  const taskRows = (tasksResult.data ?? []) as Row[];
+  const taskHave = new Set(taskRows.map((row) => text(row.task_id) || text(row.id)));
+  const commentTaskRows = await fetchByIds(
+    "task_overview_view",
+    "task_id,subject,project_name,status,priority,assigned_user_name,due_date,updated_at",
+    "task_id",
+    commentContent.ids,
+    taskHave
+  );
+
   const tasks = sortByMatch(
-    ((tasksResult.data ?? []) as Row[]).filter((row) =>
-      (uuidLike && exactIdMatch(text(row.task_id) || text(row.id), query)) ||
-      includesNormalized(
-        [text(row.subject), text(row.project_name), text(row.status), text(row.priority), text(row.assigned_user_name)],
-        query
-      )
-    ),
+    [...taskRows, ...commentTaskRows].filter((row) => {
+      const taskId = text(row.task_id) || text(row.id);
+      return (
+        commentByTaskId.has(taskId) ||
+        (uuidLike && exactIdMatch(taskId, query)) ||
+        includesNormalized(
+          [text(row.subject), text(row.project_name), text(row.status), text(row.priority), text(row.assigned_user_name)],
+          query
+        )
+      );
+    }),
     query,
     (row) => [text(row.subject), text(row.project_name), text(row.assigned_user_name), text(row.status), text(row.priority)]
   ).slice(0, limitPerGroup);
 
+  const orderIdsFromItems = new Set(itemOrderIds);
+  const orderRows = (ordersResult.data ?? []) as Row[];
+  const orderRowIds = new Set(orderRows.map((row) => text(row.order_id) || text(row.id)));
+  const missingOrderIds = itemOrderIds.filter((id) => id && !orderRowIds.has(id));
+  let itemOrderRows: Row[] = [];
+  if (missingOrderIds.length > 0) {
+    const { data } = await supabase
+      .from("order_overview_view")
+      .select("order_id,customer_name,status,payment_status,total_amount,order_date,customer_email,customer_phone,customer_address")
+      .in("order_id", missingOrderIds.slice(0, fetchSize))
+      .range(0, fetchSize - 1);
+    itemOrderRows = (data ?? []) as Row[];
+  }
+
   const orders = sortByMatch(
-    ((ordersResult.data ?? []) as Row[]).filter((row) =>
-      (uuidLike && exactIdMatch(text(row.order_id) || text(row.id), query)) ||
-      includesNormalized(
-        [
-          text(row.customer_name),
-          text(row.status),
-          text(row.payment_status),
-          text(row.customer_email),
-          text(row.customer_phone),
-          text(row.customer_address),
-        ],
-        query
-      )
-    ),
+    [...orderRows, ...itemOrderRows].filter((row) => {
+      const orderId = text(row.order_id) || text(row.id);
+      return (
+        orderIdsFromItems.has(orderId) ||
+        (uuidLike && exactIdMatch(orderId, query)) ||
+        includesNormalized(
+          [
+            text(row.customer_name),
+            text(row.status),
+            text(row.payment_status),
+            text(row.customer_email),
+            text(row.customer_phone),
+            text(row.customer_address),
+          ],
+          query
+        )
+      );
+    }),
     query,
     (row) => [text(row.customer_name), text(row.customer_phone), text(row.customer_address), text(row.status)]
   ).slice(0, limitPerGroup);
@@ -598,8 +845,19 @@ export async function performGlobalSearch(
     (row) => [text(row.address)]
   ).slice(0, limitPerGroup);
 
+  // Deep mode: payments/expenses whose NOTES (a payment's "comment") or
+  // reference/description/category match, fetched server-side so they're found no
+  // matter how old they are — not just within the recent window loaded above.
+  // Merged (deduped) into the candidates below. (Commas/percent are stripped: the
+  // value sits inside an or() list where a comma is a delimiter.)
+  // Payments/expenses: window matches (fuzzy, recent) + deep note/reference matches
+  // (fuzzy, any age — resolved above), merged and deduped by id.
+  const paymentIdMatch = new Set(paymentContent.ids);
+  const paymentHave = new Set(((paymentsResult.data ?? []) as Row[]).map((row) => text(row.id)));
+  const extraPaymentRows = await fetchByIds("payments", PAYMENT_COLUMNS, "id", paymentContent.ids, paymentHave);
   const payments = sortByMatch(
-    ((paymentsResult.data ?? []) as Row[]).filter((row) =>
+    [...((paymentsResult.data ?? []) as Row[]), ...extraPaymentRows].filter((row) =>
+      paymentIdMatch.has(text(row.id)) ||
       (uuidLike && exactIdMatch(text(row.id), query)) ||
       includesNormalized([text(row.reference_number), text(row.notes), text(row.payment_method), text(row.business_domain)], query)
     ),
@@ -607,8 +865,12 @@ export async function performGlobalSearch(
     (row) => [text(row.notes), text(row.reference_number), text(row.payment_method), text(row.business_domain)]
   ).slice(0, limitPerGroup);
 
+  const expenseIdMatch = new Set(expenseContent.ids);
+  const expenseHave = new Set(((expensesResult.data ?? []) as Row[]).map((row) => text(row.id)));
+  const extraExpenseRows = await fetchByIds("expenses", EXPENSE_COLUMNS, "id", expenseContent.ids, expenseHave);
   const expenses = sortByMatch(
-    ((expensesResult.data ?? []) as Row[]).filter((row) =>
+    [...((expensesResult.data ?? []) as Row[]), ...extraExpenseRows].filter((row) =>
+      expenseIdMatch.has(text(row.id)) ||
       (uuidLike && exactIdMatch(text(row.id), query)) ||
       includesNormalized([text(row.category), text(row.description), text(row.notes), text(row.business_domain)], query)
     ),
@@ -642,10 +904,16 @@ export async function performGlobalSearch(
     (row) => [text(row.full_name), text(row.phone), text(row.email), text(row.role)]
   ).slice(0, limitPerGroup);
 
-  // Tags (vehicles etc.) — resilient: ignored entirely before the SQL is run, so
-  // a missing table never breaks the rest of search.
+  // Tags / vehicles ("cars"). Window matches by name + deep matches on tag notes
+  // and vehicle fields (license plate, model, owner, notes — a vehicle maps to its
+  // tag id). Resilient: a missing table never breaks the rest of search.
+  const tagIdMatch = new Set(tagContentIds);
+  const tagRows = (tagsResult.error ? [] : tagsResult.data ?? []) as Row[];
+  const tagHave = new Set(tagRows.map((row) => text(row.id)));
+  const extraTagRows = await fetchByIds("tags", TAG_COLUMNS, "id", tagContentIds, tagHave);
   const tags = sortByMatch(
-    ((tagsResult.error ? [] : tagsResult.data ?? []) as Row[]).filter((row) =>
+    [...tagRows, ...extraTagRows].filter((row) =>
+      tagIdMatch.has(text(row.id)) ||
       (uuidLike && exactIdMatch(text(row.id), query)) ||
       includesNormalized([text(row.name), text(row.kind)], query)
     ),
@@ -654,18 +922,126 @@ export async function performGlobalSearch(
   ).slice(0, limitPerGroup);
 
   const results = [
-    ...(customers.map(customerResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(contacts.map((row) => contactResult(row, customerNameById)).filter(Boolean) as GlobalSearchResult[]),
-    ...(projects.map(projectResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(tasks.map(taskResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(tags.map(tagResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(orders.map(orderResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(products.map(productResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(documents.map((row) => documentResult(row, query)).filter(Boolean) as GlobalSearchResult[]),
+    ...(customers
+      .map((row) =>
+        attachMatch(
+          customerResult(row),
+          windowMatch(customerMatchById.get(text(row.customer_id) || text(row.id)), query) ??
+            buildMatch(query, [
+              ["טלפון", text(row.phone)],
+              ["וואטסאפ", text(row.whatsapp)],
+              ["אימייל", text(row.email)],
+              ["כתובת", text(row.address)],
+              ["שם לחשבונית", text(row.name_for_invoice)],
+            ])
+        )
+      )
+      .filter(Boolean) as GlobalSearchResult[]),
+    ...(contacts
+      .map((row) =>
+        attachMatch(
+          contactResult(row, customerNameById),
+          buildMatch(query, [
+            ["טלפון", text(row.phone)],
+            ["וואטסאפ", text(row.whatsapp)],
+            ["אימייל", text(row.email)],
+            ["תפקיד", text(row.role)],
+          ])
+        )
+      )
+      .filter(Boolean) as GlobalSearchResult[]),
+    ...(projects
+      .map((row) => attachMatch(projectResult(row), windowMatch(projectMatchById.get(text(row.id)), query)))
+      .filter(Boolean) as GlobalSearchResult[]),
+    ...(tasks
+      .map((row) => {
+        const taskId = text(row.task_id) || text(row.id);
+        const body = commentByTaskId.get(taskId);
+        const match = body
+          ? windowMatch({ label: "תגובה", snippet: body }, query)
+          : buildMatch(query, [["אחראי", text(row.assigned_user_name)]]);
+        return attachMatch(taskResult(row), match);
+      })
+      .filter(Boolean) as GlobalSearchResult[]),
+    ...(tags
+      .map((row) => attachMatch(tagResult(row), windowMatch(tagMatchById.get(text(row.id)), query)))
+      .filter(Boolean) as GlobalSearchResult[]),
+    ...(orders
+      .map((row) => {
+        const orderId = text(row.order_id) || text(row.id);
+        const match =
+          windowMatch(orderMatchById.get(orderId), query) ??
+          buildMatch(query, [
+            ["טלפון", text(row.customer_phone)],
+            ["אימייל", text(row.customer_email)],
+            ["עיר", text(row.customer_city)],
+            ["כתובת", text(row.customer_address)],
+          ]);
+        return attachMatch(orderResult(row), match);
+      })
+      .filter(Boolean) as GlobalSearchResult[]),
+    ...(products
+      .map((row) =>
+        attachMatch(
+          productResult(row),
+          buildMatch(query, [
+            ["מק\"ט", text(row.sku)],
+            ["ברקוד", text(row.barcode)],
+            ["תיאור", text(row.description)],
+          ])
+        )
+      )
+      .filter(Boolean) as GlobalSearchResult[]),
+    ...(documents
+      .map((row) =>
+        attachMatch(
+          documentResult(row, query),
+          buildMatch(query, [
+            ["הערה", text(row.notes)],
+            ["סוג", text(row.document_type)],
+            ["קובץ", text(row.file_name)],
+          ])
+        )
+      )
+      .filter(Boolean) as GlobalSearchResult[]),
     ...(properties.map(propertyResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(payments.map(paymentResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(expenses.map(expenseResult).filter(Boolean) as GlobalSearchResult[]),
-    ...(users.map(userResult).filter(Boolean) as GlobalSearchResult[]),
+    ...(payments
+      .map((row) =>
+        attachMatch(
+          paymentResult(row),
+          windowMatch(paymentMatchById.get(text(row.id)), query) ??
+            buildMatch(query, [
+              ["הערה", text(row.notes)],
+              ["אסמכתא", text(row.reference_number)],
+              ["אמצעי תשלום", text(row.payment_method)],
+            ])
+        )
+      )
+      .filter(Boolean) as GlobalSearchResult[]),
+    ...(expenses
+      .map((row) =>
+        attachMatch(
+          expenseResult(row),
+          windowMatch(expenseMatchById.get(text(row.id)), query) ??
+            buildMatch(query, [
+              ["הערה", text(row.notes)],
+              ["קטגוריה", text(row.category)],
+              ["תיאור", text(row.description)],
+            ])
+        )
+      )
+      .filter(Boolean) as GlobalSearchResult[]),
+    ...(users
+      .map((row) =>
+        attachMatch(
+          userResult(row),
+          buildMatch(query, [
+            ["אימייל", text(row.email)],
+            ["טלפון", text(row.phone)],
+          ])
+        )
+      )
+      .filter(Boolean) as GlobalSearchResult[]),
   ];
 
   return {

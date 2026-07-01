@@ -68,7 +68,7 @@ export default function RecentActivityFeed({ items }: { items: AuditFeedItem[] }
               key={item.id}
               className="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-muted/40"
             >
-              <InitialsAvatar name={item.actorName} />
+              <InitialsAvatar name={item.actorName} color={item.actorColor} />
               <div className="min-w-0 flex-1">
                 <div className="text-sm">
                   <span className="font-medium">{item.actorName || "משתמש"}</span>{" "}

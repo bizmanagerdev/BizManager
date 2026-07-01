@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { computeSourceCollection } from "@/lib/collections";
 import { findMatchingCustomers } from "@/lib/search/findMatchingCustomers";
+import { findProjectIdsMatchingContent } from "@/lib/search/findMatchingChildIds";
 
 type Row = Record<string, unknown>;
 
@@ -68,11 +69,20 @@ export async function loadProjectsPage(
   if (searchQuery) {
     const escaped = searchQuery.replace(/[%,]/g, " ");
     // Match the project name directly; match the customer through the shared
-    // matcher (fuzzy names, phone↔whatsapp cross-match) by customer id.
-    const { customerIds } = await findMatchingCustomers(supabase, searchQuery, { limit: 300, idsOnly: true });
-    const conditions = [`name.ilike.%${escaped}%`, `customer_name.ilike.%${escaped}%`];
+    // matcher (fuzzy names, phone↔whatsapp cross-match) by customer id; and reach
+    // projects through a matching task (subject/description) or task comment, so
+    // "find anything" — including comments — works from the projects list.
+    const [{ customerIds }, taskProjects] = await Promise.all([
+      findMatchingCustomers(supabase, searchQuery, { limit: 300, idsOnly: true }),
+      findProjectIdsMatchingContent(supabase, searchQuery, 300),
+    ]);
+    const taskProjectIds = taskProjects.ids;
+    const conditions = [`name.ilike.%${escaped}%`, `customer_name.ilike.%${escaped}%`, `project_type.ilike.%${escaped}%`];
     if (customerIds.length > 0) {
       conditions.push(`customer_id.in.(${customerIds.join(",")})`);
+    }
+    if (taskProjectIds.length > 0) {
+      conditions.push(`id.in.(${taskProjectIds.join(",")})`);
     }
     query = query.or(conditions.join(","));
   }
