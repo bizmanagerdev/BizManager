@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { ChevronDown, Search } from "lucide-react";
+import { Bell, ChevronDown, MessageSquare, Search } from "lucide-react";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreOrders } from "@/app/(app)/sales/actions";
 import type { OrdersFilters } from "@/app/(app)/sales/loadOrders";
@@ -26,6 +26,8 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { getOrderStatusColor } from "@/lib/ui/status-colors";
 import { formatOrderDate } from "@/lib/orders/format";
+import { parseOrderComments, type OrderComment } from "@/lib/orders/comments";
+import OrderReminderDialog from "@/components/orders/OrderReminderDialog";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import {
   collectionStatusClasses,
@@ -102,9 +104,34 @@ type OrderView = {
   products: { name: string; quantity: number }[];
   pendingMethods: string[];
   pendingCheckNumber: string | null;
+  comments: OrderComment[];
 };
 
 const PRODUCTS_PREVIEW_LIMIT = 3;
+
+// The order's latest comment, shown on the list card so notes are visible without
+// opening the order. Comments live in the order's notes field (see lib/orders/comments).
+function OrderCommentPreview({
+  comments,
+  className,
+}: {
+  comments: OrderComment[];
+  className?: string;
+}) {
+  if (comments.length === 0) return null;
+  const latest = comments[comments.length - 1];
+  const older = comments.length - 1;
+  return (
+    <div className={`flex items-start gap-1 text-xs text-muted-foreground ${className ?? ""}`}>
+      <MessageSquare className="mt-0.5 h-3 w-3 shrink-0" />
+      <span className="line-clamp-2 min-w-0">
+        {latest.author_name ? <span className="font-medium">{latest.author_name}: </span> : null}
+        <span className="text-muted-foreground/90">{latest.body}</span>
+        {older > 0 ? <span className="ms-1 opacity-70">(+{older})</span> : null}
+      </span>
+    </div>
+  );
+}
 
 function OrderProductList({
   products,
@@ -211,6 +238,7 @@ export default function SalesOrdersClient({
   initialInvoiceFilter = "",
   customerId = null,
   totalCount,
+  canRemind = false,
 }: {
   orders: Row[];
   initialHasMore?: boolean;
@@ -220,11 +248,14 @@ export default function SalesOrdersClient({
   initialInvoiceFilter?: string;
   customerId?: string | null;
   totalCount?: number;
+  canRemind?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(initialQuery);
   const [paymentSnapshot] = useState(() => new Map<string, number>());
+  // One shared reminder dialog for the whole list; a row's bell button sets its target.
+  const [reminderTarget, setReminderTarget] = useState<{ id: string; customerId: string; label: string } | null>(null);
 
   // Fetch-from-DB-as-you-scroll: accumulate order pages and pull the next one
   // from the server when the bottom comes into view (no "next page" button).
@@ -396,6 +427,7 @@ export default function SalesOrdersClient({
           ? (row.pending_payment_methods as unknown[]).filter((m): m is string => typeof m === "string")
           : [],
         pendingCheckNumber: getString(row, ["pending_check_number"]),
+        comments: parseOrderComments(getString(row, ["notes"])),
       };
     });
 
@@ -462,6 +494,7 @@ export default function SalesOrdersClient({
                     <th className="px-4 py-3 font-medium">לקוח</th>
                     <th className="px-4 py-3 font-medium">עיר ותאריך</th>
                     <th className="px-4 py-3 font-medium">מוצרים</th>
+                    <th className="px-4 py-3 font-medium">תגובות</th>
                     <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
                     {anyOutOfStock ? <th className="px-4 py-3 font-medium">מלאי</th> : null}
                     <th className="px-4 py-3 font-medium">
@@ -571,6 +604,13 @@ export default function SalesOrdersClient({
                         )}
                       </td>
                       <td className="px-4 py-4">
+                        {row.comments.length > 0 ? (
+                          <OrderCommentPreview comments={row.comments} className="max-w-[16rem]" />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
                         <StatusBadge value={row.status} type="order" className={orderStatusBadgeClasses(row.status)} />
                       </td>
                       {anyOutOfStock ? (
@@ -607,6 +647,21 @@ export default function SalesOrdersClient({
                           <Button asChild size="sm" onClick={() => emitNavigationStart()}>
                             <Link href={`/sales/orders/${row.id}`}>צפייה בהזמנה</Link>
                           </Button>
+                          {canRemind ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-9 w-9 p-0"
+                              title="תזכורת להזמנה"
+                              aria-label="תזכורת להזמנה"
+                              onClick={() =>
+                                setReminderTarget({ id: row.id, customerId: row.customerId, label: row.customerName })
+                              }
+                            >
+                              <Bell className="h-4 w-4" />
+                            </Button>
+                          ) : null}
                           {isActiveOrder(row.status) ? (
                             <OrderConfirmDialog orderId={row.id} buttonLabel="אישור אספקה" />
                           ) : shouldShowPaymentAction(row) ? (
@@ -688,8 +743,29 @@ export default function SalesOrdersClient({
                       </div>
                     ) : null}
 
+                    {row.comments.length > 0 ? (
+                      <div className="rounded-md bg-muted/40 px-2 py-1.5">
+                        <div className="mb-0.5 text-[10px] font-medium text-muted-foreground">תגובות</div>
+                        <OrderCommentPreview comments={row.comments} />
+                      </div>
+                    ) : null}
+
                     <div className="flex items-center justify-between gap-2">
                       <InvoiceQuickMenu orderId={row.id} needsInvoice={row.needsInvoice} invoiceSentAt={row.invoiceSentAt} />
+                      {canRemind ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-9 gap-1 rounded-lg"
+                          onClick={() =>
+                            setReminderTarget({ id: row.id, customerId: row.customerId, label: row.customerName })
+                          }
+                        >
+                          <Bell className="h-4 w-4" />
+                          תזכורת
+                        </Button>
+                      ) : null}
                     </div>
 
                     <div className={`grid gap-2 ${hasAction ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -725,6 +801,18 @@ export default function SalesOrdersClient({
           </div>
         </div>
       )}
+
+      {reminderTarget ? (
+        <OrderReminderDialog
+          orderId={reminderTarget.id}
+          customerId={reminderTarget.customerId}
+          orderLabel={reminderTarget.label}
+          open={reminderTarget !== null}
+          onOpenChange={(next) => {
+            if (!next) setReminderTarget(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

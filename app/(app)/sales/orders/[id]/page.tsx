@@ -24,6 +24,7 @@ import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
+import OrderReminderButton from "@/components/orders/OrderReminderButton";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
@@ -590,6 +591,9 @@ export default async function SalesOrderPage({
                 buttonLabel={<PencilLine className="h-4 w-4" />}
                 buttonClassName="h-9 w-9 p-0"
               />
+              {profile.role === "admin" || profile.role === "office" ? (
+                <OrderReminderButton orderId={id} customerId={customerId} orderLabel={customerName} />
+              ) : null}
               <DeleteOrderButton orderId={id} iconOnly />
             </div>
           ) : null}

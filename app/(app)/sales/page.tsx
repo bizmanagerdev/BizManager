@@ -184,6 +184,7 @@ export default async function SalesPage({
         initialInvoiceFilter={invoiceFilter}
         customerId={customerId}
         totalCount={totalCount}
+        canRemind={profile.role === "admin" || profile.role === "office"}
       />
     );
   }

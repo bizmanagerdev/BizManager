@@ -128,6 +128,10 @@ export default function RemindersPanel({ reminders: initial }: { reminders: Remi
                           <Link href={`/tasks/${r.task_id}`} className="font-medium hover:underline">
                             {r.task_subject}
                           </Link>
+                        ) : r.order_id ? (
+                          <Link href={`/sales/orders/${r.order_id}`} className="font-medium hover:underline">
+                            {r.customer_name ?? "הזמנה"}
+                          </Link>
                         ) : r.customer_id ? (
                           <Link href={`/customers/${r.customer_id}`} className="font-medium hover:underline">
                             {r.customer_name ?? "לקוח"}
@@ -136,7 +140,7 @@ export default function RemindersPanel({ reminders: initial }: { reminders: Remi
                           <span className="font-medium">{r.customer_name ?? "כללי"}</span>
                         )}
                         <span className="text-muted-foreground">
-                          {r.task_subject ? "משימה" : actionTypeLabel(r.action_type)}
+                          {r.task_subject ? "משימה" : r.order_id ? "הזמנה" : actionTypeLabel(r.action_type)}
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
