@@ -275,6 +275,7 @@ export async function getWorklistPrefs(supabase: SupabaseClient, userId: string)
 const RULE_SECTION: Record<string, string> = {
   task_overdue: "tasks",
   task_due_soon: "tasks",
+  nightly_review: "tasks",
   check_deposit_due: "money",
   payment_due_today: "money",
   promise_broken: "money",

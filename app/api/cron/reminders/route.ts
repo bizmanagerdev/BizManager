@@ -64,7 +64,7 @@ export async function GET(req: Request) {
   const { data, error } = await supabase
     .from("reminders")
     .select(
-      "id,source,behavior,repeat_rule,max_pings,ping_count,next_ping_at,remind_at,snoozed_until," +
+      "id,source,behavior,repeat_rule,max_pings,ping_count,next_ping_at,remind_at,snoozed_until,category," +
         "assigned_to,audience_role,created_by,title,content,url,task_id"
     )
     .eq("status", "pending")
@@ -93,6 +93,9 @@ export async function GET(req: Request) {
     if (source === "system") {
       const behavior = str(row, "behavior") ?? "ping_once";
       if (behavior === "silent") continue; // list-only, never pushes
+      // The nightly-review reminder is delivered by its own night-window cron
+      // (23:00–01:00), so this day cron must not push it during quiet hours.
+      if (str(row, "category") === "nightly_review") continue;
       const next = str(row, "next_ping_at");
       const due = !next || new Date(next).getTime() <= nowMs;
       if (!due) continue;

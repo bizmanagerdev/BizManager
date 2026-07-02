@@ -59,7 +59,12 @@ export async function GET(req: Request) {
     .select("*")
     .eq("enabled", true);
 
-  const allAlerts = (alertRows ?? []) as AlertRow[];
+  // Only SCHEDULED digests are this cron's job. The unified registry also holds
+  // 'live' (event-driven, handled by the reminders engine) and 'night' (nightly
+  // cron) rows — skip those here. (mode is undefined pre-migration → treated as scheduled.)
+  const allAlerts = ((alertRows ?? []) as Array<AlertRow & { mode?: string | null }>).filter(
+    (a) => !a.mode || a.mode === "scheduled"
+  );
 
   const due = allAlerts.filter(
     (a) => (force || a.send_hour_israel === currentHour) && scheduleMatchesNow(a.schedule)

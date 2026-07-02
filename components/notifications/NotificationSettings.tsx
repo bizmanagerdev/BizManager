@@ -9,8 +9,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { AlertRow, AlertSchedule } from "@/lib/notifications/types";
+import type { AlertMode, AlertRow, AlertSchedule } from "@/lib/notifications/types";
 import { BUILTIN_ALERT_TYPES } from "@/lib/notifications/types";
+
+const MODE_ORDER: AlertMode[] = ["scheduled", "live", "night"];
+const MODE_LABEL: Record<AlertMode, string> = {
+  scheduled: "התראות מתוזמנות (סיכומים בשעה קבועה)",
+  live: "התראות אירוע — חי (מופיעות במה דורש טיפול)",
+  night: "התראות לילה",
+};
+const AUDIENCE_OPTIONS = [
+  { value: "all", label: "כולם" },
+  { value: "office", label: "משרד + ניהול" },
+  { value: "admin", label: "ניהול בלבד" },
+];
+const AUDIENCE_LABEL: Record<string, string> = { all: "כולם", office: "משרד + ניהול", admin: "ניהול בלבד" };
 
 type UserOption = { id: string; label: string };
 
@@ -67,6 +80,8 @@ type FormState = {
   send_hour_israel: number;
   schedule: AlertSchedule;
   recipient_user_ids: string[];
+  audience_role: string;
+  send_hour_end_israel: number;
 };
 
 const DEFAULT_FORM: FormState = {
@@ -78,12 +93,15 @@ const DEFAULT_FORM: FormState = {
   send_hour_israel: 8,
   schedule: "daily",
   recipient_user_ids: [],
+  audience_role: "office",
+  send_hour_end_israel: 1,
 };
 
 export default function NotificationSettings({ users }: { users: UserOption[] }) {
   const [alerts, setAlerts] = useState<AlertRow[] | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingMode, setEditingMode] = useState<AlertMode>("scheduled");
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -111,12 +129,14 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
 
   function openAdd() {
     setEditingId(null);
+    setEditingMode("scheduled"); // new alerts added here are scheduled digests
     setForm(DEFAULT_FORM);
     setDialogOpen(true);
   }
 
   function openEdit(alert: AlertRow) {
     setEditingId(alert.id);
+    setEditingMode((alert.mode ?? "scheduled") as AlertMode);
     setForm({
       title: alert.title,
       body: alert.body,
@@ -126,6 +146,8 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
       send_hour_israel: alert.send_hour_israel,
       schedule: alert.schedule,
       recipient_user_ids: alert.recipient_user_ids ?? [],
+      audience_role: alert.audience_role ?? "office",
+      send_hour_end_israel: alert.send_hour_end_israel ?? 1,
     });
     setDialogOpen(true);
   }
@@ -210,83 +232,81 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
         <Button size="sm" onClick={openAdd}>+ הוסף</Button>
       </div>
 
-      {/* Alert list */}
-      <div className="divide-y rounded-xl border">
-        {alerts.length === 0 && (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            אין התראות מוגדרות
-          </div>
-        )}
-        {alerts.map((alert) => {
-          const isBuiltin =
-            alert.alert_type &&
-            (BUILTIN_ALERT_TYPES as readonly string[]).includes(alert.alert_type);
-          return (
-            <div key={alert.id} className="flex items-center gap-3 px-4 py-3">
-              {/* Toggle */}
-              <button
-                type="button"
-                onClick={() => void toggleEnabled(alert)}
-                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                  alert.enabled ? "bg-primary" : "bg-muted"
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                    alert.enabled ? "translate-x-4" : "translate-x-0.5"
-                  }`}
-                />
-              </button>
+      {/* Alert list — grouped by mode (one registry for every alert type) */}
+      {alerts.length === 0 ? (
+        <div className="rounded-xl border px-4 py-8 text-center text-sm text-muted-foreground">אין התראות מוגדרות</div>
+      ) : (
+        <div className="space-y-4">
+          {MODE_ORDER.map((mode) => {
+            const rows = alerts.filter((a) => (a.mode ?? "scheduled") === mode);
+            if (rows.length === 0) return null;
+            return (
+              <div key={mode}>
+                <div className="mb-1.5 text-xs font-semibold text-muted-foreground">{MODE_LABEL[mode]}</div>
+                <div className="divide-y rounded-xl border">
+                  {rows.map((alert) => {
+                    const isBuiltin =
+                      alert.alert_type && (BUILTIN_ALERT_TYPES as readonly string[]).includes(alert.alert_type);
+                    const meta =
+                      mode === "live"
+                        ? AUDIENCE_LABEL[alert.audience_role ?? ""] ?? "לפי אחראי"
+                        : mode === "night"
+                          ? `לילה ${fmtHour(alert.send_hour_israel)}–${fmtHour(alert.send_hour_end_israel ?? 1)} · ${AUDIENCE_LABEL[alert.audience_role ?? "office"]}`
+                          : `${fmtHour(alert.send_hour_israel)} · ${recipientLabel(alert.recipient_user_ids)}`;
+                    return (
+                      <div key={alert.id} className="flex items-center gap-3 px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => void toggleEnabled(alert)}
+                          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${alert.enabled ? "bg-primary" : "bg-muted"}`}
+                        >
+                          <span
+                            className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${alert.enabled ? "translate-x-4" : "translate-x-0.5"}`}
+                          />
+                        </button>
 
-              {/* Title + meta */}
-              <div className="min-w-0 flex-1">
-                <div
-                  className={`truncate text-sm font-medium ${
-                    alert.enabled ? "" : "text-muted-foreground"
-                  }`}
-                >
-                  {alert.title}
-                </div>
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  {isBuiltin && (
-                    <span className="rounded bg-info-soft px-1.5 py-px text-[10px] text-info-soft-foreground">
-                      {BUILTIN_LABELS[alert.alert_type!] ?? alert.alert_type}
-                    </span>
-                  )}
-                  <span className="text-[11px] text-muted-foreground">
-                    {fmtHour(alert.send_hour_israel)}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">·</span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {recipientLabel(alert.recipient_user_ids)}
-                  </span>
+                        <div className="min-w-0 flex-1">
+                          <div className={`truncate text-sm font-medium ${alert.enabled ? "" : "text-muted-foreground"}`}>{alert.title}</div>
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            {isBuiltin && (
+                              <span className="rounded bg-info-soft px-1.5 py-px text-[10px] text-info-soft-foreground">
+                                {BUILTIN_LABELS[alert.alert_type!] ?? alert.alert_type}
+                              </span>
+                            )}
+                            <span className="text-[11px] text-muted-foreground">{meta}</span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => openEdit(alert)}
+                          className="shrink-0 rounded-lg border px-2.5 py-1 text-xs transition-colors hover:bg-muted/40"
+                          title="עריכה"
+                        >
+                          ✏️
+                        </button>
+
+                        {/* System rules (rule_key) aren't deletable — only toggled/edited. */}
+                        {!alert.rule_key ? (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDelete(alert)}
+                            disabled={deleting === alert.id}
+                            className="shrink-0 rounded-lg border border-destructive/30 px-2.5 py-1 text-xs text-destructive transition-colors hover:bg-destructive-soft disabled:opacity-50"
+                            title="מחיקה"
+                          >
+                            {deleting === alert.id ? "..." : "✕"}
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-
-              {/* Edit */}
-              <button
-                type="button"
-                onClick={() => openEdit(alert)}
-                className="shrink-0 rounded-lg border px-2.5 py-1 text-xs transition-colors hover:bg-muted/40"
-                title="עריכה"
-              >
-                ✏️
-              </button>
-
-              {/* Delete */}
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(alert)}
-                disabled={deleting === alert.id}
-                className="shrink-0 rounded-lg border border-destructive/30 px-2.5 py-1 text-xs text-destructive transition-colors hover:bg-destructive-soft disabled:opacity-50"
-                title="מחיקה"
-              >
-                {deleting === alert.id ? "..." : "✕"}
-              </button>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -324,48 +344,57 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
               />
             </Field>
 
-            {/* Hour + Schedule */}
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="שעת שליחה">
-                <select
-                  value={form.send_hour_israel}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, send_hour_israel: Number(e.target.value) }))
-                  }
-                  className={inputCls}
-                >
-                  {HOURS.map((h) => (
-                    <option key={h} value={h}>
-                      {fmtHour(h)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="תדירות">
-                <select
-                  value={form.schedule}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, schedule: e.target.value as AlertSchedule }))
-                  }
-                  className={inputCls}
-                >
-                  {SCHEDULE_OPTIONS.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-
-            {/* Recipients */}
-            <Field label="למי לשלוח">
-              <RecipientsDropdown
-                users={users}
-                selected={form.recipient_user_ids}
-                onChange={(ids) => setForm((f) => ({ ...f, recipient_user_ids: ids }))}
-              />
-            </Field>
+            {editingMode === "scheduled" ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="שעת שליחה">
+                    <select value={form.send_hour_israel} onChange={(e) => setForm((f) => ({ ...f, send_hour_israel: Number(e.target.value) }))} className={inputCls}>
+                      {HOURS.map((h) => (
+                        <option key={h} value={h}>{fmtHour(h)}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="תדירות">
+                    <select value={form.schedule} onChange={(e) => setForm((f) => ({ ...f, schedule: e.target.value as AlertSchedule }))} className={inputCls}>
+                      {SCHEDULE_OPTIONS.map((s) => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <Field label="למי לשלוח">
+                  <RecipientsDropdown users={users} selected={form.recipient_user_ids} onChange={(ids) => setForm((f) => ({ ...f, recipient_user_ids: ids }))} />
+                </Field>
+              </>
+            ) : (
+              <>
+                {editingMode === "night" ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="משעה">
+                      <select value={form.send_hour_israel} onChange={(e) => setForm((f) => ({ ...f, send_hour_israel: Number(e.target.value) }))} className={inputCls}>
+                        {HOURS.map((h) => (
+                          <option key={h} value={h}>{fmtHour(h)}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="עד שעה">
+                      <select value={form.send_hour_end_israel} onChange={(e) => setForm((f) => ({ ...f, send_hour_end_israel: Number(e.target.value) }))} className={inputCls}>
+                        {HOURS.map((h) => (
+                          <option key={h} value={h}>{fmtHour(h)}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                ) : null}
+                <Field label="למי לשלוח">
+                  <select value={form.audience_role} onChange={(e) => setForm((f) => ({ ...f, audience_role: e.target.value }))} className={inputCls}>
+                    {AUDIENCE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </Field>
+              </>
+            )}
           </div>
 
           <DialogFooter>

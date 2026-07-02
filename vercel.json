@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/reminders-sync",
       "schedule": "10 * * * *"
+    },
+    {
+      "path": "/api/cron/nightly-review",
+      "schedule": "*/20 20-23 * * *"
     }
   ]
 }

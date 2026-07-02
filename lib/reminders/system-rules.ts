@@ -7,6 +7,7 @@ import {
   isOpenOrderStatus,
 } from "@/lib/collections";
 import { addWorkingDays } from "@/lib/dashboard/week";
+import { getRuleSettings } from "@/lib/notifications/alert-config";
 
 // ---------------------------------------------------------------------------
 // Reminders/Alerts unification — Phase 2: the system-rule engine.
@@ -889,11 +890,25 @@ async function reconcileRule(
  */
 export async function syncSystemReminders(supabase: SupabaseClient, now: Date): Promise<RuleSyncResult[]> {
   const ctx = buildContext(now);
+  // Each rule's on/off + audience come from the unified alert registry (tolerant
+  // of pre-migration → empty map = all rules on with their built-in audience).
+  const settings = await getRuleSettings(supabase);
   const results: RuleSyncResult[] = [];
   for (const rule of SYSTEM_RULES) {
     try {
+      const cfg = settings.get(rule.key);
+      // Disabled in settings → reconcile with an empty set so its existing
+      // worklist items auto-close (turning a rule off clears it).
+      if (cfg && !cfg.enabled) {
+        results.push(await reconcileRule(supabase, rule, [], ctx.nowIso));
+        continue;
+      }
       const items = await rule.evaluate(supabase, ctx);
-      results.push(await reconcileRule(supabase, rule, items, ctx.nowIso));
+      // Config can override the audience of role-targeted items.
+      const adjusted = cfg?.audienceRole
+        ? items.map((i) => (i.audienceRole ? { ...i, audienceRole: cfg.audienceRole as SystemReminderItem["audienceRole"] } : i))
+        : items;
+      results.push(await reconcileRule(supabase, rule, adjusted, ctx.nowIso));
     } catch (err) {
       results.push({ rule: rule.key, active: 0, inserted: 0, resolved: 0, refreshed: 0, error: (err as Error)?.message ?? "failed" });
     }

@@ -20,6 +20,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (body.schedule !== undefined)          patch.schedule = body.schedule;
   if (body.recipient_user_ids !== undefined) patch.recipient_user_ids = body.recipient_user_ids;
   if (body.sort_order !== undefined)        patch.sort_order = body.sort_order;
+  if (body.audience_role !== undefined)     patch.audience_role = body.audience_role;
+  if (body.send_hour_end_israel !== undefined) patch.send_hour_end_israel = body.send_hour_end_israel;
 
   const { error } = await supabase.from("push_alert_config").update(patch).eq("id", id);
   if (error) return NextResponse.json({ error: toHebrewError(error.message) }, { status: 500 });
