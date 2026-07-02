@@ -56,7 +56,9 @@ export async function GET(req: Request) {
   const now = new Date();
   const nowIso = now.toISOString();
   const nowMs = now.getTime();
-  const inWindow = (() => {
+  // ?force=true lets an admin test-send any time (bypasses the 08:00–21:00 window).
+  const force = new URL(req.url).searchParams.get("force") === "true";
+  const inWindow = force || (() => {
     const h = israelHour(now);
     return h >= 8 && h < 21;
   })();

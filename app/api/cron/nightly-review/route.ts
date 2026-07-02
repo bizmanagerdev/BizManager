@@ -45,7 +45,9 @@ export async function GET(req: Request) {
   const hour = israelHour(now);
   // Window may wrap past midnight (e.g. 23 → 1 means hours {23, 0}).
   const inWindow = cfg.startHour <= cfg.endHour ? hour >= cfg.startHour && hour < cfg.endHour : hour >= cfg.startHour || hour < cfg.endHour;
-  if (!inWindow) {
+  // ?force=true lets an admin fire it any time (test button) — bypasses the window.
+  const force = new URL(req.url).searchParams.get("force") === "true";
+  if (!force && !inWindow) {
     return NextResponse.json({ ok: true, skipped: "outside-window", hour });
   }
 

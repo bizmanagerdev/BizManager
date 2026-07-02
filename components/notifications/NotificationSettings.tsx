@@ -108,6 +108,8 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
   const [confirmDelete, setConfirmDelete] = useState<AlertRow | null>(null);
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [running, setRunning] = useState<string | null>(null);
+  const [runResult, setRunResult] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,6 +198,36 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
     setConfirmDelete(null);
   }
 
+  function summarizeRun(r: Record<string, unknown>): string {
+    if (typeof r.skipped === "string") return `דילג (${r.skipped})`;
+    const p: string[] = [];
+    const t = r.totals as { inserted?: number; resolved?: number } | undefined;
+    if (t) p.push(`נוצרו ${t.inserted ?? 0}, נסגרו ${t.resolved ?? 0}`);
+    if (typeof r.pushed === "number") p.push(`${r.pushed} התראות`);
+    if (typeof r.orderCount === "number") p.push(`${r.orderCount} הובלות · ${r.projectCount ?? 0} פרויקטים`);
+    if (typeof r.notifications === "number") p.push(`${r.notifications} סיכומים`);
+    if (typeof r.sent === "number") p.push(`נשלחו לנייד: ${r.sent}${r.failed ? ` (נכשלו ${r.failed})` : ""}`);
+    return p.length ? p.join(" · ") : "בוצע";
+  }
+
+  async function runTest(which: string, label: string) {
+    setRunning(which);
+    setRunResult(null);
+    try {
+      const res = await fetch("/api/notifications/test-run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ which }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { result?: Record<string, unknown> };
+      setRunResult(`${label}: ${summarizeRun(d.result ?? {})}`);
+    } catch {
+      setRunResult(`${label}: הבדיקה נכשלה`);
+    } finally {
+      setRunning(null);
+    }
+  }
+
   async function sendTest() {
     setTestSending(true);
     setTestResult(null);
@@ -230,6 +262,24 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
           {testSending ? "שולח..." : "שלח בדיקה"}
         </Button>
         <Button size="sm" onClick={openAdd}>+ הוסף</Button>
+      </div>
+
+      {/* Test runner — fire each alert engine on demand, ignoring its time gate. */}
+      <div className="rounded-xl border bg-muted/20 p-3">
+        <div className="mb-1 text-xs font-semibold">בדיקת מערכת ההתראות (הרצה מיידית, ללא המתנה לשעה)</div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { which: "sync", label: "סנכרון התראות חיות" },
+            { which: "deliver", label: "שליחת תזכורות לנייד" },
+            { which: "nightly", label: "התראת לילה עכשיו" },
+            { which: "daily", label: "סיכומים מתוזמנים" },
+          ].map((b) => (
+            <Button key={b.which} variant="outline" size="sm" disabled={running !== null} onClick={() => void runTest(b.which, b.label)}>
+              {running === b.which ? "מריץ…" : b.label}
+            </Button>
+          ))}
+        </div>
+        {runResult ? <div className="mt-2 text-xs text-muted-foreground">{runResult}</div> : null}
       </div>
 
       {/* Alert list — grouped by mode (one registry for every alert type) */}
