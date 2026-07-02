@@ -285,6 +285,7 @@ const RULE_SECTION: Record<string, string> = {
   session_unallocated: "hours",
   project_deadline: "projects",
   project_starting: "projects",
+  stale_quote: "projects",
   low_stock: "ops",
   unprocessed_items: "ops",
   vehicle_expiry: "ops",

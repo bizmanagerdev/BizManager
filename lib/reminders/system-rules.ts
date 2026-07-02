@@ -598,6 +598,40 @@ const projectStartingRule: SystemRule = {
   },
 };
 
+const staleQuoteRule: SystemRule = {
+  key: "stale_quote",
+  label: "הצעות מחיר ישנות למחיקה",
+  async evaluate(supabase, ctx) {
+    // A project still in 'quote' a week+ after it was created — the status never
+    // progressed, so it's likely dead → nudge to delete (or push it forward).
+    const weekAgo = new Date(ctx.today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const weekAgoIso = weekAgo.toISOString();
+    const { data, error } = await supabase
+      .from("projects")
+      .select("id,name,customer_id,created_at")
+      .eq("status", "quote")
+      .lte("created_at", weekAgoIso)
+      .range(0, 999);
+    throwIf(error, "projects(stale_quote)");
+    return ((data ?? []) as Row[]).map((p) => {
+      const id = getString(p, "id") ?? "";
+      const name = getString(p, "name") ?? "הצעת מחיר";
+      const created = (getString(p, "created_at") ?? "").slice(0, 10);
+      return {
+        key: id,
+        title: `הצעת מחיר ישנה: ${name}`,
+        content: `נפתחה ב-${created} וטרם השתנה הסטטוס — לשקול מחיקה או קידום.`,
+        url: `/projects/${id}`,
+        severity: "info" as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "office" as AudienceRole,
+        links: { project_id: id, customer_id: getString(p, "customer_id") },
+      };
+    });
+  },
+};
+
 // --- summary (silent) rules — one row carrying a count, no push ------------
 
 const lowStockRule: SystemRule = {
@@ -762,6 +796,7 @@ export const SYSTEM_RULES: SystemRule[] = [
   // New coverage (Phase 5): tasks & projects
   taskDueSoonRule,
   projectStartingRule,
+  staleQuoteRule,
   // Silent summaries
   lowStockRule,
   unprocessedItemsRule,
