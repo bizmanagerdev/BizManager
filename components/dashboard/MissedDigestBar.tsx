@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, Sparkles, X } from "lucide-react";
+import { Sparkles, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { formatShortDateTime } from "@/lib/date";
 import { groupAuditFeedItems, type AuditFeedItem } from "@/lib/audit";
 
@@ -36,27 +35,16 @@ const TYPE_LABEL: Record<string, string> = {
   accounts: "חשבונות",
   users: "משתמשים",
 };
-const TYPE_ORDER = [
-  "orders",
-  "projects",
-  "customers",
-  "payments",
-  "expenses",
-  "attendance_sessions",
-  "worker_payments",
-  "accounts",
-  "users",
-];
+const TYPE_ORDER = ["orders", "projects", "customers", "payments", "expenses", "attendance_sessions", "worker_payments", "accounts", "users"];
 
 /**
- * "מה קרה מאז שהיית כאן" — a compact, type-grouped digest at the top of the
- * dashboard (admin + office). Live-updates as others create things; dismissing
- * marks it read (advances the server anchor) so those items won't return.
+ * "מה קרה מאז שהיית כאן" — a compact, column-per-type digest at the top of the
+ * dashboard (admin + office). Uses horizontal space so it stays short. Live-
+ * updates as others create things; dismissing advances the server anchor.
  */
 export default function MissedDigestBar({ initialItems }: { initialItems: AuditFeedItem[] }) {
   const [items, setItems] = useState<AuditFeedItem[]>(initialItems);
   const [dismissed, setDismissed] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fold cascades (order + its items/payment → one row), then bucket by type.
@@ -125,21 +113,12 @@ export default function MissedDigestBar({ initialItems }: { initialItems: AuditF
     }
   }
 
-  function toggle(type: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(type)) next.delete(type);
-      else next.add(type);
-      return next;
-    });
-  }
-
   if (dismissed || total === 0) return null;
 
   return (
     <Card className="border-primary/30 bg-primary/5">
       <CardContent className="p-3">
-        <div className="mb-1.5 flex items-center justify-between gap-2">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Sparkles className="h-4 w-4 text-primary" />
             מה קרה מאז שהיית כאן ({total})
@@ -149,42 +128,31 @@ export default function MissedDigestBar({ initialItems }: { initialItems: AuditF
           </Button>
         </div>
 
-        <div className="divide-y divide-border/40">
-          {typed.map(([type, rows]) => {
-            const isCollapsed = collapsed.has(type);
-            return (
-              <div key={type} className="py-1">
-                <button
-                  type="button"
-                  onClick={() => toggle(type)}
-                  className="flex w-full items-center gap-1.5 py-0.5 text-right text-xs font-semibold text-muted-foreground hover:text-foreground"
-                >
-                  <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", isCollapsed && "-rotate-90")} />
-                  <span>{TYPE_LABEL[type] ?? type}</span>
-                  <span className="rounded-full bg-primary/10 px-1.5 text-[10px] text-primary">{rows.length}</span>
-                </button>
-
-                {!isCollapsed ? (
-                  <ul className="ps-5">
-                    {rows.map((it) => {
-                      const inner = (
-                        <div className="flex items-baseline justify-between gap-2 truncate rounded px-1 py-0.5 text-sm hover:bg-background/70">
-                          <span className="truncate">
-                            {it.title || it.summary}
-                            {it.actorName ? <span className="text-xs text-muted-foreground"> · {it.actorName}</span> : null}
-                          </span>
-                          <span className="shrink-0 text-[11px] text-muted-foreground">
-                            {it.createdAt ? formatShortDateTime(it.createdAt, "-") : ""}
-                          </span>
-                        </div>
-                      );
-                      return <li key={it.id}>{it.href ? <Link href={it.href}>{inner}</Link> : inner}</li>;
-                    })}
-                  </ul>
-                ) : null}
+        {/* Column per type — fills width so the bar stays short. */}
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-x-4 gap-y-2.5">
+          {typed.map(([type, rows]) => (
+            <div key={type} className="min-w-0">
+              <div className="mb-1 flex items-center gap-1.5 border-b border-border/40 pb-0.5 text-xs font-semibold text-muted-foreground">
+                <span className="truncate">{TYPE_LABEL[type] ?? type}</span>
+                <span className="rounded-full bg-primary/10 px-1.5 text-[10px] text-primary">{rows.length}</span>
               </div>
-            );
-          })}
+              <ul className="space-y-0.5">
+                {rows.map((it) => {
+                  const label = it.title || it.summary;
+                  const when = it.createdAt ? formatShortDateTime(it.createdAt, "-") : "";
+                  const inner = (
+                    <div
+                      className="truncate rounded px-1 py-0.5 text-sm hover:bg-background/70"
+                      title={`${label}${it.actorName ? ` · ${it.actorName}` : ""}${when ? ` · ${when}` : ""}`}
+                    >
+                      {label}
+                    </div>
+                  );
+                  return <li key={it.id}>{it.href ? <Link href={it.href}>{inner}</Link> : inner}</li>;
+                })}
+              </ul>
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>
