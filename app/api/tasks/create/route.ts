@@ -5,6 +5,7 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
+import { notifyTaskAssignees } from "@/lib/notifications/task-assignment";
 
 function validateTaskLinkArgs(args: {
   businessDomain: string | null;
@@ -169,6 +170,9 @@ export async function POST(req: Request) {
           }))
         );
       }
+
+      // Alert the people this task landed for (owner + members), not the creator.
+      await notifyTaskAssignees(data.id, subject, [assignedUserId, ...memberIds].filter((uid) => uid && uid !== profile.id));
     }
 
     return NextResponse.json({ task: data });

@@ -12,7 +12,7 @@ import InventoryHealth from "@/components/dashboard/InventoryHealth";
 import RemindersPanel from "@/components/dashboard/RemindersPanel";
 import RecentActivityFeed from "@/components/dashboard/RecentActivityFeed";
 import CompactFinanceStrip from "@/components/dashboard/CompactFinanceStrip";
-import { getAlertsData } from "@/lib/alerts";
+import { getWorklistGroups } from "@/lib/reminders/worklist";
 import { getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
 import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { getOpenReminders, type Reminder } from "@/lib/communications";
@@ -22,7 +22,8 @@ import { getWorkforceOverview } from "@/lib/dashboard/workforce";
 import { getInventoryHealth } from "@/lib/dashboard/inventory-health";
 import { getDashboardPrefs, resolveWidgets, type WidgetId } from "@/lib/dashboard/widgets";
 import { loadDeliveriesPage, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
-import { getRecentAuditEvents, type AuditFeedItem } from "@/lib/audit";
+import { getRecentAuditEvents, getDigestAnchor, getMissedDigest, type AuditFeedItem } from "@/lib/audit";
+import MissedDigestBar from "@/components/dashboard/MissedDigestBar";
 import { loadDomainCashBreakdown } from "@/lib/financial";
 import DomainBarChart from "@/components/charts/DomainBarChart";
 import { ensureRecurringTasksForDate } from "@/lib/recurring-tasks";
@@ -40,15 +41,6 @@ function getNumber(row: Row | null | undefined, key: string) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
-}
-
-function ErrorCard({ messages }: { messages: string[] }) {
-  if (messages.length === 0) return null;
-  return (
-    <Card className="border-destructive/40">
-      <CardContent className="p-4 text-sm text-destructive">{messages.join(" | ")}</CardContent>
-    </Card>
-  );
 }
 
 // ── Suspense fallbacks (kept close to the real layout so the swap is shift-free) ──
@@ -113,10 +105,21 @@ function groupIntoRows(items: WidgetRow[]): WidgetRow[][] {
  * blocked by these heavier aggregations.
  */
 export async function DashboardPanels() {
-  const { profile, supabase } = await requireProfile();
+  const { profile, supabase, user } = await requireProfile();
   const role = profile.role;
   const isAdminOrOffice = role === "admin" || role === "office";
   const isAdmin = role === "admin";
+
+  // "What you missed since last here" — admin + office, role-filtered inside.
+  const digestItems: AuditFeedItem[] = isAdminOrOffice
+    ? await getDigestAnchor(supabase, profile.id).then((sinceIso) =>
+        getMissedDigest(supabase, {
+          sinceIso,
+          viewerRole: role,
+          excludeActorIds: [profile.id, user.id],
+        }).then((r) => r.items)
+      )
+    : [];
 
   const prefs = await getDashboardPrefs(supabase, profile.id).catch(() => null);
   const ordered = resolveWidgets(role, prefs);
@@ -161,7 +164,7 @@ export async function DashboardPanels() {
     forecastOutResult,
     domainBreakdown,
   ] = await Promise.all([
-    show("alerts") ? getAlertsData(supabase, { viewerRole: role, userId: profile.id }) : Promise.resolve(null),
+    show("alerts") ? getWorklistGroups(supabase, { userId: profile.id, role }) : Promise.resolve(null),
     show("week")
       ? getScheduleEntries(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as CalendarEntry[])
       : Promise.resolve([] as CalendarEntry[]),
@@ -229,7 +232,7 @@ export async function DashboardPanels() {
   // ── Rendered node per widget (null when its data is empty, so we never show an
   // empty panel — mirrors the previous presence flags). ──────────────────────
   const nodes: Record<WidgetId, ReactNode> = {
-    alerts: alertsResult ? <AlertCenter alerts={alertsResult.alerts} /> : null,
+    alerts: alertsResult ? <AlertCenter alerts={alertsResult} /> : null,
     week: show("week") ? <WeekOverview entries={scheduleEntries} /> : null,
     myTasks: myTasks.length > 0 ? <MyTasksPanel tasks={myTasks} /> : null,
     finance: show("finance") && isAdminOrOffice ? (
@@ -267,7 +270,8 @@ export async function DashboardPanels() {
 
   return (
     <>
-      <ErrorCard messages={alertsResult?.errors.dashboard ? [`התראות: ${alertsResult.errors.dashboard}`] : []} />
+      {/* "What you missed" digest — top of the dashboard, dismissible (admin + office). */}
+      {isAdminOrOffice ? <MissedDigestBar initialItems={digestItems} /> : null}
 
       {/* System banner — critical cash warning, not user-hideable. */}
       {cashTighteningSoon ? (

@@ -16,6 +16,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AdaptiveDialog, PageStack, AdaptiveGrid } from "@/components/layout/page-layout";
 import { formatCurrency } from "@/lib/payroll";
 import { expiryStatus, type VehicleWithRollup } from "@/lib/vehicles";
+import AddReminderButton from "@/components/reminders/AddReminderButton";
 import { createVehicle, updateVehicle, deleteVehicle, type VehicleInput } from "./actions";
 
 const EMPTY_FORM: VehicleInput = {
@@ -160,6 +161,7 @@ export default function VehiclesClient({ vehicles }: { vehicles: VehicleWithRoll
                       ) : null}
                     </Link>
                     <div className="flex shrink-0 gap-1">
+                      <AddReminderButton entityType="vehicle" entityId={v.tagId} label={v.name} className="h-9 w-9 p-0" iconOnly />
                       <Button variant="secondary" size="icon" onClick={() => openEdit(v)} aria-label="עריכה">
                         <Pencil className="h-4 w-4" />
                       </Button>

@@ -33,6 +33,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
+import AddReminderButton from "@/components/reminders/AddReminderButton";
+import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import NewProjectClient, { type ProjectCustomerOption, type InitialProject } from "@/app/(app)/projects/NewProjectClient";
 
@@ -933,6 +935,22 @@ export default function ProjectsClient({
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-2">
+                        <AddReminderButton
+                          entityType="project"
+                          entityId={id}
+                          customerId={getString(row, "customer_id")}
+                          label={projectDisplayName(row)}
+                          className="h-9 w-9 rounded-xl p-0"
+                          iconOnly
+                        />
+                        <LogCommunicationButton
+                          entityType="project"
+                          entityId={id}
+                          customerId={getString(row, "customer_id")}
+                          defaultTopic="general"
+                          className="h-9 w-9 rounded-xl p-0"
+                          iconOnly
+                        />
                         <Button
                           type="button"
                           variant="outline"
@@ -1045,6 +1063,21 @@ export default function ProjectsClient({
                         פתיחת פרויקט
                       </Link>
                     </Button>
+
+                    <AddReminderButton
+                      entityType="project"
+                      entityId={id}
+                      customerId={getString(row, "customer_id")}
+                      label={projectDisplayName(row)}
+                      className="h-11 w-full justify-center rounded-xl"
+                    />
+                    <LogCommunicationButton
+                      entityType="project"
+                      entityId={id}
+                      customerId={getString(row, "customer_id")}
+                      defaultTopic="general"
+                      className="h-11 w-full justify-center rounded-xl"
+                    />
 
                     {currentStatus === "quote" ? (
                       <>

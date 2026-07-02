@@ -25,6 +25,7 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
 import OrderReminderButton from "@/components/orders/OrderReminderButton";
+import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
@@ -592,7 +593,10 @@ export default async function SalesOrderPage({
                 buttonClassName="h-9 w-9 p-0"
               />
               {profile.role === "admin" || profile.role === "office" ? (
-                <OrderReminderButton orderId={id} customerId={customerId} orderLabel={customerName} />
+                <>
+                  <OrderReminderButton orderId={id} customerId={customerId} orderLabel={customerName} />
+                  <LogCommunicationButton entityType="order" entityId={id} customerId={customerId} defaultTopic="sales" iconOnly />
+                </>
               ) : null}
               <DeleteOrderButton orderId={id} iconOnly />
             </div>

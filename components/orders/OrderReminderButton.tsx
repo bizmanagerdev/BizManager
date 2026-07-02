@@ -35,7 +35,7 @@ export default function OrderReminderButton({
         aria-label="תזכורת להזמנה"
         onClick={() => setOpen(true)}
       >
-        <Bell className="h-4 w-4" />
+        <Bell className="h-4 w-4 text-warning" />
         {iconOnly ? null : <span className="ms-1">תזכורת</span>}
       </Button>
       <OrderReminderDialog

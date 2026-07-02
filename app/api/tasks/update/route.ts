@@ -4,6 +4,7 @@ import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
+import { notifyTaskAssignees } from "@/lib/notifications/task-assignment";
 
 function normalizeId(value: unknown) {
   if (typeof value === "string") {
@@ -64,6 +65,18 @@ export async function POST(req: Request) {
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
+
+    // Capture the current assignee up-front so we can tell if a reassignment
+    // hands the task to a NEW person (only then do they get an alert).
+    let previousAssignee: string | null = null;
+    if ("assigned_user_id" in body) {
+      const { data: cur } = await supabase
+        .from("tasks")
+        .select("assigned_user_id")
+        .eq("id", id)
+        .maybeSingle<Record<string, unknown>>();
+      previousAssignee = typeof cur?.assigned_user_id === "string" ? cur.assigned_user_id : null;
+    }
 
     const update: Record<string, unknown> = {};
 
@@ -225,7 +238,7 @@ export async function POST(req: Request) {
     if (membersProvided) {
       const { data: taskRow } = data
         ? { data }
-        : await supabase.from("tasks").select("assigned_user_id").eq("id", id).maybeSingle<Record<string, unknown>>();
+        : await supabase.from("tasks").select("assigned_user_id,subject").eq("id", id).maybeSingle<Record<string, unknown>>();
       const assignedUserId =
         typeof taskRow?.assigned_user_id === "string" ? taskRow.assigned_user_id : null;
       const memberIds = [
@@ -236,6 +249,14 @@ export async function POST(req: Request) {
         ),
       ].filter((memberId) => memberId !== assignedUserId);
 
+      // Who was already a member? (so we alert only the NEWLY added ones)
+      const { data: existingMembers } = await supabase.from("task_members").select("user_id").eq("task_id", id);
+      const existingIds = new Set(
+        ((existingMembers ?? []) as Array<{ user_id?: string | null }>)
+          .map((m) => m.user_id)
+          .filter((v): v is string => Boolean(v))
+      );
+
       await supabase.from("task_members").delete().eq("task_id", id);
       if (memberIds.length > 0) {
         const { error: membersError } = await supabase
@@ -244,6 +265,13 @@ export async function POST(req: Request) {
         if (membersError) {
           return NextResponse.json({ error: toHebrewError(membersError.message) }, { status: 400 });
         }
+      }
+
+      // Alert members just added to the task (not already on it, not the editor).
+      const addedMembers = memberIds.filter((m) => !existingIds.has(m) && m !== profile.id);
+      if (addedMembers.length > 0) {
+        const subject = typeof taskRow?.subject === "string" ? taskRow.subject : "משימה";
+        await notifyTaskAssignees(id, subject, addedMembers);
       }
     }
 
@@ -263,6 +291,13 @@ export async function POST(req: Request) {
         changedBy: profile.id,
         userRole: profile.role,
       });
+    }
+
+    // Reassigned to a NEW person (not the one who made the change) → alert them.
+    const newAssignee = typeof data?.assigned_user_id === "string" ? data.assigned_user_id : null;
+    if (newAssignee && newAssignee !== previousAssignee && newAssignee !== profile.id) {
+      const subject = typeof data?.subject === "string" ? data.subject : "משימה";
+      await notifyTaskAssignees(id, subject, [newAssignee]);
     }
 
     return NextResponse.json({ task: data });

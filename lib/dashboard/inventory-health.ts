@@ -33,7 +33,7 @@ function getBoolean(row: Row, key: string) {
 }
 
 /**
- * Inventory health from `products` + `inventory` (same join lib/alerts.ts uses):
+ * Inventory health from `products` + `inventory` (same join the low-stock rule uses):
  * available = on_hand − reserved. Items at/below threshold but still in stock are
  * "low"; available ≤ 0 is "out". `reservedProducts` = products with live reservations.
  * Back-office only. Best-effort — missing columns/tables resolve to empty.

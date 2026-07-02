@@ -10,6 +10,7 @@ import type { OrdersFilters } from "@/app/(app)/sales/loadOrders";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import InvoiceQuickMenu from "@/app/(app)/sales/orders/InvoiceQuickMenu";
+import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -659,8 +660,18 @@ export default function SalesOrdersClient({
                                 setReminderTarget({ id: row.id, customerId: row.customerId, label: row.customerName })
                               }
                             >
-                              <Bell className="h-4 w-4" />
+                              <Bell className="h-4 w-4 text-warning" />
                             </Button>
+                          ) : null}
+                          {canRemind ? (
+                            <LogCommunicationButton
+                              entityType="order"
+                              entityId={row.id}
+                              customerId={row.customerId}
+                              defaultTopic="sales"
+                              iconOnly
+                              className="h-9 w-9 p-0"
+                            />
                           ) : null}
                           {isActiveOrder(row.status) ? (
                             <OrderConfirmDialog orderId={row.id} buttonLabel="אישור אספקה" />
@@ -762,9 +773,18 @@ export default function SalesOrdersClient({
                             setReminderTarget({ id: row.id, customerId: row.customerId, label: row.customerName })
                           }
                         >
-                          <Bell className="h-4 w-4" />
+                          <Bell className="h-4 w-4 text-warning" />
                           תזכורת
                         </Button>
+                      ) : null}
+                      {canRemind ? (
+                        <LogCommunicationButton
+                          entityType="order"
+                          entityId={row.id}
+                          customerId={row.customerId}
+                          defaultTopic="sales"
+                          className="h-9 gap-1 rounded-lg"
+                        />
                       ) : null}
                     </div>
 

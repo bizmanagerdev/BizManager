@@ -5,6 +5,7 @@ import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
 import { computeDueDate, normalizePaymentTerms } from "@/lib/paymentTerms";
 import { getCurrentVatRate } from "@/lib/settings/vat";
+import { notifyNewEntity } from "@/lib/notifications/new-entity";
 
 type CreateProjectPayload = {
   customer_id?: string;
@@ -141,6 +142,9 @@ export async function POST(req: Request) {
       changedBy: profile.id,
       userRole: profile.role,
     });
+
+    // Alert back-office (admin + office) that a new project came in.
+    await notifyNewEntity({ kind: "project", entityId: created.id, creatorUserId: profile.id, name });
 
     return NextResponse.json({ project: dashboardRow ?? created });
     });

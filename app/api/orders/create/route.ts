@@ -6,6 +6,7 @@ import {
   tryAutoIssueReceiptForPayment,
 } from "@/lib/morning/service";
 import { buildPaymentInsert } from "@/lib/payments";
+import { notifyNewEntity } from "@/lib/notifications/new-entity";
 import {
   derivePaymentStatus,
   hasInvalidPaymentEntry,
@@ -252,6 +253,9 @@ export async function POST(req: Request) {
         });
       }
     }
+
+    // Alert back-office (admin + office) that a new order came in.
+    await notifyNewEntity({ kind: "order", entityId: orderId, creatorUserId: profile.id, customerId });
 
     return NextResponse.json({
       order_id: orderId,

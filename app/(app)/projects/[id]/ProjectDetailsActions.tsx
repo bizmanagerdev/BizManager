@@ -22,6 +22,8 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { CustomerPicker } from "@/components/customers/CustomerPicker";
 import { Textarea } from "@/components/ui/textarea";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
+import AddReminderButton from "@/components/reminders/AddReminderButton";
+import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 
 type Option = {
   id: string;
@@ -296,6 +298,8 @@ export default function ProjectDetailsActions({
           <Pencil className="h-4 w-4" />
           <span>עריכה</span>
         </Button>
+        <AddReminderButton entityType="project" entityId={project.id} customerId={project.customer_id} label={project.name} />
+        <LogCommunicationButton entityType="project" entityId={project.id} customerId={project.customer_id} defaultTopic="general" />
         <DeleteProjectButton projectId={project.id} projectName={project.name} redirectTo="/projects" size="sm">
           <Trash2 className="h-4 w-4" />
           <span>מחיקה</span>

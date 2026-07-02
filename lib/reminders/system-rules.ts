@@ -1,0 +1,902 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  computeSourceCollection,
+  fetchOrderDueDates,
+  fetchProjectDueDates,
+  getPaymentsDueToday,
+  isOpenOrderStatus,
+} from "@/lib/collections";
+import { addWorkingDays } from "@/lib/dashboard/week";
+
+// ---------------------------------------------------------------------------
+// Reminders/Alerts unification — Phase 2: the system-rule engine.
+//
+// Each rule inspects the live data and returns the set of "problems that
+// currently exist" as SystemReminderItem[]. The engine (syncSystemReminders)
+// reconciles that set against the open system reminders in the DB:
+//   * a new problem  -> insert a system reminder (source='system')
+//   * a gone problem -> auto-close the reminder (status='auto_resolved')
+//   * a still-open problem whose text/severity changed -> refresh it
+//
+// Delivery (pushing these) is intentionally NOT done here — rows are created
+// with next_ping_at = NULL and the Phase 3 deliver cron schedules the actual
+// pings (respecting quiet hours / repeat cadence). Silent rules never ping.
+// ---------------------------------------------------------------------------
+
+type Row = Record<string, unknown>;
+type Severity = "info" | "warning" | "danger";
+type Behavior = "silent" | "ping_once" | "ping_repeat";
+type AudienceRole = "admin" | "office" | "all";
+
+export type SystemReminderItem = {
+  /** Unique within the rule; combined with the rule key to form dedupe_key. */
+  key: string;
+  title: string;
+  content?: string;
+  url: string;
+  severity: Severity;
+  behavior: Behavior;
+  repeatRule?: string | null;
+  maxPings?: number | null;
+  /** Target a specific user OR a role bucket (exactly one is expected). */
+  assignedTo?: string | null;
+  audienceRole?: AudienceRole | null;
+  links?: {
+    customer_id?: string | null;
+    order_id?: string | null;
+    project_id?: string | null;
+    property_id?: string | null;
+    payment_id?: string | null;
+    task_id?: string | null;
+    invoice_id?: string | null;
+    vehicle_id?: string | null;
+    expense_id?: string | null;
+  };
+};
+
+type RuleContext = {
+  todayIso: string;
+  nowIso: string;
+  today: Date;
+  /** today + 3 working days, for deadline horizons. */
+  nearHorizonIso: string;
+};
+
+type SystemRule = {
+  key: string;
+  label: string;
+  /**
+   * Return the problems that currently exist. MUST throw on a real read error
+   * (so the engine skips reconcile and never mass-auto-closes on a transient
+   * failure). Return [] only when there genuinely are no problems.
+   */
+  evaluate: (supabase: SupabaseClient, ctx: RuleContext) => Promise<SystemReminderItem[]>;
+};
+
+// --- small helpers ---------------------------------------------------------
+
+function getString(row: Row | null | undefined, key: string) {
+  const v = row?.[key];
+  return typeof v === "string" ? v : null;
+}
+function getNumber(row: Row | null | undefined, key: string) {
+  const v = row?.[key];
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string") {
+    const p = Number(v.replace(/,/g, "").trim());
+    return Number.isFinite(p) ? p : null;
+  }
+  return null;
+}
+function getBoolean(row: Row | null | undefined, key: string) {
+  const v = row?.[key];
+  return typeof v === "boolean" ? v : null;
+}
+function ils(n: number) {
+  return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(n);
+}
+function throwIf(error: unknown, label: string) {
+  if (error) throw new Error(`${label}: ${(error as { message?: string })?.message ?? "query failed"}`);
+}
+
+// ---------------------------------------------------------------------------
+// The rules — one per condition (originally ported from the retired lib/alerts.ts), at per-item
+// granularity where the thing is individually actionable, summary where it's a
+// pure metric. Two old alerts are intentionally dropped:
+//   * collection-reminders-due  -> those already ARE reminders
+//   * customers-awaiting-followup -> redundant with collection_overdue
+// ---------------------------------------------------------------------------
+
+const taskOverdueRule: SystemRule = {
+  key: "task_overdue",
+  label: "משימות באיחור",
+  async evaluate(supabase, ctx) {
+    const { data, error } = await supabase
+      .from("tasks")
+      .select("id,subject,due_date,status,assigned_user_id,project_id")
+      .in("status", ["todo", "in_progress", "blocked"])
+      .not("due_date", "is", null)
+      .lt("due_date", ctx.todayIso)
+      .not("assigned_user_id", "is", null)
+      .range(0, 1999);
+    throwIf(error, "tasks");
+    return ((data ?? []) as Row[]).map((t) => {
+      const id = getString(t, "id") ?? "";
+      const subject = getString(t, "subject") ?? "משימה";
+      return {
+        key: id,
+        title: `משימה באיחור: ${subject}`,
+        content: "משימה שחלף מועד היעד שלה וטרם הושלמה.",
+        url: `/tasks/${id}`,
+        severity: "danger" as Severity,
+        behavior: "ping_once" as Behavior,
+        assignedTo: getString(t, "assigned_user_id"),
+        links: { task_id: id, project_id: getString(t, "project_id") },
+      };
+    });
+  },
+};
+
+const projectDeadlineRule: SystemRule = {
+  key: "project_deadline",
+  label: "פרויקטים לקראת דדליין",
+  async evaluate(supabase, ctx) {
+    const { data, error } = await supabase
+      .from("projects")
+      .select("id,name,end_date,status,project_manager_id,customer_id")
+      .in("status", ["active", "in_progress"])
+      .not("end_date", "is", null)
+      .gte("end_date", ctx.todayIso)
+      .lte("end_date", ctx.nearHorizonIso)
+      .range(0, 999);
+    throwIf(error, "projects");
+    return ((data ?? []) as Row[]).map((p) => {
+      const id = getString(p, "id") ?? "";
+      const name = getString(p, "name") ?? "פרויקט";
+      const manager = getString(p, "project_manager_id");
+      return {
+        key: id,
+        title: `פרויקט לקראת דדליין: ${name}`,
+        content: "צפוי להסתיים תוך 3 ימי עבודה.",
+        url: `/projects/${id}`,
+        severity: "warning" as Severity,
+        behavior: "ping_once" as Behavior,
+        // owned by its PM if set, otherwise a back-office concern
+        assignedTo: manager,
+        audienceRole: manager ? null : ("office" as AudienceRole),
+        links: { project_id: id, customer_id: getString(p, "customer_id") },
+      };
+    });
+  },
+};
+
+const invoiceUnpaidRule: SystemRule = {
+  key: "invoice_unpaid",
+  label: "חשבוניות לא משולמות",
+  async evaluate(supabase) {
+    const { data, error } = await supabase
+      .from("invoices")
+      .select("id,payment_status,status,balance_due,amount_due,open_amount,remaining_amount,customer_name,invoice_number")
+      .order("created_at", { ascending: false })
+      .range(0, 499);
+    // Table may not exist in every install — treat "missing table" as no problems.
+    if (error) {
+      if ((error.message ?? "").includes("public.invoices")) return [];
+      throwIf(error, "invoices");
+    }
+    const unpaid = ((data ?? []) as Row[]).filter((row) => {
+      const balance =
+        getNumber(row, "balance_due") ??
+        getNumber(row, "amount_due") ??
+        getNumber(row, "open_amount") ??
+        getNumber(row, "remaining_amount");
+      if (balance !== null) return balance > 0;
+      const ps = (getString(row, "payment_status") ?? "").toLowerCase();
+      const st = (getString(row, "status") ?? "").toLowerCase();
+      const open = ["unpaid", "partial", "overdue", "open", "pending"];
+      return open.includes(ps) || open.includes(st);
+    });
+    return unpaid.map((row) => {
+      const id = getString(row, "id") ?? "";
+      const num = getString(row, "invoice_number");
+      const who = getString(row, "customer_name");
+      return {
+        key: id,
+        title: num ? `חשבונית לא משולמת #${num}` : "חשבונית לא משולמת",
+        content: who ? `חשבונית פתוחה עבור ${who}.` : "חשבונית פתוחה שטרם שולמה.",
+        url: "/invoices",
+        severity: "warning" as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "office" as AudienceRole,
+        links: { invoice_id: id },
+      };
+    });
+  },
+};
+
+const collectionOverdueRule: SystemRule = {
+  key: "collection_overdue",
+  label: "גבייה באיחור",
+  async evaluate(supabase, ctx) {
+    const { data, error } = await supabase
+      .from("collections_view")
+      .select(
+        "source_type,source_id,customer_id,customer_name,total_amount,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date,reference_date"
+      )
+      .range(0, 999);
+    throwIf(error, "collections_view");
+    const rows = (data ?? []) as Row[];
+    const [orderDue, projectDue] = await Promise.all([
+      fetchOrderDueDates(
+        supabase,
+        rows.filter((r) => getString(r, "source_type") !== "project").map((r) => getString(r, "source_id") ?? "")
+      ),
+      fetchProjectDueDates(
+        supabase,
+        rows.filter((r) => getString(r, "source_type") === "project").map((r) => getString(r, "source_id") ?? "")
+      ),
+    ]);
+    const items: SystemReminderItem[] = [];
+    for (const row of rows) {
+      const isProject = getString(row, "source_type") === "project";
+      const sourceId = getString(row, "source_id") ?? "";
+      const sm = computeSourceCollection({
+        total: getNumber(row, "total_amount") ?? 0,
+        collected: getNumber(row, "collected_amount") ?? 0,
+        pending: getNumber(row, "pending_amount") ?? 0,
+        overdue: getNumber(row, "overdue_amount") ?? 0,
+        outstanding: getNumber(row, "outstanding_amount") ?? 0,
+        nextDueDate: getString(row, "next_due_date"),
+        referenceDate: getString(row, "reference_date"),
+        dueDate: (isProject ? projectDue.get(sourceId)?.dueDate : orderDue.get(sourceId)?.dueDate) ?? null,
+        blockOverdue: !isProject && isOpenOrderStatus(orderDue.get(sourceId)?.status),
+        today: ctx.todayIso,
+      });
+      if (sm.late <= 0.009) continue;
+      const who = getString(row, "customer_name");
+      const customerId = getString(row, "customer_id");
+      items.push({
+        key: `${getString(row, "source_type")}:${sourceId}`,
+        title: who ? `חוב באיחור: ${who}` : "חוב באיחור",
+        content: `${ils(sm.late)} באיחור${sm.daysLate ? ` (${sm.daysLate} ימים)` : ""}.`,
+        url: "/collections?view=debtors&filter=overdue",
+        severity: "danger" as Severity,
+        behavior: "ping_repeat" as Behavior,
+        repeatRule: "daily",
+        audienceRole: "office" as AudienceRole,
+        links: {
+          customer_id: customerId,
+          order_id: isProject ? null : sourceId,
+          project_id: isProject ? sourceId : null,
+        },
+      });
+    }
+    return items;
+  },
+};
+
+const wageOverdueRule: SystemRule = {
+  key: "wage_overdue",
+  label: "שכר עובדים באיחור",
+  async evaluate(supabase, ctx) {
+    const { data, error } = await supabase
+      .from("worker_debt_items_view")
+      .select("user_id,source_date,due_date,owed_amount,source_type")
+      .eq("source_type", "payslip")
+      .gt("owed_amount", 0.009)
+      .range(0, 1999);
+    // due_date column may not exist on older views — fall back without it.
+    let rows = (data ?? []) as Row[];
+    if (error) {
+      if ((error.message ?? "").toLowerCase().includes("due_date")) {
+        const retry = await supabase
+          .from("worker_debt_items_view")
+          .select("user_id,source_date,owed_amount,source_type")
+          .eq("source_type", "payslip")
+          .gt("owed_amount", 0.009)
+          .range(0, 1999);
+        throwIf(retry.error, "worker_debt_items_view");
+        rows = (retry.data ?? []) as Row[];
+      } else {
+        throwIf(error, "worker_debt_items_view");
+      }
+    }
+    const nextMonthDue = (periodEndIso: string) => {
+      const [y, m] = periodEndIso.split("-").map(Number);
+      if (!Number.isFinite(y) || !Number.isFinite(m)) return "";
+      const nm = m === 12 ? 1 : m + 1;
+      const ny = m === 12 ? y + 1 : y;
+      return `${ny}-${String(nm).padStart(2, "0")}-10`;
+    };
+    // Resolve worker names for the titles.
+    const userIds = [...new Set(rows.map((r) => getString(r, "user_id")).filter((v): v is string => Boolean(v)))];
+    const nameById = new Map<string, string>();
+    if (userIds.length) {
+      const { data: users } = await supabase.from("users").select("id,full_name").in("id", userIds);
+      for (const u of (users ?? []) as Row[]) nameById.set(getString(u, "id") ?? "", getString(u, "full_name") ?? "עובד");
+    }
+    const items: SystemReminderItem[] = [];
+    for (const row of rows) {
+      const userId = getString(row, "user_id") ?? "";
+      const sourceDate = getString(row, "source_date") ?? "";
+      const owed = getNumber(row, "owed_amount") ?? 0;
+      if (!userId || !sourceDate || owed <= 0.009) continue;
+      const dueIso = getString(row, "due_date") || nextMonthDue(sourceDate);
+      if (!dueIso || ctx.todayIso <= dueIso) continue; // not overdue yet
+      items.push({
+        key: `${userId}:${sourceDate}`,
+        title: `שכר באיחור: ${nameById.get(userId) ?? "עובד"}`,
+        content: `${ils(owed)} שטרם שולמו (תלוש ${sourceDate}).`,
+        url: "/payroll",
+        severity: "danger" as Severity,
+        behavior: "ping_repeat" as Behavior,
+        repeatRule: "daily",
+        audienceRole: "admin" as AudienceRole,
+      });
+    }
+    return items;
+  },
+};
+
+const vehicleExpiryRule: SystemRule = {
+  key: "vehicle_expiry",
+  label: "רכבים — טסט/ביטוח/רישוי",
+  async evaluate(supabase, ctx) {
+    const horizon = new Date(ctx.today);
+    horizon.setDate(horizon.getDate() + 30);
+    const horizonIso = horizon.toISOString().slice(0, 10);
+    const { data, error } = await supabase
+      .from("vehicles")
+      .select("id,tag_id,license_plate,make_model,test_due_date,insurance_due_date,license_due_date")
+      .or(`test_due_date.lte.${horizonIso},insurance_due_date.lte.${horizonIso},license_due_date.lte.${horizonIso}`);
+    if (error) {
+      if ((error.message ?? "").includes("public.vehicles")) return [];
+      throwIf(error, "vehicles");
+    }
+    const kinds: Array<{ col: string; label: string }> = [
+      { col: "test_due_date", label: "טסט" },
+      { col: "insurance_due_date", label: "ביטוח" },
+      { col: "license_due_date", label: "רישוי" },
+    ];
+    const items: SystemReminderItem[] = [];
+    for (const v of (data ?? []) as Row[]) {
+      // tag_id is the vehicle's canonical identity everywhere (routes, entity_tags),
+      // so link + navigate by it — consistent with the manual reminder button.
+      const tagId = getString(v, "tag_id") ?? getString(v, "id") ?? "";
+      const label = getString(v, "license_plate") || getString(v, "make_model") || "רכב";
+      for (const k of kinds) {
+        const d = getString(v, k.col);
+        if (!d || d > horizonIso) continue;
+        const overdue = d < ctx.todayIso;
+        items.push({
+          key: `${tagId}:${k.col}`,
+          title: `${k.label} לרכב ${label}`,
+          content: overdue ? `${k.label} פג בתאריך ${d}.` : `${k.label} יפוג בתאריך ${d}.`,
+          url: tagId ? `/vehicles/${tagId}` : "/vehicles",
+          severity: (overdue ? "danger" : "warning") as Severity,
+          behavior: "ping_once" as Behavior,
+          audienceRole: "office" as AudienceRole,
+          links: { vehicle_id: tagId },
+        });
+      }
+    }
+    return items;
+  },
+};
+
+// --- Phase 5 coverage: payments & checks ----------------------------------
+
+const checkDepositDueRule: SystemRule = {
+  key: "check_deposit_due",
+  label: "צ׳קים לפירעון",
+  async evaluate(supabase, ctx) {
+    // Checks are payments (payment_method='check'). A pending check whose deposit
+    // date (due_date) has arrived should be deposited. Post-dated checks (future
+    // due_date) don't alert yet.
+    const { data, error } = await supabase
+      .from("payments")
+      .select("id,check_number,amount_total,due_date,payment_status,order_id,project_id")
+      .eq("payment_method", "check")
+      .eq("payment_status", "pending")
+      .not("due_date", "is", null)
+      .lte("due_date", ctx.todayIso)
+      .range(0, 999);
+    throwIf(error, "payments(checks)");
+    return ((data ?? []) as Row[]).map((p) => {
+      const id = getString(p, "id") ?? "";
+      const due = getString(p, "due_date") ?? "";
+      const num = getString(p, "check_number");
+      const amount = getNumber(p, "amount_total") ?? 0;
+      // Well past its deposit date → escalate.
+      const overdueDays = due ? Math.floor((new Date(ctx.todayIso).getTime() - new Date(due).getTime()) / 86_400_000) : 0;
+      return {
+        key: id,
+        title: num ? `צ׳ק לפירעון #${num}` : "צ׳ק לפירעון",
+        content: `${ils(amount)} — מועד הפקדה ${due}${overdueDays > 0 ? ` (לפני ${overdueDays} ימים)` : ""}.`,
+        url: "/checks",
+        severity: (overdueDays > 7 ? "danger" : "warning") as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "office" as AudienceRole,
+        links: { payment_id: id, order_id: getString(p, "order_id"), project_id: getString(p, "project_id") },
+      };
+    });
+  },
+};
+
+const paymentDueTodayRule: SystemRule = {
+  key: "payment_due_today",
+  label: "תשלומים לגבייה היום",
+  async evaluate(supabase, ctx) {
+    // Scheduled payments due today. Checks are excluded — they have their own
+    // deposit rule — so this doesn't double up on the same money.
+    const due = await getPaymentsDueToday(supabase, ctx.todayIso);
+    return due
+      .filter((p) => p.payment_method !== "check")
+      .map((p) => ({
+        key: p.id,
+        title: p.customer_name ? `תשלום לגבייה: ${p.customer_name}` : "תשלום לגבייה היום",
+        content: `${ils(p.amount)} מתוכנן להיום${p.customer_phone ? ` · ${p.customer_phone}` : ""}.`,
+        url: "/collections?view=today",
+        severity: "warning" as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "office" as AudienceRole,
+        links: {
+          payment_id: p.id,
+          customer_id: p.customer_id,
+          order_id: p.source_type === "order" ? p.source_id : null,
+          project_id: p.source_type === "project" ? p.source_id : null,
+        },
+      }));
+  },
+};
+
+const promiseBrokenRule: SystemRule = {
+  key: "promise_broken",
+  label: "הבטחות תשלום שהופרו",
+  async evaluate(supabase, ctx) {
+    // A promise still pending past its date → the customer didn't pay as promised.
+    const { data, error } = await supabase
+      .from("payment_promises")
+      .select("id,customer_id,amount,promised_date,order_id,project_id")
+      .eq("status", "pending")
+      .lt("promised_date", ctx.todayIso)
+      .range(0, 999);
+    if (error) {
+      if ((error.message ?? "").includes("payment_promises")) return []; // table not migrated yet
+      throwIf(error, "payment_promises");
+    }
+    const rows = (data ?? []) as Row[];
+    const customerIds = [...new Set(rows.map((r) => getString(r, "customer_id")).filter((v): v is string => Boolean(v)))];
+    const nameById = new Map<string, string>();
+    if (customerIds.length) {
+      const { data: cs } = await supabase.from("customers").select("id,name").in("id", customerIds);
+      for (const c of (cs ?? []) as Row[]) nameById.set(getString(c, "id") ?? "", getString(c, "name") ?? "לקוח");
+    }
+    return rows.map((r) => {
+      const id = getString(r, "id") ?? "";
+      const who = nameById.get(getString(r, "customer_id") ?? "") ?? null;
+      const amount = getNumber(r, "amount") ?? 0;
+      const date = getString(r, "promised_date") ?? "";
+      return {
+        key: id,
+        title: who ? `הבטחת תשלום הופרה: ${who}` : "הבטחת תשלום הופרה",
+        content: `הובטחו ${ils(amount)} עד ${date} — טרם שולם.`,
+        url: "/collections?view=debtors",
+        severity: "danger" as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "office" as AudienceRole,
+        links: { customer_id: getString(r, "customer_id"), order_id: getString(r, "order_id"), project_id: getString(r, "project_id") },
+      };
+    });
+  },
+};
+
+const recurringExpenseConfirmRule: SystemRule = {
+  key: "recurring_expense_confirm",
+  label: "אישור תשלום הוצאות קבועות",
+  async evaluate(supabase, ctx) {
+    // Recurring-generated expenses start as not_paid and need a manual "שולם"
+    // confirmation before they count as real cash. Nudge once the expense date passed.
+    const { data, error } = await supabase
+      .from("expenses")
+      .select("id,expense_date,payment_status,recurring_expense_template_id")
+      .not("recurring_expense_template_id", "is", null)
+      .eq("payment_status", "not_paid")
+      .lte("expense_date", ctx.nowIso)
+      .range(0, 999);
+    throwIf(error, "expenses(recurring)");
+    return ((data ?? []) as Row[]).map((e) => {
+      const id = getString(e, "id") ?? "";
+      const when = (getString(e, "expense_date") ?? "").slice(0, 10);
+      return {
+        key: id,
+        title: "אישור תשלום להוצאה קבועה",
+        content: `הוצאה קבועה${when ? ` מ-${when}` : ""} ממתינה לאישור תשלום.`,
+        url: "/financial",
+        severity: "warning" as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "office" as AudienceRole,
+        links: { expense_id: id },
+      };
+    });
+  },
+};
+
+// --- Phase 5 coverage: tasks & projects -----------------------------------
+
+const taskDueSoonRule: SystemRule = {
+  key: "task_due_soon",
+  label: "משימות לביצוע בקרוב",
+  async evaluate(supabase, ctx) {
+    // Assigned tasks due today or tomorrow (not yet overdue — task_overdue owns those).
+    const twoDays = new Date(ctx.today);
+    twoDays.setDate(twoDays.getDate() + 2);
+    const twoDaysIso = twoDays.toISOString().slice(0, 10);
+    const { data, error } = await supabase
+      .from("tasks")
+      .select("id,subject,due_date,status,assigned_user_id,project_id")
+      .in("status", ["todo", "in_progress", "blocked"])
+      .not("assigned_user_id", "is", null)
+      .gte("due_date", ctx.todayIso)
+      .lt("due_date", twoDaysIso)
+      .range(0, 1999);
+    throwIf(error, "tasks(due_soon)");
+    return ((data ?? []) as Row[]).map((t) => {
+      const id = getString(t, "id") ?? "";
+      const subject = getString(t, "subject") ?? "משימה";
+      const due = getString(t, "due_date") ?? "";
+      const isToday = due.slice(0, 10) === ctx.todayIso;
+      return {
+        key: id,
+        title: `${isToday ? "משימה להיום" : "משימה למחר"}: ${subject}`,
+        content: isToday ? "מועד היעד היום." : "מועד היעד מחר.",
+        url: `/tasks/${id}`,
+        severity: "info" as Severity,
+        behavior: "ping_once" as Behavior,
+        assignedTo: getString(t, "assigned_user_id"),
+        links: { task_id: id, project_id: getString(t, "project_id") },
+      };
+    });
+  },
+};
+
+const projectStartingRule: SystemRule = {
+  key: "project_starting",
+  label: "פרויקטים שמתחילים בקרוב",
+  async evaluate(supabase, ctx) {
+    const horizon = new Date(ctx.today);
+    horizon.setDate(horizon.getDate() + 7);
+    const horizonIso = horizon.toISOString().slice(0, 10);
+    const { data, error } = await supabase
+      .from("projects")
+      .select("id,name,start_date,status,project_manager_id,customer_id")
+      .in("status", ["active", "in_progress"])
+      .not("start_date", "is", null)
+      .gte("start_date", ctx.todayIso)
+      .lte("start_date", horizonIso)
+      .range(0, 999);
+    throwIf(error, "projects(starting)");
+    return ((data ?? []) as Row[]).map((p) => {
+      const id = getString(p, "id") ?? "";
+      const name = getString(p, "name") ?? "פרויקט";
+      const start = getString(p, "start_date") ?? "";
+      const manager = getString(p, "project_manager_id");
+      const isToday = start === ctx.todayIso;
+      return {
+        key: id,
+        title: `פרויקט מתחיל ${isToday ? "היום" : "בקרוב"}: ${name}`,
+        content: `מועד התחלה ${start}.`,
+        url: `/projects/${id}`,
+        severity: "info" as Severity,
+        behavior: "ping_once" as Behavior,
+        assignedTo: manager,
+        audienceRole: manager ? null : ("office" as AudienceRole),
+        links: { project_id: id, customer_id: getString(p, "customer_id") },
+      };
+    });
+  },
+};
+
+// --- summary (silent) rules — one row carrying a count, no push ------------
+
+const lowStockRule: SystemRule = {
+  key: "low_stock",
+  label: "מלאי נמוך",
+  async evaluate(supabase) {
+    const productsRes = await supabase.from("products").select("id,active,low_stock_threshold");
+    let products = productsRes;
+    if ((productsRes.error as { code?: string } | null)?.code === "42703") {
+      products = await supabase.from("products").select("id,active");
+    }
+    throwIf(products.error, "products");
+    const invRes = await supabase.from("inventory").select("product_id,quantity_on_hand,quantity_reserved");
+    throwIf(invRes.error, "inventory");
+    const invByProduct = new Map<string, { onHand: number; reserved: number }>();
+    for (const r of (invRes.data ?? []) as Row[]) {
+      const pid = getString(r, "product_id");
+      if (!pid) continue;
+      invByProduct.set(pid, { onHand: getNumber(r, "quantity_on_hand") ?? 0, reserved: getNumber(r, "quantity_reserved") ?? 0 });
+    }
+    const count = ((products.data ?? []) as Row[]).reduce((acc, row) => {
+      const id = getString(row, "id");
+      if (!id || getBoolean(row, "active") === false) return acc;
+      const threshold = getNumber(row, "low_stock_threshold") ?? 5;
+      const inv = invByProduct.get(id);
+      const available = (inv?.onHand ?? 0) - (inv?.reserved ?? 0);
+      return available <= threshold ? acc + 1 : acc;
+    }, 0);
+    if (count <= 0) return [];
+    return [
+      {
+        key: "summary",
+        title: `מלאי נמוך: ${count} פריטים`,
+        content: "פריטים מתחת לסף המלאי המוגדר.",
+        url: "/inventory",
+        severity: "warning",
+        behavior: "silent",
+        audienceRole: "office",
+      },
+    ];
+  },
+};
+
+const unprocessedItemsRule: SystemRule = {
+  key: "unprocessed_items",
+  label: "הוצאות לא מעובדות",
+  async evaluate(supabase) {
+    const [statementsRes, pendingRowsRes, unclassifiedRes] = await Promise.all([
+      supabase.from("card_statements").select("id,marked_done").range(0, 999).then((r) => r, () => ({ data: [] as Row[], error: null })),
+      supabase
+        .from("card_statement_rows")
+        .select("statement_id")
+        .eq("include", true)
+        .is("expense_id", null)
+        .range(0, 9999)
+        .then((r) => r, () => ({ data: [] as Row[], error: null })),
+      supabase
+        .from("expenses")
+        .select("id", { count: "estimated", head: true })
+        .or("category.is.null,business_domain.is.null")
+        .then((r) => r, () => ({ count: 0 })),
+    ]);
+    const unclassified =
+      typeof (unclassifiedRes as { count?: number | null }).count === "number" ? (unclassifiedRes as { count: number }).count : 0;
+    const doneIds = new Set(
+      ((statementsRes.data ?? []) as Row[]).filter((r) => getBoolean(r, "marked_done") === true).map((r) => getString(r, "id")).filter(Boolean)
+    );
+    const pendingStatements = new Set<string>();
+    for (const r of (pendingRowsRes.data ?? []) as Row[]) {
+      const sid = getString(r, "statement_id");
+      if (sid && !doneIds.has(sid)) pendingStatements.add(sid);
+    }
+    const count = pendingStatements.size + unclassified;
+    if (count <= 0) return [];
+    return [
+      {
+        key: "summary",
+        title: `${count} פריטים ממתינים לסיווג`,
+        content: "הוצאות ודפי אשראי הממתינים לעיבוד ואישור.",
+        url: "/financial/statements",
+        severity: "warning",
+        behavior: "silent",
+        audienceRole: "office",
+      },
+    ];
+  },
+};
+
+const sessionUnallocatedRule: SystemRule = {
+  key: "session_unallocated",
+  label: "שעות עבודה לשיוך",
+  async evaluate(supabase, ctx) {
+    // "Needs allocation" is a heuristic: a COMPLETED session still on the default
+    // domain with no project/property — the boss hasn't assigned where the hours
+    // went. (No explicit flag exists; refine if this over/under-counts.)
+    const since = new Date(ctx.today);
+    since.setDate(since.getDate() - 90);
+    const sinceIso = since.toISOString();
+    const { count, error } = await supabase
+      .from("attendance_sessions")
+      .select("id", { count: "estimated", head: true })
+      .not("clock_out", "is", null)
+      .eq("business_domain", "general_business")
+      .is("project_id", null)
+      .is("property_id", null)
+      .gte("clock_in", sinceIso);
+    throwIf(error, "attendance_sessions");
+    const n = typeof count === "number" ? count : 0;
+    if (n <= 0) return [];
+    return [
+      {
+        key: "summary",
+        title: `שעות עבודה לשיוך: ${n} משמרות`,
+        content: "משמרות שהסתיימו וטרם שויכו לתחום/פרויקט.",
+        url: "/payroll",
+        severity: "warning",
+        behavior: "silent",
+        audienceRole: "admin",
+      },
+    ];
+  },
+};
+
+const activeProjectsRule: SystemRule = {
+  key: "active_projects",
+  label: "פרויקטים פעילים",
+  async evaluate(supabase) {
+    const { count, error } = await supabase
+      .from("projects")
+      .select("id", { count: "estimated", head: true })
+      .in("status", ["active", "in_progress"]);
+    throwIf(error, "projects(active)");
+    const n = typeof count === "number" ? count : 0;
+    if (n <= 0) return [];
+    return [
+      {
+        key: "summary",
+        title: `${n} פרויקטים פעילים`,
+        content: "סקירה כללית של הפרויקטים הפעילים.",
+        url: "/projects",
+        severity: "info",
+        behavior: "silent",
+        audienceRole: "all",
+      },
+    ];
+  },
+};
+
+export const SYSTEM_RULES: SystemRule[] = [
+  // Ported from the old alerts (Phase 2)
+  taskOverdueRule,
+  projectDeadlineRule,
+  invoiceUnpaidRule,
+  collectionOverdueRule,
+  wageOverdueRule,
+  vehicleExpiryRule,
+  // New coverage (Phase 5): payments & checks
+  checkDepositDueRule,
+  paymentDueTodayRule,
+  promiseBrokenRule,
+  recurringExpenseConfirmRule,
+  // New coverage (Phase 5): tasks & projects
+  taskDueSoonRule,
+  projectStartingRule,
+  // Silent summaries
+  lowStockRule,
+  unprocessedItemsRule,
+  sessionUnallocatedRule,
+  activeProjectsRule,
+];
+
+// --- the reconcile engine --------------------------------------------------
+
+function buildContext(now: Date): RuleContext {
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  return {
+    today,
+    nowIso: now.toISOString(),
+    todayIso: today.toISOString().slice(0, 10),
+    nearHorizonIso: addWorkingDays(today, 3).toISOString().slice(0, 10),
+  };
+}
+
+function toInsertRow(rule: SystemRule, item: SystemReminderItem, nowIso: string) {
+  return {
+    source: "system",
+    dedupe_key: `${rule.key}:${item.key}`,
+    title: item.title,
+    content: item.content ?? "",
+    url: item.url,
+    severity: item.severity,
+    behavior: item.behavior,
+    repeat_rule: item.behavior === "ping_repeat" ? item.repeatRule ?? "daily" : null,
+    max_pings: item.maxPings ?? null,
+    // Delivery scheduling is Phase 3's job — leave unscheduled for now so nothing
+    // pushes at an inappropriate hour before quiet-hours logic exists.
+    next_ping_at: null,
+    remind_at: nowIso,
+    action_type: null,
+    category: "system",
+    status: "pending",
+    assigned_to: item.assignedTo ?? null,
+    audience_role: item.audienceRole ?? null,
+    customer_id: item.links?.customer_id ?? null,
+    order_id: item.links?.order_id ?? null,
+    project_id: item.links?.project_id ?? null,
+    property_id: item.links?.property_id ?? null,
+    payment_id: item.links?.payment_id ?? null,
+    task_id: item.links?.task_id ?? null,
+    invoice_id: item.links?.invoice_id ?? null,
+    vehicle_id: item.links?.vehicle_id ?? null,
+    expense_id: item.links?.expense_id ?? null,
+  };
+}
+
+export type RuleSyncResult = {
+  rule: string;
+  active: number;
+  inserted: number;
+  resolved: number;
+  refreshed: number;
+  error?: string;
+};
+
+async function reconcileRule(
+  supabase: SupabaseClient,
+  rule: SystemRule,
+  items: SystemReminderItem[],
+  nowIso: string
+): Promise<RuleSyncResult> {
+  const { data: existing, error } = await supabase
+    .from("reminders")
+    .select("id,dedupe_key,severity,title,content")
+    .eq("source", "system")
+    .eq("status", "pending")
+    .like("dedupe_key", `${rule.key}:%`)
+    .range(0, 9999);
+  throwIf(error, `${rule.key}:read-existing`);
+
+  const existingByKey = new Map<string, Row>();
+  for (const r of (existing ?? []) as Row[]) {
+    const dk = getString(r, "dedupe_key");
+    if (dk) existingByKey.set(dk, r);
+  }
+  const activeKeys = new Set(items.map((i) => `${rule.key}:${i.key}`));
+
+  // Insert brand-new problems.
+  const toInsert = items.filter((i) => !existingByKey.has(`${rule.key}:${i.key}`)).map((i) => toInsertRow(rule, i, nowIso));
+  if (toInsert.length) {
+    const { error: insErr } = await supabase.from("reminders").insert(toInsert);
+    throwIf(insErr, `${rule.key}:insert`);
+  }
+
+  // Refresh still-open problems whose text/severity moved.
+  let refreshed = 0;
+  for (const i of items) {
+    const dk = `${rule.key}:${i.key}`;
+    const ex = existingByKey.get(dk);
+    if (!ex) continue;
+    if (getString(ex, "severity") !== i.severity || getString(ex, "title") !== i.title || getString(ex, "content") !== (i.content ?? "")) {
+      const { error: updErr } = await supabase
+        .from("reminders")
+        .update({ severity: i.severity, title: i.title, content: i.content ?? "", updated_at: nowIso })
+        .eq("id", getString(ex, "id"));
+      if (!updErr) refreshed += 1;
+    }
+  }
+
+  // Auto-close problems that no longer exist.
+  const staleIds = ((existing ?? []) as Row[])
+    .filter((r) => !activeKeys.has(getString(r, "dedupe_key") ?? ""))
+    .map((r) => getString(r, "id"))
+    .filter((id): id is string => Boolean(id));
+  if (staleIds.length) {
+    const { error: closeErr } = await supabase
+      .from("reminders")
+      .update({ status: "auto_resolved", resolved_at: nowIso })
+      .in("id", staleIds);
+    throwIf(closeErr, `${rule.key}:auto-close`);
+  }
+
+  return { rule: rule.key, active: items.length, inserted: toInsert.length, resolved: staleIds.length, refreshed };
+}
+
+/**
+ * Evaluate every rule and reconcile the resulting system reminders. Safe to run
+ * repeatedly (idempotent). A rule that throws is skipped WITHOUT auto-closing
+ * its existing reminders, so a transient read error can't wipe the worklist.
+ */
+export async function syncSystemReminders(supabase: SupabaseClient, now: Date): Promise<RuleSyncResult[]> {
+  const ctx = buildContext(now);
+  const results: RuleSyncResult[] = [];
+  for (const rule of SYSTEM_RULES) {
+    try {
+      const items = await rule.evaluate(supabase, ctx);
+      results.push(await reconcileRule(supabase, rule, items, ctx.nowIso));
+    } catch (err) {
+      results.push({ rule: rule.key, active: 0, inserted: 0, resolved: 0, refreshed: 0, error: (err as Error)?.message ?? "failed" });
+    }
+  }
+  return results;
+}

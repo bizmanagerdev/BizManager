@@ -1074,6 +1074,69 @@ export async function getRecentAuditEvents(supabase: SupabaseClient, limit = 8) 
   };
 }
 
+// ── "What you missed" digest ─────────────────────────────────────────────────
+// Meaningful events (new/deleted business entities) since the viewer was last
+// here. Role-filtered: office sees business + money-in; admin also sees the
+// sensitive tables (payroll, users, accounts). This is the "who sees what" gate.
+const DIGEST_ACTIONS = ["INSERT", "create", "delete"];
+const DIGEST_TABLES_OFFICE = ["orders", "projects", "customers", "payments", "expenses"];
+const DIGEST_TABLES_ADMIN = [
+  ...DIGEST_TABLES_OFFICE,
+  "worker_payments",
+  "attendance_sessions",
+  "users",
+  "accounts",
+];
+
+export function digestTablesForRole(role: string | null | undefined): string[] {
+  return role === "admin" ? DIGEST_TABLES_ADMIN : DIGEST_TABLES_OFFICE;
+}
+
+/** The anchor for "since you were last here": explicit dismissal, else previous login, else now. */
+export async function getDigestAnchor(supabase: SupabaseClient, userId: string): Promise<string> {
+  const { data: u } = await supabase.from("users").select("digest_seen_at").eq("id", userId).maybeSingle();
+  const seen = (u as { digest_seen_at?: string | null } | null)?.digest_seen_at;
+  if (typeof seen === "string" && seen) return seen;
+
+  // The current session's login is the newest, so the 2nd-most-recent is the prior visit.
+  const { data: logins } = await supabase
+    .from("audit_logs")
+    .select("created_at")
+    .eq("table_name", "auth")
+    .eq("action", "login")
+    .eq("changed_by", userId)
+    .order("created_at", { ascending: false })
+    .range(0, 1);
+  const rows = (logins ?? []) as Array<{ created_at?: string | null }>;
+  if (rows.length >= 2 && typeof rows[1].created_at === "string") return rows[1].created_at as string;
+
+  return new Date().toISOString(); // brand-new user → nothing to show yet
+}
+
+export async function getMissedDigest(
+  supabase: SupabaseClient,
+  opts: { sinceIso: string; viewerRole: string | null; excludeActorIds?: string[]; limit?: number }
+): Promise<{ items: AuditFeedItem[]; error: string | null }> {
+  const limit = opts.limit ?? 40;
+  const { data, error } = await supabase
+    .from("audit_logs")
+    .select("id,table_name,record_id,action,changed_by,user_role,created_at,new_data,old_data")
+    .gt("created_at", opts.sinceIso)
+    .in("table_name", digestTablesForRole(opts.viewerRole))
+    .in("action", DIGEST_ACTIONS)
+    .order("created_at", { ascending: false })
+    .range(0, limit * 2 - 1);
+  if (error) return { items: [], error: toHebrewError(error.message) };
+
+  const exclude = new Set((opts.excludeActorIds ?? []).filter(Boolean));
+  const rows = ((data ?? []) as AuditLogRow[]).filter((r) => !exclude.has(r.changed_by ?? "")).slice(0, limit);
+  if (rows.length === 0) return { items: [], error: null };
+
+  const actorIds = Array.from(new Set(rows.map((r) => r.changed_by).filter((v): v is string => Boolean(v))));
+  const [actorInfo, titles] = await Promise.all([getActorInfo(supabase, actorIds), resolveAuditTitles(supabase, rows)]);
+  return { items: normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors), error: null };
+}
+
 export async function getLatestAuditByRecordIds(
   supabase: SupabaseClient,
   {

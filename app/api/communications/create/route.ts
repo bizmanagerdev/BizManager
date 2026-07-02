@@ -38,7 +38,7 @@ export async function POST(req: Request) {
         customer_id: customerId,
         user_id: profile.id,
         channel: nullable(body.channel) ?? "phone",
-        direction: body.direction === "incoming" ? "incoming" : "outgoing",
+        direction: body.direction === "incoming" || body.direction === "missed" ? body.direction : "outgoing",
         content: nullable(body.content),
         category: nullable(body.category) ?? "collection",
         order_id: nullable(body.order_id),

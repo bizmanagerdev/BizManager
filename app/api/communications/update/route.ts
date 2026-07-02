@@ -9,6 +9,7 @@ export async function POST(req: Request) {
       id?: string;
       channel?: string;
       direction?: string;
+      category?: string;
       content?: string | null;
     };
     const id = typeof body.id === "string" ? body.id.trim() : "";
@@ -20,7 +21,10 @@ export async function POST(req: Request) {
 
     const update: Record<string, unknown> = {};
     if (typeof body.channel === "string" && body.channel.trim()) update.channel = body.channel.trim();
-    if (body.direction === "incoming" || body.direction === "outgoing") update.direction = body.direction;
+    if (body.direction === "incoming" || body.direction === "outgoing" || body.direction === "missed") {
+      update.direction = body.direction;
+    }
+    if (typeof body.category === "string" && body.category.trim()) update.category = body.category.trim();
     if (body.content !== undefined) {
       update.content =
         typeof body.content === "string" && body.content.trim() ? body.content.trim() : null;

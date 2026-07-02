@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Bell, ChevronDown, LogOut, User } from "lucide-react";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { getAvatarColorCache, setAvatarColorCache, subscribeAvatarColor } from "@/lib/ui/avatar-color";
@@ -32,7 +32,7 @@ export function TopBar({
   initialColor,
   showSearch = true,
 }: Props) {
-  const { alerts, loading: alertsLoading, error: alertsError } = useAlerts();
+  const { alerts, count: alertsCount, loading: alertsLoading, error: alertsError } = useAlerts();
 
   // The signed-in user's chosen avatar color (null = auto). The (app) layout
   // passes the value from the server (`initialColor`), so the correct color is
@@ -64,19 +64,11 @@ export function TopBar({
     return unsubscribe;
   }, [initialColor]);
 
-  // "Real alerts" = actionable items that need attention. Excludes baseline info
-  // rows (e.g. "X active projects") and any explicitly opted-out entries.
-  const activeAlerts = useMemo(
-    () =>
-      (alerts ?? []).filter(
-        (alert) =>
-          alert.count > 0 &&
-          alert.severity !== "info" &&
-          alert.countsAsActiveAlert !== false,
-      ),
-    [alerts],
-  );
-  const activeAlertCount = activeAlerts.reduce((sum, alert) => sum + alert.count, 0);
+  // The worklist endpoint already returns only actionable items (summaries are
+  // excluded server-side), so we surface them as-is. The badge uses the store's
+  // total count (uncapped), while the dropdown previews the returned slice.
+  const activeAlerts = alerts ?? [];
+  const activeAlertCount = alertsCount;
   // First-load flash only — once we have any data, never show "loading…" again
   // on subsequent route changes (data is cached in the module-level store).
   const showLoadingState = alertsLoading && alerts === null;

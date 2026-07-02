@@ -25,6 +25,16 @@ import {
 } from "@/lib/communications";
 import { offlineFetch } from "@/lib/offline-queue";
 
+// A call/reminder here can be about anything (delivery, an order, a question) —
+// not only collection — so the user tags it with a topic.
+const TOPICS = [
+  { value: "general", label: "כללי" },
+  { value: "collection", label: "גבייה" },
+  { value: "sales", label: "מכירה" },
+  { value: "service", label: "שירות" },
+  { value: "delivery", label: "משלוח" },
+];
+
 // Same format as the customer page: no trailing ".00", decimals only when real.
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
@@ -78,6 +88,8 @@ export default function CollectionTrackingPanel({
   // Log-call form
   const [channel, setChannel] = useState("phone");
   const [direction, setDirection] = useState("outgoing");
+  const [topic, setTopic] = useState("general");
+  const [reminderTopic, setReminderTopic] = useState("general");
   const [content, setContent] = useState("");
   const [withFollowUp, setWithFollowUp] = useState(false);
   const [followUpDate, setFollowUpDate] = useState("");
@@ -155,6 +167,7 @@ export default function CollectionTrackingPanel({
           customer_id: customerId,
           channel,
           direction,
+          category: topic,
           content: content.trim() || undefined,
           follow_up: withFollowUp
             ? {
@@ -207,8 +220,8 @@ export default function CollectionTrackingPanel({
           customer_id: customerId,
           remind_at: new Date(reminderDate).toISOString(),
           content: reminderNote.trim() || undefined,
-          action_type: "call",
-          category: "collection",
+          action_type: "other",
+          category: reminderTopic,
           assigned_to: reminderAssignee || undefined,
         },
         "תזכורת חדשה",
@@ -284,7 +297,7 @@ export default function CollectionTrackingPanel({
   const callFormBlock = showCallForm ? (
     <div className="rounded-xl border border-border/70 bg-background/60 p-3">
       <div className="mb-2 text-sm font-semibold">תיעוד שיחה</div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         <select
           value={channel}
           onChange={(e) => setChannel(e.target.value)}
@@ -303,6 +316,19 @@ export default function CollectionTrackingPanel({
         >
           <option value="outgoing">שיחה יוצאת</option>
           <option value="incoming">שיחה נכנסת</option>
+          <option value="missed">שלא נענתה</option>
+        </select>
+        <select
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+          title="נושא"
+        >
+          {TOPICS.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
         </select>
       </div>
       <Textarea
@@ -365,13 +391,25 @@ export default function CollectionTrackingPanel({
       <div className="mb-2 text-sm font-semibold">קביעת תזכורת</div>
       <div className="grid gap-2 sm:grid-cols-2">
         <DateTimeInput value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
-        <input
-          value={reminderNote}
-          onChange={(e) => setReminderNote(e.target.value)}
-          placeholder="על מה להזכיר? (אופציונלי)"
+        <select
+          value={reminderTopic}
+          onChange={(e) => setReminderTopic(e.target.value)}
           className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-        />
+          title="נושא"
+        >
+          {TOPICS.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
+        </select>
       </div>
+      <input
+        value={reminderNote}
+        onChange={(e) => setReminderNote(e.target.value)}
+        placeholder="על מה להזכיר? (אופציונלי)"
+        className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+      />
       <div className="mt-2 space-y-1">
         <div className="text-xs text-muted-foreground">אחראי</div>
         <AssigneeSelect value={reminderAssignee} onChange={setReminderAssignee} includeMeDefault />

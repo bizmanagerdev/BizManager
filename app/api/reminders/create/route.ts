@@ -22,6 +22,10 @@ export async function POST(req: Request) {
       project_id?: string | null;
       property_id?: string | null;
       payment_id?: string | null;
+      task_id?: string | null;
+      vehicle_id?: string | null;
+      invoice_id?: string | null;
+      expense_id?: string | null;
     };
 
     const remindAt = typeof body.remind_at === "string" ? body.remind_at.trim() : "";
@@ -44,6 +48,10 @@ export async function POST(req: Request) {
         project_id: nullable(body.project_id),
         property_id: nullable(body.property_id),
         payment_id: nullable(body.payment_id),
+        task_id: nullable(body.task_id),
+        vehicle_id: nullable(body.vehicle_id),
+        invoice_id: nullable(body.invoice_id),
+        expense_id: nullable(body.expense_id),
         created_by: profile.id,
         updated_by: profile.id,
       })

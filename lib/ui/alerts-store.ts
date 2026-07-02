@@ -15,6 +15,7 @@ export type AlertItem = {
 
 type State = {
   alerts: AlertItem[] | null;
+  count: number;
   error: string | null;
   loading: boolean;
 };
@@ -28,7 +29,7 @@ type State = {
 
 const TTL_MS = 60_000; // re-fetch in background after one minute
 
-let state: State = { alerts: null, error: null, loading: false };
+let state: State = { alerts: null, count: 0, error: null, loading: false };
 let lastFetchedAt = 0;
 let inFlight: Promise<void> | null = null;
 const subscribers = new Set<() => void>();
@@ -48,7 +49,7 @@ function getSnapshot() {
   return state;
 }
 
-const SERVER_SNAPSHOT: State = { alerts: null, error: null, loading: false };
+const SERVER_SNAPSHOT: State = { alerts: null, count: 0, error: null, loading: false };
 function getServerSnapshot() {
   return SERVER_SNAPSHOT;
 }
@@ -66,20 +67,23 @@ async function refresh(force = false): Promise<void> {
 
   inFlight = (async () => {
     try {
-      const res = await fetch("/api/alerts", { cache: "no-store" });
+      const res = await fetch("/api/reminders/worklist", { cache: "no-store" });
       const json = (await res.json().catch(() => ({}))) as {
         alerts?: AlertItem[];
+        count?: number;
         error?: string;
       };
       if (!res.ok) {
         throw new Error(toHebrewError(json.error, "טעינת ההתראות נכשלה."));
       }
       const alerts = Array.isArray(json.alerts) ? json.alerts : [];
-      state = { alerts, error: null, loading: false };
+      const count = typeof json.count === "number" ? json.count : alerts.length;
+      state = { alerts, count, error: null, loading: false };
       lastFetchedAt = Date.now();
     } catch (err: unknown) {
       state = {
         alerts: state.alerts,
+        count: state.count,
         loading: false,
         error: toHebrewError(err, "טעינת ההתראות נכשלה."),
       };

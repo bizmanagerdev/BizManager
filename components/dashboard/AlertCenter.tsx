@@ -15,30 +15,36 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { AlertItem, AlertSeverity } from "@/lib/alerts";
+import type { WorklistGroup, WorklistSeverity } from "@/lib/reminders/worklist";
 
 const numberFormatter = new Intl.NumberFormat("he-IL");
 
-// Per-alert CTA, icon, and a clean ₪-free reason line.
-const ALERT_META: Record<string, { cta: string; icon: LucideIcon; desc?: string }> = {
-  "overdue-tasks": { cta: "טיפול במשימות", icon: Clock, desc: "דורשות טיפול מיידי כדי לא לפגוע בלוחות הזמנים" },
-  "projects-near-deadline": { cta: "צפייה בפרויקטים", icon: Flag, desc: "צפויים להסתיים תוך 3 ימי עבודה" },
-  "low-inventory": { cta: "ניהול מלאי", icon: Boxes, desc: "מתחת לסף ההזמנה המוגדר במלאי" },
-  "customers-awaiting-followup": { cta: "פתיחת רשימה", icon: Users, desc: "לקוחות עם חוב באיחור שדורש יצירת קשר" },
-  "unprocessed-items": { cta: "עיבוד הוצאות", icon: ReceiptText, desc: "ממתינות לסיווג ואישור בארכיון" },
-  "overdue-collections": { cta: "מעבר לגבייה", icon: Wallet, desc: "חובות שעברו את מועד התשלום וממתינים לגבייה" },
-  "collection-reminders-due": { cta: "טיפול בתזכורות", icon: Bell, desc: "תזכורות גבייה שממתינות לטיפול" },
-  "unpaid-invoices": { cta: "צפייה בחשבוניות", icon: FileText, desc: "חשבוניות פתוחות שטרם נפרעו" },
-  "worker-wages-due": { cta: "מעבר לשכר", icon: Wallet, desc: "תלושי שכר שטרם שולמו לעובדים" },
+// Per-group icon + reason line, keyed by the worklist rule key.
+const ALERT_META: Record<string, { icon: LucideIcon; desc?: string }> = {
+  task_overdue: { icon: Clock, desc: "דורשות טיפול מיידי כדי לא לפגוע בלוחות הזמנים" },
+  task_due_soon: { icon: Clock, desc: "מועד היעד היום או מחר" },
+  project_deadline: { icon: Flag, desc: "צפויים להסתיים תוך 3 ימי עבודה" },
+  project_starting: { icon: Flag, desc: "מתחילים בימים הקרובים" },
+  low_stock: { icon: Boxes, desc: "מתחת לסף ההזמנה המוגדר במלאי" },
+  unprocessed_items: { icon: ReceiptText, desc: "ממתינות לסיווג ואישור בארכיון" },
+  collection_overdue: { icon: Wallet, desc: "חובות שעברו את מועד התשלום וממתינים לגבייה" },
+  payment_due_today: { icon: Wallet, desc: "תשלומים מתוכננים לגבייה היום" },
+  check_deposit_due: { icon: Wallet, desc: "צ׳קים שהגיע מועד הפקדתם" },
+  recurring_expense_confirm: { icon: ReceiptText, desc: "הוצאות קבועות שממתינות לאישור תשלום" },
+  reminders: { icon: Bell, desc: "תזכורות שממתינות לטיפול" },
+  unpaid_invoices: { icon: FileText, desc: "חשבוניות פתוחות שטרם נפרעו" },
+  invoice_unpaid: { icon: FileText, desc: "חשבוניות פתוחות שטרם נפרעו" },
+  wage_overdue: { icon: Wallet, desc: "תלושי שכר שטרם שולמו לעובדים" },
+  vehicle_expiry: { icon: Users, desc: "רכבים עם טסט/ביטוח/רישוי שמתקרב או חלף" },
 };
 
-const SEVERITY: Record<AlertSeverity, { icon: string; badge: "destructive" | "warning" | "info" }> = {
+const SEVERITY: Record<WorklistSeverity, { icon: string; badge: "destructive" | "warning" | "info" }> = {
   danger: { icon: "text-destructive", badge: "destructive" },
   warning: { icon: "text-warning", badge: "warning" },
   info: { icon: "text-info", badge: "info" },
 };
 
-const SEVERITY_RANK: Record<AlertSeverity, number> = { danger: 0, warning: 1, info: 2 };
+const SEVERITY_RANK: Record<WorklistSeverity, number> = { danger: 0, warning: 1, info: 2 };
 
 function stripCurrency(text: string): string {
   return text.replace(/\s*\([^)]*₪[^)]*\)/g, "").replace(/[‎‏]/g, "").trim();
@@ -49,9 +55,9 @@ function stripCurrency(text: string): string {
  * reads like the rest of the project. Each row: severity-tinted icon, title + reason,
  * a count badge, and a chevron into the relevant tab. Currency is stripped everywhere.
  */
-export default function AlertCenter({ alerts }: { alerts: AlertItem[] }) {
+export default function AlertCenter({ alerts }: { alerts: WorklistGroup[] }) {
   const items = alerts
-    .filter((alert) => alert.count > 0 && alert.id !== "active-projects")
+    .filter((alert) => alert.count > 0)
     .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
 
   if (items.length === 0) return null;
@@ -74,7 +80,7 @@ export default function AlertCenter({ alerts }: { alerts: AlertItem[] }) {
       </CardHeader>
       <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {items.map((alert) => {
-          const meta = ALERT_META[alert.id] ?? { cta: "פתיחה", icon: AlertTriangle };
+          const meta = ALERT_META[alert.id] ?? { icon: AlertTriangle };
           const severity = SEVERITY[alert.severity];
           const Icon = meta.icon;
           const description = meta.desc ?? stripCurrency(alert.description);

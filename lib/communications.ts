@@ -72,7 +72,17 @@ export function channelLabel(value: string | null | undefined) {
 }
 
 export function directionLabel(value: string | null | undefined) {
-  return value === "incoming" ? "נכנסת" : "יוצאת";
+  if (value === "incoming") return "נכנסת";
+  if (value === "missed") return "שלא נענתה";
+  return "יוצאת";
+}
+
+// Colour convention for call direction: incoming = blue, outgoing = green,
+// missed = red. Returns a Badge variant.
+export function directionBadgeVariant(value: string | null | undefined): "info" | "success" | "destructive" {
+  if (value === "incoming") return "info";
+  if (value === "missed") return "destructive";
+  return "success";
 }
 
 export function actionTypeLabel(value: string | null | undefined) {

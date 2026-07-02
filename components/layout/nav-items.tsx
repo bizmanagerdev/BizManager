@@ -36,7 +36,9 @@ import {
   Banknote,
   Bell,
   Building2,
+  CalendarDays,
   Car,
+  Coins,
   CreditCard,
   FileBarChart,
   FolderKanban,
@@ -45,7 +47,7 @@ import {
   Landmark,
   LayoutDashboard,
   ListTodo,
-  MessagesSquare,
+  MessageCircle,
   Receipt,
   Settings,
   ShoppingCart,
@@ -62,12 +64,14 @@ export type SidebarNavItem = {
 
 const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "דשבורד", url: "/dashboard", icon: LayoutDashboard },
-  { title: "התראות", url: "/alerts", icon: Bell },
+  { title: "מה דורש טיפול", url: "/alerts", icon: Bell },
+  { title: "יומן", url: "/calendar", icon: CalendarDays },
   { title: "פרויקטים", url: "/projects", icon: FolderKanban },
   { title: "משימות", url: "/tasks", icon: ListTodo },
   { title: "מכירות", url: "/sales", icon: ShoppingCart },
   { title: "לקוחות", url: "/customers", icon: Users },
-  { title: "פניות ומעקב גבייה", url: "/collections", icon: MessagesSquare },
+  { title: "גבייה וחייבים", url: "/collections", icon: Coins },
+  { title: "תיעוד פניות", url: "/communications", icon: MessageCircle },
   { title: "ניהול נכסים", url: "/properties", icon: Building2 },
   { title: "רכבים", url: "/vehicles", icon: Car },
   {
@@ -95,12 +99,14 @@ const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
   { title: "פרויקטים", url: "/projects", icon: FolderKanban },
   { title: "מכירות", url: "/sales", icon: ShoppingCart },
   { title: "לקוחות", url: "/customers", icon: Users },
-  { title: "פניות", url: "/collections", icon: MessagesSquare },
+  { title: "גבייה", url: "/collections", icon: Coins },
 ];
 
 const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
-  { title: "התראות", url: "/alerts", icon: Bell },
+  { title: "מה דורש טיפול", url: "/alerts", icon: Bell },
+  { title: "יומן", url: "/calendar", icon: CalendarDays },
   { title: "משימות", url: "/tasks", icon: ListTodo },
+  { title: "תיעוד פניות", url: "/communications", icon: MessageCircle },
   { title: "ניהול נכסים", url: "/properties", icon: Building2 },
   { title: "רכבים", url: "/vehicles", icon: Car },
   { title: "פיננסי", url: "/financial", icon: Landmark },
@@ -117,7 +123,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
 ];
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports"]);
-const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/checks", "/financial/statements", "/financial/bank", "/financial/taxes", "/vehicles"]);
+const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/communications", "/checks", "/financial/statements", "/financial/bank", "/financial/taxes", "/vehicles"]);
 
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean): SidebarNavItem[] {
   return items.flatMap((item) => {

@@ -41,6 +41,8 @@ import { notFound } from "next/navigation";
 import AddContactButton from "./AddContactButton";
 import AddCustomerDocumentButton from "./AddCustomerDocumentButton";
 import CustomerCollectionSection from "./CustomerCollectionSection";
+import PaymentPromises from "@/components/collections/PaymentPromises";
+import { getCustomerPromises } from "@/lib/promises";
 import CustomerNotesEditor from "./CustomerNotesEditor";
 import DeleteCustomerButton from "./DeleteCustomerButton";
 import EditCustomerButton from "./EditCustomerButton";
@@ -461,6 +463,7 @@ export default async function CustomerDetailsPage({
   const customerNameParam = customerName.trim();
   const returnCustomersHref = returnPage > 1 ? `/customers?page=${returnPage}` : "/customers";
   const canManageCollections = profile.role === "admin" || profile.role === "office";
+  const paymentPromises = canManageCollections ? await getCustomerPromises(supabase, id) : [];
 
   const editButtonCustomer = {
     id,
@@ -781,13 +784,23 @@ export default async function CustomerDetailsPage({
               <SectionCard
                 id="collection-tracking"
                 icon={<PhoneCall className="h-4 w-4" />}
-                title="מעקב גבייה — שיחות ותזכורות"
+                title="שיחות ותזכורות"
               >
                 <CustomerCollectionSection
                   customerId={id}
                   customerName={customerName}
                   customerPhone={customerPhone || null}
                 />
+              </SectionCard>
+            ) : null}
+
+            {canManageCollections ? (
+              <SectionCard
+                id="payment-promises"
+                icon={<HandCoins className="h-4 w-4" />}
+                title="הבטחות תשלום"
+              >
+                <PaymentPromises customerId={id} promises={paymentPromises} />
               </SectionCard>
             ) : null}
 
