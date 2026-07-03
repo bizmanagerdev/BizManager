@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { sendPushToUser, sendPushToRecipients, type PushPayload } from "@/lib/push";
+import { type PushPayload } from "@/lib/push";
+import { deliverPush } from "@/lib/notifications/deliver";
+import { reminderBucket } from "@/lib/notifications/categories";
 import { visibleAudienceRoles } from "@/lib/reminders/worklist";
 
 // Reminders/Alerts unification — Phase 3: the deliver cron (every ~5 min).
@@ -66,7 +68,7 @@ export async function GET(req: Request) {
   const { data, error } = await supabase
     .from("reminders")
     .select(
-      "id,source,behavior,repeat_rule,max_pings,ping_count,next_ping_at,remind_at,snoozed_until,category," +
+      "id,source,behavior,severity,repeat_rule,max_pings,ping_count,next_ping_at,remind_at,snoozed_until,category,dedupe_key," +
         "assigned_to,audience_role,created_by,title,content,url,task_id"
     )
     .eq("status", "pending")
@@ -95,6 +97,10 @@ export async function GET(req: Request) {
     if (source === "system") {
       const behavior = str(row, "behavior") ?? "ping_once";
       if (behavior === "silent") continue; // list-only, never pushes
+      // Severity-tiered delivery: 'info' alerts are low-signal — they live in the
+      // worklist (מה דורש טיפול) but never interrupt with a phone push. Only
+      // 'warning'/'danger' earn a push. Keeps the channel high-signal.
+      if (str(row, "severity") === "info") continue;
       // The nightly-review reminder is delivered by its own night-window cron
       // (23:00–01:00), so this day cron must not push it during quiet hours.
       if (str(row, "category") === "nightly_review") continue;
@@ -192,14 +198,15 @@ export async function GET(req: Request) {
       const payload: PushPayload = { title, body, url, tag: `reminder-${id}` };
 
       const assigned = str(row, "assigned_to") ?? str(row, "created_by");
+      const category = reminderBucket({ source: str(row, "source"), category: str(row, "category"), dedupeKey: str(row, "dedupe_key") });
       let result = { sent: 0, failed: 0 };
       if (assigned) {
         const authId = authByUser.get(assigned);
-        if (authId) result = await sendPushToUser(supabase, authId, payload);
+        if (authId) result = await deliverPush(supabase, [authId], payload, category);
       } else {
         const ar = str(row, "audience_role");
         const ids = ar ? authByRole.get(ar) ?? [] : [];
-        if (ids.length) result = await sendPushToRecipients(supabase, ids, payload);
+        if (ids.length) result = await deliverPush(supabase, ids, payload, category);
       }
       sent += result.sent;
       failed += result.failed;

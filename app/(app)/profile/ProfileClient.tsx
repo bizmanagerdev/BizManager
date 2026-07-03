@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import NotificationPrefs from "@/components/notifications/NotificationPrefs";
+import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DateInput, DateTimeInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
@@ -699,6 +701,26 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
               אוטומטי
             </button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="py-5">
+          <div className="mb-3 text-right">
+            <div className="text-base font-semibold">התראות לטלפון</div>
+            <div className="text-sm text-muted-foreground">הפעל התראות כדי לקבל עדכונים ישירות לטלפון שלך.</div>
+          </div>
+          <PushSubscribeButton />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="py-5">
+          <div className="mb-3 text-right">
+            <div className="text-base font-semibold">העדפות התראות</div>
+            <div className="text-sm text-muted-foreground">בחר אילו התראות לקבל והשתק סוגים שלא רלוונטיים לך.</div>
+          </div>
+          <NotificationPrefs />
         </CardContent>
       </Card>
 

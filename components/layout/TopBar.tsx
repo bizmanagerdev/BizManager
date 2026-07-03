@@ -17,7 +17,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAlerts } from "@/lib/ui/alerts-store";
+import { useNotifications, markNotificationRead } from "@/lib/ui/notifications-store";
+import { formatShortDateTime } from "@/lib/date";
 
 type Props = {
   appName?: string;
@@ -32,7 +33,7 @@ export function TopBar({
   initialColor,
   showSearch = true,
 }: Props) {
-  const { alerts, count: alertsCount, loading: alertsLoading, error: alertsError } = useAlerts();
+  const { items: notifications, unreadCount, loading: alertsLoading, error: alertsError } = useNotifications();
 
   // The signed-in user's chosen avatar color (null = auto). The (app) layout
   // passes the value from the server (`initialColor`), so the correct color is
@@ -64,14 +65,11 @@ export function TopBar({
     return unsubscribe;
   }, [initialColor]);
 
-  // The worklist endpoint already returns only actionable items (summaries are
-  // excluded server-side), so we surface them as-is. The badge uses the store's
-  // total count (uncapped), while the dropdown previews the returned slice.
-  const activeAlerts = alerts ?? [];
-  const activeAlertCount = alertsCount;
-  // First-load flash only — once we have any data, never show "loading…" again
-  // on subsequent route changes (data is cached in the module-level store).
-  const showLoadingState = alertsLoading && alerts === null;
+  // The bell is the notification CENTER: a read/unread history. Badge = unread.
+  const notifItems = notifications ?? [];
+  const activeAlertCount = unreadCount;
+  // First-load flash only — once we have any data, never show "loading…" again.
+  const showLoadingState = alertsLoading && notifications === null;
 
   return (
     <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-3 border-b border-border/70 bg-background bg-gradient-to-r from-primary/[0.04] via-background/95 to-secondary/[0.05] px-4 backdrop-blur-xl">
@@ -108,49 +106,66 @@ export function TopBar({
               />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80 rounded-2xl p-2">
-            <div className="px-2 py-2">
-              <div className="text-sm font-semibold">התראות</div>
-              <div className="text-xs text-muted-foreground">פעולות שדורשות תשומת לב</div>
+          <DropdownMenuContent align="end" className="max-h-[70vh] w-80 overflow-y-auto rounded-2xl p-2">
+            <div className="flex items-center justify-between gap-2 px-2 py-2">
+              <div>
+                <div className="text-sm font-semibold">התראות</div>
+                <div className="text-xs text-muted-foreground">{unreadCount > 0 ? `${unreadCount} חדשות` : "הכול נקרא"}</div>
+              </div>
+              {unreadCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => void markNotificationRead({ all: true })}
+                  className="rounded-lg px-2 py-1 text-xs text-primary hover:bg-primary/10"
+                >
+                  סמן הכל כנקרא
+                </button>
+              ) : null}
             </div>
             <DropdownMenuSeparator />
             {showLoadingState ? (
               <div className="px-3 py-4 text-sm text-muted-foreground">טוען התראות...</div>
-            ) : alertsError && activeAlerts.length === 0 ? (
+            ) : alertsError && notifItems.length === 0 ? (
               <div className="px-3 py-4 text-sm text-destructive">{alertsError}</div>
-            ) : activeAlerts.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground">אין התראות פעילות.</div>
+            ) : notifItems.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-muted-foreground">אין התראות עדיין.</div>
             ) : (
-              activeAlerts.map((alert) => (
-                <DropdownMenuItem key={alert.id} asChild className="cursor-pointer rounded-xl p-0">
-                  <Link
-                    href={alert.href}
-                    className="flex items-start justify-between gap-3 px-3 py-3"
-                    onClick={() => emitNavigationStart()}
-                  >
-                    <div className="space-y-1">
-                      <div className="font-medium">{alert.title}</div>
-                      <div className="text-xs text-muted-foreground">{alert.description}</div>
-                    </div>
-                    <span
-                      className={
-                        alert.severity === "danger"
-                          ? "inline-flex items-center rounded-full border border-destructive bg-destructive-soft px-2 py-1 text-xs font-semibold text-destructive-soft-foreground"
-                          : "inline-flex items-center rounded-full border border-warning bg-warning-soft px-2 py-1 text-xs font-semibold text-warning-soft-foreground"
-                      }
+              notifItems.map((n) => {
+                const unread = !n.read_at;
+                return (
+                  <DropdownMenuItem key={n.id} asChild className="cursor-pointer rounded-xl p-0">
+                    <Link
+                      href={n.url}
+                      className={`flex items-start gap-2 px-3 py-2.5 ${unread ? "bg-primary/5" : ""}`}
+                      onClick={() => {
+                        if (unread) void markNotificationRead({ id: n.id });
+                        emitNavigationStart();
+                      }}
                     >
-                      {alert.count}
-                    </span>
-                  </Link>
-                </DropdownMenuItem>
-              ))
+                      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${unread ? "bg-primary" : "bg-transparent"}`} />
+                      <div className="min-w-0 space-y-0.5">
+                        <div className={`truncate text-sm ${unread ? "font-semibold" : "font-medium text-muted-foreground"}`}>{n.title}</div>
+                        {n.body ? <div className="truncate text-xs text-muted-foreground">{n.body}</div> : null}
+                        <div className="text-[11px] text-muted-foreground">{formatShortDateTime(n.created_at, "-")}</div>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
+                );
+              })
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/alerts" className="justify-center font-medium" onClick={() => emitNavigationStart()}>
-                כל ההתראות
-              </Link>
-            </DropdownMenuItem>
+            <div className="flex items-center justify-between gap-2 px-1">
+              <DropdownMenuItem asChild className="flex-1">
+                <Link href="/notifications" className="justify-center font-medium" onClick={() => emitNavigationStart()}>
+                  כל ההתראות
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild className="flex-1">
+                <Link href="/alerts" className="justify-center font-medium" onClick={() => emitNavigationStart()}>
+                  מה דורש טיפול
+                </Link>
+              </DropdownMenuItem>
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
 

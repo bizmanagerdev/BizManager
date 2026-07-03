@@ -433,3 +433,41 @@ export async function getWorklistGroups(
     }))
     .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
 }
+
+// Worklist section → the nav destination whose sidebar item we badge. Sections
+// without a single home (ops spans inventory+vehicles; reminders has no nav item)
+// are intentionally absent — no misleading badge.
+const SECTION_NAV_URL: Record<string, string> = {
+  tasks: "/tasks",
+  money: "/collections",
+  projects: "/projects",
+  hours: "/payroll",
+};
+
+export type NavCountSeverity = "danger" | "warning" | "info";
+export type NavCount = { count: number; severity: NavCountSeverity };
+
+/**
+ * Open-worklist counts keyed by nav URL, for sidebar badges. Counts the same
+ * actionable items the worklist shows me (my visibility), skipping silent
+ * summaries. Severity = the most urgent item feeding that nav entry.
+ */
+export async function getWorklistNavCounts(
+  supabase: SupabaseClient,
+  options: { userId: string; role: string | null }
+): Promise<Record<string, NavCount>> {
+  const items = await getWorklist(supabase, options);
+  const out: Record<string, NavCount> = {};
+  for (const item of items) {
+    if (item.isSummary) continue; // silent summaries carry their count in text
+    const ruleKey = item.source === "system" ? (item.dedupeKey ?? "").split(":")[0] : "reminders";
+    const section = item.source === "manual" ? "reminders" : RULE_SECTION[ruleKey];
+    const url = section ? SECTION_NAV_URL[section] : undefined;
+    if (!url) continue;
+    const cur = out[url] ?? { count: 0, severity: "info" as NavCountSeverity };
+    cur.count += 1;
+    if (SEVERITY_RANK[item.severity] < SEVERITY_RANK[cur.severity]) cur.severity = item.severity as NavCountSeverity;
+    out[url] = cur;
+  }
+  return out;
+}

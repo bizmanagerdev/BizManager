@@ -4,22 +4,23 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // new columns not existing yet (pre-migration) — callers then fall back to the
 // hardcoded defaults, so nothing breaks before the migration runs.
 
-export type RuleSetting = { enabled: boolean; audienceRole: string | null };
+export type RuleSetting = { enabled: boolean; audienceRole: string | null; recipientUserIds: string[] };
 export type NightlyConfig = { enabled: boolean; startHour: number; endHour: number; audienceRole: string };
 
-/** enabled + audience for every live/night rule, keyed by rule_key. */
+/** enabled + audience (+ optional specific recipients) for every live/night rule, keyed by rule_key. */
 export async function getRuleSettings(supabase: SupabaseClient): Promise<Map<string, RuleSetting>> {
   const map = new Map<string, RuleSetting>();
   const { data, error } = await supabase
     .from("push_alert_config")
-    .select("rule_key,enabled,audience_role")
+    .select("rule_key,enabled,audience_role,recipient_user_ids")
     .not("rule_key", "is", null);
   if (error || !data) return map; // pre-migration / no config → no overrides
-  for (const r of data as Array<{ rule_key?: string | null; enabled?: boolean | null; audience_role?: string | null }>) {
+  for (const r of data as Array<{ rule_key?: string | null; enabled?: boolean | null; audience_role?: string | null; recipient_user_ids?: unknown }>) {
     if (!r.rule_key) continue;
     map.set(r.rule_key, {
       enabled: r.enabled !== false,
       audienceRole: typeof r.audience_role === "string" && r.audience_role ? r.audience_role : null,
+      recipientUserIds: Array.isArray(r.recipient_user_ids) ? (r.recipient_user_ids as unknown[]).filter((v): v is string => typeof v === "string") : [],
     });
   }
   return map;
@@ -46,6 +47,33 @@ export async function getNightlyConfig(supabase: SupabaseClient): Promise<Nightl
     endHour: typeof d.send_hour_end_israel === "number" ? d.send_hour_end_israel : 1,
     audienceRole: typeof d.audience_role === "string" && d.audience_role ? d.audience_role : "office",
   };
+}
+
+// ── Dunning ladder (staged collection chase) ────────────────────────────────
+export type DunningStage = { offset: number; label: string; severity: "info" | "warning" | "danger" };
+
+const DEFAULT_DUNNING: DunningStage[] = [
+  { offset: 0, label: "תזכורת גבייה", severity: "warning" },
+  { offset: 7, label: "מעקב גבייה", severity: "warning" },
+  { offset: 14, label: "התראת גבייה", severity: "danger" },
+  { offset: 30, label: "התראה אחרונה", severity: "danger" },
+];
+
+/** The enabled dunning stages, ascending by offset. Falls back to defaults. */
+export async function getDunningStages(supabase: SupabaseClient): Promise<DunningStage[]> {
+  const { data, error } = await supabase
+    .from("dunning_stages")
+    .select("day_offset,label,severity,enabled")
+    .eq("enabled", true)
+    .order("day_offset", { ascending: true });
+  if (error || !data || data.length === 0) return DEFAULT_DUNNING;
+  return (data as Array<{ day_offset?: number; label?: string; severity?: string }>)
+    .map((d) => ({
+      offset: Number(d.day_offset) || 0,
+      label: String(d.label || "גבייה"),
+      severity: (["info", "warning", "danger"].includes(d.severity ?? "") ? d.severity : "warning") as DunningStage["severity"],
+    }))
+    .sort((a, b) => a.offset - b.offset);
 }
 
 /** Resolve an audience_role bucket to active users' AUTH ids (for push). */

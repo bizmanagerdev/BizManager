@@ -1,5 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { sendPushToRecipients } from "@/lib/push";
+import { deliverPush } from "@/lib/notifications/deliver";
 
 // Push a "new order / new project" alert to all active admin + office users
 // (except the creator). Best-effort — never fail the create because push failed.
@@ -33,12 +33,17 @@ export async function notifyNewEntity(opts: {
     }
 
     const isOrder = opts.kind === "order";
-    await sendPushToRecipients(admin, authIds, {
-      title: isOrder ? "🧾 הזמנה חדשה" : "📁 פרויקט חדש",
-      body: label || (isOrder ? "נוספה הזמנה חדשה למערכת." : "נוסף פרויקט חדש למערכת."),
-      url: isOrder ? `/sales/orders/${opts.entityId}` : `/projects/${opts.entityId}`,
-      tag: `${opts.kind}-new-${opts.entityId}`,
-    });
+    await deliverPush(
+      admin,
+      authIds,
+      {
+        title: isOrder ? "🧾 הזמנה חדשה" : "📁 פרויקט חדש",
+        body: label || (isOrder ? "נוספה הזמנה חדשה למערכת." : "נוסף פרויקט חדש למערכת."),
+        url: isOrder ? `/sales/orders/${opts.entityId}` : `/projects/${opts.entityId}`,
+        tag: `${opts.kind}-new-${opts.entityId}`,
+      },
+      "updates"
+    );
   } catch {
     // best-effort
   }

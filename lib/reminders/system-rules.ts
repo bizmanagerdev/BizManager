@@ -7,7 +7,7 @@ import {
   isOpenOrderStatus,
 } from "@/lib/collections";
 import { addWorkingDays } from "@/lib/dashboard/week";
-import { getRuleSettings } from "@/lib/notifications/alert-config";
+import { getRuleSettings, getDunningStages } from "@/lib/notifications/alert-config";
 
 // ---------------------------------------------------------------------------
 // Reminders/Alerts unification — Phase 2: the system-rule engine.
@@ -171,50 +171,6 @@ const projectDeadlineRule: SystemRule = {
   },
 };
 
-const invoiceUnpaidRule: SystemRule = {
-  key: "invoice_unpaid",
-  label: "חשבוניות לא משולמות",
-  async evaluate(supabase) {
-    const { data, error } = await supabase
-      .from("invoices")
-      .select("id,payment_status,status,balance_due,amount_due,open_amount,remaining_amount,customer_name,invoice_number")
-      .order("created_at", { ascending: false })
-      .range(0, 499);
-    // Table may not exist in every install — treat "missing table" as no problems.
-    if (error) {
-      if ((error.message ?? "").includes("public.invoices")) return [];
-      throwIf(error, "invoices");
-    }
-    const unpaid = ((data ?? []) as Row[]).filter((row) => {
-      const balance =
-        getNumber(row, "balance_due") ??
-        getNumber(row, "amount_due") ??
-        getNumber(row, "open_amount") ??
-        getNumber(row, "remaining_amount");
-      if (balance !== null) return balance > 0;
-      const ps = (getString(row, "payment_status") ?? "").toLowerCase();
-      const st = (getString(row, "status") ?? "").toLowerCase();
-      const open = ["unpaid", "partial", "overdue", "open", "pending"];
-      return open.includes(ps) || open.includes(st);
-    });
-    return unpaid.map((row) => {
-      const id = getString(row, "id") ?? "";
-      const num = getString(row, "invoice_number");
-      const who = getString(row, "customer_name");
-      return {
-        key: id,
-        title: num ? `חשבונית לא משולמת #${num}` : "חשבונית לא משולמת",
-        content: who ? `חשבונית פתוחה עבור ${who}.` : "חשבונית פתוחה שטרם שולמה.",
-        url: "/invoices",
-        severity: "warning" as Severity,
-        behavior: "ping_once" as Behavior,
-        audienceRole: "office" as AudienceRole,
-        links: { invoice_id: id },
-      };
-    });
-  },
-};
-
 const collectionOverdueRule: SystemRule = {
   key: "collection_overdue",
   label: "גבייה באיחור",
@@ -237,6 +193,7 @@ const collectionOverdueRule: SystemRule = {
         rows.filter((r) => getString(r, "source_type") === "project").map((r) => getString(r, "source_id") ?? "")
       ),
     ]);
+    const stages = await getDunningStages(supabase);
     const items: SystemReminderItem[] = [];
     for (const row of rows) {
       const isProject = getString(row, "source_type") === "project";
@@ -256,14 +213,18 @@ const collectionOverdueRule: SystemRule = {
       if (sm.late <= 0.009) continue;
       const who = getString(row, "customer_name");
       const customerId = getString(row, "customer_id");
+      const daysLate = sm.daysLate ?? 0;
+      // Current dunning stage = the last stage the debt has reached (highest
+      // offset ≤ days overdue). Advancing to the next stage swaps the dedupe key,
+      // so the old reminder closes and the new (escalated) one opens + pushes.
+      const stage = [...stages].reverse().find((s) => s.offset <= daysLate) ?? stages[0];
       items.push({
-        key: `${getString(row, "source_type")}:${sourceId}`,
-        title: who ? `חוב באיחור: ${who}` : "חוב באיחור",
-        content: `${ils(sm.late)} באיחור${sm.daysLate ? ` (${sm.daysLate} ימים)` : ""}.`,
+        key: `${getString(row, "source_type")}:${sourceId}:${stage.offset}`,
+        title: who ? `${stage.label}: ${who}` : stage.label,
+        content: `${ils(sm.late)} באיחור${daysLate ? ` (${daysLate} ימים)` : ""}.`,
         url: "/collections?view=debtors&filter=overdue",
-        severity: "danger" as Severity,
-        behavior: "ping_repeat" as Behavior,
-        repeatRule: "daily",
+        severity: stage.severity as Severity,
+        behavior: "ping_once" as Behavior,
         audienceRole: "office" as AudienceRole,
         links: {
           customer_id: customerId,
@@ -332,6 +293,9 @@ const wageOverdueRule: SystemRule = {
         severity: "danger" as Severity,
         behavior: "ping_repeat" as Behavior,
         repeatRule: "daily",
+        // Nudge a few mornings, then stop pinging — it stays in the worklist until
+        // paid, but daily forever just trains the admin to ignore it.
+        maxPings: 3,
         audienceRole: "admin" as AudienceRole,
       });
     }
@@ -568,10 +532,12 @@ const projectStartingRule: SystemRule = {
     const horizon = new Date(ctx.today);
     horizon.setDate(horizon.getDate() + 7);
     const horizonIso = horizon.toISOString().slice(0, 10);
+    // Include scheduled ("planned") projects, not just ongoing ones — a fixed
+    // future job on the calendar is exactly what we want to flag as it approaches.
     const { data, error } = await supabase
       .from("projects")
       .select("id,name,start_date,status,project_manager_id,customer_id")
-      .in("status", ["active", "in_progress"])
+      .in("status", ["planned", "active", "in_progress"])
       .not("start_date", "is", null)
       .gte("start_date", ctx.todayIso)
       .lte("start_date", horizonIso)
@@ -755,36 +721,13 @@ const sessionUnallocatedRule: SystemRule = {
   },
 };
 
-const activeProjectsRule: SystemRule = {
-  key: "active_projects",
-  label: "פרויקטים פעילים",
-  async evaluate(supabase) {
-    const { count, error } = await supabase
-      .from("projects")
-      .select("id", { count: "estimated", head: true })
-      .in("status", ["active", "in_progress"]);
-    throwIf(error, "projects(active)");
-    const n = typeof count === "number" ? count : 0;
-    if (n <= 0) return [];
-    return [
-      {
-        key: "summary",
-        title: `${n} פרויקטים פעילים`,
-        content: "סקירה כללית של הפרויקטים הפעילים.",
-        url: "/projects",
-        severity: "info",
-        behavior: "silent",
-        audienceRole: "all",
-      },
-    ];
-  },
-};
-
 export const SYSTEM_RULES: SystemRule[] = [
   // Ported from the old alerts (Phase 2)
   taskOverdueRule,
   projectDeadlineRule,
-  invoiceUnpaidRule,
+  // invoice_unpaid dropped — it double-nagged with collection_overdue (same money)
+  // and keyed off an invoices table that isn't part of this install. AR is chased
+  // via the dunning ladder in collection_overdue.
   collectionOverdueRule,
   wageOverdueRule,
   vehicleExpiryRule,
@@ -801,7 +744,6 @@ export const SYSTEM_RULES: SystemRule[] = [
   lowStockRule,
   unprocessedItemsRule,
   sessionUnallocatedRule,
-  activeProjectsRule,
 ];
 
 // --- the reconcile engine --------------------------------------------------
@@ -939,10 +881,20 @@ export async function syncSystemReminders(supabase: SupabaseClient, now: Date): 
         continue;
       }
       const items = await rule.evaluate(supabase, ctx);
-      // Config can override the audience of role-targeted items.
-      const adjusted = cfg?.audienceRole
-        ? items.map((i) => (i.audienceRole ? { ...i, audienceRole: cfg.audienceRole as SystemReminderItem["audienceRole"] } : i))
-        : items;
+      let adjusted: SystemReminderItem[];
+      if (cfg?.recipientUserIds?.length) {
+        // Specific-people routing takes precedence over role buckets: fan each
+        // problem out to one per-user reminder (its own read/snooze state). The
+        // per-user dedupe suffix keeps reconcile + auto-close working per user.
+        adjusted = items.flatMap((i) =>
+          cfg.recipientUserIds.map((uid) => ({ ...i, key: `${i.key}:u:${uid}`, assignedTo: uid, audienceRole: null }))
+        );
+      } else if (cfg?.audienceRole) {
+        // Config can override the audience of role-targeted items.
+        adjusted = items.map((i) => (i.audienceRole ? { ...i, audienceRole: cfg.audienceRole as SystemReminderItem["audienceRole"] } : i));
+      } else {
+        adjusted = items;
+      }
       results.push(await reconcileRule(supabase, rule, adjusted, ctx.nowIso));
     } catch (err) {
       results.push({ rule: rule.key, active: 0, inserted: 0, resolved: 0, refreshed: 0, error: (err as Error)?.message ?? "failed" });

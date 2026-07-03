@@ -8,6 +8,7 @@ import { TopNavigationProgress } from "@/components/layout/TopNavigationProgress
 import OfflineBanner from "@/components/layout/OfflineBanner";
 import ConnectionToasts from "@/components/layout/ConnectionToasts";
 import PresenceTracker from "@/components/layout/PresenceTracker";
+import NotificationsRealtime from "@/components/notifications/NotificationsRealtime";
 import FontScaleSync from "@/components/layout/FontScaleSync";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 import { useNavItems } from "@/components/layout/nav-items";
@@ -59,6 +60,7 @@ export default function AppShell({
           <TopNavigationProgress />
         </Suspense>
         <PresenceTracker userName={userName} viewerRole={viewerRole} />
+        <NotificationsRealtime />
         <FontScaleSync />
         <ConnectionToasts />
         {sidebar.length > 0 && (

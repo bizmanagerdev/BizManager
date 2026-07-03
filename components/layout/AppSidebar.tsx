@@ -7,6 +7,7 @@ import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { cn } from "@/lib/utils";
+import { useNavCounts, type NavCount } from "@/lib/ui/nav-counts-store";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 
 interface Props {
@@ -103,8 +104,31 @@ function NavGroup({ item, collapsed }: { item: SidebarNavItem; collapsed: boolea
   );
 }
 
+// Small count pill next to a nav item — colored by the most urgent open item.
+function NavCountBadge({ badge, collapsed }: { badge: NavCount; collapsed: boolean }) {
+  const tone =
+    badge.severity === "danger"
+      ? "bg-destructive text-destructive-foreground"
+      : badge.severity === "warning"
+        ? "bg-warning text-warning-foreground"
+        : "bg-sidebar-accent text-sidebar-accent-foreground";
+  return (
+    <span
+      className={cn(
+        "ms-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none",
+        tone,
+        // When icons-only, float the pill as a small dot-count over the icon.
+        collapsed ? "hidden lg:inline-flex" : "inline-flex"
+      )}
+    >
+      {badge.count > 99 ? "99+" : badge.count}
+    </span>
+  );
+}
+
 export function AppSidebar({ items, appName = "BizH", logo }: Props) {
   const [collapsed, setCollapsed] = useState(true);
+  const navCounts = useNavCounts();
 
   return (
     <aside
@@ -142,6 +166,7 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
             >
               <item.icon className="h-4 w-4 shrink-0" />
               <span className={cn(collapsed ? "hidden lg:inline" : "inline")}>{item.title}</span>
+              {navCounts[item.url] ? <NavCountBadge badge={navCounts[item.url]} collapsed={collapsed} /> : null}
             </NavLink>
           )
         )}

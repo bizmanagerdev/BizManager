@@ -34,7 +34,6 @@ import {
   Activity,
   ArrowLeftRight,
   Banknote,
-  Bell,
   Building2,
   CalendarDays,
   Car,
@@ -64,7 +63,6 @@ export type SidebarNavItem = {
 
 const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "דשבורד", url: "/dashboard", icon: LayoutDashboard },
-  { title: "מה דורש טיפול", url: "/alerts", icon: Bell },
   { title: "יומן", url: "/calendar", icon: CalendarDays },
   { title: "פרויקטים", url: "/projects", icon: FolderKanban },
   { title: "משימות", url: "/tasks", icon: ListTodo },
@@ -103,7 +101,6 @@ const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
 ];
 
 const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
-  { title: "מה דורש טיפול", url: "/alerts", icon: Bell },
   { title: "יומן", url: "/calendar", icon: CalendarDays },
   { title: "משימות", url: "/tasks", icon: ListTodo },
   { title: "תיעוד פניות", url: "/communications", icon: MessageCircle },

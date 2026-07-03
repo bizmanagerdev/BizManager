@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import type { AlertMode, AlertRow, AlertSchedule } from "@/lib/notifications/types";
 import { BUILTIN_ALERT_TYPES } from "@/lib/notifications/types";
+import DunningStagesEditor from "@/components/notifications/DunningStagesEditor";
 
 const MODE_ORDER: AlertMode[] = ["scheduled", "live", "night"];
 const MODE_LABEL: Record<AlertMode, string> = {
@@ -297,11 +298,14 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
                   {rows.map((alert) => {
                     const isBuiltin =
                       alert.alert_type && (BUILTIN_ALERT_TYPES as readonly string[]).includes(alert.alert_type);
+                    const hasRecipients = (alert.recipient_user_ids?.length ?? 0) > 0;
                     const meta =
                       mode === "live"
-                        ? AUDIENCE_LABEL[alert.audience_role ?? ""] ?? "לפי אחראי"
+                        ? hasRecipients
+                          ? recipientLabel(alert.recipient_user_ids)
+                          : AUDIENCE_LABEL[alert.audience_role ?? ""] ?? "לפי אחראי"
                         : mode === "night"
-                          ? `לילה ${fmtHour(alert.send_hour_israel)}–${fmtHour(alert.send_hour_end_israel ?? 1)} · ${AUDIENCE_LABEL[alert.audience_role ?? "office"]}`
+                          ? `לילה ${fmtHour(alert.send_hour_israel)}–${fmtHour(alert.send_hour_end_israel ?? 1)} · ${hasRecipients ? recipientLabel(alert.recipient_user_ids) : AUDIENCE_LABEL[alert.audience_role ?? "office"]}`
                           : `${fmtHour(alert.send_hour_israel)} · ${recipientLabel(alert.recipient_user_ids)}`;
                     return (
                       <div key={alert.id} className="flex items-center gap-3 px-4 py-3">
@@ -357,6 +361,8 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
           })}
         </div>
       )}
+
+      <DunningStagesEditor />
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -436,13 +442,28 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
                     </Field>
                   </div>
                 ) : null}
-                <Field label="למי לשלוח">
-                  <select value={form.audience_role} onChange={(e) => setForm((f) => ({ ...f, audience_role: e.target.value }))} className={inputCls}>
+                <Field label="למי לשלוח (לפי תפקיד)">
+                  <select
+                    value={form.audience_role}
+                    onChange={(e) => setForm((f) => ({ ...f, audience_role: e.target.value }))}
+                    disabled={editingMode === "live" && form.recipient_user_ids.length > 0}
+                    className={`${inputCls} disabled:opacity-50`}
+                  >
                     {AUDIENCE_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
                 </Field>
+                {editingMode === "live" ? (
+                  <Field label="או לאנשים מסוימים (גובר על התפקיד)">
+                    <RecipientsDropdown
+                      users={users}
+                      selected={form.recipient_user_ids}
+                      onChange={(ids) => setForm((f) => ({ ...f, recipient_user_ids: ids }))}
+                      emptyLabel="לפי התפקיד"
+                    />
+                  </Field>
+                ) : null}
               </>
             )}
           </div>
@@ -511,10 +532,13 @@ function RecipientsDropdown({
   users,
   selected,
   onChange,
+  emptyLabel = "כולם",
 }: {
   users: UserOption[];
   selected: string[];
   onChange: (ids: string[]) => void;
+  /** Shown when nothing is picked. "כולם" for scheduled digests, "לפי התפקיד" for live rules. */
+  emptyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -535,7 +559,7 @@ function RecipientsDropdown({
   }
 
   const label = allSelected
-    ? "כולם"
+    ? emptyLabel
     : selected.length === 1
     ? (users.find((u) => u.id === selected[0])?.label ?? "1 נבחר")
     : `${selected.length} נבחרו`;
@@ -556,9 +580,9 @@ function RecipientsDropdown({
           className="absolute z-50 mt-1 w-full rounded-lg border bg-background shadow-lg"
           style={{ maxHeight: 220, overflowY: "auto" }}
         >
-          {/* כולם */}
+          {/* empty selection → all recipients (scheduled) / by role (live) */}
           <DropdownRow
-            label="כולם"
+            label={emptyLabel}
             checked={allSelected}
             onClick={() => onChange([])}
           />

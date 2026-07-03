@@ -110,6 +110,51 @@ export default function ProjectsCalendar({
 
   return (
     <div className="space-y-4">
+      {/* Selected day panel (today by default) — kept on top of the calendar */}
+      <div className="rounded-2xl border bg-secondary/10 p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div>
+            <div className="font-semibold">{fmtFullDay(selectedDate)}</div>
+            <div className="text-xs text-muted-foreground">{hebrewFullDate(selectedDate)}</div>
+            {holidaysByDay.get(isoLocal(selectedDate)) ? (
+              <div className="mt-0.5 text-sm font-medium text-info-soft-foreground">
+                {holidaysByDay.get(isoLocal(selectedDate))}
+              </div>
+            ) : null}
+            <div className="text-sm text-muted-foreground">
+              {selectedEntries.length > 0
+                ? `${selectedEntries.length} פריטים`
+                : "אין פריטים ביום זה"}
+            </div>
+          </div>
+          {isToday(selectedDate, today) && <Badge variant="default">היום</Badge>}
+        </div>
+
+        {selectedEntries.length > 0 ? (
+          <div className="space-y-2">
+            {selectedEntries.map((entry) => (
+              <Link
+                key={`${entry.kind}-${entry.id}`}
+                href={entry.href}
+                className="block rounded-xl border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{entry.title}</span>
+                  <Badge variant={entryKindVariant(entry.kind)}>{entryKindLabel(entry.kind)}</Badge>
+                  {entry.priority && <StatusBadge value={entry.priority} type="priority" />}
+                  {entry.status && entry.kind !== "reminder" && (
+                    <StatusBadge value={entry.status} type={entry.kind === "task" ? "task" : "project"} />
+                  )}
+                </div>
+                <div className="mt-0.5 text-sm text-muted-foreground">{entry.subtitle}</div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">לחץ על יום כדי לראות פריטים.</div>
+        )}
+      </div>
+
       {/* Navigation */}
       <div className="flex items-center justify-between gap-2">
         <button
@@ -228,50 +273,6 @@ export default function ProjectsCalendar({
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-info-soft" />חג / מועד</span>
       </div>
 
-      {/* Selected day panel */}
-      <div className="rounded-2xl border bg-secondary/10 p-4">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div>
-            <div className="font-semibold">{fmtFullDay(selectedDate)}</div>
-            <div className="text-xs text-muted-foreground">{hebrewFullDate(selectedDate)}</div>
-            {holidaysByDay.get(isoLocal(selectedDate)) ? (
-              <div className="mt-0.5 text-sm font-medium text-info-soft-foreground">
-                {holidaysByDay.get(isoLocal(selectedDate))}
-              </div>
-            ) : null}
-            <div className="text-sm text-muted-foreground">
-              {selectedEntries.length > 0
-                ? `${selectedEntries.length} פריטים`
-                : "אין פריטים ביום זה"}
-            </div>
-          </div>
-          {isToday(selectedDate, today) && <Badge variant="default">היום</Badge>}
-        </div>
-
-        {selectedEntries.length > 0 ? (
-          <div className="space-y-2">
-            {selectedEntries.map((entry) => (
-              <Link
-                key={`${entry.kind}-${entry.id}`}
-                href={entry.href}
-                className="block rounded-xl border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{entry.title}</span>
-                  <Badge variant={entryKindVariant(entry.kind)}>{entryKindLabel(entry.kind)}</Badge>
-                  {entry.priority && <StatusBadge value={entry.priority} type="priority" />}
-                  {entry.status && entry.kind !== "reminder" && (
-                    <StatusBadge value={entry.status} type={entry.kind === "task" ? "task" : "project"} />
-                  )}
-                </div>
-                <div className="mt-0.5 text-sm text-muted-foreground">{entry.subtitle}</div>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <div className="text-sm text-muted-foreground">לחץ על יום כדי לראות פריטים.</div>
-        )}
-      </div>
     </div>
   );
 }

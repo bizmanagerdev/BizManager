@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import NotificationSettings from "@/components/notifications/NotificationSettings";
 import ConnectedDevicesCard, { type ConnectedDevice } from "@/components/notifications/ConnectedDevicesCard";
 import RecurringExpensesManager from "@/app/(app)/financial/RecurringExpensesManager";
@@ -43,7 +42,7 @@ type Props = {
 };
 
 const ALL_TABS = [
-  { key: "notifications", label: "התראות", adminOnly: false },
+  { key: "notifications", label: "התראות", adminOnly: true },
   { key: "recurring-expenses", label: "הוצאות קבועות", adminOnly: false },
   { key: "finance", label: "כספים", adminOnly: true },
   { key: "morning", label: "Morning", adminOnly: true },
@@ -77,30 +76,18 @@ export default function SettingsTabs(props: Props) {
         ))}
       </div>
 
-      {/* Notifications tab */}
+      {/* Notifications tab (admin config; personal push + prefs live in the profile) */}
       {activeTab === "notifications" && (
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>התראות לטלפון</CardTitle>
-              <CardDescription>הפעל התראות כדי לקבל עדכונים ישירות לטלפון שלך.</CardDescription>
+              <CardTitle>הגדרות התראות</CardTitle>
+              <CardDescription>הוסף, ערוך ומחק התראות — מי מקבל ומתי.</CardDescription>
             </CardHeader>
             <CardContent>
-              <PushSubscribeButton />
+              <NotificationSettings users={props.users} />
             </CardContent>
           </Card>
-
-          {props.isAdmin && (
-            <Card>
-              <CardHeader>
-                <CardTitle>הגדרות התראות</CardTitle>
-                <CardDescription>הוסף, ערוך ומחק התראות — מי מקבל ומתי.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <NotificationSettings users={props.users} />
-              </CardContent>
-            </Card>
-          )}
 
           {props.isAdmin && (
             <ConnectedDevicesCard

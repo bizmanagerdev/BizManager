@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { sendPushToRecipients } from "@/lib/push";
+import { deliverPush } from "@/lib/notifications/deliver";
 import { getNightlyConfig, recipientsForAudience } from "@/lib/notifications/alert-config";
 
 // Nightly reminder (23:00–01:00 Israel) to review + update today's new orders
@@ -108,12 +108,12 @@ export async function GET(req: Request) {
   let sent = 0;
   let failed = 0;
   if (authIds.length > 0) {
-    const res = await sendPushToRecipients(supabase, authIds, {
-      title: "🌙 עדכון הובלות ופרויקטים",
-      body: content,
-      url: "/sales",
-      tag: `nightly-review-${date}`,
-    });
+    const res = await deliverPush(
+      supabase,
+      authIds,
+      { title: "🌙 עדכון הובלות ופרויקטים", body: content, url: "/sales", tag: `nightly-review-${date}` },
+      "nightly"
+    );
     sent = res.sent;
     failed = res.failed;
   }

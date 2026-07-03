@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { sendPushToRecipients } from "@/lib/push";
+import { deliverPush } from "@/lib/notifications/deliver";
+import { usersToAuthMap } from "@/lib/notifications/identity";
 import type { AlertRow, AlertSchedule } from "@/lib/notifications/types";
 
 type Row = Record<string, unknown>;
@@ -194,8 +195,30 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, hour: currentHour, message: "אין נתונים לשלוח", sent: 0 });
   }
 
+  // recipient_user_ids in the config are users.id, but push_subscriptions +
+  // notifications are keyed by the AUTH uid — resolve before sending/recording
+  // (this also fixes targeted digests that previously never reached devices).
+  // Empty recipients = "all" → every active user.
+  const db = supabase; // captured non-null (guarded above) for the closures below
+  const specificIds = [...new Set(notifications.flatMap((n) => n.recipients))];
+  const idToAuth = await usersToAuthMap(db, specificIds);
+  let allActiveAuth: string[] | null = null;
+  async function recipientsToAuth(recipients: string[]): Promise<string[]> {
+    if (recipients.length === 0) {
+      if (!allActiveAuth) {
+        const { data } = await db.from("users").select("auth_user_id").eq("active", true);
+        allActiveAuth = ((data ?? []) as Row[]).map((u) => getString(u, "auth_user_id")).filter((v): v is string => Boolean(v));
+      }
+      return allActiveAuth;
+    }
+    return recipients.map((id) => idToAuth.get(id)).filter((v): v is string => Boolean(v));
+  }
+
   const results = await Promise.all(
-    notifications.map((n) => sendPushToRecipients(supabase, n.recipients, { title: n.title, body: n.body, url: n.url, tag: n.tag }))
+    notifications.map(async (n) => {
+      const authIds = await recipientsToAuth(n.recipients);
+      return deliverPush(db, authIds, { title: n.title, body: n.body, url: n.url, tag: n.tag }, "digests");
+    })
   );
 
   return NextResponse.json({
