@@ -339,14 +339,17 @@ export async function getWorklistView(
     if (!section) continue; // unmapped rule (e.g. active_projects) → not shown here
     const b = bucket(section);
 
-    if (item.isSummary) {
-      // Silent summary rows already carry their count in the title.
-      b.summaries.push({ id: item.id, title: item.title, href: item.url, severity: item.severity });
-    } else if (COLLAPSE_META[rk]) {
+    if (COLLAPSE_META[rk]) {
+      // Own-a-page rules collapse to ONE "label: N" line — regardless of whether
+      // they push or are silent (checked before isSummary so a silent collapsible
+      // rule like collection_overdue doesn't explode into one row per item).
       const agg = b.collapse.get(rk) ?? { count: 0, rank: 99 };
       agg.count += 1;
       agg.rank = Math.min(agg.rank, SEVERITY_RANK[item.severity]);
       b.collapse.set(rk, agg);
+    } else if (item.isSummary) {
+      // Silent summary rows already carry their count in the title.
+      b.summaries.push({ id: item.id, title: item.title, href: item.url, severity: item.severity });
     } else {
       b.items.push(item);
     }

@@ -12,6 +12,7 @@ import {
 import type { AlertMode, AlertRow, AlertSchedule } from "@/lib/notifications/types";
 import { BUILTIN_ALERT_TYPES } from "@/lib/notifications/types";
 import DunningStagesEditor from "@/components/notifications/DunningStagesEditor";
+import AlertMetricsPanel from "@/components/notifications/AlertMetricsPanel";
 
 const MODE_ORDER: AlertMode[] = ["scheduled", "live", "night"];
 const MODE_LABEL: Record<AlertMode, string> = {
@@ -363,6 +364,8 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
       )}
 
       <DunningStagesEditor />
+
+      <AlertMetricsPanel />
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

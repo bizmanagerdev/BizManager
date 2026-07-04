@@ -224,7 +224,12 @@ const collectionOverdueRule: SystemRule = {
         content: `${ils(sm.late)} באיחור${daysLate ? ` (${daysLate} ימים)` : ""}.`,
         url: "/collections?view=debtors&filter=overdue",
         severity: stage.severity as Severity,
-        behavior: "ping_once" as Behavior,
+        // Worklist-only, no per-debt push. Overdue collections are a daily
+        // desk workflow (the debtors page + the collector's own reminders) —
+        // 18 phone pings, one per debt, is pure noise. The dunning stage still
+        // drives severity/aging; it just doesn't interrupt anymore. The whole
+        // rule collapses to ONE "N חובות באיחור" worklist line.
+        behavior: "silent" as Behavior,
         audienceRole: "office" as AudienceRole,
         links: {
           customer_id: customerId,
@@ -883,12 +888,16 @@ export async function syncSystemReminders(supabase: SupabaseClient, now: Date): 
       const items = await rule.evaluate(supabase, ctx);
       let adjusted: SystemReminderItem[];
       if (cfg?.recipientUserIds?.length) {
-        // Specific-people routing takes precedence over role buckets: fan each
-        // problem out to one per-user reminder (its own read/snooze state). The
-        // per-user dedupe suffix keeps reconcile + auto-close working per user.
-        adjusted = items.flatMap((i) =>
-          cfg.recipientUserIds.map((uid) => ({ ...i, key: `${i.key}:u:${uid}`, assignedTo: uid, audienceRole: null }))
-        );
+        // Specific-people routing: fan each problem out to one per-user reminder
+        // (its own read/snooze state); the per-user dedupe suffix keeps reconcile
+        // + auto-close working per user. For OWNER-routed items (a task's
+        // assignee, a project's PM) the recipients are ADDITIVE — the owner still
+        // gets their own alert; recipients only REPLACE a role-bucket target.
+        adjusted = items.flatMap((i) => {
+          const targets = new Set(cfg.recipientUserIds);
+          if (i.assignedTo) targets.add(i.assignedTo);
+          return [...targets].map((uid) => ({ ...i, key: `${i.key}:u:${uid}`, assignedTo: uid, audienceRole: null }));
+        });
       } else if (cfg?.audienceRole) {
         // Config can override the audience of role-targeted items.
         adjusted = items.map((i) => (i.audienceRole ? { ...i, audienceRole: cfg.audienceRole as SystemReminderItem["audienceRole"] } : i));
