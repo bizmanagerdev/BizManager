@@ -176,10 +176,10 @@ export default function PaymentsCalendar({ items, todayIso }: Props) {
     const el = gridRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) < 4 && Math.abs(e.deltaX) < 4) return;
+      // Horizontal (side) scroll changes the month; vertical scroll is left alone.
+      if (Math.abs(e.deltaX) < 4 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       e.preventDefault();
-      const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-      stepMonth(delta > 0);
+      stepMonth(e.deltaX > 0);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -198,10 +198,9 @@ export default function PaymentsCalendar({ items, todayIso }: Props) {
     if (!t) return;
     const dx = t.clientX - start.x;
     const dy = t.clientY - start.y;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < 40) return;
-    // Vertical swipe up OR (RTL) swipe right → next month.
-    if (Math.abs(dy) >= Math.abs(dx)) stepMonth(dy < 0);
-    else stepMonth(dx > 0);
+    // Horizontal (side) swipe changes the month; vertical swipe scrolls the page.
+    if (Math.abs(dx) < 40 || Math.abs(dx) <= Math.abs(dy)) return;
+    stepMonth(dx > 0);
   };
 
   const afterMutation = () => {
@@ -315,7 +314,7 @@ export default function PaymentsCalendar({ items, todayIso }: Props) {
           onClick={prevMonth}
           className="rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-secondary/10"
         >
-          ›
+          ‹
         </button>
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">{fmtMonthYear(monthDate)}</span>
@@ -332,7 +331,7 @@ export default function PaymentsCalendar({ items, todayIso }: Props) {
           onClick={nextMonth}
           className="rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-secondary/10"
         >
-          ‹
+          ›
         </button>
       </div>
 
