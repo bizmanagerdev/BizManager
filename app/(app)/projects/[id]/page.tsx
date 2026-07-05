@@ -251,7 +251,7 @@ export default async function ProjectPage({
       .maybeSingle<Omit<ProjectOverview, "notes" | "items_to_move">>(),
     supabase
       .from("projects")
-      .select("id,notes,items_to_move,payment_terms,due_date,price_includes_vat,vat_rate")
+      .select("id,notes,items_to_move,payment_terms,due_date,price_includes_vat,no_charge,vat_rate")
       .eq("id", id)
       .maybeSingle<{
         id: string;
@@ -260,6 +260,7 @@ export default async function ProjectPage({
         payment_terms: string | null;
         due_date: string | null;
         price_includes_vat: boolean | null;
+        no_charge: boolean | null;
         vat_rate: number | string | null;
       }>(),
     supabase
@@ -311,6 +312,7 @@ export default async function ProjectPage({
           ? projectDetailsRaw.items_to_move.filter((item): item is string => typeof item === "string")
           : null,
         price_includes_vat: projectDetailsRaw?.price_includes_vat === true,
+        no_charge: projectDetailsRaw?.no_charge === true,
         vat_rate:
           typeof projectDetailsRaw?.vat_rate === "number"
             ? projectDetailsRaw.vat_rate

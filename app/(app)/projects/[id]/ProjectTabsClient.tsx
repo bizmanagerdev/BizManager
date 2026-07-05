@@ -103,6 +103,7 @@ export type ProjectOverview = {
   actual_price: string | number | null;
   expenses_billed_separately: boolean | null;
   price_includes_vat: boolean | null;
+  no_charge: boolean | null;
   vat_rate: string | number | null;
   customer_id: string;
   customer_name: string;

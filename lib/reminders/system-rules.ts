@@ -614,15 +614,32 @@ const projectClosedUnbilledRule: SystemRule = {
     // "unpriced" projects and this alert always agree. (customer_total_price
     // from the view folds in billed expenses, so it can be >0 with no agreed
     // price — the wrong signal here.)
-    const { data, error } = await supabase
+    // no_charge may not exist pre-migration → fall back without it (treated as
+    // false) so the rule keeps working until the column lands.
+    const primary = await supabase
       .from("projects")
-      .select("id,name,customer_id,agreed_base_price,actual_price")
+      .select("id,name,customer_id,agreed_base_price,actual_price,no_charge")
       .eq("status", "completed")
       .range(0, 999);
-    throwIf(error, "projects(closed_unbilled)");
+    let rows = (primary.data ?? []) as Row[];
+    if (primary.error) {
+      if ((primary.error.message ?? "").toLowerCase().includes("no_charge")) {
+        const retry = await supabase
+          .from("projects")
+          .select("id,name,customer_id,agreed_base_price,actual_price")
+          .eq("status", "completed")
+          .range(0, 999);
+        throwIf(retry.error, "projects(closed_unbilled)");
+        rows = (retry.data ?? []) as Row[];
+      } else {
+        throwIf(primary.error, "projects(closed_unbilled)");
+      }
+    }
 
     const items: SystemReminderItem[] = [];
-    for (const p of (data ?? []) as Row[]) {
+    for (const p of rows) {
+      // Intentionally free (donation / favor / internal) → not a billing gap.
+      if (getBoolean(p, "no_charge") === true) continue;
       const base = getNumber(p, "agreed_base_price") ?? getNumber(p, "actual_price") ?? 0;
       if (base > 0.009) continue; // has an agreed price → visible in collections
       const id = getString(p, "id") ?? "";

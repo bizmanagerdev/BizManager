@@ -32,6 +32,7 @@ type ProjectDraft = {
   status: string;
   agreedBasePrice: string;
   priceIncludesVat: boolean;
+  noCharge: boolean;
   expensesSeparately: boolean;
   projectManagerId: string;
   startDate: string;
@@ -67,6 +68,7 @@ export type InitialProject = {
   status: string;
   agreed_base_price: number;
   price_includes_vat: boolean;
+  no_charge?: boolean | null;
   expenses_billed_separately: boolean;
   project_manager_id: string | null;
   start_date: string | null;
@@ -369,6 +371,9 @@ export default function NewProjectClient({
   const [priceIncludesVat, setPriceIncludesVat] = useState(
     initialProject?.price_includes_vat ?? restoredDraft?.priceIncludesVat ?? false
   );
+  const [noCharge, setNoCharge] = useState(
+    initialProject?.no_charge ?? restoredDraft?.noCharge ?? false
+  );
   const [expensesSeparately, setExpensesSeparately] = useState(
     initialProject?.expenses_billed_separately ?? restoredDraft?.expensesSeparately ?? false
   );
@@ -409,6 +414,7 @@ export default function NewProjectClient({
       status,
       agreedBasePrice,
       priceIncludesVat,
+      noCharge,
       expensesSeparately,
       projectManagerId,
       startDate,
@@ -428,6 +434,7 @@ export default function NewProjectClient({
     status,
     agreedBasePrice,
     priceIncludesVat,
+    noCharge,
     expensesSeparately,
     projectManagerId,
     startDate,
@@ -521,9 +528,10 @@ export default function NewProjectClient({
         name: trimmedName,
         project_type: projectType,
         status,
-        agreed_base_price: agreed,
-        actual_price: agreed,
+        agreed_base_price: noCharge ? 0 : agreed,
+        actual_price: noCharge ? 0 : agreed,
         price_includes_vat: priceIncludesVat,
+        no_charge: noCharge,
         expenses_billed_separately: expensesSeparately,
         project_manager_id: projectManagerId || null,
         start_date: startDate || null,
@@ -963,15 +971,32 @@ export default function NewProjectClient({
 
             <div className="space-y-1.5 text-sm">
               <span className="font-medium">מחיר בסיס מוסכם</span>
-              <CurrencyInput value={agreedBasePrice} onChange={(e) => setAgreedBasePrice(e.target.value)} />
+              <CurrencyInput
+                value={noCharge ? "0" : agreedBasePrice}
+                onChange={(e) => setAgreedBasePrice(e.target.value)}
+                disabled={noCharge}
+              />
               <label className="flex items-start gap-2.5 pt-1 text-sm font-normal">
                 <input
                   type="checkbox"
                   className="mt-0.5 h-4 w-4 shrink-0"
                   checked={priceIncludesVat}
+                  disabled={noCharge}
                   onChange={(e) => setPriceIncludesVat(e.target.checked)}
                 />
                 <span>הוסף מע״מ מעל מחיר הבסיס (הלקוח משלם בסיס + מע״מ)</span>
+              </label>
+              <label className="flex items-start gap-2.5 pt-1 text-sm font-normal">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                  checked={noCharge}
+                  onChange={(e) => {
+                    setNoCharge(e.target.checked);
+                    if (e.target.checked) setPriceIncludesVat(false);
+                  }}
+                />
+                <span>ללא חיוב — תרומה / טובה / ללא תשלום (המחיר יישאר 0)</span>
               </label>
             </div>
 

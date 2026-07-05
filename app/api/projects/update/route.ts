@@ -14,6 +14,7 @@ type UpdateProjectPayload = {
   agreed_base_price?: number | string;
   actual_price?: number | string;
   price_includes_vat?: boolean;
+  no_charge?: boolean;
   expenses_billed_separately?: boolean;
   project_manager_id?: string | null;
   start_date?: string | null;
@@ -51,9 +52,11 @@ export async function POST(req: Request) {
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const projectType = typeof body.project_type === "string" ? body.project_type : "";
     const status = typeof body.status === "string" ? body.status : "";
+    const noCharge = Boolean(body.no_charge);
     const agreedBasePriceRaw = body.agreed_base_price;
-    const agreedBasePrice =
-      agreedBasePriceRaw === undefined || agreedBasePriceRaw === null || agreedBasePriceRaw === ""
+    const agreedBasePrice = noCharge
+      ? 0
+      : agreedBasePriceRaw === undefined || agreedBasePriceRaw === null || agreedBasePriceRaw === ""
         ? 0
         : toNumber(agreedBasePriceRaw);
     const actualPrice = agreedBasePrice;
@@ -115,6 +118,7 @@ export async function POST(req: Request) {
         actual_price: actualPrice,
         price_includes_vat: priceIncludesVat,
         vat_rate: projectVatRate,
+        no_charge: noCharge,
         expenses_billed_separately: expensesBilledSeparately,
         project_manager_id: projectManagerId,
         start_date: startDate,

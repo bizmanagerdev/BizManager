@@ -39,6 +39,7 @@ type ProjectDetails = {
   agreed_base_price: number | string | null;
   actual_price: number | string | null;
   price_includes_vat: boolean | null;
+  no_charge: boolean | null;
   expenses_billed_separately: boolean | null;
   project_manager_id: string | null;
   start_date: string | null;
@@ -173,6 +174,7 @@ export default function ProjectDetailsActions({
   const [editStatus, setEditStatus] = useState(project.status);
   const [editAgreedBasePrice, setEditAgreedBasePrice] = useState(String(toNumber(project.agreed_base_price) ?? 0));
   const [editPriceIncludesVat, setEditPriceIncludesVat] = useState(project.price_includes_vat === true);
+  const [editNoCharge, setEditNoCharge] = useState(project.no_charge === true);
   const [editExpensesSeparately, setEditExpensesSeparately] = useState(project.expenses_billed_separately === true);
   const [editProjectManagerId, setEditProjectManagerId] = useState(project.project_manager_id ?? "");
   const [editStartDate, setEditStartDate] = useState(project.start_date ?? "");
@@ -248,9 +250,10 @@ export default function ProjectDetailsActions({
           name: editName.trim(),
           project_type: editProjectType,
           status: editStatus,
-          agreed_base_price: agreed,
-          actual_price: agreed,
+          agreed_base_price: editNoCharge ? 0 : agreed,
+          actual_price: editNoCharge ? 0 : agreed,
           price_includes_vat: editPriceIncludesVat,
+          no_charge: editNoCharge,
           expenses_billed_separately: editExpensesSeparately,
           project_manager_id: editProjectManagerId || null,
           start_date: editStartDate || null,
@@ -386,16 +389,29 @@ export default function ProjectDetailsActions({
             <div className="space-y-1">
               <label className="text-sm font-medium">מחיר בסיס מוסכם</label>
               <CurrencyInput
-                value={editAgreedBasePrice}
+                value={editNoCharge ? "0" : editAgreedBasePrice}
                 onChange={(event) => setEditAgreedBasePrice(event.target.value)}
+                disabled={editNoCharge}
               />
               <label className="flex items-center gap-2 pt-1 text-sm">
                 <input
                   type="checkbox"
                   checked={editPriceIncludesVat}
+                  disabled={editNoCharge}
                   onChange={(event) => setEditPriceIncludesVat(event.target.checked)}
                 />
                 <span>הוסף מע״מ מעל מחיר הבסיס (הלקוח משלם בסיס + מע״מ)</span>
+              </label>
+              <label className="flex items-center gap-2 pt-1 text-sm">
+                <input
+                  type="checkbox"
+                  checked={editNoCharge}
+                  onChange={(event) => {
+                    setEditNoCharge(event.target.checked);
+                    if (event.target.checked) setEditPriceIncludesVat(false);
+                  }}
+                />
+                <span>ללא חיוב — תרומה / טובה / ללא תשלום (המחיר יישאר 0)</span>
               </label>
               <div className="text-xs text-muted-foreground">
                 כשמסומן — היעד הוא הסכום כולל מע״מ וכל תשלום נזקף במלואו. כשלא — המחיר הוא נטו ותשלום
