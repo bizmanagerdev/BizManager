@@ -1,5 +1,6 @@
 ﻿import { requireProfile } from "@/lib/auth/requireProfile";
 import AppShell from "@/components/layout/AppShell";
+import PageAlertBar from "@/components/reminders/PageAlertBar";
 import ProjectsClient from "@/app/(app)/projects/ProjectsClient";
 import {
   loadProjectsPage,
@@ -165,6 +166,7 @@ export default async function ProjectsPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
+        <PageAlertBar keys={["project_closed_unbilled", "project_deadline", "project_starting", "stale_quote"]} />
         {customerName ? (
           <div className="text-lg font-medium">לקוח: {customerName}</div>
         ) : null}

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
+import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { fetchVehicles } from "@/lib/vehicles";
 import VehiclesClient from "./VehiclesClient";
@@ -18,7 +19,10 @@ export default async function VehiclesPage() {
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      <VehiclesClient vehicles={vehicles} />
+      <div className="space-y-4">
+        <PageAlertBar keys={["vehicle_expiry"]} />
+        <VehiclesClient vehicles={vehicles} />
+      </div>
     </AppShell>
   );
 }

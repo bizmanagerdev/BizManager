@@ -1,4 +1,5 @@
 import AppShell from "@/components/layout/AppShell";
+import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import InventoryRealtimeBadge from "@/app/(app)/inventory/InventoryRealtimeBadge";
 import SalesInventoryClient from "@/app/(app)/sales/SalesInventoryClient";
@@ -15,6 +16,7 @@ export default async function InventoryPage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
+        <PageAlertBar keys={["low_stock"]} />
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">מלאי</h1>

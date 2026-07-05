@@ -55,6 +55,7 @@ describe("reminderBucket", () => {
     expect(reminderBucket({ source: "system", category: "system", dedupeKey: "check_deposit_due:1" })).toBe("money");
     expect(reminderBucket({ source: "system", category: "system", dedupeKey: "task_overdue:1" })).toBe("tasks");
     expect(reminderBucket({ source: "system", category: "system", dedupeKey: "stale_quote:1" })).toBe("projects");
+    expect(reminderBucket({ source: "system", category: "system", dedupeKey: "project_closed_unbilled:1" })).toBe("projects");
     expect(reminderBucket({ source: "system", category: "system", dedupeKey: "wage_overdue:1" })).toBe("payroll");
     expect(reminderBucket({ source: "system", category: "system", dedupeKey: "nightly_review:2026-07-03" })).toBe("nightly");
   });

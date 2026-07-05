@@ -12,6 +12,7 @@ const RULE_LABEL: Record<string, string> = {
   project_deadline: "פרויקטים לקראת דדליין",
   project_starting: "פרויקטים שמתחילים בקרוב",
   stale_quote: "הצעות מחיר ישנות",
+  project_closed_unbilled: "פרויקטים סגורים ללא חיוב",
   collection_overdue: "גבייה באיחור",
   check_deposit_due: "צ׳קים לפירעון",
   payment_due_today: "תשלומים לגבייה היום",

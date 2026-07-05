@@ -603,6 +603,45 @@ const staleQuoteRule: SystemRule = {
   },
 };
 
+const projectClosedUnbilledRule: SystemRule = {
+  key: "project_closed_unbilled",
+  label: "פרויקטים סגורים ללא חיוב",
+  async evaluate(supabase) {
+    // A completed ("closed") project with NO price set produces no receivable,
+    // so it never appears in collections — a silent revenue leak. "No price" =
+    // agreed_base_price / actual_price both empty — the EXACT same `priceUnset`
+    // test the projects list uses (baseProjectPrice <= 0), so the list's
+    // "unpriced" projects and this alert always agree. (customer_total_price
+    // from the view folds in billed expenses, so it can be >0 with no agreed
+    // price — the wrong signal here.)
+    const { data, error } = await supabase
+      .from("projects")
+      .select("id,name,customer_id,agreed_base_price,actual_price")
+      .eq("status", "completed")
+      .range(0, 999);
+    throwIf(error, "projects(closed_unbilled)");
+
+    const items: SystemReminderItem[] = [];
+    for (const p of (data ?? []) as Row[]) {
+      const base = getNumber(p, "agreed_base_price") ?? getNumber(p, "actual_price") ?? 0;
+      if (base > 0.009) continue; // has an agreed price → visible in collections
+      const id = getString(p, "id") ?? "";
+      const name = getString(p, "name") ?? "פרויקט";
+      items.push({
+        key: id,
+        title: `פרויקט סגור ללא חיוב: ${name}`,
+        content: "הפרויקט הושלם אך לא הוזן מחיר — לתמחר ולחייב.",
+        url: `/projects/${id}`,
+        severity: "warning" as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "office" as AudienceRole,
+        links: { project_id: id, customer_id: getString(p, "customer_id") },
+      });
+    }
+    return items;
+  },
+};
+
 // --- summary (silent) rules — one row carrying a count, no push ------------
 
 const lowStockRule: SystemRule = {
@@ -745,6 +784,7 @@ export const SYSTEM_RULES: SystemRule[] = [
   taskDueSoonRule,
   projectStartingRule,
   staleQuoteRule,
+  projectClosedUnbilledRule,
   // Silent summaries
   lowStockRule,
   unprocessedItemsRule,
@@ -813,7 +853,7 @@ async function reconcileRule(
 ): Promise<RuleSyncResult> {
   const { data: existing, error } = await supabase
     .from("reminders")
-    .select("id,dedupe_key,severity,title,content")
+    .select("id,dedupe_key,severity,title,content,behavior")
     .eq("source", "system")
     .eq("status", "pending")
     .like("dedupe_key", `${rule.key}:%`)
@@ -834,17 +874,30 @@ async function reconcileRule(
     throwIf(insErr, `${rule.key}:insert`);
   }
 
-  // Refresh still-open problems whose text/severity moved.
+  // Refresh still-open problems whose text/severity/behavior moved. Behavior is
+  // included so a rule flipped to 'silent' in code (e.g. collection_overdue)
+  // actually stops pushing its ALREADY-open reminders — otherwise the old
+  // per-item pings keep firing until each row happens to be recreated.
   let refreshed = 0;
   for (const i of items) {
     const dk = `${rule.key}:${i.key}`;
     const ex = existingByKey.get(dk);
     if (!ex) continue;
-    if (getString(ex, "severity") !== i.severity || getString(ex, "title") !== i.title || getString(ex, "content") !== (i.content ?? "")) {
-      const { error: updErr } = await supabase
-        .from("reminders")
-        .update({ severity: i.severity, title: i.title, content: i.content ?? "", updated_at: nowIso })
-        .eq("id", getString(ex, "id"));
+    const behaviorChanged = getString(ex, "behavior") !== i.behavior;
+    if (
+      getString(ex, "severity") !== i.severity ||
+      getString(ex, "title") !== i.title ||
+      getString(ex, "content") !== (i.content ?? "") ||
+      behaviorChanged
+    ) {
+      const patch: Record<string, unknown> = { severity: i.severity, title: i.title, content: i.content ?? "", updated_at: nowIso };
+      if (behaviorChanged) {
+        patch.behavior = i.behavior;
+        patch.repeat_rule = i.behavior === "ping_repeat" ? i.repeatRule ?? "daily" : null;
+        // Newly-silent → cancel any scheduled ping so it never interrupts again.
+        if (i.behavior === "silent") patch.next_ping_at = null;
+      }
+      const { error: updErr } = await supabase.from("reminders").update(patch).eq("id", getString(ex, "id"));
       if (!updErr) refreshed += 1;
     }
   }

@@ -286,6 +286,7 @@ const RULE_SECTION: Record<string, string> = {
   project_deadline: "projects",
   project_starting: "projects",
   stale_quote: "projects",
+  project_closed_unbilled: "projects",
   low_stock: "ops",
   unprocessed_items: "ops",
   vehicle_expiry: "ops",
@@ -396,6 +397,7 @@ const GROUP_META: Record<string, { label: string; href: string }> = {
   task_due_soon: { label: "משימות לביצוע בקרוב", href: "/tasks" },
   project_deadline: { label: "פרויקטים לקראת דדליין", href: "/projects" },
   project_starting: { label: "פרויקטים שמתחילים בקרוב", href: "/projects" },
+  project_closed_unbilled: { label: "פרויקטים סגורים ללא חיוב", href: "/projects" },
   invoice_unpaid: { label: "חשבוניות לא משולמות", href: "/invoices" },
   collection_overdue: { label: "גבייה באיחור", href: "/collections?view=debtors&filter=overdue" },
   wage_overdue: { label: "שכר עובדים לתשלום", href: "/payroll" },
@@ -462,8 +464,12 @@ export async function getWorklistNavCounts(
   const items = await getWorklist(supabase, options);
   const out: Record<string, NavCount> = {};
   for (const item of items) {
-    if (item.isSummary) continue; // silent summaries carry their count in text
     const ruleKey = item.source === "system" ? (item.dedupeKey ?? "").split(":")[0] : "reminders";
+    // Skip true count-in-title summaries (low_stock: "N items") — counting them
+    // as 1 would undercount. But COLLAPSE_META rules (collection_overdue, …) are
+    // real per-item reminders shown collapsed, so count them per item — that's
+    // what keeps the badge equal to the worklist's "N" line.
+    if (item.isSummary && !COLLAPSE_META[ruleKey]) continue;
     const section = item.source === "manual" ? "reminders" : RULE_SECTION[ruleKey];
     const url = section ? SECTION_NAV_URL[section] : undefined;
     if (!url) continue;
@@ -473,4 +479,43 @@ export async function getWorklistNavCounts(
     out[url] = cur;
   }
   return out;
+}
+
+export type PageAlert = { id: string; title: string; href: string; severity: WorklistSeverity };
+
+/**
+ * The subset of the viewer's worklist relevant to a specific page, for a
+ * contextual banner at the top of that page (e.g. low_stock on /sales). Same
+ * collapse rules as the worklist so a bar reads "חובות באיחור: 17", not 17 bars.
+ */
+export async function getPageAlerts(
+  supabase: SupabaseClient,
+  options: { userId: string; role: string | null; keys: string[] }
+): Promise<PageAlert[]> {
+  const wanted = new Set(options.keys);
+  if (wanted.size === 0) return [];
+  const items = await getWorklist(supabase, { userId: options.userId, role: options.role });
+  const out: PageAlert[] = [];
+  const collapse = new Map<string, { count: number; rank: number }>();
+  for (const item of items) {
+    const rk = item.source === "system" ? (item.dedupeKey ?? "").split(":")[0] : "reminders";
+    if (!wanted.has(rk)) continue;
+    if (COLLAPSE_META[rk]) {
+      const agg = collapse.get(rk) ?? { count: 0, rank: 99 };
+      agg.count += 1;
+      agg.rank = Math.min(agg.rank, SEVERITY_RANK[item.severity]);
+      collapse.set(rk, agg);
+    } else {
+      out.push({ id: item.id, title: item.title, href: item.url, severity: item.severity });
+    }
+  }
+  for (const [rk, agg] of collapse) {
+    out.push({
+      id: `sum-${rk}`,
+      title: `${COLLAPSE_META[rk].label}: ${agg.count}`,
+      href: COLLAPSE_META[rk].href,
+      severity: RANK_TO_SEVERITY[agg.rank] ?? "info",
+    });
+  }
+  return out.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
 }

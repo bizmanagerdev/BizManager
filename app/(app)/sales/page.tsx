@@ -7,6 +7,7 @@ import SalesOrdersClient from "@/app/(app)/sales/SalesOrdersClient";
 import OrderMonthlySummaryButton from "@/app/(app)/sales/OrderMonthlySummaryButton";
 import PriceListClient from "@/app/(app)/sales/PriceListClient";
 import SalesTabsNav from "@/app/(app)/sales/SalesTabsNav";
+import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { Button } from "@/components/ui/button";
 import { DELIVERY_REGIONS } from "@/lib/ui/cities";
@@ -286,6 +287,7 @@ export default async function SalesPage({
             </Button>
           </div>
         </div>
+        <PageAlertBar keys={["low_stock"]} />
         {content}
       </div>
     </AppShell>

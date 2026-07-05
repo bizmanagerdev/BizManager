@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
+import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { loadCardCostsByMonth } from "@/lib/financial/cardCosts";
 import { type StatementListItem } from "./StatementsListClient";
@@ -68,6 +69,7 @@ export default async function CardStatementsPage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4 text-right" dir="rtl">
+        <PageAlertBar keys={["unprocessed_items"]} />
         <CardsPageClient report={cardCosts} statements={statements} />
       </div>
     </AppShell>
