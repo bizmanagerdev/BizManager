@@ -1574,38 +1574,84 @@ export default function SalaryCenterClient({
     () => new Set(selectedWorkerPrintSessions.map((session) => session.id)),
     [selectedWorkerPrintSessions]
   );
+  // Which payroll month each payslip settles, so a payslip-allocated payment can be
+  // attributed to the period the WORK was done in (not the date it was paid out).
+  const payslipPeriodMonthById = useMemo(() => {
+    const next = new Map<string, string | null>();
+    payslips.forEach((payslip) => {
+      next.set(payslip.id, periodsById.get(payslip.payroll_period_id)?.period_month ?? null);
+    });
+    return next;
+  }, [payslips, periodsById]);
+  // For each payroll month, what fraction of that month's total shift cost is actually
+  // shown in this print (after the project filter). A payslip payment settles a whole
+  // month across all projects, so under a project filter we credit only that project's
+  // share of the month. With no project filter every share is 1 (the full payment counts).
+  const printedMonthCostShare = useMemo(() => {
+    const allByMonth = new Map<string, number>();
+    const printedByMonth = new Map<string, number>();
+    for (const session of selectedWorkerSessions) {
+      const monthKey = monthKeyFromDate(session.clock_in);
+      allByMonth.set(monthKey, (allByMonth.get(monthKey) ?? 0) + (sessionCostsById.get(session.id) ?? 0));
+    }
+    for (const session of selectedWorkerPrintSessions) {
+      const monthKey = monthKeyFromDate(session.clock_in);
+      printedByMonth.set(monthKey, (printedByMonth.get(monthKey) ?? 0) + (sessionCostsById.get(session.id) ?? 0));
+    }
+    const share = new Map<string, number>();
+    for (const [monthKey, printedCost] of printedByMonth) {
+      const allCost = allByMonth.get(monthKey) ?? 0;
+      share.set(monthKey, allCost > 0.009 ? Math.min(1, printedCost / allCost) : 0);
+    }
+    return share;
+  }, [selectedWorkerSessions, selectedWorkerPrintSessions, sessionCostsById]);
   const selectedWorkerPrintPayments = useMemo(() => {
-    const matchesPrintPeriod = (dateValue: string | null | undefined) => {
-      if (!workerPrintFilters.month && !workerPrintFilters.year) return true;
-      if (!dateValue) return false;
-      const date = new Date(dateValue);
-      if (Number.isNaN(date.getTime())) return false;
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const year = String(date.getFullYear());
-      if (workerPrintFilters.month && month !== workerPrintFilters.month) return false;
+    const noPeriodFilter = !workerPrintFilters.month && !workerPrintFilters.year;
+    // Does a payslip's period ("YYYY-MM") fall inside the printed month/year?
+    const payslipMonthInPeriod = (periodMonth: string | null | undefined) => {
+      if (noPeriodFilter) return true;
+      if (!periodMonth) return false;
+      const [year, month] = periodMonth.split("-");
       if (workerPrintFilters.year && year !== workerPrintFilters.year) return false;
+      if (workerPrintFilters.month && month !== workerPrintFilters.month) return false;
       return true;
     };
-    // Show ALL of the worker's payments in the period — not only the ones allocated to
-    // a session in the printed set. Payslip-mode workers are paid against payslips, so
-    // the old session-only match always came up empty for them ("no payments").
+    // "Paid in the period" means money that settles work DONE in the period — keyed to
+    // the work each allocation covers (the session's month, or the payslip's period),
+    // NOT the calendar date the payment was recorded. A worker paid on the 10th for the
+    // previous month's work: that payment belongs to the previous month, not the month
+    // it landed in. Session/payslip allocations carry that link; only truly unallocated
+    // payments (advances) have no work to key on, so they fall back to the payment date.
     return selectedWorkerPayments
-      .filter((payment) => matchesPrintPeriod(payment.payment_date))
       .map((payment) => {
-        const sessionAllocations = (workerPaymentAllocationsByPaymentId.get(payment.id) ?? []).filter(
-          (allocation) => allocation.source_type === "session" && allocation.attendance_session_id
-        );
-        // When printing a single project, scope a session-allocated payment to the
-        // sessions in that project. Payslip / unallocated payments aren't tied to a
-        // project, so they're shown in full.
-        if (workerPrintFilters.projectId && sessionAllocations.length > 0) {
-          const scopedAmount = sessionAllocations
-            .filter((allocation) => selectedWorkerPrintSessionIds.has(allocation.attendance_session_id ?? ""))
-            .reduce((sum, allocation) => sum + toNumber(allocation.amount), 0);
-          if (scopedAmount <= 0.009) return null;
-          return { payment, scopedAmount };
+        const allocations = workerPaymentAllocationsByPaymentId.get(payment.id) ?? [];
+        if (allocations.length === 0) {
+          // Unallocated payment (e.g. an advance): no work to attribute it to. Only show
+          // it in an all-months, all-projects print, where it still belongs to the total.
+          if (workerPrintFilters.projectId || !noPeriodFilter) return null;
+          return { payment, scopedAmount: toNumber(payment.amount) };
         }
-        return { payment, scopedAmount: toNumber(payment.amount) };
+        const scopedAmount = allocations.reduce((sum, allocation) => {
+          if (allocation.source_type === "session") {
+            // selectedWorkerPrintSessionIds already respects the month/year/project filters.
+            return allocation.attendance_session_id &&
+              selectedWorkerPrintSessionIds.has(allocation.attendance_session_id)
+              ? sum + toNumber(allocation.amount)
+              : sum;
+          }
+          // Payslip allocation: settles a whole payroll month across projects. Count it
+          // for the printed period, scoped to the filtered project's share of that month.
+          const periodMonth = allocation.payslip_id
+            ? workerDebtItemsBySourceKey.get(`payslip:${allocation.payslip_id}`)?.period_month ??
+              payslipPeriodMonthById.get(allocation.payslip_id) ??
+              null
+            : null;
+          if (!periodMonth || !payslipMonthInPeriod(periodMonth)) return sum;
+          const share = workerPrintFilters.projectId ? printedMonthCostShare.get(periodMonth) ?? 0 : 1;
+          return sum + toNumber(allocation.amount) * share;
+        }, 0);
+        if (scopedAmount <= 0.009) return null;
+        return { payment, scopedAmount };
       })
       .filter(
         (item): item is { payment: WorkerPaymentRow; scopedAmount: number } =>
@@ -1614,20 +1660,66 @@ export default function SalaryCenterClient({
   }, [
     selectedWorkerPayments,
     workerPaymentAllocationsByPaymentId,
+    workerDebtItemsBySourceKey,
     selectedWorkerPrintSessionIds,
+    payslipPeriodMonthById,
+    printedMonthCostShare,
     workerPrintFilters,
   ]);
   const selectedWorkerPrintSummary = useMemo(() => {
-    // Earned = work done in the printed period (session based). Paid = the actual
-    // payments listed below (so the print reconciles with what was really paid out,
-    // whether the worker is session- or payslip-tracked). Owed = the difference.
+    const noPeriodFilter = !workerPrintFilters.month && !workerPrintFilters.year;
+    const monthInPeriod = (periodMonth: string | null | undefined) => {
+      if (noPeriodFilter) return true;
+      if (!periodMonth) return false;
+      const [year, month] = periodMonth.split("-");
+      if (workerPrintFilters.year && year !== workerPrintFilters.year) return false;
+      if (workerPrintFilters.month && month !== workerPrintFilters.month) return false;
+      return true;
+    };
+    // Earned = the shifts shown in "פירוט עבודה" (session cost) — correct for both worker
+    // modes and matches the table the worker is looking at.
     const earned = selectedWorkerPrintSessions.reduce((sum, session) => {
       const debtItem = workerDebtItemsBySourceKey.get(`session:${session.id}`) ?? null;
       return sum + (debtItem ? toNumber(debtItem.earned_amount) : sessionCostsById.get(session.id) ?? 0);
     }, 0);
-    const paid = selectedWorkerPrintPayments.reduce((sum, item) => sum + item.scopedAmount, 0);
+    // Paid = the SAME per-item paid_amount the rest of the salary center trusts, straight
+    // from worker_debt_items_view (so the number matches every other screen and correctly
+    // reflects fully-paid months). Session-tracked workers have a debt row per shift;
+    // payslip-tracked workers are paid on the monthly payslip (one row per month), which
+    // we scope to the filtered project's share of that month. Owed = earned − paid.
+    const debtItems = selectedWorker ? workerDebtItemsByUserId.get(selectedWorker.id) ?? [] : [];
+    let paid = 0;
+    for (const item of debtItems) {
+      if (item.source_type === "session") {
+        if (selectedWorkerPrintSessionIds.has(item.source_id)) paid += toNumber(item.paid_amount);
+        continue;
+      }
+      if (!monthInPeriod(item.period_month)) continue;
+      const share = workerPrintFilters.projectId ? printedMonthCostShare.get(item.period_month ?? "") ?? 0 : 1;
+      paid += toNumber(item.paid_amount) * share;
+    }
+    // Unallocated payments (advances) aren't tied to any month's work, so — mirroring the
+    // payments list — they only count toward an all-months, all-projects total.
+    if (noPeriodFilter && !workerPrintFilters.projectId) {
+      for (const payment of selectedWorkerPayments) {
+        if ((workerPaymentAllocationsByPaymentId.get(payment.id) ?? []).length === 0) {
+          paid += toNumber(payment.amount);
+        }
+      }
+    }
     return { earned, paid, owed: earned - paid };
-  }, [selectedWorkerPrintSessions, selectedWorkerPrintPayments, workerDebtItemsBySourceKey, sessionCostsById]);
+  }, [
+    selectedWorker,
+    workerDebtItemsByUserId,
+    selectedWorkerPayments,
+    workerPaymentAllocationsByPaymentId,
+    selectedWorkerPrintSessions,
+    selectedWorkerPrintSessionIds,
+    workerDebtItemsBySourceKey,
+    sessionCostsById,
+    printedMonthCostShare,
+    workerPrintFilters,
+  ]);
   function printSelectedWorkerSummary() {
     if (!selectedWorker) return;
 
