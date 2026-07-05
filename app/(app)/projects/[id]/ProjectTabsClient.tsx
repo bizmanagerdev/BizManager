@@ -50,6 +50,7 @@ import {
   shouldShowSessionHours,
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
+import type { ExpenseWorkerOption } from "@/components/expenses/ExpenseDialog";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import dynamic from "next/dynamic";
@@ -78,8 +79,10 @@ import {
 
 // Heavy financial-entry dialogs are lazy-loaded — their code only downloads when
 // the user opens "add expense" / "add income", keeping the initial bundle smaller.
-const AddExpenseDialog = dynamic(
-  () => import("./ProjectExpenseDialogs").then((m) => m.AddExpenseDialog),
+// The shared expense/session dialog — one dialog used across the app (financial,
+// vehicles, dashboard, project). Replaces the old project-local AddExpenseDialog.
+const ExpenseDialog = dynamic(
+  () => import("@/components/expenses/ExpenseDialog").then((m) => m.ExpenseDialog),
   { ssr: false }
 );
 const AddIncomeDialog = dynamic(
@@ -2377,21 +2380,64 @@ export default function ProjectTabsClient({
         </AdaptiveDialog>
       </Dialog>
 
-      <AddExpenseDialog
+      <ExpenseDialog
         open={addExpenseOpen}
         onOpenChange={(open) => {
           setAddExpenseOpen(open);
           if (!open) setEditingExpense(null);
         }}
-        projectId={overview.id}
-        projectType={overview.project_type}
+        lockedProjectId={overview.id}
         projectStartDate={overview.start_date}
         defaultSessionClockIn={firstWorkerSessionDefaults.clockIn}
         defaultSessionClockOut={firstWorkerSessionDefaults.clockOut}
-        users={assignableUsers.filter((user) => user.active !== false)}
+        showAttachments
+        currentUserRole={(viewerRole ?? undefined) as ExpenseWorkerOption["role"]}
+        users={assignableUsers
+          .filter((user) => user.active !== false)
+          .map((u): ExpenseWorkerOption => ({
+            id: u.id,
+            label: u.full_name?.trim() || u.email,
+            role: (u.role ?? undefined) as ExpenseWorkerOption["role"],
+            payroll_worker_type: u.payroll_worker_type,
+            pay_tracking_mode: u.pay_tracking_mode,
+          }))}
         salaryAgreements={salaryAgreements}
-        editingItem={editingExpense}
-        onSaved={async (saved) => {
+        editingSession={editingExpense?.source_type === "session" ? editingExpense.session : null}
+        editingExpense={
+          editingExpense?.source_type === "expense" && editingExpense.expense
+            ? {
+                id: getString(editingExpense.expense, "id") ?? "",
+                amount: (editingExpense.expense["amount"] as number | string | null) ?? "",
+                category: getString(editingExpense.expense, "category"),
+                description: getString(editingExpense.expense, "description"),
+                notes: getString(editingExpense.expense, "notes"),
+                expense_date: getString(editingExpense.expense, "expense_date"),
+                business_domain: getString(editingExpense.expense, "business_domain"),
+                payment_status: getString(editingExpense.expense, "payment_status"),
+                paid_amount: (editingExpense.expense["paid_amount"] as number | string | null) ?? null,
+                payment_method: getString(editingExpense.expense, "payment_method"),
+                account_id: getString(editingExpense.expense, "account_id"),
+                project_id: overview.id,
+                billed_to_customer: Boolean(editingExpense.project_expense?.["billed_to_customer"]),
+                included_in_base_price: Boolean(editingExpense.project_expense?.["included_in_base_price"]),
+                bill_to_customer_amount:
+                  (editingExpense.project_expense?.["bill_to_customer_amount"] as number | string | null) ?? null,
+                attachments: Array.isArray(editingExpense.expense["attachments"])
+                  ? (editingExpense.expense["attachments"] as FinancialAttachment[])
+                  : [],
+              }
+            : null
+        }
+        onSaved={async (data) => {
+          const saved: ExpenseListItem =
+            data.sourceType === "session"
+              ? { source_type: "session", session: data.session ?? null, expense: null, project_expense: null }
+              : {
+                  source_type: "expense",
+                  expense: (data.expense as Record<string, unknown>) ?? null,
+                  project_expense: data.projectExpense ?? null,
+                  session: null,
+                };
           if (saved.source_type === "session" && saved.session?.id) {
             setExpensesUi((prev) => {
               const exists = prev.some(

@@ -26,6 +26,7 @@ export async function POST(req: Request) {
       expense_date?: string | null;
       included_in_base_price?: boolean;
       billed_to_customer?: boolean;
+      bill_to_customer_amount?: number | string | null;
       project_expense_notes?: string;
       payment_status?: string | null;
       paid_amount?: number | string | null;

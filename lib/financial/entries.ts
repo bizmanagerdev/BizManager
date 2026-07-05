@@ -761,6 +761,9 @@ export function buildExpenseEntries(args: {
       expensePaymentMethod: typeof row.payment_method === "string" ? row.payment_method.trim() || null : null,
       expensePaidDate: normalizeDate(row.paid_date),
       expenseAccountId: typeof row.account_id === "string" ? row.account_id : null,
+      expenseInstallmentGroupId: typeof row.installment_group_id === "string" ? row.installment_group_id : null,
+      expenseInstallmentIndex: row.installment_index != null && Number.isFinite(Number(row.installment_index)) ? Number(row.installment_index) : null,
+      expenseInstallmentCount: row.installment_count != null && Number.isFinite(Number(row.installment_count)) ? Number(row.installment_count) : null,
     }];
   });
 }
@@ -978,6 +981,7 @@ export function buildWorkerPaymentEntries(args: {
         workerName ?? "", getBusinessDomainLabel(businessDomain),
         typeof workerPayment.recorded_by === "string" ? recordedByNames[workerPayment.recorded_by] ?? "" : ""]
         .join(" ").toLowerCase(),
+      workerUserId: workerPayment.user_id?.trim() || session?.user_id?.trim() || null,
     }];
   });
 }
@@ -1073,6 +1077,7 @@ export function buildWorkerOwedEntries(args: {
       customerId: linkedProject?.customer_id ?? null,
       searchText: [description, source.label, reference, workerName ?? "", getBusinessDomainLabel(businessDomain)]
         .join(" ").toLowerCase(),
+      workerUserId: workerId || null,
     } as FinancialEntry];
   });
 }

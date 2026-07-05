@@ -38,6 +38,9 @@ export type ExpenseRow = {
   payment_method: string | null;
   paid_date?: string | null;
   account_id?: string | null;
+  installment_group_id?: string | null;
+  installment_index?: number | string | null;
+  installment_count?: number | string | null;
 };
 
 export type OrderRow = {
@@ -208,6 +211,9 @@ export type FinancialEntry = {
   recordedByName: string | null;
   customerId: string | null;
   searchText: string;
+  // Set on worker wage entries (worker_owed / worker_payment) so consumers can
+  // relate an entry back to a worker (e.g. de-duping projected salaries).
+  workerUserId?: string | null;
   expenseId?: string | null;
   expenseCategory?: string | null;
   expenseDescriptionRaw?: string | null;
@@ -219,6 +225,9 @@ export type FinancialEntry = {
   expensePaymentMethod?: string | null;
   expensePaidDate?: string | null;
   expenseAccountId?: string | null;
+  expenseInstallmentGroupId?: string | null;
+  expenseInstallmentIndex?: number | null;
+  expenseInstallmentCount?: number | null;
 };
 
 export type FinancialSummary = {

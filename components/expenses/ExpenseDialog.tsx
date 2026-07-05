@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { Car, Loader2 } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
@@ -33,11 +33,18 @@ import { cn } from "@/lib/utils";
 import { PAYMENT_METHOD_OPTIONS, type FinancialAttachment } from "@/lib/payments";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { DomainSelect } from "@/components/financial/DomainSelect";
+import {
+  InstallmentFields,
+  buildInstallmentRows,
+  validateInstallments,
+  type InstallmentRow,
+} from "@/components/expenses/InstallmentFields";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import {
   calculateSessionLaborCost,
   getActiveSalaryAgreementForDate,
   type SalaryAgreementRow,
+  type WorkSessionRow,
 } from "@/lib/payroll";
 import { shouldShowSessionHours, shouldShowSessionPrice, type PayrollWorkerType } from "@/lib/payroll-worker-type";
 import type { UserRole } from "@/lib/auth/requireProfile";
@@ -79,13 +86,17 @@ export type EditingExpenseData = {
   property_id?: string | null;
   billed_to_customer?: boolean | null;
   included_in_base_price?: boolean | null;
+  bill_to_customer_amount?: number | string | null;
   attachments?: FinancialAttachment[];
 };
 
 export type ExpenseDialogSavedData = {
   expenseId: string;
+  // "expense" | "session" | "installments" — lets a parent rebuild its list row.
+  sourceType?: "expense" | "session" | "installments";
   expense: Record<string, unknown>;
   projectExpense: Record<string, unknown> | null;
+  session?: WorkSessionRow | null;
   attachments: FinancialAttachment[];
 };
 
@@ -95,8 +106,16 @@ type Props = {
 
   // Edit mode — provide existing expense data
   editingExpense?: EditingExpenseData | null;
+  // Edit mode for a worker SESSION (shift). Turns the dialog into a session editor
+  // (worker/clock/labor-cost/payment). Requires `users` to be provided.
+  editingSession?: WorkSessionRow | null;
   // Label shown in the source info banner when editing
   editingSourceLabel?: string | null;
+
+  // Defaults for a NEW worker session (used in a project context).
+  projectStartDate?: string | null;
+  defaultSessionClockIn?: string | null;
+  defaultSessionClockOut?: string | null;
 
   // Lock to a specific source (project/order/property context)
   lockedProjectId?: string | null;
@@ -155,6 +174,21 @@ function toIso(value: string) {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
+// ISO/date → "YYYY-MM-DDTHH:mm" local value for DateTimeInput (hydrating a session).
+function toLocalDateTimeValue(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function dateOnlyOf(value: string | null | undefined) {
+  if (!value) return "";
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim());
+  return m ? m[1] : "";
+}
+
 function durationHours(clockIn: string, clockOut: string) {
   const start = new Date(clockIn).getTime();
   const end = new Date(clockOut).getTime();
@@ -166,6 +200,11 @@ function durationHours(clockIn: string, clockOut: string) {
 function formatIls(value: number | null) {
   if (value === null) return "—";
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(value);
+}
+
+function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {
+  const name = attachment.file_name?.toLowerCase() ?? "";
+  return /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|avif)$/i.test(name) || attachment.document_type?.includes("photo");
 }
 
 async function uploadAttachment(
@@ -187,6 +226,7 @@ export function ExpenseDialog({
   open,
   onOpenChange,
   editingExpense,
+  editingSession,
   editingSourceLabel,
   lockedProjectId,
   lockedOrderId,
@@ -204,9 +244,19 @@ export function ExpenseDialog({
   currentUserRole,
   onSaved,
 }: Props) {
-  const isEditing = Boolean(editingExpense);
+  const isEditingSession = Boolean(editingSession);
+  const isEditing = Boolean(editingExpense) || isEditingSession;
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  // Labor cost as originally saved on the session (edit) — drives whether we let
+  // the server auto-recalculate it, and lets us detect a manual override.
+  const originalLaborCostRef = useRef("");
+  // Amount already paid to the worker for this session (edit) — new payments are a
+  // delta on top of this, never a reduction.
+  const existingWorkerPaidAmount = Math.max(
+    0,
+    editingSession && Number(editingSession.paid_amount) > 0 ? Number(editingSession.paid_amount) : 0
+  );
 
   const [businessDomain, setBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
   const [projectId, setProjectId] = useState("");
@@ -225,6 +275,9 @@ export function ExpenseDialog({
   const [notes, setNotes] = useState("");
   const [includedInBasePrice, setIncludedInBasePrice] = useState(false);
   const [billedToCustomer, setBilledToCustomer] = useState(false);
+  // Installments ("פריסה לתשלומים"): split this expense into N dated not_paid rows.
+  const [installmentsMode, setInstallmentsMode] = useState(false);
+  const [installmentRows, setInstallmentRows] = useState<InstallmentRow[]>([]);
   const [billToCustomerAmount, setBillToCustomerAmount] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
@@ -338,6 +391,10 @@ export function ExpenseDialog({
       setNotes(editingExpense.notes ?? "");
       setBilledToCustomer(Boolean(editingExpense.billed_to_customer));
       setIncludedInBasePrice(Boolean(editingExpense.included_in_base_price));
+      {
+        const rawBill = editingExpense.bill_to_customer_amount;
+        setBillToCustomerAmount(rawBill != null && Number(rawBill) > 0 ? String(Number(rawBill)) : "");
+      }
       const dom = editingExpense.business_domain;
       if (dom && (EXPENSE_BUSINESS_DOMAINS as readonly string[]).includes(dom)) {
         setBusinessDomain(dom as ExpenseBusinessDomain);
@@ -347,6 +404,48 @@ export function ExpenseDialog({
       );
       setTagIds([]);
       void fetchExistingTagIds("expense", editingExpense.id).then(setTagIds);
+    } else if (editingSession) {
+      const s = editingSession;
+      setCategory(WORKER_WAGE_CATEGORY);
+      setCategoryOther("");
+      const dom = typeof s.business_domain === "string" ? s.business_domain : "";
+      setBusinessDomain(
+        dom && (EXPENSE_BUSINESS_DOMAINS as readonly string[]).includes(dom)
+          ? (dom as ExpenseBusinessDomain)
+          : (lockedDomain ?? "")
+      );
+      setWorkerUserId(s.user_id ?? "");
+      setClockIn(toLocalDateTimeValue(s.clock_in));
+      setClockOut(toLocalDateTimeValue(s.clock_out));
+      const lc = s.labor_cost != null ? String(Number(s.labor_cost)) : "";
+      setLaborCost(lc);
+      originalLaborCostRef.current = lc;
+      setNotes(s.notes ?? "");
+      setBilledToCustomer(Boolean(s.is_billable_to_customer));
+      setBillToCustomerAmount(
+        s.bill_to_customer_amount != null && Number(s.bill_to_customer_amount) > 0
+          ? String(Number(s.bill_to_customer_amount))
+          : ""
+      );
+      setWorkerPaymentChoice(
+        existingWorkerPaidAmount > 0 ? (s.payment_status === "partial" ? "partial" : "paid") : "none"
+      );
+      setWorkerPaidAmount(existingWorkerPaidAmount > 0 ? String(existingWorkerPaidAmount) : "");
+      setWorkerAccountId("");
+      // Non-session fields default (this row is a session, not a plain expense).
+      setAmount("");
+      setExpenseDate(dateOnlyOf(s.clock_in) || todayIso());
+      setPaymentStatus("paid");
+      setPaidAmount("");
+      setPaymentMethod("");
+      setAccountId("");
+      setDescription("");
+      setIncludedInBasePrice(false);
+      setProjectId("");
+      setOrderId("");
+      setPropertyId("");
+      setExistingAttachments(Array.isArray(s.attachments) ? s.attachments : []);
+      setTagIds([]);
     } else {
       setAmount("");
       setExpenseDate(todayIso());
@@ -366,15 +465,20 @@ export function ExpenseDialog({
       setBilledToCustomer(false);
       setExistingAttachments([]);
       setTagIds(presetTagIds ?? []);
+      setBillToCustomerAmount("");
     }
-    setBillToCustomerAmount("");
-    setWorkerUserId("");
-    setClockIn("");
-    setClockOut("");
-    setLaborCost("");
-    setWorkerPaymentChoice("none");
-    setWorkerAccountId("");
-    setWorkerPaidAmount("");
+    setInstallmentsMode(false);
+    setInstallmentRows([]);
+    if (!editingSession) {
+      setWorkerUserId("");
+      setClockIn("");
+      setClockOut("");
+      setLaborCost("");
+      setWorkerPaymentChoice("none");
+      setWorkerAccountId("");
+      setWorkerPaidAmount("");
+      originalLaborCostRef.current = "";
+    }
     setNewWorkerOpen(false);
     setNewWorkerError(null);
     setNewWorkerName("");
@@ -462,26 +566,28 @@ export function ExpenseDialog({
       setErrorMessage("יש לבחור נכס לתחום ניהול נכסים.");
       return;
     }
-    const laborCostNumber = laborCost.trim() === "" ? null : Number(laborCost);
+    const laborCostInput = laborCost.trim();
+    const laborCostNumber = laborCostInput === "" ? null : Number(laborCostInput);
     if (sessionPriceRequired && laborCostNumber === null) {
       setErrorMessage("יש להזין עלות עבודה.");
       return;
     }
-    if (laborCost.trim() !== "" && (laborCostNumber === null || !Number.isFinite(laborCostNumber) || laborCostNumber <= 0)) {
+    if (laborCostInput !== "" && (laborCostNumber === null || !Number.isFinite(laborCostNumber) || laborCostNumber <= 0)) {
       setErrorMessage("יש להזין עלות עבודה תקינה.");
       return;
     }
-    const workerPaidNumber =
-      workerPaymentChoice === "none" || !workerPaidAmount.trim() ? suggestedWorkerAmount : Number(workerPaidAmount);
+    // Entered amount only required for a PARTIAL payment; "paid" uses the session's
+    // (possibly recalculated) labor cost.
+    const enteredPaid = workerPaidAmount.trim() ? Number(workerPaidAmount) : null;
     if (
       canManageWorkerSessions &&
-      workerPaymentChoice !== "none" &&
-      (workerPaidNumber === null || !Number.isFinite(workerPaidNumber) || workerPaidNumber <= 0)
+      workerPaymentChoice === "partial" &&
+      (enteredPaid === null || !Number.isFinite(enteredPaid) || enteredPaid <= 0)
     ) {
       setErrorMessage("יש להזין סכום ששולם לעובד.");
       return;
     }
-    if (workerPaymentChoice !== "none" && accountsList.length > 0 && !workerAccountId) {
+    if (canManageWorkerSessions && workerPaymentChoice !== "none" && accountsList.length > 0 && !workerAccountId) {
       setErrorMessage("יש לבחור חשבון לתשלום לעובד.");
       return;
     }
@@ -491,13 +597,28 @@ export function ExpenseDialog({
       return;
     }
 
+    // Let the server recalc labor cost when it's blank, or (on edit) when the
+    // timing changed and the cost wasn't manually overridden.
+    const sessionTimingChanged =
+      isEditingSession && editingSession != null &&
+      (targetUserId !== (editingSession.user_id ?? "") ||
+        clockInIso !== (editingSession.clock_in ?? "") ||
+        clockOutIso !== (editingSession.clock_out ?? ""));
+    const shouldAutoCalcLabor =
+      clockOutIso !== "" &&
+      ((!isEditingSession && !laborCostInput) ||
+        (isEditingSession && (!laborCostInput || (sessionTimingChanged && laborCostInput === originalLaborCostRef.current.trim()))));
+
     setSaving(true);
     try {
-      const endpoint = canManageWorkerSessions ? "/api/payroll/sessions/create" : "/api/profile/session/create";
+      const endpoint = isEditingSession
+        ? (canManageWorkerSessions ? "/api/payroll/sessions/update" : "/api/profile/session/update")
+        : (canManageWorkerSessions ? "/api/payroll/sessions/create" : "/api/profile/session/create");
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          session_id: isEditingSession ? editingSession?.id : undefined,
           user_id: targetUserId,
           business_domain: effectiveDomain,
           project_id: effectiveProjectId || null,
@@ -505,67 +626,134 @@ export function ExpenseDialog({
           notes: notes.trim() || null,
           clock_in: clockInIso,
           clock_out: clockOutIso,
-          labor_cost: laborCostNumber,
+          labor_cost: shouldAutoCalcLabor ? null : laborCostNumber,
+          recalculate_labor_cost: shouldAutoCalcLabor,
           is_billable_to_customer: billedToCustomer,
           bill_to_customer_amount: billedToCustomer ? billAmountNumber : null,
           billing_status: billedToCustomer ? "billable" : "not_billable",
         }),
       });
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        session?: { id?: string; user_id?: string; clock_in?: string; clock_out?: string };
-      };
-      if (!res.ok || !json.session) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string; session?: WorkSessionRow };
+      const savedSession = json.session;
+      if (!res.ok || !savedSession?.id) {
         setErrorMessage(toHebrewError(json.error, "שמירת המשמרת נכשלה."));
         return;
       }
-      const sessionId = typeof json.session.id === "string" ? json.session.id : "";
+      const sessionId = savedSession.id;
 
-      if (
-        canManageWorkerSessions &&
-        workerPaymentChoice !== "none" &&
-        sessionId &&
-        json.session.user_id &&
-        workerPaidNumber !== null &&
-        Number.isFinite(workerPaidNumber) &&
-        workerPaidNumber > 0
-      ) {
-        const payDate = (json.session.clock_out || json.session.clock_in || new Date().toISOString()).slice(0, 10);
-        const payRes = await fetch("/api/payroll/worker-payments", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            user_id: json.session.user_id,
-            payment_date: payDate,
-            amount: workerPaidNumber,
-            payment_method: null,
-            account_id: workerAccountId || null,
-            reference_number: null,
-            notes: `תשלום שסומן מתוך טופס הוצאה עבור משמרת ${payDate}`,
-            allocations: [{ source_type: "session", source_id: sessionId, amount: workerPaidNumber }],
-          }),
-        });
-        if (!payRes.ok) {
-          const payJson = (await payRes.json().catch(() => ({}))) as { error?: string };
-          throw new Error(toHebrewError(payJson.error, "שמירת התשלום לעובד נכשלה."));
+      // Worker payment (managers): pay only the DELTA on top of what's already paid,
+      // never a reduction.
+      if (canManageWorkerSessions && workerPaymentChoice !== "none") {
+        const sessionLaborCost = savedSession.labor_cost != null ? Number(savedSession.labor_cost) : null;
+        const payDate = (savedSession.clock_out || savedSession.clock_in || new Date().toISOString()).slice(0, 10);
+        const desired = workerPaymentChoice === "paid" ? sessionLaborCost : enteredPaid;
+        const existingPaid = isEditingSession ? existingWorkerPaidAmount : 0;
+
+        if (sessionLaborCost === null || sessionLaborCost <= 0) {
+          toast.error("לא ניתן לרשום תשלום לעובד", {
+            description: "יש להזין עלות עבודה או לחשב עלות אוטומטית לפני רישום תשלום.",
+          });
+        } else if (desired == null || !Number.isFinite(desired) || desired <= 0) {
+          setErrorMessage("יש להזין סכום ששולם לעובד.");
+          return;
+        } else if (desired + 0.009 < existingPaid) {
+          toast.error("לא ניתן להפחית תשלום קיים מהמסך הזה", {
+            description: "כדי להקטין או לבטל תשלום שכבר נרשם, יש לערוך או למחוק אותו במסך השכר.",
+          });
+        } else {
+          const paymentAmount = Math.round(Math.max(0, desired - existingPaid) * 100) / 100;
+          if (paymentAmount > 0.009) {
+            const payRes = await fetch("/api/payroll/worker-payments", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                user_id: savedSession.user_id ?? targetUserId,
+                payment_date: payDate,
+                amount: paymentAmount,
+                payment_method: null,
+                account_id: workerAccountId || null,
+                reference_number: null,
+                notes: `תשלום שסומן מתוך טופס הוצאה עבור משמרת ${payDate}`,
+                allocations: [{ source_type: "session", source_id: sessionId, amount: paymentAmount }],
+              }),
+            });
+            if (!payRes.ok) {
+              const payJson = (await payRes.json().catch(() => ({}))) as { error?: string };
+              throw new Error(toHebrewError(payJson.error, "שמירת התשלום לעובד נכשלה."));
+            }
+          }
         }
       }
 
+      const uploaded: FinancialAttachment[] = [];
       for (const file of attachmentFiles) {
         if (!sessionId) break;
-        await uploadAttachment("session", sessionId, file);
+        const att = await uploadAttachment("session", sessionId, file);
+        if (att) uploaded.push(att);
       }
 
       toast.success(
-        canManageWorkerSessions && workerPaymentChoice !== "none"
-          ? "המשמרת נשמרה והתשלום לעובד נרשם."
-          : "המשמרת נשמרה."
+        isEditingSession
+          ? "המשמרת עודכנה"
+          : canManageWorkerSessions && workerPaymentChoice !== "none"
+            ? "המשמרת נשמרה והתשלום לעובד נרשם."
+            : "המשמרת נשמרה."
       );
-      const savedResult = onSaved({ expenseId: "", expense: {}, projectExpense: null, attachments: [] });
+      const savedResult = onSaved({
+        expenseId: "",
+        sourceType: "session",
+        expense: {},
+        projectExpense: null,
+        session: { ...savedSession, attachments: [...existingAttachments, ...uploaded] },
+        attachments: [...existingAttachments, ...uploaded],
+      });
       if (savedResult instanceof Promise) await savedResult;
       onOpenChange(false);
     } catch (error) {
       setErrorMessage(toHebrewError(error, "שמירת המשמרת נכשלה."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitInstallments(totalAmount: number) {
+    const validationError = validateInstallments(installmentRows, totalAmount);
+    if (validationError) {
+      setErrorMessage(validationError);
+      toast.error(validationError);
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/expenses/split", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          business_domain: effectiveDomain,
+          category: finalCategory,
+          description: description.trim() || null,
+          notes: notes.trim() || null,
+          project_id: effectiveProjectId || null,
+          order_id: effectiveOrderId || null,
+          property_id: effectivePropertyId || null,
+          installments: installmentRows.map((r) => ({ expense_date: r.date, amount: Number(r.amount) })),
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        const msg = toHebrewError(json.error, "פיצול ההוצאה לתשלומים נכשל.");
+        setErrorMessage(msg);
+        toast.error("שגיאה בפיצול ההוצאה", { description: msg });
+        return;
+      }
+      toast.success("ההוצאה פוצלה לתשלומים");
+      const savedResult = onSaved({ expenseId: "", sourceType: "installments", expense: {}, projectExpense: null, attachments: [] });
+      if (savedResult instanceof Promise) await savedResult;
+      onOpenChange(false);
+    } catch (error) {
+      const msg = toHebrewError(error, "פיצול ההוצאה לתשלומים נכשל.");
+      setErrorMessage(msg);
+      toast.error("שגיאה בפיצול ההוצאה", { description: msg });
     } finally {
       setSaving(false);
     }
@@ -612,6 +800,13 @@ export function ExpenseDialog({
       toast.error("יש לבחור נכס");
       return;
     }
+
+    // Installments → split into N dated not_paid rows instead of one expense.
+    if (installmentsMode) {
+      await submitInstallments(amountNumber);
+      return;
+    }
+
     if ((paymentStatus === "paid" || paymentStatus === "partial") && accountsList.length > 0 && !accountId) {
       setErrorMessage("יש לבחור חשבון לתנועה.");
       toast.error("יש לבחור חשבון");
@@ -669,7 +864,7 @@ export function ExpenseDialog({
         const result = await offlineFetch("/api/expenses/create", payload, "הוצאה חדשה", { idempotent: true });
         if (result.queued) {
           onOpenChange(false);
-          onSaved({ expenseId: "", expense: {}, projectExpense: null, attachments: [] });
+          onSaved({ expenseId: "", sourceType: "expense", expense: {}, projectExpense: null, attachments: [] });
           return;
         }
         if (!result.ok) {
@@ -698,6 +893,7 @@ export function ExpenseDialog({
 
       const savedResult = onSaved({
         expenseId,
+        sourceType: "expense",
         expense: {
           ...expenseData,
           attachments: [...existingAttachments, ...uploadedAttachments],
@@ -725,15 +921,25 @@ export function ExpenseDialog({
     !saving &&
     Boolean(effectiveDomain) &&
     Boolean(finalCategory) &&
-    (isWorkerPayment ? true : amount.trim() !== "" && Boolean(expenseDate));
+    (isWorkerPayment
+      ? true
+      : installmentsMode
+        ? amount.trim() !== "" && validateInstallments(installmentRows, Number(amount) || 0) === null
+        : amount.trim() !== "" && Boolean(expenseDate));
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!saving) onOpenChange(o); }}>
       <AdaptiveDialog size="formLg">
         <DialogHeader>
-          <DialogTitle>{isEditing ? "עריכת הוצאה" : "הוספת הוצאה"}</DialogTitle>
+          <DialogTitle>
+            {isEditingSession ? "עריכת שכר עובד" : isEditing ? "עריכת הוצאה" : "הוספת הוצאה"}
+          </DialogTitle>
           <DialogDescription>
-            {isEditing ? "עדכון פרטי הוצאה קיימת." : "יצירת הוצאה חדשה."}
+            {isEditingSession
+              ? "עדכון פרטי משמרת העובד."
+              : isEditing
+                ? "עדכון פרטי הוצאה קיימת."
+                : "יצירת הוצאה חדשה."}
           </DialogDescription>
         </DialogHeader>
 
@@ -819,6 +1025,7 @@ export function ExpenseDialog({
             <select
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={category}
+              disabled={isEditingSession}
               onChange={(e) => {
                 setCategory(e.target.value);
                 if (e.target.value !== CARS_CATEGORY) setTagIds(presetTagLabel ? tagIds : []);
@@ -1017,14 +1224,20 @@ export function ExpenseDialog({
                       <option value="partial">שולם חלקית</option>
                     </select>
                   </div>
+                  {isEditingSession && existingWorkerPaidAmount > 0 ? (
+                    <div className="text-xs text-muted-foreground">
+                      שולם עד עכשיו: {formatIls(existingWorkerPaidAmount)} — תשלום חדש נרשם כתוספת בלבד.
+                    </div>
+                  ) : null}
                   {workerPaymentChoice !== "none" ? (
                     <>
                       <div className="space-y-1">
                         <div className="text-sm font-medium">כמה שולם</div>
                         <CurrencyInput
-                          value={workerPaidAmount}
+                          value={workerPaymentChoice === "paid" ? String(suggestedWorkerAmount ?? workerPaidAmount) : workerPaidAmount}
+                          readOnly={workerPaymentChoice === "paid"}
                           onChange={(e) => setWorkerPaidAmount(e.target.value)}
-                          placeholder="אם ריק, יירשם מלוא סכום המשמרת"
+                          placeholder={workerPaymentChoice === "paid" ? "מחושב אוטומטית" : "למשל 300"}
                         />
                       </div>
                       <AccountSelect
@@ -1053,7 +1266,43 @@ export function ExpenseDialog({
                 </div>
               </div>
 
+              {/* Installments toggle — split into N dated payments (new expenses only) */}
+              {!isEditing ? (
+                <label className="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={installmentsMode}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      setInstallmentsMode(on);
+                      if (on) {
+                        const total = Number(amount);
+                        setInstallmentRows(
+                          buildInstallmentRows(
+                            Number.isFinite(total) && total > 0 ? total : 0,
+                            expenseDate || new Date().toISOString().slice(0, 10),
+                            2
+                          )
+                        );
+                      }
+                    }}
+                  />
+                  <span>פריסה לתשלומים</span>
+                </label>
+              ) : null}
+
+              {installmentsMode ? (
+                <InstallmentFields
+                  total={Number(amount) || 0}
+                  startDate={expenseDate || new Date().toISOString().slice(0, 10)}
+                  rows={installmentRows}
+                  onChange={setInstallmentRows}
+                />
+              ) : null}
+
               {/* Payment Status */}
+              {!installmentsMode ? (
+              <>
               <div className="space-y-1">
                 <div className="text-sm font-medium">סטטוס תשלום</div>
                 <div className="grid grid-cols-3 gap-2">
@@ -1115,6 +1364,8 @@ export function ExpenseDialog({
                   )}
                 </div>
               )}
+              </>
+              ) : null}
 
               {/* Description */}
               <div className="space-y-1">
@@ -1123,14 +1374,18 @@ export function ExpenseDialog({
               </div>
 
               {/* Project billing options */}
-              {showBillingOptions && (
+              {!installmentsMode && showBillingOptions && (
                 <div className="flex flex-col gap-2 rounded-xl border px-3 py-3 text-sm">
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={includedInBasePrice} onChange={(e) => setIncludedInBasePrice(e.target.checked)} />
                     <span>כלול במחיר הבסיס</span>
                   </label>
                   <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={billedToCustomer} onChange={(e) => setBilledToCustomer(e.target.checked)} />
+                    <input
+                      type="checkbox"
+                      checked={billedToCustomer}
+                      onChange={(e) => setBilledToCustomer(e.target.checked)}
+                    />
                     <span>לחיוב לקוח</span>
                   </label>
                 </div>
@@ -1168,7 +1423,7 @@ export function ExpenseDialog({
                 )}
               </div>
               {existingAttachments.length > 0 && (
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <div className="text-xs text-muted-foreground">קבצים קיימים</div>
                   <div className="flex flex-wrap gap-2">
                     {existingAttachments.map((att) => (
@@ -1182,6 +1437,19 @@ export function ExpenseDialog({
                         {att.file_name ?? "קובץ"}
                       </a>
                     ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {existingAttachments
+                      .filter((att) => att.url && isImageAttachment(att))
+                      .map((att) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={`${att.document_id}-preview`}
+                          src={att.url ?? ""}
+                          alt={att.file_name ?? "קובץ"}
+                          className="h-20 w-20 rounded-lg border object-cover"
+                        />
+                      ))}
                   </div>
                 </div>
               )}

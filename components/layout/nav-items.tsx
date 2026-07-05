@@ -35,6 +35,7 @@ import {
   ArrowLeftRight,
   Banknote,
   Building2,
+  CalendarClock,
   CalendarDays,
   Car,
   Coins,
@@ -78,6 +79,7 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
     icon: Landmark,
     children: [
       { title: "תזרים", url: "/financial", icon: Landmark },
+      { title: "לוח תשלומים", url: "/financial/payments-calendar", icon: CalendarClock },
       { title: "דוחות (רווח והפסד)", url: "/financial/reports", icon: FileBarChart },
       { title: "חשבונות", url: "/financial/bank", icon: ArrowLeftRight },
       { title: "מע״מ ומסים", url: "/financial/taxes", icon: Receipt },
@@ -107,6 +109,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
   { title: "ניהול נכסים", url: "/properties", icon: Building2 },
   { title: "רכבים", url: "/vehicles", icon: Car },
   { title: "פיננסי", url: "/financial", icon: Landmark },
+  { title: "לוח תשלומים", url: "/financial/payments-calendar", icon: CalendarClock },
   { title: "דוחות (רווח והפסד)", url: "/financial/reports", icon: FileBarChart },
   { title: "חשבונות", url: "/financial/bank", icon: ArrowLeftRight },
   { title: "מע״מ ומסים", url: "/financial/taxes", icon: Receipt },
@@ -120,7 +123,7 @@ const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
 ];
 
 const ADMIN_ONLY_URLS = new Set(["/activity", "/financial", "/settings", "/financial/loans", "/financial/reports", "/financial/bank"]);
-const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/vehicles"]);
+const ADMIN_OR_OFFICE_URLS = new Set<string>(["/payroll", "/collections", "/communications", "/checks", "/financial/statements", "/financial/taxes", "/financial/payments-calendar", "/vehicles"]);
 
 function filterByRole(items: SidebarNavItem[], isAdmin: boolean, isOffice: boolean): SidebarNavItem[] {
   return items.flatMap((item) => {
