@@ -4,11 +4,12 @@ import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { loadAccounts } from "@/lib/accounts";
 
-// Admin/office accounts CRUD (חשבונות). Same gate as the accounts RLS policy.
+// Accounts (חשבונות): reading is open to any route-access user (office needs it for the
+// AccountSelect picker when recording payments), but managing accounts is admin-only.
 const ALLOWED_KINDS = new Set(["bank", "cash", "card"]);
 
 function isManager(role: string | null | undefined) {
-  return role === "admin" || role === "office";
+  return role === "admin";
 }
 
 function sanitizeName(value: unknown) {

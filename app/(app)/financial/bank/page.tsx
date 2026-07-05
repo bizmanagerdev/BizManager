@@ -8,7 +8,9 @@ export const dynamic = "force-dynamic";
 
 export default async function BankPage() {
   const { profile, supabase } = await requireProfile();
-  if (profile.role !== "admin" && profile.role !== "office") {
+  // חשבונות (balances/management) is admin-only. Office still assigns an account
+  // when recording payments via the AccountSelect picker (read-only GET), just not here.
+  if (profile.role !== "admin") {
     redirect("/no-access");
   }
 
