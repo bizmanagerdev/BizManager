@@ -8,20 +8,20 @@ import {
   ChevronDown,
   FileImage,
   FileText,
-  MapPin,
   MessageSquare,
   Package,
   ScrollText,
   UserRound,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { toast } from "sonner";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
 import { AddressLink } from "@/components/ui/address-link";
+import { WazeIcon } from "@/components/ui/waze-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -140,7 +140,7 @@ function SummaryInfo({
   value,
   tone = "sky",
 }: {
-  icon: LucideIcon;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   value: ReactNode;
   tone?: "sky" | "emerald" | "red";
@@ -365,7 +365,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                     }
                   />
                   <SummaryInfo icon={UserRound} label="לקוח וטלפון" value={<span>{customerName} · {customerPhone ?? "-"}</span>} />
-                  <SummaryInfo icon={MapPin} label="עיר וכתובת" value={<AddressLink address={fullAddress} city={customerCity}>{customerCity} · {fullAddress}</AddressLink>} />
+                  <SummaryInfo icon={WazeIcon} label="עיר וכתובת" value={<AddressLink address={fullAddress} city={customerCity}>{customerCity} · {fullAddress}</AddressLink>} />
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

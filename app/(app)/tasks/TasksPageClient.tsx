@@ -21,11 +21,12 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bell, CheckCircle2, Circle, Clock, GripVertical, Lock, MapPin, MessageSquare, Plus } from "lucide-react";
+import { Bell, CheckCircle2, Circle, Clock, GripVertical, Lock, MessageSquare, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
 import { AddressLink } from "@/components/ui/address-link";
+import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
@@ -158,7 +159,7 @@ function TaskCard({
           ) : null}
           {task.city ? (
             <AddressLink address={task.city} className="inline-flex items-center gap-0.5">
-              <MapPin className="h-3 w-3" />
+              <WazeIcon className="h-3 w-3" />
               {task.city}
             </AddressLink>
           ) : null}

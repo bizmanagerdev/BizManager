@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { AddressLink } from "@/components/ui/address-link";
+import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import {
   ChevronLeft,
@@ -10,7 +11,6 @@ import {
   HandCoins,
   History,
   Mail,
-  MapPin,
   MessageSquareText,
   PencilLine,
   Phone,
@@ -807,7 +807,7 @@ export default async function SalesOrderPage({
                   )}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="truncate font-medium">
                     {fullAddress ? <AddressLink address={fullAddress} /> : "-"}
                   </span>

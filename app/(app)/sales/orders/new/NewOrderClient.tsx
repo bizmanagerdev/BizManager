@@ -58,6 +58,8 @@ import {
   toNonNegativeInt,
   toPositiveInt,
 } from "./NewOrderClient.ui";
+import { AddressLink } from "@/components/ui/address-link";
+import { WazeIcon } from "@/components/ui/waze-icon";
 
 type Row = Record<string, unknown>;
 
@@ -1037,20 +1039,30 @@ export default function NewOrderClient({
                             { label: "טלפון", value: selectedCustomer.phone, ltr: true },
                             { label: "וואטסאפ", value: selectedCustomer.whatsapp, ltr: true },
                             { label: "אימייל", value: selectedCustomer.email, ltr: true },
-                            { label: "כתובת", value: selectedCustomer.address || selectedCustomer.city, ltr: false },
+                            { label: "כתובת", value: selectedCustomer.address || selectedCustomer.city, ltr: false, isAddress: true },
                             { label: "שם לחשבונית", value: selectedCustomer.nameForInvoice, ltr: false },
                             { label: "אופן תשלום", value: selectedCustomer.requiresPrepayment ? "תשלום מראש" : "רגיל", ltr: false },
                           ].map((row) => (
                             <p key={row.label} className="break-words leading-5">
                               <span className="text-muted-foreground">{row.label}: </span>
                               {row.value ? (
-                                <span
-                                  dir={row.ltr ? "ltr" : undefined}
-                                  className="font-medium text-foreground"
-                                >
-                                  {/* LRI…PDI forces LTR ordering for emails/phones in the RTL line */}
-                                  {row.ltr ? `⁦${row.value}⁩` : row.value}
-                                </span>
+                                row.isAddress ? (
+                                  <AddressLink
+                                    address={row.value}
+                                    className="inline-flex items-center gap-1 font-medium text-foreground"
+                                  >
+                                    <WazeIcon className="h-3.5 w-3.5 shrink-0" />
+                                    {row.value}
+                                  </AddressLink>
+                                ) : (
+                                  <span
+                                    dir={row.ltr ? "ltr" : undefined}
+                                    className="font-medium text-foreground"
+                                  >
+                                    {/* LRI…PDI forces LTR ordering for emails/phones in the RTL line */}
+                                    {row.ltr ? `⁦${row.value}⁩` : row.value}
+                                  </span>
+                                )
                               ) : (
                                 <span className="font-medium text-muted-foreground">—</span>
                               )}
@@ -1684,7 +1696,22 @@ export default function NewOrderClient({
                 ) : null}
                 <SummaryRow label="טלפון" value={selectedCustomer?.phone || "-"} />
                 {selectedCustomer?.email ? <SummaryRow label="אימייל" value={selectedCustomer.email} /> : null}
-                <SummaryRow label="כתובת" value={selectedCustomer?.address || selectedCustomer?.city || "-"} />
+                <SummaryRow
+                  label="כתובת"
+                  value={
+                    selectedCustomer?.address || selectedCustomer?.city ? (
+                      <AddressLink
+                        address={selectedCustomer?.address || selectedCustomer?.city}
+                        className="inline-flex items-center gap-1"
+                      >
+                        <WazeIcon className="h-3.5 w-3.5 shrink-0" />
+                        {selectedCustomer?.address || selectedCustomer?.city}
+                      </AddressLink>
+                    ) : (
+                      "-"
+                    )
+                  }
+                />
                 {selectedCustomer?.requiresPrepayment ? (
                   <div className="pt-1">
                     <Badge variant="warning">תשלום מראש</Badge>

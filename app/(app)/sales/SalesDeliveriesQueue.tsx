@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useMemo } from "react";
-import { MapPin, Phone, Truck } from "lucide-react";
+import { Phone, Truck } from "lucide-react";
+import { WazeIcon } from "@/components/ui/waze-icon";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
@@ -237,8 +238,8 @@ export default function SalesDeliveriesQueue({
                                 <span className="mr-auto shrink-0 text-muted-foreground">{group.orders.length} משלוחים</span>
                               ) : null}
                             </div>
-                            <div className="mt-0.5 flex items-center gap-0.5 text-xs text-muted-foreground">
-                              <MapPin className="h-3 w-3 shrink-0" />
+                            <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                              <WazeIcon className="h-3.5 w-3.5 shrink-0" />
                               <span className="truncate">
                                 {group.address ? <AddressLink address={group.address} /> : group.address}
                               </span>

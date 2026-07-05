@@ -23,6 +23,8 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { Card, CardContent } from "@/components/ui/card";
+import { AddressLink } from "@/components/ui/address-link";
+import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -599,7 +601,19 @@ export default function CustomersClient({
                     ) : null}
                   </td>
                   <td className="px-2 py-1.5">
-                    <div className="truncate text-muted-foreground">{s(row, "address") || "-"}</div>
+                    <div className="truncate text-muted-foreground">
+                      {s(row, "address") ? (
+                        <AddressLink
+                          address={s(row, "address")}
+                          className="inline-flex max-w-full items-center gap-1 align-middle"
+                        >
+                          <WazeIcon className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{s(row, "address")}</span>
+                        </AddressLink>
+                      ) : (
+                        "-"
+                      )}
+                    </div>
                   </td>
                   <td className="px-2 py-1.5">
                     {linkedMorningClientId ? (
@@ -800,7 +814,7 @@ function ValueField({
   valueClassName = "",
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   className?: string;
   valueClassName?: string;
 }) {
@@ -887,7 +901,19 @@ function CustomerDetailsDialog({
                   <ValueField label="תשלום אחרון" value={dateText(s(row, "last_payment_at"))} />
                   <ValueField
                     label="כתובת"
-                    value={s(row, "address") || "-"}
+                    value={
+                      s(row, "address") ? (
+                        <AddressLink
+                          address={s(row, "address")}
+                          className="inline-flex items-start gap-1"
+                        >
+                          <WazeIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span className="whitespace-pre-wrap">{s(row, "address")}</span>
+                        </AddressLink>
+                      ) : (
+                        "-"
+                      )
+                    }
                     className="sm:col-span-2"
                     valueClassName="whitespace-pre-wrap"
                   />

@@ -1,12 +1,14 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, Pencil, Search, User, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { offlineFetch, saveDraft, loadDraft, clearDraft } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
 import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AddressLink } from "@/components/ui/address-link";
+import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -246,7 +248,7 @@ function WizardStepper({
   );
 }
 
-function ValueField({ label, value, className = "" }: { label: string; value: string; className?: string }) {
+function ValueField({ label, value, className = "" }: { label: string; value: ReactNode; className?: string }) {
   return (
     <div className={`rounded-xl border border-border/70 bg-background/70 px-4 py-3 ${className}`.trim()}>
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
@@ -810,7 +812,22 @@ export default function NewProjectClient({
                           <ValueField label="טלפון" value={selectedCustomer.phone || "-"} />
                           <ValueField label="וואטסאפ" value={selectedCustomer.whatsapp || "-"} />
                           <ValueField label="אימייל" value={selectedCustomer.email || "-"} />
-                          <ValueField label="עיר / כתובת" value={selectedCustomer.address || selectedCustomer.city || "-"} />
+                          <ValueField
+                            label="עיר / כתובת"
+                            value={
+                              selectedCustomer.address || selectedCustomer.city ? (
+                                <AddressLink
+                                  address={selectedCustomer.address || selectedCustomer.city}
+                                  className="inline-flex items-center gap-1"
+                                >
+                                  <WazeIcon className="h-3.5 w-3.5 shrink-0" />
+                                  {selectedCustomer.address || selectedCustomer.city}
+                                </AddressLink>
+                              ) : (
+                                "-"
+                              )
+                            }
+                          />
                           {selectedCustomer.nameForInvoice ? (
                             <ValueField label="שם לחשבונית" value={selectedCustomer.nameForInvoice} className="sm:col-span-2" />
                           ) : null}
