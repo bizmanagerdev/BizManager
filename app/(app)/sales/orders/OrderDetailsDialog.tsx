@@ -21,6 +21,7 @@ import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
+import { AddressLink } from "@/components/ui/address-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -364,7 +365,7 @@ export default function OrderDetailsDialog({ orderId }: { orderId: string }) {
                     }
                   />
                   <SummaryInfo icon={UserRound} label="לקוח וטלפון" value={<span>{customerName} · {customerPhone ?? "-"}</span>} />
-                  <SummaryInfo icon={MapPin} label="עיר וכתובת" value={<span>{customerCity} · {fullAddress}</span>} />
+                  <SummaryInfo icon={MapPin} label="עיר וכתובת" value={<AddressLink address={fullAddress} city={customerCity}>{customerCity} · {fullAddress}</AddressLink>} />
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

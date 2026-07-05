@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
+import { AddressLink } from "@/components/ui/address-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requireProfile } from "@/lib/auth/requireProfile";
@@ -975,7 +976,9 @@ export default async function CustomerDetailsPage({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium">{address || "-"}</span>
+                  <span className="truncate font-medium">
+                    {address ? <AddressLink address={address} /> : "-"}
+                  </span>
                 </div>
               </div>
             </div>

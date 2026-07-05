@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
+import { AddressLink } from "@/components/ui/address-link";
 import { Button } from "@/components/ui/button";
 import {
   ChevronLeft,
@@ -807,7 +808,9 @@ export default async function SalesOrderPage({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium">{fullAddress ?? "-"}</span>
+                  <span className="truncate font-medium">
+                    {fullAddress ? <AddressLink address={fullAddress} /> : "-"}
+                  </span>
                 </div>
               </div>
             </div>

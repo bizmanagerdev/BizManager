@@ -25,6 +25,7 @@ import { Bell, CheckCircle2, Circle, Clock, GripVertical, Lock, MapPin, MessageS
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
+import { AddressLink } from "@/components/ui/address-link";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
@@ -156,10 +157,10 @@ function TaskCard({
             </span>
           ) : null}
           {task.city ? (
-            <span className="inline-flex items-center gap-0.5">
+            <AddressLink address={task.city} className="inline-flex items-center gap-0.5">
               <MapPin className="h-3 w-3" />
               {task.city}
-            </span>
+            </AddressLink>
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
