@@ -5,6 +5,7 @@ import { Check, Pencil, Search, User, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { offlineFetch, saveDraft, loadDraft, clearDraft } from "@/lib/offline-queue";
 import { toHebrewError } from "@/lib/error-messages";
+import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -571,6 +572,9 @@ export default function NewProjectClient({
       }
 
       if (canDraft) clearDraft(draftKey!);
+      // Pricing a project (or marking it ללא חיוב) resolves the "closed unbilled"
+      // alert — resync now so it clears on screen instead of waiting for the cron.
+      void resyncAlerts();
       onSubmitted(json.project);
     } catch (e: unknown) {
       setError(toHebrewError(e, "שגיאה לא ידועה. נסו שוב."));

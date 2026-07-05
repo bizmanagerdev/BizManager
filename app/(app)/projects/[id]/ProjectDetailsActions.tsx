@@ -1,5 +1,6 @@
 ﻿"use client";
 import { toHebrewError } from "@/lib/error-messages";
+import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -278,6 +279,8 @@ export default function ProjectDetailsActions({
 
       setEditOpen(false);
       setAttachmentFiles([]);
+      // Pricing / marking ללא חיוב resolves the "closed unbilled" alert — resync now.
+      void resyncAlerts();
       router.refresh();
     } catch (error: unknown) {
       setEditError(toHebrewError(error, "שגיאה לא ידועה"));

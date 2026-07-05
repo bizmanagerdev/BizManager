@@ -197,8 +197,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function paymentStatusValue(row: ProjectRow) {
+  if (row["no_charge"] === true) return "no_charge";
   const value = getString(row, "payment_status_list");
-  if (value === "paid" || value === "partial" || value === "unpaid" || value === "unpriced") {
+  if (value === "paid" || value === "partial" || value === "unpaid" || value === "unpriced" || value === "no_charge") {
     return value;
   }
 
@@ -220,7 +221,7 @@ function paymentStatusValue(row: ProjectRow) {
   return "unpaid";
 }
 
-function paymentStatusLabel(status: "paid" | "partial" | "unpaid" | "unpriced") {
+function paymentStatusLabel(status: "paid" | "partial" | "unpaid" | "unpriced" | "no_charge") {
   switch (status) {
     case "paid":
       return "שולם";
@@ -230,10 +231,12 @@ function paymentStatusLabel(status: "paid" | "partial" | "unpaid" | "unpriced") 
       return "לא שולם";
     case "unpriced":
       return "לא סוכם תשלום";
+    case "no_charge":
+      return "ללא חיוב";
   }
 }
 
-function paymentStatusBadgeClasses(status: "paid" | "partial" | "unpaid" | "unpriced") {
+function paymentStatusBadgeClasses(status: "paid" | "partial" | "unpaid" | "unpriced" | "no_charge") {
   switch (status) {
     case "paid":
       return paymentStatusClasses("paid");
@@ -243,6 +246,8 @@ function paymentStatusBadgeClasses(status: "paid" | "partial" | "unpaid" | "unpr
       return paymentStatusClasses("unpaid");
     case "unpriced":
       return "border-border bg-background text-muted-foreground";
+    case "no_charge":
+      return "border-info/30 bg-info-soft/40 text-info-soft-foreground";
   }
 }
 
@@ -856,9 +861,9 @@ export default function ProjectsClient({
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">{startDate}</td>
                     <td className="px-4 py-4">
-                      {paymentStatus === "unpriced" ? (
-                        <Badge className={paymentStatusBadgeClasses("unpriced")}>
-                          {paymentStatusLabel("unpriced")}
+                      {paymentStatus === "unpriced" || paymentStatus === "no_charge" ? (
+                        <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
+                          {paymentStatusLabel(paymentStatus)}
                         </Badge>
                       ) : (
                         <Badge className={collectionStatusClasses(collectionStatus)}>
@@ -1043,9 +1048,9 @@ export default function ProjectsClient({
                         <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
                           <div className="text-xs text-muted-foreground">תשלום</div>
                           <div className="mt-1">
-                            {paymentStatus === "unpriced" ? (
-                              <Badge className={paymentStatusBadgeClasses("unpriced")}>
-                                {paymentStatusLabel("unpriced")}
+                            {paymentStatus === "unpriced" || paymentStatus === "no_charge" ? (
+                              <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
+                                {paymentStatusLabel(paymentStatus)}
                               </Badge>
                             ) : (
                               <Badge className={collectionStatusClasses(collectionStatus)}>

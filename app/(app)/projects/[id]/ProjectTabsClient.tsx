@@ -22,6 +22,7 @@ import { FileText, ListChecks, Wallet } from "lucide-react";
 import { ClientOnly } from "@/components/ClientOnly";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 import { toast } from "sonner";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import {
@@ -1104,6 +1105,8 @@ export default function ProjectTabsClient({
       setAgreedBasePriceUi(updatedBasePrice);
       if (!result.queued) toast.success("מחיר בסיס עודכן", { id: toastId });
       setUpdateBasePriceOpen(false);
+      // Setting a price resolves the "closed unbilled" alert — resync now.
+      void resyncAlerts();
       startTransition(() => router.refresh());
     } catch (e: unknown) {
       toast.error("שגיאה בעדכון מחיר בסיס", { id: toastId, description: getErrorMessage(e) });
@@ -1403,7 +1406,9 @@ export default function ProjectTabsClient({
               <div className="rounded-xl border bg-background/60 p-3">
                 <div className="text-xs text-muted-foreground">סטטוס תשלום לקוח</div>
                 <div className="mt-2">
-                  {collectionStatus ? (
+                  {overview.no_charge === true ? (
+                    <Badge className="border-info/30 bg-info-soft/40 text-info-soft-foreground">ללא חיוב</Badge>
+                  ) : collectionStatus ? (
                     <Badge className={collectionStatusClasses(collectionStatus)}>
                       {collectionStatusLabel(collectionStatus)}
                     </Badge>

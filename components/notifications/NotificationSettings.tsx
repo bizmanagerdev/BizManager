@@ -13,6 +13,7 @@ import type { AlertMode, AlertRow, AlertSchedule } from "@/lib/notifications/typ
 import { BUILTIN_ALERT_TYPES } from "@/lib/notifications/types";
 import DunningStagesEditor from "@/components/notifications/DunningStagesEditor";
 import AlertMetricsPanel from "@/components/notifications/AlertMetricsPanel";
+import { notifyAlertsChanged } from "@/lib/ui/alerts-refresh";
 
 const MODE_ORDER: AlertMode[] = ["scheduled", "live", "night"];
 const MODE_LABEL: Record<AlertMode, string> = {
@@ -223,6 +224,9 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
       });
       const d = (await res.json().catch(() => ({}))) as { result?: Record<string, unknown> };
       setRunResult(`${label}: ${summarizeRun(d.result ?? {})}`);
+      // The sync may have opened/closed alerts — refresh the on-screen surfaces
+      // (page bars + sidebar badges) so counts don't lag until the next poll.
+      notifyAlertsChanged();
     } catch {
       setRunResult(`${label}: הבדיקה נכשלה`);
     } finally {

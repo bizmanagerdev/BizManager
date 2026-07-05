@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, X } from "lucide-react";
+import { useAlertsVersion } from "@/lib/ui/alerts-refresh";
 
 type PageAlert = { id: string; title: string; href: string; severity: "danger" | "warning" | "info" };
 
@@ -44,6 +45,8 @@ export default function PageAlertBar({ keys }: { keys: string[] }) {
     });
   }
 
+  // Refetch on: key change, a resync (alertsVersion bump), and window focus.
+  const alertsVersion = useAlertsVersion();
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
@@ -56,10 +59,13 @@ export default function PageAlertBar({ keys }: { keys: string[] }) {
       }
     };
     void run();
+    const onFocus = () => void run();
+    window.addEventListener("focus", onFocus);
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", onFocus);
     };
-  }, [keyParam]);
+  }, [keyParam, alertsVersion]);
 
   const shown = (alerts ?? []).filter((a) => !dismissed.has(a.id));
   if (shown.length === 0) return null;
