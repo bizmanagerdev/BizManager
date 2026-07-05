@@ -239,4 +239,30 @@ describe("loadAccountsOverview — running balance & register", () => {
   it("returns an empty list when there are no accounts", async () => {
     expect(await loadAccountsOverview(makeSupabase({ accounts: [] }))).toEqual([]);
   });
+
+  it("enriches ledger rows with worker, customer (+phone) and project context", async () => {
+    const [overview] = await loadAccountsOverview(
+      makeSupabase({
+        accounts: [account()],
+        payments: [
+          { id: "p1", account_id: "acc1", payment_date: "2024-02-01", amount_total: 500, payment_status: "collected", order_id: "o1" },
+        ],
+        orders: [{ id: "o1", customer_id: "c1" }],
+        customers: [{ id: "c1", name: "דנה לוי", phone: "050-1234567" }],
+        worker_payments: [
+          { id: "w1", account_id: "acc1", payment_date: "2024-02-02", amount: 250, user_id: "u1", notes: "תשלום עבור משמרת" },
+        ],
+        worker_payment_allocations: [{ worker_payment_id: "w1", attendance_session_id: "s1" }],
+        attendance_sessions: [{ id: "s1", project_id: "pr1" }],
+        users: [{ id: "u1", full_name: "יוסי כהן" }],
+        projects: [{ id: "pr1", name: "מעבר דירה", customer_id: "c1" }],
+      })
+    );
+
+    const byId = Object.fromEntries(overview.ledger.map((l) => [l.id, l]));
+    expect(byId["p:p1"].sublabel).toBe("לקוח: דנה לוי (050-1234567)");
+    expect(byId["p:p1"].href).toBe("/sales/orders/o1");
+    expect(byId["w:w1"].sublabel).toBe("עובד: יוסי כהן · פרויקט: מעבר דירה");
+    expect(byId["w:w1"].href).toBe("/payroll/workers/u1");
+  });
 });

@@ -92,6 +92,8 @@ export type AccountLedgerEntry = {
   id: string;
   date: string; // YYYY-MM-DD
   label: string;
+  sublabel: string | null; // extra context (worker name / project) shown under the label
+  href: string | null; // link to the source record (order / project / worker / loans page)
   type: "in" | "out";
   amount: number;
   posted: boolean; // false = still expected (uncleared check / unpaid expense)
@@ -159,6 +161,8 @@ type RawLedgerEntry = {
   id: string;
   date: string;
   label: string;
+  sublabel: string | null;
+  href: string | null;
   type: "in" | "out";
   amount: number;
   posted: boolean;
@@ -198,7 +202,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("payments", (from, to) =>
         supabase
           .from("payments")
-          .select("id,account_id,payment_date,due_date,amount_total,payment_status,notes")
+          .select("id,account_id,payment_date,due_date,amount_total,payment_status,notes,project_id,order_id")
           .not("account_id", "is", null)
           .gte("payment_date", earliestOpening)
           .range(from, to)
@@ -206,7 +210,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("expenses", (from, to) =>
         supabase
           .from("expenses")
-          .select("id,account_id,expense_date,paid_date,amount,paid_amount,payment_status,description,category")
+          .select("id,account_id,expense_date,paid_date,amount,paid_amount,payment_status,description,category,project_id")
           .not("account_id", "is", null)
           .gte("expense_date", earliestOpening)
           .range(from, to)
@@ -214,7 +218,7 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       scan("worker_payments", (from, to) =>
         supabase
           .from("worker_payments")
-          .select("id,account_id,payment_date,amount,notes")
+          .select("id,account_id,payment_date,amount,notes,user_id")
           .not("account_id", "is", null)
           .gte("payment_date", earliestOpening)
           .range(from, to)
@@ -239,6 +243,179 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
           .range(from, to)
       ),
     ]);
+
+  // ── Enrichment lookups: worker names + project names for the ledger labels ──
+  // Worker-payment rows should say WHICH worker was paid, and any row tied to a
+  // project should name it. Worker→project is resolved through the payment's
+  // allocations → attendance sessions → project (only shown when unambiguous).
+  const workerIds = new Set<string>();
+  for (const row of workerPaymentRows) {
+    const id = str(row.user_id);
+    if (id) workerIds.add(id);
+  }
+  const projectIds = new Set<string>();
+  for (const row of paymentRows) {
+    const id = str(row.project_id);
+    if (id) projectIds.add(id);
+  }
+  for (const row of expenseRows) {
+    const id = str(row.project_id);
+    if (id) projectIds.add(id);
+  }
+  // Customer of a תקבול/refund is resolved through its order or (fallback) project.
+  const orderIds = new Set<string>();
+  for (const row of paymentRows) {
+    const id = str(row.order_id);
+    if (id) orderIds.add(id);
+  }
+
+  // worker_payment_id → project_id, kept only when the payment maps to a single project.
+  const workerPaymentProject = new Map<string, string>();
+  const workerPaymentIds = workerPaymentRows
+    .map((r) => str(r.id))
+    .filter((id): id is string => Boolean(id));
+  if (workerPaymentIds.length > 0) {
+    const { data: allocationsData } = await fetchAllPagedResult<Row>((from, to) =>
+      supabase
+        .from("worker_payment_allocations")
+        .select("worker_payment_id,attendance_session_id")
+        .in("worker_payment_id", workerPaymentIds)
+        .not("attendance_session_id", "is", null)
+        .range(from, to)
+    );
+    const allocations = allocationsData ?? [];
+    const sessionIds = Array.from(
+      new Set(
+        allocations
+          .map((a) => str(a.attendance_session_id))
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+    const sessionProject = new Map<string, string>();
+    if (sessionIds.length > 0) {
+      const { data: sessionsData } = await fetchAllPagedResult<Row>((from, to) =>
+        supabase
+          .from("attendance_sessions")
+          .select("id,project_id")
+          .in("id", sessionIds)
+          .range(from, to)
+      );
+      for (const s of sessionsData ?? []) {
+        const sid = str(s.id);
+        const pid = str(s.project_id);
+        if (sid && pid) sessionProject.set(sid, pid);
+      }
+    }
+    const perPayment = new Map<string, Set<string>>();
+    for (const a of allocations) {
+      const wpId = str(a.worker_payment_id);
+      const sid = str(a.attendance_session_id);
+      if (!wpId || !sid) continue;
+      const pid = sessionProject.get(sid);
+      if (!pid) continue;
+      if (!perPayment.has(wpId)) perPayment.set(wpId, new Set());
+      perPayment.get(wpId)!.add(pid);
+    }
+    for (const [wpId, pids] of perPayment) {
+      if (pids.size === 1) {
+        const pid = pids.values().next().value as string;
+        workerPaymentProject.set(wpId, pid);
+        projectIds.add(pid);
+      }
+    }
+  }
+
+  // Bulk-resolve worker names, project names+customers, and order→customer links.
+  const workerNameById = new Map<string, string>();
+  const projectNameById = new Map<string, string>();
+  const projectCustomerById = new Map<string, string>();
+  const orderCustomerById = new Map<string, string>();
+  await Promise.all([
+    workerIds.size === 0
+      ? Promise.resolve()
+      : supabase
+          .from("users")
+          .select("id,full_name")
+          .in("id", Array.from(workerIds))
+          .then(({ data }) => {
+            for (const u of (data ?? []) as Row[]) {
+              const id = str(u.id);
+              const name = str(u.full_name)?.trim();
+              if (id && name) workerNameById.set(id, name);
+            }
+          }),
+    projectIds.size === 0
+      ? Promise.resolve()
+      : supabase
+          .from("projects")
+          .select("id,name,customer_id")
+          .in("id", Array.from(projectIds))
+          .then(({ data }) => {
+            for (const p of (data ?? []) as Row[]) {
+              const id = str(p.id);
+              if (!id) continue;
+              const name = str(p.name)?.trim();
+              if (name) projectNameById.set(id, name);
+              const cid = str(p.customer_id);
+              if (cid) projectCustomerById.set(id, cid);
+            }
+          }),
+    orderIds.size === 0
+      ? Promise.resolve()
+      : supabase
+          .from("orders")
+          .select("id,customer_id")
+          .in("id", Array.from(orderIds))
+          .then(({ data }) => {
+            for (const o of (data ?? []) as Row[]) {
+              const id = str(o.id);
+              const cid = str(o.customer_id);
+              if (id && cid) orderCustomerById.set(id, cid);
+            }
+          }),
+  ]);
+
+  // Resolve the customer display strings (name + phone, per the customer-phone rule).
+  const customerLabelById = new Map<string, string>();
+  const customerIds = new Set<string>([
+    ...projectCustomerById.values(),
+    ...orderCustomerById.values(),
+  ]);
+  if (customerIds.size > 0) {
+    const { data } = await supabase
+      .from("customers")
+      .select("id,name,phone")
+      .in("id", Array.from(customerIds));
+    for (const c of (data ?? []) as Row[]) {
+      const id = str(c.id);
+      const name = str(c.name)?.trim();
+      if (!id || !name) continue;
+      const phone = str(c.phone)?.trim();
+      customerLabelById.set(id, phone ? `${name} (${phone})` : name);
+    }
+  }
+
+  // Compose the "עובד: … · לקוח: … · פרויקט: …" context line shown under a row's label.
+  const composeSublabel = (
+    opts: { workerName?: string | null; customerId?: string | null; projectId?: string | null } = {}
+  ): string | null => {
+    const parts: string[] = [];
+    if (opts.workerName) parts.push(`עובד: ${opts.workerName}`);
+    const customerLabel = opts.customerId ? customerLabelById.get(opts.customerId) : undefined;
+    if (customerLabel) parts.push(`לקוח: ${customerLabel}`);
+    const projectName = opts.projectId ? projectNameById.get(opts.projectId) : undefined;
+    if (projectName) parts.push(`פרויקט: ${projectName}`);
+    return parts.length > 0 ? parts.join(" · ") : null;
+  };
+
+  // A תקבול's customer comes from its order, else the project it's attached to.
+  const paymentCustomerId = (row: Row): string | null => {
+    const orderId = str(row.order_id);
+    if (orderId && orderCustomerById.has(orderId)) return orderCustomerById.get(orderId)!;
+    const projectId = str(row.project_id);
+    if (projectId && projectCustomerById.has(projectId)) return projectCustomerById.get(projectId)!;
+    return null;
+  };
 
   const buckets = new Map<
     string,
@@ -271,6 +448,12 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       id: `p:${str(row.id) ?? ""}`,
       date,
       label: str(row.notes)?.trim() || (isRefund ? "החזר ללקוח" : "תקבול"),
+      sublabel: composeSublabel({ customerId: paymentCustomerId(row), projectId: str(row.project_id) }),
+      href: str(row.order_id)
+        ? `/sales/orders/${str(row.order_id)}`
+        : str(row.project_id)
+          ? `/projects/${str(row.project_id)}`
+          : null,
       type: isRefund ? "out" : "in",
       amount,
       posted,
@@ -288,6 +471,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const total = Math.abs(num(row.amount));
     const paid = Math.abs(num(row.paid_amount));
     const label = str(row.description)?.trim() || str(row.category)?.trim() || "תשלום";
+    const sublabel = composeSublabel({ projectId: str(row.project_id) });
+    const href = str(row.project_id) ? `/projects/${str(row.project_id)}` : "/financial";
     let postedAmount = 0;
     let pendingAmount = 0;
     if (status === "paid" || status === "collected" || status === "completed") {
@@ -305,11 +490,11 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     }
     if (postedAmount > 0) {
       b.postedOut += postedAmount;
-      b.rows.push({ id: `e:${str(row.id) ?? ""}`, date, label, type: "out", amount: postedAmount, posted: true });
+      b.rows.push({ id: `e:${str(row.id) ?? ""}`, date, label, sublabel, href, type: "out", amount: postedAmount, posted: true });
     }
     if (pendingAmount > 0) {
       b.pendingOut += pendingAmount;
-      b.rows.push({ id: `e:${str(row.id) ?? ""}:p`, date, label, type: "out", amount: pendingAmount, posted: false });
+      b.rows.push({ id: `e:${str(row.id) ?? ""}:p`, date, label, sublabel, href, type: "out", amount: pendingAmount, posted: false });
     }
   }
 
@@ -323,10 +508,13 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
     const amount = Math.abs(num(row.amount));
     if (!amount) continue;
     b.postedOut += amount;
+    const workerName = workerNameById.get(str(row.user_id) ?? "");
     b.rows.push({
       id: `w:${str(row.id) ?? ""}`,
       date,
       label: str(row.notes)?.trim() || "תשלום שכר",
+      sublabel: composeSublabel({ workerName, projectId: workerPaymentProject.get(str(row.id) ?? "") }),
+      href: str(row.user_id) ? `/payroll/workers/${str(row.user_id)}` : "/payroll",
       type: "out",
       amount,
       posted: true,
@@ -375,6 +563,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       id: `l:${str(row.id) ?? ""}`,
       date,
       label: taken ? "הלוואה שהתקבלה" : "הלוואה שניתנה",
+      sublabel: null,
+      href: "/financial/loans",
       type: taken ? "in" : "out",
       amount,
       posted: true,
@@ -399,6 +589,8 @@ async function scanAccountActivity(supabase: SupabaseClient, accounts: Account[]
       id: `lr:${str(row.id) ?? ""}`,
       date,
       label: taken ? "החזר הלוואה" : "החזר שהתקבל",
+      sublabel: null,
+      href: "/financial/loans",
       type: taken ? "out" : "in",
       amount,
       posted: true,

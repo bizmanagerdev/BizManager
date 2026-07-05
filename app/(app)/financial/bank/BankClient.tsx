@@ -158,40 +158,57 @@ export default function BankClient({ accounts }: { accounts: AccountWithLedger[]
                   >
                     {monthLabel(group.month)}
                   </div>
-                  {group.items.map((row) => (
-                    <div key={row.id} className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate font-medium">{row.label}</span>
-                          {!row.posted && (
-                            <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-                              צפוי
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          <span dir="ltr">{formatDate(row.date)}</span>
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end">
-                        <div
-                          dir="ltr"
-                          className={cn(
-                            "font-semibold tabular-nums",
-                            row.type === "in" ? "text-success" : "text-destructive"
-                          )}
-                        >
-                          {row.type === "in" ? "+" : "−"}
-                          {formatIls(row.amount)}
-                        </div>
-                        {row.runningBalance !== null && (
-                          <div dir="ltr" className="text-xs tabular-nums text-muted-foreground">
-                            {formatIls(row.runningBalance)}
+                  {group.items.map((row) => {
+                    const inner = (
+                      <>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate font-medium">{row.label}</span>
+                            {!row.posted && (
+                              <span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                                צפוי
+                              </span>
+                            )}
                           </div>
-                        )}
+                          <div className="truncate text-xs text-muted-foreground">
+                            <span dir="ltr">{formatDate(row.date)}</span>
+                            {row.sublabel && <span> · {row.sublabel}</span>}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end">
+                          <div
+                            dir="ltr"
+                            className={cn(
+                              "font-semibold tabular-nums",
+                              row.type === "in" ? "text-success" : "text-destructive"
+                            )}
+                          >
+                            {row.type === "in" ? "+" : "−"}
+                            {formatIls(row.amount)}
+                          </div>
+                          {row.runningBalance !== null && (
+                            <div dir="ltr" className="text-xs tabular-nums text-muted-foreground">
+                              {formatIls(row.runningBalance)}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    );
+                    const rowClass = "flex items-center justify-between gap-3 px-3 py-2.5 text-sm";
+                    return row.href ? (
+                      <Link
+                        key={row.id}
+                        href={row.href}
+                        className={cn(rowClass, "transition-colors hover:bg-muted/50")}
+                      >
+                        {inner}
+                      </Link>
+                    ) : (
+                      <div key={row.id} className={rowClass}>
+                        {inner}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </Fragment>
               ))}
             </div>
