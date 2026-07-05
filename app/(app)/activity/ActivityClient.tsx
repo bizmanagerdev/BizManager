@@ -257,6 +257,9 @@ export default function ActivityClient({
     );
     io.observe(el);
     return () => io.disconnect();
+    // actorFilterKey is the stable serialization of actorFilterValues — depend
+    // on it (not the array reference) so this only re-runs when contents change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMore, loadingMore, nextPage, currentTable, currentAction, actorFilterKey]);
 
   // Realtime: prepend new rows instantly. The realtime socket must carry the
@@ -311,6 +314,9 @@ export default function ActivityClient({
       cancelled = true;
       if (channel) void supabase.removeChannel(channel);
     };
+    // actorFilterKey is the stable serialization of actorFilterValues — depend
+    // on it (not the array reference) so this only re-runs when contents change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTable, currentAction, actorFilterKey]);
 
   // Safety net: refresh the server data on an interval so the feed stays current

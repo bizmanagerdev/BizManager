@@ -6,7 +6,21 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    files: ["app/sales/orders/[[]id[]]/page.tsx"],
+    rules: {
+      // Honor the leading-underscore convention for intentionally-unused
+      // identifiers (args, destructured vars, caught errors).
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
+  {
+    files: ["app/**/sales/orders/[[]id[]]/page.tsx"],
     rules: {
       "@next/next/no-img-element": "off",
     },

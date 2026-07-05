@@ -21,14 +21,12 @@ import { useNotifications, markNotificationRead } from "@/lib/ui/notifications-s
 import { formatShortDateTime } from "@/lib/date";
 
 type Props = {
-  appName?: string;
   userName?: string;
   initialColor?: string | null;
   showSearch?: boolean;
 };
 
 export function TopBar({
-  appName = "BizH",
   userName,
   initialColor,
   showSearch = true,
