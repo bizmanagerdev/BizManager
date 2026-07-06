@@ -80,7 +80,7 @@ export function TopBar({
 
       <div className="flex items-center gap-1">
         <PwaInstallButton />
-        <DropdownMenu dir="rtl">
+        <DropdownMenu dir="rtl" modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
@@ -167,7 +167,7 @@ export function TopBar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
