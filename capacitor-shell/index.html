@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>BizH</title>
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        background: #f8fafc;
+        color: #0f172a;
+        font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+      }
+      .wrap {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 24px;
+        text-align: center;
+      }
+      .dot {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: #0f766e;
+      }
+      h1 { font-size: 20px; margin: 0; }
+      p  { font-size: 14px; color: #475569; margin: 0; max-width: 320px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      This page only shows if the device has no connection when the app starts.
+      Normally the app loads the live site (https://biz-h.com) directly.
+    -->
+    <div class="wrap">
+      <div class="dot"></div>
+      <h1>BizH</h1>
+      <p>אין חיבור לאינטרנט. פתחו את האפליקציה מחדש כשיש חיבור.</p>
+    </div>
+  </body>
+</html>
