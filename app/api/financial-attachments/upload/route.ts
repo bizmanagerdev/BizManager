@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
@@ -22,6 +23,9 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
 
+    // A queued offline upload carries an Idempotency-Key so a flaky-reconnect
+    // replay can't create a second document + storage object.
+    return withIdempotency(req, supabase, user.id, "financial-attachments/upload", async () => {
     const form = await req.formData();
     const entityTypeValue = String(form.get("entity_type") ?? "").trim();
     const entityId = String(form.get("entity_id") ?? "").trim();
@@ -189,6 +193,7 @@ export async function POST(req: Request) {
         uploaded_at: uploadedAt,
         url: typeof signed?.signedUrl === "string" ? signed.signedUrl : null,
       },
+    });
     });
   } catch (err: unknown) {
     const message = toHebrewError(err, "Unknown error");

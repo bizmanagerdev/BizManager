@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { isExpenseBusinessDomain } from "@/lib/expenses";
 import { DEFAULT_DOCUMENT_CATEGORY } from "@/lib/documents";
 import { parseTagIds, syncEntityTags } from "@/lib/tags";
@@ -25,6 +26,9 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, user, profile } = access.value;
 
+    // A queued offline upload carries an Idempotency-Key so a flaky-reconnect
+    // replay can't create a second document + storage object.
+    return withIdempotency(req, supabase, user.id, "documents/upload", async () => {
     const form = await req.formData();
     const file = form.get("file");
     const businessDomainRaw = String(form.get("business_domain") ?? "").trim();
@@ -161,6 +165,7 @@ export async function POST(req: Request) {
         project_id: linkedEntityType === "project" ? linkedEntityId : null,
         property_id: linkedEntityType === "property" ? linkedEntityId : null,
       },
+    });
     });
   } catch (err: unknown) {
     const message = toHebrewError(err, "Unknown error");

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
-import { toHebrewError } from "@/lib/error-messages";
+import { offlineUpload } from "@/lib/offline-upload";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import {
   Dialog,
@@ -48,28 +48,38 @@ export default function AddCustomerDocumentButton({
     setError("");
     try {
       let uploaded = 0;
+      // uploaded + queued files are both "done" (removed on close/retry); a
+      // queued upload was saved to the device and will replay when the
+      // connection returns (ConnectionToasts announces it), so it must not be
+      // re-sent.
+      let done = 0;
       for (const file of files) {
-        const form = new FormData();
-        form.append("file", file);
-        form.append("customer_id", customerId);
-        if (category.trim()) form.append("category", category.trim());
-        const res = await fetch("/api/documents/upload", { method: "POST", body: form });
-        if (!res.ok) {
-          const json = (await res.json().catch(() => ({}))) as { error?: string };
-          setError(toHebrewError(json.error, `העלאת ${file.name} נכשלה.`));
+        const fields: Record<string, string> = { customer_id: customerId };
+        if (category.trim()) fields.category = category.trim();
+        const result = await offlineUpload("/api/documents/upload", {
+          fields,
+          file,
+          label: file.name,
+        });
+        if (result.queued) {
+          done += 1;
+        } else if (result.ok) {
+          uploaded += 1;
+          done += 1;
+        } else {
+          setError(result.error || `העלאת ${file.name} נכשלה.`);
           break;
         }
-        uploaded += 1;
       }
       if (uploaded > 0) {
         toast.success(uploaded === 1 ? "המסמך הועלה" : `${uploaded} מסמכים הועלו`);
         router.refresh();
       }
-      if (uploaded === files.length) {
+      if (done === files.length) {
         setOpen(false);
       } else {
         // Keep only the files that didn't make it, so retry won't duplicate.
-        setFiles(files.slice(uploaded));
+        setFiles(files.slice(done));
       }
     } finally {
       setBusy(false);

@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { processQueue } from "@/lib/offline-queue";
+import { processUploadQueue } from "@/lib/offline-upload";
 
 export default function PwaRegistration() {
   useEffect(() => {
@@ -55,6 +56,7 @@ export default function PwaRegistration() {
     const handleMessage = (event: MessageEvent) => {
       if ((event.data as { type?: string })?.type === "PROCESS_OFFLINE_QUEUE") {
         void processQueue();
+        void processUploadQueue();
       }
     };
     navigator.serviceWorker.addEventListener("message", handleMessage);

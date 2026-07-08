@@ -15,6 +15,7 @@ import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CustomerPicker, type PickedCustomer } from "@/components/customers/CustomerPicker";
 import { toHebrewError } from "@/lib/error-messages";
+import { offlineUpload } from "@/lib/offline-upload";
 import {
   Dialog,
   DialogDescription,
@@ -625,23 +626,31 @@ function LoanDocumentsDialog({
     setError("");
     try {
       let uploaded = 0;
+      // uploaded + queued files are both "done" (removed from the pending list); a
+      // queued upload was saved on the device and replays on reconnect
+      // (ConnectionToasts announces it).
+      let done = 0;
       for (const file of files) {
-        const form = new FormData();
-        form.append("file", file);
-        form.append("loan_id", loanId);
-        const res = await fetch("/api/financial/loans/documents/upload", { method: "POST", body: form });
-        if (!res.ok) {
-          const json = (await res.json().catch(() => ({}))) as { error?: string };
-          setError(toHebrewError(json.error, `העלאת ${file.name} נכשלה.`));
+        const result = await offlineUpload("/api/financial/loans/documents/upload", {
+          fields: { loan_id: loanId },
+          file,
+          label: file.name,
+        });
+        if (result.queued) {
+          done += 1;
+        } else if (result.ok) {
+          uploaded += 1;
+          done += 1;
+        } else {
+          setError(result.error || `העלאת ${file.name} נכשלה.`);
           break;
         }
-        uploaded += 1;
       }
       if (uploaded > 0) {
         toast.success(uploaded === 1 ? "המסמך הועלה." : `${uploaded} מסמכים הועלו.`);
-        setFiles(files.slice(uploaded));
         await loadDocs(loanId);
       }
+      setFiles(files.slice(done));
     } finally {
       setBusy(false);
     }

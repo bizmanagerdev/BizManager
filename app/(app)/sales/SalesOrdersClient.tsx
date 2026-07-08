@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Bell, ChevronDown, MessageSquare, Search } from "lucide-react";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { useOfflineRows } from "@/hooks/useOfflineRows";
+import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { loadMoreOrders } from "@/app/(app)/sales/actions";
 import type { OrdersFilters } from "@/app/(app)/sales/loadOrders";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
@@ -296,6 +298,16 @@ export default function SalesOrdersClient({
     fetchPage,
     getId: getRowId,
   });
+
+  // Offline readability: cache the canonical open-orders list so it can be opened
+  // and searched with no signal. Scoped views (a customer's orders, the closed
+  // tab) aren't cached — only the main orders list is the "always available" one.
+  const offlineCacheKey =
+    !customerId && !showPaymentStatusFilter ? "orders-list-main" : null;
+  const { rows: sourceOrders, offline, savedAt } = useOfflineRows<Row>(
+    offlineCacheKey,
+    accumulatedOrders
+  );
   const paymentFilter: PaymentStatusFilter =
     initialPaymentFilter === "paid" ||
     initialPaymentFilter === "partial" ||
@@ -346,6 +358,9 @@ export default function SalesOrdersClient({
   const lastPushedQueryRef = useRef(initialQuery);
   useEffect(() => {
     if (query === lastPushedQueryRef.current) return;
+    // Offline, searching is in-memory over the cached list — never push a URL
+    // change (the server re-query would just fail and clobber the cached view).
+    if (offline) return;
     const timer = setTimeout(() => {
       const params = new URLSearchParams(searchParams.toString());
       if (query.trim()) {
@@ -359,11 +374,11 @@ export default function SalesOrdersClient({
       lastPushedQueryRef.current = query;
     }, 400);
     return () => clearTimeout(timer);
-  }, [query, router, searchParams]);
+  }, [query, router, searchParams, offline]);
 
   const orderRows = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
-    const mappedOrders = accumulatedOrders.map<OrderView | null>((row) => {
+    const mappedOrders = sourceOrders.map<OrderView | null>((row) => {
       const id = getString(row, ["order_id", "id"]);
       const customerId = getString(row, ["customer_id"]);
       if (!id || !customerId) return null;
@@ -433,10 +448,19 @@ export default function SalesOrdersClient({
     });
 
     return mappedOrders.filter((row): row is OrderView => row !== null);
-  }, [accumulatedOrders, paymentSnapshot]);
+  }, [sourceOrders, paymentSnapshot]);
 
-  // Server already filtered by the `q` and `payment_status` URL params across the full dataset.
-  const filteredRows = orderRows;
+  // Online, the server already filtered by the `q` / `payment_status` URL params
+  // across the full dataset. Offline, filter the cached list in memory so search
+  // still works with no signal (same fields as the placeholder).
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!offline || !q) return orderRows;
+    return orderRows.filter((row) =>
+      [row.customerName, row.customerNameForInvoice, row.customerPhone, row.customerEmail, row.customerCity]
+        .some((field) => (field ?? "").toLowerCase().includes(q))
+    );
+  }, [offline, query, orderRows]);
 
   // Only surface the stock column/badge when at least one shown order is short.
   const anyOutOfStock = filteredRows.some((row) => row.outOfStock);
@@ -445,6 +469,11 @@ export default function SalesOrdersClient({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
+        {offline ? (
+          <div className="flex justify-end">
+            <StaleDataBadge savedAt={savedAt} />
+          </div>
+        ) : null}
         <div className="relative">
           <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -688,7 +717,7 @@ export default function SalesOrdersClient({
                   ))}
                 </tbody>
               </table>
-              {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
+              {hasMore && !offline ? <div ref={sentinelRef} className="h-1" /> : null}
             </div>
           </Card>
 
@@ -812,7 +841,7 @@ export default function SalesOrdersClient({
               );
             })}
           </div>
-          {hasMore ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
+          {hasMore && !offline ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
           </div>
           <div className="pt-3 text-center text-xs text-muted-foreground">
             {loadingMore

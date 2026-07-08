@@ -19,6 +19,7 @@ import {
   PageStack,
 } from "@/components/layout/page-layout";
 import { NavLink } from "@/components/NavLink";
+import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
@@ -91,7 +92,12 @@ export default function CustomersClient({
   };
 }) {
   const router = useRouter();
-  const { search: searchCustomerIndex, loading: customerIndexLoading } = useCustomerSearchIndex();
+  const {
+    search: searchCustomerIndex,
+    loading: customerIndexLoading,
+    stale: indexStale,
+    savedAt: indexSavedAt,
+  } = useCustomerSearchIndex();
   const [apiSearchRows, setApiSearchRows] = useState<Row[] | null>(null);
   const [handledInitialEdit, setHandledInitialEdit] = useState(false);
   const [handledInitialAddContact, setHandledInitialAddContact] = useState(false);
@@ -346,7 +352,10 @@ export default function CustomersClient({
     <PageStack>
       <div className="space-y-3 lg:hidden">
         <div className="min-w-0">
-          <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
+            {indexStale ? <StaleDataBadge savedAt={indexSavedAt} /> : null}
+          </div>
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -371,7 +380,10 @@ export default function CustomersClient({
 
       <AdaptiveGrid variant="customersToolbar" className="hidden lg:grid">
         <AdaptiveCell variant="customersPrimary">
-          <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
+            {indexStale ? <StaleDataBadge savedAt={indexSavedAt} /> : null}
+          </div>
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}

@@ -37,6 +37,7 @@ import {
   emitProgressActivityStart,
 } from "@/components/layout/TopNavigationProgress";
 import { offlineFetch } from "@/lib/offline-queue";
+import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatShortDate } from "@/lib/date";
 import { getStatusDotClasses } from "@/lib/ui/status-color-classes";
@@ -265,18 +266,16 @@ export function ProjectTasksTab({
 
       if (createdTaskId && createFiles.length > 0) {
         for (const file of createFiles) {
-          const form = new FormData();
-          form.set("task_id", createdTaskId);
-          form.set("file", file);
-
-          const uploadRes = await fetch("/api/tasks/attachments/upload", {
-            method: "POST",
-            body: form,
+          const uploadResult = await offlineUpload("/api/tasks/attachments/upload", {
+            fields: { task_id: createdTaskId },
+            file,
+            label: file.name,
           });
-          const uploadJson = await uploadRes.json().catch(() => ({}));
-          if (!uploadRes.ok) {
+          // A queued upload was saved on the device and replays on reconnect
+          // (ConnectionToasts announces it) — only a real server error stops us.
+          if (!uploadResult.queued && !uploadResult.ok) {
             toast.error("שגיאה בהעלאת קובץ", {
-              description: toHebrewError(uploadJson?.error, ""),
+              description: uploadResult.error,
             });
             break;
           }

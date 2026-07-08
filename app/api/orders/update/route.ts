@@ -3,6 +3,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { buildPaymentInsert } from "@/lib/payments";
 import {
   derivePaymentStatus,
@@ -121,6 +122,17 @@ function hasInvalidRefundEntry(entries: ReturnType<typeof normalizePaymentEntrie
 
 export async function POST(req: Request) {
   try {
+    // Auth first so a queued offline confirm can be deduped by Idempotency-Key
+    // before any work runs. orders/update is multi-step and NOT atomic (image
+    // upload → RPC → payments → refunds), so a blind replay could double-insert
+    // payments or double-consume stock — withIdempotency makes a replay a no-op
+    // that returns the original cached response. Only the multipart "אישור
+    // אספקה" flow sends a key; the JSON edit path has none → runs unwrapped.
+    const access = await requireRouteAccess();
+    if (!access.ok) return access.response;
+    const { supabase, user, profile } = access.value;
+
+    return withIdempotency(req, supabase, user.id, "orders/update", async () => {
     const contentType = req.headers.get("content-type") ?? "";
     let body: UpdateOrderPayload;
     let deliveryImages: File[] = [];
@@ -193,9 +205,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid order item payload" }, { status: 400 });
     }
 
-    const access = await requireRouteAccess();
-    if (!access.ok) return access.response;
-    const { supabase, user, profile } = access.value;
     const uploadedDocuments: UploadedDocument[] = [];
 
     const subtotal = normalizedItems.reduce(
@@ -504,6 +513,7 @@ export async function POST(req: Request) {
       payment_status: derivedPaymentStatus,
       total_paid: totalPaidAfterSave,
       payment_ids: insertedPaymentIds,
+    });
     });
   } catch (err: unknown) {
     console.error("orders/update unhandled error", err);

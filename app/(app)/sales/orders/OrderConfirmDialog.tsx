@@ -8,6 +8,7 @@ import { Trash2 } from "lucide-react";
 import * as Sentry from "@sentry/nextjs";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Button } from "@/components/ui/button";
+import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { DateInput } from "@/components/ui/date-input";
 import {
@@ -411,34 +412,38 @@ export default function OrderConfirmDialog({
             : [],
       };
 
-      const formData = new FormData();
-      formData.set("payload", JSON.stringify(payload));
-      deliveryImages.forEach((image) => {
-        formData.append("delivery_images", image);
+      // Goes through offlineUpload so a confirm taken on a poor/no connection is
+      // saved to the device and replayed on reconnect instead of hanging or
+      // being lost. orders/update is idempotency-guarded, so a replay can't
+      // double-insert payments or re-consume stock. ConnectionToasts announces
+      // the queued/synced state globally.
+      const result = await offlineUpload("/api/orders/update", {
+        fields: { payload: JSON.stringify(payload) },
+        files: deliveryImages.map((image) => ({ fieldName: "delivery_images", file: image })),
+        label: "אישור האספקה",
       });
 
-      const res = await fetch("/api/orders/update", {
-        method: "POST",
-        body: formData,
-      });
+      if (result.queued) {
+        setOpen(false);
+        return;
+      }
 
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
+      if (!result.ok) {
         // The client handles this failure, so it never reaches Sentry on its own —
         // report it with the real server message + status. That's what was missing
         // when this only surfaced as a screenshot of "אישור ההזמנה נכשל".
         Sentry.captureMessage("order confirm failed", {
           level: "error",
           tags: { area: "order-confirm" },
-          extra: { orderId, status: res.status, serverError: json?.error ?? null },
+          extra: { orderId, status: result.status, serverError: result.error },
         });
         const fallback =
-          res.status === 413
+          result.status === 413
             ? "הקבצים שצורפו גדולים מדי. צמצמו את מספר התמונות ונסו שוב."
-            : res.status === 504 || res.status === 408
+            : result.status === 504 || result.status === 408
               ? "השרת לא הגיב בזמן. נסו שוב."
               : "אישור ההזמנה נכשל.";
-        setError(toHebrewError(json?.error, fallback));
+        setError(result.error || fallback);
         return;
       }
 

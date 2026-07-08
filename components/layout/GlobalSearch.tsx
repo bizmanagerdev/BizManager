@@ -11,6 +11,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { cn } from "@/lib/utils";
 import { highlightText, MatchReason } from "@/components/search/highlightMatch";
+import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import type { GlobalSearchResponse } from "@/lib/global-search";
 
 type Props = {
@@ -45,11 +46,13 @@ function SearchResults({
   results,
   query,
   compact = false,
+  offline = false,
   onNavigate,
 }: {
   results: GlobalSearchResponse | null;
   query: string;
   compact?: boolean;
+  offline?: boolean;
   onNavigate?: () => void;
 }) {
   const trimmedQuery = query.trim();
@@ -71,11 +74,20 @@ function SearchResults({
   }
 
   if (results.totalResults === 0) {
-    return <div className="px-4 py-6 text-sm text-muted-foreground">לא נמצאו תוצאות.</div>;
+    return (
+      <div className="px-4 py-6 text-sm text-muted-foreground">
+        {offline ? "לא מקוון — לא נמצא לקוח תואם ברשימה השמורה." : "לא נמצאו תוצאות."}
+      </div>
+    );
   }
 
   return (
     <div className="max-h-[min(70vh,40rem)] overflow-y-auto">
+      {offline ? (
+        <div className="flex items-center gap-1.5 border-b border-warning/40 bg-warning-soft/60 px-4 py-2 text-xs text-warning-soft-foreground">
+          <span>לא מקוון — מציג לקוחות מהרשימה השמורה במכשיר בלבד.</span>
+        </div>
+      ) : null}
       <div className="border-b border-border/70 px-4 py-3 text-xs font-medium text-muted-foreground">
         {results.totalResults} תוצאות
       </div>
@@ -141,11 +153,13 @@ function SearchResults({
 
 export function GlobalSearch({ className, desktopOnly = false, mobileOnly = false }: Props) {
   const router = useRouter();
+  const { search: searchCustomers } = useCustomerSearchIndex();
   const desktopRef = useRef<HTMLDivElement | null>(null);
   const mobileInputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [fetchedResults, setFetchedResults] = useState<GlobalSearchResponse | null>(null);
+  const [offlineFallback, setOfflineFallback] = useState(false);
   const [open, setOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const deferredQuery = useDeferredValue(debouncedQuery);
@@ -168,6 +182,32 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
     const normalized = deferredQuery.trim();
     if (!normalized || normalized.length < 2) return;
 
+    // Offline / server unreachable → search the cached customer directory in
+    // memory so the global bar still finds and links customers with no signal.
+    const showOfflineResults = () => {
+      const matched = searchCustomers(normalized, 8);
+      const results = matched.map((c) => ({
+        id: c.id,
+        group: "customers" as const,
+        groupLabel: "לקוחות",
+        title: c.name,
+        subtitle: c.address || null,
+        meta: [c.phone, c.email].filter((v): v is string => Boolean(v)),
+        href: `/customers/${encodeURIComponent(c.id)}`,
+      }));
+      setFetchedResults({
+        query: normalized,
+        totalResults: results.length,
+        groups: results.length ? [{ key: "customers", label: "לקוחות", results }] : [],
+      });
+      setOfflineFallback(true);
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      showOfflineResults();
+      return;
+    }
+
     const controller = new AbortController();
 
     void fetch(`/api/search/global?q=${encodeURIComponent(normalized)}&limit=4&mode=quick`, {
@@ -178,14 +218,16 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
         const json = (await response.json().catch(() => null)) as GlobalSearchResponse | null;
         if (!response.ok) throw new Error("החיפוש נכשל.");
         setFetchedResults(json);
+        setOfflineFallback(false);
       })
       .catch((error: unknown) => {
         if ((error as { name?: string })?.name === "AbortError") return;
-        setFetchedResults({ query: normalized, totalResults: 0, groups: [] });
+        // Network failed mid-flight — fall back to the cached customer directory.
+        showOfflineResults();
       });
 
     return () => controller.abort();
-  }, [deferredQuery]);
+  }, [deferredQuery, searchCustomers]);
 
   useEffect(() => {
     if (!open) return;
@@ -243,7 +285,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
           </div>
           {open ? (
             <div className="absolute inset-x-0 top-[calc(100%+0.6rem)] z-50 overflow-hidden rounded-[1.4rem] border border-border/60 bg-background/95 shadow-elevated backdrop-blur-xl">
-              <SearchResults results={results} query={query} onNavigate={() => setOpen(false)} />
+              <SearchResults results={results} query={query} offline={offlineFallback} onNavigate={() => setOpen(false)} />
               {query.trim().length >= 2 ? (
                 <div className="border-t border-border/70 p-2">
                   <Button variant="ghost" className="w-full justify-center rounded-xl" onClick={submitSearch}>
@@ -293,7 +335,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
                 />
               </div>
             </div>
-            <SearchResults results={results} query={query} compact onNavigate={() => setMobileOpen(false)} />
+            <SearchResults results={results} query={query} compact offline={offlineFallback} onNavigate={() => setMobileOpen(false)} />
             {query.trim().length >= 2 ? (
               <div className="border-t border-border/70 p-3">
                 <Button className="w-full rounded-xl" onClick={submitSearch}>

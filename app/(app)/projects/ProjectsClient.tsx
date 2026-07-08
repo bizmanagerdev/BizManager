@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { useOfflineRows } from "@/hooks/useOfflineRows";
+import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { loadMoreProjects } from "@/app/(app)/projects/actions";
 import type { ProjectsFilters } from "@/app/(app)/projects/loadProjects";
 import { CheckCircle2, FileText, FolderKanban, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
@@ -281,6 +283,15 @@ export default function ProjectsClient({
   // Non-admins can't sort by (or see) profit, even via a hand-crafted URL.
   const sort: SortMode = !canSeeMoney && rawSort === "profit_desc" ? defaultSortForTab(activeTab) : rawSort;
 
+  // Offline readability: cache the canonical (main-tab, unscoped) projects list so
+  // it can be opened and searched with no signal. Scoped/other-tab views aren't.
+  const customerScoped = Boolean(searchParams.get("customer_id"));
+  const offlineCacheKey = activeTab === "projects" && !customerScoped ? "projects-list-main" : null;
+  const { rows: sourceProjects, offline, savedAt } = useOfflineRows<ProjectRow>(
+    offlineCacheKey,
+    projects
+  );
+
   // Push filter changes to URL — server re-fetches with the new filters applied
   // across the full dataset, then we get a fresh paginated slice back.
   const pushFilters = useCallback(
@@ -313,6 +324,9 @@ export default function ProjectsClient({
   const initialQueryRef = useRef(initialFilters?.q ?? "");
   useEffect(() => {
     if (query === initialQueryRef.current) return;
+    // Offline, searching is in-memory over the cached list — never push a URL
+    // change (the server re-query would fail and clobber the cached view).
+    if (offline) return;
     const timer = setTimeout(() => {
       pushFilters({ q: query });
       initialQueryRef.current = query;
@@ -320,7 +334,7 @@ export default function ProjectsClient({
     return () => clearTimeout(timer);
     // pushFilters intentionally omitted to avoid resending on its own changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, offline]);
 
   const setStatus = (next: string) => pushFilters({ status: next });
   const setSort = (next: SortMode) => pushFilters({ sort: next });
@@ -370,8 +384,17 @@ export default function ProjectsClient({
     );
   }
 
-  // Server already applied tab/status/sort/search filters across the full dataset.
-  const rows = projects;
+  // Online, the server already applied tab/status/sort/search across the full
+  // dataset. Offline, render the cached list and filter it in memory so search
+  // (by customer or project name) still works with no signal.
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!offline || !q) return sourceProjects;
+    return sourceProjects.filter((row) =>
+      [getString(row, "name"), getString(row, "customer_name")]
+        .some((field) => (field ?? "").toLowerCase().includes(q))
+    );
+  }, [offline, query, sourceProjects]);
 
   const projectCount = tabCounts?.projects ?? 0;
   const quoteCount = tabCounts?.quotes ?? 0;
@@ -579,7 +602,10 @@ export default function ProjectsClient({
           ).trim()}
         >
           <div className="min-w-0">
-            <label className="text-sm text-muted-foreground">חיפוש</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-sm text-muted-foreground">חיפוש</label>
+              {offline ? <StaleDataBadge savedAt={savedAt} /> : null}
+            </div>
             <div className="relative mt-1">
               <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -642,7 +668,10 @@ export default function ProjectsClient({
       >
         <AdaptiveGrid variant="projectsToolbarControls" className="min-w-0 lg:grid-cols-4">
           <div className="min-w-0 lg:col-span-2">
-            <label className="text-sm text-muted-foreground">חיפוש</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-sm text-muted-foreground">חיפוש</label>
+              {offline ? <StaleDataBadge savedAt={savedAt} /> : null}
+            </div>
             <div className="relative mt-1">
               <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -887,7 +916,7 @@ export default function ProjectsClient({
               })}
             </tbody>
           </table>
-          {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}
+          {hasMore && !offline ? <div ref={sentinelRef} className="h-1" /> : null}
         </div>
       </Card>
 
@@ -1065,7 +1094,7 @@ export default function ProjectsClient({
           );
         })}
       </div>
-      {hasMore ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
+      {hasMore && !offline ? <div ref={mobileSentinelRef} className="h-1 xl:hidden" /> : null}
 
       {rows.length > 0 ? (
         <div className="pt-1 text-center text-xs text-muted-foreground">

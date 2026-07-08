@@ -1,4 +1,5 @@
 import { toHebrewError } from "@/lib/error-messages";
+import { offlineUpload } from "@/lib/offline-upload";
 import {
   EXPENSE_CATEGORY_OPTIONS_WITH_WAGE,
   EXPENSE_OTHER_CATEGORY,
@@ -40,20 +41,19 @@ export function isImageAttachment(attachment: Pick<FinancialAttachment, "file_na
 }
 
 export async function uploadFinancialAttachment(entityType: "expense" | "payment" | "session", entityId: string, file: File) {
-  const form = new FormData();
-  form.set("entity_type", entityType);
-  form.set("entity_id", entityId);
-  form.set("file", file);
-
-  const res = await fetch("/api/financial-attachments/upload", {
-    method: "POST",
-    body: form,
+  const result = await offlineUpload("/api/financial-attachments/upload", {
+    fields: { entity_type: entityType, entity_id: entityId },
+    file,
+    label: file.name,
   });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(typeof json?.error === "string" ? json.error : "Upload failed");
+  // Queued for later — the receipt syncs when the connection returns
+  // (ConnectionToasts announces it); no attachment row to show yet.
+  if (result.queued) return null;
+  if (!result.ok) {
+    throw new Error(result.error || "Upload failed");
   }
-  return (json?.attachment ?? null) as FinancialAttachment | null;
+  const data = result.data as { attachment?: FinancialAttachment | null } | null;
+  return data?.attachment ?? null;
 }
 
 export function getErrorMessage(error: unknown) {

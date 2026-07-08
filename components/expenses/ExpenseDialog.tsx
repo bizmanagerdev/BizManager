@@ -28,6 +28,7 @@ import {
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import { offlineFetch } from "@/lib/offline-queue";
+import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import { PAYMENT_METHOD_OPTIONS, type FinancialAttachment } from "@/lib/payments";
@@ -212,14 +213,17 @@ async function uploadAttachment(
   entityId: string,
   file: File
 ): Promise<FinancialAttachment | null> {
-  const form = new FormData();
-  form.set("entity_type", entityType);
-  form.set("entity_id", entityId);
-  form.set("file", file);
-  const res = await fetch("/api/financial-attachments/upload", { method: "POST", body: form });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof json?.error === "string" ? json.error : "העלאת הקובץ נכשלה.");
-  return (json?.attachment ?? null) as FinancialAttachment | null;
+  const result = await offlineUpload("/api/financial-attachments/upload", {
+    fields: { entity_type: entityType, entity_id: entityId },
+    file,
+    label: file.name,
+  });
+  // Queued for later — the receipt syncs when the connection returns
+  // (ConnectionToasts announces it); no attachment row to show yet.
+  if (result.queued) return null;
+  if (!result.ok) throw new Error(result.error || "העלאת הקובץ נכשלה.");
+  const data = result.data as { attachment?: FinancialAttachment | null } | null;
+  return data?.attachment ?? null;
 }
 
 export function ExpenseDialog({

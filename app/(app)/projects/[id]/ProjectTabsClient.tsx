@@ -35,6 +35,7 @@ import { computeSourceCollection } from "@/lib/collections";
 import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { applyProjectVatToBase } from "@/lib/projects/vat";
 import { offlineFetch } from "@/lib/offline-queue";
+import { offlineUpload } from "@/lib/offline-upload";
 import {
   type PaymentRow,
   type FinancialAttachment,
@@ -532,22 +533,31 @@ export default function ProjectTabsClient({
 
     try {
       const total = fileList.length;
+      let uploaded = 0;
       for (let i = 0; i < total; i++) {
         const file = fileList[i]!;
-        const form = new FormData();
-        form.set("project_id", overview.id);
-        form.set("file", file);
-        if (category.trim()) form.set("category", category.trim());
+        const fields: Record<string, string> = { project_id: overview.id };
+        if (category.trim()) fields.category = category.trim();
 
         toast.loading(`מעלה קבצים... (${i + 1}/${total})`, { id: toastId });
 
-        const res = await fetch("/api/projects/documents/upload", {
-          method: "POST",
-          body: form,
+        const result = await offlineUpload("/api/projects/documents/upload", {
+          fields,
+          file,
+          label: file.name,
         });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: toHebrewError(json?.error, "") });
+
+        if (result.queued) {
+          // Saved on the device — replays when the connection returns
+          // (ConnectionToasts announces it). No document id to wait for yet.
+          setPendingDocUploads((prev) =>
+            prev.map((p) => (p.name === file.name ? { ...p, status: "done" } : p))
+          );
+          continue;
+        }
+
+        if (!result.ok) {
+          toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: result.error });
           setPendingDocsRefresh(false);
           setPendingDocsStuck(false);
           setPendingDocUploads((prev) =>
@@ -557,6 +567,8 @@ export default function ProjectTabsClient({
           return;
         }
 
+        uploaded += 1;
+        const data = result.data as { document?: { id?: unknown } } | null;
         setPendingDocUploads((prev) =>
           prev.map((p) =>
             p.name === file.name
@@ -564,15 +576,23 @@ export default function ProjectTabsClient({
                   ...p,
                   status: "done",
                   documentId:
-                    typeof json?.document?.id === "string" ? (json.document.id as string) : null,
+                    typeof data?.document?.id === "string" ? (data.document.id as string) : null,
                 }
               : p
           )
         );
       }
 
-      toast.loading("העלאה הושלמה — מעדכן רשימה...", { id: toastId });
-      setPendingDocsRefresh(true);
+      if (uploaded > 0) {
+        // Wait for the newly-uploaded docs to appear in the refreshed list.
+        toast.loading("העלאה הושלמה — מעדכן רשימה...", { id: toastId });
+        setPendingDocsRefresh(true);
+      } else {
+        // Everything was queued for later — nothing to wait for in the list.
+        toast.dismiss(toastId);
+        docsToastIdRef.current = null;
+        setPendingDocUploads([]);
+      }
       router.refresh();
     } catch (e: unknown) {
       toast.error("שגיאה בהעלאת קובץ", { id: toastId, description: getErrorMessage(e) });

@@ -21,6 +21,7 @@ import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
+import { offlineUpload } from "@/lib/offline-upload";
 import {
   Card,
   CardContent,
@@ -508,35 +509,45 @@ export default function DocumentsArchiveClient({
     const toastId = toast.loading("מעלה קבצים...");
 
     try {
+      // uploaded = genuinely sent this session; queued = saved on the device for
+      // replay when the connection returns (ConnectionToasts announces it).
+      let uploaded = 0;
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i]!;
-        const form = new FormData();
-        form.set("file", file);
-        form.set("business_domain", uploadBusinessDomain);
-        if (showUploadProjectField) form.set("project_id", projectId);
-        if (showUploadPropertyField) form.set("property_id", propertyId);
-        if (category) form.set("category", category);
-        if (uploadTagIds.length > 0) form.set("tag_ids", JSON.stringify(uploadTagIds));
-        if (uploadRefYear.trim()) form.set("ref_year", uploadRefYear.trim());
+        const fields: Record<string, string> = { business_domain: uploadBusinessDomain };
+        if (showUploadProjectField) fields.project_id = projectId;
+        if (showUploadPropertyField) fields.property_id = propertyId;
+        if (category) fields.category = category;
+        if (uploadTagIds.length > 0) fields.tag_ids = JSON.stringify(uploadTagIds);
+        if (uploadRefYear.trim()) fields.ref_year = uploadRefYear.trim();
 
         toast.loading(`מעלה קבצים... (${i + 1}/${files.length})`, { id: toastId });
 
-        const response = await fetch("/api/documents/upload", {
-          method: "POST",
-          body: form,
+        const result = await offlineUpload("/api/documents/upload", {
+          fields,
+          file,
+          label: file.name,
         });
-        const json = await response.json().catch(() => ({}));
 
-        if (!response.ok) {
+        if (result.queued) {
+          // Saved on device — treat as done, don't count as an upload.
+        } else if (result.ok) {
+          uploaded += 1;
+        } else {
           toast.error("שגיאה בהעלאת קובץ", {
             id: toastId,
-            description: toHebrewError(json?.error, ""),
+            description: result.error,
           });
           return;
         }
       }
 
-      toast.success("הקבצים הועלו", { id: toastId });
+      if (uploaded > 0) {
+        toast.success("הקבצים הועלו", { id: toastId });
+      } else {
+        // Everything was queued for later — the global connection toast covers it.
+        toast.dismiss(toastId);
+      }
       setUploadDialogOpen(false);
       resetUploadForm();
       router.refresh();

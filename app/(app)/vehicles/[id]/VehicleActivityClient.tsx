@@ -24,6 +24,7 @@ import { DOCUMENT_CATEGORIES, inferDefaultDocumentCategory } from "@/lib/documen
 import { formatCurrency } from "@/lib/payroll";
 import { taskStatusLabel, type VehicleActivity, type VehicleExpense } from "@/lib/vehicles";
 import { toHebrewError } from "@/lib/error-messages";
+import { offlineUpload } from "@/lib/offline-upload";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -190,23 +191,35 @@ export default function VehicleActivityClient({
     setDocBusy(true);
     try {
       let uploaded = 0;
+      // uploaded + queued files are both "done"; a queued upload was saved to the
+      // device and replays when the connection returns (ConnectionToasts announces it).
+      let done = 0;
       for (const file of docFiles) {
-        const form = new FormData();
-        form.set("file", file);
-        form.set("business_domain", "general_business");
-        form.set("tag_ids", JSON.stringify([tagId]));
-        if (docCategory.trim()) form.set("category", docCategory.trim());
-        if (docYear.trim()) form.set("ref_year", docYear.trim());
-        const res = await fetch("/api/documents/upload", { method: "POST", body: form });
-        if (!res.ok) {
-          const json = await res.json().catch(() => ({}));
-          toast.error("שגיאה בהעלאת מסמך", { description: toHebrewError(json?.error, "") });
+        const fields: Record<string, string> = {
+          business_domain: "general_business",
+          tag_ids: JSON.stringify([tagId]),
+        };
+        if (docCategory.trim()) fields.category = docCategory.trim();
+        if (docYear.trim()) fields.ref_year = docYear.trim();
+        const result = await offlineUpload("/api/documents/upload", {
+          fields,
+          file,
+          label: file.name,
+        });
+        if (result.queued) {
+          done += 1;
+        } else if (result.ok) {
+          uploaded += 1;
+          done += 1;
+        } else {
+          toast.error("שגיאה בהעלאת מסמך", { description: result.error });
           break;
         }
-        uploaded += 1;
       }
       if (uploaded > 0) {
         toast.success(uploaded === 1 ? "המסמך הועלה" : `${uploaded} מסמכים הועלו`);
+      }
+      if (done === docFiles.length) {
         setDocOpen(false);
         refresh();
       }

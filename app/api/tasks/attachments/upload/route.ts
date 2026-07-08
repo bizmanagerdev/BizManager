@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 ﻿import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { STORAGE_BUCKET } from "@/lib/storage";
 
 const BUCKET = STORAGE_BUCKET;
@@ -27,6 +28,8 @@ export async function POST(req: Request) {
     if (!access.ok) return access.response;
     const { supabase, user } = access.value;
 
+    // Idempotency-Key (sent by a queued offline upload) makes a replay a no-op.
+    return withIdempotency(req, supabase, user.id, "tasks/attachments/upload", async () => {
     const form = await req.formData();
     const taskId = String(form.get("task_id") ?? "");
     const file = form.get("file");
@@ -111,6 +114,7 @@ export async function POST(req: Request) {
         file_name: displayName,
         uploaded_at: uploadedAt,
       },
+    });
     });
   } catch (err: unknown) {
     const message = toHebrewError(err, "Unknown error");

@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { FileText, Pencil, Trash2 } from "lucide-react";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { offlineFetch } from "@/lib/offline-queue";
+import { offlineUpload } from "@/lib/offline-upload";
 import { Button } from "@/components/ui/button";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import {
@@ -101,18 +102,18 @@ function formatDateTime(value: string | null) {
 }
 
 async function uploadProjectDocument(projectId: string, file: File) {
-  const form = new FormData();
-  form.set("project_id", projectId);
-  form.set("file", file);
-  form.set("category", file.type.startsWith("image/") ? "project_photo" : "project_document");
-
-  const res = await fetch("/api/projects/documents/upload", {
-    method: "POST",
-    body: form,
+  const result = await offlineUpload("/api/projects/documents/upload", {
+    fields: {
+      project_id: projectId,
+      category: file.type.startsWith("image/") ? "project_photo" : "project_document",
+    },
+    file,
+    label: file.name,
   });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(typeof json?.error === "string" ? json.error : "העלאת הקובץ נכשלה.");
+  // A queued upload was saved on the device and replays on reconnect — treat it
+  // as success; only a real server rejection should throw.
+  if (!result.queued && !result.ok) {
+    throw new Error(result.error || "העלאת הקובץ נכשלה.");
   }
 }
 

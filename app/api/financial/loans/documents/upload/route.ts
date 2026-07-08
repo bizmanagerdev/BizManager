@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { withIdempotency } from "@/lib/idempotency";
 import { STORAGE_BUCKET } from "@/lib/storage";
 
 const BUCKET = STORAGE_BUCKET;
@@ -24,6 +25,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "אין הרשאה." }, { status: 403 });
     }
 
+    // Idempotency-Key (sent by a queued offline upload) makes a replay a no-op.
+    return withIdempotency(req, supabase, user.id, "financial/loans/documents/upload", async () => {
     const form = await req.formData();
     const loanId = String(form.get("loan_id") ?? "").trim();
     const file = form.get("file");
@@ -90,6 +93,7 @@ export async function POST(req: Request) {
         document_type: category || "loan_document",
         uploaded_at: uploadedAt,
       },
+    });
     });
   } catch (err: unknown) {
     return NextResponse.json({ error: toHebrewError(err, "Unknown error") }, { status: 500 });

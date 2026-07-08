@@ -1,4 +1,5 @@
 import type { FinancialAttachment } from "@/lib/payments";
+import { offlineUpload } from "@/lib/offline-upload";
 
 // Pure date / number / formatting helpers + the attachment upload util, lifted
 // out of DashboardActions so the component file holds UI + state, not utilities.
@@ -88,18 +89,17 @@ export async function uploadFinancialAttachment(
   entityId: string,
   file: File
 ) {
-  const form = new FormData();
-  form.set("entity_type", entityType);
-  form.set("entity_id", entityId);
-  form.set("file", file);
-
-  const res = await fetch("/api/financial-attachments/upload", {
-    method: "POST",
-    body: form,
+  const result = await offlineUpload("/api/financial-attachments/upload", {
+    fields: { entity_type: entityType, entity_id: entityId },
+    file,
+    label: file.name,
   });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(typeof json?.error === "string" ? json.error : "Upload failed");
+  // Queued for later — the receipt syncs when the connection returns
+  // (ConnectionToasts announces it); no attachment row to show yet.
+  if (result.queued) return null;
+  if (!result.ok) {
+    throw new Error(result.error || "Upload failed");
   }
-  return (json?.attachment ?? null) as FinancialAttachment | null;
+  const data = result.data as { attachment?: FinancialAttachment | null } | null;
+  return data?.attachment ?? null;
 }

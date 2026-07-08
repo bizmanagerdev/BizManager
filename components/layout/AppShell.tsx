@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { TopNavigationProgress } from "@/components/layout/TopNavigationProgress";
 import OfflineBanner from "@/components/layout/OfflineBanner";
 import ConnectionToasts from "@/components/layout/ConnectionToasts";
+import ConnectionTelemetry from "@/components/pwa/ConnectionTelemetry";
 import PresenceTracker from "@/components/layout/PresenceTracker";
 import NotificationsRealtime from "@/components/notifications/NotificationsRealtime";
 import FontScaleSync from "@/components/layout/FontScaleSync";
@@ -63,6 +64,7 @@ export default function AppShell({
         <NotificationsRealtime />
         <FontScaleSync />
         <ConnectionToasts />
+        <ConnectionTelemetry />
         {sidebar.length > 0 && (
           // Suspense boundary required because AppSidebar reads useSearchParams
           // (to carry financial filters between Flow/Reports links).

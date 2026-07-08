@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { AlertTriangle, CloudUpload, Loader2, WifiOff } from "lucide-react";
 import { useOfflineStatus } from "@/hooks/useOfflineStatus";
+import PendingSyncPanel from "@/components/layout/PendingSyncPanel";
 import { cn } from "@/lib/utils";
 
 export default function OfflineBanner() {
@@ -14,6 +16,7 @@ export default function OfflineBanner() {
     retryFailed,
     clearFailed,
   } = useOfflineStatus();
+  const [panelOpen, setPanelOpen] = useState(false);
 
   if (isOnline && queueLength === 0 && failedLength === 0) return null;
 
@@ -43,17 +46,26 @@ export default function OfflineBanner() {
               {isOnline && queueLength > 0 && `${queueLength} פעולות ממתינות לשליחה`}
             </span>
           </div>
-          {isOnline && queueLength > 0 && (
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => void processQueue()}
-              disabled={isProcessing}
-              className="flex items-center gap-1.5 rounded bg-warning px-2 py-1 text-xs text-warning-foreground hover:opacity-90 disabled:opacity-60"
+              onClick={() => setPanelOpen(true)}
+              className="rounded bg-black/10 px-2 py-1 text-xs hover:bg-black/20"
             >
-              {isProcessing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {isProcessing ? "שולח..." : "שלח עכשיו"}
+              פרטים
             </button>
-          )}
+            {isOnline && queueLength > 0 && (
+              <button
+                type="button"
+                onClick={() => void processQueue()}
+                disabled={isProcessing}
+                className="flex items-center gap-1.5 rounded bg-warning px-2 py-1 text-xs text-warning-foreground hover:opacity-90 disabled:opacity-60"
+              >
+                {isProcessing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {isProcessing ? "שולח..." : "שלח עכשיו"}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -65,6 +77,13 @@ export default function OfflineBanner() {
             <span>{`${failedLength} פעולות לא נשמרו בשרת — יש לנסות שוב`}</span>
           </div>
           <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPanelOpen(true)}
+              className="rounded bg-destructive-foreground/15 px-2 py-1 text-xs hover:bg-destructive-foreground/25"
+            >
+              פרטים
+            </button>
             <button
               type="button"
               onClick={retryFailed}
@@ -82,6 +101,8 @@ export default function OfflineBanner() {
           </div>
         </div>
       )}
+
+      <PendingSyncPanel open={panelOpen} onOpenChange={setPanelOpen} />
     </div>
   );
 }

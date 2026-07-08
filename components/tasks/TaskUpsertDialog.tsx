@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clearDraft, loadDraft, offlineFetch, saveDraft } from "@/lib/offline-queue";
+import { offlineUpload } from "@/lib/offline-upload";
 import { toHebrewError } from "@/lib/error-messages";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -640,18 +641,23 @@ export function TaskUpsertDialog(props: Props) {
     setUploadingFiles(true);
     emitProgressActivityStart();
     try {
+      // uploaded = genuinely sent now; a queued upload was saved on the device
+      // and replays on reconnect (ConnectionToasts announces it).
+      let uploaded = 0;
       for (const file of files) {
-        const form = new FormData();
-        form.set("task_id", targetId);
-        form.set("file", file);
-        const res = await fetch("/api/tasks/attachments/upload", { method: "POST", body: form });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          toast.error("שגיאה בהעלאת קובץ", { description: toHebrewError(json?.error, "") });
+        const result = await offlineUpload("/api/tasks/attachments/upload", {
+          fields: { task_id: targetId },
+          file,
+          label: file.name,
+        });
+        if (result.queued) continue;
+        if (!result.ok) {
+          toast.error("שגיאה בהעלאת קובץ", { description: result.error });
           return;
         }
+        uploaded += 1;
       }
-      toast.success(files.length === 1 ? "הקובץ הועלה" : "הקבצים הועלו");
+      if (uploaded > 0) toast.success(uploaded === 1 ? "הקובץ הועלה" : "הקבצים הועלו");
       await fetchAttachments(targetId);
     } catch (error: unknown) {
       toast.error("שגיאה בהעלאת קובץ", { description: getErrorMessage(error) });

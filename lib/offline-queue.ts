@@ -136,6 +136,20 @@ export function retryFailed(): void {
   writeFailed([]);
 }
 
+/** Move a SINGLE parked failed entry back into the live queue (per-item retry). */
+export function retryFailedEntry(id: string): void {
+  const failed = readFailed();
+  const entry = failed.find((e) => e.id === id);
+  if (!entry) return;
+  writeQueue([...readQueue(), { ...entry, attempts: 0, lastError: undefined }]);
+  writeFailed(failed.filter((e) => e.id !== id));
+}
+
+/** Discard a SINGLE parked failed entry (per-item dismiss). */
+export function removeFailed(id: string): void {
+  writeFailed(readFailed().filter((e) => e.id !== id));
+}
+
 export function enqueue(
   entry: Omit<QueueEntry, "id" | "queuedAt" | "attempts">
 ): QueueEntry {
