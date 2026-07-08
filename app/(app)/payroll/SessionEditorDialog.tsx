@@ -62,6 +62,7 @@ function createSessionSplitPart(
     amount: overrides?.amount ?? "",
     billToCustomer: overrides?.billToCustomer ?? false,
     billAmount: overrides?.billAmount ?? "",
+    billAmountDirty: overrides?.billAmountDirty ?? false,
   };
 }
 
@@ -117,6 +118,9 @@ export default function SessionEditorDialog({
   const [sessionSplitParts, setSessionSplitParts] = useState<SplitPartDraft[]>([]);
   const [sessionSplitEnabled, setSessionSplitEnabled] = useState(false);
   const [sessionError, setSessionError] = useState("");
+  // True once the user hand-edits the single (non-split) customer charge, which stops it from
+  // auto-tracking the shift's labor cost.
+  const [billAmountDirty, setBillAmountDirty] = useState(false);
   // Which bank/cash account a "mark paid" payment leaves from (see accounts layer).
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
@@ -125,12 +129,20 @@ export default function SessionEditorDialog({
 
   // Reset the internal form from the parent-supplied initialForm whenever the dialog opens.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      // Scrub the "touched" flag on close so a reopened dialog (e.g. adding two shifts in a row)
+      // can never inherit it and freeze a stale customer amount instead of re-syncing to the cost.
+      setBillAmountDirty(false);
+      return;
+    }
     setSessionMode(mode);
     setSessionError("");
     setSessionSplitParts([]);
     setSessionSplitEnabled(false);
     setPaymentAccountId("");
+    // Preserve an already-saved customer charge (edit mode) instead of overwriting it with the cost;
+    // a fresh shift starts un-touched so the amount tracks the cost until the user edits it.
+    setBillAmountDirty(Boolean(initialForm.is_billable_to_customer && initialForm.bill_to_customer_amount.trim()));
     setSessionForm(initialForm);
     // initialForm/mode are the "open request" snapshot — re-run only on open transitions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -366,7 +378,9 @@ export default function SessionEditorDialog({
           ...sharedLink,
           amount: sessionForm.labor_cost ?? "",
           billToCustomer: sessionForm.is_billable_to_customer,
-          billAmount: sessionForm.is_billable_to_customer ? sessionForm.bill_to_customer_amount ?? "" : "",
+          // Leave the amount un-touched so it re-tracks this part's own cost (prorated by hours),
+          // instead of freezing on whatever the single regular field happened to hold.
+          billAmount: "",
         }),
         createSessionSplitPart(domain, sharedLink),
       ];
@@ -376,7 +390,9 @@ export default function SessionEditorDialog({
         ...sharedLink,
         endTime: midpointDateTimeLocal(sessionForm.clock_in, sessionForm.clock_out),
         billToCustomer: sessionForm.is_billable_to_customer,
-        billAmount: sessionForm.is_billable_to_customer ? sessionForm.bill_to_customer_amount ?? "" : "",
+        // Leave the amount un-touched so it re-tracks this part's own cost (prorated by hours),
+        // instead of freezing on whatever the single regular field happened to hold.
+        billAmount: "",
       }),
       createSessionSplitPart(domain, sharedLink),
     ];
@@ -564,6 +580,60 @@ export default function SessionEditorDialog({
     });
   }, [sessionDialogSuggestedAmount, sessionForm.mark_paid_now]);
 
+  // Keep the single (non-split) customer charge tracking the shift's labor cost — recomputing when
+  // hours/price change — until the user hand-edits it (billAmountDirty), after which their number
+  // stands. This is what makes it "sync" instead of freezing on the first value.
+  useEffect(() => {
+    if (sessionSplitEnabled || !sessionForm.is_billable_to_customer || billAmountDirty || sessionDialogSuggestedAmount === null) {
+      return;
+    }
+    const synced = String(Number(sessionDialogSuggestedAmount.toFixed(2)));
+    setSessionForm((current) =>
+      current.bill_to_customer_amount === synced ? current : { ...current, bill_to_customer_amount: synced }
+    );
+  }, [sessionDialogSuggestedAmount, sessionForm.is_billable_to_customer, sessionSplitEnabled, billAmountDirty]);
+
+  // Same idea per split part: money split → the part's own amount; time split → its prorated share
+  // of the shift's labor cost. Each part re-tracks until the user hand-edits it (part.billAmountDirty).
+  useEffect(() => {
+    if (!sessionSplitEnabled) return;
+    setSessionSplitParts((current) => {
+      if (current.length === 0) return current;
+      const minutes = isMoneySplit
+        ? []
+        : (() => {
+            const boundaries = [
+              sessionForm.clock_in,
+              ...current.slice(0, -1).map((part) => part.endTime),
+              sessionForm.clock_out,
+            ];
+            return current.map((_, index) => minutesBetween(boundaries[index], boundaries[index + 1]));
+          })();
+      const totalMinutes = isMoneySplit ? 0 : minutes.reduce((sum, m) => sum + m, 0);
+      let changed = false;
+      const next = current.map((part, index) => {
+        if (!part.billToCustomer || part.billAmountDirty) return part;
+        let synced = "";
+        if (isMoneySplit) {
+          synced = part.amount.trim() && Number(part.amount) > 0 ? part.amount : "";
+        } else if (sessionDialogSuggestedAmount !== null && totalMinutes > 0 && minutes[index] > 0) {
+          synced = String(Number(((sessionDialogSuggestedAmount * minutes[index]) / totalMinutes).toFixed(2)));
+        }
+        if (!synced || synced === part.billAmount) return part;
+        changed = true;
+        return { ...part, billAmount: synced };
+      });
+      return changed ? next : current;
+    });
+  }, [
+    isMoneySplit,
+    sessionDialogSuggestedAmount,
+    sessionForm.clock_in,
+    sessionForm.clock_out,
+    sessionSplitEnabled,
+    sessionSplitParts,
+  ]);
+
   return (
     <Dialog
       open={open}
@@ -590,7 +660,22 @@ export default function SessionEditorDialog({
           <Field label="עובד">
             <select
               value={sessionForm.user_id}
-              onChange={(event) => setSessionForm((current) => ({ ...current, user_id: event.target.value }))}
+              onChange={(event) => {
+                const nextUserId = event.target.value;
+                // A new worker is a new cost context — clear the worker-specific price and customer
+                // charge so nothing stale from the previous worker lingers. They re-sync once the new
+                // price/hours are entered (hourly workers recompute from their own rate immediately).
+                setBillAmountDirty(false);
+                setSessionSplitParts((parts) =>
+                  parts.map((part) => ({ ...part, amount: "", billAmount: "", billAmountDirty: false }))
+                );
+                setSessionForm((current) => ({
+                  ...current,
+                  user_id: nextUserId,
+                  labor_cost: "",
+                  bill_to_customer_amount: "",
+                }));
+              }}
               className={selectClassName}
             >
               <option value="">{"בחירה"}</option>
@@ -748,12 +833,14 @@ export default function SessionEditorDialog({
               <Field label="חיוב לקוח">
                 <select
                   value={sessionForm.is_billable_to_customer ? "yes" : "no"}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    // Toggling billing resets "touched" so the amount re-syncs to the current cost.
+                    setBillAmountDirty(false);
                     setSessionForm((current) => ({
                       ...current,
                       is_billable_to_customer: event.target.value === "yes",
-                    }))
-                  }
+                    }));
+                  }}
                   className={selectClassName}
                 >
                   <option value="no">{"לא"}</option>
@@ -765,9 +852,10 @@ export default function SessionEditorDialog({
                   <CurrencyInput
                     inputMode="decimal"
                     value={sessionForm.bill_to_customer_amount}
-                    onChange={(event) =>
-                      setSessionForm((current) => ({ ...current, bill_to_customer_amount: event.target.value }))
-                    }
+                    onChange={(event) => {
+                      setBillAmountDirty(true);
+                      setSessionForm((current) => ({ ...current, bill_to_customer_amount: event.target.value }));
+                    }}
                   />
                 </Field>
               ) : null}
@@ -934,6 +1022,7 @@ export default function SessionEditorDialog({
                             updateSessionSplitPart(part.id, {
                               billToCustomer: event.target.checked,
                               billAmount: event.target.checked ? part.billAmount : "",
+                              billAmountDirty: false,
                             })
                           }
                         />
@@ -946,7 +1035,9 @@ export default function SessionEditorDialog({
                             inputMode="decimal"
                             className="h-9 w-32"
                             value={part.billAmount}
-                            onChange={(event) => updateSessionSplitPart(part.id, { billAmount: event.target.value })}
+                            onChange={(event) =>
+                              updateSessionSplitPart(part.id, { billAmount: event.target.value, billAmountDirty: true })
+                            }
                           />
                         </label>
                       ) : null}
@@ -1049,6 +1140,7 @@ export default function SessionEditorDialog({
                               updateSessionSplitPart(part.id, {
                                 billToCustomer: event.target.checked,
                                 billAmount: event.target.checked ? sessionSplitParts[index]?.billAmount ?? "" : "",
+                                billAmountDirty: false,
                               })
                             }
                           />
@@ -1061,7 +1153,9 @@ export default function SessionEditorDialog({
                               inputMode="decimal"
                               className="h-9 w-32"
                               value={sessionSplitParts[index]?.billAmount ?? ""}
-                              onChange={(event) => updateSessionSplitPart(part.id, { billAmount: event.target.value })}
+                              onChange={(event) =>
+                                updateSessionSplitPart(part.id, { billAmount: event.target.value, billAmountDirty: true })
+                              }
                             />
                           </label>
                         ) : null}

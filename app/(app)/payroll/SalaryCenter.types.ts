@@ -140,6 +140,8 @@ export type SplitPartDraft = {
   // Per-part "bill the customer" toggle + amount (money-based split).
   billToCustomer: boolean;
   billAmount: string;
+  // True once the user hand-edits billAmount, which stops it from auto-tracking the worker cost.
+  billAmountDirty: boolean;
 };
 
 export type PendingSalaryDeletion =
