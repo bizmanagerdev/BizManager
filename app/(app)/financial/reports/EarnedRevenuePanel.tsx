@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import DomainMultiSelect from "@/components/financial/DomainMultiSelect";
 import { cn } from "@/lib/utils";
 import type { EarnedDomainCell, EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 
@@ -35,10 +36,52 @@ function hasActivity(cell: EarnedDomainCell) {
  * per domain. Accrual basis — attributed to the month the work belongs to, not
  * the month its cash cleared (that's the מגמה חודשית tab).
  */
-export default function EarnedRevenuePanel({ report }: { report: EarnedRevenueReport }) {
-  const { months, domains, totals } = report;
+const EMPTY_CELL: EarnedDomainCell = { count: 0, income: 0, expense: 0, net: 0 };
 
-  if (months.length === 0 || domains.length === 0) {
+function sumCells(cells: EarnedDomainCell[]): EarnedDomainCell {
+  return cells.reduce(
+    (acc, c) => ({
+      count: acc.count + c.count,
+      income: acc.income + c.income,
+      expense: acc.expense + c.expense,
+      net: acc.net + c.net,
+    }),
+    { ...EMPTY_CELL }
+  );
+}
+
+export default function EarnedRevenuePanel({ report }: { report: EarnedRevenueReport }) {
+  const { domains } = report;
+  // Empty = all domains. Scopes the whole table (per-month rows + totals) to a subset.
+  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+
+  const activeDomainKeys = useMemo(() => {
+    const set = new Set(selectedDomains);
+    return set.size === 0 ? domains.map((d) => d.key) : domains.map((d) => d.key).filter((k) => set.has(k));
+  }, [domains, selectedDomains]);
+
+  // Recompute per-month and grand totals from the selected domains only, so the
+  // total row always matches the visible domain rows.
+  const months = useMemo(
+    () =>
+      report.months.map((m) => ({
+        ...m,
+        total: sumCells(activeDomainKeys.map((k) => m.byDomain[k] ?? EMPTY_CELL)),
+      })),
+    [report.months, activeDomainKeys]
+  );
+  const totals = useMemo(
+    () => ({
+      grand: sumCells(months.map((m) => m.total)),
+    }),
+    [months]
+  );
+  const visibleDomains = useMemo(
+    () => domains.filter((d) => activeDomainKeys.includes(d.key)),
+    [domains, activeDomainKeys]
+  );
+
+  if (report.months.length === 0 || domains.length === 0) {
     return (
       <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
         אין נתוני הכנסה להצגה עבור התקופה שנבחרה.
@@ -46,11 +89,18 @@ export default function EarnedRevenuePanel({ report }: { report: EarnedRevenueRe
     );
   }
 
-  // Newest month first.
-  const orderedMonths = [...months].reverse();
+  // Newest month first; drop months where the selected domains have no activity.
+  const orderedMonths = [...months]
+    .filter((m) => m.total.count !== 0 || Math.round(m.total.income) !== 0 || Math.round(m.total.expense) !== 0)
+    .reverse();
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
+      <DomainMultiSelect
+        domains={domains.map((d) => ({ key: d.key, label: d.label }))}
+        selected={selectedDomains}
+        onChange={setSelectedDomains}
+      />
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base text-right">
@@ -59,8 +109,9 @@ export default function EarnedRevenuePanel({ report }: { report: EarnedRevenueRe
           <CardDescription className="text-right">
             הכנסה לפי ביצוע ולא לפי גבייה — נספרת בחודש שבו נוצרה, בלי קשר אם הכסף כבר ביד.
             הזמנות לפי תאריך ההזמנה; פרויקטים מחולקים שווה בשווה על חודשי הפרויקט; שאר התחומים לפי
-            תקבולים/הוצאות באותו חודש. הוצאות אשראי לפי תאריך הקנייה. סכומים כולל מע״מ. תחומים אישיים
-            (בית/צדקה) אינם נכללים.
+            תקבולים/הוצאות באותו חודש. הוצאות אשראי לפי תאריך הקנייה. שכר עובדים נספר לפי חודש העבודה
+            (גם אם שולם בחודש שאחרי) — משכורות כלליות לפי שוטף, ופרויקט־ייעודי לפי הפרויקט. סכומים כולל מע״מ.
+            תחומים אישיים (בית/צדקה) אינם נכללים.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -87,7 +138,7 @@ export default function EarnedRevenuePanel({ report }: { report: EarnedRevenueRe
                         {formatMonthLabel(monthRow.month)}
                       </td>
                     </tr>
-                    {domains
+                    {visibleDomains
                       .filter((domain) => hasActivity(monthRow.byDomain[domain.key]))
                       .map((domain) => {
                         const cell = monthRow.byDomain[domain.key];

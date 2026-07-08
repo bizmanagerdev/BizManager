@@ -9,6 +9,11 @@ import {
   loadEarnedRevenueByMonth,
   type EarnedRevenueReport,
 } from "@/lib/financial/earnedRevenue";
+import {
+  loadProjectPeriodBreakdown,
+  type ProjectBreakdown,
+} from "@/lib/financial/projectBreakdown";
+import { loadDomainProof, type DomainProofMap } from "@/lib/financial/domainProof";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
 
 type Row = Record<string, unknown>;
@@ -88,13 +93,26 @@ export default async function CashFlowPageContent({
   const canManageExpenses = profile.role === "admin" || profile.role === "office";
   const canViewCashflow = profile.role === "admin";
 
-  // Earned (booked) revenue per month per domain — only needed on the reports view.
+  // Earned (booked) revenue per month per domain + per-project breakdown — only
+  // needed on the reports view (the per-project detail proves the פרויקטים total).
   let earnedRevenue: EarnedRevenueReport | null = null;
+  let projectBreakdown: ProjectBreakdown | null = null;
+  let domainProof: DomainProofMap | null = null;
   if (view === "reports") {
-    earnedRevenue = await loadEarnedRevenueByMonth(supabase, {
-      from: initialFilters.from || null,
-      to: initialFilters.to || null,
-    });
+    [earnedRevenue, projectBreakdown, domainProof] = await Promise.all([
+      loadEarnedRevenueByMonth(supabase, {
+        from: initialFilters.from || null,
+        to: initialFilters.to || null,
+      }),
+      loadProjectPeriodBreakdown(supabase, {
+        from: initialFilters.from || null,
+        to: initialFilters.to || null,
+      }),
+      loadDomainProof(supabase, {
+        from: initialFilters.from || null,
+        to: initialFilters.to || null,
+      }),
+    ]);
   }
 
   let projectOptions: Array<{ id: string; label: string }> = [];
@@ -167,6 +185,8 @@ export default async function CashFlowPageContent({
         })}
         data={data}
         earnedRevenue={earnedRevenue}
+        projectBreakdown={projectBreakdown}
+        domainProof={domainProof}
         initialFilters={initialFilters}
         view={view}
         canManageExpenses={canManageExpenses}

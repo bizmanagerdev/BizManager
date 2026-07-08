@@ -170,6 +170,18 @@ export type AssignableUser = {
 
 export type ProjectSalaryAgreement = SalaryAgreementRow;
 
+// A monthly-salary (payslip) cost attributed to this project via the worker's
+// salary agreement — shown as a read-only line in the project's expenses.
+export type ProjectMonthlySalaryItem = {
+  payslip_id: string;
+  user_id: string | null;
+  period_month: string | null;
+  earned_amount: number | string | null;
+  paid_amount: number | string | null;
+  owed_amount: number | string | null;
+  payment_status: string | null;
+};
+
 type PendingProjectDeletion =
   | { kind: "expense"; item: ExpenseListItem }
   | { kind: "session"; item: ExpenseListItem }
@@ -222,6 +234,7 @@ export default function ProjectTabsClient({
   paymentAuditError,
   workerBalance,
   salaryAgreements,
+  monthlySalaryItems,
 }: {
   viewerRole: string | null;
   overview: ProjectOverview;
@@ -260,6 +273,7 @@ export default function ProjectTabsClient({
   paymentAuditError: string | null;
   workerBalance: ProjectWorkerBalance;
   salaryAgreements: ProjectSalaryAgreement[];
+  monthlySalaryItems: ProjectMonthlySalaryItem[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -818,6 +832,25 @@ export default function ProjectTabsClient({
     for (const u of assignableUsers) map.set(u.id, u);
     return map;
   }, [assignableUsers]);
+
+  // Monthly-salary (payslip) costs attributed to this project, newest month first.
+  const monthlySalaryRows = useMemo(() => {
+    return [...monthlySalaryItems]
+      .map((item) => {
+        const user = item.user_id ? usersById.get(item.user_id) : null;
+        return {
+          payslipId: item.payslip_id,
+          workerName: user?.full_name?.trim() || user?.email || "עובד",
+          periodMonth: item.period_month,
+          earned: toNumber(item.earned_amount) ?? 0,
+          paid: toNumber(item.paid_amount) ?? 0,
+          owed: toNumber(item.owed_amount) ?? 0,
+        };
+      })
+      .filter((row) => row.earned > 0)
+      .sort((a, b) => (b.periodMonth ?? "").localeCompare(a.periodMonth ?? ""));
+  }, [monthlySalaryItems, usersById]);
+  const monthlySalaryTotal = monthlySalaryRows.reduce((sum, row) => sum + row.earned, 0);
 
   const cashFlow = (() => {
     const incomeEvents: CashFlowEvent[] = paymentsUi.map((p) => {
@@ -1397,12 +1430,12 @@ export default function ProjectTabsClient({
                 </div>
               ) : null}
               <div className="rounded-xl border bg-background/60 p-3">
-                <div className="text-xs text-muted-foreground">יתרה לעובדי משמרות</div>
+                <div className="text-xs text-muted-foreground">יתרה לעובדים</div>
                 <div className="mt-2 text-lg font-semibold">
                   <LtrInline>{formatIls(totalWorkerOwed)}</LtrInline>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
-                  <span>שולם לעובדי משמרות </span>
+                  <span>שולם לעובדים </span>
                   <LtrInline>{formatIls(totalWorkerPaid)}</LtrInline>
                 </div>
               </div>
@@ -1666,13 +1699,33 @@ export default function ProjectTabsClient({
                 <div className="flex-1 text-destructive text-sm">
                   שגיאה בטעינת הוצאות: {expensesError}
                 </div>
-              ) : expensesUi.length === 0 ? (
+              ) : expensesUi.length === 0 && monthlySalaryRows.length === 0 ? (
                 <div className="flex-1 text-muted-foreground">אין הוצאות להצגה.</div>
               ) : (
                 <div className="flex-1 divide-y overflow-y-auto pl-1">
                   {sortedExpensesUi.map((item, idx) => renderExpenseRow(item, idx))}
                 </div>
               )}
+
+              {monthlySalaryRows.length > 0 ? (
+                <div className="mt-3 space-y-1 border-t pt-3">
+                  <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                    <span>משכורות חודשיות (שכר גלובלי)</span>
+                    <LtrInline>{formatIls(monthlySalaryTotal)}</LtrInline>
+                  </div>
+                  {monthlySalaryRows.map((row) => (
+                    <div key={row.payslipId} className="flex items-center gap-3 py-1 text-sm">
+                      <span className="w-16 shrink-0 text-xs text-muted-foreground">
+                        <LtrInline>{row.periodMonth ? `${row.periodMonth.slice(5)}/${row.periodMonth.slice(2, 4)}` : "—"}</LtrInline>
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">שכר — {row.workerName}</span>
+                      <span className="shrink-0 whitespace-nowrap font-medium tabular-nums text-destructive">
+                        <LtrInline>{formatIls(row.earned)}</LtrInline>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
               {billedExpensesTotal > 0 ? (
                 <div className="pt-2 text-xs text-muted-foreground">

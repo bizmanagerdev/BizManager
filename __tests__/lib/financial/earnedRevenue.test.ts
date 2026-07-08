@@ -134,6 +134,23 @@ describe("buildEarnedRevenueByMonth — expenses & other income", () => {
     expect(report.domains.map((d) => d.key)).not.toContain("sales");
   });
 
+  it("books general_business (שוטף) expenses — the domain salaried payroll lands in", () => {
+    // loadEarnedRevenueByMonth folds worker payroll into the expense list: salaried
+    // (payslip) pay has no session domain, so it lands in general_business (שוטף),
+    // just like the cash P&L. Here we assert general_business expenses aggregate.
+    const report = build({
+      expenses: [
+        { date: "2024-05-01", amount: 3000, domain: "general_business" }, // e.g. wages
+        { date: "2024-05-15", amount: 500, domain: "general_business" },
+      ],
+      income: [{ date: "2024-05-10", amount: 800, domain: "general_business" }],
+    });
+    const may = report.months.find((m) => m.month === "2024-05");
+    expect(may?.byDomain.general_business.expense).toBe(3500);
+    expect(may?.byDomain.general_business.income).toBe(800);
+    expect(may?.byDomain.general_business.net).toBe(-2700);
+  });
+
   it("net = income − expense per domain per month", () => {
     const report = build({
       orders: [{ orderDate: "2024-05-01", amount: 1000, status: "completed" }],

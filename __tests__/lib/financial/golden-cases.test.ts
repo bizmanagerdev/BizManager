@@ -87,6 +87,7 @@ function wageArgs(
     allocations,
     workerPaymentById: new Map(workerPayments.map((w) => [w.id, w])),
     sessionsById: new Map(sessions.map((s) => [s.id, s])),
+    payslipMetaById: new Map(),
     projectsById: new Map(), propertiesById: new Map(), propertyCustomersById: new Map(),
     recordedByNames: {}, customerId: null, customerProjectSet: new Set<string>(), referenceDate: REF_DATE,
   };

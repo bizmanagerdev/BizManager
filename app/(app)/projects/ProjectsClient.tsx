@@ -42,27 +42,6 @@ type ProjectRow = Record<string, unknown>;
 type Option = { id: string; label: string; phone?: string | null; whatsapp?: string | null; email?: string | null; name_for_invoice?: string | null; contacts?: Array<{ full_name: string; phone: string | null; email: string | null }> };
 type SortMode = "recent" | "start_date" | "start_date_desc" | "profit_desc";
 type ProjectsView = "projects" | "quotes" | "closed";
-type ProjectMonthlySummary = {
-  month: string;
-  startDate: string;
-  endDate: string;
-  totalProjects: number;
-  byType: Array<{ type: string; count: number }>;
-  byStatus: Array<{ status: string; count: number }>;
-  totals: {
-    charged: number;
-    paid: number;
-    expenses: number;
-    profit: number;
-    basePrice: number;
-    billedExtras: number;
-    workerOwed: number;
-  };
-  quotes: {
-    count: number;
-    charged: number;
-  };
-};
 const defaultStatusOptions = ["quote", "planned", "active", "on_hold", "completed", "cancelled"];
 const defaultProjectTypeOptions = ["logistics", "moving", "construction"];
 
@@ -148,19 +127,6 @@ function statusLabel(status: string) {
   return status === "unknown" ? "לא ידוע" : getProjectStatusLabel(status);
 }
 
-function projectTypeLabel(value: string) {
-  switch (value) {
-    case "logistics":
-      return "לוגיסטיקה";
-    case "moving":
-      return "הובלה";
-    case "construction":
-      return "שיפוצים";
-    default:
-      return value;
-  }
-}
-
 function profitValue(row: ProjectRow) {
   const direct = getNumber(row, "gross_profit");
   if (direct !== null) return direct;
@@ -185,15 +151,6 @@ function actualPriceValue(row: ProjectRow) {
 
 function normalizeProjectsView(value: string | null): ProjectsView {
   return value === "quotes" || value === "closed" ? value : "projects";
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border bg-background p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-lg font-semibold">{value}</div>
-    </div>
-  );
 }
 
 function paymentStatusValue(row: ProjectRow) {
@@ -249,10 +206,6 @@ function paymentStatusBadgeClasses(status: "paid" | "partial" | "unpaid" | "unpr
     case "no_charge":
       return "border-info/30 bg-info-soft/40 text-info-soft-foreground";
   }
-}
-
-function currentMonthIso() {
-  return new Date().toISOString().slice(0, 7);
 }
 
 function defaultSortForTab(_tab: ProjectsView): SortMode {
@@ -372,11 +325,6 @@ export default function ProjectsClient({
   const setStatus = (next: string) => pushFilters({ status: next });
   const setSort = (next: SortMode) => pushFilters({ sort: next });
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [monthlySummaryOpen, setMonthlySummaryOpen] = useState(false);
-  const [monthlySummaryMonth, setMonthlySummaryMonth] = useState(currentMonthIso());
-  const [monthlySummaryLoading, setMonthlySummaryLoading] = useState(false);
-  const [monthlySummaryError, setMonthlySummaryError] = useState<string | null>(null);
-  const [monthlySummary, setMonthlySummary] = useState<ProjectMonthlySummary | null>(null);
 
   // Project create/edit now run through the shared <NewProjectClient/> wizard, so
   // this component only tracks dialog open/submit state — the wizard owns the form.
@@ -527,30 +475,6 @@ export default function ProjectsClient({
     setApproveQuoteOpen(true);
   }
 
-  async function loadMonthlySummary() {
-    if (monthlySummaryLoading) return;
-    setMonthlySummaryError(null);
-    setMonthlySummaryLoading(true);
-    try {
-      const res = await fetch("/api/projects/monthly-summary", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ month: monthlySummaryMonth }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-      } & Partial<ProjectMonthlySummary>;
-      if (!res.ok) {
-        setMonthlySummaryError(toHebrewError(json.error, "טעינת הסיכום נכשלה."));
-        return;
-      }
-      setMonthlySummary(json as ProjectMonthlySummary);
-    } catch (e: unknown) {
-      setMonthlySummaryError(toHebrewError(e, "שגיאה לא ידועה"));
-    } finally {
-      setMonthlySummaryLoading(false);
-    }
-  }
 
 
   async function approveQuote() {
@@ -639,17 +563,6 @@ export default function ProjectsClient({
           >
             <SlidersHorizontal className="h-4 w-4" />
             {mobileFiltersOpen ? "הסתרת חיפוש וסינון" : "חיפוש וסינון"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11"
-            onClick={() => {
-              setMonthlySummaryOpen(true);
-              void loadMonthlySummary();
-            }}
-          >
-            סיכום חודשי
           </Button>
         </div>
 
@@ -774,18 +687,7 @@ export default function ProjectsClient({
         </AdaptiveGrid>
 
         <div className="w-full xl:w-auto">
-          <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:flex xl:w-auto">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 w-full xl:w-auto"
-              onClick={() => {
-                setMonthlySummaryOpen(true);
-                void loadMonthlySummary();
-              }}
-            >
-              סיכום חודשי
-            </Button>
+          <div className="grid w-full grid-cols-1 gap-2 xl:flex xl:w-auto">
             <Button type="button" className="h-11 w-full xl:w-auto" onClick={() => openCreateDialog(activeTab)}>
               {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
             </Button>
@@ -1318,94 +1220,6 @@ export default function ProjectsClient({
         </AdaptiveDialog>
       </Dialog>
 
-      <Dialog open={monthlySummaryOpen} onOpenChange={setMonthlySummaryOpen}>
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>סיכום פרויקטים לפי חודש</DialogTitle>
-            <DialogDescription>
-              בחר חודש כדי לראות סיכום של פרויקטים בפועל.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">חודש</label>
-                <Input
-                  type="month"
-                  value={monthlySummaryMonth}
-                  onChange={(e) => setMonthlySummaryMonth(e.target.value)}
-                />
-              </div>
-              <div className="flex items-end">
-                <Button
-                  type="button"
-                  className="w-full"
-                  onClick={() => void loadMonthlySummary()}
-                  disabled={monthlySummaryLoading}
-                >
-                  {monthlySummaryLoading ? "טוען..." : "הצג סיכום"}
-                </Button>
-              </div>
-            </AdaptiveGrid>
-
-            {monthlySummaryError ? (
-              <div className="text-sm text-destructive">{monthlySummaryError}</div>
-            ) : null}
-
-            {monthlySummary ? (
-              <div className="space-y-4">
-                <AdaptiveGrid variant="customerStats">
-                  <Stat label="פרויקטים בפועל" value={`${monthlySummary.totalProjects}`} />
-                  {canSeeMoney ? (
-                    <>
-                      <Stat label='סה"כ לחיוב' value={formatIls(monthlySummary.totals.charged)} />
-                      <Stat label='סה"כ הוצאות' value={formatIls(monthlySummary.totals.expenses)} />
-                      <Stat label="רווח גולמי" value={formatIls(monthlySummary.totals.profit)} />
-                      <Stat label='סה"כ שולם' value={formatIls(monthlySummary.totals.paid)} />
-                      <Stat label='סה"כ חייב לעובדים' value={formatIls(monthlySummary.totals.workerOwed)} />
-                      <Stat
-                        label="יתרה פתוחה"
-                        value={formatIls(monthlySummary.totals.charged - monthlySummary.totals.paid)}
-                      />
-                    </>
-                  ) : null}
-                </AdaptiveGrid>
-
-                <AdaptiveGrid variant="formTwo">
-                  <div className="space-y-2 rounded-md border bg-background p-3">
-                    <div className="text-sm font-semibold">סוג פרויקט</div>
-                    {monthlySummary.byType.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">אין נתונים לחודש הזה.</div>
-                    ) : (
-                      monthlySummary.byType.map((item) => (
-                        <div key={item.type} className="flex items-center justify-between gap-3 text-sm">
-                          <span>{projectTypeLabel(item.type)}</span>
-                          <span className="font-medium">{item.count}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="space-y-2 rounded-md border bg-background p-3">
-                    <div className="text-sm font-semibold">סטטוס</div>
-                    {monthlySummary.byStatus.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">אין נתונים לחודש הזה.</div>
-                    ) : (
-                      monthlySummary.byStatus.map((item) => (
-                        <div key={item.status} className="flex items-center justify-between gap-3 text-sm">
-                          <span>{statusLabel(item.status)}</span>
-                          <span className="font-medium">{item.count}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </AdaptiveGrid>
-              </div>
-            ) : null}
-          </div>
-        </AdaptiveDialog>
-      </Dialog>
     </PageStack>
   );
 }

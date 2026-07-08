@@ -9,6 +9,7 @@ import type {
   AssignableUser,
   ExpenseListItem,
   ProjectFinancials,
+  ProjectMonthlySalaryItem,
   ProjectOverview,
   ProjectSalaryAgreement,
   ProjectTaskProgress,
@@ -340,6 +341,26 @@ export default async function ProjectPage({
           .in("user_id", assignableUserIds)
           .order("valid_from", { ascending: false })
       : { data: [] as ProjectSalaryAgreement[] };
+
+  // Monthly-salary (payslip) costs attributed to THIS project via the worker's
+  // salary agreement (business_domain=פרויקטים + project_id). Shown as read-only
+  // lines in the project's expenses; the totals come from project_financials_view.
+  const monthlySalaryResult = await supabase
+    .from("worker_debt_items_view")
+    .select("source_id,user_id,period_month,earned_amount,paid_amount,owed_amount,payment_status")
+    .eq("source_type", "payslip")
+    .eq("project_id", id);
+  const monthlySalaryItems: ProjectMonthlySalaryItem[] = (
+    (monthlySalaryResult.data ?? []) as Array<Record<string, unknown>>
+  ).map((row) => ({
+    payslip_id: typeof row.source_id === "string" ? row.source_id : "",
+    user_id: typeof row.user_id === "string" ? row.user_id : null,
+    period_month: typeof row.period_month === "string" ? row.period_month : null,
+    earned_amount: (row.earned_amount as number | string | null) ?? null,
+    paid_amount: (row.paid_amount as number | string | null) ?? null,
+    owed_amount: (row.owed_amount as number | string | null) ?? null,
+    payment_status: typeof row.payment_status === "string" ? row.payment_status : null,
+  }));
 
   const expenseIds = Array.from(
     new Set(
@@ -1132,6 +1153,7 @@ export default async function ProjectPage({
             paymentAuditError={paymentAuditResult.error}
             workerBalance={workerBalance ?? null}
             salaryAgreements={(salaryAgreements ?? []) as ProjectSalaryAgreement[]}
+            monthlySalaryItems={monthlySalaryItems}
           />
         )}
 

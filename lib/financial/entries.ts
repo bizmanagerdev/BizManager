@@ -906,6 +906,7 @@ export function buildWorkerPaymentEntries(args: {
   allocations: WorkerPaymentAllocationRow[];
   workerPaymentById: Map<string, WorkerPaymentRow>;
   sessionsById: Map<string, AttendanceSessionFinanceRow>;
+  payslipMetaById: Map<string, { businessDomain: string | null; projectId: string | null; propertyId: string | null }>;
   projectsById: Map<string, ProjectRow>;
   propertiesById: Map<string, PropertyRow>;
   propertyCustomersById: Map<string, Set<string>>;
@@ -914,7 +915,7 @@ export function buildWorkerPaymentEntries(args: {
   customerProjectSet: Set<string>;
   referenceDate: string;
 }): FinancialEntry[] {
-  const { allocations, workerPaymentById, sessionsById, projectsById, propertiesById, propertyCustomersById, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
+  const { allocations, workerPaymentById, sessionsById, payslipMetaById, projectsById, propertiesById, propertyCustomersById, recordedByNames, customerId, customerProjectSet, referenceDate } = args;
 
   return allocations.flatMap((allocation) => {
     if (!allocation.id || !allocation.worker_payment_id) return [];
@@ -928,14 +929,26 @@ export function buildWorkerPaymentEntries(args: {
       allocation.source_type === "session" && allocation.attendance_session_id
         ? sessionsById.get(allocation.attendance_session_id) ?? null
         : null;
-    const businessDomain = session?.business_domain ? normalizeDomain(session.business_domain) : "general_business";
-    const linkedProject = session?.project_id ? projectsById.get(session.project_id) ?? null : null;
-    const linkedProperty = session?.property_id ? propertiesById.get(session.property_id) ?? null : null;
-    const propertyCustomers = session?.property_id ? propertyCustomersById.get(session.property_id) ?? null : null;
+    // Monthly-salary (payslip) allocations have no session — their domain/project/
+    // property come from the worker's active salary agreement (via worker_debt_items_view).
+    // A payslip tied to a project books the whole salary as that project's expense;
+    // otherwise it stays general_business (שוטף).
+    const payslipMeta = !session && allocation.payslip_id ? payslipMetaById.get(allocation.payslip_id) ?? null : null;
+
+    const businessDomain = session?.business_domain
+      ? normalizeDomain(session.business_domain)
+      : payslipMeta?.businessDomain
+        ? normalizeDomain(payslipMeta.businessDomain)
+        : "general_business";
+    const linkedProjectId = session?.project_id ?? payslipMeta?.projectId ?? null;
+    const linkedPropertyId = session?.property_id ?? payslipMeta?.propertyId ?? null;
+    const linkedProject = linkedProjectId ? projectsById.get(linkedProjectId) ?? null : null;
+    const linkedProperty = linkedPropertyId ? propertiesById.get(linkedPropertyId) ?? null : null;
+    const propertyCustomers = linkedPropertyId ? propertyCustomersById.get(linkedPropertyId) ?? null : null;
 
     if (!matchesCustomerFilter({
       customerId, customerProjectIds: customerProjectSet,
-      projectId: session?.project_id ?? null, orderCustomerId: null,
+      projectId: linkedProjectId, orderCustomerId: null,
       propertyCustomerIds: propertyCustomers, projectCustomerId: linkedProject?.customer_id ?? null,
     })) return [];
 
@@ -943,7 +956,7 @@ export function buildWorkerPaymentEntries(args: {
     if (!(amount > 0)) return [];
 
     const source = buildSource({
-      businessDomain, projectId: session?.project_id ?? null, orderId: null, propertyId: session?.property_id ?? null,
+      businessDomain, projectId: linkedProjectId, orderId: null, propertyId: linkedPropertyId,
       projectName: linkedProject?.name?.trim() || null, propertyAddress: linkedProperty?.address?.trim() || null,
     });
     const workerName =

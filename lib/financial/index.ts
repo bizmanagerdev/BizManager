@@ -155,6 +155,18 @@ export async function loadFinancialEntries(
       .filter((row) => row.id)
       .map((row) => [row.id, row] as const)
   );
+  // Payslip (monthly-salary) domain/project/property, keyed by payslip id (= the
+  // debt view's source_id for payslip rows). Lets worker-payment entries attribute
+  // a salaried worker's pay to the project/domain on their salary agreement.
+  const payslipMetaById = new Map<string, { businessDomain: string | null; projectId: string | null; propertyId: string | null }>();
+  for (const row of workerPaymentsResult.workerDebtItemRows) {
+    if ((row.source_type ?? "").toLowerCase() !== "payslip" || !row.source_id) continue;
+    payslipMetaById.set(row.source_id, {
+      businessDomain: row.business_domain ?? null,
+      projectId: row.project_id ?? null,
+      propertyId: row.property_id ?? null,
+    });
+  }
   const projectIds = uniqueStrings([
     ...projectRows.map((row) => row.id),
     ...paymentLinks.map((row) => row.projectId),
@@ -171,6 +183,7 @@ export async function loadFinancialEntries(
     ...paymentLinks.map((row) => row.propertyId),
     ...expenseRows.map((row) => row.property_id),
     ...workerPaymentsResult.attendanceSessionRows.map((row) => row.property_id),
+    ...workerPaymentsResult.workerDebtItemRows.map((row) => row.property_id ?? null),
   ]);
   const recordedByValues = uniqueStrings([
     ...paymentRows.map((row) => row.recorded_by),
@@ -243,6 +256,7 @@ export async function loadFinancialEntries(
     allocations: workerPaymentsResult.allocations,
     workerPaymentById,
     sessionsById: workerPaymentsResult.sessionsById,
+    payslipMetaById,
     ...sharedArgs,
   });
   const workerOwedEntries = buildWorkerOwedEntries({

@@ -1,12 +1,11 @@
 "use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import DomainBarChart from "@/components/charts/DomainBarChart";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { BarChart3, CalendarClock, CheckCircle2, Clock, Gauge, History, Layers, LineChart, Loader2, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, TrendingUp, Trash2 } from "lucide-react";
+import { BarChart3, Calculator, CalendarClock, CheckCircle2, Clock, History, LineChart, Loader2, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, Trash2 } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -27,17 +26,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import ProfitLossPanel from "@/app/(app)/financial/reports/ProfitLossPanel";
+import BottomLinePanel from "@/app/(app)/financial/reports/BottomLinePanel";
 import MonthlyTrendPanel from "@/app/(app)/financial/reports/MonthlyTrendPanel";
 import ForecastPanel from "@/app/(app)/financial/reports/ForecastPanel";
 import EarnedRevenuePanel from "@/app/(app)/financial/reports/EarnedRevenuePanel";
 import PositionPanel from "@/app/(app)/financial/reports/PositionPanel";
 import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
+import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
+import type { DomainProofMap } from "@/lib/financial/domainProof";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import {
   getBusinessDomainLabel,
   type ExpenseBusinessDomain,
 } from "@/lib/expenses";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
+import { monthRange, recentMonthKeys } from "@/lib/financial/periodPresets";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
@@ -94,6 +97,8 @@ type InitialFilters = {
 type Props = {
   data: FinancialPageData;
   earnedRevenue?: EarnedRevenueReport | null;
+  projectBreakdown?: ProjectBreakdown | null;
+  domainProof?: DomainProofMap | null;
   initialFilters: InitialFilters;
   /** "flow" = the cash-flow ledger page; "reports" = totals + domain views + P&L. */
   view?: "flow" | "reports";
@@ -196,6 +201,8 @@ export default function FinancialPageClient({
   initialFilters,
   view = "flow",
   earnedRevenue = null,
+  projectBreakdown = null,
+  domainProof = null,
   canManageExpenses,
   canViewCashflow,
   recurringProjects,
@@ -205,9 +212,21 @@ export default function FinancialPageClient({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  // Inner report tab (סיכום / תחומים / רווח והפסד). Local state — switching it must
-  // not trigger a server re-query, unlike the shared URL-driven filters.
-  const [reportTab, setReportTab] = useState("summary");
+  // Inner report tab. Local state — switching it must not trigger a server
+  // re-query, unlike the shared URL-driven filters. 5 views: overview / pl /
+  // monthly / balance / forecast.
+  const [reportTab, setReportTab] = useState("overview");
+  // ── Global report toggles (drive every report tab, live in the top control row) ──
+  //  reportBasis "cash"  = money that actually ENTERED accounts this period (liquidity, by date received).
+  //              "earned"= money MADE this period (booked to the month of the work/sale).
+  //  includeOpen  = also count open debts owed to/by me (cash → accrual). N/A in earned mode.
+  //  includePersonal = include בית + צדקה in the numbers.
+  const [reportBasis, setReportBasis] = useState<"cash" | "earned">("cash");
+  const [includeOpen, setIncludeOpen] = useState(false);
+  const [includePersonal, setIncludePersonal] = useState(false);
+  // Resolved P&L basis for the domain/waterfall views (earned wins; else cash±open).
+  const plBasis: "cash" | "accrual" | "earned" =
+    reportBasis === "earned" ? "earned" : includeOpen ? "accrual" : "cash";
   // Flow view: which table is shown (full ledger vs upcoming flow).
   const [flowTab, setFlowTab] = useState<"ledger" | "upcoming" | "history">("history");
   // Filter panel is collapsed by default; opens automatically when filters arrive active.
@@ -272,7 +291,6 @@ export default function FinancialPageClient({
     type !== "all" ? type : "",
     stage !== "all" ? stage : "",
   ].filter(Boolean).length;
-  const domainGroups = data.domainGroups;
   const upcomingEntries = data.upcomingEntries;
   const ledgerEntries = data.ledgerEntries;
   // Scroll-to-load the upcoming list instead of paging it (same feel as the ledger).
@@ -488,6 +506,14 @@ export default function FinancialPageClient({
       setOrDelete(params, "ledgerPage", nextLedgerPage > 1 ? nextLedgerPage : null);
       setOrDelete(params, "upcomingPage", nextUpcomingPage > 1 ? nextUpcomingPage : null);
     }, { pending: true });
+  };
+
+  // Set both ends of the date range in one route update (used by the period chips
+  // and the month picker). Empty strings clear the range.
+  const applyRange = (nextFrom: string, nextTo: string) => {
+    setFrom(nextFrom);
+    setTo(nextTo);
+    replaceFilters({ from: nextFrom, to: nextTo, ledgerPage: 1, upcomingPage: 1 });
   };
 
   const resetFilters = () => {
@@ -752,11 +778,32 @@ export default function FinancialPageClient({
     }
   };
 
-  const filterControls = (
-    <div className="flex flex-wrap items-center gap-2">
+  // Month picker — always visible in the filter-button row (outside the
+  // collapsible filters panel) so switching month is one tap.
+  const periodControls = (
+    <select
+      aria-label="בחר חודש"
+      value={from && to && monthRange(from.slice(0, 7))?.from === from && monthRange(from.slice(0, 7))?.to === to ? from.slice(0, 7) : ""}
+      onChange={(event) => {
+        const range = event.target.value ? monthRange(event.target.value) : null;
+        applyRange(range?.from ?? "", range?.to ?? "");
+      }}
+      className="h-9 w-36 rounded-lg border border-input bg-background px-2 text-right text-sm shadow-sm"
+    >
+      <option value="">כל התקופה</option>
+      {recentMonthKeys(data.todayIso).map((key) => (
+        <option key={key} value={key}>
+          {key.slice(5)}/{key.slice(2, 4)}
+        </option>
+      ))}
+    </select>
+  );
+
+  const advancedFilterButton = (
+    <>
       <Button type="button" variant="outline" onClick={() => setFiltersOpen((value) => !value)}>
         <SlidersHorizontal className="ml-2 h-4 w-4" />
-        סינון
+        סינון מתקדם
         {activeFilterCount > 0 ? (
           <Badge variant="secondary" className="ms-2">{activeFilterCount}</Badge>
         ) : null}
@@ -767,8 +814,172 @@ export default function FinancialPageClient({
           איפוס סינון
         </Button>
       ) : null}
+    </>
+  );
+
+  const filterControls = (
+    <div className="flex flex-wrap items-center gap-2">
+      {periodControls}
+      {advancedFilterButton}
     </div>
   );
+
+  // The shared report control row: month + the 3 global toggles + advanced filters.
+  // These drive every report tab (סקירה / לפי תחום / חודשי / מאזן).
+  const reportControls = (
+    <div className="flex flex-wrap items-center gap-2 print:hidden">
+      {periodControls}
+      <div className="flex overflow-hidden rounded-lg border text-sm">
+        <button
+          type="button"
+          onClick={() => setReportBasis("cash")}
+          className={cn("px-3 py-1.5 transition-colors", reportBasis === "cash" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
+          title="כמה כסף באמת נכנס לחשבונות בתקופה — לפי תאריך הקבלה"
+        >
+          נכנס בפועל
+        </button>
+        <button
+          type="button"
+          onClick={() => setReportBasis("earned")}
+          className={cn("px-3 py-1.5 transition-colors", reportBasis === "earned" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
+          title="מה שהרווחתי בתקופה — לפי החודש שבו נוצר, גם אם עדיין לא נגבה"
+        >
+          הרווחתי
+        </button>
+      </div>
+      <label className={cn("flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm", reportBasis === "earned" ? "opacity-40" : "")}>
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-primary"
+          checked={includeOpen}
+          disabled={reportBasis === "earned"}
+          onChange={(e) => setIncludeOpen(e.target.checked)}
+        />
+        <span>כולל פתוחים</span>
+      </label>
+      <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm">
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-primary"
+          checked={includePersonal}
+          onChange={(e) => setIncludePersonal(e.target.checked)}
+        />
+        <span>כולל בית וצדקה</span>
+      </label>
+      {advancedFilterButton}
+    </div>
+  );
+
+  // The collapsible advanced-filter panel (search / date range / domain / source /
+  // type / stage). Rendered INLINE under the control row so it opens next to its
+  // button instead of jumping to the top of the page.
+  const advancedFilterPanel = filtersOpen ? (
+    <Card className="print:hidden">
+      <CardContent className="space-y-3 pt-6">
+        <div className="grid gap-3 lg:grid-cols-[1.2fr_repeat(6,minmax(0,1fr))]">
+          <label className="space-y-1.5 text-sm text-right">
+            <span className="font-medium">חיפוש</span>
+            <div className="relative">
+              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setQuery(nextValue);
+                  if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current);
+                  queryDebounceRef.current = setTimeout(() => {
+                    replaceFilters({ q: nextValue, ledgerPage: 1, upcomingPage: 1 });
+                  }, 300);
+                }}
+                placeholder="חפש לפי תיאור, מקור, תחום או אסמכתא..."
+                className="pr-9"
+              />
+            </div>
+          </label>
+
+          <label className="space-y-1.5 text-sm text-right">
+            <span className="font-medium">מתאריך</span>
+            <DateInput
+              value={from}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setFrom(nextValue);
+                if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
+                dateDebounceRef.current = setTimeout(() => {
+                  replaceFilters({ from: nextValue, ledgerPage: 1, upcomingPage: 1 });
+                }, 400);
+              }}
+            />
+          </label>
+
+          <label className="space-y-1.5 text-sm text-right">
+            <span className="font-medium">עד תאריך</span>
+            <DateInput
+              value={to}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setTo(nextValue);
+                if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
+                dateDebounceRef.current = setTimeout(() => {
+                  replaceFilters({ to: nextValue, ledgerPage: 1, upcomingPage: 1 });
+                }, 400);
+              }}
+            />
+          </label>
+
+          <SelectField value={domain} onChange={(value) => {
+            setDomain(value);
+            setSourceId("");
+            replaceFilters({ domain: value, sourceId: "", ledgerPage: 1, upcomingPage: 1 });
+          }} label="תחום עסקי">
+            <option value="">כל התחומים</option>
+            {domainOptions.map((option) => (
+              <option key={option} value={option}>
+                {getBusinessDomainLabel(option)}
+              </option>
+            ))}
+          </SelectField>
+
+          <SelectField value={sourceId} onChange={(value) => {
+            setSourceId(value);
+            replaceFilters({ sourceId: value, ledgerPage: 1, upcomingPage: 1 });
+          }} label={sourceKindLabel(sourceKind)}>
+            <option value="">{sourceKind ? `כל ה${sourceKindLabel(sourceKind)}` : "בחר תחום קודם"}</option>
+            {sourceOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </SelectField>
+
+          <SelectField value={type} onChange={(value) => {
+            setType(value);
+            replaceFilters({ type: value, ledgerPage: 1, upcomingPage: 1 });
+          }} label="סוג תנועה">
+            <option value="all">הכול</option>
+            <option value="inflow">כניסות בלבד</option>
+            <option value="outflow">יציאות בלבד</option>
+          </SelectField>
+
+          <SelectField value={stage} onChange={(value) => {
+            setStage(value);
+            replaceFilters({ stage: value, ledgerPage: 1, upcomingPage: 1 });
+          }} label="סטטוס תזרים">
+            <option value="all">הכול</option>
+            <option value="actual">בפועל</option>
+            <option value="future">צפוי / ממתין</option>
+            <option value="pending">ממתין בלבד</option>
+          </SelectField>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm text-muted-foreground">
+          <Badge variant="outline">{filteredEntries.length} תנועות</Badge>
+          <Badge variant="outline">{sourceCount} מקורות</Badge>
+          <Badge variant="outline">{upcomingCount} צפויות / ממתינות</Badge>
+        </div>
+      </CardContent>
+    </Card>
+  ) : null;
 
   const flowActions =
     canManageExpenses && view === "flow" ? (
@@ -787,121 +998,8 @@ export default function FinancialPageClient({
       {resolvedCanView ? (
         <>
       <div dir="rtl" className="space-y-4 text-right">
-      <div ref={filtersCardRef} className="print:hidden space-y-2">
-      {filtersOpen ? (
-      <Card>
-        <CardHeader className="hidden">
-          <CardTitle className="text-lg text-right">סינון וניווט</CardTitle>
-          <CardDescription className="text-right">
-            מסננים מקומיים לפי תאריך תזרים, תחום עסקי, מקור, סוג תנועה וחיפוש חופשי.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-6">
-          <div className="grid gap-3 lg:grid-cols-[1.2fr_repeat(6,minmax(0,1fr))]">
-            <label className="space-y-1.5 text-sm text-right">
-              <span className="font-medium">חיפוש</span>
-              <div className="relative">
-                <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setQuery(nextValue);
-                    if (queryDebounceRef.current) clearTimeout(queryDebounceRef.current);
-                    queryDebounceRef.current = setTimeout(() => {
-                      replaceFilters({ q: nextValue, ledgerPage: 1, upcomingPage: 1 });
-                    }, 300);
-                  }}
-                  placeholder="חפש לפי תיאור, מקור, תחום או אסמכתא..."
-                  className="pr-9"
-                />
-              </div>
-            </label>
-
-            <label className="space-y-1.5 text-sm text-right">
-              <span className="font-medium">מתאריך</span>
-              <DateInput
-                value={from}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setFrom(nextValue);
-                  if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
-                  dateDebounceRef.current = setTimeout(() => {
-                    replaceFilters({ from: nextValue, ledgerPage: 1, upcomingPage: 1 });
-                  }, 400);
-                }}
-              />
-            </label>
-
-            <label className="space-y-1.5 text-sm text-right">
-              <span className="font-medium">עד תאריך</span>
-              <DateInput
-                value={to}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setTo(nextValue);
-                  if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
-                  dateDebounceRef.current = setTimeout(() => {
-                    replaceFilters({ to: nextValue, ledgerPage: 1, upcomingPage: 1 });
-                  }, 400);
-                }}
-              />
-            </label>
-
-            <SelectField value={domain} onChange={(value) => {
-              setDomain(value);
-              setSourceId("");
-              replaceFilters({ domain: value, sourceId: "", ledgerPage: 1, upcomingPage: 1 });
-            }} label="תחום עסקי">
-              <option value="">כל התחומים</option>
-              {domainOptions.map((option) => (
-                <option key={option} value={option}>
-                  {getBusinessDomainLabel(option)}
-                </option>
-              ))}
-            </SelectField>
-
-            <SelectField value={sourceId} onChange={(value) => {
-              setSourceId(value);
-              replaceFilters({ sourceId: value, ledgerPage: 1, upcomingPage: 1 });
-            }} label={sourceKindLabel(sourceKind)}>
-              <option value="">{sourceKind ? `כל ה${sourceKindLabel(sourceKind)}` : "בחר תחום קודם"}</option>
-              {sourceOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </SelectField>
-
-            <SelectField value={type} onChange={(value) => {
-              setType(value);
-              replaceFilters({ type: value, ledgerPage: 1, upcomingPage: 1 });
-            }} label="סוג תנועה">
-              <option value="all">הכול</option>
-              <option value="inflow">כניסות בלבד</option>
-              <option value="outflow">יציאות בלבד</option>
-            </SelectField>
-
-            <SelectField value={stage} onChange={(value) => {
-              setStage(value);
-              replaceFilters({ stage: value, ledgerPage: 1, upcomingPage: 1 });
-            }} label="סטטוס תזרים">
-              <option value="all">הכול</option>
-              <option value="actual">בפועל</option>
-              <option value="future">צפוי / ממתין</option>
-              <option value="pending">ממתין בלבד</option>
-            </SelectField>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm text-muted-foreground">
-            <Badge variant="outline">{filteredEntries.length} תנועות</Badge>
-            <Badge variant="outline">{sourceCount} מקורות</Badge>
-            <Badge variant="outline">{upcomingCount} צפויות / ממתינות</Badge>
-          </div>
-        </CardContent>
-      </Card>
-      ) : null}
-      </div>
+      {/* Anchor only — the advanced-filter panel now renders inline under the tab controls. */}
+      <div ref={filtersCardRef} className="print:hidden" />
 
       <div ref={contentAreaRef} className="relative space-y-4">
         {isFilterPending ? (
@@ -920,22 +1018,24 @@ export default function FinancialPageClient({
         ) : null}
 
       {view === "reports" ? (
-      <Tabs value={reportTab} onValueChange={setReportTab} dir="rtl" className="space-y-4">
-        <div className="flex items-center justify-between gap-3 print:hidden">
-          <div className="min-w-0 flex-1">
-            <TabsList variant="underline">
-              <TabsTrigger value="summary"><Gauge className="h-4 w-4 shrink-0" />סיכום</TabsTrigger>
-              <TabsTrigger value="position"><Scale className="h-4 w-4 shrink-0" />מאזן</TabsTrigger>
-              <TabsTrigger value="domains"><Layers className="h-4 w-4 shrink-0" />תחומים</TabsTrigger>
-              <TabsTrigger value="pl"><BarChart3 className="h-4 w-4 shrink-0" />רווח והפסד</TabsTrigger>
-              <TabsTrigger value="earned"><TrendingUp className="h-4 w-4 shrink-0" />רווח עבודה חודשי</TabsTrigger>
-              <TabsTrigger value="trend"><LineChart className="h-4 w-4 shrink-0" />מגמה חודשית</TabsTrigger>
-              <TabsTrigger value="forecast"><CalendarClock className="h-4 w-4 shrink-0" />תחזית</TabsTrigger>
-            </TabsList>
-          </div>
-          <div className="shrink-0">{filterControls}</div>
+      <Tabs value={reportTab} onValueChange={setReportTab} dir="rtl" className="space-y-3">
+        {/* Row 1: the 5 views */}
+        <div className="min-w-0">
+          <TabsList variant="underline">
+            <TabsTrigger value="overview"><Calculator className="h-4 w-4 shrink-0" />סקירה</TabsTrigger>
+            <TabsTrigger value="pl"><BarChart3 className="h-4 w-4 shrink-0" />לפי תחום</TabsTrigger>
+            <TabsTrigger value="monthly"><LineChart className="h-4 w-4 shrink-0" />חודשי</TabsTrigger>
+            <TabsTrigger value="balance"><Scale className="h-4 w-4 shrink-0" />מאזן</TabsTrigger>
+            <TabsTrigger value="forecast"><CalendarClock className="h-4 w-4 shrink-0" />תחזית</TabsTrigger>
+          </TabsList>
         </div>
-        <TabsContent value="summary" className="space-y-6">
+        {/* Row 2 (under the tabs, reads as part of the tab): shared controls */}
+        <div className="rounded-b-xl border-x border-b bg-muted/20 px-3 py-2">
+          {reportControls}
+        </div>
+        {/* Advanced filters open right here, under the controls — not at the page top. */}
+        {advancedFilterPanel}
+        <TabsContent value="balance" className="space-y-6">
       {/* ── עכשיו: כסף שכבר זז בפועל ── */}
       <section dir="rtl" className="space-y-2">
         <div>
@@ -1029,102 +1129,43 @@ export default function FinancialPageClient({
           />
         </div>
       </section>
+      <PositionPanel data={data} />
         </TabsContent>
-        <TabsContent value="domains" className="space-y-4">
-      <section dir="rtl" className="grid gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg text-right">מבט תחומים עסקיים</CardTitle>
-            <CardDescription className="text-right">
-              חלוקה לפי דומיין עסקי, עם הפרדה בין תזרים בפועל לצפי עתידי.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {domainGroups.length > 0 && (
-              <DomainBarChart
-                data={domainGroups.map((g) => ({
-                  name: g.domainName,
-                  inflow: g.actual.inflow,
-                  outflow: g.actual.outflow,
-                }))}
-                height={220}
-              />
-            )}
-            {domainGroups.length === 0 ? (
-              <div className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                אין תנועות להצגה עבור הסינון שנבחר.
-              </div>
-            ) : (
-              domainGroups.map((group) => (
-                <div key={group.domain ?? "general"} className="rounded-2xl border border-border/70 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1 text-right">
-                      <div className="font-medium">{group.domainName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {group.total.count} תנועות • נטו {formatCurrency(group.total.net)}
-                      </div>
-                    </div>
-                    <Badge variant="outline">{group.domain ? getBusinessDomainLabel(group.domain) : "שוטף"}</Badge>
-                  </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-xl bg-muted/30 p-3 text-sm">
-                      <div className="text-muted-foreground">בפועל</div>
-                      <div className="mt-1 grid gap-1">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-muted-foreground">כניסות</span>
-                          <span dir="ltr" className="text-success tabular-nums">{formatCurrency(group.actual.inflow)}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-muted-foreground">יציאות</span>
-                          <span dir="ltr" className="text-destructive tabular-nums">{formatCurrency(group.actual.outflow)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rounded-xl bg-muted/30 p-3 text-sm">
-                      <div className="text-muted-foreground">צפוי / ממתין</div>
-                      <div className="mt-1 grid gap-1">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-muted-foreground">כניסות</span>
-                          <span dir="ltr" className="text-success tabular-nums">{formatCurrency(group.future.inflow)}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-muted-foreground">יציאות</span>
-                          <span dir="ltr" className="text-destructive tabular-nums">{formatCurrency(group.future.outflow)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </section>
+        <TabsContent value="overview" className="space-y-4">
+          <BottomLinePanel
+            rows={data.profitLoss}
+            earned={earnedRevenue}
+            basis={plBasis}
+            includePersonal={includePersonal}
+          />
         </TabsContent>
         <TabsContent value="pl" className="space-y-4">
           <ProfitLossPanel
             rows={data.profitLoss}
+            earned={earnedRevenue}
+            projectBreakdown={projectBreakdown}
+            domainProof={domainProof}
             expenseCategories={data.profitLossExpenseCategories}
             previousRows={data.profitLossPrevious}
             previousPeriod={data.profitLossPreviousPeriod}
             from={initialFilters.from || null}
             to={initialFilters.to || null}
+            basis={plBasis}
+            includePersonal={includePersonal}
           />
         </TabsContent>
-        <TabsContent value="position" className="space-y-4">
-          <PositionPanel data={data} />
-        </TabsContent>
-        <TabsContent value="earned" className="space-y-4">
-          {earnedRevenue ? (
-            <EarnedRevenuePanel report={earnedRevenue} />
+        <TabsContent value="monthly" className="space-y-4">
+          {reportBasis === "earned" ? (
+            earnedRevenue ? (
+              <EarnedRevenuePanel report={earnedRevenue} />
+            ) : (
+              <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+                אין נתוני הכנסה להצגה.
+              </div>
+            )
           ) : (
-            <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
-              אין נתוני הכנסה להצגה.
-            </div>
+            <MonthlyTrendPanel points={data.monthlyTrend} />
           )}
-        </TabsContent>
-        <TabsContent value="trend" className="space-y-4">
-          <MonthlyTrendPanel points={data.monthlyTrend} />
         </TabsContent>
         <TabsContent value="forecast" className="space-y-4">
           <ForecastPanel changes={data.forecastMonthly} openingBalance={data.actualSummary.net} />
@@ -1137,7 +1178,7 @@ export default function FinancialPageClient({
         dir="rtl"
         className="space-y-4"
       >
-        <div className="flex items-center justify-between gap-3 print:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div className="min-w-0 flex-1">
             <TabsList variant="underline">
               <TabsTrigger value="history"><History className="h-4 w-4 shrink-0" />היסטוריה</TabsTrigger>
@@ -1158,6 +1199,8 @@ export default function FinancialPageClient({
             {filterControls}
           </div>
         </div>
+        {/* Advanced filters open inline under the flow controls. */}
+        {advancedFilterPanel}
         <TabsContent value="history" forceMount className="data-[state=inactive]:hidden">
       <Card>
         <CardHeader className="pb-3">

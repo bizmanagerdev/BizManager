@@ -13,7 +13,10 @@ import { fetchAllPaged } from "@/lib/supabase/paginate";
 //                                month the project spans (start → end).
 //     • שוטף / ספייסיט / נכסים  — collected income payments tagged to that domain,
 //                                by payment date (these have no booking event).
-//   EXPENSES (all business domains) — by expense_date (incurred), every expense.
+//   EXPENSES (all business domains) — by expense_date (incurred), every expense,
+//                                PLUS worker labor cost (incurred) by the work
+//                                month, so payroll shows here exactly as it does
+//                                in the cash P&L (both tabs count wages).
 //   NET = income − expenses, per domain and per month.
 // Amounts are GROSS (incl. VAT). Personal domains (בית/צדקה) are excluded.
 // ════════════════════════════════════════════════════════════════════════════
@@ -266,6 +269,16 @@ export async function loadEarnedRevenueByMonth(
     ),
   ]);
 
+  // Worker payroll — EARNED/incurred basis: each worker's cost lands in the month
+  // the work BELONGS to (period_month), not the month it was paid. So a June salary
+  // paid on the 10th of July still counts in June. worker_debt_items_view gives the
+  // full incurred amount (earned_amount) + domain for BOTH hourly (labor_cost by
+  // clock_in month) and salaried (gross_salary by payroll month, project-linked when
+  // the agreement points at a project). The cash tab keeps counting wages when PAID.
+  const debtItemRows = await fetchAllPaged<Row>((lo, hi) =>
+    supabase.from("worker_debt_items_view").select("business_domain,period_month,earned_amount").range(lo, hi)
+  ).catch(() => [] as Row[]);
+
   const priceById = new Map<string, number>();
   for (const row of financialRows) {
     const id = str(row.id);
@@ -299,6 +312,22 @@ export async function loadEarnedRevenueByMonth(
       domain: str(row.business_domain) ?? "",
     };
   });
+
+  // Worker labor cost as an incurred expense, in the month it was earned. Both
+  // hourly (session) and salaried (payslip) rows carry period_month + earned_amount;
+  // salaried pay lands in general_business (שוטף) unless the salary agreement points
+  // at a project, in which case worker_debt_items_view already carries that domain.
+  for (const row of debtItemRows) {
+    const amount = Math.abs(toNum(row.earned_amount));
+    if (!(amount > 0)) continue;
+    const month = str(row.period_month);
+    expenses.push({
+      // period_month is "YYYY-MM"; anchor to the 1st so it buckets into that month.
+      date: month ? `${month}-01` : null,
+      amount,
+      domain: str(row.business_domain) ?? "general_business",
+    });
+  }
 
   // Other-domain income = collected payments tagged to a non-order/project domain.
   const otherIncome: EarnedIncomeInput[] = paymentRows
