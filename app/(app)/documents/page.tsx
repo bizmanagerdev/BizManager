@@ -580,9 +580,21 @@ export default async function DocumentsPage({
     })
   );
 
+  const filterCustomerId = normalizeString(params.customer_id) || "";
+  let filterCustomerPhone = "";
+  if (filterCustomerId) {
+    const { data: filterCustomerRow } = await supabase
+      .from("customer_overview_view")
+      .select("phone")
+      .eq("customer_id", filterCustomerId)
+      .maybeSingle<{ phone: string | null }>();
+    filterCustomerPhone = normalizeString(filterCustomerRow?.phone) || "";
+  }
+
   const initialFilters: DocumentArchiveFilters = {
-    customer_id: normalizeString(params.customer_id) || "",
+    customer_id: filterCustomerId,
     customer_name: normalizeString(params.customer_name) || "",
+    customer_phone: filterCustomerPhone,
     customer_page: normalizeString(params.customer_page) || "",
     project_id: normalizeString(params.project_id) || "",
     property_id: normalizeString(params.property_id) || "",

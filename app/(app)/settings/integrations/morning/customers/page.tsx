@@ -6,7 +6,7 @@ export default async function MorningCustomersSettingsPage() {
   const { profile, supabase } = await requireProfile();
   const { data: customers, error } = await supabase
     .from("customers")
-    .select("id,name,morning_client_id,morning_match_status,morning_synced_at,morning_last_sync_error")
+    .select("id,name,phone,morning_client_id,morning_match_status,morning_synced_at,morning_last_sync_error")
     .order("name", { ascending: true })
     .range(0, 199);
 
@@ -27,6 +27,11 @@ export default async function MorningCustomersSettingsPage() {
             {(customers ?? []).map((customer) => (
               <div key={customer.id} className="rounded-xl border p-3">
                 <div className="font-medium">{customer.name}</div>
+                {customer.phone ? (
+                  <a href={`tel:${customer.phone}`} className="text-xs text-muted-foreground hover:underline">
+                    {customer.phone}
+                  </a>
+                ) : null}
                 <div className="text-muted-foreground">
                   סטטוס Morning: {customer.morning_match_status ?? "unmatched"}
                   {customer.morning_client_id ? ` • לקוח Morning: ${customer.morning_client_id}` : ""}

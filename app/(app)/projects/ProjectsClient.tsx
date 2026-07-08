@@ -121,6 +121,10 @@ function clientDisplayName(row: ProjectRow) {
   return getString(row, "customer_name") ?? "-";
 }
 
+function clientPhone(row: ProjectRow) {
+  return getString(row, "customer_phone");
+}
+
 function statusValue(row: ProjectRow) {
   return getString(row, "status") ?? "unknown";
 }
@@ -802,7 +806,18 @@ export default function ProjectsClient({
                         </Badge>
                       )}
                     </td>
-                    <td className="px-4 py-4">{clientDisplayName(row)}</td>
+                    <td className="px-4 py-4">
+                      <div>{clientDisplayName(row)}</div>
+                      {clientPhone(row) ? (
+                        <a
+                          href={`tel:${clientPhone(row)}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs text-muted-foreground hover:underline"
+                        >
+                          {clientPhone(row)}
+                        </a>
+                      ) : null}
+                    </td>
                     {canSeeMoney ? (
                       <td className="px-4 py-4">
                         {currentStatus === "quote" ? (
@@ -941,6 +956,15 @@ export default function ProjectsClient({
                       <div className="min-w-0">
                         <div className="truncate text-base font-semibold">{projectDisplayName(row)}</div>
                         <div className="mt-1 truncate text-sm text-muted-foreground">{clientDisplayName(row)}</div>
+                        {clientPhone(row) ? (
+                          <a
+                            href={`tel:${clientPhone(row)}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-0.5 block truncate text-xs text-muted-foreground hover:underline"
+                          >
+                            {clientPhone(row)}
+                          </a>
+                        ) : null}
                       </div>
                       <div className="shrink-0 text-xs text-muted-foreground">#{id.slice(0, 8)}</div>
                     </div>

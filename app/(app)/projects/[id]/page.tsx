@@ -859,15 +859,22 @@ export default async function ProjectPage({
   const projectName = typeof overview?.name === "string" ? overview.name : "פרויקט";
   const customerName =
     typeof overview?.customer_name === "string" ? overview.customer_name : "";
-  const customerPhoneRow =
-    ((customers ?? []) as UnknownRow[]).find(
-      (row) =>
-        typeof row.customer_id === "string" &&
-        row.customer_id === overview?.customer_id &&
-        typeof row.phone === "string" &&
-        row.phone.trim()
-    ) ?? null;
-  const customerPhone = typeof customerPhoneRow?.phone === "string" ? customerPhoneRow.phone : null;
+  // Look the customer's phone up directly by id — the `customers` array above is
+  // capped at 200 rows (it only feeds the picker dropdown), so a .find() there
+  // misses any customer past the first 200 and wrongly shows "—".
+  const overviewCustomerId =
+    typeof overview?.customer_id === "string" ? overview.customer_id : null;
+  const { data: customerPhoneRow } = overviewCustomerId
+    ? await supabase
+        .from("customer_overview_view")
+        .select("phone")
+        .eq("customer_id", overviewCustomerId)
+        .maybeSingle<{ phone: string | null }>()
+    : { data: null };
+  const customerPhone =
+    typeof customerPhoneRow?.phone === "string" && customerPhoneRow.phone.trim()
+      ? customerPhoneRow.phone
+      : null;
   const projectNotes =
     typeof overview?.notes === "string" && overview.notes.trim() ? overview.notes.trim() : null;
   const managerName =
@@ -999,6 +1006,14 @@ export default async function ProjectPage({
                     </h1>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {customerName || "ללא לקוח משויך"}
+                      {customerName && customerPhone ? (
+                        <>
+                          {" · "}
+                          <a href={`tel:${customerPhone}`} className="hover:underline">
+                            {customerPhone}
+                          </a>
+                        </>
+                      ) : null}
                     </p>
                   </div>
                 </div>

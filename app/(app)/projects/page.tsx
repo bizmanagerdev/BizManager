@@ -168,7 +168,22 @@ export default async function ProjectsPage({
       <div className="space-y-4">
         <PageAlertBar keys={["project_closed_unbilled", "project_deadline", "project_starting", "stale_quote"]} />
         {customerName ? (
-          <div className="text-lg font-medium">לקוח: {customerName}</div>
+          <div className="text-lg font-medium">
+            לקוח: {customerName}
+            {(() => {
+              const phone = customerId
+                ? customerOptionsFinal.find((o) => o.id === customerId)?.phone
+                : null;
+              return phone ? (
+                <a
+                  href={`tel:${phone}`}
+                  className="mr-2 text-sm font-normal text-muted-foreground hover:underline"
+                >
+                  {phone}
+                </a>
+              ) : null;
+            })()}
+          </div>
         ) : null}
 
         {loadError ? (

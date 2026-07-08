@@ -42,6 +42,7 @@ export type Loan = {
   interest_amount: number;
   business_domain: string;
   counterparty_customer_id: string | null;
+  counterparty_phone: string | null;
   status: LoanStatus;
   notes: string | null;
   created_at: string | null;
@@ -128,6 +129,7 @@ export function deriveLoan(row: Row, repayments: LoanRepayment[]): Loan {
     interest_amount: num(row.interest_amount),
     business_domain: str(row.business_domain) ?? "general_business",
     counterparty_customer_id: str(row.counterparty_customer_id),
+    counterparty_phone: null,
     status: storedStatus,
     notes: str(row.notes),
     created_at: str(row.created_at),
@@ -175,9 +177,33 @@ export async function fetchLoans(supabase: SupabaseClient): Promise<Loan[]> {
       repaymentsByLoan.set(repayment.loan_id, list);
     }
 
-    return loanRows.map((row) =>
+    const loans = loanRows.map((row) =>
       deriveLoan(row, repaymentsByLoan.get(str(row.id) ?? "") ?? [])
     );
+
+    // Enrich loans linked to a customer with that customer's phone so the list
+    // can show a number next to the name (project rule).
+    const counterpartyIds = Array.from(
+      new Set(loans.map((loan) => loan.counterparty_customer_id).filter((id): id is string => Boolean(id)))
+    );
+    if (counterpartyIds.length > 0) {
+      const { data: phoneRows } = await supabase
+        .from("customer_overview_view")
+        .select("customer_id,phone")
+        .in("customer_id", counterpartyIds);
+      const phoneByCustomerId = new Map<string, string | null>();
+      ((phoneRows ?? []) as Row[]).forEach((row) => {
+        const id = str(row.customer_id);
+        if (id) phoneByCustomerId.set(id, str(row.phone));
+      });
+      for (const loan of loans) {
+        if (loan.counterparty_customer_id) {
+          loan.counterparty_phone = phoneByCustomerId.get(loan.counterparty_customer_id) ?? null;
+        }
+      }
+    }
+
+    return loans;
   } catch {
     return [];
   }

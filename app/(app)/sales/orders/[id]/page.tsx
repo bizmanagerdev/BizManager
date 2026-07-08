@@ -568,6 +568,14 @@ export default async function SalesOrderPage({
               ) : (
                 <span className="font-semibold text-foreground">{customerName}</span>
               )}
+              {customerPhone ? (
+                <>
+                  {" · "}
+                  <a href={`tel:${customerPhone}`} dir="ltr" className="hover:underline">
+                    {customerPhone}
+                  </a>
+                </>
+              ) : null}
               {" · "}הוזמן <span className="font-medium text-foreground">{formatDate(orderDate)}</span>
               {formatRelativeDateLabel(orderDate) ? ` (${formatRelativeDateLabel(orderDate)})` : ""}
               {orderCreatedByName ? (

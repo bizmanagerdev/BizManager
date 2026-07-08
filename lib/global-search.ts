@@ -263,12 +263,16 @@ function projectResult(row: Row): GlobalSearchResult | null {
   const id = text(row.id);
   const name = text(row.name);
   if (!id || !name) return null;
+  const customerName = text(row.customer_name);
+  const customerPhone = text(row.customer_phone);
+  const subtitle =
+    [customerName, customerPhone].filter(Boolean).join(" · ") || null;
   return {
     id,
     group: "projects",
     groupLabel: GROUP_LABELS.projects,
     title: name,
-    subtitle: text(row.customer_name) || null,
+    subtitle,
     meta: [getProjectStatusLabel(text(row.status)), projectTypeLabel(row.project_type)].filter(Boolean),
     href: `/projects/${encodeURIComponent(id)}`,
   };
@@ -493,7 +497,7 @@ export async function performGlobalSearch(
       .range(0, fetchSize - 1),
     supabase
       .from("project_dashboard_view")
-      .select("id,name,customer_name,status,project_type,updated_at")
+      .select("id,name,customer_id,customer_name,status,project_type,updated_at")
       .order("updated_at", { ascending: false })
       .range(0, fetchSize - 1),
     supabase
@@ -738,7 +742,7 @@ export async function performGlobalSearch(
   const projectHave = new Set(projectRows.map((row) => text(row.id)));
   const taskProjectRows = await fetchByIds(
     "project_dashboard_view",
-    "id,name,customer_name,status,project_type,updated_at",
+    "id,name,customer_id,customer_name,status,project_type,updated_at",
     "id",
     projectContent.ids,
     projectHave
@@ -752,6 +756,28 @@ export async function performGlobalSearch(
     query,
     (row) => [text(row.name), text(row.customer_name), text(row.status), text(row.project_type)]
   ).slice(0, limitPerGroup);
+
+  // The project view carries no phone; look it up for the shortlisted projects so a
+  // project result shows the customer's number next to the name (project rule).
+  const projectCustomerIds = Array.from(
+    new Set(projects.map((row) => text(row.customer_id)).filter(Boolean))
+  );
+  if (projectCustomerIds.length > 0) {
+    const { data: projectPhoneRows } = await supabase
+      .from("customer_overview_view")
+      .select("customer_id,phone")
+      .in("customer_id", projectCustomerIds);
+    const phoneByCustomerId = new Map<string, string>();
+    ((projectPhoneRows ?? []) as Row[]).forEach((row) => {
+      const cid = text(row.customer_id);
+      const phone = text(row.phone);
+      if (cid && phone) phoneByCustomerId.set(cid, phone);
+    });
+    for (const row of projects) {
+      const phone = phoneByCustomerId.get(text(row.customer_id));
+      if (phone) row.customer_phone = phone;
+    }
+  }
 
   // Comments → parent task. task_comments has no page of its own, so a matching
   // comment (fuzzy, any age — resolved above) surfaces the task it belongs to.

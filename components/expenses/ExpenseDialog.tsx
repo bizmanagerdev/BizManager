@@ -921,16 +921,6 @@ export function ExpenseDialog({
     }
   };
 
-  const canSubmit =
-    !saving &&
-    Boolean(effectiveDomain) &&
-    Boolean(finalCategory) &&
-    (isWorkerPayment
-      ? true
-      : installmentsMode
-        ? amount.trim() !== "" && validateInstallments(installmentRows, Number(amount) || 0) === null
-        : amount.trim() !== "" && Boolean(expenseDate));
-
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!saving) onOpenChange(o); }}>
       <AdaptiveDialog size="formLg">
@@ -1035,7 +1025,7 @@ export function ExpenseDialog({
                 if (e.target.value !== CARS_CATEGORY) setTagIds(presetTagLabel ? tagIds : []);
               }}
             >
-              <option value="">בחרו קטגוריה</option>
+              <option value=""></option>
               {categoryOptions.map((option) => (
                 <option key={option} value={option}>{option}</option>
               ))}
@@ -1475,7 +1465,7 @@ export function ExpenseDialog({
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={saving}>
               ביטול
             </Button>
-            <Button type="submit" disabled={!canSubmit}>
+            <Button type="submit" disabled={saving}>
               {saving ? (
                 <>
                   <Loader2 className="ml-2 h-4 w-4 animate-spin" />

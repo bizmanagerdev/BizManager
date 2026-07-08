@@ -40,6 +40,7 @@ function makeLoan(overrides: Partial<Loan> = {}): Loan {
     interest_amount: 0,
     business_domain: "general_business",
     counterparty_customer_id: null,
+    counterparty_phone: null,
     status: "active",
     notes: null,
     created_at: null,

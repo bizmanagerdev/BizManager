@@ -884,6 +884,15 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
                       ) : (
                         <span className="font-semibold">{counterparty}</span>
                       )}
+                      {loan.counterparty_phone ? (
+                        <a
+                          href={`tel:${loan.counterparty_phone}`}
+                          dir="ltr"
+                          className="text-xs text-muted-foreground hover:underline"
+                        >
+                          {loan.counterparty_phone}
+                        </a>
+                      ) : null}
                       <span className={"rounded-md border px-2 py-0.5 text-xs " + getStatusColorClasses("neutral")}>
                         {loan.direction === "taken" ? "שלקחתי" : "שנתתי"}
                       </span>

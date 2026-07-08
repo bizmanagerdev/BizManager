@@ -103,6 +103,13 @@ export async function loadProjectsPage(
   const projectIds = rows
     .map((row) => (typeof row?.id === "string" ? row.id : ""))
     .filter(Boolean);
+  const customerIdsForRows = Array.from(
+    new Set(
+      rows
+        .map((row) => (typeof row?.customer_id === "string" ? row.customer_id : ""))
+        .filter(Boolean)
+    )
+  );
 
   const [{ data: projectSettingsRows }] = await Promise.all([
     projectIds.length > 0
@@ -110,14 +117,29 @@ export async function loadProjectsPage(
       : Promise.resolve({ data: [] as Row[] }),
   ]);
 
-  const [{ data: financialRows }] = await Promise.all([
+  const [{ data: financialRows }, { data: customerPhoneRows }] = await Promise.all([
     projectIds.length > 0
       ? supabase
           .from("project_financials_view")
           .select("id,total_expenses,gross_profit,customer_total_price,expenses_billed,collected_amount,pending_amount,overdue_amount,outstanding_amount,next_due_date")
           .in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
+    // The projects view doesn't carry the customer's phone; look it up so every
+    // customer name in the list can show a phone next to it (project rule).
+    customerIdsForRows.length > 0
+      ? supabase
+          .from("customer_overview_view")
+          .select("customer_id,phone")
+          .in("customer_id", customerIdsForRows)
+      : Promise.resolve({ data: [] as Row[] }),
   ]);
+
+  const phoneByCustomerId = new Map<string, string | null>();
+  ((customerPhoneRows ?? []) as Row[]).forEach((row) => {
+    const customerId = typeof row?.customer_id === "string" ? row.customer_id : "";
+    if (!customerId) return;
+    phoneByCustomerId.set(customerId, typeof row?.phone === "string" ? row.phone : null);
+  });
 
   const expensesSeparatelyByProjectId = new Map<string, boolean>();
   const paymentTermsByProjectId = new Map<string, string | null>();
@@ -174,6 +196,7 @@ export async function loadProjectsPage(
 
     return {
       ...row,
+      customer_phone: phoneByCustomerId.get(typeof row?.customer_id === "string" ? row.customer_id : "") ?? null,
       total_expenses: totalExpenses,
       gross_profit: grossProfit,
       customer_total_price: customerTotalPrice,

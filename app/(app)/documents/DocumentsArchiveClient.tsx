@@ -50,6 +50,7 @@ import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel, inferDefaultDocumentCate
 export type DocumentArchiveFilters = {
   customer_id: string;
   customer_name: string;
+  customer_phone: string;
   customer_page: string;
   project_id: string;
   property_id: string;
@@ -243,6 +244,7 @@ export default function DocumentsArchiveClient({
   const [documentType, setDocumentType] = useState(initialFilters.type);
   const [customerId, setCustomerId] = useState(initialFilters.customer_id);
   const customerName = initialFilters.customer_name;
+  const customerPhone = initialFilters.customer_phone;
   const [projectId, setProjectId] = useState(initialFilters.project_id);
   const [propertyId, setPropertyId] = useState(initialFilters.property_id);
   const [fileKind, setFileKind] = useState("");
@@ -654,7 +656,19 @@ export default function DocumentsArchiveClient({
         <CardHeader className="space-y-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
-              {customerName ? <div className="text-lg font-medium">לקוח: {customerName}</div> : null}
+              {customerName ? (
+                <div className="text-lg font-medium">
+                  לקוח: {customerName}
+                  {customerPhone ? (
+                    <a
+                      href={`tel:${customerPhone}`}
+                      className="mr-2 text-sm font-normal text-muted-foreground hover:underline"
+                    >
+                      {customerPhone}
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
