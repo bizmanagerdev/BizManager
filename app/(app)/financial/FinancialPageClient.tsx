@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 import {
   Dialog,
   DialogDescription,
@@ -42,6 +43,7 @@ import {
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { monthRange, recentMonthKeys } from "@/lib/financial/periodPresets";
 import { DomainSelect } from "@/components/financial/DomainSelect";
+import DomainMultiSelect from "@/components/financial/DomainMultiSelect";
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import type {
@@ -49,7 +51,6 @@ import type {
   FinancialPageData,
 } from "@/lib/financial";
 import {
-  FilterLoadingDots,
   SelectField,
   SummaryCard,
   sourceKindLabel,
@@ -224,6 +225,9 @@ export default function FinancialPageClient({
   const [reportBasis, setReportBasis] = useState<"cash" | "earned">("cash");
   const [includeOpen, setIncludeOpen] = useState(false);
   const [includePersonal, setIncludePersonal] = useState(false);
+  // Global domain chips (empty = all) — live in the report control row and filter
+  // the by-domain views (לפי תחום / חודשי) across every tab, not just one panel.
+  const [selectedReportDomains, setSelectedReportDomains] = useState<string[]>([]);
   // Resolved P&L basis for the domain/waterfall views (earned wins; else cash±open).
   const plBasis: "cash" | "accrual" | "earned" =
     reportBasis === "earned" ? "earned" : includeOpen ? "accrual" : "cash";
@@ -258,10 +262,6 @@ export default function FinancialPageClient({
   }, [canViewCashflow]);
   const [isFilterPending, startFilterTransition] = useTransition();
   const [isRefreshPending, startRefreshTransition] = useTransition();
-  const [loadingOverlayTop, setLoadingOverlayTop] = useState(0);
-  const [loadingOverlayLeft, setLoadingOverlayLeft] = useState(0);
-  const [loadingOverlayRight, setLoadingOverlayRight] = useState(0);
-  const filtersCardRef = useRef<HTMLDivElement | null>(null);
   const contentAreaRef = useRef<HTMLDivElement | null>(null);
   const queryDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -557,29 +557,6 @@ export default function FinancialPageClient({
   const [incomeCheckPhotoFiles, setIncomeCheckPhotoFiles] = useState<File[]>([]);
   const [isCreatingIncome, setIsCreatingIncome] = useState(false);
 
-  useEffect(() => {
-    if (!isFilterPending) return undefined;
-
-    const updateOverlayBounds = () => {
-      const nextTop = filtersCardRef.current?.getBoundingClientRect().bottom ?? 0;
-      const contentRect = contentAreaRef.current?.getBoundingClientRect() ?? null;
-      setLoadingOverlayTop(Math.max(0, Math.round(nextTop + 12)));
-      setLoadingOverlayLeft(contentRect ? Math.max(0, Math.round(contentRect.left)) : 0);
-      setLoadingOverlayRight(
-        contentRect ? Math.max(0, Math.round(window.innerWidth - contentRect.right)) : 0
-      );
-    };
-
-    updateOverlayBounds();
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("resize", updateOverlayBounds);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("resize", updateOverlayBounds);
-    };
-  }, [isFilterPending]);
 
   useEffect(() => {
     if (!isRefreshPending && refreshResolveRef.current) {
@@ -826,9 +803,19 @@ export default function FinancialPageClient({
 
   // The shared report control row: month + the 3 global toggles + advanced filters.
   // These drive every report tab (סקירה / לפי תחום / חודשי / מאזן).
+  // Domain chips for the report row (empty = all). Business domains present in the
+  // data, plus בית/צדקה only when "כולל בית וצדקה" is on.
+  const reportDomainOptions = data.domainOptions
+    .filter((key) => includePersonal || (key !== "home" && key !== "charity"))
+    .map((key) => ({ key, label: getBusinessDomainLabel(key) }));
+
   const reportControls = (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
       {periodControls}
+      <DateRangePicker from={from} to={to} onChange={applyRange} todayIso={data.todayIso} />
+      {reportDomainOptions.length > 1 ? (
+        <DomainMultiSelect domains={reportDomainOptions} selected={selectedReportDomains} onChange={setSelectedReportDomains} />
+      ) : null}
       <div className="flex overflow-hidden rounded-lg border text-sm">
         <button
           type="button"
@@ -866,18 +853,24 @@ export default function FinancialPageClient({
         />
         <span>כולל בית וצדקה</span>
       </label>
-      {advancedFilterButton}
+      {activeFilterCount > 0 ? (
+        <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>
+          <TimerReset className="ml-1 h-4 w-4" />
+          איפוס
+        </Button>
+      ) : null}
     </div>
   );
 
-  // The collapsible advanced-filter panel (search / date range / domain / source /
-  // type / stage). Rendered INLINE under the control row so it opens next to its
-  // button instead of jumping to the top of the page.
-  const advancedFilterPanel = filtersOpen ? (
-    <Card className="print:hidden">
-      <CardContent className="space-y-3 pt-6">
-        <div className="grid gap-3 lg:grid-cols-[1.2fr_repeat(6,minmax(0,1fr))]">
-          <label className="space-y-1.5 text-sm text-right">
+  // The advanced-filter FIELDS (search / date range / domain / source / type /
+  // stage). Rendered as the lower part of the SAME filter box as the control row,
+  // so the two read as one connected area (not two floating cards).
+  const advancedFilterFields = (
+      <div className="space-y-2">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Free-text search filters the ledger — not the reports — so flow only. */}
+          {view === "flow" ? (
+          <label className="space-y-1 text-sm text-right sm:col-span-2">
             <span className="font-medium">חיפוש</span>
             <div className="relative">
               <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -896,8 +889,9 @@ export default function FinancialPageClient({
               />
             </div>
           </label>
+          ) : null}
 
-          <label className="space-y-1.5 text-sm text-right">
+          <label className="space-y-1 text-sm text-right">
             <span className="font-medium">מתאריך</span>
             <DateInput
               value={from}
@@ -912,7 +906,7 @@ export default function FinancialPageClient({
             />
           </label>
 
-          <label className="space-y-1.5 text-sm text-right">
+          <label className="space-y-1 text-sm text-right">
             <span className="font-medium">עד תאריך</span>
             <DateInput
               value={to}
@@ -940,6 +934,9 @@ export default function FinancialPageClient({
             ))}
           </SelectField>
 
+          {/* Source / type / stage only affect the ledger — flow only. */}
+          {view === "flow" ? (
+          <>
           <SelectField value={sourceId} onChange={(value) => {
             setSourceId(value);
             replaceFilters({ sourceId: value, ledgerPage: 1, upcomingPage: 1 });
@@ -970,16 +967,19 @@ export default function FinancialPageClient({
             <option value="future">צפוי / ממתין</option>
             <option value="pending">ממתין בלבד</option>
           </SelectField>
+          </>
+          ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm text-muted-foreground">
-          <Badge variant="outline">{filteredEntries.length} תנועות</Badge>
-          <Badge variant="outline">{sourceCount} מקורות</Badge>
-          <Badge variant="outline">{upcomingCount} צפויות / ממתינות</Badge>
-        </div>
-      </CardContent>
-    </Card>
-  ) : null;
+        {view === "flow" ? (
+          <div className="flex flex-wrap items-center gap-2 border-t pt-2 text-xs text-muted-foreground">
+            <Badge variant="outline">{filteredEntries.length} תנועות</Badge>
+            <Badge variant="outline">{sourceCount} מקורות</Badge>
+            <Badge variant="outline">{upcomingCount} צפויות / ממתינות</Badge>
+          </div>
+        ) : null}
+      </div>
+  );
 
   const flowActions =
     canManageExpenses && view === "flow" ? (
@@ -998,22 +998,11 @@ export default function FinancialPageClient({
       {resolvedCanView ? (
         <>
       <div dir="rtl" className="space-y-4 text-right">
-      {/* Anchor only — the advanced-filter panel now renders inline under the tab controls. */}
-      <div ref={filtersCardRef} className="print:hidden" />
-
       <div ref={contentAreaRef} className="relative space-y-4">
+        {/* Slim, non-blocking loading bar — clearly visible, no scroll lock, no blur. */}
         {isFilterPending ? (
-          <div
-            className="fixed bottom-0 z-30 bg-background/60 backdrop-blur-[2px]"
-            style={{
-              top: loadingOverlayTop,
-              left: loadingOverlayLeft,
-              right: loadingOverlayRight,
-            }}
-          >
-            <div className="flex h-full min-h-[16rem] items-start justify-center px-4 pt-12">
-              <FilterLoadingDots />
-            </div>
+          <div className="pointer-events-none absolute inset-x-0 -top-1 z-20 h-1 overflow-hidden rounded-full bg-primary/15 print:hidden">
+            <div className="h-full w-full rounded-full bg-primary animate-progress-indeterminate" />
           </div>
         ) : null}
 
@@ -1029,12 +1018,12 @@ export default function FinancialPageClient({
             <TabsTrigger value="forecast"><CalendarClock className="h-4 w-4 shrink-0" />תחזית</TabsTrigger>
           </TabsList>
         </div>
-        {/* Row 2 (under the tabs, reads as part of the tab): shared controls */}
+        {/* Row 2 (under the tabs): all report filters in one row — date range +
+            basis + toggles. Domain is chosen via the chips inside each panel; the
+            ledger-only advanced filters live on the תזרים page. */}
         <div className="rounded-b-xl border-x border-b bg-muted/20 px-3 py-2">
           {reportControls}
         </div>
-        {/* Advanced filters open right here, under the controls — not at the page top. */}
-        {advancedFilterPanel}
         <TabsContent value="balance" className="space-y-6">
       {/* ── עכשיו: כסף שכבר זז בפועל ── */}
       <section dir="rtl" className="space-y-2">
@@ -1152,12 +1141,13 @@ export default function FinancialPageClient({
             to={initialFilters.to || null}
             basis={plBasis}
             includePersonal={includePersonal}
+            selectedDomains={selectedReportDomains}
           />
         </TabsContent>
         <TabsContent value="monthly" className="space-y-4">
           {reportBasis === "earned" ? (
             earnedRevenue ? (
-              <EarnedRevenuePanel report={earnedRevenue} />
+              <EarnedRevenuePanel report={earnedRevenue} selectedDomains={selectedReportDomains} />
             ) : (
               <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
                 אין נתוני הכנסה להצגה.
@@ -1199,8 +1189,10 @@ export default function FinancialPageClient({
             {filterControls}
           </div>
         </div>
-        {/* Advanced filters open inline under the flow controls. */}
-        {advancedFilterPanel}
+        {/* Advanced filters open inline under the flow controls, same box style. */}
+        {filtersOpen ? (
+          <div className="rounded-xl border bg-muted/20 p-3 print:hidden">{advancedFilterFields}</div>
+        ) : null}
         <TabsContent value="history" forceMount className="data-[state=inactive]:hidden">
       <Card>
         <CardHeader className="pb-3">

@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { Download, Printer } from "lucide-react";
 import DomainBarChart from "@/components/charts/DomainBarChart";
-import DomainMultiSelect from "@/components/financial/DomainMultiSelect";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatShortDate } from "@/lib/date";
@@ -68,6 +67,7 @@ export default function ProfitLossPanel({
   to,
   basis,
   includePersonal,
+  selectedDomains,
 }: {
   rows: ProfitLossDomainRow[];
   earned: EarnedRevenueReport | null;
@@ -80,13 +80,12 @@ export default function ProfitLossPanel({
   to: string | null;
   basis: Basis;
   includePersonal: boolean;
+  /** Global domain chips (empty = all). Chosen in the report control row. */
+  selectedDomains: string[];
 }) {
   const isEarned = basis === "earned";
   const [projectDetailOpen, setProjectDetailOpen] = useState(false);
   const [domainProofOpen, setDomainProofOpen] = useState(true);
-  // Empty = all domains. Lets the user view several domains together (combined
-  // totals below) while still seeing each one broken out per row.
-  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
 
   const domainMatchesSelection = useMemo(() => {
     const set = new Set(selectedDomains);
@@ -119,11 +118,6 @@ export default function ProfitLossPanel({
         expense: basis === "accrual" ? r.accrualExpense : r.cashExpense,
       }));
   }, [basis, isEarned, earned, rows, includePersonal]);
-
-  const domainOptions = useMemo(
-    () => normalizedRows.map((row) => ({ key: (row.domain as string | null) ?? "__unassigned__", label: row.domainName })),
-    [normalizedRows]
-  );
 
   const visibleRows = useMemo(
     () => normalizedRows.filter((row) => domainMatchesSelection((row.domain as string | null) ?? null)),
@@ -239,9 +233,6 @@ export default function ProfitLossPanel({
           </Button>
         </div>
       </div>
-
-      {/* Domain multi-select — combined totals + per-domain rows for the chosen set. */}
-      <DomainMultiSelect domains={domainOptions} selected={selectedDomains} onChange={setSelectedDomains} />
 
       {/* Print-only header */}
       <div className="hidden text-right print:block">

@@ -1,8 +1,7 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import DomainMultiSelect from "@/components/financial/DomainMultiSelect";
 import { cn } from "@/lib/utils";
 import type { EarnedDomainCell, EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 
@@ -50,10 +49,15 @@ function sumCells(cells: EarnedDomainCell[]): EarnedDomainCell {
   );
 }
 
-export default function EarnedRevenuePanel({ report }: { report: EarnedRevenueReport }) {
+export default function EarnedRevenuePanel({
+  report,
+  selectedDomains,
+}: {
+  report: EarnedRevenueReport;
+  /** Global domain chips (empty = all), chosen in the report control row. */
+  selectedDomains: string[];
+}) {
   const { domains } = report;
-  // Empty = all domains. Scopes the whole table (per-month rows + totals) to a subset.
-  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
 
   const activeDomainKeys = useMemo(() => {
     const set = new Set(selectedDomains);
@@ -96,11 +100,6 @@ export default function EarnedRevenuePanel({ report }: { report: EarnedRevenueRe
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
-      <DomainMultiSelect
-        domains={domains.map((d) => ({ key: d.key, label: d.label }))}
-        selected={selectedDomains}
-        onChange={setSelectedDomains}
-      />
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base text-right">

@@ -137,12 +137,18 @@ module.exports = {
           "25%": { transform: "rotate(5deg)" },
           "30%": { transform: "rotate(0deg)" },
         },
+        "progress-indeterminate": {
+          "0%": { transform: "translateX(-100%) scaleX(0.35)" },
+          "50%": { transform: "translateX(0%) scaleX(0.55)" },
+          "100%": { transform: "translateX(100%) scaleX(0.35)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "caret-blink": "caret-blink 1.25s ease-out infinite",
         "bell-ring": "bell-ring 2.5s ease-in-out infinite",
+        "progress-indeterminate": "progress-indeterminate 1.1s ease-in-out infinite",
       },
     },
   },
