@@ -35,6 +35,11 @@ export function invalidateAccountsCache() {
   cache = null;
 }
 
+/** Shared loader (cache-aware) for callers that render their own account UI. */
+export function loadAccounts(): Promise<Account[]> {
+  return fetchAccounts();
+}
+
 type Props = {
   value: string;
   onChange: (accountId: string) => void;

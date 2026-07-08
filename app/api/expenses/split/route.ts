@@ -12,7 +12,7 @@ import { isExpenseBusinessDomain } from "@/lib/expenses";
 // individually. Optionally replaces an existing unpaid expense (source_expense_id)
 // with its installments.
 
-type InstallmentInput = { expense_date?: string | null; amount?: number | string | null };
+type InstallmentInput = { expense_date?: string | null; amount?: number | string | null; paid?: boolean | null };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -30,6 +30,7 @@ export async function POST(req: Request) {
         description?: string | null;
         notes?: string | null;
         account_id?: string | null;
+        payment_method?: string | null;
         project_id?: string | null;
         order_id?: string | null;
         property_id?: string | null;
@@ -41,6 +42,7 @@ export async function POST(req: Request) {
       const description = typeof body.description === "string" ? body.description.trim() || null : null;
       const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;
       const accountId = typeof body.account_id === "string" && body.account_id.trim() ? body.account_id.trim() : null;
+      const paymentMethod = typeof body.payment_method === "string" && body.payment_method.trim() ? body.payment_method.trim() : null;
       const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
       const orderId = typeof body.order_id === "string" ? body.order_id.trim() : "";
       const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
@@ -64,6 +66,7 @@ export async function POST(req: Request) {
       const installments = rawInstallments.map((row) => ({
         date: typeof row.expense_date === "string" ? row.expense_date.trim() : "",
         amount: typeof row.amount === "number" ? row.amount : Number(row.amount),
+        paid: row.paid === true,
       }));
 
       if (installments.length < 2) {
@@ -109,7 +112,11 @@ export async function POST(req: Request) {
         property_id: propertyId || null,
         notes,
         recorded_by: user.id,
-        payment_status: "not_paid",
+        // Installments already paid are recorded as paid-in-full (so they count as
+        // real outflow now); the rest stay pending on their due date.
+        payment_status: row.paid ? "paid" : "not_paid",
+        paid_amount: row.paid ? row.amount : null,
+        payment_method: row.paid ? paymentMethod : null,
         account_id: accountId,
         installment_group_id: groupId,
         installment_index: index + 1,

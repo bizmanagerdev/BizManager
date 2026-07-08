@@ -4,8 +4,13 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DateInput } from "@/components/ui/date-input";
+import { cn } from "@/lib/utils";
 
-export type InstallmentRow = { date: string; amount: string };
+export type InstallmentRow = { date: string; amount: string; paid?: boolean };
+
+export function installmentsPaidSum(rows: InstallmentRow[]) {
+  return rows.reduce((s, r) => s + (r.paid ? Number(r.amount) || 0 : 0), 0);
+}
 
 function fmtIls(value: number) {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(value);
@@ -70,6 +75,7 @@ type Props = {
 /** Editable installment schedule — N dated amount rows with an even-split helper. */
 export function InstallmentFields({ total, startDate, rows, onChange }: Props) {
   const sum = installmentsSum(rows);
+  const paidSum = installmentsPaidSum(rows);
   const diff = Math.round((total - sum) * 100) / 100;
   const off = Math.abs(diff) > 0.01;
 
@@ -94,27 +100,39 @@ export function InstallmentFields({ total, startDate, rows, onChange }: Props) {
         </Button>
       </div>
 
+      {paidSum > 0 ? (
+        <div className="text-xs font-medium text-success">
+          שולם כבר: {fmtIls(paidSum)} · נותר: {fmtIls(Math.max(0, sum - paidSum))}
+        </div>
+      ) : null}
+
       <div className="space-y-2">
         {rows.map((row, index) => (
-          <div key={index} className="flex items-end gap-2">
-            <div className="w-6 pb-2 text-center text-sm text-muted-foreground">{index + 1}</div>
-            <div className="flex-1 space-y-1">
-              <div className="text-xs font-medium text-muted-foreground">תאריך</div>
-              <DateInput value={row.date} onChange={(e) => updateRow(index, { date: e.target.value })} />
+          <div key={index} className={cn("rounded-lg border p-2 transition-colors", row.paid ? "border-success/50 bg-success/5" : "border-transparent")}>
+            <div className="flex items-end gap-2">
+              <div className="w-6 pb-2 text-center text-sm text-muted-foreground">{index + 1}</div>
+              <div className="flex-1 space-y-1">
+                <div className="text-xs font-medium text-muted-foreground">תאריך</div>
+                <DateInput value={row.date} onChange={(e) => updateRow(index, { date: e.target.value })} />
+              </div>
+              <div className="flex-1 space-y-1">
+                <div className="text-xs font-medium text-muted-foreground">סכום</div>
+                <CurrencyInput type="number" min="0" step="0.01" value={row.amount} onChange={(e) => updateRow(index, { amount: e.target.value })} />
+              </div>
+              <button
+                type="button"
+                onClick={() => removeRow(index)}
+                disabled={rows.length <= 2}
+                className="pb-2 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-30"
+                aria-label="הסרת תשלום"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
             </div>
-            <div className="flex-1 space-y-1">
-              <div className="text-xs font-medium text-muted-foreground">סכום</div>
-              <CurrencyInput type="number" min="0" step="0.01" value={row.amount} onChange={(e) => updateRow(index, { amount: e.target.value })} />
-            </div>
-            <button
-              type="button"
-              onClick={() => removeRow(index)}
-              disabled={rows.length <= 2}
-              className="pb-2 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-30"
-              aria-label="הסרת תשלום"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
+            <label className="mt-1 flex w-fit cursor-pointer items-center gap-1.5 ps-8 text-xs font-medium">
+              <input type="checkbox" checked={!!row.paid} onChange={(e) => updateRow(index, { paid: e.target.checked })} />
+              <span className={row.paid ? "text-success" : "text-muted-foreground"}>שולם כבר</span>
+            </label>
           </div>
         ))}
       </div>

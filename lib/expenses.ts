@@ -65,6 +65,7 @@ export const EXPENSE_CATEGORY_OPTIONS = [
   "תחבורה",
   "אוכל",
   EXPENSE_CARS_CATEGORY,
+  "משאית",
   EXPENSE_TAX_CATEGORY,
   EXPENSE_OTHER_CATEGORY,
 ] as const;
