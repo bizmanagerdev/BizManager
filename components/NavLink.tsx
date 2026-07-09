@@ -32,7 +32,18 @@ export const NavLink = React.forwardRef<HTMLAnchorElement, Props>(
       if (typeof obj.pathname === "string") toPath = obj.pathname;
     }
 
-    const active = isActivePath(pathname, toPath, end);
+    // The active state is derived from usePathname(), which can disagree between
+    // the server-rendered shell and the client (the App Router layout persists /
+    // may be part of the prerendered static shell, so its pathname isn't
+    // guaranteed to match the browser's URL at hydration). Applying the active
+    // class straight from that would flip `text-sidebar-foreground` on/off and
+    // produce a hydration mismatch. Gate it on mount: server + first client
+    // render are identical (inactive), then the client re-renders with the real
+    // active state once usePathname() is authoritative.
+    const [mounted, setMounted] = React.useState(false);
+    React.useEffect(() => setMounted(true), []);
+
+    const active = mounted && isActivePath(pathname, toPath, end);
     const [pending, setPending] = React.useState(false);
     const lastPathRef = React.useRef(pathname);
 

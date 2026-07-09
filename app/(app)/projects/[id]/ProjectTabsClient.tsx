@@ -1389,7 +1389,7 @@ export default function ProjectTabsClient({
       fallback={<div className="text-muted-foreground text-base">טוען…</div>}
     >
       <Tabs value={tabValue} onValueChange={setTab} dir="rtl">
-        <TabsList variant="underline" className="sticky top-2 z-10 justify-center bg-background sm:top-4">
+        <TabsList variant="underline" className="sticky top-2 z-10 justify-start bg-background sm:top-4 sm:justify-center">
           {canSeeFinances ? (
             <TabsTrigger value="overview">
               <Wallet className="h-4 w-4" />

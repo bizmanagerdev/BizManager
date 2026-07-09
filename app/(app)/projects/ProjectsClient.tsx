@@ -576,7 +576,7 @@ export default function ProjectsClient({
           </TabsList>
         </div>
 
-        <TabsList variant="underline" className="justify-center md:hidden">
+        <TabsList variant="underline" className="justify-start md:hidden">
           <TabsTrigger value="quotes"><FileText className="h-4 w-4" />הצעות ({quoteCount})</TabsTrigger>
           <TabsTrigger value="projects"><FolderKanban className="h-4 w-4" />פרויקטים ({projectCount})</TabsTrigger>
           <TabsTrigger value="closed"><CheckCircle2 className="h-4 w-4" />סגורים ({closedCount})</TabsTrigger>

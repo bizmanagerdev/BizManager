@@ -265,11 +265,6 @@ export default function SalesDeliveriesQueue({
                                     >
                                       {paymentStatusLabel(delivery.paymentStatus)}
                                     </span>
-                                    {delivery.collectOnDelivery ? (
-                                      <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
-                                        גבייה ע&quot;י הנהג
-                                      </span>
-                                    ) : null}
                                     <div className="mr-auto flex shrink-0 gap-1">
                                       <OrderConfirmDialog
                                         orderId={delivery.id}
@@ -288,12 +283,25 @@ export default function SalesDeliveriesQueue({
                                       </Button>
                                     </div>
                                   </div>
+                                  {delivery.collectOnDelivery ? (
+                                    <div className="mt-1">
+                                      <span className="inline-flex rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                                        גבייה ע&quot;י הנהג
+                                      </span>
+                                    </div>
+                                  ) : null}
                                   {delivery.items.length > 0 ? (
-                                    <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                                    <div className="mt-1 flex flex-wrap gap-1 text-xs">
                                       {delivery.items.map((item, itemIndex) => (
-                                        <span key={`${delivery.id}-${itemIndex}`}>
-                                          ×{item.quantity} {item.name}
-                                          {item.notes ? ` (${item.notes})` : ""}
+                                        <span
+                                          key={`${delivery.id}-${itemIndex}`}
+                                          className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-foreground"
+                                        >
+                                          <span className="font-semibold">×{item.quantity}</span>
+                                          <span>
+                                            {item.name}
+                                            {item.notes ? ` (${item.notes})` : ""}
+                                          </span>
                                         </span>
                                       ))}
                                     </div>
