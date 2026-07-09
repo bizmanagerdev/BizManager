@@ -24,6 +24,12 @@ type CreateProjectPayload = {
   due_date?: string | null;
   notes?: string | null;
   items_to_move?: string[] | null;
+  origin_address?: string | null;
+  origin_floor?: string | null;
+  origin_has_elevator?: boolean | null;
+  destination_address?: string | null;
+  destination_floor?: string | null;
+  destination_has_elevator?: boolean | null;
 };
 
 function toNumber(value: unknown) {
@@ -42,6 +48,14 @@ function sanitizeStringArray(value: unknown) {
     .map((item) => item.trim())
     .filter(Boolean);
   return cleaned.length > 0 ? cleaned : null;
+}
+
+function toTrimmedOrNull(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function toBoolOrNull(value: unknown) {
+  return typeof value === "boolean" ? value : null;
 }
 
 export async function POST(req: Request) {
@@ -78,6 +92,14 @@ export async function POST(req: Request) {
         : computeDueDate(startDate, paymentTerms);
     const notes = typeof body.notes === "string" ? body.notes.trim() : null;
     const itemsToMove = sanitizeStringArray(body.items_to_move);
+    // Moving-only origin → destination addresses (each: address + floor + elevator).
+    const isMoving = projectType === "moving";
+    const originAddress = isMoving ? toTrimmedOrNull(body.origin_address) : null;
+    const originFloor = isMoving ? toTrimmedOrNull(body.origin_floor) : null;
+    const originHasElevator = isMoving ? toBoolOrNull(body.origin_has_elevator) : null;
+    const destinationAddress = isMoving ? toTrimmedOrNull(body.destination_address) : null;
+    const destinationFloor = isMoving ? toTrimmedOrNull(body.destination_floor) : null;
+    const destinationHasElevator = isMoving ? toBoolOrNull(body.destination_has_elevator) : null;
     const allowedProjectTypes = new Set([
       "logistics",
       "construction",
@@ -119,10 +141,16 @@ export async function POST(req: Request) {
         payment_terms: paymentTerms,
         due_date: dueDate,
         notes,
-        items_to_move: projectType === "moving" ? itemsToMove : null,
+        items_to_move: isMoving ? itemsToMove : null,
+        origin_address: originAddress,
+        origin_floor: originFloor,
+        origin_has_elevator: originHasElevator,
+        destination_address: destinationAddress,
+        destination_floor: destinationFloor,
+        destination_has_elevator: destinationHasElevator,
       })
       .select(
-        "id,customer_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,payment_terms,due_date,notes,items_to_move,created_at,updated_at"
+        "id,customer_id,name,project_type,status,agreed_base_price,actual_price,expenses_billed_separately,project_manager_id,start_date,end_date,payment_terms,due_date,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,created_at,updated_at"
       )
       .maybeSingle();
 

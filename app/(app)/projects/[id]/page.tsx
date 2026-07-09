@@ -15,6 +15,7 @@ import type {
   ProjectTaskProgress,
   ProjectWorkerBalance,
 } from "@/app/(app)/projects/[id]/ProjectTabsClient";
+import { formatMovingEndpoint } from "@/lib/projects/movingAddress";
 import { PAYMENT_SELECT } from "@/lib/payments";
 import type { FinancialAttachment } from "@/lib/payments";
 import type { MorningLocalDocument } from "@/lib/morning/types";
@@ -249,15 +250,33 @@ export default async function ProjectPage({
         "id,name,status,project_type,start_date,end_date,agreed_base_price,actual_price,expenses_billed_separately,customer_id,customer_name,project_manager_id,project_manager_name,created_at,updated_at"
       )
       .eq("id", id)
-      .maybeSingle<Omit<ProjectOverview, "notes" | "items_to_move">>(),
+      .maybeSingle<
+        Omit<
+          ProjectOverview,
+          | "notes"
+          | "items_to_move"
+          | "origin_address"
+          | "origin_floor"
+          | "origin_has_elevator"
+          | "destination_address"
+          | "destination_floor"
+          | "destination_has_elevator"
+        >
+      >(),
     supabase
       .from("projects")
-      .select("id,notes,items_to_move,payment_terms,due_date,price_includes_vat,no_charge,vat_rate")
+      .select("id,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator,payment_terms,due_date,price_includes_vat,no_charge,vat_rate")
       .eq("id", id)
       .maybeSingle<{
         id: string;
         notes: string | null;
         items_to_move: string[] | null;
+        origin_address: string | null;
+        origin_floor: string | null;
+        origin_has_elevator: boolean | null;
+        destination_address: string | null;
+        destination_floor: string | null;
+        destination_has_elevator: boolean | null;
         payment_terms: string | null;
         due_date: string | null;
         price_includes_vat: boolean | null;
@@ -312,6 +331,18 @@ export default async function ProjectPage({
         items_to_move: Array.isArray(projectDetailsRaw?.items_to_move)
           ? projectDetailsRaw.items_to_move.filter((item): item is string => typeof item === "string")
           : null,
+        origin_address: typeof projectDetailsRaw?.origin_address === "string" ? projectDetailsRaw.origin_address : null,
+        origin_floor: typeof projectDetailsRaw?.origin_floor === "string" ? projectDetailsRaw.origin_floor : null,
+        origin_has_elevator:
+          typeof projectDetailsRaw?.origin_has_elevator === "boolean" ? projectDetailsRaw.origin_has_elevator : null,
+        destination_address:
+          typeof projectDetailsRaw?.destination_address === "string" ? projectDetailsRaw.destination_address : null,
+        destination_floor:
+          typeof projectDetailsRaw?.destination_floor === "string" ? projectDetailsRaw.destination_floor : null,
+        destination_has_elevator:
+          typeof projectDetailsRaw?.destination_has_elevator === "boolean"
+            ? projectDetailsRaw.destination_has_elevator
+            : null,
         price_includes_vat: projectDetailsRaw?.price_includes_vat === true,
         no_charge: projectDetailsRaw?.no_charge === true,
         vat_rate:
@@ -884,6 +915,16 @@ export default async function ProjectPage({
   const projectType =
     typeof overview?.project_type === "string" ? overview.project_type : null;
   const itemsToMove = Array.isArray(overview?.items_to_move) ? overview.items_to_move : [];
+  const moveOrigin = formatMovingEndpoint({
+    address: overview?.origin_address ?? null,
+    floor: overview?.origin_floor ?? null,
+    hasElevator: overview?.origin_has_elevator ?? null,
+  });
+  const moveDestination = formatMovingEndpoint({
+    address: overview?.destination_address ?? null,
+    floor: overview?.destination_floor ?? null,
+    hasElevator: overview?.destination_has_elevator ?? null,
+  });
   const grossProfit = financials?.gross_profit ?? null;
   const openTasks =
     typeof tasks?.open_tasks === "number" || typeof tasks?.open_tasks === "string" ? tasks.open_tasks : 0;
@@ -1111,6 +1152,21 @@ export default async function ProjectPage({
                     {projectNotes || "—"}
                   </div>
                 </div>
+                {projectType === "moving" ? (
+                  <div className="min-w-[16rem] space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">מסלול ההובלה:</div>
+                    <div className="space-y-1 font-medium">
+                      <div>
+                        <span className="text-muted-foreground">מוצא: </span>
+                        {moveOrigin || "—"}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">יעד: </span>
+                        {moveDestination || "—"}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 {projectType === "moving" ? (
                   <div className="hidden min-w-[16rem] space-y-1 lg:block">
                     <div className="text-xs font-medium text-muted-foreground">פריטים להעברה:</div>

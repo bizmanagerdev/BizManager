@@ -17,6 +17,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { DateInput } from "@/components/ui/date-input";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { CustomerForm, type CustomerRecord } from "@/components/customers/CustomerForm";
+import {
+  MovingEndpointFields,
+  EMPTY_MOVING_ENDPOINT,
+  elevatorToBool,
+  boolToElevator,
+  type MovingEndpointValue,
+} from "@/components/projects/MovingAddressFields";
 import { useCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
 import { getProjectStatusLabel } from "@/lib/ui/status-colors";
@@ -44,6 +51,8 @@ type ProjectDraft = {
   dueDate: string;
   notes: string;
   itemsToMove: string;
+  origin: MovingEndpointValue;
+  destination: MovingEndpointValue;
 };
 
 /** A customer as the wizard renders it. Both the initial list and the search
@@ -80,6 +89,12 @@ export type InitialProject = {
   due_date: string | null;
   notes: string | null;
   items_to_move: string[] | null;
+  origin_address?: string | null;
+  origin_floor?: string | null;
+  origin_has_elevator?: boolean | null;
+  destination_address?: string | null;
+  destination_floor?: string | null;
+  destination_has_elevator?: boolean | null;
 };
 
 const DEFAULT_PROJECT_TYPE_OPTIONS = ["logistics", "moving", "construction"];
@@ -402,6 +417,24 @@ export default function NewProjectClient({
   const [itemsToMove, setItemsToMove] = useState(
     initialProject ? itemsToMoveToText(initialProject.items_to_move) : restoredDraft?.itemsToMove ?? ""
   );
+  const [origin, setOrigin] = useState<MovingEndpointValue>(
+    initialProject
+      ? {
+          address: initialProject.origin_address ?? "",
+          floor: initialProject.origin_floor ?? "",
+          hasElevator: boolToElevator(initialProject.origin_has_elevator),
+        }
+      : restoredDraft?.origin ?? EMPTY_MOVING_ENDPOINT
+  );
+  const [destination, setDestination] = useState<MovingEndpointValue>(
+    initialProject
+      ? {
+          address: initialProject.destination_address ?? "",
+          floor: initialProject.destination_floor ?? "",
+          hasElevator: boolToElevator(initialProject.destination_has_elevator),
+        }
+      : restoredDraft?.destination ?? EMPTY_MOVING_ENDPOINT
+  );
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
 
   // Autosave the in-progress create form so it survives offline / leaving the app
@@ -426,6 +459,8 @@ export default function NewProjectClient({
       dueDate,
       notes,
       itemsToMove,
+      origin,
+      destination,
     } satisfies ProjectDraft);
   }, [
     canDraft,
@@ -446,6 +481,8 @@ export default function NewProjectClient({
     dueDate,
     notes,
     itemsToMove,
+    origin,
+    destination,
   ]);
 
   // ---- Submit ------------------------------------------------------------------
@@ -543,6 +580,14 @@ export default function NewProjectClient({
         due_date: dueDate || null,
         notes: notes.trim() || null,
         items_to_move: isMovingProjectType(projectType) ? textToItemsToMove(itemsToMove) : null,
+        origin_address: isMovingProjectType(projectType) ? origin.address.trim() || null : null,
+        origin_floor: isMovingProjectType(projectType) ? origin.floor.trim() || null : null,
+        origin_has_elevator: isMovingProjectType(projectType) ? elevatorToBool(origin.hasElevator) : null,
+        destination_address: isMovingProjectType(projectType) ? destination.address.trim() || null : null,
+        destination_floor: isMovingProjectType(projectType) ? destination.floor.trim() || null : null,
+        destination_has_elevator: isMovingProjectType(projectType)
+          ? elevatorToBool(destination.hasElevator)
+          : null,
       };
 
       const result = isEditMode
@@ -932,6 +977,16 @@ export default function NewProjectClient({
                 <span className="font-medium">תיאור / הערות</span>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
               </label>
+
+              {isMovingProjectType(projectType) ? (
+                <div className="space-y-2 text-sm sm:col-span-2">
+                  <span className="font-medium">כתובות ההובלה</span>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <MovingEndpointFields title="מוצא (מאיפה)" value={origin} onChange={setOrigin} />
+                    <MovingEndpointFields title="יעד (לאן)" value={destination} onChange={setDestination} />
+                  </div>
+                </div>
+              ) : null}
 
               {isMovingProjectType(projectType) ? (
                 <div className="space-y-1.5 text-sm sm:col-span-2">

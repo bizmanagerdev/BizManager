@@ -23,6 +23,12 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { CustomerPicker } from "@/components/customers/CustomerPicker";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  MovingEndpointFields,
+  elevatorToBool,
+  boolToElevator,
+  type MovingEndpointValue,
+} from "@/components/projects/MovingAddressFields";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
 import AddReminderButton from "@/components/reminders/AddReminderButton";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
@@ -48,6 +54,12 @@ type ProjectDetails = {
   end_date: string | null;
   notes: string | null;
   items_to_move: string[] | null;
+  origin_address?: string | null;
+  origin_floor?: string | null;
+  origin_has_elevator?: boolean | null;
+  destination_address?: string | null;
+  destination_floor?: string | null;
+  destination_has_elevator?: boolean | null;
 };
 
 type ProjectDocument = {
@@ -183,6 +195,16 @@ export default function ProjectDetailsActions({
   const [editEndDate, setEditEndDate] = useState(project.end_date ?? "");
   const [editNotes, setEditNotes] = useState(project.notes ?? "");
   const [editItemsToMove, setEditItemsToMove] = useState(itemsToMoveToText(project.items_to_move));
+  const [editOrigin, setEditOrigin] = useState<MovingEndpointValue>({
+    address: project.origin_address ?? "",
+    floor: project.origin_floor ?? "",
+    hasElevator: boolToElevator(project.origin_has_elevator),
+  });
+  const [editDestination, setEditDestination] = useState<MovingEndpointValue>({
+    address: project.destination_address ?? "",
+    floor: project.destination_floor ?? "",
+    hasElevator: boolToElevator(project.destination_has_elevator),
+  });
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingDocuments, setExistingDocuments] = useState<ProjectDocument[]>(projectDocuments);
   const [documentActionError, setDocumentActionError] = useState<string | null>(projectDocumentsError);
@@ -262,6 +284,12 @@ export default function ProjectDetailsActions({
           end_date: editEndDate || null,
           notes: editNotes.trim() || null,
           items_to_move: textToItemsToMove(editItemsToMove),
+          origin_address: editOrigin.address.trim() || null,
+          origin_floor: editOrigin.floor.trim() || null,
+          origin_has_elevator: elevatorToBool(editOrigin.hasElevator),
+          destination_address: editDestination.address.trim() || null,
+          destination_floor: editDestination.floor.trim() || null,
+          destination_has_elevator: elevatorToBool(editDestination.hasElevator),
         },
         "עדכון פרויקט"
       );
@@ -463,6 +491,26 @@ export default function ProjectDetailsActions({
               <label className="text-sm font-medium">הערות</label>
               <Textarea value={editNotes} onChange={(event) => setEditNotes(event.target.value)} rows={3} />
             </div>
+
+            {isMovingProjectType(editProjectType) ? (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">כתובות ההובלה</label>
+                <AdaptiveGrid variant="formTwo">
+                  <MovingEndpointFields
+                    title="מוצא (מאיפה)"
+                    value={editOrigin}
+                    onChange={setEditOrigin}
+                    disabled={editSubmitting}
+                  />
+                  <MovingEndpointFields
+                    title="יעד (לאן)"
+                    value={editDestination}
+                    onChange={setEditDestination}
+                    disabled={editSubmitting}
+                  />
+                </AdaptiveGrid>
+              </div>
+            ) : null}
 
             {isMovingProjectType(editProjectType) ? (
               <div className="space-y-1">

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import ProjectWorkerExportActions from "@/app/(app)/projects/[id]/export/ProjectWorkerExportActions";
+import { formatMovingEndpoint } from "@/lib/projects/movingAddress";
 
 import { STORAGE_BUCKET } from "@/lib/storage";
 
@@ -107,7 +108,9 @@ export default async function ProjectWorkerExportPage({
 
   const { data: projectDetails } = await supabase
     .from("projects")
-    .select("id,notes,items_to_move")
+    .select(
+      "id,notes,items_to_move,origin_address,origin_floor,origin_has_elevator,destination_address,destination_floor,destination_has_elevator"
+    )
     .eq("id", id)
     .maybeSingle();
 
@@ -221,6 +224,20 @@ export default async function ProjectWorkerExportPage({
   const pdfFileName = `worker-brief-${id.slice(0, 8)}.pdf`;
   const itemsToMove = getStringArray(projectDetails as UnknownRow | null, "items_to_move");
   const projectNotes = getFirstString(projectDetails as UnknownRow | null, ["notes"]);
+  const isMovingProject = getFirstString(overview as UnknownRow, ["project_type"]) === "moving";
+  const detailsRow = projectDetails as UnknownRow | null;
+  const rawOriginElevator = detailsRow?.origin_has_elevator;
+  const rawDestinationElevator = detailsRow?.destination_has_elevator;
+  const moveOrigin = formatMovingEndpoint({
+    address: getFirstString(detailsRow, ["origin_address"]),
+    floor: getFirstString(detailsRow, ["origin_floor"]),
+    hasElevator: typeof rawOriginElevator === "boolean" ? rawOriginElevator : null,
+  });
+  const moveDestination = formatMovingEndpoint({
+    address: getFirstString(detailsRow, ["destination_address"]),
+    floor: getFirstString(detailsRow, ["destination_floor"]),
+    hasElevator: typeof rawDestinationElevator === "boolean" ? rawDestinationElevator : null,
+  });
   const address = getFirstString(customerRow as UnknownRow | null, ["address"]);
   const customerPhone = getFirstString(customerRow as UnknownRow | null, ["phone"]);
   const customerEmail = getFirstString(customerRow as UnknownRow | null, ["email"]);
@@ -274,6 +291,22 @@ export default async function ProjectWorkerExportPage({
                 <div className="mt-1 font-medium">{getFirstString(overview as UnknownRow, ["project_manager_name"]) ?? "לא הוגדר"}</div>
               </section>
             </div>
+
+            {isMovingProject && (moveOrigin || moveDestination) ? (
+              <section className="rounded-xl border p-3">
+                <div className="text-xs text-muted-foreground">מסלול ההובלה</div>
+                <div className="mt-1 space-y-1 font-medium">
+                  <div>
+                    <span className="text-muted-foreground">מוצא: </span>
+                    {moveOrigin || "—"}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">יעד: </span>
+                    {moveDestination || "—"}
+                  </div>
+                </div>
+              </section>
+            ) : null}
 
             {address ? (
               <section className="rounded-xl border p-3">

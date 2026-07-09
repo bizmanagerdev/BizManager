@@ -91,6 +91,14 @@ function toInitialProject(row: ProjectRow): InitialProject {
     due_date: getString(row, "due_date"),
     notes: getString(row, "notes"),
     items_to_move: getStringArray(row, "items_to_move"),
+    origin_address: getString(row, "origin_address"),
+    origin_floor: getString(row, "origin_floor"),
+    origin_has_elevator:
+      row["origin_has_elevator"] === true ? true : row["origin_has_elevator"] === false ? false : null,
+    destination_address: getString(row, "destination_address"),
+    destination_floor: getString(row, "destination_floor"),
+    destination_has_elevator:
+      row["destination_has_elevator"] === true ? true : row["destination_has_elevator"] === false ? false : null,
   };
 }
 

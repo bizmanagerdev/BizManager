@@ -116,6 +116,12 @@ export type ProjectOverview = {
   project_manager_name: string | null;
   notes: string | null;
   items_to_move: string[] | null;
+  origin_address: string | null;
+  origin_floor: string | null;
+  origin_has_elevator: boolean | null;
+  destination_address: string | null;
+  destination_floor: string | null;
+  destination_has_elevator: boolean | null;
   created_at: string;
   updated_at: string;
 };
