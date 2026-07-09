@@ -9,7 +9,11 @@ const config: CapacitorConfig = {
   appName: 'BizH',
   webDir: 'capacitor-shell',
   server: {
-    url: 'https://biz-h.com',
+    // Load the canonical origin directly. www.biz-h.com is Vercel's production
+    // domain; the apex biz-h.com only 307-redirects to it. Pointing at the apex
+    // would force a launch-time redirect (and split the service worker across
+    // two origins), so target www to stay single-origin.
+    url: 'https://www.biz-h.com',
     androidScheme: 'https',
     // Only load secure content; never fall back to cleartext HTTP.
     cleartext: false,
