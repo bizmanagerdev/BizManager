@@ -322,7 +322,7 @@ export function ExpenseDialog({
   // screen flow. Both are driven by the SAME state above, so toggling between
   // them preserves the in-progress entry with no serialization. Editing always
   // uses the form (express is a fast-create experience). Persisted per browser.
-  const [viewMode, setViewMode] = useState<"form" | "express">("form");
+  const [viewMode, setViewMode] = useState<"form" | "express">("express");
   const [expStepId, setExpStepId] = useState<string>("amount");
   useEffect(() => {
     try {
@@ -1808,10 +1808,31 @@ export function ExpenseDialog({
         );
       case "review":
       default: {
+        // Which project/order/property this expense is being saved to — resolved
+        // from the locked context or the source the user picked in express.
+        const sourceLabel: [string, string] | null = (() => {
+          const labelFor = (type: "project" | "order" | "property") =>
+            type === "project" ? "פרויקט" : type === "order" ? "הזמנה" : "נכס";
+          if (isSourceLocked) {
+            const type = lockedProjectId ? "project" : lockedOrderId ? "order" : "property";
+            return [labelFor(type), editingSourceLabel ?? labelFor(type)];
+          }
+          if (effectiveProjectId) {
+            return ["פרויקט", recurringProjects.find((p) => p.id === effectiveProjectId)?.label ?? "—"];
+          }
+          if (effectiveOrderId) {
+            return ["הזמנה", recurringOrders.find((o) => o.id === effectiveOrderId)?.label ?? "—"];
+          }
+          if (effectivePropertyId) {
+            return ["נכס", recurringProperties.find((p) => p.id === effectivePropertyId)?.label ?? "—"];
+          }
+          return null;
+        })();
         const rows: Array<[string, string]> = isWorkerPayment
           ? [
               ["עובד", localUsers.find((u) => u.id === targetUserId)?.label ?? "—"],
               ["תחום", getBusinessDomainLabel(effectiveDomain)],
+              ...(sourceLabel ? [sourceLabel] : []),
               ["שעות", sessionDuration || "—"],
               ["עלות עבודה", laborCost ? ils(Number(laborCost)) : suggestedWorkerAmount !== null ? formatIls(suggestedWorkerAmount) : "יחושב"],
               ["תשלום לעובד", workerPaymentChoice === "none" ? "לא שולם" : workerPaymentChoice === "paid" ? "שולם במלואו" : "שולם חלקית"],
@@ -1820,6 +1841,7 @@ export function ExpenseDialog({
             ? [
                 ["סכום", ils(Number(amount) || 0)],
                 ["תחום", getBusinessDomainLabel(effectiveDomain)],
+                ...(sourceLabel ? [sourceLabel] : []),
                 ["קטגוריה", finalCategory || "—"],
                 ["פריסה", `${installmentRows.length} תשלומים`],
                 ...(installmentRows.some((r) => r.paid)
@@ -1829,6 +1851,7 @@ export function ExpenseDialog({
             : [
                 ["סכום", ils(Number(amount) || 0)],
                 ["תחום", getBusinessDomainLabel(effectiveDomain)],
+                ...(sourceLabel ? [sourceLabel] : []),
                 ["קטגוריה", finalCategory || "—"],
                 ["תאריך", expenseDate || "—"],
                 ["סטטוס", paymentStatusLabel(paymentStatus)],
