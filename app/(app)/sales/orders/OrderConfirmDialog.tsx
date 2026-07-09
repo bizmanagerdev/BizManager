@@ -92,6 +92,20 @@ function formatDate(value: string | null) {
   return formatShortDate(value);
 }
 
+// Paid-amount line: green once the order is fully paid, red while a balance remains.
+function paidAmountClass(status: string) {
+  return status === "paid"
+    ? "font-semibold text-success-soft-foreground"
+    : "font-semibold text-destructive-soft-foreground";
+}
+
+// Whole "paid so far" box: green tint when fully paid, red tint while owing.
+function paidBoxClass(status: string) {
+  return status === "paid"
+    ? "border-success bg-success-soft"
+    : "border-destructive bg-destructive-soft";
+}
+
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -491,9 +505,9 @@ export default function OrderConfirmDialog({
                     <div className="text-xs text-muted-foreground">תאריך הזמנה</div>
                     <div className="mt-1 font-medium">{formatDate(data.initialOrder.order_date)}</div>
                   </div>
-                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
+                  <div className={`rounded-2xl border px-3 py-2 ${paidBoxClass(derivePaymentStatus(totalAmount, existingPaid))}`}>
                     <div className="text-xs text-muted-foreground">שולם עד עכשיו</div>
-                    <div className="mt-1 font-medium">{formatCurrency(existingPaid)}</div>
+                    <div className={`mt-1 ${paidAmountClass(derivePaymentStatus(totalAmount, existingPaid))}`}>{formatCurrency(existingPaid)}</div>
                   </div>
                   <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
                     <div className="text-xs text-muted-foreground">סה״כ הזמנה מעודכן</div>
@@ -610,7 +624,7 @@ export default function OrderConfirmDialog({
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <span className="text-muted-foreground">שולם</span>
-                      <span>{formatCurrency(projectedPaid)}</span>
+                      <span className={paidAmountClass(projectedPaymentStatus)}>{formatCurrency(projectedPaid)}</span>
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
                       <span className="text-muted-foreground">{refundDue > 0 ? "החזר ללקוח" : "יתרה"}</span>
@@ -762,7 +776,7 @@ export default function OrderConfirmDialog({
                             </div>
                             <div className="mt-2 flex items-center justify-between gap-2">
                               <span className="text-muted-foreground">שולם נטו</span>
-                              <span>{formatCurrency(finalPaidAfterRefund)}</span>
+                              <span className={paidAmountClass(finalPaymentStatus)}>{formatCurrency(finalPaidAfterRefund)}</span>
                             </div>
                             <div className="mt-1 flex items-center justify-between gap-2">
                               <span className="text-muted-foreground">יתרה</span>
@@ -854,7 +868,7 @@ export default function OrderConfirmDialog({
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted-foreground">שולם נטו</span>
-                    <span>{formatCurrency(finalPaidAfterRefund)}</span>
+                    <span className={paidAmountClass(finalPaymentStatus)}>{formatCurrency(finalPaidAfterRefund)}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted-foreground">יתרה</span>
