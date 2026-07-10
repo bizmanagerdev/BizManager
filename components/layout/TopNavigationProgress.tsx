@@ -7,9 +7,12 @@ const NAV_START_EVENT = "app:navigation-start";
 const ACTIVITY_START_EVENT = "app:progress-activity-start";
 const ACTIVITY_END_EVENT = "app:progress-activity-end";
 const ROUTE_LOADING_SELECTOR = "[data-route-loading='true']";
-const SKELETON_APPEAR_WAIT_MS = 1400;
-const MIN_VISIBLE_MS = 500;
+const SKELETON_APPEAR_WAIT_MS = 700;
+const MIN_VISIBLE_MS = 180;
 const FAILSAFE_MS = 12000;
+// How long the bar takes to fade out after it fills to 100%. Kept short so the
+// bar clears the moment content is ready instead of lingering.
+const FILL_TO_HIDE_MS = 140;
 
 export function emitNavigationStart() {
   if (typeof window === "undefined") return;
@@ -74,7 +77,7 @@ export function TopNavigationProgress() {
       finalizeTimerRef.current = setTimeout(() => {
         setVisible(false);
         setProgress(0);
-      }, 280);
+      }, FILL_TO_HIDE_MS);
     }, wait);
   }, []);
 

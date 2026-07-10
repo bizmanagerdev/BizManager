@@ -15,6 +15,11 @@ export type UserProfile = {
   active: boolean;
   system_access: boolean;
   payroll_worker_type: PayrollWorkerType | null;
+  // Carried on the profile so pages that need them don't fire a second `users`
+  // round-trip: dashboard layout prefs (raw jsonb — sanitize before use) and the
+  // "what you missed" digest anchor.
+  dashboard_prefs?: unknown;
+  digest_seen_at?: string | null;
 };
 
 export const requireProfile = cache(async () => {
@@ -30,7 +35,7 @@ export const requireProfile = cache(async () => {
 
   const { data: profile, error } = await supabase
     .from("users")
-    .select("id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type")
+    .select("id,auth_user_id,email,full_name,phone,role,active,system_access,payroll_worker_type,dashboard_prefs,digest_seen_at")
     .eq("auth_user_id", userId)
     .maybeSingle();
 

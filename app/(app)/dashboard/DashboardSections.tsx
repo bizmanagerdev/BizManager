@@ -20,7 +20,7 @@ import { getMyTasks, getTaskStatusCounts } from "@/lib/dashboard/tasks-overview"
 import { getProjectsOverview } from "@/lib/dashboard/projects-overview";
 import { getWorkforceOverview } from "@/lib/dashboard/workforce";
 import { getInventoryHealth } from "@/lib/dashboard/inventory-health";
-import { getDashboardPrefs, resolveWidgets, type WidgetId } from "@/lib/dashboard/widgets";
+import { sanitizePrefs, resolveWidgets, type WidgetId } from "@/lib/dashboard/widgets";
 import { loadDeliveriesPage, type DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 import { getRecentAuditEvents, getDigestAnchor, getMissedDigest, type AuditFeedItem } from "@/lib/audit";
 import MissedDigestBar from "@/components/dashboard/MissedDigestBar";
@@ -111,17 +111,23 @@ export async function DashboardPanels() {
   const isAdmin = role === "admin";
 
   // "What you missed since last here" — admin + office, role-filtered inside.
-  const digestItems: AuditFeedItem[] = isAdminOrOffice
-    ? await getDigestAnchor(supabase, profile.id).then((sinceIso) =>
-        getMissedDigest(supabase, {
-          sinceIso,
-          viewerRole: role,
-          excludeActorIds: [profile.id, user.id],
-        }).then((r) => r.items)
-      )
-    : [];
+  // The 2-hop digest chain (anchor → digest) is kicked off here but NOT awaited;
+  // it's folded into the Promise.all below so it runs CONCURRENTLY with the widget
+  // queries instead of blocking ~2 sequential round-trips ahead of them.
+  const digestPromise: Promise<AuditFeedItem[]> = isAdminOrOffice
+    ? getDigestAnchor(supabase, profile.id, profile.digest_seen_at)
+        .then((sinceIso) =>
+          getMissedDigest(supabase, {
+            sinceIso,
+            viewerRole: role,
+            excludeActorIds: [profile.id, user.id],
+          }).then((r) => r.items)
+        )
+        .catch(() => [] as AuditFeedItem[])
+    : Promise.resolve([] as AuditFeedItem[]);
 
-  const prefs = await getDashboardPrefs(supabase, profile.id).catch(() => null);
+  // Prefs come off the profile (loaded by requireProfile) — no extra round-trip.
+  const prefs = sanitizePrefs(profile.dashboard_prefs);
   const ordered = resolveWidgets(role, prefs);
   const visible = new Set(ordered.map((w) => w.id));
   const show = (id: WidgetId) => visible.has(id);
@@ -163,6 +169,7 @@ export async function DashboardPanels() {
     forecastInResult,
     forecastOutResult,
     domainBreakdown,
+    digestItems,
   ] = await Promise.all([
     show("alerts") ? getWorklistGroups(supabase, { userId: profile.id, role }) : Promise.resolve(null),
     show("week")
@@ -197,6 +204,7 @@ export async function DashboardPanels() {
       ? loadDomainCashBreakdown(supabase, { from: monthStartIso, to: todayIso })
           .catch(() => [] as { domainName: string; inflow: number; outflow: number }[])
       : Promise.resolve([] as { domainName: string; inflow: number; outflow: number }[]),
+    digestPromise,
   ]);
 
   // Let the recurring-tasks write (started above) finish before responding.

@@ -1092,10 +1092,22 @@ export function digestTablesForRole(role: string | null | undefined): string[] {
   return role === "admin" ? DIGEST_TABLES_ADMIN : DIGEST_TABLES_OFFICE;
 }
 
-/** The anchor for "since you were last here": explicit dismissal, else previous login, else now. */
-export async function getDigestAnchor(supabase: SupabaseClient, userId: string): Promise<string> {
-  const { data: u } = await supabase.from("users").select("digest_seen_at").eq("id", userId).maybeSingle();
-  const seen = (u as { digest_seen_at?: string | null } | null)?.digest_seen_at;
+/**
+ * The anchor for "since you were last here": explicit dismissal, else previous login, else now.
+ * `seenAt` lets a caller that already loaded the user's `digest_seen_at` (e.g. via
+ * requireProfile) pass it in to skip this function's own `users` round-trip.
+ * Pass `undefined` (the default) to have it fetched here as before.
+ */
+export async function getDigestAnchor(
+  supabase: SupabaseClient,
+  userId: string,
+  seenAt?: string | null
+): Promise<string> {
+  let seen = seenAt;
+  if (seen === undefined) {
+    const { data: u } = await supabase.from("users").select("digest_seen_at").eq("id", userId).maybeSingle();
+    seen = (u as { digest_seen_at?: string | null } | null)?.digest_seen_at;
+  }
   if (typeof seen === "string" && seen) return seen;
 
   // The current session's login is the newest, so the 2nd-most-recent is the prior visit.

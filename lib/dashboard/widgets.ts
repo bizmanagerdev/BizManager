@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UserRole } from "@/lib/auth/requireProfile";
 
@@ -134,10 +135,14 @@ export function resolveWidgets(role: UserRole, prefs: DashboardPrefs | null): Wi
  * yet (returns null before add_dashboard_prefs.sql runs) — exactly like the
  * font-scale GET — so the dashboard keeps working on role defaults pre-migration.
  */
-export async function getDashboardPrefs(
+export const getDashboardPrefs = cache(async function getDashboardPrefs(
   supabase: SupabaseClient,
   userId: string
 ): Promise<DashboardPrefs | null> {
+  // cache(): the page shell and the streamed DashboardPanels both read prefs for
+  // the same (supabase, userId) within one request — requireProfile() is itself
+  // cached so both get the identical supabase instance, letting this dedupe to a
+  // single `users` round-trip instead of two.
   const { data, error } = await supabase
     .from("users")
     .select("dashboard_prefs")
@@ -145,4 +150,4 @@ export async function getDashboardPrefs(
     .maybeSingle();
   if (error) return null;
   return sanitizePrefs((data as { dashboard_prefs?: unknown } | null)?.dashboard_prefs);
-}
+});

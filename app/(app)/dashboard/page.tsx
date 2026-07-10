@@ -7,7 +7,7 @@ import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
 import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
 import QuickActionsClient from "@/app/(app)/dashboard/QuickActionsClient";
 import { loadQuickActionsData } from "@/app/(app)/dashboard/quick-actions-data";
-import { getDashboardPrefs } from "@/lib/dashboard/widgets";
+import { sanitizePrefs } from "@/lib/dashboard/widgets";
 import { DashboardPanels, PanelsFallback } from "@/app/(app)/dashboard/DashboardSections";
 
 export const revalidate = 60;
@@ -21,7 +21,9 @@ export default async function DashboardPage() {
   const { profile, supabase } = await requireProfile();
 
   const dataPromise = loadQuickActionsData(supabase, profile);
-  const dashboardPrefs = await getDashboardPrefs(supabase, profile.id).catch(() => null);
+  // Prefs ride along on the profile (requireProfile's single `users` query), so
+  // the shell no longer waits on a second round-trip just to hydrate the customizer.
+  const dashboardPrefs = sanitizePrefs(profile.dashboard_prefs);
 
   const firstName = profile.full_name?.trim().split(/\s+/)[0] ?? "";
   const currentHour = new Date().getHours();
