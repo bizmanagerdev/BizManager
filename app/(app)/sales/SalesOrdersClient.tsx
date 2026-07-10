@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Bell, ChevronDown, MessageSquare, Search } from "lucide-react";
+import { Bell, Check, ChevronDown, Eye, MessageSquare, Search } from "lucide-react";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useOfflineRows } from "@/hooks/useOfflineRows";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
@@ -139,13 +139,35 @@ function OrderCommentPreview({
 function OrderProductList({
   products,
   className,
+  chips = false,
 }: {
   products: { name: string; quantity: number }[];
   className?: string;
+  chips?: boolean;
 }) {
   if (products.length === 0) return null;
   const shown = products.slice(0, PRODUCTS_PREVIEW_LIMIT);
   const remaining = products.length - shown.length;
+
+  if (chips) {
+    return (
+      <div className={`flex flex-wrap gap-1 text-xs ${className ?? ""}`}>
+        {shown.map((product, idx) => (
+          <span
+            key={`${product.name}-${idx}`}
+            className="inline-flex items-center rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
+          >
+            {product.quantity > 0 ? `${product.quantity}× ` : ""}
+            {product.name}
+          </span>
+        ))}
+        {remaining > 0 ? (
+          <span className="inline-flex items-center px-1 text-muted-foreground/80">ועוד {remaining}…</span>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <ul className={`space-y-0.5 text-xs text-muted-foreground ${className ?? ""}`}>
       {shown.map((product, idx) => (
@@ -725,61 +747,60 @@ export default function SalesOrdersClient({
             {filteredRows.map((row) => {
               const showConfirm = isActiveOrder(row.status);
               const showPayment = !showConfirm && shouldShowPaymentAction(row);
-              const hasAction = showConfirm || showPayment;
               return (
                 <Card key={row.id} className="min-w-0 overflow-hidden border-border/70 shadow-sm">
                   <CardContent className="space-y-2 p-3">
+                    {/* Header: name / invoice-name / phone  +  status badges stacked */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold leading-tight">{row.customerName}</div>
+                        <div className="truncate text-sm font-bold leading-tight">{row.customerName}</div>
                         {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
                           <div className="truncate text-xs text-muted-foreground">לחשבונית: {row.customerNameForInvoice}</div>
                         ) : null}
                         <div className="truncate text-xs text-muted-foreground">{row.customerPhone ?? "-"}</div>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1">
-                        <div className="flex flex-wrap justify-end gap-1">
-                          <StatusBadge value={row.status} type="order" className={`${orderStatusBadgeClasses(row.status)} px-1.5 py-0 text-[10px]`} />
-                          <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-1.5 py-0 text-[10px]`}>
-                            {orderCollectionStatusLabel(row.collectionStatus)}
+                        <StatusBadge value={row.status} type="order" className={`${orderStatusBadgeClasses(row.status)} px-2 py-0.5 text-xs`} />
+                        <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-2 py-0.5 text-xs`}>
+                          {orderCollectionStatusLabel(row.collectionStatus)}
+                        </Badge>
+                        {row.pendingMethods.includes("check") ? (
+                          <Badge variant="info" className="gap-1 px-2 py-0.5 text-xs">
+                            צ׳ק{row.pendingCheckNumber ? ` מס׳ ${row.pendingCheckNumber}` : ""}
                           </Badge>
-                          {row.pendingMethods.includes("check") ? (
-                            <Badge variant="info" className="gap-1 px-1.5 py-0 text-[10px]">
-                              צ׳ק{row.pendingCheckNumber ? ` מס׳ ${row.pendingCheckNumber}` : ""}
-                            </Badge>
-                          ) : null}
-                          {row.outOfStock ? (
-                            <Badge className={`${outOfStockBadgeClasses} px-1.5 py-0 text-[10px]`}>חוסר במלאי</Badge>
-                          ) : null}
-                        </div>
+                        ) : null}
+                        {row.outOfStock ? (
+                          <Badge className={`${outOfStockBadgeClasses} px-2 py-0.5 text-xs`}>חוסר במלאי</Badge>
+                        ) : null}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-muted-foreground">עיר:</span>
-                        <span className="truncate font-medium">{row.customerCity ?? "-"}</span>
+                    {/* Facts grid: label above value */}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-y border-border/60 py-2">
+                      <div className="min-w-0">
+                        <div className="text-[10px] text-muted-foreground">עיר</div>
+                        <div className="truncate text-sm font-semibold">{row.customerCity ?? "-"}</div>
                       </div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-muted-foreground">תאריך:</span>
-                        <span className="font-medium">{formatOrderDate(row.orderDate)}</span>
+                      <div>
+                        <div className="text-[10px] text-muted-foreground">תאריך</div>
+                        <div className="text-sm font-semibold">{formatOrderDate(row.orderDate)}</div>
                       </div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-muted-foreground">סכום:</span>
-                        <span className="font-medium">{formatCurrency(row.totalAmount)}</span>
-                      </div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-muted-foreground">יתרה:</span>
-                        <span className={`font-medium ${row.remainingBalance > 0 ? "text-destructive" : ""}`}>
+                      <div>
+                        <div className="text-[10px] text-muted-foreground">יתרה</div>
+                        <div className={`text-sm font-semibold ${row.remainingBalance > 0 ? "text-destructive" : ""}`}>
                           {formatCurrency(row.remainingBalance)}
-                        </span>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-muted-foreground">סכום</div>
+                        <div className="text-sm font-semibold">{formatCurrency(row.totalAmount)}</div>
                       </div>
                     </div>
 
                     {row.products.length > 0 ? (
                       <div className="rounded-md bg-muted/40 px-2 py-1.5">
-                        <div className="mb-0.5 text-[10px] font-medium text-muted-foreground">מוצרים</div>
-                        <OrderProductList products={row.products} />
+                        <div className="mb-1 text-[10px] font-medium text-muted-foreground">מוצרים</div>
+                        <OrderProductList products={row.products} chips />
                       </div>
                     ) : null}
 
@@ -790,8 +811,46 @@ export default function SalesOrdersClient({
                       </div>
                     ) : null}
 
-                    <div className="flex items-center justify-between gap-2">
+                    {/* Invoice status row */}
+                    <div className="flex items-center">
                       <InvoiceQuickMenu orderId={row.id} needsInvoice={row.needsInvoice} invoiceSentAt={row.invoiceSentAt} />
+                    </div>
+
+                    {/* Actions */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {showConfirm ? (
+                        <OrderConfirmDialog
+                          orderId={row.id}
+                          buttonVariant="default"
+                          buttonLabel={
+                            <>
+                              <Check className="h-4 w-4" />
+                              אספקה
+                            </>
+                          }
+                          buttonClassName="h-9 w-full gap-1 rounded-lg"
+                        />
+                      ) : showPayment ? (
+                        <OrderPaymentDialog
+                          orderId={row.id}
+                          totalAmount={row.totalAmount}
+                          paidAmount={row.totalPaid}
+                          buttonClassName="h-9 w-full rounded-lg"
+                        />
+                      ) : null}
+                      <Button
+                        asChild
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-9 gap-1 rounded-lg"
+                        onClick={() => emitNavigationStart()}
+                      >
+                        <Link href={`/sales/orders/${row.id}`}>
+                          <Eye className="h-4 w-4" />
+                          צפייה
+                        </Link>
+                      </Button>
                       {canRemind ? (
                         <Button
                           type="button"
@@ -813,26 +872,6 @@ export default function SalesOrdersClient({
                           customerId={row.customerId}
                           defaultTopic="sales"
                           className="h-9 gap-1 rounded-lg"
-                        />
-                      ) : null}
-                    </div>
-
-                    <div className={`grid gap-2 ${hasAction ? "grid-cols-2" : "grid-cols-1"}`}>
-                      <Button asChild type="button" size="sm" className="h-9 rounded-lg" onClick={() => emitNavigationStart()}>
-                        <Link href={`/sales/orders/${row.id}`}>צפייה</Link>
-                      </Button>
-                      {showConfirm ? (
-                        <OrderConfirmDialog
-                          orderId={row.id}
-                          buttonLabel="אישור אספקה"
-                          buttonClassName="h-9 w-full rounded-lg"
-                        />
-                      ) : showPayment ? (
-                        <OrderPaymentDialog
-                          orderId={row.id}
-                          totalAmount={row.totalAmount}
-                          paidAmount={row.totalPaid}
-                          buttonClassName="h-9 w-full rounded-lg"
                         />
                       ) : null}
                     </div>

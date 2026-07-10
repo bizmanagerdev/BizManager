@@ -145,6 +145,14 @@ export default function SalesDeliveriesQueue({
     0
   );
 
+  // Desktop shows one column per region (south · center · north, read RTL). When
+  // a region filter is active we only render that region. Empty known regions
+  // still get a column so the three lists stay side by side.
+  const citiesByRegion = new Map(deliveriesByRegion);
+  const columnRegions = regionFilter
+    ? deliveriesByRegion.map(([region]) => region)
+    : ["דרום", "מרכז", "צפון", ...(citiesByRegion.has("לא ידוע") ? ["לא ידוע"] : [])];
+
   return (
     <div className="space-y-3">
       {/* Region filter tabs */}
@@ -172,7 +180,9 @@ export default function SalesDeliveriesQueue({
       {deliveriesByRegion.length === 0 ? (
         <p className="text-sm text-muted-foreground">אין כרגע הזמנות מקובצות למשלוחים.</p>
       ) : (
-        deliveriesByRegion.map(([region, cities]) => {
+        <div className={regionFilter ? "space-y-3" : "grid items-start gap-4 lg:grid-cols-3"}>
+        {columnRegions.map((region) => {
+          const cities = citiesByRegion.get(region) ?? [];
           const regionTotal = cities.reduce(
             (sum, [, groups]) => sum + groups.reduce((s, [, g]) => s + g.orders.length, 0),
             0
@@ -181,15 +191,19 @@ export default function SalesDeliveriesQueue({
 
           return (
             <div key={region} className="space-y-2">
-              {/* Region header */}
-              <div className="flex items-center gap-3 px-1">
-                <div className="h-px flex-1 bg-border/60" />
-                <span className="text-sm font-semibold text-foreground">{region}</span>
+              {/* Region column header */}
+              <div className="flex items-center justify-between gap-2 px-1">
+                <span className="text-sm font-bold text-foreground">{region}</span>
                 <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
                   {regionCustomers} לקוחות • {regionTotal} משלוחים
                 </span>
-                <div className="h-px flex-1 bg-border/60" />
               </div>
+
+              {cities.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-border/60 p-4 text-center text-xs text-muted-foreground">
+                  אין משלוחים באזור זה
+                </p>
+              ) : null}
 
               {/* Cities in region */}
               {cities.map(([city, customerGroups]) => (
@@ -355,7 +369,8 @@ export default function SalesDeliveriesQueue({
               ))}
             </div>
           );
-        })
+        })}
+        </div>
       )}
 
       {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}

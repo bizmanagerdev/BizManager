@@ -4,7 +4,6 @@ import AppShell from "@/components/layout/AppShell";
 import SalesDeliveriesQueue from "@/app/(app)/sales/SalesDeliveriesQueue";
 import SalesInventoryClient from "@/app/(app)/sales/SalesInventoryClient";
 import SalesOrdersClient from "@/app/(app)/sales/SalesOrdersClient";
-import OrderMonthlySummaryButton from "@/app/(app)/sales/OrderMonthlySummaryButton";
 import PriceListClient from "@/app/(app)/sales/PriceListClient";
 import SalesTabsNav from "@/app/(app)/sales/SalesTabsNav";
 import PageAlertBar from "@/components/reminders/PageAlertBar";
@@ -273,16 +272,13 @@ export default async function SalesPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border/60">
+        <div className="flex flex-col-reverse gap-3 border-b border-border/60 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
           <SalesTabsNav activeTab={activeTab} counts={salesTabCounts} searchParams={params} />
-          <div className="flex flex-wrap items-center gap-3 pb-2">
+          <div className="flex flex-wrap items-center gap-3 max-sm:w-full sm:pb-2">
             {customerName ? (
               <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
             ) : null}
-            {profile.role === "admin" && (activeTab === "orders" || activeTab === "closed") ? (
-              <OrderMonthlySummaryButton />
-            ) : null}
-            <Button asChild>
+            <Button asChild className="max-sm:w-full">
               <Link href="/sales/orders/new">הזמנה חדשה</Link>
             </Button>
           </div>
