@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
+import { formatDeliveryAddress } from "@/lib/ui/cities";
 import { paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
@@ -23,18 +24,6 @@ function formatItem(item: DeliveryItem["items"][number]) {
   return item.notes ? `${base} (${item.notes})` : base;
 }
 
-function fullAddress(delivery: DeliveryItem) {
-  // Addresses are stored "city|rest" — normalize the pipe to a comma for display.
-  const address = (delivery.address ?? "").replace(/\s*\|\s*/g, ", ").trim();
-  const parts = [delivery.city, address].filter(
-    (part) => part && part !== "-" && part !== "ללא עיר"
-  );
-  // City is often already the first token of address; avoid duplicating it.
-  if (parts.length === 2 && address.startsWith(delivery.city)) {
-    return address;
-  }
-  return parts.join(", ");
-}
 
 const SLIP_LABEL = "#475569";
 const SLIP_TEXT = "#1e293b";
@@ -135,7 +124,7 @@ export default function DeliveryShareActions({ delivery }: { delivery: DeliveryI
     };
   }, [renderingImage, delivery]);
 
-  const address = fullAddress(delivery);
+  const address = formatDeliveryAddress({ address: delivery.address, city: delivery.city });
 
   return (
     <>

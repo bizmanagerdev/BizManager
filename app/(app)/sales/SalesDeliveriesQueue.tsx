@@ -10,7 +10,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DELIVERY_REGIONS, getCityRegion } from "@/lib/ui/cities";
+import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui/cities";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreDeliveries } from "@/app/(app)/sales/actions";
 import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
@@ -211,6 +211,7 @@ export default function SalesDeliveriesQueue({
                     <ul className="space-y-2">
                       {customerGroups.map(([customerKey, group]) => {
                         const customerPhoneHref = phoneHref(group.customerPhone);
+                        const displayAddress = formatDeliveryAddress({ address: group.address, city });
 
                         const hasMultipleOrders = group.orders.length > 1;
 
@@ -242,7 +243,7 @@ export default function SalesDeliveriesQueue({
                             <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                               <WazeIcon className="h-3.5 w-3.5 shrink-0" />
                               <span className="truncate">
-                                {group.address ? <AddressLink address={group.address} /> : group.address}
+                                {displayAddress ? <AddressLink address={displayAddress} /> : "-"}
                               </span>
                             </div>
 
@@ -297,7 +298,7 @@ export default function SalesDeliveriesQueue({
                                           key={`${delivery.id}-${itemIndex}`}
                                           className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-foreground"
                                         >
-                                          <span className="font-semibold">×{item.quantity}</span>
+                                          <span className="font-semibold">{item.quantity}</span>
                                           <span>
                                             {item.name}
                                             {item.notes ? ` (${item.notes})` : ""}

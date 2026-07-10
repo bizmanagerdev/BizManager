@@ -160,3 +160,46 @@ export function getCityRegion(city: string | null | undefined): DeliveryRegion |
   if (!city) return null;
   return CITY_REGION_MAP[city.trim()] ?? null;
 }
+
+const isBlankAddressPart = (value: string) => !value || value === "-" || value === "ללא עיר";
+
+// Street-type words that already stand in for "רחוב" — don't prefix these.
+const STREET_TYPE_PREFIX = /^(רחוב|רח['׳]|שדרות|שד['׳]|דרך|סמט|שכ|כיכר|ככר|מושב|קיבוץ|כביש|נתיב)/;
+
+/**
+ * Compose a delivery address as "רחוב <street>, <city>" — street first, then
+ * city, prefixing "רחוב" when the street name has no street-type word of its
+ * own. Addresses are stored "city | street", which we split apart. Shared by
+ * the deliveries cards and the shareable delivery image so both read alike.
+ */
+export function formatDeliveryAddress(input: {
+  address?: string | null;
+  city?: string | null;
+}): string {
+  const raw = (input.address ?? "").trim();
+  let city = (input.city ?? "").trim();
+  let street = "";
+
+  if (raw.includes("|")) {
+    const segments = raw.split("|").map((part) => part.trim()).filter(Boolean);
+    if (isBlankAddressPart(city) && segments[0]) city = segments[0];
+    street = segments.slice(1).join(", ").trim();
+  } else if (!isBlankAddressPart(city) && raw.startsWith(city)) {
+    street = raw.slice(city.length).replace(/^[\s,]+/, "").trim();
+  } else if (!isBlankAddressPart(city) && raw === city) {
+    street = "";
+  } else {
+    street = raw;
+  }
+
+  const cityClean = isBlankAddressPart(city) ? "" : city;
+  // Guard against a duplicated city trailing the street segment.
+  if (cityClean && street.endsWith(cityClean)) {
+    street = street.slice(0, -cityClean.length).replace(/[\s,]+$/, "").trim();
+  }
+  if (street && !STREET_TYPE_PREFIX.test(street)) {
+    street = `רחוב ${street}`;
+  }
+
+  return [street, cityClean].filter(Boolean).join(", ");
+}
