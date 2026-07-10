@@ -501,7 +501,7 @@ export default function SalesOrdersClient({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="חיפוש לפי לקוח, טלפון, אימייל או עיר"
+            placeholder="חיפוש..."
             className="h-11 pr-10"
           />
         </div>
