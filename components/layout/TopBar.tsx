@@ -6,6 +6,7 @@ import { Bell, ChevronDown, LogOut, User } from "lucide-react";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { getAvatarColorCache, setAvatarColorCache, subscribeAvatarColor } from "@/lib/ui/avatar-color";
 import { BackButton } from "@/components/layout/BackButton";
+import { RefreshButton } from "@/components/layout/RefreshButton";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import PwaInstallButton from "@/components/pwa/PwaInstallButton";
@@ -72,6 +73,7 @@ export function TopBar({
   return (
     <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-3 border-b border-border/70 bg-background bg-gradient-to-r from-primary/[0.04] via-background/95 to-secondary/[0.05] px-4 backdrop-blur-xl">
       <BackButton />
+      <RefreshButton />
 
       {/* Brand mark intentionally omitted on mobile (the sidebar carries the brand
           on desktop); keeps the compact top bar uncluttered at large text sizes. */}
