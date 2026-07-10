@@ -39,8 +39,8 @@ export function CheckDetailsFields({
           <FileUploadActions
             files={photoFiles}
             onFilesSelected={onPhotoFilesChange}
-            accept="image/*"
-            chooseLabel="העלאת צילום"
+            accept="image/*,application/pdf"
+            chooseLabel="העלאת קובץ"
             takePhotoLabel="צילום"
             chooseVariant="outline"
             size="sm"
