@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Image as ImageIcon, Loader2, Phone } from "lucide-react";
+import { Loader2, Phone, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatDeliveryAddress } from "@/lib/ui/cities";
 import { paymentStatusLabel } from "@/lib/orders/paymentStatus";
@@ -45,7 +46,15 @@ const slipIconStyle: CSSProperties = {
   textAlign: "center",
 };
 
-export default function DeliveryShareActions({ delivery }: { delivery: DeliveryItem }) {
+export default function DeliveryShareActions({
+  delivery,
+  className,
+  label = "שיתוף",
+}: {
+  delivery: DeliveryItem;
+  className?: string;
+  label?: string;
+}) {
   const slipRef = useRef<HTMLDivElement>(null);
   const [renderingImage, setRenderingImage] = useState(false);
 
@@ -132,16 +141,16 @@ export default function DeliveryShareActions({ delivery }: { delivery: DeliveryI
         type="button"
         variant="secondary"
         size="sm"
-        className="h-6 gap-1 px-2 text-xs"
+        className={cn("gap-1", className)}
         onClick={() => setRenderingImage(true)}
         disabled={renderingImage}
       >
         {renderingImage ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          <ImageIcon className="h-3.5 w-3.5" />
+          <Share2 className="h-4 w-4" />
         )}
-        <span>שיתוף משלוח</span>
+        <span>{label}</span>
       </Button>
 
       {/* Clean slip rendered only while capturing. It sits at the origin inside a

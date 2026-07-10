@@ -40,9 +40,9 @@ function buildTabHref(nextTab: SalesTab, searchParams: SalesTabsSearchParams) {
   return query ? `/sales?${query}` : "/sales";
 }
 
-function getCountSuffix(tab: { id: SalesTab }, counts: Record<SalesTab, number>) {
-  if (tab.id === "inventory" || tab.id === "price-list") return "";
-  return ` (${counts[tab.id] ?? 0})`;
+function getCount(tab: { id: SalesTab }, counts: Record<SalesTab, number>) {
+  if (tab.id === "inventory" || tab.id === "price-list") return null;
+  return counts[tab.id] ?? 0;
 }
 
 // Mirrors the "underline" TabsTrigger styling from components/ui/tabs.tsx so the
@@ -77,7 +77,7 @@ export default function SalesTabsNav({
     <div dir="rtl" className={LIST_CLASSES}>
       {tabs.map((tab) => {
         const isActive = tab.id === activeTab;
-        const countSuffix = getCountSuffix(tab, counts);
+        const count = getCount(tab, counts);
         const Icon = tab.icon;
         return (
           <Link
@@ -88,14 +88,17 @@ export default function SalesTabsNav({
             onClick={() => emitNavigationStart()}
           >
             <Icon className="h-4 w-4 shrink-0" />
-            <span className="sm:hidden">
-              {(tab.shortLabel ?? tab.label)}
-              {countSuffix}
-            </span>
-            <span className="hidden sm:inline">
-              {tab.label}
-              {countSuffix}
-            </span>
+            <span className="sm:hidden">{tab.shortLabel ?? tab.label}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
+            {count !== null ? (
+              <span
+                className={`inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-4 ${
+                  isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {count}
+              </span>
+            ) : null}
           </Link>
         );
       })}

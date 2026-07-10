@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useMemo } from "react";
-import { Phone, Truck } from "lucide-react";
+import { Check, Eye, MapPin, Phone } from "lucide-react";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
@@ -193,22 +193,22 @@ export default function SalesDeliveriesQueue({
 
               {/* Cities in region */}
               {cities.map(([city, customerGroups]) => (
-                <Card key={city} className="overflow-hidden border-2 border-primary/60">
+                <Card key={city} className="overflow-hidden">
                   <CardContent className="space-y-3 p-3 sm:p-4">
                     <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-2">
                       <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-info/30 bg-info-soft text-info-soft-foreground">
-                          <Truck className="h-4 w-4" />
+                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                          <MapPin className="h-4 w-4" />
                         </div>
                         <h3 className="text-base font-bold">{city}</h3>
                       </div>
-                      <span className="shrink-0 rounded-full border border-info/40 bg-info-soft/50 px-2.5 py-1 text-xs font-medium text-info-soft-foreground">
+                      <span className="shrink-0 rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground">
                         {customerGroups.length} לקוחות •{" "}
                         {customerGroups.reduce((sum, [, group]) => sum + group.orders.length, 0)} משלוחים
                       </span>
                     </div>
 
-                    <ul className="space-y-2">
+                    <ul className="space-y-3">
                       {customerGroups.map(([customerKey, group]) => {
                         const customerPhoneHref = phoneHref(group.customerPhone);
                         const displayAddress = formatDeliveryAddress({ address: group.address, city });
@@ -217,99 +217,134 @@ export default function SalesDeliveriesQueue({
 
                         return (
                           <li key={customerKey}>
-                            <div className="rounded-lg border-2 border-secondary/40 bg-background/80 px-2.5 py-2">
-                            <div className="flex items-center gap-x-2 text-xs">
-                              <span className="truncate text-sm font-semibold">{group.customerName}</span>
-                              {group.customerPhone ? (
-                                customerPhoneHref ? (
-                                  <a
-                                    href={customerPhoneHref}
-                                    className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground hover:text-foreground"
-                                  >
-                                    <Phone className="h-3 w-3" />
-                                    <span dir="ltr">{group.customerPhone}</span>
-                                  </a>
-                                ) : (
-                                  <span className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground">
-                                    <Phone className="h-3 w-3" />
-                                    <span dir="ltr">{group.customerPhone}</span>
+                            <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+                              {/* Customer header: name + phone, and amount (single) / count (multi) */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-bold">{group.customerName}</div>
+                                  {group.customerPhone ? (
+                                    customerPhoneHref ? (
+                                      <a
+                                        href={customerPhoneHref}
+                                        className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                                      >
+                                        <Phone className="h-3 w-3" />
+                                        <span dir="ltr">{group.customerPhone}</span>
+                                      </a>
+                                    ) : (
+                                      <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                        <Phone className="h-3 w-3" />
+                                        <span dir="ltr">{group.customerPhone}</span>
+                                      </span>
+                                    )
+                                  ) : null}
+                                  {displayAddress ? (
+                                    <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                                      <WazeIcon className="h-3.5 w-3.5 shrink-0" />
+                                      <span className="truncate">
+                                        <AddressLink address={displayAddress} />
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                                {hasMultipleOrders ? (
+                                  <span className="shrink-0 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                                    {group.orders.length} משלוחים
                                   </span>
-                                )
-                              ) : null}
-                              {hasMultipleOrders ? (
-                                <span className="mr-auto shrink-0 text-muted-foreground">{group.orders.length} משלוחים</span>
-                              ) : null}
-                            </div>
-                            <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                              <WazeIcon className="h-3.5 w-3.5 shrink-0" />
-                              <span className="truncate">
-                                {displayAddress ? <AddressLink address={displayAddress} /> : "-"}
-                              </span>
-                            </div>
-
-                            <ul
-                              className={
-                                hasMultipleOrders
-                                  ? "me-[3px] mt-1.5 space-y-0.5 border-e-2 border-info/30 pe-3"
-                                  : "mt-0.5"
-                              }
-                            >
-                              {group.orders.map((delivery) => (
-                                <li
-                                  key={delivery.id}
-                                  title={delivery.notes ?? undefined}
-                                  className="py-1 text-xs hover:bg-muted/20"
-                                >
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-medium">{formatCurrency(delivery.totalAmount)}</span>
-                                    <span
-                                      className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
-                                    >
-                                      {paymentStatusLabel(delivery.paymentStatus)}
+                                ) : (
+                                  <div className="flex shrink-0 flex-col items-end gap-1">
+                                    <span className="text-base font-bold">
+                                      {formatCurrency(group.orders[0]?.totalAmount ?? null)}
                                     </span>
-                                    {delivery.collectOnDelivery ? (
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(group.orders[0]?.paymentStatus ?? "unpaid")}`}
+                                    >
+                                      {paymentStatusLabel(group.orders[0]?.paymentStatus ?? "unpaid")}
+                                    </span>
+                                    {group.orders[0]?.collectOnDelivery ? (
                                       <span className="inline-flex rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
                                         גבייה ע&quot;י הנהג
                                       </span>
                                     ) : null}
                                   </div>
-                                  <div className="mt-1 flex flex-wrap gap-1">
-                                    <OrderConfirmDialog
-                                      orderId={delivery.id}
-                                      buttonLabel="אספקה"
-                                      buttonClassName="h-6 px-2 text-xs"
-                                    />
-                                    <Button
-                                      asChild
-                                      type="button"
-                                      variant="secondary"
-                                      size="sm"
-                                      className="h-6 px-2 text-xs"
-                                      onClick={() => emitNavigationStart()}
-                                    >
-                                      <Link href={`/sales/orders/${delivery.id}`}>פרטים</Link>
-                                    </Button>
-                                    <DeliveryShareActions delivery={delivery} />
-                                  </div>
-                                  {delivery.items.length > 0 ? (
-                                    <div className="mt-1 flex flex-wrap gap-1 text-xs">
-                                      {delivery.items.map((item, itemIndex) => (
-                                        <span
-                                          key={`${delivery.id}-${itemIndex}`}
-                                          className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-foreground"
-                                        >
-                                          <span className="font-semibold">{item.quantity}</span>
-                                          <span>
-                                            {item.name}
-                                            {item.notes ? ` (${item.notes})` : ""}
-                                          </span>
+                                )}
+                              </div>
+
+                              {/* Orders */}
+                              <div className={hasMultipleOrders ? "mt-3 space-y-2" : "mt-3"}>
+                                {group.orders.map((delivery) => (
+                                  <div
+                                    key={delivery.id}
+                                    title={delivery.notes ?? undefined}
+                                    className={hasMultipleOrders ? "rounded-lg border border-border/70 p-2" : ""}
+                                  >
+                                    {hasMultipleOrders ? (
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-sm font-bold">
+                                          {formatCurrency(delivery.totalAmount)}
                                         </span>
-                                      ))}
+                                        <span
+                                          className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
+                                        >
+                                          {paymentStatusLabel(delivery.paymentStatus)}
+                                        </span>
+                                        {delivery.collectOnDelivery ? (
+                                          <span className="inline-flex rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                                            גבייה ע&quot;י הנהג
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+
+                                    {delivery.items.length > 0 ? (
+                                      <div className="mt-2 rounded-lg bg-muted/50 p-2">
+                                        <div className="flex flex-wrap gap-1 text-xs">
+                                          {delivery.items.map((item, itemIndex) => (
+                                            <span
+                                              key={`${delivery.id}-${itemIndex}`}
+                                              className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
+                                            >
+                                              <span className="font-semibold">{item.quantity}</span>
+                                              <span>
+                                                {item.name}
+                                                {item.notes ? ` (${item.notes})` : ""}
+                                              </span>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : null}
+
+                                    <div className="mt-2 grid grid-cols-3 gap-2 border-t border-border/60 pt-2">
+                                      <OrderConfirmDialog
+                                        orderId={delivery.id}
+                                        buttonVariant="default"
+                                        buttonClassName="w-full gap-1"
+                                        buttonLabel={
+                                          <>
+                                            <Check className="h-4 w-4" />
+                                            אספקה
+                                          </>
+                                        }
+                                      />
+                                      <Button
+                                        asChild
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        className="w-full gap-1"
+                                        onClick={() => emitNavigationStart()}
+                                      >
+                                        <Link href={`/sales/orders/${delivery.id}`}>
+                                          <Eye className="h-4 w-4" />
+                                          פרטים
+                                        </Link>
+                                      </Button>
+                                      <DeliveryShareActions delivery={delivery} className="w-full" />
                                     </div>
-                                  ) : null}
-                                </li>
-                              ))}
-                            </ul>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           </li>
                         );

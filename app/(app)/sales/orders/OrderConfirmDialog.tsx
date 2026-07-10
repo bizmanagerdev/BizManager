@@ -147,6 +147,7 @@ export default function OrderConfirmDialog({
   orderId,
   buttonLabel = "אישור אספקה",
   buttonClassName,
+  buttonVariant = "outline",
   title = "אישור אספקת הזמנה",
   description = "עדכון כמויות סופיות, תשלום, החזר והוכחת אספקה במסך אחד.",
   defaultStatus = "delivered",
@@ -154,6 +155,7 @@ export default function OrderConfirmDialog({
   orderId: string;
   buttonLabel?: React.ReactNode;
   buttonClassName?: string;
+  buttonVariant?: React.ComponentProps<typeof Button>["variant"];
   title?: string;
   description?: string;
   defaultStatus?: string;
@@ -479,7 +481,7 @@ export default function OrderConfirmDialog({
         if (!nextOpen) setError(null);
       }}
     >
-      <Button type="button" size="sm" variant="outline" className={buttonClassName ?? "w-full sm:w-auto"} onClick={() => setOpen(true)}>
+      <Button type="button" size="sm" variant={buttonVariant} className={buttonClassName ?? "w-full sm:w-auto"} onClick={() => setOpen(true)}>
         {buttonLabel}
       </Button>
       <DialogContent className="flex max-h-[92svh] w-[calc(100vw-1rem)] max-w-4xl flex-col overflow-hidden p-4 sm:p-6">
