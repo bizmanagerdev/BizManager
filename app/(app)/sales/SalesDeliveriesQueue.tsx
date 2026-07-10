@@ -5,6 +5,7 @@ import { useCallback, useMemo } from "react";
 import { Phone, Truck } from "lucide-react";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
+import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
 import { Button } from "@/components/ui/button";
@@ -258,38 +259,37 @@ export default function SalesDeliveriesQueue({
                                   title={delivery.notes ?? undefined}
                                   className="py-1 text-xs hover:bg-muted/20"
                                 >
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
                                     <span className="font-medium">{formatCurrency(delivery.totalAmount)}</span>
                                     <span
                                       className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
                                     >
                                       {paymentStatusLabel(delivery.paymentStatus)}
                                     </span>
-                                    <div className="mr-auto flex shrink-0 gap-1">
-                                      <OrderConfirmDialog
-                                        orderId={delivery.id}
-                                        buttonLabel="אספקה"
-                                        buttonClassName="h-6 px-2 text-xs"
-                                      />
-                                      <Button
-                                        asChild
-                                        type="button"
-                                        variant="secondary"
-                                        size="sm"
-                                        className="h-6 px-2 text-xs"
-                                        onClick={() => emitNavigationStart()}
-                                      >
-                                        <Link href={`/sales/orders/${delivery.id}`}>פרטים</Link>
-                                      </Button>
-                                    </div>
-                                  </div>
-                                  {delivery.collectOnDelivery ? (
-                                    <div className="mt-1">
+                                    {delivery.collectOnDelivery ? (
                                       <span className="inline-flex rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
                                         גבייה ע&quot;י הנהג
                                       </span>
-                                    </div>
-                                  ) : null}
+                                    ) : null}
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    <OrderConfirmDialog
+                                      orderId={delivery.id}
+                                      buttonLabel="אספקה"
+                                      buttonClassName="h-6 px-2 text-xs"
+                                    />
+                                    <Button
+                                      asChild
+                                      type="button"
+                                      variant="secondary"
+                                      size="sm"
+                                      className="h-6 px-2 text-xs"
+                                      onClick={() => emitNavigationStart()}
+                                    >
+                                      <Link href={`/sales/orders/${delivery.id}`}>פרטים</Link>
+                                    </Button>
+                                    <DeliveryShareActions delivery={delivery} />
+                                  </div>
                                   {delivery.items.length > 0 ? (
                                     <div className="mt-1 flex flex-wrap gap-1 text-xs">
                                       {delivery.items.map((item, itemIndex) => (
