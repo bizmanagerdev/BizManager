@@ -332,6 +332,7 @@ export default function SalesDeliveriesQueue({
                                     <div className="mt-2 grid grid-cols-3 gap-2 border-t border-border/60 pt-2">
                                       <OrderConfirmDialog
                                         orderId={delivery.id}
+                                        customerName={delivery.customerName}
                                         buttonVariant="default"
                                         buttonClassName="w-full gap-1"
                                         buttonLabel={

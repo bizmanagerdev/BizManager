@@ -2,9 +2,9 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Delete, Trash2, Truck } from "lucide-react";
 import * as Sentry from "@sentry/nextjs";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import LoadingDots from "@/app/(app)/sales/orders/LoadingDots";
 import {
@@ -99,13 +98,6 @@ function paidAmountClass(status: string) {
     : "font-semibold text-destructive-soft-foreground";
 }
 
-// Whole "paid so far" box: green tint when fully paid, red tint while owing.
-function paidBoxClass(status: string) {
-  return status === "paid"
-    ? "border-success bg-success-soft"
-    : "border-destructive bg-destructive-soft";
-}
-
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -116,32 +108,23 @@ function normalizeQty(value: string) {
   return Math.max(1, Math.round(parsed));
 }
 
-function Section({
-  step,
-  title,
-  description,
-  children,
-}: {
-  step: string;
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl border border-border/70 bg-card/70 p-4">
-      <div className="mb-4 flex items-start gap-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
-          {step}
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold">{title}</h3>
-          {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
-        </div>
-      </div>
-      {children}
-    </section>
-  );
-}
+
+// Wizard step headings — eyebrow ("שלב N · <eyebrow>") + the big question title.
+const STEP_META: Record<string, { eyebrow: string; title: string; description?: string }> = {
+  items: { eyebrow: "פריטים סופיים", title: "מה נמסר בפועל?", description: "עדכן כמויות, הסר או הוסף מוצרים שסופקו." },
+  paidChoice: { eyebrow: "תשלום", title: "האם נגבה תשלום במסירה?" },
+  amount: { eyebrow: "תשלום", title: "כמה נגבה במסירה?" },
+  paymentDate: { eyebrow: "תשלום", title: "מתי שולם?" },
+  paymentMethod: { eyebrow: "תשלום", title: "באיזה אמצעי תשלום?" },
+  paymentAccount: { eyebrow: "תשלום", title: "לאיזה חשבון נכנס התשלום?" },
+  reference: { eyebrow: "תשלום", title: "אסמכתא", description: "אופציונלי — מספר קבלה/אסמכתא." },
+  paymentNotes: { eyebrow: "תשלום", title: "הערת תשלום", description: "אופציונלי." },
+  refund: { eyebrow: "החזר", title: "רישום החזר ללקוח", description: "נגבה יותר מסכום ההזמנה." },
+  deliveryDate: { eyebrow: "הוכחת אספקה", title: "מתי סופק?", description: "התאריך שבו אושרה האספקה בפועל." },
+  images: { eyebrow: "הוכחת אספקה", title: "צירוף תמונות", description: "צלם או העלה הוכחת אספקה." },
+  comments: { eyebrow: "הערות אספקה", title: "הערות למסירה", description: "חוסרים, מצב אספקה, כל דבר שכדאי לתעד." },
+  review: { eyebrow: "אישור", title: "לאשר את האספקה?", description: "בדוק את הסיכום ואשר. המלאי, התשלום והסטטוס יתעדכנו." },
+};
 
 export default function OrderConfirmDialog({
   orderId,
@@ -151,6 +134,7 @@ export default function OrderConfirmDialog({
   title = "אישור אספקת הזמנה",
   description = "עדכון כמויות סופיות, תשלום, החזר והוכחת אספקה במסך אחד.",
   defaultStatus = "delivered",
+  customerName,
 }: {
   orderId: string;
   buttonLabel?: React.ReactNode;
@@ -159,9 +143,12 @@ export default function OrderConfirmDialog({
   title?: string;
   description?: string;
   defaultStatus?: string;
+  customerName?: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [stepId, setStepId] = useState("items");
+  const [paidNow, setPaidNow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -261,6 +248,8 @@ export default function OrderConfirmDialog({
     setDeliveryImages([]);
     setProductQuery("");
     setProductResults([]);
+    setStepId("items");
+    setPaidNow(false);
     setError(null);
   }, [data]);
 
@@ -282,13 +271,11 @@ export default function OrderConfirmDialog({
   const paymentAmountNumber = Number(paymentAmount || 0);
   const pendingPaymentAmount = Number.isFinite(paymentAmountNumber) && paymentAmountNumber > 0 ? paymentAmountNumber : 0;
   const projectedPaid = existingPaid + pendingPaymentAmount;
-  const projectedRemaining = Math.max(totalAmount - projectedPaid, 0);
   const refundDue = Math.max(projectedPaid - totalAmount, 0);
   const refundToRecord = recordRefund ? refundDue : 0;
   const finalPaidAfterRefund = projectedPaid - refundToRecord;
   const finalRemainingAfterRefund = Math.max(totalAmount - finalPaidAfterRefund, 0);
   const finalPaymentStatus = derivePaymentStatus(totalAmount, finalPaidAfterRefund);
-  const projectedPaymentStatus = derivePaymentStatus(totalAmount, projectedPaid);
   const finalStatus = defaultStatus || "delivered";
 
   function updateQuantity(index: number, nextValue: string) {
@@ -473,6 +460,487 @@ export default function OrderConfirmDialog({
     }
   }
 
+  // Steps are a dynamic list of string IDs — choosing "paid" splits each payment
+  // field into its own step, and an overpayment inserts a refund step.
+  const steps = useMemo(() => {
+    const s: string[] = ["items", "paidChoice"];
+    if (paidNow) {
+      s.push("amount", "paymentDate", "paymentMethod");
+      if (accountsList.length > 0) s.push("paymentAccount");
+      s.push("reference", "paymentNotes");
+    }
+    if (refundDue > 0) s.push("refund");
+    s.push("deliveryDate", "images", "comments", "review");
+    return s;
+  }, [paidNow, accountsList.length, refundDue]);
+
+  const stepIndex = Math.max(0, steps.indexOf(stepId));
+  const currentStepId = steps[stepIndex] ?? "items";
+  const isLastStep = currentStepId === "review";
+  const progress = ((stepIndex + 1) / steps.length) * 100;
+
+  // Navigation reads the latest step list via refs, because a choice mid-flow
+  // (paid? / overpayment) reshapes the array between render and click.
+  const stepsRef = useRef(steps);
+  const stepIdRef = useRef(currentStepId);
+  useEffect(() => {
+    stepsRef.current = steps;
+    stepIdRef.current = currentStepId;
+  });
+
+  function stepError(id: string): string | null {
+    switch (id) {
+      case "items":
+        if (lines.length === 0) return "לא ניתן לאשר הזמנה ללא פריטים.";
+        if (lines.some((line) => !line.product_id || line.quantity_ordered <= 0)) {
+          return "יש להשלים כמויות תקינות לכל הפריטים.";
+        }
+        return null;
+      case "amount":
+        if (!(pendingPaymentAmount > 0)) return "יש להזין סכום תשלום.";
+        return null;
+      case "paymentDate":
+        if (!paymentDate) return "יש לבחור תאריך תשלום.";
+        return null;
+      case "paymentMethod":
+        if (!paymentMethod) return "יש לבחור אמצעי תשלום.";
+        return null;
+      case "paymentAccount":
+        if (accountsList.length > 0 && !paymentAccountId) return "יש לבחור חשבון לתשלום.";
+        return null;
+      case "refund":
+        if (recordRefund) {
+          if (!refundDate) return "יש לבחור תאריך החזר.";
+          if (!refundMethod) return "יש לבחור אמצעי החזר.";
+          if (accountsList.length > 0 && !refundAccountId) return "יש לבחור חשבון להחזר.";
+        }
+        return null;
+      case "images":
+        if (deliveryImages.some((file) => !file.type.startsWith("image/"))) {
+          return "ניתן לצרף רק קובץ תמונה.";
+        }
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  function goTo(delta: 1 | -1) {
+    const arr = stepsRef.current;
+    const cur = arr.indexOf(stepIdRef.current);
+    const base = cur < 0 ? 0 : cur;
+    const next = Math.max(0, Math.min(arr.length - 1, base + delta));
+    setStepId(arr[next]);
+  }
+  function goNext() {
+    const err = stepError(stepIdRef.current);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setError(null);
+    goTo(1);
+  }
+  function goBack() {
+    setError(null);
+    goTo(-1);
+  }
+  function choosePaid(value: boolean) {
+    setPaidNow(value);
+    if (!value) setPaymentAmount("");
+    setError(null);
+    // Let the reshaped step list settle before advancing off this step.
+    window.setTimeout(() => goTo(1), 120);
+  }
+
+  function renderStepContent() {
+    if (!data) return null;
+    switch (currentStepId) {
+      case "items":
+        return (
+          <div className="space-y-2">
+            {lines.length === 0 ? (
+              <p className="text-sm text-muted-foreground">אין פריטים — הוסף מוצר כדי לאשר אספקה.</p>
+            ) : null}
+            {lines.map((line, index) => {
+              const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
+              return (
+                <div
+                  key={`${line.product_id}-${index}`}
+                  className="grid gap-3 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-[1fr_120px_140px_40px]"
+                >
+                  <div>
+                    <div className="font-medium">{line.product_name}</div>
+                    <div className="text-xs text-muted-foreground">מחיר יחידה: {formatCurrency(line.unit_price)}</div>
+                    {line.notes ? <div className="mt-1 text-xs text-muted-foreground">הערות: {line.notes}</div> : null}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">כמות</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={line.quantity_ordered}
+                      onChange={(e) => updateQuantity(index, e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium">סה״כ שורה</div>
+                    <div className="h-10 rounded-md border bg-muted/20 px-3 py-2 text-sm">{formatCurrency(lineTotal)}</div>
+                  </div>
+                  <div className="flex items-end justify-end sm:pb-0.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      className="h-9 w-9 p-0"
+                      title="הסרת מוצר"
+                      aria-label="הסרת מוצר"
+                      onClick={() => removeLine(index)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="space-y-2 border-t border-border/60 pt-3">
+              <label className="text-sm font-medium">הוספת מוצר</label>
+              <Input
+                value={productQuery}
+                onChange={(e) => setProductQuery(e.target.value)}
+                placeholder="חיפוש מוצר לפי שם, מק״ט או ברקוד..."
+              />
+              {productSearching ? <p className="text-xs text-muted-foreground">מחפש...</p> : null}
+              {!productSearching && productQuery.trim() && productResults.length === 0 ? (
+                <p className="text-xs text-muted-foreground">לא נמצאו מוצרים.</p>
+              ) : null}
+              {productResults.length > 0 ? (
+                <div className="max-h-48 divide-y divide-border/60 overflow-y-auto rounded-xl border border-border/70 bg-background/70">
+                  {productResults.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-right text-sm hover:bg-muted/40"
+                      onClick={() => addProduct(product)}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{product.name}</span>
+                        {product.sku ? (
+                          <span className="block text-xs text-muted-foreground">מק״ט: {product.sku}</span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">{formatCurrency(product.base_price ?? 0)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        );
+      case "paidChoice":
+        return (
+          <div className="mx-auto flex max-w-sm flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => choosePaid(true)}
+              className={`rounded-xl border p-4 text-center text-sm font-semibold transition-colors ${paidNow ? "border-primary bg-primary/10 text-primary" : "border-input hover:bg-muted"}`}
+            >
+              כן, נגבה תשלום
+            </button>
+            <button
+              type="button"
+              onClick={() => choosePaid(false)}
+              className={`rounded-xl border p-4 text-center text-sm font-semibold transition-colors ${!paidNow ? "border-primary bg-primary/10 text-primary" : "border-input hover:bg-muted"}`}
+            >
+              לא נגבה תשלום
+            </button>
+          </div>
+        );
+      case "amount": {
+        const outstanding = Math.max(totalAmount - existingPaid, 0);
+        const appendDigit = (d: string) =>
+          setPaymentAmount((prev) => {
+            if (d === ".") {
+              if (prev.includes(".")) return prev;
+              return (prev || "0") + ".";
+            }
+            if (prev === "0") return d;
+            return prev + d;
+          });
+        const backspace = () => setPaymentAmount((prev) => prev.slice(0, -1));
+        const quickClass =
+          "rounded-lg border border-input bg-background py-1 text-xs font-semibold transition-colors hover:bg-muted";
+        const padClass =
+          "flex items-center justify-center rounded-lg border border-input bg-background py-1.5 text-base font-semibold transition-colors hover:bg-muted";
+        return (
+          <div className="mx-auto max-w-xs space-y-1.5">
+            <p className="text-xs text-muted-foreground">
+              יתרה לתשלום:{" "}
+              <span className="font-semibold text-foreground">{formatCurrency(outstanding)}</span> · אפשר להשאיר 0
+            </p>
+            {/* Amount hero — ₪ on the right with the amount right next to it */}
+            <div className="flex items-baseline justify-start gap-2 rounded-lg border border-border/60 bg-muted/10 px-4 py-1.5">
+              <span className="text-lg text-muted-foreground">₪</span>
+              <span className="text-2xl font-bold tabular-nums">{paymentAmount || "0"}</span>
+            </div>
+            {/* Quick amounts */}
+            <div className="grid grid-cols-3 gap-1.5">
+              <button type="button" className={quickClass} onClick={() => setPaymentAmount(String(outstanding))}>
+                הכל
+              </button>
+              <button
+                type="button"
+                className={quickClass}
+                onClick={() => setPaymentAmount(String(Math.round((outstanding / 2) * 100) / 100))}
+              >
+                חצי
+              </button>
+              <button type="button" className={quickClass} onClick={() => setPaymentAmount("")}>
+                לא שולם
+              </button>
+            </div>
+            {/* Keypad */}
+            <div className="grid grid-cols-3 gap-1">
+              {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+                <button key={d} type="button" className={padClass} onClick={() => appendDigit(d)}>
+                  {d}
+                </button>
+              ))}
+              <button type="button" className={padClass} onClick={() => appendDigit(".")}>
+                .
+              </button>
+              <button type="button" className={padClass} onClick={() => appendDigit("0")}>
+                0
+              </button>
+              <button type="button" className={padClass} aria-label="מחיקה" onClick={backspace}>
+                <Delete className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        );
+      }
+      case "paymentDate":
+        return (
+          <div className="mx-auto max-w-xs space-y-1">
+            <label className="text-sm font-medium">תאריך תשלום</label>
+            <DateInput value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+          </div>
+        );
+      case "paymentMethod":
+        return (
+          <div className="mx-auto max-w-xs space-y-1">
+            <label className="text-sm font-medium">אמצעי תשלום</label>
+            <select
+              value={paymentMethod}
+              onChange={(e) => {
+                const m = e.target.value;
+                setPaymentMethod(m);
+                setPaymentAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+              }}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">בחר אמצעי תשלום...</option>
+              {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        );
+      case "paymentAccount":
+        return (
+          <div className="mx-auto max-w-xs">
+            <AccountSelect
+              required
+              value={paymentAccountId}
+              onChange={setPaymentAccountId}
+              onLoaded={(list) => {
+                setAccountsList(list);
+                setPaymentAccountId((prev) => prev || defaultAccountForMethod(list, paymentMethod));
+              }}
+            />
+          </div>
+        );
+      case "reference":
+        return (
+          <div className="mx-auto max-w-xs space-y-1">
+            <label className="text-sm font-medium">אסמכתא</label>
+            <Input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="אופציונלי" />
+          </div>
+        );
+      case "paymentNotes":
+        return (
+          <div className="mx-auto max-w-xs space-y-1">
+            <label className="text-sm font-medium">הערת תשלום</label>
+            <Input value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} placeholder="אופציונלי" />
+          </div>
+        );
+      case "refund":
+        return (
+          <div className="space-y-3 rounded-2xl border border-warning/40 bg-warning-soft/60 p-3">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" checked={recordRefund} onChange={(e) => setRecordRefund(e.target.checked)} />
+              <span>לרשום החזר עכשיו</span>
+            </label>
+            <div className="text-sm">
+              סכום החזר: <span className="font-semibold text-warning-soft-foreground">{formatCurrency(refundDue)}</span>
+            </div>
+            {recordRefund ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">תאריך החזר</label>
+                    <DateInput value={refundDate} onChange={(e) => setRefundDate(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">אמצעי החזר</label>
+                    <select
+                      value={refundMethod}
+                      onChange={(e) => {
+                        const m = e.target.value;
+                        setRefundMethod(m);
+                        setRefundAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                      }}
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">בחר אמצעי החזר...</option>
+                      {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
+                        <option key={`refund-${option.value}`} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <AccountSelect
+                    required
+                    value={refundAccountId}
+                    onChange={setRefundAccountId}
+                    onLoaded={(list) => {
+                      setAccountsList(list);
+                      setRefundAccountId((prev) => prev || defaultAccountForMethod(list, refundMethod));
+                    }}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">אסמכתא להחזר</label>
+                    <Input
+                      value={refundReferenceNumber}
+                      onChange={(e) => setRefundReferenceNumber(e.target.value)}
+                      placeholder="אופציונלי"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">הערת החזר</label>
+                    <Input
+                      value={refundNotes}
+                      onChange={(e) => setRefundNotes(e.target.value)}
+                      placeholder="למשל: הוחזר עקב שינוי בכמויות"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-xs text-warning-soft-foreground">ההחזר לא יירשם במערכת עד שתסמן ותמלא פרטי החזר.</div>
+            )}
+          </div>
+        );
+      case "deliveryDate":
+        return (
+          <div className="mx-auto max-w-xs space-y-1">
+            <label className="text-sm font-medium">תאריך אספקה</label>
+            <DateInput value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+          </div>
+        );
+      case "images":
+        return (
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">העלאת תמונה</label>
+              <FileUploadActions
+                files={deliveryImages}
+                accept="image/*"
+                multiple
+                onFilesSelected={setDeliveryImages}
+                chooseLabel="בחר תמונות"
+                className="flex-wrap"
+              />
+              <p className="text-xs text-muted-foreground">אפשר לצרף הוכחת אספקה חדשה בלי למחוק תמונות קיימות.</p>
+            </div>
+            {(data.deliveryImages ?? []).length > 0 ? (
+              <div className="space-y-2">
+                <div className="text-sm font-medium">תמונות קיימות</div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(data.deliveryImages ?? []).map((image) => (
+                    <a
+                      key={image.id}
+                      href={image.url ?? "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-xl border border-border/70 bg-background/70 p-2 text-sm"
+                    >
+                      {image.url ? (
+                        <img
+                          src={image.url}
+                          alt={image.file_name ?? "Delivery image"}
+                          className="mb-2 h-32 w-full rounded object-cover"
+                        />
+                      ) : null}
+                      <div className="font-medium">{image.file_name ?? "תמונה"}</div>
+                      <div className="text-xs text-muted-foreground">{formatDate(image.uploaded_at)}</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        );
+      case "comments":
+        return (
+          <div className="space-y-1">
+            <label className="text-sm font-medium">הערות אספקה</label>
+            <Textarea
+              value={deliveryNotes}
+              onChange={(e) => setDeliveryNotes(e.target.value)}
+              rows={5}
+              placeholder="הערות למסירה, חוסרים, מצב אספקה..."
+            />
+          </div>
+        );
+      case "review":
+        return (
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">סטטוס אחרי שמירה</span>
+              <span className="font-medium">סופקה</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">סטטוס תשלום</span>
+              <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(finalPaymentStatus)}`}>
+                {paymentStatusLabel(finalPaymentStatus)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">שולם נטו</span>
+              <span className={paidAmountClass(finalPaymentStatus)}>{formatCurrency(finalPaidAfterRefund)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">יתרה</span>
+              <span>{formatCurrency(finalRemainingAfterRefund)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">תמונות חדשות</span>
+              <span>{deliveryImages.length}</span>
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  }
+
   return (
     <Dialog
       open={open}
@@ -484,10 +952,21 @@ export default function OrderConfirmDialog({
       <Button type="button" size="sm" variant={buttonVariant} className={buttonClassName ?? "w-full sm:w-auto"} onClick={() => setOpen(true)}>
         {buttonLabel}
       </Button>
-      <DialogContent className="flex max-h-[92svh] w-[calc(100vw-1rem)] max-w-4xl flex-col overflow-hidden p-4 sm:p-6">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+      <DialogContent className="flex max-h-[92svh] w-[calc(100vw-1rem)] max-w-lg flex-col overflow-hidden p-3 sm:p-4">
+        <DialogHeader className="space-y-1.5">
+          <div className="flex items-center gap-2 pe-8">
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <Truck className="h-4 w-4 shrink-0 text-primary" />
+              <span className="truncate">{customerName ? customerName : title}</span>
+            </DialogTitle>
+            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              {stepIndex + 1} / {steps.length}
+            </span>
+          </div>
+          <DialogDescription className="sr-only">{description}</DialogDescription>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+          </div>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -500,399 +979,57 @@ export default function OrderConfirmDialog({
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
           {data ? (
-            <div className="space-y-5">
-              <section className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
-                <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
-                    <div className="text-xs text-muted-foreground">תאריך הזמנה</div>
-                    <div className="mt-1 font-medium">{formatDate(data.initialOrder.order_date)}</div>
-                  </div>
-                  <div className={`rounded-2xl border px-3 py-2 ${paidBoxClass(derivePaymentStatus(totalAmount, existingPaid))}`}>
-                    <div className="text-xs text-muted-foreground">שולם עד עכשיו</div>
-                    <div className={`mt-1 ${paidAmountClass(derivePaymentStatus(totalAmount, existingPaid))}`}>{formatCurrency(existingPaid)}</div>
-                  </div>
-                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
-                    <div className="text-xs text-muted-foreground">סה״כ הזמנה מעודכן</div>
-                    <div className="mt-1 font-medium">{formatCurrency(totalAmount)}</div>
-                  </div>
-                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2">
-                    <div className="text-xs text-muted-foreground">{refundDue > 0 ? "החזר נדרש" : "יתרה אחרי אישור"}</div>
-                    <div className={`mt-1 font-medium ${refundDue > 0 ? "text-warning-soft-foreground" : ""}`}>
-                      {formatCurrency(refundDue > 0 ? refundDue : projectedRemaining)}
-                    </div>
-                  </div>
-                </div>
-              </section>
+            <div className="space-y-2">
+              {/* Question header for the current step */}
+              <div>
+                <h2 className="text-base font-bold leading-tight">{STEP_META[currentStepId]?.title}</h2>
+                {STEP_META[currentStepId]?.description ? (
+                  <p className="mt-0.5 text-xs text-muted-foreground">{STEP_META[currentStepId]?.description}</p>
+                ) : null}
+              </div>
 
-              <Section
-                step="1"
-                title="פריטים סופיים"
-                description="עדכן כמויות, הסר מוצרים או הוסף מוצרים שנמסרו בפועל."
-              >
-                <div className="space-y-2">
-                  {lines.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">אין פריטים — הוסף מוצר כדי לאשר אספקה.</p>
-                  ) : null}
-                  {lines.map((line, index) => {
-                    const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
-                    return (
-                      <div
-                        key={`${line.product_id}-${index}`}
-                        className="grid gap-3 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-[1fr_120px_140px_40px]"
-                      >
-                        <div>
-                          <div className="font-medium">{line.product_name}</div>
-                          <div className="text-xs text-muted-foreground">מחיר יחידה: {formatCurrency(line.unit_price)}</div>
-                          {line.notes ? <div className="mt-1 text-xs text-muted-foreground">הערות: {line.notes}</div> : null}
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium">כמות</label>
-                          <Input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={line.quantity_ordered}
-                            onChange={(e) => updateQuantity(index, e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs font-medium">סה״כ שורה</div>
-                          <div className="h-10 rounded-md border bg-muted/20 px-3 py-2 text-sm">{formatCurrency(lineTotal)}</div>
-                        </div>
-                        <div className="flex items-end justify-end sm:pb-0.5">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="destructive"
-                            className="h-9 w-9 p-0"
-                            title="הסרת מוצר"
-                            aria-label="הסרת מוצר"
-                            onClick={() => removeLine(index)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
+              {renderStepContent()}
 
-                  <div className="space-y-2 border-t border-border/60 pt-3">
-                    <label className="text-sm font-medium">הוספת מוצר</label>
-                    <Input
-                      value={productQuery}
-                      onChange={(e) => setProductQuery(e.target.value)}
-                      placeholder="חיפוש מוצר לפי שם, מק״ט או ברקוד..."
-                    />
-                    {productSearching ? (
-                      <p className="text-xs text-muted-foreground">מחפש...</p>
-                    ) : null}
-                    {!productSearching && productQuery.trim() && productResults.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">לא נמצאו מוצרים.</p>
-                    ) : null}
-                    {productResults.length > 0 ? (
-                      <div className="max-h-48 divide-y divide-border/60 overflow-y-auto rounded-xl border border-border/70 bg-background/70">
-                        {productResults.map((product) => (
-                          <button
-                            key={product.id}
-                            type="button"
-                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-right text-sm hover:bg-muted/40"
-                            onClick={() => addProduct(product)}
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate font-medium">{product.name}</span>
-                              {product.sku ? (
-                                <span className="block text-xs text-muted-foreground">מק״ט: {product.sku}</span>
-                              ) : null}
-                            </span>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {formatCurrency(product.base_price ?? 0)}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </Section>
-
-              <Section step="2" title="תשלום והחזר" description="רשום מה נגבה במסירה, ואם צריך גם החזר ללקוח.">
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-border/60 bg-muted/20 p-3 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">אחרי התשלום הזה</span>
-                      <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(projectedPaymentStatus)}`}>
-                        {paymentStatusLabel(projectedPaymentStatus)}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">שולם</span>
-                      <span className={paidAmountClass(projectedPaymentStatus)}>{formatCurrency(projectedPaid)}</span>
-                    </div>
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">{refundDue > 0 ? "החזר ללקוח" : "יתרה"}</span>
-                      <span className={refundDue > 0 ? "font-medium text-warning-soft-foreground" : ""}>
-                        {formatCurrency(refundDue > 0 ? refundDue : projectedRemaining)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">סכום תשלום</label>
-                      <CurrencyInput
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={paymentAmount}
-                        onChange={(e) => setPaymentAmount(e.target.value)}
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">תאריך תשלום</label>
-                      <DateInput value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">אמצעי תשלום</label>
-                      <select
-                        value={paymentMethod}
-                        onChange={(e) => {
-                          const m = e.target.value;
-                          setPaymentMethod(m);
-                          setPaymentAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
-                        }}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        <option value="">בחר אמצעי תשלום...</option>
-                        {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <AccountSelect
-                      required
-                      value={paymentAccountId}
-                      onChange={setPaymentAccountId}
-                      onLoaded={(list) => {
-                        setAccountsList(list);
-                        setPaymentAccountId((prev) => prev || defaultAccountForMethod(list, paymentMethod));
-                      }}
-                    />
-                    <div className="space-y-1">
-                      <label className="text-sm font-medium">אסמכתא</label>
-                      <Input
-                        value={referenceNumber}
-                        onChange={(e) => setReferenceNumber(e.target.value)}
-                        placeholder="אופציונלי"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">הערת תשלום</label>
-                    <Input
-                      value={paymentNotes}
-                      onChange={(e) => setPaymentNotes(e.target.value)}
-                      placeholder="אופציונלי"
-                    />
-                  </div>
-
-                  {refundDue > 0 ? (
-                    <div className="space-y-3 rounded-2xl border border-warning/40 bg-warning-soft/60 p-3">
-                      <label className="flex items-center gap-2 text-sm font-medium">
-                        <input type="checkbox" checked={recordRefund} onChange={(e) => setRecordRefund(e.target.checked)} />
-                        <span>לרשום החזר עכשיו</span>
-                      </label>
-
-                      <div className="text-sm">
-                        סכום החזר: <span className="font-semibold text-warning-soft-foreground">{formatCurrency(refundDue)}</span>
-                      </div>
-
-                      {recordRefund ? (
-                        <>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="space-y-1">
-                              <label className="text-sm font-medium">תאריך החזר</label>
-                              <DateInput value={refundDate} onChange={(e) => setRefundDate(e.target.value)} />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-sm font-medium">אמצעי החזר</label>
-                              <select
-                                value={refundMethod}
-                                onChange={(e) => {
-                                  const m = e.target.value;
-                                  setRefundMethod(m);
-                                  setRefundAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
-                                }}
-                                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                              >
-                                <option value="">בחר אמצעי החזר...</option>
-                                {ORDER_PAYMENT_METHOD_OPTIONS.map((option) => (
-                                  <option key={`refund-${option.value}`} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <AccountSelect
-                              required
-                              value={refundAccountId}
-                              onChange={setRefundAccountId}
-                              onLoaded={(list) => {
-                                setAccountsList(list);
-                                setRefundAccountId((prev) => prev || defaultAccountForMethod(list, refundMethod));
-                              }}
-                            />
-                          </div>
-
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="space-y-1">
-                              <label className="text-sm font-medium">אסמכתא להחזר</label>
-                              <Input
-                                value={refundReferenceNumber}
-                                onChange={(e) => setRefundReferenceNumber(e.target.value)}
-                                placeholder="אופציונלי"
-                              />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-sm font-medium">הערת החזר</label>
-                              <Input
-                                value={refundNotes}
-                                onChange={(e) => setRefundNotes(e.target.value)}
-                                placeholder="למשל: הוחזר עקב שינוי בכמויות"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="rounded-2xl border border-border/60 bg-background/80 p-3 text-sm">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-muted-foreground">אחרי רישום ההחזר</span>
-                              <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(finalPaymentStatus)}`}>
-                                {paymentStatusLabel(finalPaymentStatus)}
-                              </span>
-                            </div>
-                            <div className="mt-2 flex items-center justify-between gap-2">
-                              <span className="text-muted-foreground">שולם נטו</span>
-                              <span className={paidAmountClass(finalPaymentStatus)}>{formatCurrency(finalPaidAfterRefund)}</span>
-                            </div>
-                            <div className="mt-1 flex items-center justify-between gap-2">
-                              <span className="text-muted-foreground">יתרה</span>
-                              <span>{formatCurrency(finalRemainingAfterRefund)}</span>
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-xs text-warning-soft-foreground">ההחזר לא יירשם במערכת עד שתסמן ותמלא פרטי החזר.</div>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              </Section>
-
-              <Section step="3" title="הוכחת אספקה" description="צרף תמונות ועדכן הערות מסירה.">
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">תאריך אספקה</label>
-                    <DateInput value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
-                    <p className="text-xs text-muted-foreground">התאריך שבו אושרה האספקה בפועל.</p>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">העלאת תמונה</label>
-                    <FileUploadActions
-                      files={deliveryImages}
-                      accept="image/*"
-                      multiple
-                      onFilesSelected={setDeliveryImages}
-                      chooseLabel="בחר תמונות"
-                      className="flex-wrap"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      אפשר לצרף הוכחת אספקה חדשה בלי למחוק תמונות קיימות.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">הערות אספקה</label>
-                    <Textarea
-                      value={deliveryNotes}
-                      onChange={(e) => setDeliveryNotes(e.target.value)}
-                      rows={4}
-                      placeholder="הערות למסירה, חוסרים, מצב אספקה..."
-                    />
-                  </div>
-
-                  {(data.deliveryImages ?? []).length > 0 ? (
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium">תמונות קיימות</div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {(data.deliveryImages ?? []).map((image) => (
-                          <a
-                            key={image.id}
-                            href={image.url ?? "#"}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-xl border border-border/70 bg-background/70 p-2 text-sm"
-                          >
-                            {image.url ? (
-                              <img
-                                src={image.url}
-                                alt={image.file_name ?? "Delivery image"}
-                                className="mb-2 h-32 w-full rounded object-cover"
-                              />
-                            ) : null}
-                            <div className="font-medium">{image.file_name ?? "תמונה"}</div>
-                            <div className="text-xs text-muted-foreground">{formatDate(image.uploaded_at)}</div>
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </Section>
-
-              <Section step="4" title="אישור" description="האישור יעדכן את המלאי, התשלום, ההחזר והסטטוס להזמנה שסופקה.">
-                <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">סטטוס אחרי שמירה</span>
-                    <span className="font-medium">סופקה</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">סטטוס תשלום</span>
-                    <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(finalPaymentStatus)}`}>
-                      {paymentStatusLabel(finalPaymentStatus)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">שולם נטו</span>
-                    <span className={paidAmountClass(finalPaymentStatus)}>{formatCurrency(finalPaidAfterRefund)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">יתרה</span>
-                    <span>{formatCurrency(finalRemainingAfterRefund)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">תמונות חדשות</span>
-                    <span>{deliveryImages.length}</span>
-                  </div>
-                </div>
-              </Section>
+              {/* Hidden loader so the accounts list is known before the account step */}
+              <div className="hidden">
+                <AccountSelect
+                  value={paymentAccountId}
+                  onChange={setPaymentAccountId}
+                  onLoaded={(list) => setAccountsList(list)}
+                />
+              </div>
             </div>
           ) : null}
         </div>
 
-        <DialogFooter className="border-t pt-4">
-          <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>
-            ביטול
-          </Button>
-          <Button type="button" onClick={() => void submit()} disabled={submitting || loading || !data}>
-            {submitting ? "שומר..." : "אישור אספקה"}
-          </Button>
+        <DialogFooter className="mt-2 flex-row justify-between gap-2 border-t pt-2">
+          {stepIndex > 0 ? (
+            <Button type="button" size="sm" variant="secondary" className="flex-1 sm:flex-none" onClick={goBack} disabled={submitting}>
+              <ChevronRight className="h-4 w-4" />
+              חזרה
+            </Button>
+          ) : (
+            <Button type="button" size="sm" variant="secondary" className="flex-1 sm:flex-none" onClick={() => setOpen(false)} disabled={submitting}>
+              ביטול
+            </Button>
+          )}
+          {isLastStep ? (
+            <Button type="button" size="sm" className="flex-1 sm:flex-none" onClick={() => void submit()} disabled={submitting || loading || !data}>
+              {submitting ? (
+                "שומר..."
+              ) : (
+                <>
+                  <Check className="h-4 w-4" />
+                  אישור אספקה
+                </>
+              )}
+            </Button>
+          ) : (
+            <Button type="button" size="sm" className="flex-1 sm:flex-none" onClick={goNext} disabled={loading || !data}>
+              הבא
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -821,6 +821,7 @@ export default function SalesOrdersClient({
                       {showConfirm ? (
                         <OrderConfirmDialog
                           orderId={row.id}
+                          customerName={row.customerName}
                           buttonVariant="default"
                           buttonLabel={
                             <>

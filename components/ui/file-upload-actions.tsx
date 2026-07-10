@@ -139,8 +139,10 @@ export function FileUploadActions({
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            // Portrait (smartphone-shaped) frame so delivery photos aren't captured
+            // sideways/landscape. `ideal` lets desktop webcams fall back gracefully.
+            width: { ideal: 1080 },
+            height: { ideal: 1920 },
           },
           audio: false,
         });
@@ -322,7 +324,7 @@ export function FileUploadActions({
                 muted
                 playsInline
                 autoPlay
-                className="aspect-[4/3] w-full object-cover"
+                className="mx-auto aspect-[3/4] max-h-[60vh] w-auto object-cover"
                 onLoadedMetadata={() => setCameraReady(true)}
               />
             </div>
