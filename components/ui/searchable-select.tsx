@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -59,6 +59,29 @@ export function SearchableSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const listCleanup = useRef<(() => void) | null>(null);
+
+  // When this select opens inside a Radix Dialog, the dialog locks body scroll
+  // via react-remove-scroll, which installs document-level wheel/touchmove
+  // listeners that cancel scrolling on anything outside the dialog's subtree.
+  // This menu is portaled to <body> (outside that subtree), so without this the
+  // list would only scroll by dragging the scrollbar — not with a wheel or a
+  // finger. Stopping the events at the list container keeps them from reaching
+  // that document listener, so native scrolling of the list works again. A
+  // callback ref (not an effect) attaches the listeners the instant the list
+  // node mounts, so portal/animation timing can never leave it unbound.
+  const listRef = useCallback((node: HTMLDivElement | null) => {
+    listCleanup.current?.();
+    listCleanup.current = null;
+    if (!node) return;
+    const stop = (event: Event) => event.stopPropagation();
+    node.addEventListener("wheel", stop, { passive: true });
+    node.addEventListener("touchmove", stop, { passive: true });
+    listCleanup.current = () => {
+      node.removeEventListener("wheel", stop);
+      node.removeEventListener("touchmove", stop);
+    };
+  }, []);
 
   const selected = useMemo(
     () => options.find((option) => option.value === value) ?? null,
@@ -145,7 +168,7 @@ export function SearchableSelect({
             </div>
           ) : null}
 
-          <div className={cn("overflow-auto p-1", maxHeightClassName)}>
+          <div ref={listRef} className={cn("overflow-auto overscroll-contain p-1", maxHeightClassName)}>
             {emptyOptionLabel && !query.trim() ? (
               <button
                 type="button"
