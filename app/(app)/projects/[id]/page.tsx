@@ -1146,7 +1146,7 @@ export default async function ProjectPage({
                   <div className="text-xs font-medium text-muted-foreground">מנהל פרויקט:</div>
                   <div className="font-medium">{managerName || "לא הוגדר"}</div>
                 </div>
-                <div className="hidden min-w-[16rem] max-w-[28rem] space-y-1 lg:block">
+                <div className="col-span-2 min-w-0 space-y-1 lg:min-w-[16rem] lg:max-w-[28rem]">
                   <div className="text-xs font-medium text-muted-foreground">הערות:</div>
                   <div className="whitespace-pre-wrap font-medium text-sm">
                     {projectNotes || "—"}
@@ -1168,7 +1168,7 @@ export default async function ProjectPage({
                   </div>
                 ) : null}
                 {projectType === "moving" ? (
-                  <div className="hidden min-w-[16rem] space-y-1 lg:block">
+                  <div className="col-span-2 min-w-0 space-y-1 lg:min-w-[16rem]">
                     <div className="text-xs font-medium text-muted-foreground">פריטים להעברה:</div>
                     {itemsToMove.length > 0 ? (
                       <ul className="list-inside list-disc space-y-1 font-medium">

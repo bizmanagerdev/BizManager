@@ -1294,7 +1294,7 @@ export default function ProjectTabsClient({
             return <div className="mt-1 text-xs text-muted-foreground">{parts.join(" • ")}</div>;
           })()}
           {session?.notes ? (
-            <div className="text-xs text-muted-foreground mt-1 truncate">
+            <div className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">
               {session.notes}
             </div>
           ) : null}
@@ -1590,7 +1590,7 @@ export default function ProjectTabsClient({
                             {dueDate ? <span>פירעון: <LtrInline>{formatDate(dueDate)}</LtrInline></span> : null}
                           </div>
                           {p.notes ? (
-                            <div className="text-xs text-muted-foreground mt-1 truncate">
+                            <div className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">
                               {p.notes}
                             </div>
                           ) : null}
@@ -1793,20 +1793,20 @@ export default function ProjectTabsClient({
                     return (
                       <div
                         key={`${ev.type}:${ev.id}`}
-                        className="flex items-center gap-3 py-1.5 text-sm"
+                        className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5 text-sm"
                       >
-                        <span className="w-20 shrink-0 text-xs text-muted-foreground">
+                        <span className="order-1 w-20 shrink-0 text-xs text-muted-foreground">
                           <LtrInline>{formatDate(ev.date)}</LtrInline>
                         </span>
-                        <span className="min-w-0 flex-1 truncate font-medium">{ev.title}</span>
+                        <span className="order-2 min-w-0 flex-1 font-medium sm:truncate">{ev.title}</span>
                         {notesText ? (
-                          <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:inline">
+                          <span className="order-4 w-full ps-[5.75rem] text-xs text-muted-foreground sm:order-3 sm:w-auto sm:min-w-0 sm:flex-1 sm:truncate sm:ps-0">
                             {notesText}
                           </span>
                         ) : null}
                         <span
                           className={
-                            "shrink-0 whitespace-nowrap font-medium tabular-nums " +
+                            "order-3 shrink-0 whitespace-nowrap font-medium tabular-nums sm:order-4 " +
                             (signedAmount === null
                               ? ""
                               : isIncome
