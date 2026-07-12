@@ -658,10 +658,11 @@ export default function CardImportClient({
               <div className="space-y-1">
                 <label className="text-sm font-medium">שורת כותרת</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   min={1}
                   value={headerRow + 1}
-                  onChange={(e) => setHeaderRow(Math.max(0, (Number(e.target.value) || 1) - 1))}
+                  onChange={(e) => setHeaderRow(Math.max(0, (Number(e.target.value.replace(/[^\d]/g, "")) || 1) - 1))}
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 />
               </div>

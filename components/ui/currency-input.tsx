@@ -22,6 +22,16 @@ export const CurrencyInput = React.forwardRef<
       <Input
         ref={ref}
         inputMode={inputMode ?? "decimal"}
+        // Money fields look like credit-card / payment fields to autofill tools
+        // (browser autofill, password managers, the "card-injection" coupon
+        // extension seen in Sentry, Samsung Pass). Those hijack the field —
+        // locking the value and swallowing typed digits. These opt-out flags
+        // tell every major one to leave it alone.
+        autoComplete="off"
+        data-lpignore="true"
+        data-1p-ignore="true"
+        data-bwignore="true"
+        data-form-type="other"
         className={cn("pr-6 text-right", className)}
         {...props}
       />

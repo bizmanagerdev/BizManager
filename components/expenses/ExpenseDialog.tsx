@@ -1124,7 +1124,12 @@ export function ExpenseDialog({
   // Physical keyboard in express: type the amount directly (digits / "." /
   // backspace / Enter), and press 1-9 on option screens to pick that card.
   useEffect(() => {
-    if (activeMode !== "express") return;
+    // Only while THIS dialog is actually open. Otherwise a mounted-but-closed
+    // ExpenseDialog (e.g. the project page's "add project expense" dialog,
+    // which defaults to express/amount) would keep this global window listener
+    // attached and swallow every digit keypress across the whole page —
+    // breaking unrelated number fields (base price, etc.) while letters passed.
+    if (!open || activeMode !== "express") return;
     function onKey(e: KeyboardEvent) {
       const tag = document.activeElement?.tagName ?? "";
       const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
@@ -1149,7 +1154,7 @@ export function ExpenseDialog({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeMode, expStep, expressSteps, amount]);
+  }, [open, activeMode, expStep, expressSteps, amount]);
 
   function expEyebrow(icon: ReactNode, text: string) {
     return (
