@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { BarChart3, Calculator, CalendarClock, CheckCircle2, Clock, History, LineChart, Loader2, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, Trash2, Users } from "lucide-react";
+import { BarChart3, Calculator, CalendarClock, CheckCircle2, Clock, Coins, History, LineChart, Loader2, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, Trash2, Users } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -13,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
 import {
   Dialog,
   DialogDescription,
@@ -31,8 +30,10 @@ import BottomLinePanel from "@/app/(app)/financial/reports/BottomLinePanel";
 import MonthlyTrendPanel from "@/app/(app)/financial/reports/MonthlyTrendPanel";
 import ForecastPanel from "@/app/(app)/financial/reports/ForecastPanel";
 import EarnedRevenuePanel from "@/app/(app)/financial/reports/EarnedRevenuePanel";
+import ProductMarginPanel from "@/app/(app)/financial/reports/ProductMarginPanel";
 import CustomerRankingPanel from "@/app/(app)/financial/reports/CustomerRankingPanel";
 import type { CustomerRankingReport } from "@/lib/financial/customerRanking";
+import type { ProductMarginReport } from "@/lib/financial/productMargin";
 import PositionPanel from "@/app/(app)/financial/reports/PositionPanel";
 import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
@@ -73,6 +74,11 @@ import { PAYMENT_METHOD_OPTIONS } from "@/lib/payments";
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
+const HE_MONTHS = [
+  "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
+  "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
+] as const;
+
 function readCachedIsAdmin(): boolean | null {
   try {
     const raw = localStorage.getItem("biz_viewer_role");
@@ -103,6 +109,7 @@ type Props = {
   projectBreakdown?: ProjectBreakdown | null;
   domainProof?: DomainProofMap | null;
   customerRanking?: CustomerRankingReport | null;
+  productMargin?: ProductMarginReport | null;
   initialFilters: InitialFilters;
   /** "flow" = the cash-flow ledger page; "reports" = totals + domain views + P&L. */
   view?: "flow" | "reports";
@@ -208,6 +215,7 @@ export default function FinancialPageClient({
   projectBreakdown = null,
   domainProof = null,
   customerRanking = null,
+  productMargin = null,
   canManageExpenses,
   canViewCashflow,
   recurringProjects,
@@ -226,7 +234,7 @@ export default function FinancialPageClient({
   //              "earned"= money MADE this period (booked to the month of the work/sale).
   //  includeOpen  = also count open debts owed to/by me (cash → accrual). N/A in earned mode.
   //  includePersonal = include בית + צדקה in the numbers.
-  const [reportBasis, setReportBasis] = useState<"cash" | "earned">("cash");
+  const [reportBasis, setReportBasis] = useState<"cash" | "earned">("earned");
   const [includeOpen, setIncludeOpen] = useState(false);
   const [includePersonal, setIncludePersonal] = useState(false);
   // Global domain chips (empty = all) — live in the report control row and filter
@@ -814,17 +822,13 @@ export default function FinancialPageClient({
     .map((key) => ({ key, label: getBusinessDomainLabel(key) }));
 
   const reportControls = (
-    <div className="flex flex-wrap items-center gap-2 print:hidden">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 print:hidden">
       {periodControls}
-      <DateRangePicker from={from} to={to} onChange={applyRange} todayIso={data.todayIso} />
-      {reportDomainOptions.length > 1 ? (
-        <DomainMultiSelect domains={reportDomainOptions} selected={selectedReportDomains} onChange={setSelectedReportDomains} />
-      ) : null}
-      <div className="flex overflow-hidden rounded-lg border text-sm">
+      <div className="flex h-9 overflow-hidden rounded-lg border text-sm">
         <button
           type="button"
           onClick={() => setReportBasis("cash")}
-          className={cn("px-3 py-1.5 transition-colors", reportBasis === "cash" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
+          className={cn("flex items-center px-3 transition-colors", reportBasis === "cash" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
           title="כמה כסף באמת נכנס לחשבונות בתקופה — לפי תאריך הקבלה"
         >
           נכנס בפועל
@@ -832,23 +836,26 @@ export default function FinancialPageClient({
         <button
           type="button"
           onClick={() => setReportBasis("earned")}
-          className={cn("px-3 py-1.5 transition-colors", reportBasis === "earned" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
+          className={cn("flex items-center px-3 transition-colors", reportBasis === "earned" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted")}
           title="מה שהרווחתי בתקופה — לפי החודש שבו נוצר, גם אם עדיין לא נגבה"
         >
           הרווחתי
         </button>
       </div>
-      <label className={cn("flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm", reportBasis === "earned" ? "opacity-40" : "")}>
-        <input
-          type="checkbox"
-          className="h-4 w-4 accent-primary"
-          checked={includeOpen}
-          disabled={reportBasis === "earned"}
-          onChange={(e) => setIncludeOpen(e.target.checked)}
-        />
-        <span>כולל פתוחים</span>
-      </label>
-      <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm">
+      {/* Open debts only apply on the cash basis — hide it entirely in earned mode
+          rather than showing a greyed-out control. */}
+      {reportBasis !== "earned" ? (
+        <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-primary"
+            checked={includeOpen}
+            onChange={(e) => setIncludeOpen(e.target.checked)}
+          />
+          <span>כולל פתוחים</span>
+        </label>
+      ) : null}
+      <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm">
         <input
           type="checkbox"
           className="h-4 w-4 accent-primary"
@@ -858,13 +865,26 @@ export default function FinancialPageClient({
         <span>כולל בית וצדקה</span>
       </label>
       {activeFilterCount > 0 ? (
-        <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>
+        <Button type="button" variant="ghost" size="sm" onClick={resetFilters} className="ms-auto h-9">
           <TimerReset className="ml-1 h-4 w-4" />
           איפוס
         </Button>
       ) : null}
     </div>
   );
+
+  // "מציג:" summary — the active period + basis, shown as chips under the control
+  // row so the current view is unmistakable no matter which tab is open.
+  const reportPeriodMonthKey =
+    from && to && monthRange(from.slice(0, 7))?.from === from && monthRange(from.slice(0, 7))?.to === to
+      ? from.slice(0, 7)
+      : null;
+  const reportPeriodLabel = reportPeriodMonthKey
+    ? `${HE_MONTHS[Number(reportPeriodMonthKey.slice(5, 7)) - 1]} ${reportPeriodMonthKey.slice(0, 4)}`
+    : from || to
+    ? `${from || "…"} – ${to || "…"}`
+    : "כל התקופה";
+  const reportBasisLabel = reportBasis === "earned" ? "הרווחתי" : "נכנס בפועל";
 
   // The advanced-filter FIELDS (search / date range / domain / source / type /
   // stage). Rendered as the lower part of the SAME filter box as the control row,
@@ -1011,23 +1031,49 @@ export default function FinancialPageClient({
         ) : null}
 
       {view === "reports" ? (
-      <Tabs value={reportTab} onValueChange={setReportTab} dir="rtl" className="space-y-3">
-        {/* Row 1: the 5 views */}
-        <div className="min-w-0">
+      <Tabs value={reportTab} onValueChange={setReportTab} dir="rtl" className="space-y-4">
+        {/* Global filters — a flat full-width band (no rounding / side borders),
+            its two sections color-coded: the CONTROLS row and the "מציג:" summary
+            of what's currently shown. Separated from the tabs by clear space. */}
+        <div className="border-y border-border/60">
+          {/* Section 1 — controls (drive every tab). Reset pinned to the far end. */}
+          <div className="flex flex-wrap items-center gap-2 bg-muted/50 px-3 py-2.5">
+            <span className="flex shrink-0 items-center gap-1.5 text-sm font-semibold">
+              <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+              מסננים גלובליים
+            </span>
+            <span className="mx-1 hidden h-5 w-px self-center bg-border sm:block" />
+            {reportControls}
+          </div>
+          {/* Section 2 — "מציג:" what you're looking at now (different color). */}
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 bg-primary/[0.06] px-3 py-1.5 text-xs">
+            <span className="text-muted-foreground">מציג:</span>
+            <span className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              {reportPeriodLabel}
+            </span>
+            <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium">
+              שיטה: {reportBasisLabel}
+            </span>
+            {includeOpen && reportBasis !== "earned" ? (
+              <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium">כולל פתוחים</span>
+            ) : null}
+            {includePersonal ? (
+              <span className="inline-flex items-center rounded-full border bg-background px-2 py-0.5 font-medium">כולל בית וצדקה</span>
+            ) : null}
+          </div>
+        </div>
+        {/* Tabs — separated from the filter band with clear breathing room. */}
+        <div className="min-w-0 pt-2">
           <TabsList variant="underline">
             <TabsTrigger value="overview"><Calculator className="h-4 w-4 shrink-0" />סקירה</TabsTrigger>
             <TabsTrigger value="pl"><BarChart3 className="h-4 w-4 shrink-0" />לפי תחום</TabsTrigger>
             <TabsTrigger value="monthly"><LineChart className="h-4 w-4 shrink-0" />חודשי</TabsTrigger>
+            <TabsTrigger value="margin"><Coins className="h-4 w-4 shrink-0" />מכירות</TabsTrigger>
             <TabsTrigger value="balance"><Scale className="h-4 w-4 shrink-0" />מאזן</TabsTrigger>
             <TabsTrigger value="forecast"><CalendarClock className="h-4 w-4 shrink-0" />תחזית</TabsTrigger>
             <TabsTrigger value="customers"><Users className="h-4 w-4 shrink-0" />לקוחות</TabsTrigger>
           </TabsList>
-        </div>
-        {/* Row 2 (under the tabs): all report filters in one row — date range +
-            basis + toggles. Domain is chosen via the chips inside each panel; the
-            ledger-only advanced filters live on the תזרים page. */}
-        <div className="rounded-b-xl border-x border-b bg-muted/20 px-3 py-2">
-          {reportControls}
         </div>
         <TabsContent value="balance" className="space-y-6">
       {/* ── עכשיו: כסף שכבר זז בפועל ── */}
@@ -1134,6 +1180,13 @@ export default function FinancialPageClient({
           />
         </TabsContent>
         <TabsContent value="pl" className="space-y-4">
+          {/* Domain filter belongs to this tab (it only affects the by-domain view). */}
+          {reportDomainOptions.length > 1 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">סינון תחומים:</span>
+              <DomainMultiSelect domains={reportDomainOptions} selected={selectedReportDomains} onChange={setSelectedReportDomains} />
+            </div>
+          ) : null}
           <ProfitLossPanel
             rows={data.profitLoss}
             earned={earnedRevenue}
@@ -1160,6 +1213,15 @@ export default function FinancialPageClient({
             )
           ) : (
             <MonthlyTrendPanel points={data.monthlyTrend} />
+          )}
+        </TabsContent>
+        <TabsContent value="margin" className="space-y-4">
+          {productMargin ? (
+            <ProductMarginPanel report={productMargin} />
+          ) : (
+            <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+              אין נתוני מכירות להצגה.
+            </div>
           )}
         </TabsContent>
         <TabsContent value="forecast" className="space-y-4">

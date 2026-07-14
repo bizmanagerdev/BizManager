@@ -10,6 +10,10 @@ import {
   type EarnedRevenueReport,
 } from "@/lib/financial/earnedRevenue";
 import {
+  loadProductMarginByMonth,
+  type ProductMarginReport,
+} from "@/lib/financial/productMargin";
+import {
   loadProjectPeriodBreakdown,
   type ProjectBreakdown,
 } from "@/lib/financial/projectBreakdown";
@@ -100,8 +104,9 @@ export default async function CashFlowPageContent({
   let projectBreakdown: ProjectBreakdown | null = null;
   let domainProof: DomainProofMap | null = null;
   let customerRanking: CustomerRankingReport | null = null;
+  let productMargin: ProductMarginReport | null = null;
   if (view === "reports") {
-    [earnedRevenue, projectBreakdown, domainProof, customerRanking] = await Promise.all([
+    [earnedRevenue, projectBreakdown, domainProof, customerRanking, productMargin] = await Promise.all([
       loadEarnedRevenueByMonth(supabase, {
         from: initialFilters.from || null,
         to: initialFilters.to || null,
@@ -116,6 +121,10 @@ export default async function CashFlowPageContent({
       }),
       // Customer analytics are book-wide (not date-scoped) — always the latest picture.
       loadCustomerRanking(supabase),
+      loadProductMarginByMonth(supabase, {
+        from: initialFilters.from || null,
+        to: initialFilters.to || null,
+      }),
     ]);
   }
 
@@ -192,6 +201,7 @@ export default async function CashFlowPageContent({
         projectBreakdown={projectBreakdown}
         domainProof={domainProof}
         customerRanking={customerRanking}
+        productMargin={productMargin}
         initialFilters={initialFilters}
         view={view}
         canManageExpenses={canManageExpenses}
