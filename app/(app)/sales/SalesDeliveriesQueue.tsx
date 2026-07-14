@@ -180,7 +180,7 @@ export default function SalesDeliveriesQueue({
       {deliveriesByRegion.length === 0 ? (
         <p className="text-sm text-muted-foreground">אין כרגע הזמנות מקובצות למשלוחים.</p>
       ) : (
-        <div className={regionFilter ? "space-y-3" : "grid items-start gap-4 lg:grid-cols-3"}>
+        <div className={regionFilter ? "space-y-3" : "grid grid-cols-1 items-start gap-4 lg:grid-cols-3"}>
         {columnRegions.map((region) => {
           const cities = citiesByRegion.get(region) ?? [];
           const regionTotal = cities.reduce(
@@ -190,7 +190,7 @@ export default function SalesDeliveriesQueue({
           const regionCustomers = cities.reduce((sum, [, groups]) => sum + groups.length, 0);
 
           return (
-            <div key={region} className="space-y-2">
+            <div key={region} className="min-w-0 space-y-2">
               {/* Region column header */}
               <div className="flex items-center justify-between gap-2 px-1">
                 <span className="text-sm font-bold text-foreground">{region}</span>
