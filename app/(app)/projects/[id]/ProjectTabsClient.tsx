@@ -914,7 +914,7 @@ export default function ProjectTabsClient({
             id: item.session.id,
             date: item.session.clock_in ?? null,
             amount: sessionLaborCost(item.session),
-            title: `שכר עובד — ${workerName}`,
+            title: workerName,
             meta: sessionNotes ? [sessionNotes] : [],
             includedInBase: true,
             billedToCustomer: false,
@@ -931,11 +931,9 @@ export default function ProjectTabsClient({
 
       const category = getString(item.expense, "category");
       const description = getString(item.expense, "description");
-      const title =
-        (category && description && `${category} — ${description}`) ||
-        category ||
-        description ||
-        "הוצאה";
+      // Show the specific name the user wrote (e.g. the car name), not the
+      // category prefix — the amount's sign already signals it's an expense.
+      const title = description || category || "הוצאה";
 
       const includedInBase = Boolean(item.project_expense?.["included_in_base_price"]);
       const billedToCustomer = Boolean(item.project_expense?.["billed_to_customer"]);
@@ -1795,12 +1793,12 @@ export default function ProjectTabsClient({
                         key={`${ev.type}:${ev.id}`}
                         className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5 text-sm"
                       >
-                        <span className="order-1 w-20 shrink-0 text-xs text-muted-foreground">
+                        <span className="order-1 hidden w-20 shrink-0 text-xs text-muted-foreground sm:inline">
                           <LtrInline>{formatDate(ev.date)}</LtrInline>
                         </span>
                         <span className="order-2 min-w-0 flex-1 font-medium sm:truncate">{ev.title}</span>
                         {notesText ? (
-                          <span className="order-4 w-full ps-[5.75rem] text-xs text-muted-foreground sm:order-3 sm:w-auto sm:min-w-0 sm:flex-1 sm:truncate sm:ps-0">
+                          <span className="order-4 w-full text-xs text-muted-foreground sm:order-3 sm:w-auto sm:min-w-0 sm:flex-1 sm:truncate">
                             {notesText}
                           </span>
                         ) : null}
