@@ -99,6 +99,9 @@ export default function TodayInbox({ data }: { data: TodayInboxData }) {
                 {task.project_name ? (
                   <span className="text-muted-foreground">· {task.project_name}</span>
                 ) : null}
+                {task.customer_name ? (
+                  <span className="text-muted-foreground">· {task.customer_name}</span>
+                ) : null}
                 <span className={overdue ? "font-medium text-destructive" : "text-muted-foreground"}>
                   {overdue ? "באיחור · " : ""}
                   {formatShortDate(task.due_date)}

@@ -12,6 +12,7 @@ export type TodayTask = {
   priority: string | null;
   status: string | null;
   project_name: string | null;
+  customer_name: string | null;
   overdue: boolean;
 };
 
@@ -45,7 +46,7 @@ export async function getTodayInboxData(
   const [tasksRes, reminders, payments] = await Promise.all([
     supabase
       .from("tasks")
-      .select("id,subject,due_date,priority,status,project_id")
+      .select("id,subject,due_date,priority,status,project_id,customer_id")
       .eq("assigned_user_id", profile.id)
       .in("status", OPEN_TASK_STATUSES)
       .not("due_date", "is", null)
@@ -69,11 +70,26 @@ export async function getTodayInboxData(
       taskRows.map((t) => getString(t, "project_id")).filter((v): v is string => Boolean(v))
     ),
   ];
-  const projectsRes = projectIds.length
-    ? await supabase.from("projects").select("id,name").in("id", projectIds)
-    : { data: [] as Row[] };
+  const customerIds = [
+    ...new Set(
+      taskRows.map((t) => getString(t, "customer_id")).filter((v): v is string => Boolean(v))
+    ),
+  ];
+  const [projectsRes, customersRes] = await Promise.all([
+    projectIds.length
+      ? supabase.from("projects").select("id,name").in("id", projectIds)
+      : Promise.resolve({ data: [] as Row[] }),
+    customerIds.length
+      ? supabase.from("customers").select("id,name").in("id", customerIds)
+      : Promise.resolve({ data: [] as Row[] }),
+  ]);
   const projectNameById = new Map(
     ((projectsRes.data ?? []) as Row[])
+      .map((r) => [getString(r, "id"), getString(r, "name")] as const)
+      .filter((e): e is readonly [string, string | null] => Boolean(e[0]))
+  );
+  const customerNameById = new Map(
+    ((customersRes.data ?? []) as Row[])
       .map((r) => [getString(r, "id"), getString(r, "name")] as const)
       .filter((e): e is readonly [string, string | null] => Boolean(e[0]))
   );
@@ -81,6 +97,7 @@ export async function getTodayInboxData(
   const tasks: TodayTask[] = taskRows.map((t) => {
     const due = getString(t, "due_date");
     const projectId = getString(t, "project_id");
+    const customerId = getString(t, "customer_id");
     return {
       id: getString(t, "id") ?? "",
       subject: getString(t, "subject") ?? "משימה",
@@ -88,6 +105,7 @@ export async function getTodayInboxData(
       priority: getString(t, "priority"),
       status: getString(t, "status"),
       project_name: projectId ? projectNameById.get(projectId) ?? null : null,
+      customer_name: customerId ? customerNameById.get(customerId) ?? null : null,
       overdue: due !== null && due.slice(0, 10) < today,
     };
   });

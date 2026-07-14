@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { formatShortDateTime } from "@/lib/date";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
@@ -122,6 +123,9 @@ export function TaskDomainSection({
   properties,
   propertyId,
   onPropertyIdChange,
+  customers,
+  customerId,
+  onCustomerIdChange,
 }: {
   allowedDomains: ExpenseBusinessDomain[];
   effectiveDomain: ExpenseBusinessDomain | "";
@@ -136,6 +140,9 @@ export function TaskDomainSection({
   properties: TaskOption[];
   propertyId: string;
   onPropertyIdChange: (id: string) => void;
+  customers: TaskOption[];
+  customerId: string;
+  onCustomerIdChange: (id: string) => void;
 }) {
   return (
     <div className="space-y-3 rounded-md border bg-muted/20 p-3">
@@ -180,6 +187,26 @@ export function TaskDomainSection({
               </option>
             ))}
           </select>
+        </div>
+      ) : null}
+
+      {/* Customer link — independent of the project/property target. A follow-up can
+          point at a customer even when there's no order/project yet (e.g. a prospect).
+          Only shown where the caller supplies the customer list. */}
+      {customers.length > 0 ? (
+        <div className="space-y-1">
+          <div className="text-sm font-medium">לקוח מקושר</div>
+          <SearchableSelect
+            options={customers.map((c) => ({ value: c.id, label: c.label }))}
+            value={customerId}
+            onChange={onCustomerIdChange}
+            placeholder="ללא לקוח"
+            searchPlaceholder="חיפוש לקוח..."
+            emptyOptionLabel="ללא לקוח"
+            noResultsLabel="לא נמצאו לקוחות לחיפוש הזה."
+            maxHeightClassName="max-h-56"
+            searchThreshold={0}
+          />
         </div>
       ) : null}
     </div>

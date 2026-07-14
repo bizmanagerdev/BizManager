@@ -41,6 +41,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as {
       project_id?: string;
       property_id?: string;
+      customer_id?: string | null;
       business_domain?: string | null;
       subject?: string;
       description?: string;
@@ -59,6 +60,9 @@ export async function POST(req: Request) {
 
     const projectId = typeof body.project_id === "string" ? body.project_id.trim() : "";
     const propertyId = typeof body.property_id === "string" ? body.property_id.trim() : "";
+    // Independent customer link — a follow-up can point at a customer regardless of
+    // the project/property target (or with none at all, e.g. a prospect).
+    const customerId = typeof body.customer_id === "string" && body.customer_id.trim() ? body.customer_id.trim() : null;
     // Only the name is required. Everything else is optional and can be added later
     // by opening the card, so we fall back to sensible defaults when not supplied.
     const businessDomain = isExpenseBusinessDomain(body.business_domain)
@@ -102,6 +106,7 @@ export async function POST(req: Request) {
         business_domain: businessDomain,
         project_id: hasProject ? projectId : null,
         property_id: hasProperty ? propertyId : null,
+        customer_id: customerId,
         assigned_user_id: assignedUserId,
         subject,
         description,
@@ -117,7 +122,7 @@ export async function POST(req: Request) {
         private_owner_id: profile.id,
       })
       .select(
-        "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at"
+        "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at"
       )
       .maybeSingle();
 

@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
+import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
+import { Tag } from "lucide-react";
 
 export type CustomerRecord = {
   id: string;
@@ -142,6 +144,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [active, setActive] = useState(initial?.active ?? true);
   const [requiresPrepayment, setRequiresPrepayment] = useState(initial?.requires_prepayment ?? false);
+  const [tagIds, setTagIds] = useState<string[]>([]);
   const [contacts, setContacts] = useState<ContactDraft[]>([]);
 
   const [error, setError] = useState<string | null>(null);
@@ -193,6 +196,8 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
           const json = (await contactsRes.json().catch(() => ({}))) as { contacts?: Row[] };
           setContacts((json.contacts ?? []).map(contactRowToDraft));
         }
+        const existingTags = await fetchExistingTagIds("customer", initialId);
+        if (!controller.signal.aborted) setTagIds(existingTags);
       } catch {
         // ignore — aborted or network error
       } finally {
@@ -331,6 +336,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
             notes: notes.trim() || null,
             active,
             requires_prepayment: requiresPrepayment,
+            tag_ids: tagIds,
           }),
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: CustomerRecord };
@@ -352,6 +358,7 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
             address: street || null,
             notes: notes.trim() || null,
             requires_prepayment: requiresPrepayment,
+            tag_ids: tagIds,
           }),
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: CustomerRecord };
@@ -512,6 +519,20 @@ export function CustomerForm({ mode, initial = null, onSaved, onCancel, onUseExi
             <span>לקוח פעיל</span>
           </label>
         ) : null}
+
+        {/* Always visible (not tucked in the collapsible) so tagging an existing
+            customer is one obvious step in the edit form. */}
+        <TagPicker
+          value={tagIds}
+          onChange={setTagIds}
+          kind="general"
+          createKind="general"
+          allowCreate
+          icon={<Tag className="h-3.5 w-3.5" />}
+          label="תגיות / סיווג לקוח"
+          addLabel="הוספת תגית"
+          emptyText="אין תגיות עדיין."
+        />
 
         <details className="rounded-md border border-dashed p-3" open={Boolean(notes || visibleContacts.length > 0)}>
           <summary className="cursor-pointer text-sm font-medium">פרטים נוספים ואנשי קשר</summary>

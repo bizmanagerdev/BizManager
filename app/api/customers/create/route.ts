@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 ﻿import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { withIdempotency } from "@/lib/idempotency";
+import { syncEntityTags, parseTagIds } from "@/lib/tags";
 
 type CreateCustomerPayload = {
   name?: string;
@@ -14,6 +15,7 @@ type CreateCustomerPayload = {
   address?: string | null;
   notes?: string | null;
   requires_prepayment?: boolean;
+  tag_ids?: unknown;
 };
 
 export async function POST(req: Request) {
@@ -74,6 +76,10 @@ export async function POST(req: Request) {
     if (!data || typeof data.id !== "string") {
       return NextResponse.json({ error: "לקוח לא נוצר בהצלחה." }, { status: 500 });
     }
+
+    await syncEntityTags(supabase, "customer", data.id, parseTagIds(body.tag_ids), {
+      createdBy: user.id,
+    });
 
     return NextResponse.json({ customer: data });
     });

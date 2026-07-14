@@ -9,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // errors (e.g. before the SQL has been run).
 // ════════════════════════════════════════════════════════════════════════════
 
-export type TaggableEntityType = "task" | "expense" | "payment" | "document" | "work_session";
+export type TaggableEntityType = "task" | "expense" | "payment" | "document" | "work_session" | "customer";
 
 /** Parse a `tag_ids` field off a request body into a clean, de-duped string[]. */
 export function parseTagIds(raw: unknown): string[] {

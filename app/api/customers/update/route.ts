@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { syncEntityTags, parseTagIds } from "@/lib/tags";
 
 type UpdateCustomerPayload = {
   id?: string;
@@ -15,6 +16,7 @@ type UpdateCustomerPayload = {
   notes?: string | null;
   active?: boolean;
   requires_prepayment?: boolean;
+  tag_ids?: unknown;
 };
 
 function trimOrNull(value: unknown): string | null {
@@ -62,26 +64,50 @@ export async function POST(req: Request) {
     if ("active" in body) patch.active = body.active === true;
     if ("requires_prepayment" in body) patch.requires_prepayment = body.requires_prepayment === true;
 
-    if (Object.keys(patch).length === 0) {
+    const hasTagUpdate = "tag_ids" in body;
+    if (Object.keys(patch).length === 0 && !hasTagUpdate) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
     const access = await requireRouteAccess();
     if (!access.ok) return access.response;
-    const { supabase } = access.value;
+    const { supabase, user } = access.value;
 
-    const { data, error } = await supabase
-      .from("customers")
-      .update(patch)
-      .eq("id", id)
-      .select("id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes,requires_prepayment")
-      .maybeSingle();
+    const SELECT =
+      "id,name,name_for_invoice,registration_number,phone,whatsapp,email,address,active,notes,requires_prepayment";
 
-    if (error) {
-      return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
+    let data:
+      | { id: string; [key: string]: unknown }
+      | null = null;
+
+    if (Object.keys(patch).length > 0) {
+      const { data: updated, error } = await supabase
+        .from("customers")
+        .update(patch)
+        .eq("id", id)
+        .select(SELECT)
+        .maybeSingle();
+      if (error) {
+        return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
+      }
+      if (!updated || typeof updated.id !== "string") {
+        return NextResponse.json({ error: "Customer was not updated" }, { status: 400 });
+      }
+      data = updated as { id: string; [key: string]: unknown };
+    } else {
+      // Tag-only edit: nothing changed on the customer row itself; read it back.
+      const { data: current } = await supabase.from("customers").select(SELECT).eq("id", id).maybeSingle();
+      data = (current as { id: string; [key: string]: unknown } | null) ?? null;
+      if (!data) {
+        return NextResponse.json({ error: "Customer was not updated" }, { status: 400 });
+      }
     }
-    if (!data || typeof data.id !== "string") {
-      return NextResponse.json({ error: "Customer was not updated" }, { status: 400 });
+
+    if (hasTagUpdate) {
+      await syncEntityTags(supabase, "customer", id, parseTagIds(body.tag_ids), {
+        replace: true,
+        createdBy: user.id,
+      });
     }
 
     return NextResponse.json({ customer: data });

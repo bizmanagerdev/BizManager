@@ -50,7 +50,7 @@ export default async function TasksPage({
     ? ensureRecurringTasksForDate(supabase).catch(() => undefined)
     : Promise.resolve(undefined);
 
-  const [boardResult, projectsResult, propertiesResult, usersResult] = await Promise.all([
+  const [boardResult, projectsResult, propertiesResult, customersResult, usersResult] = await Promise.all([
     loadTasksBoard(supabase, { filters, userId: profile.id, canSeeAll }),
     supabase
       .from("project_dashboard_view")
@@ -62,6 +62,14 @@ export default async function TasksPage({
       .select("id,address,is_active")
       .order("address", { ascending: true })
       .range(0, 999),
+    // Active customers for the "linked customer" picker (searchable, A–Z). The card
+    // display resolves the name/phone via a direct id query, not this list.
+    supabase
+      .from("customers")
+      .select("id,name,phone,active")
+      .eq("active", true)
+      .order("name", { ascending: true })
+      .range(0, 1999),
     supabase
       .from("users")
       .select("id,full_name,email,active")
@@ -86,6 +94,7 @@ export default async function TasksPage({
 
   const projectRows = (projectsResult.data ?? []) as Row[];
   const propertyRows = (propertiesResult.data ?? []) as Row[];
+  const customerRows = (customersResult.data ?? []) as Row[];
   const userRows = (usersResult.data ?? []) as Row[];
 
   const projectOptions = projectRows
@@ -102,6 +111,17 @@ export default async function TasksPage({
     .filter((p) => p.is_active !== false)
     .map((p) => ({ id: getString(p, "id") ?? "", label: getString(p, "address") ?? "" }))
     .filter((p) => p.id && p.label);
+
+  const customerOptions = customerRows
+    .map((c) => {
+      const id = getString(c, "id") ?? "";
+      const name = getString(c, "name") ?? "";
+      const phone = getString(c, "phone");
+      // Phone in the label so the searchable picker matches on it too.
+      const label = phone ? `${name} · ${phone}` : name;
+      return { id, label };
+    })
+    .filter((c) => c.id && c.label);
 
   const userOptions = userRows
     .filter((u) => u.active !== false)
@@ -128,6 +148,7 @@ export default async function TasksPage({
             tasks={boardResult.items}
             projects={projectOptions}
             properties={propertyOptions}
+            customers={customerOptions}
             users={userOptions}
             canSeeAll={canSeeAll}
             currentUserId={profile.id}

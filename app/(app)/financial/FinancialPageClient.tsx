@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { BarChart3, Calculator, CalendarClock, CheckCircle2, Clock, History, LineChart, Loader2, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, Trash2 } from "lucide-react";
+import { BarChart3, Calculator, CalendarClock, CheckCircle2, Clock, History, LineChart, Loader2, Pencil, Scale, ScrollText, Search, SlidersHorizontal, TimerReset, Trash2, Users } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { TagPicker } from "@/components/tags/TagPicker";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -31,6 +31,8 @@ import BottomLinePanel from "@/app/(app)/financial/reports/BottomLinePanel";
 import MonthlyTrendPanel from "@/app/(app)/financial/reports/MonthlyTrendPanel";
 import ForecastPanel from "@/app/(app)/financial/reports/ForecastPanel";
 import EarnedRevenuePanel from "@/app/(app)/financial/reports/EarnedRevenuePanel";
+import CustomerRankingPanel from "@/app/(app)/financial/reports/CustomerRankingPanel";
+import type { CustomerRankingReport } from "@/lib/financial/customerRanking";
 import PositionPanel from "@/app/(app)/financial/reports/PositionPanel";
 import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
@@ -100,6 +102,7 @@ type Props = {
   earnedRevenue?: EarnedRevenueReport | null;
   projectBreakdown?: ProjectBreakdown | null;
   domainProof?: DomainProofMap | null;
+  customerRanking?: CustomerRankingReport | null;
   initialFilters: InitialFilters;
   /** "flow" = the cash-flow ledger page; "reports" = totals + domain views + P&L. */
   view?: "flow" | "reports";
@@ -204,6 +207,7 @@ export default function FinancialPageClient({
   earnedRevenue = null,
   projectBreakdown = null,
   domainProof = null,
+  customerRanking = null,
   canManageExpenses,
   canViewCashflow,
   recurringProjects,
@@ -1016,6 +1020,7 @@ export default function FinancialPageClient({
             <TabsTrigger value="monthly"><LineChart className="h-4 w-4 shrink-0" />חודשי</TabsTrigger>
             <TabsTrigger value="balance"><Scale className="h-4 w-4 shrink-0" />מאזן</TabsTrigger>
             <TabsTrigger value="forecast"><CalendarClock className="h-4 w-4 shrink-0" />תחזית</TabsTrigger>
+            <TabsTrigger value="customers"><Users className="h-4 w-4 shrink-0" />לקוחות</TabsTrigger>
           </TabsList>
         </div>
         {/* Row 2 (under the tabs): all report filters in one row — date range +
@@ -1159,6 +1164,15 @@ export default function FinancialPageClient({
         </TabsContent>
         <TabsContent value="forecast" className="space-y-4">
           <ForecastPanel changes={data.forecastMonthly} openingBalance={data.actualSummary.net} />
+        </TabsContent>
+        <TabsContent value="customers" className="space-y-4">
+          {customerRanking ? (
+            <CustomerRankingPanel report={customerRanking} />
+          ) : (
+            <div className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
+              אין נתוני לקוחות להצגה.
+            </div>
+          )}
         </TabsContent>
       </Tabs>
       ) : (

@@ -179,6 +179,23 @@ describe("buildTaskPayload", () => {
     expect(p.property_id).toBe("fixed-x");
   });
 
+  it("maps the customer link independently of the project/property target", () => {
+    // A general-business task (no project/property) can still carry a customer.
+    const p = buildTaskPayload(payloadInput({ customerId: "cust-1" }));
+    expect(p.customer_id).toBe("cust-1");
+    expect(p.project_id).toBeNull();
+    expect(p.property_id).toBeNull();
+    // A project task keeps both its project AND the customer.
+    const withProject = buildTaskPayload(
+      payloadInput({ derivedTargetType: "project", effectiveDomain: "logistics_projects", projectId: "proj-1", customerId: "cust-9" })
+    );
+    expect(withProject.project_id).toBe("proj-1");
+    expect(withProject.customer_id).toBe("cust-9");
+    // Blank / missing customer collapses to null.
+    expect(buildTaskPayload(payloadInput({ customerId: "  " })).customer_id).toBeNull();
+    expect(buildTaskPayload(payloadInput()).customer_id).toBeNull();
+  });
+
   it("maps staged reminders to ISO timestamps and null-trims their content", () => {
     const p = buildTaskPayload(
       payloadInput({ pendingReminders: [{ remind_at: "2024-05-01T09:00:00Z", content: "  שיחה  " }, { remind_at: "2024-05-02T09:00:00Z", content: "  " }] })

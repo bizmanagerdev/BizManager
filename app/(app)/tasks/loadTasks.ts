@@ -15,8 +15,11 @@ export type TaskBoardItem = {
   business_domain: string | null;
   project_id: string | null;
   property_id: string | null;
+  customer_id: string | null;
   project_name: string | null;
   property_name: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
   assigned_user_id: string | null;
   assigned_user_name: string | null;
   members: TaskMember[];
@@ -46,7 +49,7 @@ const DONE_LIMIT = 60;
 const OPEN_LIMIT = 1000;
 
 const TASK_SELECT =
-  "id,subject,status,priority,due_date,due_time,city,business_domain,project_id,property_id,assigned_user_id,is_private,private_owner_id";
+  "id,subject,status,priority,due_date,due_time,city,business_domain,project_id,property_id,customer_id,assigned_user_id,is_private,private_owner_id";
 
 function getString(row: Row, key: string) {
   const value = row[key];
@@ -68,6 +71,7 @@ type TaskRow = {
   business_domain: string | null;
   project_id: string | null;
   property_id: string | null;
+  customer_id: string | null;
   assigned_user_id: string | null;
   is_private: boolean | null;
   private_owner_id: string | null;
@@ -158,13 +162,18 @@ export async function loadTasksBoard(
   const taskIds = taskRows.map((t) => t.id);
   const projectIds = uniqueIds(taskRows as unknown as Row[], "project_id");
   const propertyIds = uniqueIds(taskRows as unknown as Row[], "property_id");
+  const customerIds = uniqueIds(taskRows as unknown as Row[], "customer_id");
 
-  const [projectsRes, propertiesRes, membersRes, commentsRes, remindersRes] = await Promise.all([
+  const [projectsRes, propertiesRes, customersRes, membersRes, commentsRes, remindersRes] = await Promise.all([
     projectIds.length
       ? supabase.from("project_dashboard_view").select("id,name").in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
     propertyIds.length
       ? supabase.from("properties").select("id,address").in("id", propertyIds)
+      : Promise.resolve({ data: [] as Row[] }),
+    // Direct id lookup (name + phone) — never resolved through a capped picker list.
+    customerIds.length
+      ? supabase.from("customers").select("id,name,phone").in("id", customerIds)
       : Promise.resolve({ data: [] as Row[] }),
     supabase.from("task_members").select("task_id,user_id").in("task_id", taskIds),
     supabase.from("task_comments").select("task_id").in("task_id", taskIds).range(0, 9999),
@@ -190,6 +199,11 @@ export async function loadTasksBoard(
   );
   const propertyNameById = new Map(
     ((propertiesRes.data ?? []) as Row[]).map((r) => [getString(r, "id"), getString(r, "address")] as const)
+  );
+  const customerById = new Map(
+    ((customersRes.data ?? []) as Row[]).map(
+      (r) => [getString(r, "id"), { name: getString(r, "name"), phone: getString(r, "phone") }] as const
+    )
   );
   const userNameById = new Map(
     ((usersRes.data ?? []) as Row[]).map(
@@ -247,8 +261,11 @@ export async function loadTasksBoard(
       business_domain: row.business_domain,
       project_id: row.project_id,
       property_id: row.property_id,
+      customer_id: row.customer_id,
       project_name: row.project_id ? projectNameById.get(row.project_id) ?? null : null,
       property_name: row.property_id ? propertyNameById.get(row.property_id) ?? null : null,
+      customer_name: row.customer_id ? customerById.get(row.customer_id)?.name ?? null : null,
+      customer_phone: row.customer_id ? customerById.get(row.customer_id)?.phone ?? null : null,
       assigned_user_id: assigneeId,
       assigned_user_name: assigneeName,
       members,

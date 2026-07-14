@@ -124,6 +124,8 @@ export type TaskPayloadInput = {
   effectiveDomain: ExpenseBusinessDomain | "";
   projectId: string;
   propertyId: string;
+  /** Independent customer link — not tied to the project/property target. */
+  customerId?: string;
   subject: string;
   description: string;
   dueDate: string;
@@ -148,6 +150,7 @@ export function buildTaskPayload(input: TaskPayloadInput) {
     business_domain: input.effectiveDomain || "general_business",
     project_id: linkType === "project" ? input.effectiveTarget?.id ?? input.projectId : null,
     property_id: linkType === "property" ? input.effectiveTarget?.id ?? input.propertyId : null,
+    customer_id: input.customerId?.trim() ? input.customerId.trim() : null,
     subject: input.subject.trim(),
     description: input.description.trim() ? input.description.trim() : null,
     due_date: input.dueDate || null,
@@ -173,6 +176,7 @@ export type TaskSnapshotInput = {
   effectiveDomain: ExpenseBusinessDomain | "";
   projectId: string;
   propertyId: string;
+  customerId?: string;
   subject: string;
   description: string;
   dueDate: string;
@@ -193,6 +197,7 @@ export function buildTaskFormSnapshot(fields: TaskSnapshotInput): string {
     businessDomain: fields.effectiveDomain,
     projectId: fields.projectId,
     propertyId: fields.propertyId,
+    customerId: fields.customerId ?? "",
     subject: fields.subject.trim(),
     description: fields.description.trim(),
     dueDate: fields.dueDate,

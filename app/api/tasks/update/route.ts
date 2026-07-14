@@ -45,6 +45,7 @@ export async function POST(req: Request) {
       business_domain?: string | null;
       project_id?: string | null;
       property_id?: string | null;
+      customer_id?: string | null;
       subject?: string | null;
       description?: string | null;
       due_date?: string | null;
@@ -109,6 +110,11 @@ export async function POST(req: Request) {
     if ("due_time" in body) {
       update.due_time =
         typeof body.due_time === "string" && body.due_time.trim() ? body.due_time.trim() : null;
+    }
+
+    if ("customer_id" in body) {
+      // Independent of the project/property target — set or clear freely.
+      update.customer_id = normalizeId(body.customer_id);
     }
 
     if ("city" in body) {
@@ -224,7 +230,7 @@ export async function POST(req: Request) {
         .update(update)
         .eq("id", id)
         .select(
-          "id,business_domain,project_id,property_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at"
+          "id,business_domain,project_id,property_id,customer_id,assigned_user_id,subject,description,due_date,due_time,city,address,priority,status,created_at,updated_at"
         )
         .maybeSingle();
       if (result.error) {

@@ -21,7 +21,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bell, CheckCircle2, Circle, Clock, GripVertical, Lock, MessageSquare, Plus } from "lucide-react";
+import { Bell, Building2, CheckCircle2, Circle, Clock, FolderKanban, GripVertical, Lock, MessageSquare, Plus, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
@@ -46,6 +46,7 @@ type Props = {
   tasks: TaskBoardItem[];
   projects: TaskOption[];
   properties: TaskOption[];
+  customers: TaskOption[];
   users: UserOption[];
   canSeeAll?: boolean;
   currentUserId: string;
@@ -140,6 +141,33 @@ function TaskCard({
         </div>
         {task.priority ? <StatusBadge value={task.priority} type="priority" className="shrink-0 text-[10px]" /> : null}
       </div>
+
+      {/* What this task is attached to: project / property / customer. */}
+      {task.project_name || task.property_name || task.customer_name ? (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+          {task.project_name ? (
+            <span className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/30 px-1.5 py-0.5 text-muted-foreground">
+              <FolderKanban className="h-3 w-3 shrink-0" />
+              <span className="truncate">{task.project_name}</span>
+            </span>
+          ) : null}
+          {task.property_name ? (
+            <span className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/30 px-1.5 py-0.5 text-muted-foreground">
+              <Building2 className="h-3 w-3 shrink-0" />
+              <span className="truncate">{task.property_name}</span>
+            </span>
+          ) : null}
+          {task.customer_name ? (
+            <span className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/30 px-1.5 py-0.5 text-muted-foreground">
+              <UserRound className="h-3 w-3 shrink-0" />
+              <span className="truncate">
+                {task.customer_name}
+                {task.customer_phone ? <span dir="ltr"> · {task.customer_phone}</span> : null}
+              </span>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Date (start/right) + assignees/indicators (end/left), one row. */}
       <div className="mt-2 flex items-center justify-between gap-2">
@@ -769,6 +797,7 @@ export default function TasksPageClient(props: Props) {
         users={props.users}
         projects={props.projects}
         properties={props.properties}
+        customers={props.customers}
         currentUserId={props.currentUserId}
         wizard
         defaultSubject={createSubject}
@@ -789,6 +818,7 @@ export default function TasksPageClient(props: Props) {
         users={props.users}
         projects={props.projects}
         properties={props.properties}
+        customers={props.customers}
         currentUserId={props.currentUserId}
         onSaved={() => router.refresh()}
       />

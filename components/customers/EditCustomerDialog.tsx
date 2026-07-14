@@ -18,6 +18,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CITY_OPTIONS } from "@/lib/ui/cities";
+import { TagPicker, fetchExistingTagIds } from "@/components/tags/TagPicker";
+import { Tag } from "lucide-react";
 
 function splitAddressIntoCityAndStreet(address: string | null): { city: string; street: string } {
   if (!address) return { city: "", street: "" };
@@ -133,6 +135,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
   const [notes, setNotes] = useState("");
   const [active, setActive] = useState(true);
   const [requiresPrepayment, setRequiresPrepayment] = useState(false);
+  const [tagIds, setTagIds] = useState<string[]>([]);
 
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contacts, setContacts] = useState<EditContactDraft[]>([]);
@@ -162,8 +165,10 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
     setActive(customer.active);
     setRequiresPrepayment(customer.requires_prepayment);
     setContacts((customer.contacts ?? []).map(contactRowToDraft));
+    setTagIds([]);
 
     if (!customer.id) return;
+    void fetchExistingTagIds("customer", customer.id).then(setTagIds);
     setContactsLoading(true);
     void fetch(`/api/customer-contacts/list?customer_id=${encodeURIComponent(customer.id)}`)
       .then(async (res) => {
@@ -241,6 +246,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
           notes: notes.trim() || null,
           active,
           requires_prepayment: requiresPrepayment,
+          tag_ids: tagIds,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string; customer?: Row };
@@ -390,6 +396,18 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
               />
               <span>לקוח פעיל</span>
             </label>
+
+            <TagPicker
+              value={tagIds}
+              onChange={setTagIds}
+              kind="general"
+              createKind="general"
+              allowCreate
+              icon={<Tag className="h-3.5 w-3.5" />}
+              label="תגיות / סיווג לקוח"
+              addLabel="הוספת תגית"
+              emptyText="אין תגיות עדיין."
+            />
 
             <div className="space-y-3 rounded-md border p-3">
               <div className="flex items-center justify-between gap-2">

@@ -97,6 +97,7 @@ type Props = {
   users: UserOption[];
   projects?: TaskOption[];
   properties?: TaskOption[];
+  customers?: TaskOption[];
   fixedTarget?: { type: TaskTargetType; id: string } | null;
   defaultProjectType?: string | null;
   // Pre-fill status / title for board quick-add and the create stepper.
@@ -108,6 +109,8 @@ type Props = {
   wizard?: boolean;
   // Pre-select tags (e.g. a vehicle) for a NEW task.
   presetTagIds?: string[];
+  // Pre-link a customer for a NEW task (e.g. creating from a customer page).
+  presetCustomerId?: string;
   onSaved?: () => void;
 };
 
@@ -134,6 +137,7 @@ export function TaskUpsertDialog(props: Props) {
 
   const [projectId, setProjectId] = useState("");
   const [propertyId, setPropertyId] = useState("");
+  const [customerId, setCustomerId] = useState("");
   const initialDomain: ExpenseBusinessDomain | "" =
     props.mode === "create" && !props.fixedTarget && !props.defaultProjectType
       ? ""
@@ -186,6 +190,7 @@ export function TaskUpsertDialog(props: Props) {
 
   const projects = props.projects ?? [];
   const properties = props.properties ?? [];
+  const customers = props.customers ?? [];
 
   const effectiveTarget = props.fixedTarget ?? null;
   const allowedDomains = useMemo(
@@ -262,6 +267,7 @@ export function TaskUpsertDialog(props: Props) {
         const nextPropertyId = typeof task.property_id === "string" ? task.property_id : "";
         setProjectId(nextProjectId);
         setPropertyId(nextProjectId ? "" : nextPropertyId);
+        setCustomerId(typeof task.customer_id === "string" ? task.customer_id : "");
 
         setSubject(typeof task.subject === "string" ? task.subject : "");
         setDescription(typeof task.description === "string" ? task.description : "");
@@ -303,7 +309,7 @@ export function TaskUpsertDialog(props: Props) {
 
   function resetForCreate() {
     const draft = loadDraft<{
-      projectId: string; propertyId: string; businessDomain: ExpenseBusinessDomain;
+      projectId: string; propertyId: string; customerId: string; businessDomain: ExpenseBusinessDomain;
       subject: string; description: string; dueDate: string; dueTime: string;
       city: string; address: string; assignedUserId: string; memberIds: string[];
       priority: TaskPriority; status: TaskStatus; isPrivate: boolean;
@@ -321,6 +327,8 @@ export function TaskUpsertDialog(props: Props) {
 
     setProjectId(draft?.projectId ?? (effectiveTarget?.type === "project" ? effectiveTarget.id : ""));
     setPropertyId(draft?.propertyId ?? (effectiveTarget?.type === "property" ? effectiveTarget.id : ""));
+    // A preset customer (creating from a customer page) wins over any saved draft.
+    setCustomerId(props.presetCustomerId ?? draft?.customerId ?? "");
     const nextDomain = draft?.businessDomain ?? (
       effectiveTarget?.type === "property"
         ? "property_management"
@@ -375,10 +383,10 @@ export function TaskUpsertDialog(props: Props) {
   useEffect(() => {
     if (!props.open || props.mode !== "create" || activeTaskId) return;
     saveDraft("task-create", {
-      projectId, propertyId, businessDomain, subject, description, dueDate, dueTime,
+      projectId, propertyId, customerId, businessDomain, subject, description, dueDate, dueTime,
       city, address, assignedUserId, memberIds, priority, status, isPrivate,
     });
-  }, [props.open, props.mode, activeTaskId, projectId, propertyId, businessDomain, subject, description, dueDate, dueTime, city, address, assignedUserId, memberIds, priority, status, isPrivate]);
+  }, [props.open, props.mode, activeTaskId, projectId, propertyId, customerId, businessDomain, subject, description, dueDate, dueTime, city, address, assignedUserId, memberIds, priority, status, isPrivate]);
 
   function handleBusinessDomainChange(nextDomain: ExpenseBusinessDomain | "") {
     setBusinessDomain(nextDomain);
@@ -458,6 +466,7 @@ export function TaskUpsertDialog(props: Props) {
       effectiveDomain,
       projectId,
       propertyId,
+      customerId,
       subject,
       description,
       dueDate,
@@ -723,6 +732,7 @@ export function TaskUpsertDialog(props: Props) {
     effectiveDomain,
     projectId,
     propertyId,
+    customerId,
     subject,
     description,
     dueDate,
@@ -920,6 +930,9 @@ export function TaskUpsertDialog(props: Props) {
               properties={properties}
               propertyId={propertyId}
               onPropertyIdChange={setPropertyId}
+              customers={customers}
+              customerId={customerId}
+              onCustomerIdChange={setCustomerId}
             />
           ) : null}
 

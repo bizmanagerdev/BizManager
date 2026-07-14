@@ -42,6 +42,7 @@ import { notFound } from "next/navigation";
 import AddContactButton from "./AddContactButton";
 import AddCustomerDocumentButton from "./AddCustomerDocumentButton";
 import CustomerCollectionSection from "./CustomerCollectionSection";
+import CustomerTasksSection, { type CustomerTaskItem } from "./CustomerTasksSection";
 import PaymentPromises from "@/components/collections/PaymentPromises";
 import { getCustomerPromises } from "@/lib/promises";
 import CustomerNotesEditor from "./CustomerNotesEditor";
@@ -248,6 +249,7 @@ export default async function CustomerDetailsPage({
     { data: customerDocLinks },
     { data: orderDocLinks },
     { data: projectDocLinks },
+    { data: customerTagLinks },
   ] = await Promise.all([
     projectIds.length > 0
       ? supabase
@@ -293,7 +295,17 @@ export default async function CustomerDetailsPage({
           .eq("entity_type", "project")
           .in("entity_id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
+    supabase
+      .from("entity_tags")
+      .select("tag:tags(id,name,color)")
+      .eq("entity_type", "customer")
+      .eq("entity_id", id),
   ]);
+
+  // Customer segment tags (from the entity_tags cross-cut).
+  const customerTags = ((customerTagLinks ?? []) as Row[])
+    .map((link) => (link as { tag?: { id?: string; name?: string; color?: string | null } }).tag)
+    .filter((t): t is { id: string; name: string; color?: string | null } => Boolean(t && t.id && t.name));
 
   // --- Orders money: straight sum of the same per-order figures the list shows.
   let ordersSales = 0;
@@ -514,6 +526,69 @@ export default async function CustomerDetailsPage({
           ])
         ).items
       : [];
+
+  // This customer's tasks (independent customer_id link) + the staff list for the
+  // "add task" dialog. Admin/office only, matching the other management sections.
+  let customerTasks: CustomerTaskItem[] = [];
+  let taskUserOptions: { id: string; label: string; color: string | null }[] = [];
+  if (canManageCollections) {
+    const [taskRes, usersRes] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("id,subject,status,priority,due_date,assigned_user_id,is_private,private_owner_id")
+        .eq("customer_id", id)
+        .neq("status", "cancelled")
+        .order("due_date", { ascending: true, nullsFirst: false })
+        .range(0, 199),
+      supabase
+        .from("users")
+        .select("id,full_name,email,avatar_color,active")
+        .neq("role", "worker_no_access")
+        .order("full_name", { ascending: true })
+        .range(0, 499),
+    ]);
+
+    const taskRows = ((taskRes.data ?? []) as Row[])
+      // Private tasks are visible only to their owner (RLS also enforces this).
+      .filter((t) => t.is_private !== true || s(t, "private_owner_id") === profile.id);
+    const taskIds = taskRows.map((t) => s(t, "id")).filter(Boolean);
+
+    const remindersRes = taskIds.length
+      ? await supabase.from("reminders").select("task_id").in("task_id", taskIds).eq("status", "pending")
+      : { data: [] as Row[] };
+    const reminderTaskIds = new Set(
+      ((remindersRes.data ?? []) as Row[]).map((r) => s(r, "task_id")).filter(Boolean)
+    );
+
+    const userNameById = new Map(
+      ((usersRes.data ?? []) as Row[]).map(
+        (u) => [s(u, "id"), s(u, "full_name") || s(u, "email") || ""] as const
+      )
+    );
+
+    customerTasks = taskRows.map((t) => {
+      const assigneeId = s(t, "assigned_user_id");
+      return {
+        id: s(t, "id"),
+        subject: s(t, "subject") || "משימה",
+        status: s(t, "status") || null,
+        priority: s(t, "priority") || null,
+        due_date: s(t, "due_date") || null,
+        assigned_user_name: assigneeId ? userNameById.get(assigneeId) ?? null : null,
+        has_open_reminder: reminderTaskIds.has(s(t, "id")),
+        is_private: t.is_private === true,
+      };
+    });
+
+    taskUserOptions = ((usersRes.data ?? []) as Row[])
+      .filter((u) => u.active !== false)
+      .map((u) => ({
+        id: s(u, "id"),
+        label: s(u, "full_name") || s(u, "email") || "",
+        color: s(u, "avatar_color") || null,
+      }))
+      .filter((u) => u.id && u.label);
+  }
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
@@ -782,6 +857,19 @@ export default async function CustomerDetailsPage({
             )}
 
             {canManageCollections ? (
+              <div className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
+                <CustomerTasksSection
+                  customerId={id}
+                  customerName={customerName}
+                  customerPhone={customerPhone || null}
+                  tasks={customerTasks}
+                  users={taskUserOptions}
+                  currentUserId={profile.id}
+                />
+              </div>
+            ) : null}
+
+            {canManageCollections ? (
               <SectionCard
                 id="collection-tracking"
                 icon={<PhoneCall className="h-4 w-4" />}
@@ -945,6 +1033,15 @@ export default async function CustomerDetailsPage({
                       ח.פ / ת.ז: <span dir="ltr">{registrationNumber}</span>
                     </>
                   ) : null}
+                </div>
+              ) : null}
+              {customerTags.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {customerTags.map((tag) => (
+                    <Badge key={tag.id} className={getStatusColorClasses("info")}>
+                      {tag.name}
+                    </Badge>
+                  ))}
                 </div>
               ) : null}
               <div className="space-y-1.5 text-xs">
