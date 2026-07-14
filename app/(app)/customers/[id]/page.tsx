@@ -857,16 +857,14 @@ export default async function CustomerDetailsPage({
             )}
 
             {canManageCollections ? (
-              <div className="rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
-                <CustomerTasksSection
-                  customerId={id}
-                  customerName={customerName}
-                  customerPhone={customerPhone || null}
-                  tasks={customerTasks}
-                  users={taskUserOptions}
-                  currentUserId={profile.id}
-                />
-              </div>
+              <CustomerTasksSection
+                customerId={id}
+                customerName={customerName}
+                customerPhone={customerPhone || null}
+                tasks={customerTasks}
+                users={taskUserOptions}
+                currentUserId={profile.id}
+              />
             ) : null}
 
             {canManageCollections ? (

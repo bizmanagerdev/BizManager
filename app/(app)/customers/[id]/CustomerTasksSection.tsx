@@ -52,32 +52,78 @@ export default function CustomerTasksSection({
     { id: customerId, label: customerPhone ? `${customerName} · ${customerPhone}` : customerName },
   ];
 
-  return (
+  const addButton = (
+    <Button
+      size="sm"
+      variant="secondary"
+      className={SOFT_ADD_BUTTON_CLASSES}
+      onClick={() => setCreateOpen(true)}
+    >
+      <Plus className="h-3.5 w-3.5" /> משימה
+    </Button>
+  );
+
+  const dialogs = (
     <>
+      <TaskUpsertDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        mode="create"
+        users={users}
+        customers={customerOptions}
+        presetCustomerId={customerId}
+        currentUserId={currentUserId}
+        wizard
+        onSaved={() => router.refresh()}
+      />
+      <TaskUpsertDialog
+        open={editId !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditId(null);
+        }}
+        mode="edit"
+        taskId={editId}
+        users={users}
+        customers={customerOptions}
+        currentUserId={currentUserId}
+        onSaved={() => router.refresh()}
+      />
+    </>
+  );
+
+  // Empty → a slim one-line row, matching the orders/projects empty rows so the
+  // section doesn't take a full card's footprint when there's nothing yet.
+  if (tasks.length === 0) {
+    return (
+      <>
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card/50 px-4 py-2.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+            <ListTodo className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="font-semibold">משימות</span>
+            <span className="text-xs text-muted-foreground">אין משימות ללקוח זה עדיין</span>
+          </div>
+          <div className="shrink-0">{addButton}</div>
+        </div>
+        {dialogs}
+      </>
+    );
+  }
+
+  return (
+    <section className="space-y-3 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
           <ListTodo className="h-4 w-4 text-primary" />
           משימות
-          {tasks.length > 0 ? (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
-              {tasks.length}
-            </span>
-          ) : null}
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
+            {tasks.length}
+          </span>
         </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          className={SOFT_ADD_BUTTON_CLASSES}
-          onClick={() => setCreateOpen(true)}
-        >
-          <Plus className="h-3.5 w-3.5" /> משימה
-        </Button>
+        {addButton}
       </div>
 
-      {tasks.length === 0 ? (
-        <p className="mt-2 text-xs text-muted-foreground">אין משימות ללקוח זה עדיין.</p>
-      ) : (
-        <div className="mt-2 divide-y divide-border/60">
+      {(
+        <div className="divide-y divide-border/60">
           {tasks.map((task) => {
             const overdue =
               task.due_date !== null &&
@@ -118,30 +164,7 @@ export default function CustomerTasksSection({
         </div>
       )}
 
-      <TaskUpsertDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        mode="create"
-        users={users}
-        customers={customerOptions}
-        presetCustomerId={customerId}
-        currentUserId={currentUserId}
-        wizard
-        onSaved={() => router.refresh()}
-      />
-
-      <TaskUpsertDialog
-        open={editId !== null}
-        onOpenChange={(open) => {
-          if (!open) setEditId(null);
-        }}
-        mode="edit"
-        taskId={editId}
-        users={users}
-        customers={customerOptions}
-        currentUserId={currentUserId}
-        onSaved={() => router.refresh()}
-      />
-    </>
+      {dialogs}
+    </section>
   );
 }
