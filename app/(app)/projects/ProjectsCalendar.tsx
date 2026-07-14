@@ -25,6 +25,12 @@ function entryKindVariant(kind: CalendarEntry["kind"]) {
   return "secondary" as const;
 }
 
+function entryKindDot(kind: CalendarEntry["kind"]) {
+  if (kind === "task") return "bg-warning";
+  if (kind === "reminder") return "bg-info";
+  return "bg-success";
+}
+
 export default function ProjectsCalendar({
   entries,
   todayIso,
@@ -142,11 +148,34 @@ export default function ProjectsCalendar({
     );
   }
 
+  function renderDayHover({ day }: DayContext) {
+    const dayEntries = entriesOnDay(day);
+    if (dayEntries.length === 0) return null;
+    return (
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between gap-2 border-b pb-1.5">
+          <span className="text-sm font-semibold">{fmtFullDay(day)}</span>
+          <span className="text-xs text-muted-foreground">{dayEntries.length} פריטים</span>
+        </div>
+        <ul className="space-y-1">
+          {dayEntries.map((entry) => (
+            <li key={`${entry.kind}-${entry.id}`} className="flex items-center gap-1.5 text-xs">
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${entryKindDot(entry.kind)}`} />
+              <span className="min-w-0 flex-1 truncate">{entry.title}</span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">{entryKindLabel(entry.kind)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
   return (
     <MonthCalendar
       todayIso={todayIso}
       renderSelectedPanel={renderSelectedPanel}
       renderDayContent={renderDayContent}
+      renderDayHover={renderDayHover}
       legend={
         <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />משימה</span>

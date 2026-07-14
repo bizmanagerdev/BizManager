@@ -139,11 +139,38 @@ export default function PaymentsCalendar({ items, todayIso }: Props) {
     );
   }
 
+  function renderDayHover({ day }: DayContext) {
+    const dayItems = itemsOnDay(day);
+    if (dayItems.length === 0) return null;
+    const total = unpaidTotalOnDay(day);
+    return (
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between gap-2 border-b pb-1.5">
+          <span className="text-sm font-semibold">{fmtFullDay(day)}</span>
+          {total > 0 ? <span className="text-xs font-semibold">{fmtIls(total)}</span> : null}
+        </div>
+        <ul className="space-y-1">
+          {dayItems.map((item) => {
+            const stage = itemStageKey(item);
+            return (
+              <li key={item.id} className="flex items-center gap-1.5 text-xs">
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <span className="shrink-0 font-medium">{fmtIls(item.amount)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  }
+
   return (
     <MonthCalendar
       todayIso={todayIso}
       renderSelectedPanel={renderSelectedPanel}
       renderDayContent={renderDayContent}
+      renderDayHover={renderDayHover}
       renderToolbar={(monthDate) => (
         <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-sm">
           <span className="text-muted-foreground">

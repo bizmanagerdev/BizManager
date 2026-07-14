@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { hebrewDayLabel, getHolidaysInRange } from "@/lib/hebrew-calendar";
 
 // ── Shared date helpers ───────────────────────────────────────────────────────
@@ -46,6 +47,12 @@ type Props = {
   renderSelectedPanel: (ctx: SelectedContext) => ReactNode;
   /** Dots / amount / count rendered under each day cell (after day number + Hebrew numeral). */
   renderDayContent: (ctx: DayContext) => ReactNode;
+  /**
+   * Optional hover popover content for a day cell (desktop). Return null/undefined
+   * for days that have nothing to show. Rendered in a floating panel anchored to
+   * the hovered cell — the same detail the selected-day panel shows, on hover.
+   */
+  renderDayHover?: (ctx: DayContext) => ReactNode;
   /** Optional slot between the month-nav row and the grid (e.g. month total + toggles). */
   renderToolbar?: (monthDate: Date) => ReactNode;
   /** Legend row under the grid. */
@@ -63,12 +70,17 @@ export default function MonthCalendar({
   todayIso,
   renderSelectedPanel,
   renderDayContent,
+  renderDayHover,
   renderToolbar,
   legend,
 }: Props) {
   const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
   const [monthDate, setMonthDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(today);
+
+  // Hover popover (desktop): the cell being hovered + its on-screen rect.
+  const [hover, setHover] = useState<{ day: Date; rect: DOMRect } | null>(null);
+  const clearHover = () => setHover(null);
 
   const calendarDays = useMemo(() => {
     const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
@@ -86,6 +98,9 @@ export default function MonthCalendar({
     () => getHolidaysInRange(calendarDays[0], calendarDays[calendarDays.length - 1]),
     [calendarDays]
   );
+
+  // A month change (arrows/swipe) invalidates the hovered cell's anchor rect.
+  useEffect(() => clearHover(), [monthDate]);
 
   // Direction of the last month step drives the slide-in animation.
   const [navDir, setNavDir] = useState<"next" | "prev">("next");
@@ -231,6 +246,12 @@ export default function MonthCalendar({
                 key={day.toISOString()}
                 type="button"
                 onClick={() => setSelectedDate(day)}
+                onMouseEnter={
+                  renderDayHover
+                    ? (e) => setHover({ day, rect: e.currentTarget.getBoundingClientRect() })
+                    : undefined
+                }
+                onMouseLeave={renderDayHover ? clearHover : undefined}
                 title={holiday ?? undefined}
                 className={`flex min-h-[3.75rem] flex-col items-center gap-0.5 px-1 py-2 transition-colors ${
                   !inMonth
@@ -266,6 +287,62 @@ export default function MonthCalendar({
       </div>
 
       {legend}
+
+      {/* Hover popover — anchored to the hovered cell, rendered outside the
+          overflow-hidden/animated grid so it isn't clipped. */}
+      {hover && renderDayHover ? (
+        <DayHoverPopover
+          rect={hover.rect}
+          content={renderDayHover({
+            day: hover.day,
+            holiday: holidaysByDay.get(isoLocal(hover.day)) ?? null,
+            isToday: isSameDay(hover.day, today),
+            isSelected: isSameDay(hover.day, selectedDate),
+            inMonth: hover.day.getMonth() === monthDate.getMonth(),
+          })}
+        />
+      ) : null}
     </div>
+  );
+}
+
+// Floating detail panel anchored to a hovered day cell. Flips above the cell
+// when there isn't room below, and clamps horizontally to the viewport (RTL-safe).
+function DayHoverPopover({
+  rect,
+  content,
+}: {
+  rect: DOMRect;
+  content: ReactNode;
+}) {
+  if (!content || typeof document === "undefined") return null;
+
+  const WIDTH = 260;
+  const GAP = 6;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  const below = rect.bottom < vh * 0.6;
+  const center = rect.left + rect.width / 2;
+  const left = Math.min(Math.max(center - WIDTH / 2, 8), vw - WIDTH - 8);
+
+  const style: React.CSSProperties = below
+    ? { top: rect.bottom + GAP, left, width: WIDTH }
+    : { bottom: vh - rect.top + GAP, left, width: WIDTH };
+
+  // Portaled to <body> so `position: fixed` resolves against the viewport, not
+  // an ancestor with a transform (which would offset it to random-looking spots).
+  return createPortal(
+    <div
+      dir="rtl"
+      role="tooltip"
+      // pointer-events-none: the panel never intercepts the mouse, so the cell's
+      // own onMouseLeave fires as the pointer leaves it and the panel closes.
+      style={{ position: "fixed", zIndex: 50, maxHeight: "16rem", ...style }}
+      className="pointer-events-none overflow-y-auto rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-95 duration-100"
+    >
+      {content}
+    </div>,
+    document.body
   );
 }
