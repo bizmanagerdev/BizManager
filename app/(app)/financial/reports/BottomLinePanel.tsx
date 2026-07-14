@@ -8,6 +8,7 @@ import type { ProfitLossDomainRow } from "@/lib/financial";
 import type { EarnedRevenueReport } from "@/lib/financial/earnedRevenue";
 import type { DomainProofMap, DomainProofItem } from "@/lib/financial/domainProof";
 import type { ProjectBreakdown } from "@/lib/financial/projectBreakdown";
+import type { ProfitLossProofMap } from "@/lib/financial";
 
 // "cash"    = money that actually moved this period (came in / went out).
 // "earned"  = money I MADE this period — booked to the month the work/sale
@@ -64,10 +65,11 @@ type RowDetail = {
  *     − בית / צדקה (אישי)
  *     = מה שנשאר בסוף
  * Each stage shows its contribution and the running "כמה נשאר" after it.
- * Every business/overhead row is CLICKABLE — it opens to the exact transactions
- * behind the number (what I earned / what I spent), from the same proof data the
- * לפי תחום tab uses. The proof is earned-basis, so the detail ties to the row
- * only in "הרווחתי" mode; in other modes the rows stay flat.
+ * Every row is CLICKABLE — it opens to the exact transactions behind the number
+ * (what I earned / what I spent). The detail source matches the active basis so it
+ * always ties to the row: "הרווחתי" uses the earned proof (domainProof +
+ * projectBreakdown); "נכנס בפועל"/"כולל פתוחים" use the cash/accrual line-item
+ * proof (profitLossProof). Personal (home/charity) rows are always cash-basis.
  */
 export default function BottomLinePanel({
   rows,
@@ -76,6 +78,7 @@ export default function BottomLinePanel({
   includePersonal,
   domainProof,
   projectBreakdown,
+  profitLossProof,
 }: {
   rows: ProfitLossDomainRow[];
   earned: EarnedRevenueReport | null;
@@ -83,6 +86,7 @@ export default function BottomLinePanel({
   includePersonal: boolean;
   domainProof?: DomainProofMap | null;
   projectBreakdown?: ProjectBreakdown | null;
+  profitLossProof?: ProfitLossProofMap | null;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggle = (key: string) =>
@@ -127,36 +131,62 @@ export default function BottomLinePanel({
     return { business, overhead, personal };
   }, [basis, rows, earned, includePersonal]);
 
-  // Detail is earned-basis (proof data mirrors the earned report), so it only
-  // ties to the row numbers in "הרווחתי" mode. Elsewhere, rows stay flat.
-  const detailAvailable = basis === "earned";
-
+  // Detail for a row, resolved for the basis that row is displayed on. Business/
+  // overhead rows use the panel basis; personal rows are always cash (that's how
+  // their net is computed above). Earned → earned proof; cash/accrual → line-item
+  // proof. Every path ties to the row because it mirrors the same aggregation.
   const detailFor = useMemo(() => {
-    return (domain: string): RowDetail | null => {
-      if (!detailAvailable || !domain) return null;
-      if (domain === PROJECTS_DOMAIN) {
-        if (!projectBreakdown) return null;
-        const income: DomainProofItem[] = projectBreakdown.rows
-          .filter((r) => Math.round(r.earnedShare) !== 0)
-          .map((r) => ({ date: null, label: r.name, amount: r.earnedShare }));
-        const expenses: DomainProofItem[] = projectBreakdown.rows
-          .filter((r) => Math.round(r.periodExpenses) !== 0)
-          .map((r) => ({ date: null, label: r.name, amount: r.periodExpenses }));
-        if (Math.round(projectBreakdown.unassignedExpense) !== 0)
-          expenses.push({ date: null, label: "הוצאות פרויקטים כלליות (לא שויך)", amount: projectBreakdown.unassignedExpense });
-        if (income.length === 0 && expenses.length === 0) return null;
-        return {
-          income,
-          expenses,
-          incomeTotal: projectBreakdown.totals.earnedShare,
-          expenseTotal: projectBreakdown.domainExpense,
-        };
+    return (domain: string, effectiveBasis: Basis): RowDetail | null => {
+      if (!domain || domain === "__unassigned__") return null;
+
+      if (effectiveBasis === "earned") {
+        if (domain === PROJECTS_DOMAIN) {
+          if (!projectBreakdown) return null;
+          const income: DomainProofItem[] = projectBreakdown.rows
+            .filter((r) => Math.round(r.earnedShare) !== 0)
+            .map((r) => ({ date: null, label: r.name, amount: r.earnedShare }));
+          const expenses: DomainProofItem[] = projectBreakdown.rows
+            .filter((r) => Math.round(r.periodExpenses) !== 0)
+            .map((r) => ({ date: null, label: r.name, amount: r.periodExpenses }));
+          if (Math.round(projectBreakdown.unassignedExpense) !== 0)
+            expenses.push({ date: null, label: "הוצאות פרויקטים כלליות (לא שויך)", amount: projectBreakdown.unassignedExpense });
+          if (income.length === 0 && expenses.length === 0) return null;
+          return {
+            income,
+            expenses,
+            incomeTotal: projectBreakdown.totals.earnedShare,
+            expenseTotal: projectBreakdown.domainExpense,
+          };
+        }
+        const proof = domainProof?.[domain];
+        if (!proof || (proof.income.length === 0 && proof.expenses.length === 0)) return null;
+        return proof;
       }
-      const proof = domainProof?.[domain];
-      if (!proof || (proof.income.length === 0 && proof.expenses.length === 0)) return null;
-      return proof;
+
+      // cash / accrual — from the line-item proof, picking that basis's amount.
+      const items = profitLossProof?.[domain];
+      if (!items || items.length === 0) return null;
+      const income: DomainProofItem[] = [];
+      const expenses: DomainProofItem[] = [];
+      let incomeTotal = 0;
+      let expenseTotal = 0;
+      for (const item of items) {
+        const amount = effectiveBasis === "accrual" ? item.accrual : item.cash;
+        if (Math.round(amount) === 0) continue;
+        if (item.kind === "income") {
+          income.push({ date: item.date, label: item.label, amount });
+          incomeTotal += amount;
+        } else {
+          expenses.push({ date: item.date, label: item.label, amount });
+          expenseTotal += amount;
+        }
+      }
+      if (income.length === 0 && expenses.length === 0) return null;
+      return { income, expenses, incomeTotal, expenseTotal };
     };
-  }, [detailAvailable, domainProof, projectBreakdown]);
+  }, [domainProof, projectBreakdown, profitLossProof]);
+
+  const detailAvailable = basis === "earned" ? !!(domainProof || projectBreakdown) : !!profitLossProof;
 
   const businessTotal = groups.business.reduce((sum, r) => sum + r.net, 0);
   const overheadTotal = groups.overhead.reduce((sum, r) => sum + r.net, 0);
@@ -168,8 +198,8 @@ export default function BottomLinePanel({
 
   // A single waterfall line. When earned-basis detail exists for the row's domain,
   // it becomes a clickable disclosure that opens the transactions behind the number.
-  const line = (label: string, value: number, key: string, domain: string) => {
-    const detail = detailFor(domain);
+  const line = (label: string, value: number, key: string, domain: string, effectiveBasis: Basis) => {
+    const detail = detailFor(domain, effectiveBasis);
     if (!detail) {
       return (
         <div key={key} className="flex items-center justify-between gap-3 py-1.5">
@@ -193,7 +223,7 @@ export default function BottomLinePanel({
           </span>
           <span dir="ltr" className={cn("tabular-nums text-sm font-medium", netClass(value))}>{signed(value)}</span>
         </button>
-        {isOpen ? <DetailBlock detail={detail} /> : null}
+        {isOpen ? <DetailBlock detail={detail} effectiveBasis={effectiveBasis} /> : null}
       </div>
     );
   };
@@ -252,7 +282,7 @@ export default function BottomLinePanel({
                   groups.business
                     .slice()
                     .sort((a, b) => b.net - a.net)
-                    .map((r, i) => line(r.name, r.net, `biz-${i}`, r.domain))
+                    .map((r, i) => line(r.name, r.net, `biz-${i}`, r.domain, basis))
                 )}
                 {runningRow(basis === "earned" ? "סה״כ שהרווחתי" : "רווח מכל העסקים", businessTotal, "__biz_total__")}
               </div>
@@ -260,7 +290,7 @@ export default function BottomLinePanel({
               {groups.overhead.length > 0 ? (
                 <div className="py-2">
                   <div className="mb-1 text-xs font-medium text-muted-foreground">פחות תקורה כללית (שוטף)</div>
-                  {groups.overhead.map((r, i) => line(r.name, r.net, `ovh-${i}`, r.domain))}
+                  {groups.overhead.map((r, i) => line(r.name, r.net, `ovh-${i}`, r.domain, basis))}
                   {runningRow("נשאר אחרי שוטף", afterOverhead, "__after_overhead__")}
                 </div>
               ) : null}
@@ -271,7 +301,7 @@ export default function BottomLinePanel({
                   {groups.personal
                     .slice()
                     .sort((a, b) => a.net - b.net)
-                    .map((r, i) => line(r.name, r.net, `per-${i}`, r.domain))}
+                    .map((r, i) => line(r.name, r.net, `per-${i}`, r.domain, "cash"))}
                 </div>
               ) : null}
 
@@ -290,20 +320,24 @@ export default function BottomLinePanel({
 }
 
 /** The opened detail under a row: income items on one side, expenses on the other. */
-function DetailBlock({ detail }: { detail: RowDetail }) {
+function DetailBlock({ detail, effectiveBasis }: { detail: RowDetail; effectiveBasis: Basis }) {
   const netTotal = detail.incomeTotal - detail.expenseTotal;
+  const incomeTitle =
+    effectiveBasis === "earned" ? "מה שהרווחתי" : effectiveBasis === "accrual" ? "הכנסות (כולל פתוחים)" : "מה שנכנס";
+  const expenseTitle =
+    effectiveBasis === "earned" ? "על מה הוצאתי" : effectiveBasis === "accrual" ? "הוצאות (כולל פתוחים)" : "מה ששילמתי";
   return (
     <div className="mb-2 mt-1 rounded-lg border bg-muted/30 p-3">
       <div className="grid gap-4 md:grid-cols-2">
         <DetailColumn
-          title="מה שהרווחתי"
+          title={incomeTitle}
           items={detail.income}
           total={detail.incomeTotal}
           empty="אין הכנסות בתקופה."
           amountClass="text-success"
         />
         <DetailColumn
-          title="על מה הוצאתי"
+          title={expenseTitle}
           items={detail.expenses}
           total={detail.expenseTotal}
           empty="אין הוצאות בתקופה."

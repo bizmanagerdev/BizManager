@@ -76,7 +76,7 @@ export async function loadDomainProof(
         .range(lo, hi)
     ),
     fetchAllPaged<Row>((lo, hi) =>
-      supabase.from("worker_debt_items_view").select("business_domain,period_month,earned_amount").range(lo, hi)
+      supabase.from("worker_debt_items_view").select("user_id,source_date,business_domain,period_month,earned_amount").range(lo, hi)
     ).catch(() => [] as Row[]),
   ]);
 
@@ -122,22 +122,47 @@ export async function loadDomainProof(
     b.expenseTotal += amount;
   }
 
-  // Worker labor, grouped into one line per domain per month (excluding projects).
-  const laborByDomainMonth = new Map<string, number>();
+  // Worker labor — one line PER WORKER per domain per month (excluding projects),
+  // so the wage number is provable by name: which worker earned how much, when.
+  // Sessions of the same worker in a month collapse into that worker's line; its
+  // date is the latest work/pay date in the group (falls back to the month start).
+  const laborByWorker = new Map<string, { domain: string; month: string; userId: string; amount: number; date: string | null }>();
   for (const d of debtRows) {
     const domain = str(d.business_domain) ?? "general_business";
     if (domain === PROJECTS_DOMAIN) continue;
     const month = str(d.period_month);
-    if (!inPeriod(month)) continue;
+    if (!month || !inPeriod(month)) continue;
     const amount = Math.abs(toNum(d.earned_amount));
     if (amount === 0) continue;
-    laborByDomainMonth.set(`${domain}|${month}`, (laborByDomainMonth.get(`${domain}|${month}`) ?? 0) + amount);
+    const userId = str(d.user_id) ?? "__unknown__";
+    const sourceDate = str(d.source_date);
+    const key = `${domain}|${month}|${userId}`;
+    const existing = laborByWorker.get(key);
+    if (existing) {
+      existing.amount += amount;
+      if (sourceDate && (!existing.date || sourceDate > existing.date)) existing.date = sourceDate;
+    } else {
+      laborByWorker.set(key, { domain, month, userId, amount, date: sourceDate });
+    }
   }
-  for (const [key, amount] of laborByDomainMonth) {
-    const [domain, month] = key.split("|");
-    const b = bucket(domain);
-    b.expenses.push({ date: `${month}-01`, label: `שכר עובדים ${month}`, amount });
-    b.expenseTotal += amount;
+
+  // Resolve worker ids → names for the labels (one query for the whole set).
+  const workerIds = Array.from(new Set(Array.from(laborByWorker.values()).map((w) => w.userId).filter((id) => id !== "__unknown__")));
+  const nameById = new Map<string, string>();
+  if (workerIds.length > 0) {
+    const { data: userRows } = await supabase.from("users").select("id,full_name").in("id", workerIds);
+    for (const u of (userRows ?? []) as Row[]) {
+      const id = str(u.id);
+      const name = str(u.full_name)?.trim();
+      if (id && name) nameById.set(id, name);
+    }
+  }
+
+  for (const w of laborByWorker.values()) {
+    const b = bucket(w.domain);
+    const name = nameById.get(w.userId) || "עובד";
+    b.expenses.push({ date: w.date ?? `${w.month}-01`, label: `שכר — ${name} (${w.month})`, amount: w.amount });
+    b.expenseTotal += w.amount;
   }
 
   // Newest first within each list.

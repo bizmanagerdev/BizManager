@@ -1177,6 +1177,9 @@ export default function FinancialPageClient({
             earned={earnedRevenue}
             basis={plBasis}
             includePersonal={includePersonal}
+            domainProof={domainProof}
+            projectBreakdown={projectBreakdown}
+            profitLossProof={data.profitLossProof}
           />
         </TabsContent>
         <TabsContent value="pl" className="space-y-4">

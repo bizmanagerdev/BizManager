@@ -21,6 +21,7 @@ import {
 } from "./db";
 import {
   aggregateProfitLoss,
+  aggregateProfitLossProof,
   aggregateExpenseCategories,
   buildDomainGroups,
   buildForecastMonthly,
@@ -80,6 +81,8 @@ export type {
 export type {
   ProfitLossDomainRow,
   ProfitLossCategoryRow,
+  ProfitLossProofItem,
+  ProfitLossProofMap,
   MonthlyTrendPoint,
   ForecastChangePoint,
 } from "./types";
@@ -426,6 +429,8 @@ export async function getFinancialPageData(
     // P&L, monthly trend and forecast are driven by date/domain only (they need both
     // inflow+outflow and posted+pending), so they ignore the type/stage/source/q filters.
     profitLoss: aggregateProfitLoss(domainEntries, { from, to }),
+    // Line-item proof behind each domain's cash/accrual number (סקירה drill-down).
+    profitLossProof: aggregateProfitLossProof(domainEntries, { from, to }),
     // Expense line items by category. When no explicit domain is chosen, exclude personal
     // (home/charity) to match the P&L's business-only default; an explicit domain shows as-is.
     profitLossExpenseCategories: aggregateExpenseCategories(

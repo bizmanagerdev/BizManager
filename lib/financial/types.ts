@@ -266,6 +266,22 @@ export type ProfitLossCategoryRow = {
   accrualExpense: number;
 };
 
+// One transaction that PROVES part of a domain's cash/accrual P&L number — the
+// line-by-line detail behind a row in the סקירה/לפי-תחום reports. `cash` and
+// `accrual` are the entry's signed contribution to that basis (they differ for
+// partial expenses and open receivables/liabilities), so the UI basis toggle can
+// pick the right column and the items still sum to the row. Built by
+// aggregateProfitLossProof in entries.ts, mirroring aggregateProfitLoss exactly.
+export type ProfitLossProofItem = {
+  date: string | null;
+  label: string;
+  kind: "income" | "expense";
+  cash: number;
+  accrual: number;
+};
+// domain key ("sales", "general_business", … | "__unassigned__") → its items.
+export type ProfitLossProofMap = Record<string, ProfitLossProofItem[]>;
+
 // One month of realized (posted) cash movement — see buildMonthlyTrend in entries.ts.
 export type MonthlyTrendPoint = {
   month: string; // YYYY-MM
@@ -298,6 +314,8 @@ export type FinancialPageData = {
   loansSummary: LoansSummary;
   domainGroups: FinancialDomainGroup[];
   profitLoss: ProfitLossDomainRow[];
+  // Per-domain line-item proof behind the cash/accrual P&L (סקירה row drill-down).
+  profitLossProof: ProfitLossProofMap;
   profitLossExpenseCategories: ProfitLossCategoryRow[];
   // Same-shape rows for the immediately-preceding equal-length period (empty unless
   // both from+to are set); profitLossPreviousPeriod holds that window's dates.

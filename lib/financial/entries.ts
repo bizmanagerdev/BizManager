@@ -17,6 +17,8 @@ import type {
   PaymentRow,
   ProfitLossCategoryRow,
   ProfitLossDomainRow,
+  ProfitLossProofItem,
+  ProfitLossProofMap,
   ProjectFinancialRow,
   ProjectRow,
   PropertyRow,
@@ -429,6 +431,63 @@ export function aggregateProfitLoss(
       (left, right) =>
         right.accrualRevenue - right.accrualExpense - (left.accrualRevenue - left.accrualExpense)
     );
+}
+
+/**
+ * Line-item PROOF behind each domain's cash/accrual P&L — the exact transactions
+ * that sum to the numbers aggregateProfitLoss produces, so a report row can be
+ * opened to "prove it". Mirrors aggregateProfitLoss's per-entry rules one-to-one:
+ * every entry that contributes to a domain's revenue/expense is emitted as an item
+ * carrying BOTH bases' signed contribution (cash + accrual differ for partial
+ * expenses and open receivables/liabilities). Refunds are contra-revenue (a
+ * negative income item), matching the aggregate. Keyed by the same domain key.
+ */
+export function aggregateProfitLossProof(
+  entries: FinancialEntry[],
+  options: { from?: string | null; to?: string | null } = {}
+): ProfitLossProofMap {
+  const from = options.from || null;
+  const to = options.to || null;
+  const map: ProfitLossProofMap = {};
+  const push = (key: string, item: ProfitLossProofItem) => {
+    (map[key] ??= []).push(item);
+  };
+
+  for (const entry of entries) {
+    if (from && entry.flowDate < from) continue;
+    if (to && entry.flowDate > to) continue;
+
+    const key = entry.businessDomain ?? "__unassigned__";
+    const { type, stage, origin, amount } = entry;
+    const partialPaid =
+      entry.expensePaidAmount != null && entry.expensePaidAmount > 0 ? entry.expensePaidAmount : 0;
+    const date = entry.flowDate;
+    const label = entry.description?.trim() || entry.sourceLabel?.trim() || entry.domainName;
+
+    if (type === "inflow") {
+      if (origin === "payment" && stage === "posted") {
+        push(key, { date, label, kind: "income", cash: amount, accrual: amount });
+      } else if ((origin === "project_receivable" || origin === "order_receivable") && stage === "pending") {
+        push(key, { date, label, kind: "income", cash: 0, accrual: amount });
+      }
+    } else if (type === "outflow") {
+      if (origin === "payment") {
+        // Refund = contra-revenue: a NEGATIVE income item (reduces the row), just
+        // as aggregateProfitLoss subtracts it from revenue.
+        if (stage === "posted") push(key, { date, label, kind: "income", cash: -amount, accrual: -amount });
+        else push(key, { date, label, kind: "income", cash: 0, accrual: -amount });
+      } else if (origin === "expense") {
+        if (stage === "posted") push(key, { date, label, kind: "expense", cash: amount, accrual: amount });
+        else if (stage === "pending") push(key, { date, label, kind: "expense", cash: partialPaid, accrual: amount });
+      } else if (origin === "worker_payment" && stage === "posted") {
+        push(key, { date, label, kind: "expense", cash: amount, accrual: amount });
+      } else if (origin === "worker_owed" && stage === "pending") {
+        push(key, { date, label, kind: "expense", cash: 0, accrual: amount });
+      }
+    }
+  }
+
+  return map;
 }
 
 const WAGES_CATEGORY = "שכר עובדים";
