@@ -122,9 +122,8 @@ export default function CustomerTasksSection({
         {addButton}
       </div>
 
-      {(
-        <div className="divide-y divide-border/60">
-          {tasks.map((task) => {
+      <div className="divide-y divide-border/60">
+        {tasks.map((task) => {
             const overdue =
               task.due_date !== null &&
               task.status !== "done" &&
@@ -161,8 +160,7 @@ export default function CustomerTasksSection({
               </button>
             );
           })}
-        </div>
-      )}
+      </div>
 
       {dialogs}
     </section>
