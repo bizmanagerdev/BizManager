@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import PushSubscribeButton from "@/components/notifications/PushSubscribeButton";
 import WorklistCustomizer from "@/app/(app)/alerts/WorklistCustomizer";
+import ReminderFormDialog, { type ReminderFormValue } from "@/components/reminders/ReminderFormDialog";
 import { cn } from "@/lib/utils";
 import type { WorklistItem, WorklistPrefs, WorklistSectionView, WorklistSeverity } from "@/lib/reminders/worklist";
 
@@ -55,11 +56,13 @@ function preset(kind: "hour" | "tomorrow" | "week"): string {
 
 export default function WorklistClient({
   sections,
+  assignedByMe = [],
   canSync,
   hasPush,
   prefs,
 }: {
   sections: WorklistSectionView[];
+  assignedByMe?: WorklistItem[];
   canSync: boolean;
   hasPush: boolean;
   prefs: WorklistPrefs | null;
@@ -69,6 +72,7 @@ export default function WorklistClient({
   const [busy, setBusy] = useState<string | null>(null);
   const [snoozeOpen, setSnoozeOpen] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [editing, setEditing] = useState<ReminderFormValue | null>(null);
 
   // Drop optimistically-actioned items; keep only sections that still have content.
   const visibleSections = useMemo(
@@ -77,6 +81,11 @@ export default function WorklistClient({
         .map((s) => ({ ...s, items: s.items.filter((i) => !hidden.has(i.id)) }))
         .filter((s) => s.items.length > 0 || s.summaries.length > 0),
     [sections, hidden]
+  );
+  // Reminders I created for other people (tracking) — drop optimistically-actioned.
+  const visibleAssignedByMe = useMemo(
+    () => assignedByMe.filter((i) => !hidden.has(i.id)),
+    [assignedByMe, hidden]
   );
   // "All clear" ignores the snoozed section — snoozed items aren't active work.
   const activeCount = visibleSections
@@ -217,6 +226,18 @@ export default function WorklistClient({
           <Button variant="secondary" size="sm" onClick={() => act(item.id, "dismiss")} disabled={busy === item.id}>
             {item.source === "system" ? "הסתר להיום" : "בטל"}
           </Button>
+          {item.source === "manual" ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setEditing({ id: item.id, remindAt: item.remindAt, content: item.content, assignedTo: item.assignedTo })
+              }
+              disabled={busy === item.id}
+            >
+              ערוך
+            </Button>
+          ) : null}
         </div>
       </div>
     );
@@ -272,6 +293,33 @@ export default function WorklistClient({
           </CardContent>
         </Card>
       ))}
+
+      {visibleAssignedByMe.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">תזכורות שהקצאתי לאחרים</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {visibleAssignedByMe.map((item) => (
+              <ItemCard key={item.id} item={item} />
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      <ReminderFormDialog
+        mode="edit"
+        open={editing !== null}
+        onOpenChange={(v) => {
+          if (!v) setEditing(null);
+        }}
+        value={editing ?? undefined}
+        onSaved={() => {
+          setEditing(null);
+          refreshAlerts();
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

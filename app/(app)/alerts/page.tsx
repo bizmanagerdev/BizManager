@@ -1,6 +1,6 @@
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import { getWorklistView, getWorklistPrefs } from "@/lib/reminders/worklist";
+import { getWorklistView, getWorklistPrefs, getCreatedByMeReminders } from "@/lib/reminders/worklist";
 import { getTodayInboxData } from "@/lib/today-inbox";
 import TodayInbox from "@/components/TodayInbox";
 import WorklistClient from "@/app/(app)/alerts/WorklistClient";
@@ -15,8 +15,9 @@ export default async function AlertsPage() {
   const canSync = profile.role === "admin" || profile.role === "office";
 
   const worklistPrefs = await getWorklistPrefs(supabase, profile.id);
-  const [sections, todayInbox, pushCount] = await Promise.all([
+  const [sections, assignedByMe, todayInbox, pushCount] = await Promise.all([
     getWorklistView(supabase, { userId: profile.id, role: profile.role, prefs: worklistPrefs }),
+    getCreatedByMeReminders(supabase, { userId: profile.id }),
     getTodayInboxData(supabase, profile),
     // Does this viewer have any registered device? (subscriptions are keyed by
     // the AUTH user id.) Drives the "will/won't ping your phone" hints.
@@ -33,7 +34,13 @@ export default async function AlertsPage() {
       <div className="space-y-5">
         <TodayInbox data={todayInbox} />
 
-        <WorklistClient sections={sections} canSync={canSync} hasPush={hasPush} prefs={worklistPrefs} />
+        <WorklistClient
+          sections={sections}
+          assignedByMe={assignedByMe}
+          canSync={canSync}
+          hasPush={hasPush}
+          prefs={worklistPrefs}
+        />
       </div>
     </AppShell>
   );

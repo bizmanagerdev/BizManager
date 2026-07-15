@@ -173,6 +173,8 @@ export function TaskUpsertDialog(props: Props) {
   const [addingComment, setAddingComment] = useState(false);
 
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
+  // When set, the reminder add-form acts as an EDIT form for this reminder id.
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(null);
   const [reminderAt, setReminderAt] = useState("");
   const [reminderNote, setReminderNote] = useState("");
   const [addingReminder, setAddingReminder] = useState(false);
@@ -615,6 +617,55 @@ export function TaskUpsertDialog(props: Props) {
     }
   }
 
+  // Load an existing reminder into the add-form so it can be edited (reschedule /
+  // change note). The footer button flips to "עדכון" while editingReminderId is set.
+  function beginEditReminder(reminder: ReminderItem) {
+    setEditingReminderId(reminder.id);
+    const d = new Date(reminder.remind_at);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      setReminderAt(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    }
+    setReminderNote(reminder.content ?? "");
+  }
+
+  function cancelEditReminder() {
+    setEditingReminderId(null);
+    setReminderAt("");
+    setReminderNote("");
+  }
+
+  async function saveReminderEdit() {
+    const id = editingReminderId;
+    if (!id || !reminderAt) return;
+    setAddingReminder(true);
+    emitProgressActivityStart();
+    try {
+      const remindIso = new Date(reminderAt).toISOString();
+      const content = reminderNote.trim() || null;
+      // Optimistic — reflect the new time/note immediately.
+      setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, remind_at: remindIso, content } : r)));
+      const result = await offlineFetch(
+        "/api/tasks/reminders/update",
+        { id, remind_at: remindIso, content },
+        "עדכון תזכורת"
+      );
+      if (!result.queued && !result.ok) {
+        toast.error("שגיאה בעדכון תזכורת", { description: toHebrewError(result.error, "") });
+        return;
+      }
+      setEditingReminderId(null);
+      setReminderAt("");
+      setReminderNote("");
+      if (!result.queued) toast.success("התזכורת עודכנה");
+    } catch (error: unknown) {
+      toast.error("שגיאה בעדכון תזכורת", { description: getErrorMessage(error) });
+    } finally {
+      emitProgressActivityEnd();
+      setAddingReminder(false);
+    }
+  }
+
   // Create mode: just stage the reminder locally (no task id yet). It's sent with
   // the create payload and inserted server-side after the task is created.
   function stageReminder() {
@@ -1033,7 +1084,10 @@ export function TaskUpsertDialog(props: Props) {
             reminderNote={reminderNote}
             setReminderNote={setReminderNote}
             addingReminder={addingReminder}
-            onAddReminder={() => void addReminder()}
+            editingReminderId={editingReminderId}
+            onAddReminder={() => void (editingReminderId ? saveReminderEdit() : addReminder())}
+            onEditReminder={beginEditReminder}
+            onCancelEditReminder={cancelEditReminder}
             onSetReminderStatus={(id, nextStatus) => void setReminderStatus(id, nextStatus)}
             comments={comments}
             legacyNotes={legacyNotes}

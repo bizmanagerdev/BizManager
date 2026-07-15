@@ -4,7 +4,8 @@ import { requireProfile } from "@/lib/auth/requireProfile";
 import ProjectDetailsActions from "@/app/(app)/projects/[id]/ProjectDetailsActions";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
-import { History } from "lucide-react";
+import EntityReminders from "@/components/reminders/EntityReminders";
+import { Bell, History } from "lucide-react";
 import type {
   AssignableUser,
   ExpenseListItem,
@@ -1227,6 +1228,27 @@ export default async function ProjectPage({
             monthlySalaryItems={monthlySalaryItems}
           />
         )}
+
+        {overview && (profile.role === "admin" || profile.role === "office") ? (
+          <Card>
+            <CardContent className="space-y-3 p-4 sm:p-5">
+              <div className="flex items-center gap-2">
+                <Bell className="h-4 w-4 text-primary" />
+                <h2 className="text-sm font-semibold">תזכורות</h2>
+              </div>
+              <EntityReminders
+                queryKey="project_id"
+                queryId={id}
+                links={{
+                  project_id: id,
+                  customer_id: typeof overview.customer_id === "string" ? overview.customer_id : undefined,
+                }}
+                category="project"
+                canManage
+              />
+            </CardContent>
+          </Card>
+        ) : null}
 
         {profile.role === "admin" && overview ? (
           <Card>

@@ -1,9 +1,13 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { visibleAudienceRoles } from "@/lib/reminders/worklist";
 
 // Update a reminder: change status (done / cancelled / pending), reschedule
-// (remind_at), or edit content.
+// (remind_at), edit content, or reassign. Any authenticated user may edit a
+// reminder that targets them (assigned to / created by / their role bucket) —
+// same permission model as the worklist action route, so editing works from the
+// worklist, the order/entity panels, and elsewhere.
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
@@ -19,9 +23,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 });
     }
 
-    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
+    const access = await requireRouteAccess();
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
+
+    // Confirm the caller is a target of this reminder before mutating (RLS also
+    // limits what they can read/write, this returns a clean Hebrew error).
+    const { data: row, error: readError } = await supabase
+      .from("reminders")
+      .select("id,assigned_to,created_by,audience_role")
+      .eq("id", id)
+      .maybeSingle();
+    if (readError) return NextResponse.json({ error: toHebrewError(readError.message) }, { status: 400 });
+    if (!row) return NextResponse.json({ error: "התזכורת לא נמצאה או שאין הרשאה." }, { status: 404 });
+    const canAct =
+      row.assigned_to === profile.id ||
+      row.created_by === profile.id ||
+      (typeof row.audience_role === "string" && visibleAudienceRoles(profile.role).includes(row.audience_role));
+    if (!canAct) return NextResponse.json({ error: "אין הרשאה לעדכן תזכורת זו." }, { status: 403 });
 
     const updates: Record<string, unknown> = { updated_by: profile.id };
     if (typeof body.status === "string" && ["pending", "done", "cancelled"].includes(body.status)) {

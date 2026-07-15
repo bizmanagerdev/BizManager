@@ -634,7 +634,10 @@ export function TaskCardSidebar({
   reminderNote,
   setReminderNote,
   addingReminder,
+  editingReminderId,
   onAddReminder,
+  onEditReminder,
+  onCancelEditReminder,
   onSetReminderStatus,
   comments,
   legacyNotes,
@@ -651,7 +654,10 @@ export function TaskCardSidebar({
   reminderNote: string;
   setReminderNote: (value: string) => void;
   addingReminder: boolean;
+  editingReminderId: string | null;
   onAddReminder: () => void;
+  onEditReminder: (reminder: ReminderItem) => void;
+  onCancelEditReminder: () => void;
   onSetReminderStatus: (id: string, status: "done" | "cancelled") => void;
   comments: CommentItem[];
   legacyNotes: LegacyNote[];
@@ -679,7 +685,9 @@ export function TaskCardSidebar({
               .map((reminder) => (
                 <div
                   key={reminder.id}
-                  className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+                  className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm ${
+                    editingReminderId === reminder.id ? "border-primary/50 bg-primary/5" : ""
+                  }`}
                 >
                   <div className="min-w-0">
                     <div className="font-medium">{formatShortDateTime(reminder.remind_at)}</div>
@@ -688,6 +696,9 @@ export function TaskCardSidebar({
                     ) : null}
                   </div>
                   <div className="flex shrink-0 gap-1">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => onEditReminder(reminder)}>
+                      ערוך
+                    </Button>
                     <Button type="button" size="sm" variant="secondary" onClick={() => onSetReminderStatus(reminder.id, "done")}>
                       בוצע
                     </Button>
@@ -709,9 +720,14 @@ export function TaskCardSidebar({
             <Input value={reminderNote} onChange={(e) => setReminderNote(e.target.value)} />
           </div>
         </AdaptiveGrid>
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-1.5">
+          {editingReminderId ? (
+            <Button type="button" size="sm" variant="outline" disabled={addingReminder} onClick={onCancelEditReminder}>
+              ביטול עריכה
+            </Button>
+          ) : null}
           <Button type="button" size="sm" disabled={!reminderAt || addingReminder} onClick={onAddReminder}>
-            {addingReminder ? "מוסיף..." : "הוספת תזכורת"}
+            {addingReminder ? "שומר..." : editingReminderId ? "עדכון תזכורת" : "הוספת תזכורת"}
           </Button>
         </div>
       </section>

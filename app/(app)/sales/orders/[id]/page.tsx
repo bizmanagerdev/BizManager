@@ -4,6 +4,7 @@ import { AddressLink } from "@/components/ui/address-link";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import {
+  Bell,
   ChevronLeft,
   Copy,
   ExternalLink,
@@ -25,7 +26,7 @@ import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
-import OrderReminderButton from "@/components/orders/OrderReminderButton";
+import EntityReminders from "@/components/reminders/EntityReminders";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
@@ -602,10 +603,7 @@ export default async function SalesOrderPage({
                 buttonClassName="h-9 w-9 p-0"
               />
               {profile.role === "admin" || profile.role === "office" ? (
-                <>
-                  <OrderReminderButton orderId={id} customerId={customerId} orderLabel={customerName} />
-                  <LogCommunicationButton entityType="order" entityId={id} customerId={customerId} defaultTopic="sales" iconOnly />
-                </>
+                <LogCommunicationButton entityType="order" entityId={id} customerId={customerId} defaultTopic="sales" iconOnly />
               ) : null}
               <DeleteOrderButton orderId={id} iconOnly />
             </div>
@@ -957,6 +955,18 @@ export default async function SalesOrderPage({
                 </>
               )}
             </SectionCard>
+
+            {profile.role === "admin" || profile.role === "office" ? (
+              <SectionCard icon={<Bell className="h-4 w-4" />} title="תזכורות">
+                <EntityReminders
+                  queryKey="order_id"
+                  queryId={id}
+                  links={{ order_id: id, customer_id: customerId ?? undefined }}
+                  category="order"
+                  canManage
+                />
+              </SectionCard>
+            ) : null}
 
             <SectionCard
               icon={<HandCoins className="h-4 w-4" />}

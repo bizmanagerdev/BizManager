@@ -115,7 +115,17 @@ export async function getWorklist(
         return Number.isNaN(t) || t <= nowMs;
       });
 
-  // Enrich manual rows with customer / task / assignee display info.
+  const items = await enrichRows(supabase, rows);
+  return items.sort((a, b) => {
+    const s = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+    if (s !== 0) return s;
+    return a.remindAt.localeCompare(b.remindAt);
+  });
+}
+
+// Shared enrichment: resolve customer / task / assignee display info and map raw
+// `reminders` rows to WorklistItem[]. Used by every reminder read model here.
+async function enrichRows(supabase: SupabaseClient, rows: Row[]): Promise<WorklistItem[]> {
   const customerIds = [...new Set(rows.map((r) => str(r, "customer_id")).filter((v): v is string => Boolean(v)))];
   const taskIds = [...new Set(rows.map((r) => str(r, "task_id")).filter((v): v is string => Boolean(v)))];
   const assigneeIds = [...new Set(rows.map((r) => str(r, "assigned_to")).filter((v): v is string => Boolean(v)))];
@@ -142,7 +152,7 @@ export async function getWorklist(
     if (id) userById.set(id, str(r, "full_name") ?? str(r, "email") ?? id.slice(0, 8));
   }
 
-  const items: WorklistItem[] = rows.map((r) => {
+  return rows.map((r) => {
     const source = str(r, "source") === "system" ? "system" : "manual";
     const behavior = (str(r, "behavior") ?? "ping_once") as WorklistItem["behavior"];
     const severity = (str(r, "severity") ?? "info") as WorklistSeverity;
@@ -176,12 +186,39 @@ export async function getWorklist(
       dedupeKey: str(r, "dedupe_key"),
     };
   });
+}
 
-  return items.sort((a, b) => {
-    const s = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
-    if (s !== 0) return s;
-    return a.remindAt.localeCompare(b.remindAt);
+/**
+ * Manual reminders I created but assigned to SOMEONE ELSE. My own worklist only
+ * shows reminders assigned to me (a reminder I made FOR someone else is theirs),
+ * so without this a reminder I set for another person would vanish from my view.
+ * This read model surfaces them back to the creator (tracking, not action).
+ */
+export async function getCreatedByMeReminders(
+  supabase: SupabaseClient,
+  options: { userId: string }
+): Promise<WorklistItem[]> {
+  const { userId } = options;
+  const { data, error } = await supabase
+    .from("reminders")
+    .select(SELECT)
+    .eq("status", "pending")
+    .eq("source", "manual")
+    .eq("created_by", userId)
+    .not("assigned_to", "is", null)
+    .neq("assigned_to", userId)
+    .order("remind_at", { ascending: true })
+    .range(0, 199);
+  if (error || !data) return [];
+  const nowMs = Date.now();
+  const rows = (data as unknown as Row[]).filter((r) => {
+    const snoozed = str(r, "snoozed_until");
+    if (!snoozed) return true;
+    const t = new Date(snoozed).getTime();
+    return Number.isNaN(t) || t <= nowMs;
   });
+  const items = await enrichRows(supabase, rows);
+  return items.sort((a, b) => a.remindAt.localeCompare(b.remindAt));
 }
 
 // --- Sectioned view (for the "מה דורש טיפול" worklist page) -----------------
