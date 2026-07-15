@@ -3,6 +3,12 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  isNativePlatform,
+  enableNativePush,
+  disableNativePush,
+  nativePermissionStatus,
+} from "@/lib/native-push";
 
 type Status = "loading" | "unsupported" | "denied" | "subscribed" | "unsubscribed";
 
@@ -57,10 +63,23 @@ function IOSInstallWarning() {
 export default function PushSubscribeButton() {
   const [status, setStatus] = useState<Status>("loading");
   const [showIOSHelp, setShowIOSHelp] = useState(false);
+  const [native, setNative] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      // Native (Capacitor APK): the WebView has no PushManager, so route through
+      // the FCM path instead of web push. Do this first so we never fall into
+      // the "unsupported browser" branch below.
+      if (await isNativePlatform()) {
+        if (cancelled) return;
+        setNative(true);
+        const perm = await nativePermissionStatus();
+        if (cancelled) return;
+        setStatus(perm === "granted" ? "subscribed" : perm === "denied" ? "denied" : "unsubscribed");
+        return;
+      }
+
       const iosNotInstalled = detectIOS() && !isInstalledPWA();
       if (!cancelled) setShowIOSHelp(iosNotInstalled);
 
@@ -82,6 +101,23 @@ export default function PushSubscribeButton() {
 
   async function subscribe() {
     setStatus("loading");
+
+    // Native APK: register with FCM instead of web push.
+    if (native) {
+      const result = await enableNativePush();
+      if (result === "granted") {
+        setStatus("subscribed");
+        toast.success("ההתראות הופעלו למכשיר זה");
+      } else if (result === "denied") {
+        setStatus("denied");
+        toast.error("ההתראות חסומות בהגדרות המכשיר.");
+      } else {
+        setStatus("unsubscribed");
+        toast.error("הפעלת ההתראות נכשלה. נסו שוב.");
+      }
+      return;
+    }
+
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") {
@@ -122,6 +158,15 @@ export default function PushSubscribeButton() {
 
   async function unsubscribe() {
     setStatus("loading");
+
+    // Native APK: drop the FCM token server-side.
+    if (native) {
+      await disableNativePush();
+      setStatus("unsubscribed");
+      toast.success("ההתראות כובו למכשיר זה");
+      return;
+    }
+
     try {
       const sub = await getCurrentSubscription();
       if (sub) {

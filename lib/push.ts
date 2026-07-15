@@ -2,6 +2,15 @@ import webpush from "web-push";
 // SupabaseClient here is intentionally wide — both anon (route handlers) and
 // service-role (cron jobs) clients satisfy this interface.
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { sendFcmToRecipients } from "@/lib/fcm";
+
+type SendResult = { sent: number; failed: number };
+
+// Add up a web-push result and a native-FCM result into one tally so callers
+// see a single sent/failed count across both delivery channels.
+function merge(a: SendResult, b: SendResult): SendResult {
+  return { sent: a.sent + b.sent, failed: a.failed + b.failed };
+}
 
 let vapidConfigured = false;
 
@@ -49,8 +58,11 @@ export async function sendPushToUser(
     .select("id,endpoint,p256dh,auth,user_id")
     .eq("user_id", userId);
 
-  if (error || !rows?.length) return { sent: 0, failed: 0 };
-  return sendToRows(supabase, rows as SubscriptionRow[], payload);
+  const web = error || !rows?.length
+    ? { sent: 0, failed: 0 }
+    : await sendToRows(supabase, rows as SubscriptionRow[], payload);
+  const native = await sendFcmToRecipients(supabase, [userId], payload);
+  return merge(web, native);
 }
 
 export async function sendPushToAll(
@@ -61,8 +73,12 @@ export async function sendPushToAll(
     .from("push_subscriptions")
     .select("id,endpoint,p256dh,auth,user_id");
 
-  if (error || !rows?.length) return { sent: 0, failed: 0 };
-  return sendToRows(supabase, rows as SubscriptionRow[], payload);
+  const web = error || !rows?.length
+    ? { sent: 0, failed: 0 }
+    : await sendToRows(supabase, rows as SubscriptionRow[], payload);
+  // Empty recipient list = all native devices.
+  const native = await sendFcmToRecipients(supabase, [], payload);
+  return merge(web, native);
 }
 
 // Send to a specific list of user IDs; if list is empty, sends to all.
@@ -79,8 +95,11 @@ export async function sendPushToRecipients(
     .select("id,endpoint,p256dh,auth,user_id")
     .in("user_id", recipientUserIds);
 
-  if (error || !rows?.length) return { sent: 0, failed: 0 };
-  return sendToRows(supabase, rows as SubscriptionRow[], payload);
+  const web = error || !rows?.length
+    ? { sent: 0, failed: 0 }
+    : await sendToRows(supabase, rows as SubscriptionRow[], payload);
+  const native = await sendFcmToRecipients(supabase, recipientUserIds, payload);
+  return merge(web, native);
 }
 
 async function sendToRows(

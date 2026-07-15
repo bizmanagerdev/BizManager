@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "295076773296",
+    "project_id": "bizh-66c16",
+    "storage_bucket": "bizh-66c16.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:295076773296:android:c19a6aa3bb3e1f852daa75",
+        "android_client_info": {
+          "package_name": "com.bizh.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpOE2Z_K3I56tvGo0fZagRd7e1TgsAgO8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

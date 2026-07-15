@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import PwaRegistration from "@/components/pwa/PwaRegistration";
+import NativePushRegistration from "@/components/pwa/NativePushRegistration";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
@@ -46,6 +47,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <PwaRegistration />
+        <NativePushRegistration />
         {children}
         <Toaster />
         <SpeedInsights />
