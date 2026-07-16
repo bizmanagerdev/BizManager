@@ -2,8 +2,9 @@
 import { toHebrewError } from "@/lib/error-messages";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Eye, EyeOff, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import NotificationPrefs from "@/components/notifications/NotificationPrefs";
@@ -110,8 +111,109 @@ function toLocalDateTimeValue(date: Date) {
   return adjusted.toISOString().slice(0, 16);
 }
 
+type ProfileTab = "profile" | "notifications" | "sessions" | "salary";
+
 export default function ProfileClient({ profile, initialFontScale, initialAvatarColor, sessions, agreements, payslips, periods, monthlySummaries, projectOptions, propertyOptions }: Props) {
   const router = useRouter();
+  // Tab lives in the URL so the user menu can deep-link (?tab=notifications) and
+  // the browser back button behaves.
+  const searchParams = useSearchParams();
+  const tabParam = (searchParams.get("tab") ?? "profile") as ProfileTab;
+  const setTab = (tab: ProfileTab) => {
+    const qs = new URLSearchParams(searchParams.toString());
+    if (tab === "profile") qs.delete("tab");
+    else qs.set("tab", tab);
+    const q = qs.toString();
+    router.replace(q ? `/profile?${q}` : "/profile", { scroll: false });
+  };
+  // Name + phone, editable in place. Kept in local state so the card (and the
+  // avatar's initials) update on save without a round-trip through the server
+  // component.
+  const [detailsName, setDetailsName] = useState(profile.full_name ?? "");
+  const [detailsPhone, setDetailsPhone] = useState(profile.phone ?? "");
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [detailsNameDraft, setDetailsNameDraft] = useState(profile.full_name ?? "");
+  const [detailsPhoneDraft, setDetailsPhoneDraft] = useState(profile.phone ?? "");
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState("");
+
+  async function saveDetails() {
+    const name = detailsNameDraft.trim();
+    if (!name) {
+      setDetailsError("יש להזין שם.");
+      return;
+    }
+    setSavingDetails(true);
+    setDetailsError("");
+    try {
+      const res = await fetch("/api/profile/details", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ full_name: name, phone: detailsPhoneDraft.trim() }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; phone?: string | null };
+      if (!res.ok) throw new Error(json.error);
+      setDetailsName(name);
+      setDetailsPhone(json.phone ?? "");
+      setDetailsNameDraft(name);
+      setDetailsPhoneDraft(json.phone ?? "");
+      setEditingDetails(false);
+      toast.success("הפרטים נשמרו");
+      // The name shows in the top bar / presence too — refresh the server tree.
+      router.refresh();
+    } catch (err) {
+      setDetailsError(toHebrewError(err, "שמירה נכשלה."));
+    } finally {
+      setSavingDetails(false);
+    }
+  }
+
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordDone, setPasswordDone] = useState(false);
+
+  async function savePassword() {
+    if (newPassword.length < 6) {
+      setPasswordError("הסיסמה חייבת להכיל לפחות 6 תווים.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("הסיסמאות אינן תואמות.");
+      return;
+    }
+    setSavingPassword(true);
+    setPasswordError("");
+    try {
+      // Goes through our own origin rather than calling GoTrue from the page —
+      // see app/api/profile/password/route.ts for why.
+      const res = await fetch("/api/profile/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setPasswordError(json.error || "שינוי הסיסמה נכשל.");
+        return;
+      }
+      setPasswordDone(true);
+      setChangingPassword(false);
+      setNewPassword("");
+      setConfirmPassword("");
+      toast.success("הסיסמה עודכנה");
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "";
+      const hebrew = toHebrewError(err, "");
+      setPasswordError(hebrew || (raw ? `שינוי הסיסמה נכשל: ${raw}` : "שינוי הסיסמה נכשל."));
+    } finally {
+      setSavingPassword(false);
+    }
+  }
+
   const splitPartIdRef = useRef(0);
   const [isPending, startTransition] = useTransition();
   const [sessionNote, setSessionNote] = useState("");
@@ -621,8 +723,193 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
       </div>
     );
   }
+  // Three unrelated things used to share one long scroll: how the app looks, how
+  // it notifies you, and your shifts. They're separate errands, so they're
+  // separate tabs — and the top-bar user menu deep-links straight to each.
+  const tabs: Array<{ key: ProfileTab; label: string }> = [
+    { key: "profile", label: "הפרופיל שלי" },
+    { key: "notifications", label: "הגדרות התראות" },
+    ...(canTrackSessions ? [{ key: "sessions" as ProfileTab, label: "נוכחות ומשמרות" }] : []),
+    // Salary stands alone: you can have payslips without punching shifts, and
+    // it has nothing to do with preferences.
+    ...(showSalarySection ? [{ key: "salary" as ProfileTab, label: "שכר ותלושים" }] : []),
+  ];
+  // A stale/ineligible ?tab= falls back rather than showing an empty page.
+  const activeTab: ProfileTab = tabs.some((t) => t.key === tabParam) ? tabParam : "profile";
+
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap gap-1.5">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`rounded-full border px-3.5 py-1.5 text-sm transition-colors ${
+              activeTab === t.key
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-background hover:bg-muted"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "profile" ? (
+        <>
+      {/* Your details. Name + phone are self-editable (via an auth.uid()-scoped
+          RPC); email is the auth identity and role/pay type are admin-managed, so
+          they stay read-only here. */}
+      <Card>
+        <CardContent className="py-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <InitialsAvatar name={detailsName || profileName} color={avatarColor} size="md" />
+              <div className="min-w-0 text-base font-semibold">{detailsName || "—"}</div>
+            </div>
+            {!editingDetails ? (
+              <Button variant="secondary" size="sm" onClick={() => setEditingDetails(true)}>
+                עריכה
+              </Button>
+            ) : null}
+          </div>
+
+          {editingDetails ? (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">שם</label>
+                <Input value={detailsNameDraft} onChange={(e) => setDetailsNameDraft(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">טלפון</label>
+                <Input
+                  dir="ltr"
+                  inputMode="tel"
+                  value={detailsPhoneDraft}
+                  onChange={(e) => setDetailsPhoneDraft(e.target.value)}
+                />
+              </div>
+              {detailsError ? <div className="text-sm text-destructive">{detailsError}</div> : null}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={savingDetails}
+                  onClick={() => {
+                    setEditingDetails(false);
+                    setDetailsNameDraft(detailsName);
+                    setDetailsPhoneDraft(detailsPhone);
+                    setDetailsError("");
+                  }}
+                >
+                  ביטול
+                </Button>
+                <Button size="sm" disabled={savingDetails} onClick={() => void saveDetails()}>
+                  {savingDetails ? "שומר…" : "שמירה"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <dl className="space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-2">
+                <dt className="text-muted-foreground">טלפון</dt>
+                <dd dir="ltr" className="font-medium">
+                  {detailsPhone ? (
+                    <a href={`tel:${detailsPhone}`} className="hover:underline">
+                      {detailsPhone}
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-2">
+                <dt className="text-muted-foreground">אימייל</dt>
+                <dd dir="ltr" className="font-medium">
+                  {profile.email ?? <span className="text-muted-foreground">—</span>}
+                </dd>
+              </div>
+            </dl>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Password: Supabase treats the live session as proof of identity, so
+          updateUser() needs no current password. Email is deliberately absent —
+          it's the login identity, and changing it needs a confirmation round-trip
+          plus a sync into public.users, so it stays admin-managed for now. */}
+      <Card>
+        <CardContent className="py-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold">סיסמה</div>
+            {!changingPassword ? (
+              <Button variant="secondary" size="sm" onClick={() => setChangingPassword(true)}>
+                שינוי סיסמה
+              </Button>
+            ) : null}
+          </div>
+          {changingPassword ? (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">סיסמה חדשה</label>
+                <div className="relative">
+                  <Input
+                    type={showPasswords ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="pe-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords((v) => !v)}
+                    className="absolute inset-y-0 end-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+                    aria-label={showPasswords ? "הסתר סיסמה" : "הצג סיסמה"}
+                    tabIndex={-1}
+                  >
+                    {showPasswords ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">אימות סיסמה</label>
+                <Input
+                  type={showPasswords ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </div>
+              {passwordError ? <div className="text-sm text-destructive">{passwordError}</div> : null}
+              {passwordDone ? <div className="text-sm text-success">הסיסמה עודכנה.</div> : null}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={savingPassword}
+                  onClick={() => {
+                    setChangingPassword(false);
+                    setNewPassword("");
+                    setConfirmPassword("");
+                    setPasswordError("");
+                  }}
+                >
+                  ביטול
+                </Button>
+                <Button size="sm" disabled={savingPassword} onClick={() => void savePassword()}>
+                  {savingPassword ? "שומר…" : "שמירה"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {passwordDone ? "הסיסמה עודכנה." : "מומלץ להחליף סיסמה מדי פעם."}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="py-5">
           <div className="mb-1 text-sm font-semibold">גודל טקסט</div>
@@ -704,29 +991,36 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="py-5">
-          <div className="mb-3 text-right">
-            <div className="text-base font-semibold">התראות לטלפון</div>
-            <div className="text-sm text-muted-foreground">הפעל התראות כדי לקבל עדכונים ישירות לטלפון שלך.</div>
-          </div>
-          <PushSubscribeButton />
-        </CardContent>
-      </Card>
+        </>
+      ) : null}
 
-      <Card>
-        <CardContent className="py-5">
-          <div className="mb-3 text-right">
-            <div className="text-base font-semibold">העדפות התראות</div>
-            <div className="text-sm text-muted-foreground">בחר אילו התראות לקבל והשתק סוגים שלא רלוונטיים לך.</div>
-          </div>
-          <NotificationPrefs />
-        </CardContent>
-      </Card>
+      {activeTab === "notifications" ? (
+        <>
+          <Card>
+            <CardContent className="py-5">
+              <div className="mb-3 text-right">
+                <div className="text-base font-semibold">התראות לטלפון</div>
+                <div className="text-sm text-muted-foreground">הפעל התראות כדי לקבל עדכונים ישירות לטלפון שלך.</div>
+              </div>
+              <PushSubscribeButton />
+            </CardContent>
+          </Card>
 
-      {canTrackSessions ? (
+          <Card>
+            <CardContent className="py-5">
+              <div className="mb-3 text-right">
+                <div className="text-base font-semibold">העדפות התראות</div>
+                <div className="text-sm text-muted-foreground">כמה להתריע, מתי, ומה בכלל להציג בתיבה.</div>
+              </div>
+              <NotificationPrefs />
+            </CardContent>
+          </Card>
+        </>
+      ) : null}
+
+      {/* No section heading — the active tab already names it. */}
+      {activeTab === "sessions" && canTrackSessions ? (
         <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-right">נוכחות ומשמרות</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <SummaryCard title="סטטוס נוכחי" value={openSession ? "במשמרת" : "לא במשמרת"} hint={openSession ? `נכנסת ב-${formatDateTime(openSession.clock_in)}` : "אין משמרת פתוחה כרגע"} />
             <SummaryCard title="שעות החודש" value={selectedMonthSummary ? formatMinutes(selectedMonthSummary.totalMinutes) : "0:00"} hint={selectedMonthSummary ? selectedMonthSummary.label : "אין שעות מדווחות"} />
@@ -800,9 +1094,8 @@ export default function ProfileClient({ profile, initialFontScale, initialAvatar
         </section>
       ) : null}
 
-      {showSalarySection ? (
+      {activeTab === "salary" && showSalarySection ? (
         <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-right">שכר ותלושים</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <SummaryCard title="שכר נוכחי" value={currentAgreement ? currentAgreement.salary_type === "hourly" ? `${formatCurrency(currentAgreement.hourly_rate)} לשעה` : formatCurrency(currentAgreement.monthly_salary) : "-"} hint={currentAgreement ? `סוג שכר: ${getSalaryTypeLabel(currentAgreement.salary_type)}` : "אין משכורת פעילה"} />
             <SummaryCard title="תלוש אחרון" value={latestPayslip ? formatCurrency(latestPayslip.gross_salary) : "-"} hint={latestPeriod ? `${latestPeriod.period_month} • ${getPayrollStatusLabel(latestPeriod.status)}` : "אין תלושים זמינים"} />
