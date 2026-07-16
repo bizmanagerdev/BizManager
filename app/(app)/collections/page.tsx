@@ -4,6 +4,7 @@ import PageAlertBar from "@/components/reminders/PageAlertBar";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getCollectionsData, getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
+import DunningStagesEditor from "@/components/notifications/DunningStagesEditor";
 import CollectionsClient from "./CollectionsClient";
 
 export const revalidate = 60;
@@ -36,6 +37,21 @@ export default async function CollectionsPage() {
         ) : (
           <CollectionsClient customers={data.customers} totals={data.totals} dueToday={dueToday} />
         )}
+
+        {/* The dunning ladder drives the automatic collection chase, so it lives
+            here with the debtors it acts on — not buried in the alert settings. */}
+        {profile.role === "admin" ? (
+          <details className="group rounded-2xl border border-border/60 bg-card">
+            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium">
+              <span className="text-muted-foreground group-open:hidden">▸ </span>
+              <span className="hidden text-muted-foreground group-open:inline">▾ </span>
+              מדרגות גבייה — מתי נשלחות תזכורות אוטומטיות
+            </summary>
+            <div className="border-t border-border/60 p-4">
+              <DunningStagesEditor />
+            </div>
+          </details>
+        ) : null}
       </div>
     </AppShell>
   );

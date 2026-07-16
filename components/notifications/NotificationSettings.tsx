@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,15 +12,22 @@ import {
 } from "@/components/ui/dialog";
 import type { AlertMode, AlertRow, AlertSchedule } from "@/lib/notifications/types";
 import { BUILTIN_ALERT_TYPES } from "@/lib/notifications/types";
-import DunningStagesEditor from "@/components/notifications/DunningStagesEditor";
 import AlertMetricsPanel from "@/components/notifications/AlertMetricsPanel";
 import { notifyAlertsChanged } from "@/lib/ui/alerts-refresh";
 
-const MODE_ORDER: AlertMode[] = ["scheduled", "live", "night"];
+// This screen answers ONE question for an admin: which automatic alerts exist,
+// and who gets them. That's the "live" rules list — everything else (scheduled
+// digests, the night window, custom one-offs, the test runner, noise metrics) is
+// plumbing, so it sits behind מתקדם.
+//
+// Not here on purpose:
+//   * how MUCH each person wants (mode / summary hour / subscriptions) → /profile
+//   * the dunning ladder → /collections, next to the debtors it chases
+const ADVANCED_MODES: AlertMode[] = ["scheduled", "night"];
 const MODE_LABEL: Record<AlertMode, string> = {
-  scheduled: "התראות מתוזמנות (סיכומים בשעה קבועה)",
-  live: "התראות אירוע — חי (מופיעות במה דורש טיפול)",
-  night: "התראות לילה",
+  scheduled: "סיכומים מתוזמנים",
+  live: "התראות אוטומטיות",
+  night: "התראת לילה",
 };
 const AUDIENCE_OPTIONS = [
   { value: "all", label: "כולם" },
@@ -66,7 +74,7 @@ const PAGE_SECTIONS: PageSection[] = [
   { key: "sales", label: "מכירות", baseUrl: "/sales", optionsType: "orders" },
   { key: "customers", label: "לקוחות", baseUrl: "/customers", optionsType: "customers" },
   { key: "financial", label: "פיננסים", baseUrl: "/financial" },
-  { key: "alerts", label: "התראות", baseUrl: "/alerts" },
+  { key: "inbox", label: "התיבה", baseUrl: "/inbox" },
 ];
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -90,7 +98,7 @@ type FormState = {
 const DEFAULT_FORM: FormState = {
   title: "",
   body: "",
-  url: "/alerts",
+  url: "/inbox",
   alert_type: null,
   enabled: true,
   send_hour_israel: 8,
@@ -257,155 +265,192 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
     return `${ids.length} נבחרו`;
   }
 
+  function metaFor(alert: AlertRow, mode: AlertMode) {
+    const hasRecipients = (alert.recipient_user_ids?.length ?? 0) > 0;
+    if (mode === "live") {
+      return hasRecipients
+        ? recipientLabel(alert.recipient_user_ids)
+        : AUDIENCE_LABEL[alert.audience_role ?? ""] ?? "לפי אחראי";
+    }
+    if (mode === "night") {
+      return `${fmtHour(alert.send_hour_israel)}–${fmtHour(alert.send_hour_end_israel ?? 1)} · ${
+        hasRecipients ? recipientLabel(alert.recipient_user_ids) : AUDIENCE_LABEL[alert.audience_role ?? "office"]
+      }`;
+    }
+    return `${fmtHour(alert.send_hour_israel)} · ${recipientLabel(alert.recipient_user_ids)}`;
+  }
+
+  function AlertRowItem({ alert, mode }: { alert: AlertRow; mode: AlertMode }) {
+    const isBuiltin = alert.alert_type && (BUILTIN_ALERT_TYPES as readonly string[]).includes(alert.alert_type);
+    return (
+      <div className="flex items-center gap-3 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => void toggleEnabled(alert)}
+          aria-label={alert.enabled ? "כבה התראה" : "הפעל התראה"}
+          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${alert.enabled ? "bg-primary" : "bg-muted"}`}
+        >
+          <span
+            className={`absolute top-0.5 h-4 w-4 rounded-full bg-background shadow transition-transform ${alert.enabled ? "translate-x-4" : "translate-x-0.5"}`}
+          />
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <div className={`truncate text-sm font-medium ${alert.enabled ? "" : "text-muted-foreground"}`}>{alert.title}</div>
+          <div className="mt-0.5 flex items-center gap-1.5">
+            {isBuiltin && (
+              <span className="rounded bg-info-soft px-1.5 py-px text-[10px] text-info-soft-foreground">
+                {BUILTIN_LABELS[alert.alert_type!] ?? alert.alert_type}
+              </span>
+            )}
+            <span className="text-[11px] text-muted-foreground">{metaFor(alert, mode)}</span>
+          </div>
+        </div>
+
+        <Button variant="ghost" size="sm" className="h-7 w-7 shrink-0 p-0" title="עריכה" aria-label="עריכת התראה" onClick={() => openEdit(alert)}>
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+
+        {/* System rules (rule_key) aren't deletable — only toggled/edited. */}
+        {!alert.rule_key ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 shrink-0 p-0 text-destructive hover:bg-destructive/10"
+            title="מחיקה"
+            aria-label="מחיקת התראה"
+            disabled={deleting === alert.id}
+            onClick={() => setConfirmDelete(alert)}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
+  const liveRows = alerts.filter((a) => a.mode === "live");
+  const advancedRows = alerts.filter((a) => ADVANCED_MODES.includes((a.mode ?? "scheduled") as AlertMode));
+
   return (
     <div className="space-y-3">
-      {/* Actions row */}
-      <div className="flex items-center justify-end gap-2">
-        {testResult && (
-          <span className="text-xs text-muted-foreground">{testResult}</span>
-        )}
-        <Button variant="secondary" size="sm" onClick={sendTest} disabled={testSending}>
-          {testSending ? "שולח..." : "שלח בדיקה"}
-        </Button>
-        <Button size="sm" onClick={openAdd}>+ הוסף</Button>
-      </div>
+      {/* The whole point of the page: which automatic alerts run, and who gets them. */}
+      <p className="text-xs text-muted-foreground">
+        מה המערכת מזהה לבד, ולמי זה מגיע. כמה התראות כל אחד מקבל — נקבע אישית ב
+        <a href="/profile#notifications" className="mx-1 text-primary hover:underline">
+          אזור האישי
+        </a>
+        של כל משתמש.
+      </p>
 
-      {/* Test runner — fire each alert engine on demand, ignoring its time gate. */}
-      <div className="rounded-xl border bg-muted/20 p-3">
-        <div className="mb-1 text-xs font-semibold">בדיקת מערכת ההתראות (הרצה מיידית, ללא המתנה לשעה)</div>
-        <div className="flex flex-wrap gap-2">
-          {[
-            { which: "sync", label: "סנכרון התראות חיות" },
-            { which: "deliver", label: "שליחת תזכורות לנייד" },
-            { which: "nightly", label: "התראת לילה עכשיו" },
-            { which: "daily", label: "סיכומים מתוזמנים" },
-          ].map((b) => (
-            <Button key={b.which} variant="outline" size="sm" disabled={running !== null} onClick={() => void runTest(b.which, b.label)}>
-              {running === b.which ? "מריץ…" : b.label}
-            </Button>
-          ))}
-        </div>
-        {runResult ? <div className="mt-2 text-xs text-muted-foreground">{runResult}</div> : null}
-      </div>
-
-      {/* Alert list — grouped by mode (one registry for every alert type) */}
-      {alerts.length === 0 ? (
+      {liveRows.length === 0 ? (
         <div className="rounded-xl border px-4 py-8 text-center text-sm text-muted-foreground">אין התראות מוגדרות</div>
       ) : (
-        <div className="space-y-4">
-          {MODE_ORDER.map((mode) => {
-            const rows = alerts.filter((a) => (a.mode ?? "scheduled") === mode);
-            if (rows.length === 0) return null;
-            return (
-              <div key={mode}>
-                <div className="mb-1.5 text-xs font-semibold text-muted-foreground">{MODE_LABEL[mode]}</div>
-                <div className="divide-y rounded-xl border">
-                  {rows.map((alert) => {
-                    const isBuiltin =
-                      alert.alert_type && (BUILTIN_ALERT_TYPES as readonly string[]).includes(alert.alert_type);
-                    const hasRecipients = (alert.recipient_user_ids?.length ?? 0) > 0;
-                    const meta =
-                      mode === "live"
-                        ? hasRecipients
-                          ? recipientLabel(alert.recipient_user_ids)
-                          : AUDIENCE_LABEL[alert.audience_role ?? ""] ?? "לפי אחראי"
-                        : mode === "night"
-                          ? `לילה ${fmtHour(alert.send_hour_israel)}–${fmtHour(alert.send_hour_end_israel ?? 1)} · ${hasRecipients ? recipientLabel(alert.recipient_user_ids) : AUDIENCE_LABEL[alert.audience_role ?? "office"]}`
-                          : `${fmtHour(alert.send_hour_israel)} · ${recipientLabel(alert.recipient_user_ids)}`;
-                    return (
-                      <div key={alert.id} className="flex items-center gap-3 px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => void toggleEnabled(alert)}
-                          className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${alert.enabled ? "bg-primary" : "bg-muted"}`}
-                        >
-                          <span
-                            className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${alert.enabled ? "translate-x-4" : "translate-x-0.5"}`}
-                          />
-                        </button>
-
-                        <div className="min-w-0 flex-1">
-                          <div className={`truncate text-sm font-medium ${alert.enabled ? "" : "text-muted-foreground"}`}>{alert.title}</div>
-                          <div className="mt-0.5 flex items-center gap-1.5">
-                            {isBuiltin && (
-                              <span className="rounded bg-info-soft px-1.5 py-px text-[10px] text-info-soft-foreground">
-                                {BUILTIN_LABELS[alert.alert_type!] ?? alert.alert_type}
-                              </span>
-                            )}
-                            <span className="text-[11px] text-muted-foreground">{meta}</span>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => openEdit(alert)}
-                          className="shrink-0 rounded-lg border px-2.5 py-1 text-xs transition-colors hover:bg-muted/40"
-                          title="עריכה"
-                        >
-                          ✏️
-                        </button>
-
-                        {/* System rules (rule_key) aren't deletable — only toggled/edited. */}
-                        {!alert.rule_key ? (
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDelete(alert)}
-                            disabled={deleting === alert.id}
-                            className="shrink-0 rounded-lg border border-destructive/30 px-2.5 py-1 text-xs text-destructive transition-colors hover:bg-destructive-soft disabled:opacity-50"
-                            title="מחיקה"
-                          >
-                            {deleting === alert.id ? "..." : "✕"}
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+        <div className="divide-y rounded-xl border">
+          {liveRows.map((alert) => (
+            <AlertRowItem key={alert.id} alert={alert} mode="live" />
+          ))}
         </div>
       )}
 
-      <DunningStagesEditor />
+      {/* Everything below is plumbing — collapsed by default. */}
+      <details className="group rounded-xl border bg-muted/10">
+        <summary className="cursor-pointer list-none px-4 py-2.5 text-xs font-semibold text-muted-foreground">
+          <span className="group-open:hidden">▸ </span>
+          <span className="hidden group-open:inline">▾ </span>
+          מתקדם — סיכומים מתוזמנים, התראת לילה, בדיקות
+        </summary>
 
-      <AlertMetricsPanel />
+        <div className="space-y-3 border-t p-3">
+          {advancedRows.length > 0
+            ? ADVANCED_MODES.map((mode) => {
+                const rows = alerts.filter((a) => (a.mode ?? "scheduled") === mode);
+                if (rows.length === 0) return null;
+                return (
+                  <div key={mode}>
+                    <div className="mb-1.5 text-xs font-semibold text-muted-foreground">{MODE_LABEL[mode]}</div>
+                    <div className="divide-y rounded-xl border bg-background">
+                      {rows.map((alert) => (
+                        <AlertRowItem key={alert.id} alert={alert} mode={mode} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })
+            : null}
+
+          <div className="flex items-center justify-end gap-2">
+            {testResult && <span className="text-xs text-muted-foreground">{testResult}</span>}
+            <Button variant="secondary" size="sm" onClick={sendTest} disabled={testSending}>
+              {testSending ? "שולח..." : "שלח בדיקה לנייד"}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={openAdd}>
+              + סיכום מתוזמן
+            </Button>
+          </div>
+
+          {/* Fire each engine on demand, ignoring its time gate. */}
+          <div className="rounded-xl border bg-background p-3">
+            <div className="mb-1 text-xs font-semibold">הרצה מיידית (ללא המתנה לשעה)</div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { which: "sync", label: "סנכרון התראות" },
+                { which: "deliver", label: "שליחת תזכורות" },
+                { which: "nightly", label: "התראת לילה" },
+                { which: "daily", label: "סיכומים" },
+              ].map((b) => (
+                <Button key={b.which} variant="secondary" size="sm" disabled={running !== null} onClick={() => void runTest(b.which, b.label)}>
+                  {running === b.which ? "מריץ…" : b.label}
+                </Button>
+              ))}
+            </div>
+            {runResult ? <div className="mt-2 text-xs text-muted-foreground">{runResult}</div> : null}
+          </div>
+
+          <AlertMetricsPanel />
+        </div>
+      </details>
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto" dir="rtl">
           <DialogHeader>
-            <DialogTitle>{editingId ? "עריכת התראה" : "הוספת התראה"}</DialogTitle>
+            <DialogTitle>{editingMode === "live" ? form.title : editingId ? "עריכת התראה" : "הוספת התראה"}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-1">
-            {/* Title */}
-            <Field label="כותרת">
-              <input
-                value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                placeholder="כותרת ההתראה"
-                className={inputCls}
-              />
-            </Field>
+            {/* An automatic rule writes its own title/text/link per finding, so the
+                only thing there is to set here is WHO it goes to. Showing the
+                title/body/url fields for it was pure noise. */}
+            {editingMode === "live" ? (
+              <p className="text-xs text-muted-foreground">
+                המערכת מזהה את זה לבד וכותבת את הטקסט לכל מקרה. כאן קובעים רק למי זה שייך.
+              </p>
+            ) : (
+              <>
+                <Field label="כותרת">
+                  <input
+                    value={form.title}
+                    onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                    placeholder="כותרת ההתראה"
+                    className={inputCls}
+                  />
+                </Field>
 
-            {/* Body */}
-            <Field label="תוכן">
-              <input
-                value={form.body}
-                onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-                placeholder="טקסט ההתראה (אופציונלי)"
-                className={inputCls}
-              />
-            </Field>
+                <Field label="תוכן">
+                  <input
+                    value={form.body}
+                    onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+                    placeholder="טקסט ההתראה (אופציונלי)"
+                    className={inputCls}
+                  />
+                </Field>
 
-            {/* URL */}
-            <Field label="קישור — עמוד שייפתח">
-              <UrlPicker
-                value={form.url}
-                onChange={(url) => setForm((f) => ({ ...f, url }))}
-              />
-            </Field>
+                <Field label="קישור — עמוד שייפתח">
+                  <UrlPicker value={form.url} onChange={(url) => setForm((f) => ({ ...f, url }))} />
+                </Field>
+              </>
+            )}
 
             {editingMode === "scheduled" ? (
               <>
@@ -449,7 +494,7 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
                     </Field>
                   </div>
                 ) : null}
-                <Field label="למי לשלוח (לפי תפקיד)">
+                <Field label="למי זה שייך (לפי תפקיד)">
                   <select
                     value={form.audience_role}
                     onChange={(e) => setForm((f) => ({ ...f, audience_role: e.target.value }))}
@@ -462,14 +507,21 @@ export default function NotificationSettings({ users }: { users: UserOption[] })
                   </select>
                 </Field>
                 {editingMode === "live" ? (
-                  <Field label="או לאנשים מסוימים (גובר על התפקיד)">
-                    <RecipientsDropdown
-                      users={users}
-                      selected={form.recipient_user_ids}
-                      onChange={(ids) => setForm((f) => ({ ...f, recipient_user_ids: ids }))}
-                      emptyLabel="לפי התפקיד"
-                    />
-                  </Field>
+                  <>
+                    <Field label="או לאנשים מסוימים (גובר על התפקיד)">
+                      <RecipientsDropdown
+                        users={users}
+                        selected={form.recipient_user_ids}
+                        onChange={(ids) => setForm((f) => ({ ...f, recipient_user_ids: ids }))}
+                        emptyLabel="לפי התפקיד"
+                      />
+                    </Field>
+                    <p className="rounded-lg bg-muted/40 p-2 text-[11px] leading-relaxed text-muted-foreground">
+                      זה קובע <strong className="text-foreground">של מי</strong> ההתראה — כלומר למי היא מתריעה
+                      לנייד. ניהול רואה בתיבה גם התראות של המשרד בכל מקרה; זה רק לא מצלצל להם.
+                      התראות שיש להן אחראי (משימה, פרויקט) הולכות תמיד לאחראי עצמו.
+                    </p>
+                  </>
                 ) : null}
               </>
             )}

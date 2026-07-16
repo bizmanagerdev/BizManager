@@ -81,8 +81,8 @@ export default function SettingsTabs(props: Props) {
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>הגדרות התראות</CardTitle>
-              <CardDescription>הוסף, ערוך ומחק התראות — מי מקבל ומתי.</CardDescription>
+              <CardTitle>התראות אוטומטיות</CardTitle>
+              <CardDescription>מה המערכת מזהה לבד, ולמי זה מגיע.</CardDescription>
             </CardHeader>
             <CardContent>
               <NotificationSettings users={props.users} />

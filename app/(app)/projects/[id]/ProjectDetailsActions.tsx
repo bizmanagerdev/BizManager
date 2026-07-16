@@ -30,7 +30,6 @@ import {
   type MovingEndpointValue,
 } from "@/components/projects/MovingAddressFields";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
-import AddReminderButton from "@/components/reminders/AddReminderButton";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 
 type Option = {
@@ -333,7 +332,6 @@ export default function ProjectDetailsActions({
           <Pencil className="h-4 w-4" />
           <span>עריכה</span>
         </Button>
-        <AddReminderButton entityType="project" entityId={project.id} customerId={project.customer_id} label={project.name} />
         <LogCommunicationButton entityType="project" entityId={project.id} customerId={project.customer_id} defaultTopic="general" />
         <DeleteProjectButton projectId={project.id} projectName={project.name} redirectTo="/projects" size="sm">
           <Trash2 className="h-4 w-4" />
