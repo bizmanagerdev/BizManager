@@ -11,7 +11,7 @@ describe("resolveWidgets — role is the security boundary", () => {
   it("never surfaces office/admin widgets for a worker, even if prefs name them", () => {
     // A worker tries (via a tampered/stale pref) to show finance + workforce.
     const prefs: DashboardPrefs = {
-      order: ["finance", "workforce", "myTasks", "alerts"],
+      order: ["finance", "workforce", "myTasks", "today"],
       hidden: [],
     };
     const ids = resolveWidgets("worker", prefs).map((w) => w.id);
@@ -33,12 +33,12 @@ describe("resolveWidgets — role is the security boundary", () => {
 describe("resolveWidgets — order & visibility", () => {
   it("respects the user's saved order", () => {
     const prefs: DashboardPrefs = {
-      order: ["myTasks", "alerts", "finance"],
+      order: ["myTasks", "today", "finance"],
       hidden: [],
     };
     const ids = resolveWidgets("admin", prefs).map((w) => w.id);
-    expect(ids.indexOf("myTasks")).toBeLessThan(ids.indexOf("alerts"));
-    expect(ids.indexOf("alerts")).toBeLessThan(ids.indexOf("finance"));
+    expect(ids.indexOf("myTasks")).toBeLessThan(ids.indexOf("today"));
+    expect(ids.indexOf("today")).toBeLessThan(ids.indexOf("finance"));
   });
 
   it("drops hidden widgets but keeps them in the customizer catalog", () => {
@@ -63,7 +63,7 @@ describe("resolveWidgets — order & visibility", () => {
 
     const ids = resolveWidgets("admin", prefs).map((w) => w.id);
     expect(ids[0]).toBe("finance");
-    // Default-order widgets (e.g. week, alerts, myTasks) still render.
+    // Default-order widgets (e.g. week, today, myTasks) still render.
     expect(ids).toContain("week");
     expect(ids).toContain("myTasks");
     expect(ids.length).toBe(catalogForRole("admin").length);
@@ -78,9 +78,21 @@ describe("sanitizePrefs", () => {
   });
 
   it("de-dupes order and strips unknown ids", () => {
-    expect(sanitizePrefs({ order: ["alerts", "alerts", "ghost"], hidden: ["finance", "finance"] })).toEqual({
-      order: ["alerts"],
+    expect(sanitizePrefs({ order: ["today", "today", "ghost"], hidden: ["finance", "finance"] })).toEqual({
+      order: ["today"],
       hidden: ["finance"],
     });
+  });
+
+  it("drops RETIRED widget ids from saved prefs without breaking the board", () => {
+    // "alerts" + "reminders" merged into "today". Users still have them in their
+    // saved order/hidden — those must be ignored, not crash or hide the new card.
+    const prefs = sanitizePrefs({ order: ["alerts", "today", "reminders"], hidden: ["reminders"] });
+    expect(prefs).toEqual({ order: ["today"], hidden: [] });
+
+    const ids = resolveWidgets("admin", prefs).map((w) => w.id);
+    expect(ids).toContain("today");
+    expect(ids).not.toContain("alerts");
+    expect(ids).not.toContain("reminders");
   });
 });

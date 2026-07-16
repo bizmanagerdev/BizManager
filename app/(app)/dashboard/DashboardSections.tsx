@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import AlertCenter from "@/components/dashboard/AlertCenter";
+import TodayCard from "@/components/dashboard/TodayCard";
 import WeekOverview from "@/components/dashboard/WeekOverview";
 import MyTasksPanel from "@/components/dashboard/MyTasksPanel";
 import ProjectStatusCards from "@/components/dashboard/ProjectStatusCards";
@@ -9,13 +9,11 @@ import UpcomingDeliveries from "@/components/dashboard/UpcomingDeliveries";
 import TaskStatusDonut from "@/components/dashboard/TaskStatusDonut";
 import WorkforceOverview from "@/components/dashboard/WorkforceOverview";
 import InventoryHealth from "@/components/dashboard/InventoryHealth";
-import RemindersPanel from "@/components/dashboard/RemindersPanel";
 import RecentActivityFeed from "@/components/dashboard/RecentActivityFeed";
 import CompactFinanceStrip from "@/components/dashboard/CompactFinanceStrip";
-import { getWorklistGroups } from "@/lib/reminders/worklist";
+import { getInboxView } from "@/lib/reminders/worklist";
 import { getPaymentsDueToday, type PaymentDueToday } from "@/lib/collections";
 import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
-import { getOpenReminders, type Reminder } from "@/lib/communications";
 import { getMyTasks, getTaskStatusCounts } from "@/lib/dashboard/tasks-overview";
 import { getProjectsOverview } from "@/lib/dashboard/projects-overview";
 import { getWorkforceOverview } from "@/lib/dashboard/workforce";
@@ -153,10 +151,9 @@ export async function DashboardPanels() {
   // (workerOwed / near-term in/out forecasts) are gated on role only, not on a
   // widget toggle.
   const [
-    alertsResult,
+    inboxResult,
     scheduleEntries,
     myTasks,
-    reminders,
     taskStatusCounts,
     projectsOverview,
     deliveriesResult,
@@ -171,14 +168,11 @@ export async function DashboardPanels() {
     domainBreakdown,
     digestItems,
   ] = await Promise.all([
-    show("alerts") ? getWorklistGroups(supabase, { userId: profile.id, role }) : Promise.resolve(null),
+    show("today") ? getInboxView(supabase, { userId: profile.id, role }).catch(() => null) : Promise.resolve(null),
     show("week")
       ? getScheduleEntries(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as CalendarEntry[])
       : Promise.resolve([] as CalendarEntry[]),
     show("myTasks") ? getMyTasks(supabase, profile.id) : Promise.resolve([]),
-    show("reminders")
-      ? getOpenReminders(supabase, { scope: "mine", userId: profile.id }).catch(() => [] as Reminder[])
-      : Promise.resolve([] as Reminder[]),
     show("taskDonut") && isAdminOrOffice ? getTaskStatusCounts(supabase) : Promise.resolve(null),
     show("projects") && isAdminOrOffice ? getProjectsOverview(supabase) : Promise.resolve(null),
     show("deliveries") && isAdminOrOffice
@@ -240,7 +234,7 @@ export async function DashboardPanels() {
   // ── Rendered node per widget (null when its data is empty, so we never show an
   // empty panel — mirrors the previous presence flags). ──────────────────────
   const nodes: Record<WidgetId, ReactNode> = {
-    alerts: alertsResult ? <AlertCenter alerts={alertsResult} /> : null,
+    today: inboxResult ? <TodayCard inbox={inboxResult} /> : null,
     week: show("week") ? <WeekOverview entries={scheduleEntries} /> : null,
     myTasks: myTasks.length > 0 ? <MyTasksPanel tasks={myTasks} /> : null,
     finance: show("finance") && isAdminOrOffice ? (
@@ -266,7 +260,6 @@ export async function DashboardPanels() {
         </CardContent>
       </Card>
     ) : null,
-    reminders: reminders.length > 0 ? <RemindersPanel reminders={reminders} /> : null,
     activity: recentActivity.length > 0 ? <RecentActivityFeed items={recentActivity} /> : null,
   };
 

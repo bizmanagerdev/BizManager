@@ -14,10 +14,9 @@ import type { UserRole } from "@/lib/auth/requireProfile";
  */
 
 export type WidgetId =
-  | "alerts"
+  | "today"
   | "week"
   | "myTasks"
-  | "reminders"
   | "finance"
   | "projects"
   | "deliveries"
@@ -47,9 +46,11 @@ const ADMIN_ONLY: UserRole[] = ["admin"];
  * an explicit order.
  */
 export const DASHBOARD_WIDGETS: WidgetMeta[] = [
-  // "מבט על היום" leads the dashboard for everyone by default (users can reorder).
-  { id: "week", label: "מבט על היום", roles: ALL, span: 2 },
-  { id: "alerts", label: "התראות", roles: ALL, span: 2 },
+  // "היום" is the morning landing: the first thing you see is what needs you
+  // today. It replaces the old separate "התראות" + "תזכורות" widgets — those were
+  // two views of the same inbox, so neither was the single place to look.
+  { id: "today", label: "היום", roles: ALL, span: 2 },
+  { id: "week", label: "מבט על השבוע", roles: ALL, span: 2 },
   { id: "finance", label: "גבייה ותשלומים", roles: BACK_OFFICE, span: 2 },
   { id: "myTasks", label: "המשימות שלי", roles: ALL, span: 2 },
   { id: "projects", label: "סטטוס פרויקטים", roles: BACK_OFFICE, span: 2 },
@@ -58,7 +59,6 @@ export const DASHBOARD_WIDGETS: WidgetMeta[] = [
   { id: "workforce", label: "כוח אדם", roles: BACK_OFFICE, span: 2 },
   { id: "inventory", label: "מצב מלאי", roles: BACK_OFFICE, span: 2 },
   { id: "domainChart", label: "הכנסות והוצאות לפי תחום", roles: BACK_OFFICE, span: 2 },
-  { id: "reminders", label: "תזכורות", roles: ALL, span: 1 },
   { id: "activity", label: "פעילות אחרונה", roles: ADMIN_ONLY, span: 1 },
 ];
 
