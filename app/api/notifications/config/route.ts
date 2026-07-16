@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     .insert({
       title: body.title.trim(),
       body: body.body ?? "",
-      url: body.url ?? "/alerts",
+      url: body.url ?? "/inbox",
       alert_type: body.alert_type ?? null,
       enabled: body.enabled ?? true,
       send_hour_israel: body.send_hour_israel ?? 8,

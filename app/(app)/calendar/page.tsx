@@ -2,7 +2,7 @@ import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getScheduleEntries, type CalendarEntry } from "@/lib/projectSchedule";
 import { Card, CardContent } from "@/components/ui/card";
-import CalendarSection from "@/app/(app)/alerts/CalendarSection";
+import CalendarSection from "@/app/(app)/calendar/CalendarSection";
 
 export const revalidate = 60;
 

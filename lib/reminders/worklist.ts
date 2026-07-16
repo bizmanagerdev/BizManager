@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { reminderBucket } from "@/lib/notifications/categories";
+import { DEFAULT_PREFS, sanitizeNotificationPrefs, type NotificationPrefs } from "@/lib/notifications/prefs";
 
 // Reminders/Alerts unification — Phase 4: the worklist read model.
 // One query over the unified `reminders` table returns everything that needs a
@@ -36,6 +38,8 @@ export type WorklistItem = {
   assignedToName: string | null;
   /** For system rows: 'rule:key'. The rule key is the prefix before the first ':'. */
   dedupeKey: string | null;
+  /** Arrived since the viewer last opened their inbox. Set by getInboxView only. */
+  isNew?: boolean;
 };
 
 const SELECT =
@@ -49,9 +53,29 @@ function str(row: Row, key: string): string | null {
   return typeof v === "string" && v.trim() ? v : null;
 }
 
-/** Which audience_role buckets a viewer of the given role can see. */
+/**
+ * Which audience_role buckets a viewer of the given role is ALLOWED to see.
+ * This is a permission ceiling (used for the DB fetch + action authorization),
+ * NOT what actually lands in their inbox — see ownAudienceRoles.
+ */
 export function visibleAudienceRoles(role: string | null | undefined): string[] {
   if (role === "admin") return ["all", "office", "admin"];
+  if (role === "office") return ["all", "office"];
+  return ["all"];
+}
+
+/**
+ * The buckets that are a viewer's OWN desk — what may INTERRUPT them (push)
+ * without opting in. DELIVERY ONLY: this must never filter what a page shows.
+ *
+ * Note admin does NOT include "office": an admin SEES office items (they're in
+ * the inbox, the dashboard and the nav badges via visibleAudienceRoles) but isn't
+ * pushed them. That single difference is why the boss got 18 pushes of the
+ * secretary's collection work on a Friday. He can opt back into being pushed per
+ * bucket via notification_prefs.subscribe.
+ */
+export function ownAudienceRoles(role: string | null | undefined): string[] {
+  if (role === "admin") return ["all", "admin"];
   if (role === "office") return ["all", "office"];
   return ["all"];
 }
@@ -78,12 +102,38 @@ function manualUrl(row: Row): string {
   if (invoiceId) return "/invoices";
   const customerId = str(row, "customer_id");
   if (customerId) return `/customers/${customerId}`;
-  return "/alerts";
+  return "/inbox";
 }
 
+/**
+ * Everything the viewer is allowed to SEE, open and unresolved.
+ *
+ * Three separate questions, decided in three different places — keep them apart:
+ *
+ *   1. CAN I see it?      → my role (visibleAudienceRoles). Deliberately broad:
+ *                           an admin sees the office's findings, because the
+ *                           inbox is where you go to ask "what's outstanding?"
+ *                           and it must give the real answer.
+ *   2. DO I want to see it? → me, via notification_prefs.muted (default: empty →
+ *                           I see everything I'm allowed to). The ONLY user-facing
+ *                           visibility filter.
+ *   3. Does it INTERRUPT me? → the deliver cron (ownAudienceRoles + subscribe +
+ *                           delivery mode). Never affects this function.
+ *
+ * (2) and (3) were once conflated, which silently hid ~12 of the 16 rules from
+ * every admin's inbox, dashboard card and nav badges — because those rules target
+ * 'office'. Not being pushed something must never mean not being shown it.
+ */
 export async function getWorklist(
   supabase: SupabaseClient,
-  options: { userId: string; role: string | null; limit?: number; includeSnoozed?: boolean }
+  options: {
+    userId: string;
+    role: string | null;
+    limit?: number;
+    includeSnoozed?: boolean;
+    /** Pass to avoid a re-fetch; omitted → loaded here. */
+    prefs?: NotificationPrefs;
+  }
 ): Promise<WorklistItem[]> {
   const { userId, role } = options;
   const limit = options.limit ?? 500;
@@ -116,11 +166,30 @@ export async function getWorklist(
       });
 
   const items = await enrichRows(supabase, rows);
-  return items.sort((a, b) => {
+
+  // The one visibility choice the USER owns: topics they've muted are hidden
+  // everywhere they'd otherwise appear (inbox, dashboard, badges, page bars).
+  // Default is nothing muted → you see everything your role permits.
+  const prefs = options.prefs ?? (await loadPrefs(supabase, userId));
+  const visible = prefs.muted.length
+    ? items.filter((i) => !prefs.muted.includes(inboxBucket(i)))
+    : items;
+
+  return visible.sort((a, b) => {
     const s = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
     if (s !== 0) return s;
     return a.remindAt.localeCompare(b.remindAt);
   });
+}
+
+/** The viewer's prefs, fetched once per read model (tolerant of a missing column). */
+async function loadPrefs(supabase: SupabaseClient, userId: string): Promise<NotificationPrefs> {
+  try {
+    const { data } = await supabase.from("users").select("notification_prefs").eq("id", userId).maybeSingle();
+    return sanitizeNotificationPrefs((data as { notification_prefs?: unknown } | null)?.notification_prefs);
+  } catch {
+    return { ...DEFAULT_PREFS };
+  }
 }
 
 // Shared enrichment: resolve customer / task / assignee display info and map raw
@@ -159,7 +228,7 @@ async function enrichRows(supabase: SupabaseClient, rows: Row[]): Promise<Workli
     const cust = customerById.get(str(r, "customer_id") ?? "");
     const taskSubject = taskById.get(str(r, "task_id") ?? "") ?? null;
     const title = source === "system" ? str(r, "title") ?? "התראה" : manualTitle(r, cust?.name ?? null, taskSubject);
-    const url = source === "system" ? str(r, "url") ?? "/alerts" : manualUrl(r);
+    const url = source === "system" ? str(r, "url") ?? "/inbox" : manualUrl(r);
     return {
       id: str(r, "id") ?? "",
       source,
@@ -235,100 +304,7 @@ export type WorklistSummary = {
   href: string;
   severity: WorklistSeverity;
 };
-export type WorklistSectionView = {
-  key: string;
-  title: string;
-  items: WorklistItem[];
-  summaries: WorklistSummary[];
-};
-
 const RANK_TO_SEVERITY: WorklistSeverity[] = ["danger", "warning", "info"];
-
-// The user-customizable sections (toggle + reorder), in default order. The
-// "snoozed" section is deliberately NOT here — it's system behavior, always
-// shown last and never hidden.
-export const WORKLIST_SECTIONS: Array<{ id: string; label: string }> = [
-  { id: "reminders", label: "תזכורות שלי" },
-  { id: "tasks", label: "משימות" },
-  { id: "money", label: "כסף להיום" },
-  { id: "hours", label: "שכר ושעות עבודה" },
-  { id: "projects", label: "פרויקטים" },
-  { id: "ops", label: "מלאי ותפעול" },
-];
-const SNOOZED_SECTION = { key: "snoozed", title: "נדחו לזמן מאוחר" };
-const SECTION_TITLE = new Map<string, string>([
-  ...WORKLIST_SECTIONS.map((s) => [s.id, s.label] as [string, string]),
-  [SNOOZED_SECTION.key, SNOOZED_SECTION.title],
-]);
-
-export type WorklistPrefs = { order: string[]; hidden: string[] };
-
-const KNOWN_SECTION_IDS = new Set(WORKLIST_SECTIONS.map((s) => s.id));
-const isSectionId = (v: unknown): v is string => typeof v === "string" && KNOWN_SECTION_IDS.has(v);
-
-/** Coerce arbitrary JSON (DB / request body) into clean WorklistPrefs, or null. */
-export function sanitizeWorklistPrefs(value: unknown): WorklistPrefs | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as { order?: unknown; hidden?: unknown };
-  const order = Array.isArray(raw.order) ? raw.order.filter(isSectionId) : [];
-  const seen = new Set<string>();
-  const dedupedOrder = order.filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
-  const hidden = Array.isArray(raw.hidden) ? [...new Set(raw.hidden.filter(isSectionId))] : [];
-  return { order: dedupedOrder, hidden };
-}
-
-/** The customizable sections reordered by saved prefs (nothing hidden) — for the customizer. */
-export function orderedWorklistSections(prefs: WorklistPrefs | null): Array<{ id: string; label: string }> {
-  const order = prefs?.order ?? [];
-  const idx = new Map<string, number>();
-  order.forEach((id, i) => idx.set(id, i));
-  return [...WORKLIST_SECTIONS]
-    .map((s, defaultIdx) => ({ s, defaultIdx }))
-    .sort((a, b) => {
-      const ai = idx.has(a.s.id) ? idx.get(a.s.id)! : Number.POSITIVE_INFINITY;
-      const bi = idx.has(b.s.id) ? idx.get(b.s.id)! : Number.POSITIVE_INFINITY;
-      return ai !== bi ? ai - bi : a.defaultIdx - b.defaultIdx;
-    })
-    .map((e) => e.s);
-}
-
-// The ordered list of section keys to actually render (customizable ones per
-// prefs, minus hidden, then always the snoozed section last).
-function resolvedSectionKeys(prefs: WorklistPrefs | null): string[] {
-  const hidden = new Set(prefs?.hidden ?? []);
-  const visible = orderedWorklistSections(prefs)
-    .map((s) => s.id)
-    .filter((id) => !hidden.has(id));
-  return [...visible, SNOOZED_SECTION.key];
-}
-
-export async function getWorklistPrefs(supabase: SupabaseClient, userId: string): Promise<WorklistPrefs | null> {
-  const { data, error } = await supabase.from("users").select("worklist_prefs").eq("id", userId).maybeSingle();
-  if (error) return null; // column may not exist yet → defaults
-  return sanitizeWorklistPrefs((data as { worklist_prefs?: unknown } | null)?.worklist_prefs);
-}
-
-// Which section each system rule belongs to (manual reminders → "reminders").
-const RULE_SECTION: Record<string, string> = {
-  task_overdue: "tasks",
-  task_due_soon: "tasks",
-  nightly_review: "tasks",
-  check_deposit_due: "money",
-  payment_due_today: "money",
-  promise_broken: "money",
-  collection_overdue: "money",
-  invoice_unpaid: "money",
-  wage_overdue: "hours",
-  session_unallocated: "hours",
-  project_deadline: "projects",
-  project_starting: "projects",
-  stale_quote: "projects",
-  project_closed_unbilled: "projects",
-  low_stock: "ops",
-  unprocessed_items: "ops",
-  vehicle_expiry: "ops",
-  // active_projects intentionally omitted → excluded from the worklist
-};
 
 // Per-item rules that collapse to ONE summary line (they own a workspace page).
 const COLLAPSE_META: Record<string, { label: string; href: string }> = {
@@ -343,147 +319,133 @@ function ruleKeyOf(item: WorklistItem): string {
   return (item.dedupeKey ?? "").split(":")[0] || "system";
 }
 
-/** The worklist grouped into sections, with own-a-workspace rules collapsed. */
-export async function getWorklistView(
+// --- Inbox read model (the ONE list — replaces the sectioned worklist) -------
+//
+// Redesign §3.2: one inbox, filtered by ORIGIN rather than split across six
+// life-area sections. "שלי" = a reminder a human set. "אוטומטי" = the system
+// noticed something. Own-a-workspace rules still collapse to a single line so
+// the list stays scannable (17 debts = 1 row, not 17).
+
+export type InboxOrigin = "mine" | "auto";
+
+export type InboxView = {
+  /** Flat, sorted, non-snoozed, non-collapsed items. */
+  items: WorklistItem[];
+  /** Collapsed own-a-page rules + silent count-in-title rows. Always origin=auto. */
+  summaries: WorklistSummary[];
+  /** Deferred items — shown last, never counted. */
+  snoozed: WorklistItem[];
+  counts: { all: number; mine: number; auto: number; new: number };
+  /** Open items per notification bucket (money/tasks/…), for the filter chips. */
+  byBucket: Record<string, number>;
+};
+
+/** A reminder a human set vs. something the engine found. */
+export function inboxOrigin(item: WorklistItem): InboxOrigin {
+  return item.source === "manual" ? "mine" : "auto";
+}
+
+/** Which notification bucket an item belongs to (money / tasks / projects / …). */
+export function inboxBucket(item: WorklistItem): string {
+  return reminderBucket({ source: item.source, category: item.category, dedupeKey: item.dedupeKey });
+}
+
+/** The whole inbox for one viewer: one list, origin-tagged, summaries collapsed. */
+export async function getInboxView(
   supabase: SupabaseClient,
-  options: { userId: string; role: string | null; prefs?: WorklistPrefs | null }
-): Promise<WorklistSectionView[]> {
-  // Include snoozed items — they stay visible in their own "נדחו" section so a
-  // snoozed reminder never just disappears.
-  const items = await getWorklist(supabase, { ...options, includeSnoozed: true });
+  options: { userId: string; role: string | null; seenAt?: string | null }
+): Promise<InboxView> {
+  const all = await getWorklist(supabase, { ...options, includeSnoozed: true });
   const nowMs = Date.now();
   const isSnoozed = (i: WorklistItem) => Boolean(i.snoozedUntil && new Date(i.snoozedUntil).getTime() > nowMs);
 
-  type Bucket = { items: WorklistItem[]; summaries: WorklistSummary[]; collapse: Map<string, { count: number; rank: number }> };
-  const buckets = new Map<string, Bucket>();
-  const bucket = (key: string) => {
-    let b = buckets.get(key);
-    if (!b) {
-      b = { items: [], summaries: [], collapse: new Map() };
-      buckets.set(key, b);
-    }
-    return b;
-  };
+  const snoozed: WorklistItem[] = [];
+  const active: WorklistItem[] = [];
+  for (const i of all) (isSnoozed(i) ? snoozed : active).push(i);
 
-  for (const item of items) {
-    // Snoozed items collect in their own section (never collapsed) so the user
-    // can see them and when they return.
-    if (isSnoozed(item)) {
-      bucket("snoozed").items.push(item);
-      continue;
-    }
+  const items: WorklistItem[] = [];
+  const summaries: WorklistSummary[] = [];
+  const collapse = new Map<string, { count: number; rank: number }>();
+
+  for (const item of active) {
     const rk = ruleKeyOf(item);
-    const section = item.source === "manual" ? "reminders" : RULE_SECTION[rk];
-    if (!section) continue; // unmapped rule (e.g. active_projects) → not shown here
-    const b = bucket(section);
-
     if (COLLAPSE_META[rk]) {
-      // Own-a-page rules collapse to ONE "label: N" line — regardless of whether
-      // they push or are silent (checked before isSummary so a silent collapsible
-      // rule like collection_overdue doesn't explode into one row per item).
-      const agg = b.collapse.get(rk) ?? { count: 0, rank: 99 };
+      const agg = collapse.get(rk) ?? { count: 0, rank: 99 };
       agg.count += 1;
       agg.rank = Math.min(agg.rank, SEVERITY_RANK[item.severity]);
-      b.collapse.set(rk, agg);
+      collapse.set(rk, agg);
     } else if (item.isSummary) {
-      // Silent summary rows already carry their count in the title.
-      b.summaries.push({ id: item.id, title: item.title, href: item.url, severity: item.severity });
+      summaries.push({ id: item.id, title: item.title, href: item.url, severity: item.severity });
     } else {
-      b.items.push(item);
+      items.push(item);
     }
   }
-
-  // Materialize collapsed rules into summary lines.
-  for (const b of buckets.values()) {
-    for (const [rk, agg] of b.collapse) {
-      b.summaries.push({
-        id: `sum-${rk}`,
-        title: `${COLLAPSE_META[rk].label}: ${agg.count}`,
-        href: COLLAPSE_META[rk].href,
-        severity: RANK_TO_SEVERITY[agg.rank] ?? "info",
-      });
-    }
+  for (const [rk, agg] of collapse) {
+    summaries.push({
+      id: `sum-${rk}`,
+      title: `${COLLAPSE_META[rk].label}: ${agg.count}`,
+      href: COLLAPSE_META[rk].href,
+      severity: RANK_TO_SEVERITY[agg.rank] ?? "info",
+    });
   }
 
-  // Order + filter sections per the user's saved prefs (snoozed always last).
-  return resolvedSectionKeys(options.prefs ?? null)
-    .map((key) => {
-      const b = buckets.get(key);
-      return { key, title: SECTION_TITLE.get(key) ?? key, items: b?.items ?? [], summaries: b?.summaries ?? [] };
-    })
-    .filter((s) => s.items.length > 0 || s.summaries.length > 0);
-}
+  // "New" = arrived since the viewer last opened the inbox (users.inbox_seen_at).
+  // Reminders have no per-user read flag — one timestamp per user answers "have I
+  // looked at this yet" without a row per user per item.
+  const seenMs = options.seenAt ? new Date(options.seenAt).getTime() : NaN;
+  const isNew = (i: WorklistItem) => {
+    if (Number.isNaN(seenMs)) return true; // never opened → everything is new
+    const t = new Date(i.remindAt).getTime();
+    return Number.isNaN(t) ? false : t > seenMs;
+  };
+  for (const i of items) i.isNew = isNew(i);
 
-// --- Grouped summary (for the dashboard "מרכז התראות" widget) ---------------
-
-export type WorklistGroup = {
-  id: string;
-  title: string;
-  description: string;
-  href: string;
-  count: number;
-  severity: WorklistSeverity;
-};
-
-// Per rule key: the group label + canonical destination. Silent-summary rules
-// (low_stock/unprocessed_items/active_projects) are deliberately absent — the
-// dashboard has dedicated widgets for those, and their count lives in the row
-// text, not the row count.
-const GROUP_META: Record<string, { label: string; href: string }> = {
-  task_overdue: { label: "משימות באיחור", href: "/tasks?status=overdue&scope=mine" },
-  task_due_soon: { label: "משימות לביצוע בקרוב", href: "/tasks" },
-  project_deadline: { label: "פרויקטים לקראת דדליין", href: "/projects" },
-  project_starting: { label: "פרויקטים שמתחילים בקרוב", href: "/projects" },
-  project_closed_unbilled: { label: "פרויקטים סגורים ללא חיוב", href: "/projects" },
-  invoice_unpaid: { label: "חשבוניות לא משולמות", href: "/invoices" },
-  collection_overdue: { label: "גבייה באיחור", href: "/collections?view=debtors&filter=overdue" },
-  wage_overdue: { label: "שכר עובדים לתשלום", href: "/payroll" },
-  vehicle_expiry: { label: "רכבים — טסט/ביטוח/רישוי", href: "/vehicles" },
-  check_deposit_due: { label: "צ׳קים לפירעון", href: "/checks" },
-  payment_due_today: { label: "תשלומים לגבייה היום", href: "/collections?view=today" },
-  recurring_expense_confirm: { label: "אישור הוצאות קבועות", href: "/financial" },
-  reminders: { label: "תזכורות", href: "/alerts" },
-};
-
-/** The worklist rolled up into per-kind counts, for the dashboard alert center. */
-export async function getWorklistGroups(
-  supabase: SupabaseClient,
-  options: { userId: string; role: string | null }
-): Promise<WorklistGroup[]> {
-  const items = await getWorklist(supabase, options);
-  const groups = new Map<string, { count: number; rank: number }>();
-
-  for (const item of items) {
-    if (item.isSummary) continue; // silent summaries have their count in the text
-    const ruleKey = item.source === "system" ? (item.dedupeKey ?? "").split(":")[0] || "system" : "reminders";
-    if (!GROUP_META[ruleKey]) continue; // e.g. active_projects — excluded
-    const existing = groups.get(ruleKey) ?? { count: 0, rank: 99 };
-    existing.count += 1;
-    existing.rank = Math.min(existing.rank, SEVERITY_RANK[item.severity]);
-    groups.set(ruleKey, existing);
+  const byBucket: Record<string, number> = {};
+  for (const i of active) {
+    const b = inboxBucket(i);
+    byBucket[b] = (byBucket[b] ?? 0) + 1;
   }
 
-  const rankToSeverity: WorklistSeverity[] = ["danger", "warning", "info"];
-  return [...groups.entries()]
-    .map(([id, g]) => ({
-      id,
-      title: GROUP_META[id].label,
-      description: "",
-      href: GROUP_META[id].href,
-      count: g.count,
-      severity: rankToSeverity[g.rank] ?? "info",
-    }))
-    .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+  return {
+    items,
+    summaries,
+    snoozed,
+    counts: {
+      all: active.length,
+      mine: active.filter((i) => inboxOrigin(i) === "mine").length,
+      auto: active.filter((i) => inboxOrigin(i) === "auto").length,
+      new: items.filter(isNew).length,
+    },
+    byBucket,
+  };
 }
 
-// Worklist section → the nav destination whose sidebar item we badge. Sections
-// without a single home (ops spans inventory+vehicles; reminders has no nav item)
-// are intentionally absent — no misleading badge.
-const SECTION_NAV_URL: Record<string, string> = {
-  tasks: "/tasks",
-  money: "/collections",
-  projects: "/projects",
-  hours: "/payroll",
+// Which sidebar entry each RULE badges. Per-rule (not per-section) so nested
+// routes light up too — a section-level map could only ever badge one destination
+// per area, so /checks, /financial and /inventory silently never badged.
+// A rule with no single home is simply absent → no misleading badge.
+const RULE_NAV_URL: Record<string, string> = {
+  // tasks
+  task_overdue: "/tasks",
+  task_due_soon: "/tasks",
+  // money — each to the page that actually resolves it
+  collection_overdue: "/collections",
+  payment_due_today: "/collections",
+  promise_broken: "/collections",
+  check_deposit_due: "/checks",
+  recurring_expense_confirm: "/financial",
+  unprocessed_items: "/financial/statements",
+  // projects
+  project_deadline: "/projects",
+  project_starting: "/projects",
+  stale_quote: "/projects",
+  project_closed_unbilled: "/projects",
+  // payroll
+  wage_overdue: "/payroll",
+  session_unallocated: "/payroll",
+  // ops
+  low_stock: "/inventory",
+  vehicle_expiry: "/vehicles",
 };
 
 export type NavCountSeverity = "danger" | "warning" | "info";
@@ -505,10 +467,10 @@ export async function getWorklistNavCounts(
     // Skip true count-in-title summaries (low_stock: "N items") — counting them
     // as 1 would undercount. But COLLAPSE_META rules (collection_overdue, …) are
     // real per-item reminders shown collapsed, so count them per item — that's
-    // what keeps the badge equal to the worklist's "N" line.
+    // what keeps the badge equal to the inbox's "N" line.
     if (item.isSummary && !COLLAPSE_META[ruleKey]) continue;
-    const section = item.source === "manual" ? "reminders" : RULE_SECTION[ruleKey];
-    const url = section ? SECTION_NAV_URL[section] : undefined;
+    // Manual reminders have no single nav home (they live in the inbox) → not badged.
+    const url = item.source === "manual" ? undefined : RULE_NAV_URL[ruleKey];
     if (!url) continue;
     const cur = out[url] ?? { count: 0, severity: "info" as NavCountSeverity };
     cur.count += 1;

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import AlertsTimeline from "@/app/(app)/alerts/AlertsTimeline";
+import CalendarTimeline from "@/app/(app)/calendar/CalendarTimeline";
 import ProjectsCalendar from "@/app/(app)/projects/ProjectsCalendar";
 import type { CalendarEntry } from "@/lib/projectSchedule";
 
@@ -91,7 +91,7 @@ export default function CalendarSection({
               <LegendDot color="bg-success" label="פרויקט מתחיל" />
               <LegendDot color="bg-destructive" label="פרויקט מסתיים" />
             </div>
-            <AlertsTimeline entries={shownEntries} todayIso={todayIso} days={21} />
+            <CalendarTimeline entries={shownEntries} todayIso={todayIso} days={21} />
           </>
         ) : (
           <ProjectsCalendar entries={shownEntries} todayIso={todayIso} />

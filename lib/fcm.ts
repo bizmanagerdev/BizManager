@@ -91,7 +91,7 @@ export async function sendFcmToRecipients(
       },
     },
     // Carried through to the tap handler (NativePushRegistration) for deep-link.
-    data: { url: payload.url ?? "/alerts" },
+    data: { url: payload.url ?? "/inbox" },
   };
 
   let res;

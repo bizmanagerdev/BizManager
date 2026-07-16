@@ -45,7 +45,7 @@ function fmtDayLabel(d: Date) {
   }).format(d);
 }
 
-export default function AlertsTimeline({
+export default function CalendarTimeline({
   entries,
   todayIso,
   days = 21,
