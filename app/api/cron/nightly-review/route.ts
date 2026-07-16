@@ -3,10 +3,19 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { deliverPush } from "@/lib/notifications/deliver";
 import { getNightlyConfig, recipientsForAudience } from "@/lib/notifications/alert-config";
 
-// Nightly reminder (23:00–01:00 Israel) to review + update today's new orders
-// (הובלות) and projects. Keeps pushing to admin+office each run until someone
-// marks the worklist item בוצע. Hit on a short schedule during the night window
-// with the CRON_SECRET bearer token.
+// Nightly reminder (23:00–01:00 Israel): a DATA-CAPTURE nudge, not an alert.
+// End of day → "these projects ran today, update what happened (tasks, money…)".
+// Keeps pushing each run until someone marks the item בוצע.
+//
+// Population = projects ACTIVE that day, i.e. today falls inside the project's
+// date range — NOT projects created today (which is what this used to count, and
+// was backwards: a project opened three weeks ago but running today is exactly
+// what needs an end-of-day update, while one merely *created* today may not have
+// started). An open end_date counts as still ongoing.
+//
+// This is deliberately exempt from the owner-first delivery rules: it's an
+// opted-in nightly ritual for the back office, so it pings regardless of each
+// user's delivery mode.
 
 function israelHour(d: Date): number {
   const s = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jerusalem", hour: "2-digit", hour12: false }).format(d);
@@ -17,16 +26,6 @@ function israelDate(d: Date): string {
   // en-CA → YYYY-MM-DD
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 }
-// The UTC instant that is 00:00 in Israel for today's Israel date (DST-safe).
-function israelDayStartIso(d: Date): string {
-  const [y, m, day] = israelDate(d).split("-").map(Number);
-  for (const off of [2, 3]) {
-    const cand = new Date(Date.UTC(y, m - 1, day, 0 - off, 0, 0));
-    if (israelHour(cand) === 0) return cand.toISOString();
-  }
-  return new Date(Date.UTC(y, m - 1, day, -2, 0, 0)).toISOString();
-}
-
 export async function GET(req: Request) {
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret) {
@@ -52,21 +51,33 @@ export async function GET(req: Request) {
   }
 
   const date = israelDate(now);
-  const dayStart = israelDayStartIso(now);
   const nowIso = now.toISOString();
 
-  const [ordersRes, projectsRes] = await Promise.all([
-    supabase.from("orders").select("id", { count: "estimated", head: true }).gte("created_at", dayStart),
-    supabase.from("projects").select("id", { count: "estimated", head: true }).gte("created_at", dayStart),
-  ]);
-  const orderCount = typeof ordersRes.count === "number" ? ordersRes.count : 0;
-  const projectCount = typeof projectsRes.count === "number" ? projectsRes.count : 0;
-  if (orderCount + projectCount === 0) {
-    return NextResponse.json({ ok: true, skipped: "nothing-new", date });
+  // Active that day = scheduled to be running today. start_date has begun, and
+  // the end_date hasn't passed (null end_date = ongoing).
+  const { data: activeRows, error: activeError } = await supabase
+    .from("projects")
+    .select("id,name")
+    .in("status", ["active", "in_progress"])
+    .lte("start_date", date)
+    .or(`end_date.gte.${date},end_date.is.null`)
+    .range(0, 199);
+  if (activeError) return NextResponse.json({ error: activeError.message }, { status: 500 });
+
+  const projects = (activeRows ?? []) as Array<{ id?: string; name?: string }>;
+  const projectCount = projects.length;
+  if (projectCount === 0) {
+    return NextResponse.json({ ok: true, skipped: "no-active-projects", date });
   }
 
   const dedupe = `nightly_review:${date}`;
-  const content = `${orderCount} הובלות ו-${projectCount} פרויקטים נוספו היום — יש לעדכן ולסמן בוצע.`;
+  const names = projects
+    .slice(0, 3)
+    .map((p) => (typeof p.name === "string" && p.name ? p.name : "פרויקט"))
+    .join(", ");
+  const content =
+    `${projectCount} פרויקטים פעילים היום — עדכן מה קרה: משימות, כסף, הוצאות.` +
+    (names ? ` (${names}${projectCount > 3 ? " ועוד" : ""})` : "");
 
   // Existing reminder for tonight? If it's already resolved/done → user handled it, stop.
   const { data: existing } = await supabase
@@ -85,9 +96,9 @@ export async function GET(req: Request) {
     await supabase.from("reminders").insert({
       source: "system",
       dedupe_key: dedupe,
-      title: "🌙 עדכון הובלות ופרויקטים מהיום",
+      title: `🌙 ${projectCount} פרויקטים פעילים היום`,
       content,
-      url: "/sales",
+      url: "/projects?status=active",
       severity: "warning",
       behavior: "ping_repeat",
       repeat_rule: "daily",
@@ -98,8 +109,11 @@ export async function GET(req: Request) {
       action_type: null,
     });
   } else {
-    // Keep the worklist copy's counts current.
-    await supabase.from("reminders").update({ content, updated_at: nowIso }).eq("id", ex.id);
+    // Keep the inbox copy's counts current.
+    await supabase
+      .from("reminders")
+      .update({ title: `🌙 ${projectCount} פרויקטים פעילים היום`, content, updated_at: nowIso })
+      .eq("id", ex.id);
   }
 
   // Push to the configured audience (this is a night-window alert by design).
@@ -111,12 +125,20 @@ export async function GET(req: Request) {
     const res = await deliverPush(
       supabase,
       authIds,
-      { title: "🌙 עדכון הובלות ופרויקטים", body: content, url: "/sales", tag: `nightly-review-${date}` },
-      "nightly"
+      {
+        title: `🌙 ${projectCount} פרויקטים פעילים היום`,
+        body: "עדכן מה קרה — משימות, כסף, הוצאות.",
+        url: "/projects?status=active",
+        tag: `nightly-review-${date}`,
+      },
+      "nightly",
+      // The nightly ritual is opted-in by design — it isn't an automatic finding,
+      // so it isn't subject to the per-user delivery mode.
+      { alwaysPush: true }
     );
     sent = res.sent;
     failed = res.failed;
   }
 
-  return NextResponse.json({ ok: true, date, orderCount, projectCount, recipients: authIds.length, sent, failed });
+  return NextResponse.json({ ok: true, date, projectCount, recipients: authIds.length, sent, failed });
 }

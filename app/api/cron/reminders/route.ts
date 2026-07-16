@@ -3,7 +3,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { type PushPayload } from "@/lib/push";
 import { deliverPush } from "@/lib/notifications/deliver";
 import { reminderBucket } from "@/lib/notifications/categories";
-import { visibleAudienceRoles } from "@/lib/reminders/worklist";
+import { sanitizeNotificationPrefs } from "@/lib/notifications/prefs";
+import { ownAudienceRoles } from "@/lib/reminders/worklist";
 
 // Reminders/Alerts unification — Phase 3: the deliver cron (every ~5 min).
 // Pushes due reminders — manual ones AND system issue reminders — honoring
@@ -144,25 +145,32 @@ export async function GET(req: Request) {
     }
   }
 
-  // For each needed role bucket, the auth ids of active users in it.
-  const authByRole = new Map<string, string[]>();
+  // Audience-targeted rows: resolve recipients per (audience_role, bucket) pair.
+  // Owner-first routing — a user receives an audience item when it's aimed at
+  // THEIR OWN desk (ownAudienceRoles), or when they explicitly subscribed to that
+  // bucket. Deliberately NOT visibleAudienceRoles: that let 'office' items reach
+  // every admin, which is how the boss ended up with 18 pushes of someone else's
+  // collection work.
+  type AudienceUser = { authId: string; role: string | null; subscribe: string[] };
+  let audienceUsers: AudienceUser[] = [];
   if (roles.size) {
-    const { data: us } = await supabase.from("users").select("id,auth_user_id,role,active").eq("active", true);
-    const all = (us ?? []) as unknown as Row[];
-    for (const ar of roles) {
-      // A user of role R receives bucket B when B ∈ visibleAudienceRoles(R):
-      // so 'office' reaches office + admin, 'admin' reaches admin only, 'all' everyone.
-      const ids = all
-        .filter((u) => {
-          if (ar === "all") return true;
-          const role = str(u, "role");
-          return role ? visibleAudienceRoles(role).includes(ar) : false;
-        })
-        .map((u) => str(u, "auth_user_id"))
-        .filter((v): v is string => Boolean(v));
-      authByRole.set(ar, ids);
-    }
+    const { data: us } = await supabase.from("users").select("auth_user_id,role,active,notification_prefs").eq("active", true);
+    audienceUsers = ((us ?? []) as unknown as Row[])
+      .map((u) => {
+        const authId = str(u, "auth_user_id");
+        if (!authId) return null;
+        return {
+          authId,
+          role: str(u, "role"),
+          subscribe: sanitizeNotificationPrefs((u as { notification_prefs?: unknown }).notification_prefs).subscribe,
+        };
+      })
+      .filter((v): v is AudienceUser => v !== null);
   }
+  const recipientsForAudience = (audienceRole: string, bucket: string): string[] =>
+    audienceUsers
+      .filter((u) => ownAudienceRoles(u.role).includes(audienceRole) || u.subscribe.includes(bucket))
+      .map((u) => u.authId);
 
   // Task subjects for manual reminders lacking a title.
   const taskIds = [
@@ -199,14 +207,20 @@ export async function GET(req: Request) {
 
       const assigned = str(row, "assigned_to") ?? str(row, "created_by");
       const category = reminderBucket({ source: str(row, "source"), category: str(row, "category"), dedupeKey: str(row, "dedupe_key") });
+      // A reminder a human set for a specific time always pings at that time —
+      // the delivery mode only governs AUTOMATIC (system) findings.
+      const opts = {
+        severity: str(row, "severity") ?? "info",
+        alwaysPush: str(row, "source") !== "system",
+      };
       let result = { sent: 0, failed: 0 };
       if (assigned) {
         const authId = authByUser.get(assigned);
-        if (authId) result = await deliverPush(supabase, [authId], payload, category);
+        if (authId) result = await deliverPush(supabase, [authId], payload, category, opts);
       } else {
         const ar = str(row, "audience_role");
-        const ids = ar ? authByRole.get(ar) ?? [] : [];
-        if (ids.length) result = await deliverPush(supabase, ids, payload, category);
+        const ids = ar ? recipientsForAudience(ar, category) : [];
+        if (ids.length) result = await deliverPush(supabase, ids, payload, category, opts);
       }
       sent += result.sent;
       failed += result.failed;
