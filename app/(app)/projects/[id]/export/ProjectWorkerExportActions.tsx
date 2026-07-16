@@ -1,11 +1,10 @@
 "use client";
-import { toHebrewError } from "@/lib/error-messages";
 
 import { useCallback, useState } from "react";
-import { Loader2, MessageCircle } from "lucide-react";
+import { Loader2, Share2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-
-type ShareMode = "whatsapp" | null;
+import { toHebrewError } from "@/lib/error-messages";
 
 export default function ProjectWorkerExportActions({
   shareTitle,
@@ -16,8 +15,7 @@ export default function ProjectWorkerExportActions({
   exportContentId: string;
   pdfFileName: string;
 }) {
-  const [activeMode, setActiveMode] = useState<ShareMode>(null);
-  const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const getExportElement = useCallback(() => {
     const exportElement = document.getElementById(exportContentId);
@@ -35,17 +33,30 @@ export default function ProjectWorkerExportActions({
       await document.fonts.ready;
     }
 
-    const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-      import("html2canvas"),
+    // html-to-image (NOT html2canvas): this captures the LIVE, token-styled app
+    // DOM, and Tailwind v4 compiles every `/opacity` utility (e.g. the
+    // `bg-background/70` on <Badge variant="outline"> in the header) to
+    // `color-mix(in oklab, …)`, which browsers resolve to a `color(srgb …)`
+    // computed value. html2canvas re-implements CSS parsing itself and only
+    // understands rgb/rgba/hsl/hsla, so it threw on every single export.
+    // html-to-image rasterises through the browser's own renderer, so any color
+    // syntax the browser accepts works here by construction.
+    const [{ toCanvas }, { default: jsPDF }] = await Promise.all([
+      import("html-to-image"),
       import("jspdf"),
     ]);
 
-    const canvas = await html2canvas(exportElement, {
-      scale: Math.min(window.devicePixelRatio || 1, 2),
-      useCORS: true,
+    const canvas = await toCanvas(exportElement, {
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
       backgroundColor: "#ffffff",
-      logging: false,
-      windowWidth: document.documentElement.scrollWidth,
+      // Attachment photos are cross-origin (signed Supabase URLs) and are
+      // inlined as data URLs. cacheBust avoids reusing a cached opaque response
+      // that would otherwise fail to embed.
+      cacheBust: true,
+      // The UI is a system font stack (no @font-face / next-font anywhere), so
+      // there is nothing to embed — skipping avoids a slow, failure-prone
+      // stylesheet crawl on every export.
+      skipFonts: true,
     });
 
     const imageData = canvas.toDataURL("image/jpeg", 0.95);
@@ -83,10 +94,25 @@ export default function ProjectWorkerExportActions({
     window.print();
   }, [getExportElement]);
 
-  const sharePdfToWhatsApp = useCallback(async () => {
-    setActiveMode("whatsapp");
-    setShareMessage(null);
+  const downloadPdfFile = useCallback((pdfFile: File) => {
+    const fileUrl = URL.createObjectURL(pdfFile);
+    const downloadLink = document.createElement("a");
+    downloadLink.href = fileUrl;
+    downloadLink.download = pdfFile.name;
+    downloadLink.rel = "noopener";
+    // Firefox/Safari ignore a click on a link that was never in the document.
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+    // Revoking synchronously can abort a download that hasn't started reading
+    // the blob yet — hand the URL back only once the browser has taken it.
+    window.setTimeout(() => URL.revokeObjectURL(fileUrl), 60_000);
+  }, []);
 
+  const sharePdf = useCallback(async () => {
+    if (sharing) return;
+
+    setSharing(true);
     try {
       const pdfFile = await createPdfFile();
       const shareData = {
@@ -102,45 +128,40 @@ export default function ProjectWorkerExportActions({
         navigator.canShare(shareData)
       ) {
         await navigator.share(shareData);
-        setShareMessage("ה-PDF מוכן לשיתוף ונשלח דרך חלון השיתוף של המכשיר.");
         return;
       }
 
-      const fileUrl = URL.createObjectURL(pdfFile);
-      const downloadLink = document.createElement("a");
-      downloadLink.href = fileUrl;
-      downloadLink.download = pdfFileName;
-      downloadLink.click();
-      URL.revokeObjectURL(fileUrl);
-      setShareMessage(`ה-PDF הורד למכשיר בשם ${pdfFileName}. צרפו אותו ל-WhatsApp אם חלון השיתוף לא נפתח.`);
+      // Desktop has no file share sheet — download so the PDF can be attached.
+      downloadPdfFile(pdfFile);
+      toast.success(`ה-PDF הורד למכשיר בשם ${pdfFileName}.`);
     } catch (error: unknown) {
+      // The user dismissed the share sheet — not a failure.
       if (error instanceof Error && error.name === "AbortError") {
         return;
       }
-      setShareMessage(toHebrewError(error, "יצירת ה-PDF נכשלה."));
+      toast.error(toHebrewError(error, "יצירת ה-PDF נכשלה."));
     } finally {
-      setActiveMode(null);
+      setSharing(false);
     }
-  }, [createPdfFile, pdfFileName, shareTitle]);
-
-  const isBusy = activeMode !== null;
+  }, [createPdfFile, downloadPdfFile, pdfFileName, shareTitle, sharing]);
 
   return (
     <div className="print:hidden border-b bg-background/95 px-4 py-3 sm:px-6">
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={() => void sharePdfToWhatsApp()} disabled={isBusy}>
-          {activeMode === "whatsapp" ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <MessageCircle className="h-4 w-4" />
-          )}
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => void sharePdf()}
+          disabled={sharing}
+        >
+          {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
           <span>שיתוף PDF</span>
         </Button>
-        <Button type="button" size="sm" onClick={() => void openPrintDialog()} disabled={isBusy}>
+        <Button type="button" size="sm" onClick={() => void openPrintDialog()} disabled={sharing}>
           הדפסה / שמירה ל־PDF
         </Button>
       </div>
-      {shareMessage ? <div className="mt-2 text-xs text-muted-foreground">{shareMessage}</div> : null}
     </div>
   );
 }
