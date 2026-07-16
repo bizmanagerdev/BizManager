@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
 
 // Refreshes ONLY the current route's data (re-runs the server components for
 // this page) via router.refresh() — no full browser reload, the app shell /
@@ -30,15 +31,15 @@ export function RefreshButton() {
     <Button
       type="button"
       variant="ghost"
-      size="icon"
+      size="icon-sm"
       onClick={onClick}
-      className="group rounded-full !bg-transparent !border-transparent !shadow-none text-foreground transition-all hover:!bg-accent hover:scale-110"
+      className={TOPBAR_ICON_BUTTON}
       aria-label="רענון"
       title="רענון"
     >
       <RotateCw
-        className={`h-6 w-6 ${spinning || isPending ? "animate-spin" : "transition-transform group-hover:rotate-90"}`}
-        strokeWidth={2.5}
+        className={spinning || isPending ? "animate-spin" : "transition-transform group-hover:rotate-90"}
+        strokeWidth={TOPBAR_ICON_STROKE}
       />
     </Button>
   );

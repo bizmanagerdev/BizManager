@@ -4,6 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
 
 export function BackButton() {
   const router = useRouter();
@@ -17,13 +18,13 @@ export function BackButton() {
     <Button
       type="button"
       variant="ghost"
-      size="icon"
+      size="icon-sm"
       onClick={onClick}
-      className="group rounded-full !bg-transparent !border-transparent !shadow-none text-foreground transition-all hover:!bg-accent hover:scale-110"
+      className={TOPBAR_ICON_BUTTON}
       aria-label="חזרה"
       title="חזרה"
     >
-      <ArrowRight className="h-11 w-11 transition-transform group-hover:translate-x-0.5" strokeWidth={3} />
+      <ArrowRight className="transition-transform group-hover:translate-x-0.5" strokeWidth={TOPBAR_ICON_STROKE} />
     </Button>
   );
 }

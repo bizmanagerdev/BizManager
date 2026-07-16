@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bell, ChevronDown, LogOut, User } from "lucide-react";
+import { Bell, ChevronDown, Clock, LogOut, User, Wallet } from "lucide-react";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { getAvatarColorCache, setAvatarColorCache, subscribeAvatarColor } from "@/lib/ui/avatar-color";
 import { BackButton } from "@/components/layout/BackButton";
 import { RefreshButton } from "@/components/layout/RefreshButton";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
+import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
 import PwaInstallButton from "@/components/pwa/PwaInstallButton";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,8 +19,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useNotifications, markNotificationRead } from "@/lib/ui/notifications-store";
-import { formatShortDateTime } from "@/lib/date";
+import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
+import { useAlerts } from "@/lib/ui/alerts-store";
+
+// The top-bar glyph for the inbox. Most-looked-at icon in the app, so it lives
+// in one named place: swap this line + the lucide import to change it
+// everywhere. (Tried Inbox / Mailbox / ListChecks — back to the bell.)
+const InboxIcon = Bell;
+
+// The signed-in user's email + whether they punch shifts — for the user menu.
+// Fetched once per page load and cached at module scope (TopBar remounts on every
+// navigation, so component state would refetch each time). Nothing here is
+// sensitive enough to warrant threading props through ~40 AppShell call sites.
+type Me = { email: string | null; canTrackSessions: boolean; canViewSalary: boolean };
+let meCache: Me | null = null;
+let meInFlight: Promise<void> | null = null;
 
 type Props = {
   userName?: string;
@@ -32,7 +46,7 @@ export function TopBar({
   initialColor,
   showSearch = true,
 }: Props) {
-  const { items: notifications, unreadCount, loading: alertsLoading, error: alertsError } = useNotifications();
+  const { alerts, count, loading: alertsLoading, error: alertsError } = useAlerts();
 
   // The signed-in user's chosen avatar color (null = auto). The (app) layout
   // passes the value from the server (`initialColor`), so the correct color is
@@ -64,110 +78,158 @@ export function TopBar({
     return unsubscribe;
   }, [initialColor]);
 
-  // The bell is the notification CENTER: a read/unread history. Badge = unread.
-  const notifItems = notifications ?? [];
-  const activeAlertCount = unreadCount;
+  // The top-bar icon IS the inbox: it previews what's still open and its count is
+  // the inbox count — the same number the inbox page shows, from the same source.
+  // (It used to count unread rows in the delivery log, a different number of a
+  // different thing — that mismatch is what made it untrustworthy.)
+  const notifItems = alerts ?? [];
+  const activeAlertCount = count;
   // First-load flash only — once we have any data, never show "loading…" again.
-  const showLoadingState = alertsLoading && notifications === null;
+  const showLoadingState = alertsLoading && alerts === null;
+
+  // Hover peeks at the list; clicking the icon goes straight to /inbox.
+  const inboxPanel = useHoverPanel();
+
+  const [me, setMe] = useState<Me | null>(meCache);
+  useEffect(() => {
+    if (meCache) return;
+    if (!meInFlight) {
+      meInFlight = fetch("/api/profile/me", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((json: { email?: string | null; canTrackSessions?: boolean; canViewSalary?: boolean } | null) => {
+          meCache = {
+            email: typeof json?.email === "string" ? json.email : null,
+            canTrackSessions: json?.canTrackSessions === true,
+            canViewSalary: json?.canViewSalary === true,
+          };
+        })
+        .catch(() => {
+          meCache = { email: null, canTrackSessions: false, canViewSalary: false };
+        })
+        .finally(() => {
+          meInFlight = null;
+        });
+    }
+    let active = true;
+    void meInFlight?.then(() => {
+      if (active) setMe(meCache);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-3 border-b border-border/70 bg-background bg-gradient-to-r from-primary/[0.04] via-background/95 to-secondary/[0.05] px-4 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-2 border-b border-border/70 bg-background bg-gradient-to-r from-primary/[0.04] via-background/95 to-secondary/[0.05] px-4 backdrop-blur-xl">
+      {/* RTL: the first child sits on the RIGHT. Back arrow, then the search —
+          both anchored to the start edge. Brand mark intentionally omitted (the
+          sidebar carries it on desktop). */}
       <BackButton />
-      <RefreshButton />
+      {showSearch ? <GlobalSearch desktopOnly className="max-w-md flex-1" /> : null}
 
-      {/* Brand mark intentionally omitted on mobile (the sidebar carries the brand
-          on desktop); keeps the compact top bar uncluttered at large text sizes. */}
+      <div className="flex-1" />
 
-      <div className="flex-1 lg:flex-none" />
+      {/* End edge, in reading order: refresh, bell, then the user menu. */}
+      <div className="flex items-center gap-2">
+        <RefreshButton />
 
-      <div className="flex items-center gap-1">
-        <PwaInstallButton />
-        <DropdownMenu dir="rtl" modal={false}>
-          <DropdownMenuTrigger asChild>
+        <HoverPanel open={inboxPanel.open} onOpenChange={inboxPanel.setOpen}>
+          <HoverPanelTrigger asChild>
             <Button
+              asChild
               variant="ghost"
               size="icon-sm"
-              className={
-                activeAlertCount > 0
-                  ? "rounded-xl !bg-transparent !border-transparent !shadow-none text-destructive hover:text-destructive hover:!bg-transparent"
-                  : "rounded-xl !bg-transparent !border-transparent !shadow-none text-primary hover:text-primary hover:!bg-transparent"
-              }
-              type="button"
-              id="topbar-alerts-trigger"
+              className={TOPBAR_ICON_BUTTON}
+              id="topbar-inbox-trigger"
             >
-              <Bell
-                className={
-                  activeAlertCount > 0
-                    ? "h-5 w-5 origin-top animate-bell-ring"
-                    : "h-5 w-5"
+              <Link
+                href="/inbox"
+                aria-label={
+                  activeAlertCount > 0 ? `התיבה שלי — ${activeAlertCount} ממתינים לטיפול` : "התיבה שלי"
                 }
-                fill={activeAlertCount > 0 ? "currentColor" : "none"}
-                strokeWidth={activeAlertCount > 0 ? 2.4 : 2}
-              />
+                {...inboxPanel.triggerProps}
+                // Click always goes to the inbox — the panel is only a peek.
+                // (On touch there's no hover, so tapping simply opens the page.)
+                onClick={() => {
+                  inboxPanel.hide();
+                  emitNavigationStart();
+                }}
+              >
+                {/* No size class on the glyph: Button's `[&_svg]:size-4` sizes every
+                    top-bar icon to 16px, so adding one here made this icon bigger
+                    and bolder than its neighbours. The badge anchors to this span
+                    (the glyph) — anchoring it to the button box, which is larger,
+                    left it floating away from the icon. */}
+                <span className="relative inline-flex shrink-0">
+                  <InboxIcon strokeWidth={TOPBAR_ICON_STROKE} />
+                  {activeAlertCount > 0 ? (
+                    <span
+                      className="absolute -top-2 -end-2 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground ring-2 ring-background"
+                      aria-hidden
+                    >
+                      {activeAlertCount > 99 ? "99+" : activeAlertCount}
+                    </span>
+                  ) : null}
+                </span>
+              </Link>
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="max-h-[70vh] w-80 overflow-y-auto rounded-2xl p-2">
-            <div className="flex items-center justify-between gap-2 px-2 py-2">
-              <div>
-                <div className="text-sm font-semibold">התראות</div>
-                <div className="text-xs text-muted-foreground">{unreadCount > 0 ? `${unreadCount} חדשות` : "הכול נקרא"}</div>
+          </HoverPanelTrigger>
+          <HoverPanelContent
+            dir="rtl"
+            className="max-h-[70vh] w-80 overflow-y-auto p-2 text-right"
+            {...inboxPanel.panelProps}
+          >
+            <div className="px-2 py-2">
+              <div className="text-sm font-semibold">התיבה שלי</div>
+              <div className="text-xs text-muted-foreground">
+                {activeAlertCount > 0 ? `${activeAlertCount} ממתינים לטיפול` : "אין מה לטפל"}
               </div>
-              {unreadCount > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => void markNotificationRead({ all: true })}
-                  className="rounded-lg px-2 py-1 text-xs text-primary hover:bg-primary/10"
-                >
-                  סמן הכל כנקרא
-                </button>
-              ) : null}
             </div>
-            <DropdownMenuSeparator />
+            <div className="-mx-1 my-1 h-px bg-muted" />
             {showLoadingState ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground">טוען התראות...</div>
+              <div className="px-3 py-4 text-sm text-muted-foreground">טוען...</div>
             ) : alertsError && notifItems.length === 0 ? (
               <div className="px-3 py-4 text-sm text-destructive">{alertsError}</div>
             ) : notifItems.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground">אין התראות עדיין.</div>
+              <div className="px-3 py-4 text-sm text-muted-foreground">הכול נקי.</div>
             ) : (
-              notifItems.map((n) => {
-                const unread = !n.read_at;
-                return (
-                  <DropdownMenuItem key={n.id} asChild className="cursor-pointer rounded-xl p-0">
-                    <Link
-                      href={n.url}
-                      className={`flex items-start gap-2 px-3 py-2.5 ${unread ? "bg-primary/5" : ""}`}
-                      onClick={() => {
-                        if (unread) void markNotificationRead({ id: n.id });
-                        emitNavigationStart();
-                      }}
-                    >
-                      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${unread ? "bg-primary" : "bg-transparent"}`} />
-                      <div className="min-w-0 space-y-0.5">
-                        <div className={`truncate text-sm ${unread ? "font-semibold" : "font-medium text-muted-foreground"}`}>{n.title}</div>
-                        {n.body ? <div className="truncate text-xs text-muted-foreground">{n.body}</div> : null}
-                        <div className="text-[11px] text-muted-foreground">{formatShortDateTime(n.created_at, "-")}</div>
-                      </div>
-                    </Link>
-                  </DropdownMenuItem>
-                );
-              })
+              notifItems.map((n) => (
+                <Link
+                  key={n.id}
+                  href={n.href}
+                  className="flex items-start gap-2 rounded-xl px-3 py-2.5 transition-colors hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => {
+                    inboxPanel.hide();
+                    emitNavigationStart();
+                  }}
+                >
+                  <span
+                    className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                      n.severity === "danger" ? "bg-destructive" : n.severity === "warning" ? "bg-warning" : "bg-muted-foreground/40"
+                    }`}
+                  />
+                  <span className="min-w-0 space-y-0.5">
+                    <span className="block truncate text-sm font-medium">{n.title}</span>
+                    {n.description ? (
+                      <span className="block truncate text-xs text-muted-foreground">{n.description}</span>
+                    ) : null}
+                  </span>
+                </Link>
+              ))
             )}
-            <DropdownMenuSeparator />
-            <div className="flex items-center justify-between gap-2 px-1">
-              <DropdownMenuItem asChild className="flex-1">
-                <Link href="/notifications" className="justify-center font-medium" onClick={() => emitNavigationStart()}>
-                  כל ההתראות
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild className="flex-1">
-                <Link href="/alerts" className="justify-center font-medium" onClick={() => emitNavigationStart()}>
-                  מה דורש טיפול
-                </Link>
-              </DropdownMenuItem>
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <div className="-mx-1 my-1 h-px bg-muted" />
+            <Link
+              href="/inbox"
+              className="flex justify-center rounded-xl px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+              onClick={() => {
+                inboxPanel.hide();
+                emitNavigationStart();
+              }}
+            >
+              פתח את התיבה
+            </Link>
+          </HoverPanelContent>
+        </HoverPanel>
 
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
@@ -189,20 +251,58 @@ export function TopBar({
               <ChevronDown className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 rounded-xl">
+          <DropdownMenuContent align="end" className="w-60 rounded-xl p-1.5">
+            {/* Who you're signed in as — the menu's most common question. */}
+            <div className="flex items-center gap-2.5 px-2 py-2">
+              {userName ? <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="sm" /> : null}
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{userName ?? "משתמש"}</div>
+                {me?.email ? <div className="truncate text-xs text-muted-foreground">{me.email}</div> : null}
+              </div>
+            </div>
+            <DropdownMenuSeparator />
+
+            {/* One entry per errand — these are the profile's three tabs. */}
             <DropdownMenuItem asChild>
               <Link href="/profile" className="flex items-center" onClick={() => emitNavigationStart()}>
-                <User className="me-2 h-4 w-4" />
-                אזור אישי
+                <User className="me-2 h-4 w-4 text-muted-foreground" />
+                הפרופיל שלי
               </Link>
             </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link
+                href="/profile?tab=notifications"
+                className="flex items-center"
+                onClick={() => emitNavigationStart()}
+              >
+                <Bell className="me-2 h-4 w-4 text-muted-foreground" />
+                הגדרות התראות
+              </Link>
+            </DropdownMenuItem>
+            {/* These two mirror the profile's own gates — a pay type that doesn't
+                punch in has no shifts tab, and one with no payslips has no salary
+                tab. Showing either unconditionally would link to nothing. */}
+            {me?.canTrackSessions ? (
+              <DropdownMenuItem asChild>
+                <Link href="/profile?tab=sessions" className="flex items-center" onClick={() => emitNavigationStart()}>
+                  <Clock className="me-2 h-4 w-4 text-muted-foreground" />
+                  נוכחות ומשמרות
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
+            {me?.canViewSalary ? (
+              <DropdownMenuItem asChild>
+                <Link href="/profile?tab=salary" className="flex items-center" onClick={() => emitNavigationStart()}>
+                  <Wallet className="me-2 h-4 w-4 text-muted-foreground" />
+                  שכר ותלושים
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
+
             <DropdownMenuSeparator />
             <form action="/api/auth/logout" method="post">
-              <DropdownMenuItem asChild className="text-destructive">
-                <button
-                  type="submit"
-                  className="flex w-full items-center rounded-lg bg-destructive px-3 py-2 text-destructive-foreground"
-                >
+              <DropdownMenuItem asChild className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                <button type="submit" className="flex w-full items-center rounded-lg px-3 py-2">
                   <LogOut className="me-2 h-4 w-4" />
                   התנתקות
                 </button>
@@ -211,10 +311,10 @@ export function TopBar({
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <PwaInstallButton />
+
         {showSearch ? <GlobalSearch mobileOnly /> : null}
       </div>
-
-      {showSearch ? <GlobalSearch desktopOnly className="max-w-md" /> : null}
     </header>
   );
 }

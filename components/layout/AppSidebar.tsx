@@ -26,7 +26,18 @@ const linkPending = "bg-white/10 opacity-70";
 // the sidebar carries the current filters (date/domain/…) so context isn't lost.
 const FILTER_SHARED_ROUTES = new Set(["/financial", "/financial/reports"]);
 
-function NavGroup({ item, collapsed }: { item: SidebarNavItem; collapsed: boolean }) {
+// Lower = more urgent, for picking a group's roll-up tone.
+const SEVERITY_ORDER: Record<NavCount["severity"], number> = { danger: 0, warning: 1, info: 2 };
+
+function NavGroup({
+  item,
+  collapsed,
+  navCounts,
+}: {
+  item: SidebarNavItem;
+  collapsed: boolean;
+  navCounts: Record<string, NavCount>;
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const children = item.children ?? [];
@@ -37,6 +48,19 @@ function NavGroup({ item, collapsed }: { item: SidebarNavItem; collapsed: boolea
     FILTER_SHARED_ROUTES.has(pathname) ? searchParams.toString() : "";
   // Auto-expand whenever a child route is active (no effect needed).
   const expanded = open || childActive;
+
+  // Roll the children's counts up onto the group header, so a badge on a nested
+  // route (e.g. /collections under "פיננסי") isn't invisible while collapsed.
+  // Shown only when collapsed — expanded, the child rows carry their own badges.
+  const rollup = children.reduce<NavCount | null>((acc, c) => {
+    const b = navCounts[c.url];
+    if (!b) return acc;
+    if (!acc) return { count: b.count, severity: b.severity };
+    return {
+      count: acc.count + b.count,
+      severity: SEVERITY_ORDER[b.severity] < SEVERITY_ORDER[acc.severity] ? b.severity : acc.severity,
+    };
+  }, null);
 
   return (
     <div>
@@ -52,6 +76,7 @@ function NavGroup({ item, collapsed }: { item: SidebarNavItem; collapsed: boolea
       >
         <item.icon className="h-4 w-4 shrink-0" />
         <span className={cn("flex-1 text-right", collapsed ? "hidden lg:inline" : "inline")}>{item.title}</span>
+        {rollup && !expanded ? <NavCountBadge badge={rollup} collapsed={collapsed} /> : null}
         <ChevronDown
           className={cn(
             "h-4 w-4 shrink-0 transition-transform",
@@ -96,6 +121,7 @@ function NavGroup({ item, collapsed }: { item: SidebarNavItem; collapsed: boolea
               />
               <child.icon className="h-3.5 w-3.5 shrink-0" />
               <span className={cn(collapsed ? "hidden lg:inline" : "inline")}>{child.title}</span>
+              {navCounts[child.url] ? <NavCountBadge badge={navCounts[child.url]} collapsed={collapsed} /> : null}
             </NavLink>
           ))}
         </div>
@@ -154,7 +180,7 @@ export function AppSidebar({ items, appName = "BizH", logo }: Props) {
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
         {items.map((item) =>
           item.children && item.children.length > 0 ? (
-            <NavGroup key={item.title} item={item} collapsed={collapsed} />
+            <NavGroup key={item.title} item={item} collapsed={collapsed} navCounts={navCounts} />
           ) : (
             <NavLink
               key={item.title}
