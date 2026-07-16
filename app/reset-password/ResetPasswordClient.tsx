@@ -39,15 +39,51 @@ export default function ResetPasswordClient() {
       setErr(null);
       setInfo(null);
 
-      const code = searchParams.get("code");
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+      const hashParams = getHashParams();
+
+      // Supabase reports link failures by REDIRECTING here with the reason in the
+      // hash (e.g. #error=access_denied&error_description=Email+link+is+invalid+or+has+expired).
+      // Without this we'd fall through to the generic "invalid link" message and
+      // throw away the only thing that explains what actually went wrong.
+      const errorDescription = hashParams.get("error_description") ?? searchParams.get("error_description");
+      const errorCode = hashParams.get("error") ?? searchParams.get("error");
+      if (errorDescription || errorCode) {
+        if (!cancelled) {
+          setErr(toHebrewError(errorDescription ?? errorCode ?? "", "קישור האיפוס אינו תקין או שפג תוקפו."));
+          setReady(true);
+        }
+        return;
+      }
+
+      // token_hash works from ANY browser — it needs no locally-stored verifier.
+      // Prefer it: recovery links are very often opened on a different device from
+      // the one that asked for them.
+      const tokenHash = searchParams.get("token_hash") ?? hashParams.get("token_hash");
+      if (tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
         if (!cancelled && error) setErr(toHebrewError(error.message));
         if (!cancelled) setReady(true);
         return;
       }
 
-      const hashParams = getHashParams();
+      const code = searchParams.get("code");
+      if (code) {
+        // PKCE: needs the code_verifier stored by THIS browser when the reset was
+        // requested. Opening the email elsewhere fails here — say so plainly
+        // instead of surfacing "code verifier should be non-empty".
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (!cancelled && error) {
+          const raw = error.message ?? "";
+          setErr(
+            /verifier/i.test(raw)
+              ? "יש לפתוח את קישור האיפוס באותו דפדפן שבו ביקשת אותו. אפשר לבקש קישור חדש ולפתוח אותו כאן."
+              : toHebrewError(raw)
+          );
+        }
+        if (!cancelled) setReady(true);
+        return;
+      }
+
       const access_token = hashParams.get("access_token");
       const refresh_token = hashParams.get("refresh_token");
 
@@ -97,9 +133,19 @@ export default function ResetPasswordClient() {
         return;
       }
 
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) {
-        setErr(toHebrewError(error.message));
+      // Go through our own origin instead of calling GoTrue from the page. The
+      // link exchange above has already put the recovery session in cookies, so
+      // the API route acts as this user. Doing it from the browser is what broke
+      // the in-app change ("Could not parse request body as JSON: invalid
+      // character 'P'") — something client-side mangles the cross-origin body.
+      const res = await fetch("/api/profile/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setErr(json.error || "שינוי הסיסמה נכשל.");
         return;
       }
 

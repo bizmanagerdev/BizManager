@@ -7,11 +7,8 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { toHebrewError } from "@/lib/error-messages";
 
 export default function ForgotPasswordClient() {
-  const supabase = createSupabaseBrowserClient();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -39,14 +36,17 @@ export default function ForgotPasswordClient() {
         return;
       }
 
-      const redirectTo = `${window.location.origin}/reset-password`;
-
-      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-        redirectTo,
+      // Through our own origin — calling GoTrue from the page is what fails here
+      // (see app/api/auth/forgot-password/route.ts).
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmedEmail }),
       });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
 
-      if (error) {
-        setErr(toHebrewError(error.message));
+      if (!res.ok) {
+        setErr(json.error || "שליחת הקישור נכשלה.");
         return;
       }
 

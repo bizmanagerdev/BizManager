@@ -136,6 +136,38 @@ const EXACT_MATCH: Record<string, string> = {
 };
 
 const PATTERN_RULES: Array<{ test: RegExp; hebrew: string }> = [
+  // ── Supabase auth (password change / reset) ────────────────────────────────
+  // These come back in English from GoTrue. Without a rule each one collapsed to
+  // the generic fallback, so a user changing their password just saw "נכשל" with
+  // no idea why — and neither did we.
+  {
+    test: /new password should be different|should be different from the old password/i,
+    hebrew: "הסיסמה החדשה זהה לנוכחית. יש לבחור סיסמה אחרת.",
+  },
+  {
+    test: /password should be at least (\d+)|password is too short/i,
+    hebrew: "הסיסמה קצרה מדי — יש לבחור סיסמה ארוכה יותר.",
+  },
+  {
+    test: /password is known to be weak|easy to guess|pwned/i,
+    hebrew: "הסיסמה הזו נפוצה מדי וניתנת לניחוש. יש לבחור סיסמה חזקה יותר.",
+  },
+  {
+    test: /reauthentication|for security purposes, you must reauthenticate|nonce/i,
+    hebrew: "מטעמי אבטחה יש להתחבר מחדש לפני שינוי הסיסמה.",
+  },
+  {
+    test: /auth session missing|session (not found|expired)|jwt expired/i,
+    hebrew: "החיבור פג. יש להתחבר מחדש ולנסות שוב.",
+  },
+  {
+    test: /for security purposes, you can only request this after (\d+) seconds?/i,
+    hebrew: "בקשת יותר מדי פעמים. יש להמתין רגע ולנסות שוב.",
+  },
+  {
+    test: /same_password/i,
+    hebrew: "הסיסמה החדשה זהה לנוכחית. יש לבחור סיסמה אחרת.",
+  },
   {
     test: /duplicate key value violates unique constraint/i,
     hebrew: "הערך כבר קיים במערכת.",
