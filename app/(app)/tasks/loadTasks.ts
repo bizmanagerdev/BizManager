@@ -24,6 +24,8 @@ export type TaskBoardItem = {
   assigned_user_name: string | null;
   members: TaskMember[];
   comment_count: number;
+  /** Files/photos linked to this task — drives the card's paperclip. */
+  attachment_count: number;
   has_open_reminder: boolean;
   is_overdue: boolean;
   is_private: boolean;
@@ -164,7 +166,8 @@ export async function loadTasksBoard(
   const propertyIds = uniqueIds(taskRows as unknown as Row[], "property_id");
   const customerIds = uniqueIds(taskRows as unknown as Row[], "customer_id");
 
-  const [projectsRes, propertiesRes, customersRes, membersRes, commentsRes, remindersRes] = await Promise.all([
+  const [projectsRes, propertiesRes, customersRes, membersRes, commentsRes, remindersRes, attachmentsRes] =
+    await Promise.all([
     projectIds.length
       ? supabase.from("project_dashboard_view").select("id,name").in("id", projectIds)
       : Promise.resolve({ data: [] as Row[] }),
@@ -183,6 +186,17 @@ export async function loadTasksBoard(
       .in("task_id", taskIds)
       .eq("status", "pending")
       .range(0, 9999),
+    // Attachments are documents linked polymorphically, not a task column — so
+    // the card's paperclip comes from document_links, same shape the card's
+    // comment/reminder indicators use. Tolerant: a failure here must not take
+    // down the board over an icon.
+    supabase
+      .from("document_links")
+      .select("entity_id")
+      .eq("entity_type", "task")
+      .in("entity_id", taskIds)
+      .range(0, 9999)
+      .then((r) => r, () => ({ data: [] as Row[] })),
   ]);
 
   const memberRows = (membersRes.data ?? []) as Row[];
@@ -235,6 +249,13 @@ export async function loadTasksBoard(
     ((remindersRes.data ?? []) as Row[]).map((r) => getString(r, "task_id")).filter(Boolean) as string[]
   );
 
+  const attachmentCountByTask = new Map<string, number>();
+  for (const row of (attachmentsRes.data ?? []) as Row[]) {
+    const taskId = getString(row, "entity_id");
+    if (!taskId) continue;
+    attachmentCountByTask.set(taskId, (attachmentCountByTask.get(taskId) ?? 0) + 1);
+  }
+
   const todayIso = new Date().toISOString().slice(0, 10);
 
   const items: TaskBoardItem[] = taskRows.map((row) => {
@@ -270,6 +291,7 @@ export async function loadTasksBoard(
       assigned_user_name: assigneeName,
       members,
       comment_count: commentCountByTask.get(row.id) ?? 0,
+      attachment_count: attachmentCountByTask.get(row.id) ?? 0,
       has_open_reminder: reminderTaskIds.has(row.id),
       is_overdue: isOpen && row.due_date !== null && row.due_date.slice(0, 10) < todayIso,
       is_private: Boolean(row.is_private),

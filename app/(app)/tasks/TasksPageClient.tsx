@@ -21,7 +21,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bell, Building2, CheckCircle2, Circle, Clock, FolderKanban, GripVertical, ListPlus, Lock, MessageSquare, Plus, UserRound } from "lucide-react";
+import { Bell, Building2, CheckCircle2, Circle, Clock, FolderKanban, GripVertical, Lock, MessageSquare, Paperclip, Plus, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
@@ -30,7 +30,9 @@ import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedLines, parseTaskLines } from "@/components/tasks/taskLines.helpers";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -38,7 +40,6 @@ import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { TaskUpsertDialog, type TaskOption, type TaskStatus, type UserOption } from "@/components/tasks/TaskUpsertDialog";
-import QuickAddTasksDialog from "@/components/tasks/QuickAddTasksDialog";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
@@ -200,6 +201,15 @@ function TaskCard({
             </span>
           ) : null}
           {task.has_open_reminder ? <Bell className="h-3.5 w-3.5 text-warning-strong" /> : null}
+          {task.attachment_count > 0 ? (
+            <span
+              className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"
+              title={task.attachment_count === 1 ? "קובץ אחד מצורף" : `${task.attachment_count} קבצים מצורפים`}
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+              {task.attachment_count}
+            </span>
+          ) : null}
           {task.comment_count > 0 ? (
             <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
               <MessageSquare className="h-3.5 w-3.5" />
@@ -239,7 +249,8 @@ function BoardColumn({
   onOpen: (id: string) => void;
   onToggleDone: (id: string, done: boolean) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
-  onQuickAdd: (status: string, title: string) => Promise<void>;
+  /** One title per line — the box doubles as a list. */
+  onQuickAdd: (status: string, titles: string[]) => Promise<void>;
   colorIndexById: Map<string, number>;
 }) {
   const {
@@ -258,11 +269,11 @@ function BoardColumn({
   const style = { transform: CSS.Translate.toString(transform), transition };
 
   async function submitQuickAdd() {
-    const trimmed = title.trim();
-    if (!trimmed || busy) return;
+    const titles = parseTaskLines(title);
+    if (titles.length === 0 || busy) return;
     setBusy(true);
     try {
-      await onQuickAdd(status, trimmed);
+      await onQuickAdd(status, titles);
       setTitle("");
       setAdding(null);
     } finally {
@@ -270,15 +281,22 @@ function BoardColumn({
     }
   }
 
+  // Same rule as the full dialog: the title doubles as a list — paste or dictate
+  // several and each line becomes its own card. A textarea (not an Input) so the
+  // newlines survive at all.
+  const addLines = parseTaskLines(title);
   const addBox = (
     <div className="space-y-1.5 rounded-lg border bg-card p-2">
-      <Input
+      <Textarea
         autoFocus
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="כותרת המשימה"
+        rows={Math.min(Math.max(addLines.length, 1), 6)}
+        className="min-h-0 resize-none py-2 text-sm"
         onKeyDown={(e) => {
-          if (e.key === "Enter") {
+          // Enter adds; Shift+Enter starts another line.
+          if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             void submitQuickAdd();
           }
@@ -289,21 +307,22 @@ function BoardColumn({
         }}
       />
       <div className="flex items-center gap-1.5">
-        <Button type="button" size="sm" disabled={!title.trim() || busy} onClick={() => void submitQuickAdd()}>
-          {busy ? "מוסיף..." : "הוספה"}
+        <Button type="button" size="sm" disabled={addLines.length === 0 || busy} onClick={() => void submitQuickAdd()}>
+          {busy ? "מוסיף..." : addLines.length > 1 ? `הוספת ${addLines.length}` : "הוספה"}
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={() => { setAdding(null); setTitle(""); }}>
           ביטול
         </Button>
         <DictateButton
-          onTranscript={(text) =>
-            setTitle((prev) => (prev.trim() ? `${prev.trimEnd()} ${text}` : text))
-          }
+          onTranscript={(text) => setTitle((prev) => appendDictatedLines(prev, text))}
           disabled={busy}
-          title="הכתבת כותרת המשימה"
+          title="הכתבת כותרת — אפשר להקריא כמה משימות ברצף"
           className="ms-auto"
         />
       </div>
+      {addLines.length > 1 ? (
+        <p className="text-[11px] text-muted-foreground">{addLines.length} שורות — ייווצרו {addLines.length} משימות</p>
+      ) : null}
     </div>
   );
 
@@ -412,7 +431,6 @@ export default function TasksPageClient(props: Props) {
   }, [storageKey]);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [createSubject, setCreateSubject] = useState("");
   const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
   const [editId, setEditId] = useState<string | null>(null);
@@ -598,29 +616,42 @@ export default function TasksPageClient(props: Props) {
   // Quick-add creates the card immediately from just the typed name (Trello-style):
   // it lands in the column's status, owned by the creator so it stays visible, and
   // the rest of the details can be filled in later by opening the card.
-  async function quickAdd(status: string, title: string) {
-    const subject = title.trim();
-    if (!subject) return;
+  // One card per line: pasting or dictating a list into the column's add box
+  // creates them all, rather than one card with a paragraph for a name.
+  async function quickAdd(status: string, titles: string[]) {
+    if (titles.length === 0) return;
     emitProgressActivityStart();
     try {
-      const result = await offlineFetch(
-        "/api/tasks/create",
-        {
-          subject,
-          status,
-          business_domain: "general_business",
-          priority: "medium",
-          assigned_user_id: props.currentUserId,
-        },
-        "משימה חדשה",
-        { idempotent: true }
-      );
-      if (!result.queued && !result.ok) {
-        toast.error("שגיאה ביצירת משימה", { description: toHebrewError(result.error, "") });
-        return;
+      let created = 0;
+      let queued = 0;
+      const failed: string[] = [];
+      for (const subject of titles) {
+        try {
+          const result = await offlineFetch(
+            "/api/tasks/create",
+            {
+              subject,
+              status,
+              business_domain: "general_business",
+              priority: "medium",
+              assigned_user_id: props.currentUserId,
+            },
+            "משימה חדשה",
+            { idempotent: true }
+          );
+          if (result.queued) queued += 1;
+          else if (result.ok) created += 1;
+          else failed.push(subject);
+        } catch {
+          failed.push(subject);
+        }
       }
-      if (!result.queued) toast.success("המשימה נוצרה");
-      router.refresh();
+      // Report per batch, not per row — N toasts for N cards is noise.
+      if (created > 0) toast.success(created === 1 ? "המשימה נוצרה" : `נוצרו ${created} משימות`);
+      if (failed.length > 0) {
+        toast.error(`${failed.length} משימות לא נוצרו`, { description: failed.join(", ") });
+      }
+      if (created > 0 || queued > 0) router.refresh();
     } catch (error: unknown) {
       toast.error("שגיאה ביצירת משימה", { description: toHebrewError(error, "") });
     } finally {
@@ -702,25 +733,18 @@ export default function TasksPageClient(props: Props) {
               )}
             </div>
           ) : null}
-          <div className="ms-auto flex items-center gap-2">
-            {/* Handing one person a day's work: pick אחראי + date once, one line
-                per task — instead of the full dialog N times. */}
-            <Button type="button" variant="secondary" onClick={() => setQuickAddOpen(true)}>
-              <ListPlus className="ms-1 h-4 w-4" />
-              הוספה מהירה
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                setCreateSubject("");
-                setCreateStatus("todo");
-                setCreateOpen(true);
-              }}
-            >
-              <Plus className="ms-1 h-4 w-4" />
-              משימה
-            </Button>
-          </div>
+          <Button
+            type="button"
+            className="ms-auto"
+            onClick={() => {
+              setCreateSubject("");
+              setCreateStatus("todo");
+              setCreateOpen(true);
+            }}
+          >
+            <Plus className="ms-1 h-4 w-4" />
+            משימה
+          </Button>
         </CardContent>
       </Card>
 
@@ -795,15 +819,6 @@ export default function TasksPageClient(props: Props) {
           </div>
         </>
       ) : null}
-
-      <QuickAddTasksDialog
-        open={quickAddOpen}
-        onOpenChange={setQuickAddOpen}
-        users={props.users}
-        projects={props.projects}
-        defaultAssigneeId={props.currentUserId}
-        onCreated={() => router.refresh()}
-      />
 
       <TaskUpsertDialog
         open={createOpen}

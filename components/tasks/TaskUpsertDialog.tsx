@@ -30,6 +30,7 @@ import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DictateButton } from "@/components/ui/dictate-button";
+import { appendDictatedLines, parseTaskLines } from "@/components/tasks/taskLines.helpers";
 import { TaskVoiceFillButton, type ParsedTaskFields } from "@/components/tasks/TaskVoiceFillButton";
 import {
   Dialog,
@@ -38,7 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { fetchExistingTagIds } from "@/components/tags/TagPicker";
 import {
@@ -75,6 +76,7 @@ import {
   TaskLabelsSection,
   TaskLocationSection,
   TaskPeopleSection,
+  TaskPendingFilesSection,
   TaskRemindersStagingSection,
   type AttachmentItem,
   type CommentItem,
@@ -116,6 +118,15 @@ type Props = {
 
 function getErrorMessage(err: unknown) {
   return toHebrewError(err, "Unknown error");
+}
+
+/** The id of the task /api/tasks/create just returned ({ task: { id } }), or "". */
+function newTaskIdFrom(data: unknown): string {
+  if (!data || typeof data !== "object" || !("task" in data)) return "";
+  const task = (data as { task?: unknown }).task;
+  if (!task || typeof task !== "object" || !("id" in task)) return "";
+  const id = (task as { id?: unknown }).id;
+  return typeof id === "string" ? id : "";
 }
 
 export function TaskUpsertDialog(props: Props) {
@@ -184,6 +195,9 @@ export function TaskUpsertDialog(props: Props) {
   const [pendingReminders, setPendingReminders] = useState<{ remind_at: string; content: string }[]>([]);
 
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  // Files picked before the task exists — uploaded once it has an id (see
+  // uploadPendingFiles). Mirrors how pendingReminders ride along on create.
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
@@ -209,6 +223,9 @@ export function TaskUpsertDialog(props: Props) {
   // later by reopening the card. (targetOk still applies: once a domain that needs
   // a project/property is chosen, that link must be filled in.)
   const canSubmit = canSubmitTask(subject, targetOk);
+  // The name field doubles as a list: each real line is one task.
+  const subjectLines = useMemo(() => parseTaskLines(subject), [subject]);
+  const [splitAsk, setSplitAsk] = useState(false);
 
   // Same color map as the board (built from the same user list) so a person's
   // bold color matches between the card, the picker and their comments.
@@ -323,6 +340,8 @@ export function TaskUpsertDialog(props: Props) {
     setReminders([]);
     setPendingReminders([]);
     setAttachments([]);
+    // Or files staged for a task you abandoned would ride along to the next one.
+    setPendingFiles([]);
     setNewComment("");
     setReminderAt("");
     setReminderNote("");
@@ -485,14 +504,78 @@ export function TaskUpsertDialog(props: Props) {
     });
   }
 
+  // A multi-line name on CREATE is ambiguous — it's either one task with a long
+  // name, or a list. Ask instead of guessing. (On edit it's just a name.)
   async function submit() {
     if (!canSubmit) return;
+    if (!isEditing && subjectLines.length > 1) {
+      setSplitAsk(true);
+      return;
+    }
+    await reallySubmit();
+  }
+
+  /** Create one task per line, sharing everything else in the dialog. */
+  async function submitAsSeparateTasks() {
+    setSplitAsk(false);
+    setSaving(true);
+    emitProgressActivityStart();
+    try {
+      const base = buildPayload();
+      let created = 0;
+      const failed: string[] = [];
+      for (const line of subjectLines) {
+        try {
+          const result = await offlineFetch(
+            "/api/tasks/create",
+            { ...base, subject: line },
+            "משימה חדשה",
+            { idempotent: true }
+          );
+          if (result.queued || result.ok) created += 1;
+          else failed.push(line);
+        } catch {
+          failed.push(line);
+        }
+      }
+      // Partial failure is real across N writes: keep what failed on screen to
+      // retry rather than silently dropping it.
+      if (created > 0) toast.success(`נוצרו ${created} משימות`);
+      if (failed.length > 0) {
+        setSubject(failed.join("\n"));
+        toast.error(`${failed.length} משימות לא נוצרו — נסה שוב`);
+        return;
+      }
+      // Which of the N tasks would the files belong to? Nobody can answer that,
+      // so don't guess — the tasks are created, say the files weren't attached.
+      if (pendingFiles.length > 0) {
+        toast.warning("הקבצים לא צורפו — אפשר לצרף אותם לכרטיס המתאים");
+        setPendingFiles([]);
+      }
+      clearDraft("task-create");
+      props.onSaved?.();
+      props.onOpenChange(false);
+      router.refresh();
+    } finally {
+      emitProgressActivityEnd();
+      setSaving(false);
+    }
+  }
+
+  // `override` exists because setSubject() hasn't landed yet when the split
+  // prompt collapses a list into one name — buildPayload() would read the stale
+  // multi-line value.
+  async function reallySubmit(override?: { subject?: string }) {
     setSaving(true);
     emitProgressActivityStart();
     try {
       if (!isEditing) {
-        const result = await offlineFetch("/api/tasks/create", buildPayload(), "משימה חדשה", { idempotent: true });
+        const payload = { ...buildPayload(), ...(override?.subject ? { subject: override.subject } : {}) };
+        const result = await offlineFetch("/api/tasks/create", payload, "משימה חדשה", { idempotent: true });
         if (result.queued) {
+          // Queued offline → no task id yet, so staged files can't be attached.
+          // Say so rather than dropping them silently.
+          if (pendingFiles.length > 0) toast.warning("הקבצים לא צורפו — המשימה תיווצר כשהחיבור יחזור");
           clearDraft("task-create");
           props.onSaved?.();
           props.onOpenChange(false);
@@ -504,6 +587,7 @@ export function TaskUpsertDialog(props: Props) {
         }
         clearDraft("task-create");
         toast.success("המשימה נוצרה");
+        await uploadPendingFiles(newTaskIdFrom(result.data));
         props.onSaved?.();
         // Close so the new task shows in the list (no lingering edit dialog).
         props.onOpenChange(false);
@@ -695,6 +779,34 @@ export function TaskUpsertDialog(props: Props) {
     }
   }
 
+  /** Send the files staged during creation, now that the task has an id. */
+  async function uploadPendingFiles(taskId: string) {
+    if (pendingFiles.length === 0) return;
+    if (!taskId) {
+      toast.error("הקבצים לא צורפו — המשימה נוצרה, אפשר לצרף אותם מהכרטיס");
+      return;
+    }
+    let uploaded = 0;
+    const failed: string[] = [];
+    for (const file of pendingFiles) {
+      try {
+        const result = await offlineUpload("/api/tasks/attachments/upload", {
+          fields: { task_id: taskId },
+          file,
+          label: file.name,
+        });
+        if (result.queued || result.ok) uploaded += 1;
+        else failed.push(file.name);
+      } catch {
+        failed.push(file.name);
+      }
+    }
+    if (uploaded > 0) toast.success(uploaded === 1 ? "הקובץ הועלה" : `${uploaded} קבצים הועלו`);
+    // The task itself was created — don't fail the whole save over an attachment.
+    if (failed.length > 0) toast.error("חלק מהקבצים לא הועלו", { description: failed.join(", ") });
+    setPendingFiles([]);
+  }
+
   async function uploadAttachments(files: File[]) {
     const targetId = activeTaskId ?? props.taskId;
     if (!targetId || files.length === 0) return;
@@ -839,7 +951,8 @@ export function TaskUpsertDialog(props: Props) {
         <DialogHeader>
           <DialogTitle className="sr-only">{subject.trim() ? subject : dialogTitle}</DialogTitle>
           {/* pe-8 keeps the end button clear of the dialog's close X (top-left in RTL). */}
-          <div className="flex items-center gap-2 pe-8">
+          {/* items-start, not items-center: the name grows downward when it's a list. */}
+          <div className="flex items-start gap-2 pe-8">
             {isEditing ? (
               <button
                 type="button"
@@ -856,19 +969,38 @@ export function TaskUpsertDialog(props: Props) {
                 )}
               </button>
             ) : null}
-            <Input
+            {/* A textarea, not an input: <input> silently strips newlines, so
+                pasting or dictating a list would collapse into one long name and
+                we'd never know it was a list.
+                flex-1 + min-w-0 or it collapses to its intrinsic width in this
+                flex row; min-h-0 to shed the component's 110px minimum, which is
+                meant for a description box, not a title. */}
+            <Textarea
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter still submits a normal one-line name; Shift+Enter (and
+                // paste, and dictation) start a new line.
+                if (e.key === "Enter" && !e.shiftKey && !subject.includes("\n")) {
+                  e.preventDefault();
+                  if (canSubmit && !saving && !loading) void submit();
+                }
+              }}
               placeholder="שם המשימה"
               disabled={loading}
-              className="border-transparent bg-transparent px-1 text-lg font-semibold shadow-none focus-visible:border-input"
+              rows={Math.min(Math.max(subjectLines.length, 1), 8)}
+              className="min-h-0 flex-1 resize-none border-transparent bg-transparent px-1 py-1 text-lg font-semibold leading-snug shadow-none focus-visible:border-input"
             />
             <DictateButton
               onTranscript={(text) =>
-                setSubject((prev) => (prev.trim() ? `${prev.trimEnd()} ${text}` : text))
+                // One recording, several tasks: speech comes back as
+                // "לבדוק את הדירה, לדבר עם הקבלן ולתקן..." — split it into lines
+                // so you can say the whole list in one go instead of
+                // record-stop-record per row.
+                setSubject((prev) => appendDictatedLines(prev, text))
               }
               disabled={loading}
-              title="הכתבת שם המשימה"
+              title="הכתבת שם המשימה — אפשר להקריא כמה משימות ברצף"
               className="shrink-0"
             />
             {viewerIsCreator ? (
@@ -956,10 +1088,9 @@ export function TaskUpsertDialog(props: Props) {
             {!isEditing ? (
               <ActionChip icon={Bell} label="תזכורות" active={isOpen("reminders")} onClick={() => toggleSection("reminders")} />
             ) : null}
-            {/* Files need a saved task — only offer the section once one exists. */}
-            {targetTaskId ? (
-              <ActionChip icon={Paperclip} label="קבצים ותמונות" active={isOpen("files")} onClick={() => toggleSection("files")} />
-            ) : null}
+            {/* Uploading needs a task id, but CHOOSING files doesn't — on a new
+                task they're staged and uploaded right after it's created. */}
+            <ActionChip icon={Paperclip} label="קבצים ותמונות" active={isOpen("files")} onClick={() => toggleSection("files")} />
           </div>
 
           {isOpen("description") ? (
@@ -1025,13 +1156,21 @@ export function TaskUpsertDialog(props: Props) {
                 />
               ) : null}
 
-              {isOpen("files") && targetTaskId ? (
-                <TaskAttachmentsSection
-                  attachments={attachments}
-                  uploadingFiles={uploadingFiles}
-                  onUpload={(files) => void uploadAttachments(files)}
-                  onRequestDelete={setAttachmentToDelete}
-                />
+              {isOpen("files") ? (
+                targetTaskId ? (
+                  <TaskAttachmentsSection
+                    attachments={attachments}
+                    uploadingFiles={uploadingFiles}
+                    onUpload={(files) => void uploadAttachments(files)}
+                    onRequestDelete={setAttachmentToDelete}
+                  />
+                ) : (
+                  <TaskPendingFilesSection
+                    files={pendingFiles}
+                    onAdd={(picked) => setPendingFiles((prev) => [...prev, ...picked])}
+                    onRemove={(index) => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
+                  />
+                )
               ) : null}
 
               {isOpen("labels") ? (
@@ -1101,6 +1240,53 @@ export function TaskUpsertDialog(props: Props) {
         ) : null}
         </div>
         )}
+      </AdaptiveDialog>
+    </Dialog>
+
+    {/* The name has several lines — is it a list, or one long name? Only the
+        person typing knows, so ask. Three real choices, which is why this isn't
+        a ConfirmDialog (its "cancel" would have to lie about what it does). */}
+    <Dialog open={splitAsk} onOpenChange={setSplitAsk}>
+      <AdaptiveDialog size="formSm" dir="rtl" className="text-right">
+        <DialogHeader>
+          <DialogTitle>{subjectLines.length} שורות בשם המשימה</DialogTitle>
+          <DialogDescription>ליצור משימה נפרדת לכל שורה, או משימה אחת?</DialogDescription>
+        </DialogHeader>
+
+        <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border/60 p-2 text-sm">
+          {subjectLines.map((line, i) => (
+            <li key={`${line}-${i}`} className="flex items-start gap-2">
+              <span className="text-muted-foreground">{i + 1}.</span>
+              <span className="min-w-0 flex-1">{line}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-muted-foreground">
+          כל המשימות יקבלו את אותו אחראי, תאריך ושאר הפרטים שמילאת.
+        </p>
+
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => setSplitAsk(false)} disabled={saving}>
+            חזרה לעריכה
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={saving}
+            onClick={() => {
+              // Collapse to a real one-line name — storing the raw newlines would
+              // leave a task whose title renders as a broken block everywhere.
+              setSubject(subjectLines.join(" "));
+              setSplitAsk(false);
+              void reallySubmit({ subject: subjectLines.join(" ") });
+            }}
+          >
+            משימה אחת
+          </Button>
+          <Button type="button" disabled={saving} onClick={() => void submitAsSeparateTasks()}>
+            {saving ? "יוצר…" : `צור ${subjectLines.length} משימות`}
+          </Button>
+        </DialogFooter>
       </AdaptiveDialog>
     </Dialog>
 

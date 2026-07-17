@@ -418,6 +418,72 @@ export function TaskLocationSection({
   );
 }
 
+/**
+ * Files chosen BEFORE the task exists.
+ *
+ * Uploading needs a task id, so during creation we just hold the File objects and
+ * send them once the task has been created. Without this, attaching a photo meant
+ * create → reopen the card → attach, which is why "קבצים ותמונות" was invisible on
+ * a new task.
+ */
+export function TaskPendingFilesSection({
+  files,
+  onAdd,
+  onRemove,
+}: {
+  files: File[];
+  onAdd: (files: File[]) => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-sm font-medium">
+          <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+          קבצים ותמונות
+        </div>
+        <FileUploadActions
+          files={[]}
+          accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
+          multiple
+          size="sm"
+          onFilesSelected={(picked) => onAdd(picked)}
+          chooseLabel="צירוף קובץ"
+          takePhotoLabel="צילום"
+          showPreview={false}
+          notifyOnAdd={false}
+        />
+      </div>
+      {files.length === 0 ? (
+        <div className="text-xs text-muted-foreground">אפשר לצרף קבצים כבר עכשיו — הם יועלו עם יצירת המשימה.</div>
+      ) : (
+        <div className="space-y-1.5">
+          {files.map((file, index) => (
+            <div
+              key={`${file.name}-${index}`}
+              className="flex items-center justify-between gap-2 rounded-md border bg-background px-2 py-1.5"
+            >
+              <span className="min-w-0 truncate text-xs">{file.name}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 shrink-0 p-0 text-destructive"
+                title="הסרה"
+                aria-label={`הסרת ${file.name}`}
+                onClick={() => onRemove(index)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+          <div className="text-[11px] text-muted-foreground">{files.length} קבצים יועלו עם השמירה</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TaskAttachmentsSection({
   attachments,
   uploadingFiles,
