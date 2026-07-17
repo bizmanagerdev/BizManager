@@ -21,7 +21,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bell, Building2, CheckCircle2, Circle, Clock, FolderKanban, GripVertical, Lock, MessageSquare, Plus, UserRound } from "lucide-react";
+import { Bell, Building2, CheckCircle2, Circle, Clock, FolderKanban, GripVertical, ListPlus, Lock, MessageSquare, Plus, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline-queue";
 import { BOARD_STATUSES, type TaskBoardItem } from "@/app/(app)/tasks/loadTasks";
@@ -38,6 +38,7 @@ import { ProjectPicker } from "@/components/projects/ProjectPicker";
 import { InitialsAvatar, buildColorIndexMap } from "@/components/dashboard/InitialsAvatar";
 import { dueUrgencyChipClass, formatShortDate, getDueUrgency } from "@/lib/date";
 import { TaskUpsertDialog, type TaskOption, type TaskStatus, type UserOption } from "@/components/tasks/TaskUpsertDialog";
+import QuickAddTasksDialog from "@/components/tasks/QuickAddTasksDialog";
 import { emitNavigationStart, emitProgressActivityEnd, emitProgressActivityStart } from "@/components/layout/TopNavigationProgress";
 import { DomainSelect } from "@/components/financial/DomainSelect";
 import { getTaskPriorityLabel, getTaskStatusLabel } from "@/lib/ui/status-colors";
@@ -411,6 +412,7 @@ export default function TasksPageClient(props: Props) {
   }, [storageKey]);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [createSubject, setCreateSubject] = useState("");
   const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
   const [editId, setEditId] = useState<string | null>(null);
@@ -700,18 +702,25 @@ export default function TasksPageClient(props: Props) {
               )}
             </div>
           ) : null}
-          <Button
-            type="button"
-            className="ms-auto"
-            onClick={() => {
-              setCreateSubject("");
-              setCreateStatus("todo");
-              setCreateOpen(true);
-            }}
-          >
-            <Plus className="ms-1 h-4 w-4" />
-            משימה
-          </Button>
+          <div className="ms-auto flex items-center gap-2">
+            {/* Handing one person a day's work: pick אחראי + date once, one line
+                per task — instead of the full dialog N times. */}
+            <Button type="button" variant="secondary" onClick={() => setQuickAddOpen(true)}>
+              <ListPlus className="ms-1 h-4 w-4" />
+              הוספה מהירה
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setCreateSubject("");
+                setCreateStatus("todo");
+                setCreateOpen(true);
+              }}
+            >
+              <Plus className="ms-1 h-4 w-4" />
+              משימה
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -786,6 +795,15 @@ export default function TasksPageClient(props: Props) {
           </div>
         </>
       ) : null}
+
+      <QuickAddTasksDialog
+        open={quickAddOpen}
+        onOpenChange={setQuickAddOpen}
+        users={props.users}
+        projects={props.projects}
+        defaultAssigneeId={props.currentUserId}
+        onCreated={() => router.refresh()}
+      />
 
       <TaskUpsertDialog
         open={createOpen}
