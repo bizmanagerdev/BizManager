@@ -38,6 +38,12 @@ export type PushPayload = {
   body: string;
   url?: string;
   tag?: string;
+  /**
+   * Keep the banner on screen until the user dismisses it (desktop). Default
+   * false → auto-dismisses like a chat notification. Reserve for genuinely
+   * urgent alerts, or everything feels "stuck".
+   */
+  requireInteraction?: boolean;
 };
 
 type SubscriptionRow = {

@@ -1,4 +1,4 @@
-const V = "v12";
+const V = "v13";
 const STATIC_CACHE = `bizh-static-${V}`;   // immutable _next/static chunks
 const PAGES_CACHE  = `bizh-pages-${V}`;    // navigation responses
 const API_CACHE    = `bizh-api-${V}`;      // /api GET responses
@@ -87,6 +87,9 @@ self.addEventListener("push", (event) => {
         body: data.body ?? payload.body,
         url: data.url ?? payload.url,
         tag: data.tag ?? payload.tag,
+        // Opt-in stickiness: only genuinely urgent alerts should sit on the
+        // screen. Everything else behaves like WhatsApp — appears, then goes.
+        requireInteraction: data.requireInteraction === true,
       };
     } catch {
       payload.body = event.data.text();
@@ -102,9 +105,11 @@ self.addEventListener("push", (event) => {
       // updates the existing one — no banner, no sound — so it only appears
       // in the tray. renotify forces a fresh heads-up alert every time.
       renotify: true,
-      // Keep the banner on screen until the user acts, instead of it flashing
-      // by and dropping straight into the notification list.
-      requireInteraction: true,
+      // Auto-dismiss like a chat notification (a few seconds, then into the
+      // tray) unless the SERVER marked this one urgent. On desktop, true here
+      // means the banner never leaves until you click X — which is what felt
+      // "stuck". Default false = WhatsApp behaviour.
+      requireInteraction: payload.requireInteraction,
       vibrate: [200, 100, 200],
       icon: "/icon-192.png",
       badge: "/icon-192.png",
