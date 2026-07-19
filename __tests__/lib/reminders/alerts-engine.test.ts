@@ -124,6 +124,7 @@ describe("reminderBucket", () => {
   it("maps system rule keys to buckets", () => {
     expect(reminderBucket({ source: "system", category: "system", dedupeKey: "collection_overdue:order:1:7" })).toBe("money");
     expect(reminderBucket({ source: "system", category: "system", dedupeKey: "check_deposit_due:1" })).toBe("money");
+    expect(reminderBucket({ source: "system", category: "system", dedupeKey: "payment_outflow_due:summary" })).toBe("money");
     expect(reminderBucket({ source: "system", category: "system", dedupeKey: "task_overdue:1" })).toBe("tasks");
     expect(reminderBucket({ source: "system", category: "system", dedupeKey: "stale_quote:1" })).toBe("projects");
     expect(reminderBucket({ source: "system", category: "system", dedupeKey: "project_closed_unbilled:1" })).toBe("projects");
