@@ -312,6 +312,7 @@ const COLLAPSE_META: Record<string, { label: string; href: string }> = {
   invoice_unpaid: { label: "חשבוניות לא משולמות", href: "/invoices" },
   vehicle_expiry: { label: "רכבים — טסט/ביטוח/רישוי", href: "/vehicles" },
   wage_overdue: { label: "שכר עובדים לתשלום", href: "/payroll" },
+  payment_outflow_due: { label: "תשלומים לתשלום", href: "/financial/payments-calendar" },
 };
 
 function ruleKeyOf(item: WorklistItem): string {
@@ -433,6 +434,7 @@ const RULE_NAV_URL: Record<string, string> = {
   payment_due_today: "/collections",
   promise_broken: "/collections",
   check_deposit_due: "/checks",
+  payment_outflow_due: "/financial/payments-calendar",
   recurring_expense_confirm: "/financial",
   unprocessed_items: "/financial/statements",
   // projects

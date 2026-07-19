@@ -6,6 +6,7 @@ import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
 import { loadPaymentCalendarItems, type PaymentCalendarItem } from "@/lib/payables";
 import { loadAccounts, type Account } from "@/lib/accounts";
 import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
+import PageAlertBar from "@/components/reminders/PageAlertBar";
 import PaymentsHubClient from "./PaymentsHubClient";
 
 export const revalidate = 0;
@@ -136,6 +137,7 @@ export default async function PaymentsCalendarPage() {
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-5">
+        <PageAlertBar keys={["payment_outflow_due"]} />
         {error ? (
           <Card className="border-destructive/40">
             <CardContent className="p-4 text-sm text-destructive">{error}</CardContent>

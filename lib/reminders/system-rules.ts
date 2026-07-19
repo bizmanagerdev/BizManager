@@ -470,57 +470,49 @@ const paymentOutflowDueRule: SystemRule = {
   key: "payment_outflow_due",
   label: "תשלומים לתשלום",
   async evaluate(supabase, ctx) {
-    // Money going OUT that we still owe: unpaid (or partly paid) expenses whose pay
-    // date has arrived (overdue / today) or is a few days off (heads-up). Collapsed
-    // to ONE silent summary line — the payments calendar is where you actually pay
-    // them, and per-bill pings would flood. Wages have wage_overdue; this covers
-    // every other bill (suppliers, rent, utilities, taxes, recurring bills,
-    // installments, hand-added payments — all live in `expenses`), matching the
-    // calendar's outflow so the numbers agree.
+    // Money going OUT that we still owe: unpaid (or partly-paid) expenses whose pay
+    // date has arrived (overdue / today) or is a few days off (heads-up). One
+    // reminder per bill, but SILENT and COLLAPSE'd (see COLLAPSE_META) — so it drives
+    // the payments-calendar nav badge + page bar with a real count and shows as ONE
+    // "תשלומים לתשלום: N" worklist line, without a per-bill push flood. Covers every
+    // bill in `expenses` (suppliers, rent, utilities, taxes, recurring bills,
+    // installments, hand-added payments), matching the calendar's outflow so the
+    // numbers agree; wages are on wage_overdue.
     const horizon = new Date(ctx.today);
     horizon.setDate(horizon.getDate() + PAYMENT_HEADS_UP_DAYS);
     const horizonIso = horizon.toISOString().slice(0, 10);
     const { data, error } = await supabase
       .from("expenses")
-      .select("id,expense_date,amount,paid_amount,payment_status")
+      .select("id,expense_date,amount,paid_amount,payment_status,description,category")
       .in("payment_status", ["not_paid", "partial"])
       .lte("expense_date", horizonIso)
       .range(0, 4999);
     throwIf(error, "expenses(payment_due)");
-    let overdue = 0;
-    let dueToday = 0;
-    let upcoming = 0;
-    let total = 0;
+    const items: SystemReminderItem[] = [];
     for (const row of (data ?? []) as Row[]) {
+      const id = getString(row, "id") ?? "";
       const date = (getString(row, "expense_date") ?? "").slice(0, 10);
-      if (!date) continue;
+      if (!id || !date) continue;
       const outstanding = Math.max(0, (getNumber(row, "amount") ?? 0) - (getNumber(row, "paid_amount") ?? 0));
       if (outstanding <= 0.009) continue;
-      total += outstanding;
-      if (date < ctx.todayIso) overdue += 1;
-      else if (date === ctx.todayIso) dueToday += 1;
-      else upcoming += 1;
-    }
-    const count = overdue + dueToday + upcoming;
-    if (count <= 0) return [];
-    const parts: string[] = [];
-    if (overdue) parts.push(`${overdue} באיחור`);
-    if (dueToday) parts.push(`${dueToday} להיום`);
-    if (upcoming) parts.push(`${upcoming} מתקרבים`);
-    // Worst bucket drives the colour: any overdue → danger, else due-today → warning,
-    // else a calm heads-up.
-    const severity: Severity = overdue > 0 ? "danger" : dueToday > 0 ? "warning" : "info";
-    return [
-      {
-        key: "summary",
-        title: `${count} תשלומים לתשלום · ${ils(total)}`,
-        content: `${parts.join(" · ")}.`,
+      const label = getString(row, "description") || getString(row, "category") || "הוצאה";
+      const overdue = date < ctx.todayIso;
+      const dueToday = date === ctx.todayIso;
+      const days = Math.round((new Date(date).getTime() - new Date(ctx.todayIso).getTime()) / 86_400_000);
+      const when = overdue ? `באיחור ${Math.abs(days)} ימים` : dueToday ? "לתשלום היום" : `בעוד ${days} ימים`;
+      items.push({
+        key: id,
+        title: `תשלום לתשלום: ${label}`,
+        content: `${ils(outstanding)} · ${when}.`,
         url: "/financial/payments-calendar",
-        severity,
+        // Worst bill in the group drives the collapsed line's colour.
+        severity: (overdue ? "danger" : dueToday ? "warning" : "info") as Severity,
         behavior: "silent" as Behavior,
         audienceRole: "office" as AudienceRole,
-      },
-    ];
+        links: { expense_id: id },
+      });
+    }
+    return items;
   },
 };
 
