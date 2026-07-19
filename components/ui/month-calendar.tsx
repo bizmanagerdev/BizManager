@@ -27,6 +27,50 @@ export function fmtFullDay(d: Date) {
 
 const WEEK_DAYS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
 
+// Reusable month-navigation group: ‹ month year › + היום. The caller places it
+// inside its own toolbar so it controls the order of the other controls.
+export function MonthNav({
+  month,
+  todayDate,
+  onChange,
+}: {
+  month: Date;
+  todayDate: Date;
+  onChange: (next: Date) => void;
+}) {
+  const onCurrent = month.getFullYear() === todayDate.getFullYear() && month.getMonth() === todayDate.getMonth();
+  const step = (delta: number) => onChange(new Date(month.getFullYear(), month.getMonth() + delta, 1));
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => step(-1)}
+        aria-label="חודש קודם"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:bg-secondary/10"
+      >
+        ‹
+      </button>
+      <span className="min-w-[7rem] text-center text-sm font-semibold">{fmtMonthYear(month)}</span>
+      <button
+        type="button"
+        onClick={() => step(1)}
+        aria-label="חודש הבא"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border bg-background text-muted-foreground transition-colors hover:bg-secondary/10"
+      >
+        ›
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1))}
+        disabled={onCurrent}
+        className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary/10 disabled:opacity-40"
+      >
+        היום
+      </button>
+    </div>
+  );
+}
+
 export type DayContext = {
   day: Date;
   holiday: string | null;
@@ -43,7 +87,17 @@ export type SelectedContext = {
 
 type Props = {
   todayIso: string;
-  /** Panel above the calendar showing the selected day's items. */
+  /** Optional controlled month (first of the month). When set with onMonthChange,
+   *  the caller owns the visible month (e.g. to keep a list view in sync). */
+  month?: Date;
+  onMonthChange?: (next: Date) => void;
+  /** Hide the built-in month-nav row — the caller renders its own (e.g. a shared
+   *  toolbar). Requires controlled `month`/`onMonthChange`. */
+  hideNav?: boolean;
+  /** Toolbar rendered at the top of the calendar (main) column, above the grid —
+   *  so the selected-day side panel rises to the same top edge. */
+  toolbar?: ReactNode;
+  /** Panel beside the calendar (desktop) / below it (mobile) showing the selected day. */
   renderSelectedPanel: (ctx: SelectedContext) => ReactNode;
   /** Dots / amount / count rendered under each day cell (after day number + Hebrew numeral). */
   renderDayContent: (ctx: DayContext) => ReactNode;
@@ -68,6 +122,10 @@ type Props = {
  */
 export default function MonthCalendar({
   todayIso,
+  month,
+  onMonthChange,
+  hideNav = false,
+  toolbar,
   renderSelectedPanel,
   renderDayContent,
   renderDayHover,
@@ -75,12 +133,29 @@ export default function MonthCalendar({
   legend,
 }: Props) {
   const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
-  const [monthDate, setMonthDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  // Month is controlled when `month`+`onMonthChange` are supplied, else internal.
+  const [internalMonth, setInternalMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const monthDate = month ?? internalMonth;
+  const applyMonth = (next: Date) => {
+    if (onMonthChange) onMonthChange(next);
+    else setInternalMonth(next);
+  };
   const [selectedDate, setSelectedDate] = useState(today);
 
-  // Hover popover (desktop): the cell being hovered + its on-screen rect.
+  // Hover popover (desktop): the cell being hovered + its on-screen rect. A short
+  // close delay lets the pointer travel from the cell INTO the popover (to scroll
+  // it) without it closing; entering the popover cancels the pending close.
   const [hover, setHover] = useState<{ day: Date; rect: DOMRect } | null>(null);
-  const clearHover = () => setHover(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelClose = () => {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setHover(null), 160);
+  };
+  const clearHover = () => { cancelClose(); setHover(null); };
+  const openHover = (day: Date, rect: DOMRect) => { cancelClose(); setHover({ day, rect }); };
 
   const calendarDays = useMemo(() => {
     const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
@@ -100,26 +175,24 @@ export default function MonthCalendar({
   );
 
   // A month change (arrows/swipe) invalidates the hovered cell's anchor rect.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => clearHover(), [monthDate]);
 
   // Direction of the last month step drives the slide-in animation.
   const [navDir, setNavDir] = useState<"next" | "prev">("next");
   const prevMonth = () => {
     setNavDir("prev");
-    setMonthDate((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1));
+    applyMonth(new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1));
   };
   const nextMonth = () => {
     setNavDir("next");
-    setMonthDate((p) => new Date(p.getFullYear(), p.getMonth() + 1, 1));
+    applyMonth(new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1));
   };
-  const goToday = () => {
-    const todayMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    setNavDir(monthDate.getTime() > todayMonth.getTime() ? "prev" : "next");
-    setMonthDate(todayMonth);
-    setSelectedDate(today);
+  const goToMonth = (next: Date) => {
+    setNavDir(monthDate.getTime() > next.getTime() ? "prev" : "next");
+    applyMonth(new Date(next.getFullYear(), next.getMonth(), 1));
+    if (next.getFullYear() === today.getFullYear() && next.getMonth() === today.getMonth()) setSelectedDate(today);
   };
-  const onCurrentMonth =
-    monthDate.getFullYear() === today.getFullYear() && monthDate.getMonth() === today.getMonth();
 
   // Horizontal (side) scroll / swipe over the grid steps the month. A time guard
   // collapses one continuous gesture into a single month step.
@@ -170,62 +243,35 @@ export default function MonthCalendar({
 
   return (
     <div className="space-y-4">
-      {/* Selected day panel — supplied by the caller */}
-      {renderSelectedPanel({
-        day: selectedDate,
-        holiday: holidaysByDay.get(selectedIso) ?? null,
-        isToday: isSameDay(selectedDate, today),
-      })}
-
-      {/* Month navigation */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={prevMonth}
-          aria-label="חודש קודם"
-          className="rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-secondary/10"
-        >
-          ‹
-        </button>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">{fmtMonthYear(monthDate)}</span>
-          {!onCurrentMonth ? (
-            <button
-              type="button"
-              onClick={goToday}
-              className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-            >
-              חזרה להיום
-            </button>
+      {/* Desktop: [toolbar + grid] (main) + selected-day panel (aside). The
+          toolbar lives INSIDE the main column so the aside rises to the top. */}
+      <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="min-w-0 space-y-3">
+          {/* Toolbar / month nav */}
+          {toolbar ? (
+            toolbar
+          ) : !hideNav ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <MonthNav month={monthDate} todayDate={today} onChange={goToMonth} />
+              {renderToolbar ? renderToolbar(monthDate) : null}
+            </div>
           ) : null}
-        </div>
-        <button
-          type="button"
-          onClick={nextMonth}
-          aria-label="חודש הבא"
-          className="rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-secondary/10"
-        >
-          ›
-        </button>
-      </div>
 
-      {/* Optional toolbar (totals, toggles) */}
-      {renderToolbar ? renderToolbar(monthDate) : null}
+          {/* Whole calendar in one border: weekday headers + day cells */}
+          <div className="overflow-hidden rounded-xl border">
+            <div className="grid grid-cols-7 border-b bg-muted/40 text-center text-xs font-medium text-muted-foreground">
+              {WEEK_DAYS.map((d) => (
+                <div key={d} className="py-1.5">{d}</div>
+              ))}
+            </div>
 
-      {/* Weekday headers */}
-      <div className="grid grid-cols-7 text-center text-xs font-medium text-muted-foreground">
-        {WEEK_DAYS.map((d) => (
-          <div key={d} className="py-1">{d}</div>
-        ))}
-      </div>
-
-      {/* Day cells */}
-      <div
-        ref={gridRef}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        className="rounded-xl border bg-secondary/30 overflow-hidden"
-      >
+            {/* Day cells */}
+            <div
+              ref={gridRef}
+              onTouchStart={onTouchStart}
+              onTouchEnd={onTouchEnd}
+              className="bg-border overflow-hidden"
+            >
         <div
           key={`${monthDate.getFullYear()}-${monthDate.getMonth()}`}
           className={`grid grid-cols-7 gap-px animate-in fade-in-0 duration-200 ${
@@ -236,10 +282,11 @@ export default function MonthCalendar({
             const inMonth = day.getMonth() === monthDate.getMonth();
             const isToday = isSameDay(day, today);
             const isSelected = isSameDay(day, selectedDate);
-            const holiday = holidaysByDay.get(isoLocal(day)) ?? null;
-            // Holidays render as a solid dark-primary cell (light text); the light
-            // secondary "other month" cells and normal cells keep dark text.
-            const darkHoliday = Boolean(holiday) && inMonth;
+            const holidayInfo = holidaysByDay.get(isoLocal(day)) ?? null;
+            const holiday = holidayInfo?.name ?? null;
+            // Only MAJOR holidays tint the cell; minor ones (Rosh Chodesh, fasts…)
+            // stay a normal work-day cell and only show their text label.
+            const isHoliday = Boolean(holidayInfo?.major) && inMonth;
 
             return (
               <button
@@ -248,54 +295,72 @@ export default function MonthCalendar({
                 onClick={() => setSelectedDate(day)}
                 onMouseEnter={
                   renderDayHover
-                    ? (e) => setHover({ day, rect: e.currentTarget.getBoundingClientRect() })
+                    ? (e) => openHover(day, e.currentTarget.getBoundingClientRect())
                     : undefined
                 }
-                onMouseLeave={renderDayHover ? clearHover : undefined}
+                onMouseLeave={renderDayHover ? scheduleClose : undefined}
                 title={holiday ?? undefined}
-                className={`flex min-h-[3.75rem] flex-col items-center gap-0.5 px-1 py-2 transition-colors ${
+                className={`flex min-h-[3.75rem] flex-col gap-1 px-1.5 py-1.5 transition-colors ${
                   !inMonth
-                    ? "bg-muted text-muted-foreground"
-                    : darkHoliday
-                      ? "bg-primary text-primary-foreground"
+                    ? "bg-muted/20 text-muted-foreground/45"
+                    : isHoliday
+                      ? "bg-muted/40"
                       : "bg-background"
-                } ${isSelected ? "ring-1 ring-inset ring-primary/40" : "hover:bg-secondary/10"}`}
+                } ${isSelected ? "z-10 ring-2 ring-inset ring-primary" : "hover:bg-secondary/10"}`}
               >
-                {/* Day number (Gregorian) */}
-                <span
-                  className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-medium transition-colors ${
-                    isToday
-                      ? "bg-primary text-primary-foreground"
-                      : isSelected
-                        ? "bg-secondary/20 text-secondary font-semibold"
-                        : ""
-                  }`}
-                >
-                  {day.getDate()}
-                </span>
+                {/* Date header — Gregorian number + Hebrew numeral on ONE row */}
+                <div className="flex w-full items-center justify-between gap-1">
+                  <span
+                    className={`flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-sm font-medium transition-colors ${
+                      isToday
+                        ? "bg-primary text-primary-foreground"
+                        : isSelected
+                          ? "bg-secondary/20 text-secondary font-semibold"
+                          : ""
+                    }`}
+                  >
+                    {day.getDate()}
+                  </span>
+                  <span className="text-[10px] leading-none text-muted-foreground">
+                    {hebrewDayLabel(day)}
+                  </span>
+                </div>
 
-                {/* Hebrew day numeral */}
-                <span className={`text-[10px] leading-none ${darkHoliday ? "text-primary-foreground/75" : "text-muted-foreground"}`}>
-                  {hebrewDayLabel(day)}
-                </span>
-
-                {renderDayContent({ day, holiday, isToday, isSelected, inMonth })}
+                {/* Day content (dots / amount) — centered under the header */}
+                <div className="flex flex-1 flex-col items-center justify-start gap-0.5">
+                  {renderDayContent({ day, holiday, isToday, isSelected, inMonth })}
+                </div>
               </button>
             );
           })}
-        </div>
-      </div>
+              </div>
+            </div>
+          </div>
 
-      {legend}
+          {legend ? <div className="mt-3">{legend}</div> : null}
+        </div>
+
+        {/* Selected-day panel — beside the grid on desktop (matches its height),
+            below it on mobile. */}
+        <aside className="min-w-0">
+          {renderSelectedPanel({
+            day: selectedDate,
+            holiday: holidaysByDay.get(selectedIso)?.name ?? null,
+            isToday: isSameDay(selectedDate, today),
+          })}
+        </aside>
+      </div>
 
       {/* Hover popover — anchored to the hovered cell, rendered outside the
           overflow-hidden/animated grid so it isn't clipped. */}
       {hover && renderDayHover ? (
         <DayHoverPopover
           rect={hover.rect}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
           content={renderDayHover({
             day: hover.day,
-            holiday: holidaysByDay.get(isoLocal(hover.day)) ?? null,
+            holiday: holidaysByDay.get(isoLocal(hover.day))?.name ?? null,
             isToday: isSameDay(hover.day, today),
             isSelected: isSameDay(hover.day, selectedDate),
             inMonth: hover.day.getMonth() === monthDate.getMonth(),
@@ -311,9 +376,13 @@ export default function MonthCalendar({
 function DayHoverPopover({
   rect,
   content,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   rect: DOMRect;
   content: ReactNode;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }) {
   if (!content || typeof document === "undefined") return null;
 
@@ -332,14 +401,16 @@ function DayHoverPopover({
 
   // Portaled to <body> so `position: fixed` resolves against the viewport, not
   // an ancestor with a transform (which would offset it to random-looking spots).
+  // pointer-events-auto + onMouseEnter (cancels the cell's pending close) let the
+  // user move onto the panel and SCROLL its list without it closing.
   return createPortal(
     <div
       dir="rtl"
       role="tooltip"
-      // pointer-events-none: the panel never intercepts the mouse, so the cell's
-      // own onMouseLeave fires as the pointer leaves it and the panel closes.
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       style={{ position: "fixed", zIndex: 50, maxHeight: "16rem", ...style }}
-      className="pointer-events-none overflow-y-auto rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-95 duration-100"
+      className="pointer-events-auto overflow-y-auto overscroll-contain rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-95 duration-100"
     >
       {content}
     </div>,

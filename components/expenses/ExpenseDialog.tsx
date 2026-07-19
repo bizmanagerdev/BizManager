@@ -19,6 +19,7 @@ import {
   Landmark,
   CreditCard,
   Banknote,
+  Repeat,
 } from "lucide-react";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,54 @@ const KNOWN_CATEGORIES = new Set([WORKER_WAGE_CATEGORY, ...BASE_EXPENSE_CATEGORI
 // "חיוב הלקוח" section is offered (form + express stay in sync via this list).
 const WORKER_BILLABLE_DOMAINS: readonly string[] = ["logistics_projects", "sales", "property_management"];
 
+// Recurrence cadence choices (monthly intervals + yearly). Yearly keeps its own
+// month picker; the monthly ones set interval_months.
+const RECURRENCE_CHOICES = [
+  { key: "m1", label: "כל חודש", frequency: "monthly" as const, interval: 1 },
+  { key: "m2", label: "כל חודשיים", frequency: "monthly" as const, interval: 2 },
+  { key: "m3", label: "כל 3 חודשים", frequency: "monthly" as const, interval: 3 },
+  { key: "m6", label: "כל 6 חודשים", frequency: "monthly" as const, interval: 6 },
+  { key: "y", label: "כל שנה", frequency: "yearly" as const, interval: 1 },
+] as const;
+
+function recurrenceKeyOf(freq: "monthly" | "yearly", interval: number): string {
+  if (freq === "yearly") return "y";
+  if (interval >= 6) return "m6";
+  if (interval >= 3) return "m3";
+  if (interval >= 2) return "m2";
+  return "m1";
+}
+
+// Hebrew month labels for the yearly-recurring picker.
+const MONTH_OPTIONS = [
+  { value: "1", label: "ינואר" },
+  { value: "2", label: "פברואר" },
+  { value: "3", label: "מרץ" },
+  { value: "4", label: "אפריל" },
+  { value: "5", label: "מאי" },
+  { value: "6", label: "יוני" },
+  { value: "7", label: "יולי" },
+  { value: "8", label: "אוגוסט" },
+  { value: "9", label: "ספטמבר" },
+  { value: "10", label: "אוקטובר" },
+  { value: "11", label: "נובמבר" },
+  { value: "12", label: "דצמבר" },
+] as const;
+
+// The months an every-N-months bill lands on, starting from the start date's
+// month — so the user can see (and shift, by changing the date) whether it's on
+// odd months (1,3,5…) or even (2,4,6…).
+function occurrenceMonths(startIso: string, interval: number): string[] {
+  const startMonth = Number(startIso.slice(5, 7)) || 1;
+  const step = Math.max(1, interval);
+  const out: string[] = [];
+  for (let m = 0; m < 12; m += step) {
+    const monthNum = ((startMonth - 1 + m) % 12) + 1;
+    out.push(MONTH_OPTIONS.find((x) => x.value === String(monthNum))?.label ?? "");
+  }
+  return out;
+}
+
 export type ExpenseWorkerOption = {
   id: string;
   label: string;
@@ -113,6 +162,35 @@ export type EditingExpenseData = {
   attachments?: FinancialAttachment[];
 };
 
+// Edit mode for a RECURRING EXPENSE TEMPLATE (the הוצאות קבועות tab). Turns the
+// dialog into a template editor: recurring is forced on, and the schedule/name/
+// active fields hydrate from the template. Structurally a subset of
+// RecurringExpenseTemplateItem, so that item can be passed directly.
+export type EditingRecurringTemplateData = {
+  id: string;
+  template_name: string | null;
+  category: string | null;
+  amount: number | string | null;
+  is_variable_amount: boolean;
+  description_template: string | null;
+  notes_template: string | null;
+  business_domain: string | null;
+  project_id: string | null;
+  order_id: string | null;
+  property_id: string | null;
+  account_id: string | null;
+  included_in_base_price: boolean;
+  billed_to_customer: boolean;
+  project_expense_notes_template: string | null;
+  frequency: "monthly" | "yearly";
+  interval_months: number;
+  expense_day_of_month: number;
+  expense_month_of_year: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  is_active: boolean;
+};
+
 export type ExpenseDialogSavedData = {
   expenseId: string;
   // "expense" | "session" | "installments" — lets a parent rebuild its list row.
@@ -132,6 +210,11 @@ type Props = {
   // Edit mode for a worker SESSION (shift). Turns the dialog into a session editor
   // (worker/clock/labor-cost/payment). Requires `users` to be provided.
   editingSession?: WorkSessionRow | null;
+  // Edit mode for a recurring-expense TEMPLATE (forces recurring on + hydrates it).
+  editingRecurringTemplate?: EditingRecurringTemplateData | null;
+  // Open a NEW expense with recurring pre-selected (e.g. the הוצאות קבועות tab's
+  // "new" button, where no date is supplied and the user picks one).
+  defaultRecurring?: boolean;
   // Label shown in the source info banner when editing
   editingSourceLabel?: string | null;
 
@@ -152,6 +235,10 @@ type Props = {
 
   // Attachment support
   showAttachments?: boolean;
+
+  // Prefill the expense date for a NEW expense (e.g. a day clicked on the
+  // payments calendar). Falls back to today when omitted.
+  defaultDate?: string;
 
   // Default category for a NEW expense (e.g. "רכבים" from a car's page).
   defaultCategory?: string;
@@ -261,6 +348,8 @@ export function ExpenseDialog({
   onOpenChange,
   editingExpense,
   editingSession,
+  editingRecurringTemplate,
+  defaultRecurring = false,
   editingSourceLabel,
   lockedProjectId,
   lockedOrderId,
@@ -269,6 +358,7 @@ export function ExpenseDialog({
   recurringOrders = [],
   recurringProperties = [],
   showAttachments = false,
+  defaultDate,
   defaultCategory,
   presetTagIds,
   presetTagLabel,
@@ -279,6 +369,7 @@ export function ExpenseDialog({
   onSaved,
 }: Props) {
   const isEditingSession = Boolean(editingSession);
+  const isEditingTemplate = Boolean(editingRecurringTemplate);
   const isEditing = Boolean(editingExpense) || isEditingSession;
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -312,6 +403,20 @@ export function ExpenseDialog({
   // Installments ("פריסה לתשלומים"): split this expense into N dated not_paid rows.
   const [installmentsMode, setInstallmentsMode] = useState(false);
   const [installmentRows, setInstallmentRows] = useState<InstallmentRow[]>([]);
+  // Recurring ("חוזר"): turn this NEW expense into a recurring template instead of
+  // a one-off row. The chosen expense date supplies the day-of-month (and, for
+  // yearly, the default month) + the template start date. Mutually exclusive with
+  // installments and only offered for a new, non-worker expense.
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurFrequency, setRecurFrequency] = useState<"monthly" | "yearly">("monthly");
+  const [recurInterval, setRecurInterval] = useState(1); // monthly: every N months (1/2/3/6)
+  const [recurMonth, setRecurMonth] = useState(""); // yearly: month it recurs, "1".."12"
+  const [recurEndDate, setRecurEndDate] = useState("");
+  // Recurring template extras (parity with the old bespoke template form).
+  const [templateName, setTemplateName] = useState(""); // optional; defaults to description/category
+  const [recurActive, setRecurActive] = useState(true); // is_active (template edit)
+  const [projectNotesTemplate, setProjectNotesTemplate] = useState(""); // project domain only
+  const [recurVariable, setRecurVariable] = useState(false); // amount known only at pay time (taxes)
   const [billToCustomerAmount, setBillToCustomerAmount] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
@@ -332,6 +437,20 @@ export function ExpenseDialog({
       /* localStorage unavailable — stay on the form default */
     }
   }, []);
+  // Per-open default: EDITING a recurring template opens the full form (easier to
+  // scan/change one field); CREATING defaults to the step-by-step flow (respecting
+  // a saved preference). The toggle still lets the user switch.
+  useEffect(() => {
+    if (!open) return;
+    if (isEditingTemplate) { setViewMode("form"); return; }
+    try {
+      const saved = window.localStorage.getItem("expenseDialogMode");
+      setViewMode(saved === "form" ? "form" : "express");
+    } catch {
+      setViewMode("express");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   function chooseMode(mode: "form" | "express") {
     setViewMode(mode);
     try {
@@ -441,7 +560,47 @@ export function ExpenseDialog({
 
   useEffect(() => {
     if (!open) return;
-    if (editingExpense) {
+    if (editingRecurringTemplate) {
+      const t = editingRecurringTemplate;
+      const rawAmt = t.amount;
+      setAmount(rawAmt != null ? String(rawAmt) : "");
+      // Seed the date so its DAY = the template's expense day (its month/year come
+      // from the start date when present, else the current month). The chosen date
+      // drives day-of-month + start_date on save (create-day = expense-day).
+      const day = Number(t.expense_day_of_month) || 1;
+      const baseYm = t.start_date && /^\d{4}-\d{2}/.test(t.start_date) ? t.start_date.slice(0, 7) : todayIso().slice(0, 7);
+      const [by, bm] = baseYm.split("-").map(Number);
+      const lastDay = new Date(by, bm, 0).getDate();
+      const clampedDay = Math.min(Math.max(1, day), lastDay);
+      setExpenseDate(`${baseYm}-${String(clampedDay).padStart(2, "0")}`);
+      setPaymentStatus("paid");
+      setPaidAmount("");
+      setPaymentMethod("");
+      setAccountId(typeof t.account_id === "string" ? t.account_id : "");
+      const cat = t.category ?? "";
+      if (cat && KNOWN_CATEGORIES.has(cat)) {
+        setCategory(cat);
+        setCategoryOther("");
+      } else {
+        setCategory(cat ? OTHER_CATEGORY : "");
+        setCategoryOther(cat);
+      }
+      setDescription(t.description_template ?? "");
+      setNotes(t.notes_template ?? "");
+      setBusinessDomain(
+        t.business_domain && (EXPENSE_BUSINESS_DOMAINS as readonly string[]).includes(t.business_domain)
+          ? (t.business_domain as ExpenseBusinessDomain)
+          : ""
+      );
+      setProjectId(t.project_id ?? "");
+      setOrderId(t.order_id ?? "");
+      setPropertyId(t.property_id ?? "");
+      setIncludedInBasePrice(Boolean(t.included_in_base_price));
+      setBilledToCustomer(Boolean(t.billed_to_customer));
+      setBillToCustomerAmount("");
+      setExistingAttachments([]);
+      setTagIds([]);
+    } else if (editingExpense) {
       const raw = editingExpense.amount;
       setAmount(typeof raw === "number" ? String(raw) : raw ?? "");
       setExpenseDate(editingExpense.expense_date || todayIso());
@@ -519,7 +678,7 @@ export function ExpenseDialog({
       setTagIds([]);
     } else {
       setAmount("");
-      setExpenseDate(todayIso());
+      setExpenseDate(defaultDate || todayIso());
       setPaymentStatus("paid");
       setPaidAmount("");
       setPaymentMethod("");
@@ -540,6 +699,31 @@ export function ExpenseDialog({
     }
     setInstallmentsMode(false);
     setInstallmentRows([]);
+    setIsRecurring(false);
+    setRecurFrequency("monthly");
+    setRecurInterval(1);
+    setRecurMonth("");
+    setRecurEndDate("");
+    setTemplateName("");
+    setRecurActive(true);
+    setProjectNotesTemplate("");
+    setRecurVariable(false);
+    // Recurring override: template edit forces recurring on + hydrates its schedule;
+    // a NEW expense opened with defaultRecurring starts on the recurring path.
+    if (editingRecurringTemplate) {
+      const t = editingRecurringTemplate;
+      setIsRecurring(true);
+      setRecurFrequency(t.frequency === "yearly" ? "yearly" : "monthly");
+      setRecurInterval(Math.max(1, Number(t.interval_months) || 1));
+      setRecurMonth(t.expense_month_of_year ? String(t.expense_month_of_year) : "");
+      setRecurEndDate(t.end_date ?? "");
+      setTemplateName(t.template_name ?? "");
+      setRecurActive(t.is_active !== false);
+      setProjectNotesTemplate(t.project_expense_notes_template ?? "");
+      setRecurVariable(t.is_variable_amount === true);
+    } else if (defaultRecurring) {
+      setIsRecurring(true);
+    }
     if (!editingSession) {
       setWorkerUserId("");
       setClockIn("");
@@ -844,6 +1028,68 @@ export function ExpenseDialog({
     }
   }
 
+  // Recurring → save a recurring_expense_template instead of a one-off expense.
+  // The generator (generate_recurring_expenses_for_date) then materializes a
+  // not_paid expense each period; the account/domain/link carry through.
+  async function submitRecurring(amountNumber: number) {
+    const startDate = expenseDate || todayIso();
+    const day = Number(startDate.slice(8, 10)) || 1;
+    const monthOfYear =
+      recurFrequency === "yearly"
+        ? Number(recurMonth) || Number(startDate.slice(5, 7)) || 1
+        : null;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/recurring-expenses/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: editingRecurringTemplate?.id ?? undefined,
+          template_name: templateName.trim() || description.trim() || finalCategory,
+          category: finalCategory,
+          amount: recurVariable ? 0 : amountNumber,
+          is_variable_amount: recurVariable,
+          description_template: description.trim() || null,
+          notes_template: notes.trim() || null,
+          business_domain: effectiveDomain,
+          project_id: effectiveProjectId || null,
+          order_id: effectiveOrderId || null,
+          property_id: effectivePropertyId || null,
+          account_id: accountId || null,
+          included_in_base_price: showBillingOptions ? includedInBasePrice : false,
+          billed_to_customer: showBillingOptions ? billedToCustomer : false,
+          project_expense_notes_template: showBillingOptions ? (projectNotesTemplate.trim() || null) : null,
+          frequency: recurFrequency,
+          interval_months: recurFrequency === "yearly" ? 1 : recurInterval,
+          create_day_of_month: day,
+          expense_day_of_month: day,
+          create_month_of_year: monthOfYear,
+          expense_month_of_year: monthOfYear,
+          start_date: startDate,
+          end_date: recurEndDate || null,
+          is_active: isEditingTemplate ? recurActive : true,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        const msg = toHebrewError(json.error, "שמירת ההוצאה הקבועה נכשלה.");
+        setErrorMessage(msg);
+        toast.error("שגיאה בשמירת הוצאה קבועה", { description: msg });
+        return;
+      }
+      toast.success(isEditingTemplate ? "ההוצאה הקבועה עודכנה" : "ההוצאה הקבועה נשמרה ותיווצר בכל תקופה");
+      const savedResult = onSaved({ expenseId: "", sourceType: "expense", expense: {}, projectExpense: null, attachments: [] });
+      if (savedResult instanceof Promise) await savedResult;
+      onOpenChange(false);
+    } catch (error) {
+      const msg = toHebrewError(error, "שמירת ההוצאה הקבועה נכשלה.");
+      setErrorMessage(msg);
+      toast.error("שגיאה בשמירת הוצאה קבועה", { description: msg });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const handleSubmit = async () => {
     setErrorMessage("");
     if (!effectiveDomain) {
@@ -859,7 +1105,9 @@ export function ExpenseDialog({
     }
 
     const amountNumber = Number(amount);
-    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+    // Variable-amount recurring templates (taxes etc.) have no amount yet.
+    const skipAmountCheck = isRecurring && recurVariable;
+    if (!skipAmountCheck && (!Number.isFinite(amountNumber) || amountNumber <= 0)) {
       setErrorMessage("יש להזין סכום תקין (גדול מאפס).");
       toast.error("יש להזין סכום תקין");
       return;
@@ -883,6 +1131,12 @@ export function ExpenseDialog({
     if (!isEditing && effectiveDomain === "property_management" && recurringProperties.length > 0 && !effectivePropertyId) {
       setErrorMessage("יש לבחור נכס.");
       toast.error("יש לבחור נכס");
+      return;
+    }
+
+    // Recurring → save a template instead of a one-off (or installments) expense.
+    if (isRecurring) {
+      await submitRecurring(amountNumber);
       return;
     }
 
@@ -1006,6 +1260,9 @@ export function ExpenseDialog({
   // Only offered for NEW expenses; editing an expense/session always uses the
   // full form. Both modes share the state above, so a half-filled entry carries
   // over when toggling. Worker-wage ("שכר עובד") hands off to the full form.
+  // Recurring templates (new AND edit) use the shared dialog's normal behavior:
+  // step-by-step by default, with the form/express toggle. Only real expense/session
+  // EDIT is form-only (express is a fast-create experience there).
   const showModeToggle = !isEditing && !isEditingSession;
   const activeMode: "form" | "express" = showModeToggle ? viewMode : "form";
 
@@ -1015,6 +1272,11 @@ export function ExpenseDialog({
     ((effectiveDomain === "logistics_projects" && recurringProjects.length > 0) ||
       (effectiveDomain === "sales" && recurringOrders.length > 0) ||
       (effectiveDomain === "property_management" && recurringProperties.length > 0));
+
+  // "חוזר" (recurring) is offered only for a NEW, non-worker expense. Turning it
+  // on saves a recurring template instead of a one-off; it's mutually exclusive
+  // with installments.
+  const canRecur = !isEditing && !isWorkerPayment;
 
   const expressSteps = useMemo<string[]>(() => {
     // Worker wage ("שכר עובד") → the flow becomes a work-session builder handled
@@ -1051,20 +1313,33 @@ export function ExpenseDialog({
     if (category === OTHER_CATEGORY) s.push("otherCategory");
     if (finalCategory === CARS_CATEGORY && !presetTagLabel) s.push("tags");
     s.push("date");
-    // Installments come BEFORE the payment questions: splitting turns the expense
-    // into dated not-paid rows, so paid/method/account don't apply once you split.
-    if (!isEditing) s.push("installments");
-    if (installmentsMode) {
-      s.push("instcount");
-      // If some installments were marked already-paid, collect where they were paid.
-      if (installmentRows.some((r) => r.paid)) s.push("method", "account");
-    } else {
-      s.push("status");
-      if (paymentStatus === "partial") s.push("paidamt");
-      if (paymentStatus === "paid" || paymentStatus === "partial") s.push("method", "account");
+    // One-time vs recurring: the choice reshapes the rest of the flow. Hidden when
+    // editing a template (that's always recurring — can't switch to one-time).
+    if (canRecur && !isEditingTemplate) s.push("recurrence");
+    if (isRecurring) {
+      // A template isn't "paid now" — collect only the schedule + which account it
+      // will be paid from; the generated rows start not_paid and get confirmed later.
+      s.push("recurfreq");
+      if (recurFrequency === "yearly") s.push("recurmonth");
+      s.push("recurvariable", "recurrange", "account");
       if (showBillingOptions) s.push("billing");
+    } else {
+      // Installments come BEFORE the payment questions: splitting turns the expense
+      // into dated not-paid rows, so paid/method/account don't apply once you split.
+      if (!isEditing) s.push("installments");
+      if (installmentsMode) {
+        s.push("instcount");
+        // If some installments were marked already-paid, collect where they were paid.
+        if (installmentRows.some((r) => r.paid)) s.push("method", "account");
+      } else {
+        s.push("status");
+        if (paymentStatus === "partial") s.push("paidamt");
+        if (paymentStatus === "paid" || paymentStatus === "partial") s.push("method", "account");
+        if (showBillingOptions) s.push("billing");
+      }
     }
     s.push("description", "notes");
+    if (isRecurring) s.push("recurname"); // name the template (after description, so it can default from it)
     if (showAttachments) s.push("files");
     s.push("review");
     return s;
@@ -1073,7 +1348,8 @@ export function ExpenseDialog({
     finalCategory, presetTagLabel, paymentStatus, isEditing, installmentsMode,
     showBillingOptions, showAttachments, canManageWorkerSessions,
     showSessionTimingFields, showSessionPriceField, selectedWorkerType,
-    workerPaymentChoice, installmentRows,
+    workerPaymentChoice, installmentRows, canRecur, isRecurring, recurFrequency,
+    isEditingTemplate,
   ]);
 
   const rawIndex = expressSteps.indexOf(expStepId);
@@ -1139,7 +1415,6 @@ export function ExpenseDialog({
         if (e.key === ".") { e.preventDefault(); setter((c) => applyKey(c, ".")); return; }
         if (e.key === "Backspace") { e.preventDefault(); setter((c) => applyKey(c, "del")); return; }
         if (e.key === "Enter") {
-          if (expStep === "amount" && !(Number(amount) > 0)) return;
           e.preventDefault();
           expressGo(1);
           return;
@@ -1270,9 +1545,20 @@ export function ExpenseDialog({
         return (
           <>
             {expEyebrow(<Wallet className="h-4 w-4" />, "סכום")}
-            {expTitle("כמה עלתה ההוצאה?")}
+            {expTitle("כמה עלתה ההוצאה?", "אפשר להשאיר 0 ולקבוע אחר כך")}
             {expAmountHero(amount)}
-            {expKeypad(setAmount, !(Number(amount) > 0))}
+            {/* Allow proceeding at 0 — e.g. a recurring bill whose amount changes
+                each time (taxes). Real amount is enforced at submit for one-offs. */}
+            {expKeypad(setAmount, false)}
+            {canRecur ? (
+              <button
+                type="button"
+                onClick={() => { setIsRecurring(true); setRecurVariable(true); setAmount(""); expressAdvance(); }}
+                className="mx-auto mt-3 block text-sm font-semibold text-primary hover:underline"
+              >
+                תשלום חוזר בסכום משתנה
+              </button>
+            ) : null}
           </>
         );
       case "domain":
@@ -1411,6 +1697,117 @@ export function ExpenseDialog({
                 </button>
               ))}
             </div>
+            {expContinue()}
+          </>
+        );
+      case "recurrence":
+        return (
+          <>
+            {expEyebrow(<Repeat className="h-4 w-4" />, "תדירות")}
+            {expTitle("הוצאה חד-פעמית או חוזרת?", "חוזרת = תיווצר אוטומטית בכל תקופה")}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {expCard({ badge: 1, icon: <Wallet className="h-4 w-4" />, title: "חד-פעמי", sub: "הוצאה אחת בתאריך שנבחר", selected: !isRecurring, onClick: () => { setIsRecurring(false); expressAdvance(); } })}
+              {expCard({
+                badge: 2,
+                icon: <Repeat className="h-4 w-4" />,
+                title: "חוזר",
+                sub: "כל חודש או כל שנה",
+                selected: isRecurring,
+                onClick: () => {
+                  setIsRecurring(true);
+                  setInstallmentsMode(false);
+                  if (!recurMonth) setRecurMonth(String(Number((expenseDate || todayIso()).slice(5, 7)) || 1));
+                  expressAdvance();
+                },
+              })}
+            </div>
+          </>
+        );
+      case "recurfreq": {
+        const currentKey = recurrenceKeyOf(recurFrequency, recurInterval);
+        return (
+          <>
+            {expEyebrow(<Repeat className="h-4 w-4" />, "כל כמה זמן")}
+            {expTitle("כל כמה זמן חוזרת ההוצאה?")}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {RECURRENCE_CHOICES.map((c, i) =>
+                expCard({
+                  key: c.key,
+                  badge: i + 1,
+                  title: c.label,
+                  selected: currentKey === c.key,
+                  onClick: () => {
+                    setRecurFrequency(c.frequency);
+                    setRecurInterval(c.interval);
+                    if (c.frequency === "yearly" && !recurMonth) {
+                      setRecurMonth(String(Number((expenseDate || todayIso()).slice(5, 7)) || 1));
+                    }
+                    expressAdvance();
+                  },
+                })
+              )}
+            </div>
+          </>
+        );
+      }
+      case "recurmonth":
+        return (
+          <>
+            {expEyebrow(<CalendarDays className="h-4 w-4" />, "חודש")}
+            {expTitle("באיזה חודש?")}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {MONTH_OPTIONS.map((m, i) =>
+                expCard({ key: m.value, badge: i + 1, title: m.label, selected: recurMonth === m.value, onClick: () => { setRecurMonth(m.value); expressAdvance(); } })
+              )}
+            </div>
+          </>
+        );
+      case "recurname": {
+        const derivedName = description.trim() || finalCategory || "הוצאה קבועה";
+        return (
+          <>
+            {expEyebrow(<Paperclip className="h-4 w-4" />, "שם תבנית")}
+            {expTitle("איך לקרוא להוצאה הקבועה?", "השם שיופיע ברשימת ההוצאות הקבועות")}
+            <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder={derivedName} autoFocus />
+            <div className="mt-1.5 text-center text-xs text-muted-foreground">
+              שם שיוצג: <span className="font-medium text-foreground">{templateName.trim() || derivedName}</span>
+            </div>
+            {expContinue(undefined, "המשך", () => expressGo(1))}
+          </>
+        );
+      }
+      case "recurvariable":
+        return (
+          <>
+            {expEyebrow(<Wallet className="h-4 w-4" />, "סכום")}
+            {expTitle("הסכום קבוע או משתנה?", "משתנה = ייקבע בעת התשלום, כמו מס")}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {expCard({ badge: 1, title: "סכום קבוע", sub: Number(amount) > 0 ? ils(Number(amount)) : undefined, selected: !recurVariable, onClick: () => { setRecurVariable(false); expressAdvance(); } })}
+              {expCard({ badge: 2, title: "סכום משתנה", sub: "ייקבע בעת התשלום", selected: recurVariable, onClick: () => { setRecurVariable(true); expressAdvance(); } })}
+            </div>
+          </>
+        );
+      case "recurrange":
+        return (
+          <>
+            {expEyebrow(<CalendarDays className="h-4 w-4" />, "טווח")}
+            {expTitle("עד מתי?", "אפשר לדלג — ימשיך ללא הגבלה")}
+            <div className="space-y-1">
+              <div className="text-sm font-medium">תאריך סיום (לא חובה)</div>
+              <DateInput value={recurEndDate} onChange={(e) => setRecurEndDate(e.target.value)} />
+            </div>
+            {recurFrequency === "monthly" && recurInterval > 1 ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                יחול בחודשים: <span className="font-medium text-foreground">{occurrenceMonths(expenseDate || todayIso(), recurInterval).join(" · ")}</span>
+              </p>
+            ) : null}
+            <p className="mt-2 text-xs text-muted-foreground">
+              {recurFrequency === "yearly"
+                ? `ייווצר בכל שנה ב-${Number((expenseDate || todayIso()).slice(8, 10)) || 1}/${MONTH_OPTIONS.find((m) => m.value === (recurMonth || String(Number((expenseDate || todayIso()).slice(5, 7)))))?.label ?? ""}.`
+                : recurInterval > 1
+                  ? `ייווצר כל ${recurInterval} חודשים ביום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1}.`
+                  : `ייווצר בכל חודש ביום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1}.`}
+            </p>
             {expContinue()}
           </>
         );
@@ -1842,7 +2239,23 @@ export function ExpenseDialog({
               ["עלות עבודה", laborCost ? ils(Number(laborCost)) : suggestedWorkerAmount !== null ? formatIls(suggestedWorkerAmount) : "יחושב"],
               ["תשלום לעובד", workerPaymentChoice === "none" ? "לא שולם" : workerPaymentChoice === "paid" ? "שולם במלואו" : "שולם חלקית"],
             ]
-          : installmentsMode
+          : isRecurring
+            ? [
+                ["שם", templateName.trim() || description.trim() || finalCategory || "—"],
+                ["סכום", recurVariable ? "סכום משתנה" : ils(Number(amount) || 0)],
+                ["תחום", getBusinessDomainLabel(effectiveDomain)],
+                ...(sourceLabel ? [sourceLabel] : []),
+                ["קטגוריה", finalCategory || "—"],
+                ["תדירות", recurFrequency === "yearly" ? "כל שנה" : recurInterval > 1 ? `כל ${recurInterval} חודשים` : "כל חודש"],
+                [
+                  "מתי",
+                  recurFrequency === "yearly"
+                    ? `${Number((expenseDate || todayIso()).slice(8, 10)) || 1}/${MONTH_OPTIONS.find((m) => m.value === (recurMonth || String(Number((expenseDate || todayIso()).slice(5, 7)))))?.label ?? ""}`
+                    : `יום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1} בכל חודש`,
+                ],
+                ...(recurEndDate ? ([["עד", recurEndDate]] as Array<[string, string]>) : []),
+              ]
+            : installmentsMode
             ? [
                 ["סכום", ils(Number(amount) || 0)],
                 ["תחום", getBusinessDomainLabel(effectiveDomain)],
@@ -1875,7 +2288,7 @@ export function ExpenseDialog({
             </div>
             <div className="mt-6">
               <Button type="button" onClick={() => void handleSubmit()} disabled={saving} className="w-full">
-                {saving ? (<><Loader2 className="ml-2 h-4 w-4 animate-spin" />שומר...</>) : (<><Check className="ml-2 h-4 w-4" />{isWorkerPayment ? "שמור משמרת" : "שמור הוצאה"}</>)}
+                {saving ? (<><Loader2 className="ml-2 h-4 w-4 animate-spin" />שומר...</>) : (<><Check className="ml-2 h-4 w-4" />{isWorkerPayment ? "שמור משמרת" : isRecurring ? "שמור הוצאה קבועה" : "שמור הוצאה"}</>)}
               </Button>
             </div>
           </>
@@ -1939,14 +2352,22 @@ export function ExpenseDialog({
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <DialogTitle>
-                {isEditingSession ? "עריכת שכר עובד" : isEditing ? "עריכת הוצאה" : "הוספת הוצאה"}
+                {isEditingTemplate
+                  ? "עריכת הוצאה קבועה"
+                  : isEditingSession
+                    ? "עריכת שכר עובד"
+                    : isEditing
+                      ? "עריכת הוצאה"
+                      : "הוספת הוצאה"}
               </DialogTitle>
               <DialogDescription className={activeMode === "express" ? "sr-only" : undefined}>
-                {isEditingSession
-                  ? "עדכון פרטי משמרת העובד."
-                  : isEditing
-                    ? "עדכון פרטי הוצאה קיימת."
-                    : "יצירת הוצאה חדשה."}
+                {isEditingTemplate
+                  ? "עדכון תבנית ההוצאה הקבועה."
+                  : isEditingSession
+                    ? "עדכון פרטי משמרת העובד."
+                    : isEditing
+                      ? "עדכון פרטי הוצאה קיימת."
+                      : "יצירת הוצאה חדשה."}
               </DialogDescription>
             </div>
             {showModeToggle ? (
@@ -1981,8 +2402,9 @@ export function ExpenseDialog({
           className="mt-4 space-y-3"
           onSubmit={(e) => { e.preventDefault(); void handleSubmit(); }}
         >
-          {/* Amount hero — first, like the mockup (normal expenses) */}
-          {!isWorkerPayment ? (
+          {/* Amount hero — first, like the mockup (normal expenses). Hidden for a
+              variable-amount recurring template (the amount is set at pay time). */}
+          {!isWorkerPayment && !(isRecurring && recurVariable) ? (
             <div className={cn("rounded-xl border p-3 transition-colors", (Number(amount) || 0) > 0 ? "border-success/50 bg-success/5" : "bg-muted/20")}>
               <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                 <Wallet className="h-3.5 w-3.5" />סכום ההוצאה <span className="text-destructive">*</span>
@@ -2321,12 +2743,163 @@ export function ExpenseDialog({
             /* ── Normal expense branch ───────────────────────────────────── */
             <>
               <div className="space-y-1">
-                <div className="text-sm font-medium">תאריך</div>
+                <div className="text-sm font-medium">{isRecurring ? "תאריך התחלה" : "תאריך"}</div>
                 <DateInput value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
+                {isRecurring ? (
+                  <div className="text-xs text-muted-foreground">קובע את יום החיוב בכל תקופה (ואת החודש בחיוב כל X חודשים).</div>
+                ) : null}
               </div>
 
+              {/* One-time vs recurring (new, non-worker expenses only; hidden when
+                  editing a template — that's always recurring) */}
+              {canRecur && !isEditingTemplate ? (
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">תדירות</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { key: false, label: "חד-פעמי" },
+                      { key: true, label: "חוזר" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={String(opt.key)}
+                        type="button"
+                        onClick={() => {
+                          setIsRecurring(opt.key);
+                          if (opt.key) {
+                            setInstallmentsMode(false);
+                            if (!recurMonth) setRecurMonth(String(Number((expenseDate || todayIso()).slice(5, 7)) || 1));
+                          }
+                        }}
+                        className={cn(
+                          "flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors",
+                          isRecurring === opt.key
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-input bg-background text-muted-foreground hover:bg-muted/40"
+                        )}
+                      >
+                        {opt.key ? <Repeat className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Recurring schedule — replaces the installments + payment blocks */}
+              {isRecurring ? (
+                <div className="space-y-3 rounded-xl border bg-muted/10 p-3">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">שם תבנית</div>
+                    <Input
+                      value={templateName}
+                      onChange={(e) => setTemplateName(e.target.value)}
+                      placeholder="למשל: שכירות משרד"
+                    />
+                    <div className="text-xs text-muted-foreground">אם ריק — ייגזר מהתיאור או מהקטגוריה.</div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">כל כמה זמן</div>
+                      <select
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        value={recurrenceKeyOf(recurFrequency, recurInterval)}
+                        onChange={(e) => {
+                          const c = RECURRENCE_CHOICES.find((o) => o.key === e.target.value) ?? RECURRENCE_CHOICES[0];
+                          setRecurFrequency(c.frequency);
+                          setRecurInterval(c.interval);
+                          if (c.frequency === "yearly" && !recurMonth) {
+                            setRecurMonth(String(Number((expenseDate || todayIso()).slice(5, 7)) || 1));
+                          }
+                        }}
+                      >
+                        {RECURRENCE_CHOICES.map((c) => (
+                          <option key={c.key} value={c.key}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {recurFrequency === "yearly" ? (
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">חודש</div>
+                        <select
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                          value={recurMonth}
+                          onChange={(e) => setRecurMonth(e.target.value)}
+                        >
+                          {MONTH_OPTIONS.map((m) => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">עד תאריך (לא חובה)</div>
+                      <DateInput value={recurEndDate} onChange={(e) => setRecurEndDate(e.target.value)} />
+                    </div>
+                  </div>
+
+                  {/* Occurrence-month preview — the start date's month sets the phase
+                      (change the date to shift e.g. odd → even months). */}
+                  {recurFrequency === "monthly" && recurInterval > 1 ? (
+                    <div className="rounded-lg border bg-background px-3 py-2 text-xs text-muted-foreground">
+                      יחול בחודשים:{" "}
+                      <span className="font-medium text-foreground">
+                        {occurrenceMonths(expenseDate || todayIso(), recurInterval).join(" · ")}
+                      </span>
+                      <div className="mt-0.5">שנה את התאריך שלמעלה כדי להזיז את חודשי החיוב.</div>
+                    </div>
+                  ) : null}
+
+                  {/* Variable amount (e.g. taxes): only the schedule is fixed */}
+                  <label className="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={recurVariable}
+                      onChange={(e) => setRecurVariable(e.target.checked)}
+                    />
+                    <span>
+                      <span className="block font-medium">סכום משתנה</span>
+                      <span className="block text-xs text-muted-foreground">
+                        לתשלומים שהסכום שלהם משתנה (כמו מס) — יופיע ביומן כתזכורת, והסכום ייקבע בעת התשלום.
+                      </span>
+                    </span>
+                  </label>
+
+                  <AccountSelect
+                    value={accountId}
+                    onChange={setAccountId}
+                    onLoaded={setAccountsList}
+                  />
+                  {showBillingOptions ? (
+                    <div className="space-y-1">
+                      <div className="text-sm font-medium">הערת פרויקט</div>
+                      <Input
+                        value={projectNotesTemplate}
+                        onChange={(e) => setProjectNotesTemplate(e.target.value)}
+                      />
+                    </div>
+                  ) : null}
+                  {isEditingTemplate ? (
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={recurActive} onChange={(e) => setRecurActive(e.target.checked)} />
+                      <span>פעיל</span>
+                    </label>
+                  ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    {recurFrequency === "yearly"
+                      ? `ייווצר בכל שנה ב-${Number((expenseDate || todayIso()).slice(8, 10)) || 1}/${MONTH_OPTIONS.find((m) => m.value === recurMonth)?.label ?? ""}, ויופיע ביומן לאישור תשלום.`
+                      : recurInterval > 1
+                        ? `ייווצר כל ${recurInterval} חודשים ביום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1}, ויופיע ביומן לאישור תשלום.`
+                        : `ייווצר בכל חודש ביום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1}, ויופיע ביומן לאישור תשלום.`}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    אפשר להשתמש בטוקנים בתיאור/הערות: {"{{expense_month}}"} · {"{{expense_date}}"} · {"{{period_key}}"}.
+                  </p>
+                </div>
+              ) : null}
+
               {/* Installments toggle — split into N dated payments (new expenses only) */}
-              {!isEditing ? (
+              {!isEditing && !isRecurring ? (
                 <label
                   className={cn(
                     "flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors",
@@ -2406,7 +2979,7 @@ export function ExpenseDialog({
               ) : null}
 
               {/* Payment Status */}
-              {!installmentsMode ? (
+              {!installmentsMode && !isRecurring ? (
               <>
               <div className="flex items-center gap-3 pt-1">
                 <div className="h-px flex-1 bg-border" />

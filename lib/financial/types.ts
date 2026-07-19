@@ -41,6 +41,7 @@ export type ExpenseRow = {
   installment_group_id?: string | null;
   installment_index?: number | string | null;
   installment_count?: number | string | null;
+  recurring_expense_template_id?: string | null;
 };
 
 export type OrderRow = {
@@ -228,6 +229,7 @@ export type FinancialEntry = {
   expenseInstallmentGroupId?: string | null;
   expenseInstallmentIndex?: number | null;
   expenseInstallmentCount?: number | null;
+  expenseRecurringTemplateId?: string | null;
 };
 
 export type FinancialSummary = {

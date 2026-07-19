@@ -113,18 +113,17 @@ export default function ProjectsCalendar({
     );
   }
 
-  function renderDayContent({ day, holiday, inMonth }: DayContext) {
+  function renderDayContent({ day, holiday }: DayContext) {
     const dayEntries = entriesOnDay(day);
     const taskCount = dayEntries.filter((e) => e.kind === "task").length;
     const reminderCount = dayEntries.filter((e) => e.kind === "reminder").length;
     const projectCount = dayEntries.filter((e) => e.kind === "project").length;
-    const darkHoliday = Boolean(holiday) && inMonth; // light text on the dark holiday cell
 
     return (
       <>
         {/* Holiday name (truncated) */}
         {holiday ? (
-          <span className={`max-w-full truncate text-[9px] leading-tight ${darkHoliday ? "text-primary-foreground/90" : "text-muted-foreground"}`}>
+          <span className="max-w-full truncate text-[9px] leading-tight text-primary/80">
             {holiday}
           </span>
         ) : null}
@@ -140,7 +139,7 @@ export default function ProjectsCalendar({
 
         {/* Overflow count */}
         {dayEntries.length > 0 && (
-          <span className={`text-[10px] leading-none ${darkHoliday ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+          <span className="text-[10px] leading-none text-muted-foreground">
             {dayEntries.length}
           </span>
         )}

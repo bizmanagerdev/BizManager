@@ -16,10 +16,13 @@ type Payload = {
   project_id?: string | null;
   order_id?: string | null;
   property_id?: string | null;
+  account_id?: string | null;
   included_in_base_price?: boolean | null;
   billed_to_customer?: boolean | null;
   project_expense_notes_template?: string | null;
   frequency?: Frequency | null;
+  interval_months?: number | string | null;
+  is_variable_amount?: boolean | null;
   create_day_of_month?: number | string | null;
   expense_day_of_month?: number | string | null;
   create_month_of_year?: number | string | null;
@@ -95,10 +98,19 @@ export async function POST(req: Request) {
     const projectId = normalizeId(body.project_id);
     const orderId = normalizeId(body.order_id);
     const propertyId = normalizeId(body.property_id);
+    const accountId = normalizeId(body.account_id);
     const includedInBasePrice = body.included_in_base_price === true;
     const billedToCustomer = body.billed_to_customer === true;
     const projectExpenseNotesTemplate = normalizeText(body.project_expense_notes_template);
     const frequency: Frequency = body.frequency === "yearly" ? "yearly" : "monthly";
+    // Interval only applies to monthly templates (yearly is once a year).
+    const intervalMonths = (() => {
+      if (frequency === "yearly") return 1;
+      const parsed = typeof body.interval_months === "number" ? body.interval_months
+        : typeof body.interval_months === "string" ? Number(body.interval_months) : NaN;
+      if (!Number.isFinite(parsed)) return 1;
+      return Math.max(1, Math.min(12, Math.floor(parsed)));
+    })();
     const createDay = normalizeDay(body.create_day_of_month, 1);
     const expenseDay = normalizeDay(body.expense_day_of_month, createDay);
     const createMonth = frequency === "yearly" ? normalizeMonth(body.create_month_of_year) : null;
@@ -106,8 +118,12 @@ export async function POST(req: Request) {
     const startDate = normalizeText(body.start_date);
     const endDate = normalizeText(body.end_date);
     const isActive = body.is_active === false ? false : true;
+    const isVariableAmount = body.is_variable_amount === true;
+    // Variable-amount templates (e.g. taxes) may have amount 0 — the amount is set
+    // at pay time. Non-variable still require a positive amount.
+    const effectiveAmount = isVariableAmount ? (Number.isFinite(amount) && amount > 0 ? amount : 0) : amount;
 
-    if (!templateName || !category || !Number.isFinite(amount) || amount <= 0 || !businessDomain) {
+    if (!templateName || !category || !businessDomain || (!isVariableAmount && (!Number.isFinite(amount) || amount <= 0))) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -125,17 +141,20 @@ export async function POST(req: Request) {
     const payload = {
       template_name: templateName,
       category,
-      amount,
+      amount: effectiveAmount,
+      is_variable_amount: isVariableAmount,
       description_template: descriptionTemplate,
       notes_template: notesTemplate,
       business_domain: businessDomain,
       project_id: businessDomain === "logistics_projects" ? projectId : null,
       order_id: businessDomain === "sales" ? orderId : null,
       property_id: businessDomain === "property_management" ? propertyId : null,
+      account_id: accountId,
       included_in_base_price: includedInBasePrice,
       billed_to_customer: billedToCustomer,
       project_expense_notes_template: projectExpenseNotesTemplate,
       frequency,
+      interval_months: intervalMonths,
       create_day_of_month: createDay,
       expense_day_of_month: expenseDay,
       create_month_of_year: createMonth,

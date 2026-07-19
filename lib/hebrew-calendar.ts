@@ -19,19 +19,47 @@ export function hebrewFullDate(date: Date): string {
   return new HDate(date).renderGematriya();
 }
 
-// Holidays worth surfacing in a business calendar (Israel). Excludes parashat
-// hashavua, candle-lighting times, omer count and special-Shabbat labels.
-const HOLIDAY_MASK =
-  flags.CHAG |
-  flags.MAJOR_FAST |
-  flags.MINOR_FAST |
-  flags.MODERN_HOLIDAY |
-  flags.MINOR_HOLIDAY |
-  flags.ROSH_CHODESH |
-  flags.EREV;
+// Curated list — @hebcal surfaces a LOT of trivia (Jabotinsky Day, Rosh Hashana
+// LaBehemot, Family Day…) that just clutters a business calendar. We keep only:
+//   • MAJOR  → the festivals (non-work) + Independence Day → highlighted cell.
+//   • MINOR  → still worth a text label but a normal work-day cell (no highlight):
+//              Rosh Chodesh, Chanukah, Purim, the fasts, Yom HaZikaron/HaShoah…
+// Everything else is dropped. Matched by @hebcal's stable English `basename()`.
+const MAJOR_HOLIDAYS = new Set<string>([
+  "Rosh Hashana",
+  "Yom Kippur",
+  "Sukkot",
+  "Shmini Atzeret",
+  "Simchat Torah",
+  "Pesach",
+  "Shavuot",
+  "Yom HaAtzma'ut",
+]);
+const MINOR_HOLIDAYS = new Set<string>([
+  "Chanukah",
+  "Purim",
+  "Shushan Purim",
+  "Tu BiShvat",
+  "Lag BaOmer",
+  "Tu B'Av",
+  "Pesach Sheni",
+  "Yom HaZikaron",
+  "Yom HaShoah",
+  "Yom Yerushalayim",
+  "Tzom Gedaliah",
+  "Asara B'Tevet",
+  "Ta'anit Esther",
+  "Tzom Tammuz",
+  "Tish'a B'Av",
+  "Erev Rosh Hashana",
+  "Erev Yom Kippur",
+  "Erev Pesach",
+]);
 
-/** Map of `YYYY-MM-DD` (local) → Hebrew holiday name for the given range. */
-export function getHolidaysInRange(start: Date, end: Date): Map<string, string> {
+export type HolidayInfo = { name: string; major: boolean };
+
+/** Map of `YYYY-MM-DD` (local) → curated holiday info for the given range. */
+export function getHolidaysInRange(start: Date, end: Date): Map<string, HolidayInfo> {
   const events = HebrewCalendar.calendar({
     start,
     end,
@@ -41,12 +69,19 @@ export function getHolidaysInRange(start: Date, end: Date): Map<string, string> 
     omer: false,
   });
 
-  const byDay = new Map<string, string>();
+  const byDay = new Map<string, HolidayInfo>();
   for (const ev of events) {
-    if ((ev.getFlags() & HOLIDAY_MASK) === 0) continue;
+    const base = ev.basename();
+    const isChag = (ev.getFlags() & flags.CHAG) !== 0;
+    let major: boolean;
+    if (isChag || MAJOR_HOLIDAYS.has(base)) major = true;
+    else if (base.startsWith("Rosh Chodesh") || MINOR_HOLIDAYS.has(base)) major = false;
+    else continue; // drop the trivia
     const iso = toIsoLocal(ev.getDate().greg());
-    // First (most significant) event per day wins.
-    if (!byDay.has(iso)) byDay.set(iso, ev.render("he"));
+    // First (most significant) event per day wins; a later MAJOR upgrades it.
+    const existing = byDay.get(iso);
+    if (!existing) byDay.set(iso, { name: ev.render("he"), major });
+    else if (major && !existing.major) byDay.set(iso, { name: ev.render("he"), major });
   }
   return byDay;
 }

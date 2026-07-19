@@ -823,6 +823,7 @@ export function buildExpenseEntries(args: {
       expenseInstallmentGroupId: typeof row.installment_group_id === "string" ? row.installment_group_id : null,
       expenseInstallmentIndex: row.installment_index != null && Number.isFinite(Number(row.installment_index)) ? Number(row.installment_index) : null,
       expenseInstallmentCount: row.installment_count != null && Number.isFinite(Number(row.installment_count)) ? Number(row.installment_count) : null,
+      expenseRecurringTemplateId: typeof row.recurring_expense_template_id === "string" ? row.recurring_expense_template_id : null,
     }];
   });
 }

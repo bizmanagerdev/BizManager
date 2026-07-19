@@ -5,6 +5,7 @@ import {
   type FinancialEntryStage,
   type FinancialEntryOrigin,
 } from "@/lib/financial";
+import { getBusinessDomainLabel } from "@/lib/expenses";
 
 // ── Payments calendar item ─────────────────────────────────────────────────────
 // One outgoing obligation placed on a calendar day. Sourced from the single
@@ -37,6 +38,14 @@ export type PaymentCalendarItem = {
   installmentIndex: number | null;
   installmentCount: number | null;
   workerUserId: string | null; // set on wage items + projected salaries
+  // Recurring-template FORECAST fields. Present ⇒ this is an upcoming recurring
+  // occurrence that hasn't been generated yet. It has no expenseId; "mark paid"
+  // materializes the concrete expense for this period (see the materialize-paid API).
+  recurringTemplateId: string | null;
+  recurrenceKey: string | null;
+  // A variable-amount forecast (e.g. taxes): amount is unknown until paid. Shown as
+  // "סכום משתנה"; mark-paid asks for the actual amount.
+  variableAmount: boolean;
 };
 
 /**
@@ -70,7 +79,20 @@ export function toPaymentCalendarItems(entries: FinancialEntry[], todayIso: stri
       installmentIndex: entry.expenseInstallmentIndex ?? null,
       installmentCount: entry.expenseInstallmentCount ?? null,
       workerUserId: entry.workerUserId ?? null,
+      // Generated-from-a-recurring-template expenses carry the template id (has an
+      // expenseId, so it's NOT a forecast — the "recurring only" filter still catches it).
+      recurringTemplateId: entry.expenseRecurringTemplateId ?? null,
+      recurrenceKey: null,
+      variableAmount: false,
     }));
+}
+
+function applyRecurringTokens(value: string | null, periodKey: string, expenseDate: string): string | null {
+  if (!value) return null;
+  return value
+    .split("{{period_key}}").join(periodKey)
+    .split("{{expense_date}}").join(expenseDate)
+    .split("{{expense_month}}").join(expenseDate.slice(0, 7));
 }
 
 function pad2(n: number) {
@@ -197,6 +219,152 @@ export async function loadProjectedSalaries(
         installmentIndex: null,
         installmentCount: null,
         workerUserId: userId,
+        recurringTemplateId: null,
+        recurrenceKey: null,
+        variableAmount: false,
+      });
+    }
+  }
+  return items;
+}
+
+/**
+ * Calendar forecast of upcoming recurring bills. The generator only materializes
+ * an expense once its create-day arrives, so future months' recurring payments are
+ * invisible until then. This projects the next `months` occurrences of each active
+ * template as scheduled (צפוי) items — de-duped against periods already generated —
+ * so they show ahead of time. Each carries `recurringTemplateId` + `recurrenceKey`
+ * so "mark paid" can materialize the concrete expense (materialize-paid API).
+ */
+export async function loadProjectedRecurringExpenses(
+  supabase: SupabaseClient,
+  { referenceDate, months = 12 }: { referenceDate: string; months?: number }
+): Promise<PaymentCalendarItem[]> {
+  const { data: tplRows, error } = await supabase
+    .from("recurring_expense_templates")
+    .select("id,template_name,category,amount,is_variable_amount,description_template,notes_template,business_domain,account_id,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,end_date,created_at,is_active")
+    .eq("is_active", true);
+  if (error || !tplRows?.length) return [];
+
+  type Tpl = {
+    id: string;
+    template_name: string | null;
+    category: string | null;
+    amount: number | string | null;
+    is_variable_amount: boolean | null;
+    description_template: string | null;
+    notes_template: string | null;
+    business_domain: string | null;
+    account_id: string | null;
+    frequency: string | null;
+    interval_months: number | string | null;
+    expense_day_of_month: number | string | null;
+    expense_month_of_year: number | string | null;
+    start_date: string | null;
+    end_date: string | null;
+    created_at: string | null;
+  };
+  const templates = tplRows as Tpl[];
+
+  const monthIndex = (iso: string) => {
+    const y = Number(iso.slice(0, 4));
+    const m = Number(iso.slice(5, 7));
+    return y * 12 + (m - 1);
+  };
+
+  // Which template+period pairs already exist as real expense rows → skip those.
+  const { data: existingRows } = await supabase
+    .from("expenses")
+    .select("recurring_expense_template_id,recurrence_key")
+    .in("recurring_expense_template_id", templates.map((t) => t.id));
+  const materialized = new Set<string>();
+  for (const row of (existingRows ?? []) as Array<{ recurring_expense_template_id: string | null; recurrence_key: string | null }>) {
+    if (row.recurring_expense_template_id && row.recurrence_key) {
+      materialized.add(`${row.recurring_expense_template_id}:${row.recurrence_key}`);
+    }
+  }
+
+  // Look back a few months so a due-but-not-yet-generated recurring occurrence
+  // (variable OR fixed) still shows as pending/overdue instead of vanishing.
+  const LOOKBACK_MONTHS = 3;
+  const refYear = Number(referenceDate.slice(0, 4));
+  const refMonth = Number(referenceDate.slice(5, 7));
+
+  const items: PaymentCalendarItem[] = [];
+  for (const tpl of templates) {
+    const isVar = tpl.is_variable_amount === true;
+    const amount = isVar ? 0 : Number(tpl.amount);
+    if (!isVar && !(Number.isFinite(amount) && amount > 0)) continue;
+    const expenseDay = Number(tpl.expense_day_of_month) || 1;
+
+    // Occurrence dates within the forecast horizon.
+    const occurrences: Array<{ date: string; key: string }> = [];
+    if (tpl.frequency === "yearly") {
+      const expMonth = Number(tpl.expense_month_of_year) || 1;
+      for (const year of [refYear, refYear + 1]) {
+        const lastDay = new Date(year, expMonth, 0).getDate();
+        const day = Math.min(Math.max(1, expenseDay), lastDay);
+        const date = `${year}-${pad2(expMonth)}-${pad2(day)}`;
+        if (date >= referenceDate) { occurrences.push({ date, key: String(year) }); break; }
+        if (isVar) { occurrences.push({ date, key: String(year) }); break; } // past annual variable — still show
+      }
+    } else {
+      // Monthly, possibly every N months. Only keep occurrence months on the
+      // interval phase, counted from the anchor (start_date, else created_at).
+      const interval = Math.max(1, Number(tpl.interval_months) || 1);
+      const anchorIso = tpl.start_date || tpl.created_at?.slice(0, 10) || referenceDate;
+      const anchorIdx = monthIndex(anchorIso);
+      // Look back a few months for EVERY recurring template (not just variable): a
+      // due-but-not-yet-generated occurrence earlier this month would otherwise be
+      // invisible. Anything already generated is removed by the de-dup below.
+      for (let i = -LOOKBACK_MONTHS; i < months; i++) {
+        const d = new Date(refYear, refMonth - 1 + i, 1);
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        const diff = y * 12 + (m - 1) - anchorIdx;
+        if (diff < 0 || diff % interval !== 0) continue;
+        const lastDay = new Date(y, m, 0).getDate();
+        const day = Math.min(Math.max(1, expenseDay), lastDay);
+        const date = `${y}-${pad2(m)}-${pad2(day)}`;
+        occurrences.push({ date, key: date.slice(0, 7) });
+      }
+    }
+
+    for (const occ of occurrences) {
+      if (materialized.has(`${tpl.id}:${occ.key}`)) continue;
+      if (tpl.start_date && occ.date < tpl.start_date) continue;
+      if (tpl.end_date && occ.date > tpl.end_date) continue;
+      const desc = applyRecurringTokens(tpl.description_template, occ.key, occ.date);
+      // The template NAME is the human-facing title (matches the recurring
+      // manager list) — lead with it, not the free-text description/category.
+      const label = tpl.template_name || desc || tpl.category || "הוצאה קבועה";
+      const isPast = occ.date < referenceDate;
+      items.push({
+        id: `recur_proj:${tpl.id}:${occ.key}`,
+        date: occ.date,
+        amount,
+        label,
+        sourceLabel: isVar ? "הוצאה קבועה · סכום משתנה" : "הוצאה קבועה",
+        sourceHref: null,
+        stage: isPast ? "pending" : "scheduled",
+        paymentStatus: "not_paid",
+        origin: "expense",
+        domainName: tpl.business_domain ? getBusinessDomainLabel(tpl.business_domain) : "",
+        expenseId: null,
+        category: tpl.category,
+        businessDomain: tpl.business_domain,
+        accountId: tpl.account_id,
+        paidAmount: null,
+        descriptionRaw: desc,
+        notes: applyRecurringTokens(tpl.notes_template, occ.key, occ.date),
+        overdue: isPast,
+        installmentGroupId: null,
+        installmentIndex: null,
+        installmentCount: null,
+        workerUserId: null,
+        recurringTemplateId: tpl.id,
+        recurrenceKey: occ.key,
+        variableAmount: isVar,
       });
     }
   }
@@ -219,8 +387,11 @@ export async function loadPaymentCalendarItems(
   })();
   const { entries, referenceDate } = await loadFinancialEntries(supabase, { from: since });
   const items = toPaymentCalendarItems(entries, referenceDate);
-  // Forecast upcoming monthly salaries onto the calendar (calendar-only; never
-  // breaks the page if payroll data is unreadable).
-  const projected = await loadProjectedSalaries(supabase, { referenceDate, existingItems: items }).catch(() => []);
-  return { items: [...items, ...projected], todayIso: referenceDate };
+  // Forecast upcoming monthly salaries + recurring bills onto the calendar
+  // (calendar-only; never breaks the page if a source is unreadable).
+  const [projectedSalaries, projectedRecurring] = await Promise.all([
+    loadProjectedSalaries(supabase, { referenceDate, existingItems: items }).catch(() => []),
+    loadProjectedRecurringExpenses(supabase, { referenceDate }).catch(() => []),
+  ]);
+  return { items: [...items, ...projectedSalaries, ...projectedRecurring], todayIso: referenceDate };
 }

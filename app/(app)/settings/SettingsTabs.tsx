@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import NotificationSettings from "@/components/notifications/NotificationSettings";
 import ConnectedDevicesCard, { type ConnectedDevice } from "@/components/notifications/ConnectedDevicesCard";
-import RecurringExpensesManager from "@/app/(app)/financial/RecurringExpensesManager";
-import type { RecurringExpenseTemplateItem } from "@/app/(app)/financial/RecurringExpensesManager";
 import MorningAutoIssueForm from "@/app/(app)/settings/integrations/morning/MorningAutoIssueForm";
 import BackupCard from "@/app/(app)/settings/BackupCard";
 import VatRateCard from "@/app/(app)/settings/VatRateCard";
@@ -17,17 +15,10 @@ import type { MorningSettings } from "@/lib/morning/settings";
 import type { Account } from "@/lib/accounts";
 
 type UserOption = { id: string; label: string };
-type Option = { id: string; label: string };
 
 type Props = {
   isAdmin: boolean;
   users: UserOption[];
-  // recurring expenses
-  expenseTemplates: RecurringExpenseTemplateItem[];
-  expenseProjects: Option[];
-  expenseProperties: Option[];
-  expenseOrders: Option[];
-  expenseMissingSchema: boolean;
   // Morning integration (admin only)
   morningSettings: MorningSettings | null;
   // Current VAT rate (fraction, e.g. 0.18) — admin only
@@ -43,7 +34,6 @@ type Props = {
 
 const ALL_TABS = [
   { key: "notifications", label: "התראות", adminOnly: true },
-  { key: "recurring-expenses", label: "הוצאות קבועות", adminOnly: false },
   { key: "finance", label: "כספים", adminOnly: true },
   { key: "morning", label: "Morning", adminOnly: true },
   { key: "backup", label: "גיבוי", adminOnly: true },
@@ -96,17 +86,6 @@ export default function SettingsTabs(props: Props) {
             />
           )}
         </div>
-      )}
-
-      {/* Recurring expenses tab */}
-      {activeTab === "recurring-expenses" && (
-        <RecurringExpensesManager
-          templates={props.expenseTemplates}
-          projects={props.expenseProjects}
-          properties={props.expenseProperties}
-          orders={props.expenseOrders}
-          missingSchema={props.expenseMissingSchema}
-        />
       )}
 
       {/* Finance tab (admin only) */}

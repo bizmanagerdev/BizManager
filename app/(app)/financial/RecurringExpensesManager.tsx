@@ -1,31 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarPlus2 } from "lucide-react";
-import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
+import { Repeat, Pencil, Trash2, BellPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
-import { DateInput } from "@/components/ui/date-input";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ProjectPicker } from "@/components/projects/ProjectPicker";
-import {
-  getBusinessDomainLabel,
-  type ExpenseBusinessDomain,
-} from "@/lib/expenses";
-import { DomainSelect } from "@/components/financial/DomainSelect";
+import { getBusinessDomainLabel } from "@/lib/expenses";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
+import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
+import type { Account } from "@/lib/accounts";
 
 type Option = {
   id: string;
@@ -39,16 +26,19 @@ export type RecurringExpenseTemplateItem = {
   template_name: string;
   category: string;
   amount: number;
+  is_variable_amount: boolean;
   description_template: string | null;
   notes_template: string | null;
   business_domain: string;
   project_id: string | null;
   order_id: string | null;
   property_id: string | null;
+  account_id: string | null;
   included_in_base_price: boolean;
   billed_to_customer: boolean;
   project_expense_notes_template: string | null;
   frequency: Frequency;
+  interval_months: number;
   create_day_of_month: number;
   expense_day_of_month: number;
   create_month_of_year: number | null;
@@ -63,31 +53,8 @@ type Props = {
   projects: Option[];
   orders: Option[];
   properties: Option[];
+  accounts: Account[];
   missingSchema?: boolean;
-};
-
-type FormState = {
-  id: string | null;
-  template_name: string;
-  category: string;
-  amount: string;
-  description_template: string;
-  notes_template: string;
-  business_domain: ExpenseBusinessDomain | "";
-  project_id: string;
-  order_id: string;
-  property_id: string;
-  included_in_base_price: boolean;
-  billed_to_customer: boolean;
-  project_expense_notes_template: string;
-  frequency: Frequency;
-  create_day_of_month: number;
-  expense_day_of_month: number;
-  create_month_of_year: string;
-  expense_month_of_year: string;
-  start_date: string;
-  end_date: string;
-  is_active: boolean;
 };
 
 const MONTH_OPTIONS = [
@@ -113,227 +80,146 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function linkRequirement(domain: ExpenseBusinessDomain | "") {
-  if (domain === "logistics_projects") return "project";
-  if (domain === "property_management") return "property";
-  if (domain === "sales") return "order-optional";
-  return null;
-}
-
-function createEmptyForm(): FormState {
-  return {
-    id: null,
-    template_name: "",
-    category: "",
-    amount: "",
-    description_template: "",
-    notes_template: "",
-    business_domain: "",
-    project_id: "",
-    order_id: "",
-    property_id: "",
-    included_in_base_price: false,
-    billed_to_customer: false,
-    project_expense_notes_template: "",
-    frequency: "monthly",
-    create_day_of_month: 1,
-    expense_day_of_month: 1,
-    create_month_of_year: "",
-    expense_month_of_year: "",
-    start_date: "",
-    end_date: "",
-    is_active: true,
-  };
-}
-
-function scheduleLabel(template: RecurringExpenseTemplateItem) {
-  if (template.frequency === "yearly") {
-    const createMonth =
-      MONTH_OPTIONS.find((item) => item.value === String(template.create_month_of_year ?? ""))?.label ?? "—";
-    const expenseMonth =
-      MONTH_OPTIONS.find((item) => item.value === String(template.expense_month_of_year ?? ""))?.label ?? "—";
-    return `שנתי • יצירה ${template.create_day_of_month}/${createMonth} • הוצאה ${template.expense_day_of_month}/${expenseMonth}`;
+// Timestamp of the template's next payment (expense) date on/after today — used
+// to order the list "by payment date". Honors the interval (every N months),
+// phased off start_date (or today when unset).
+function nextPaymentTime(t: RecurringExpenseTemplateItem): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = t.expense_day_of_month || 1;
+  if (t.frequency === "yearly") {
+    const month = (t.expense_month_of_year || 1) - 1;
+    for (const year of [today.getFullYear(), today.getFullYear() + 1]) {
+      const last = new Date(year, month + 1, 0).getDate();
+      const cand = new Date(year, month, Math.min(day, last));
+      if (cand >= today) return cand.getTime();
+    }
+    return today.getTime();
   }
+  const interval = Math.max(1, t.interval_months || 1);
+  const anchor = t.start_date ? new Date(t.start_date) : today;
+  const anchorIdx = anchor.getFullYear() * 12 + anchor.getMonth();
+  for (let i = 0; i < 24; i++) {
+    const base = new Date(today.getFullYear(), today.getMonth() + i, 1);
+    const diff = base.getFullYear() * 12 + base.getMonth() - anchorIdx;
+    if (diff < 0 || diff % interval !== 0) continue;
+    const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+    const cand = new Date(base.getFullYear(), base.getMonth(), Math.min(day, last));
+    if (cand >= today) return cand.getTime();
+  }
+  return today.getTime();
+}
 
-  return `חודשי • יצירה ביום ${template.create_day_of_month} • הוצאה ביום ${template.expense_day_of_month}`;
+// Human cadence label — "חודשי" / "כל חודשיים" / "כל 3 חודשים" / "שנתי".
+function cadenceLabel(t: RecurringExpenseTemplateItem): string {
+  if (t.frequency === "yearly") return "שנתי";
+  const n = Math.max(1, t.interval_months || 1);
+  if (n === 1) return "חודשי";
+  if (n === 2) return "כל חודשיים";
+  return `כל ${n} חודשים`;
+}
+
+// The recurring payment timing, NOT a concrete date — a monthly bill leaves on
+// the same day every month (show just the day), a yearly one on a day+month.
+function payScheduleLabel(t: RecurringExpenseTemplateItem): string {
+  const day = t.expense_day_of_month || 1;
+  if (t.frequency === "yearly") {
+    const monthLabel = MONTH_OPTIONS.find((m) => m.value === String(t.expense_month_of_year ?? ""))?.label ?? "";
+    return monthLabel ? `${day} ב${monthLabel}` : `${day} לחודש`;
+  }
+  const n = Math.max(1, t.interval_months || 1);
+  if (n === 1) return `${day} לכל חודש`;
+  if (n === 2) return `${day}, כל חודשיים`;
+  return `${day}, כל ${n} חודשים`;
+}
+
+// Cadence sub-label under the day-of-month in the מועד column ("לכל חודש" etc.).
+function moedSubLabel(t: RecurringExpenseTemplateItem): string {
+  if (t.frequency === "yearly") {
+    const monthLabel = MONTH_OPTIONS.find((m) => m.value === String(t.expense_month_of_year ?? ""))?.label ?? "";
+    return monthLabel ? `ב${monthLabel}` : "בשנה";
+  }
+  const n = Math.max(1, t.interval_months || 1);
+  if (n === 1) return "לכל חודש";
+  if (n === 2) return "כל חודשיים";
+  return `כל ${n} חודשים`;
 }
 
 export default function RecurringExpensesManager(props: Props) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [form, setForm] = useState<FormState>(createEmptyForm());
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [remindTemplate, setRemindTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
 
-  const requirement = linkRequirement(form.business_domain);
-  const amountNumber = Number(form.amount);
-  const canSave =
-    Boolean(form.business_domain) &&
-    Boolean(form.template_name.trim()) &&
-    Boolean(form.category.trim()) &&
-    Number.isFinite(amountNumber) &&
-    amountNumber > 0 &&
-    (requirement === "project"
-      ? Boolean(form.project_id)
-      : requirement === "property"
-        ? Boolean(form.property_id)
-        : true) &&
-    (form.frequency === "monthly" ||
-      (Boolean(form.create_month_of_year) && Boolean(form.expense_month_of_year)));
-
-  function updateForm<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
-
-  function openCreate() {
-    setForm(createEmptyForm());
-    setOpen(true);
-  }
+  // Ordered by next payment date (soonest first).
+  const sortedTemplates = useMemo(
+    () => [...props.templates].sort((a, b) => nextPaymentTime(a) - nextPaymentTime(b)),
+    [props.templates]
+  );
+  const accountNameById = useMemo(
+    () => new Map(props.accounts.map((a) => [a.id, a.name] as const)),
+    [props.accounts]
+  );
+  // Total monthly commitment (fixed-amount templates only), normalized to a month:
+  // yearly ÷ 12, every-N-months ÷ N. Variable templates are counted separately.
+  const summary = useMemo(() => {
+    const active = props.templates.filter((t) => t.is_active);
+    const variableCount = active.filter((t) => t.is_variable_amount).length;
+    const monthlyTotal = active.reduce((sum, t) => {
+      if (t.is_variable_amount) return sum;
+      const per = t.frequency === "yearly" ? t.amount / 12 : t.amount / Math.max(1, t.interval_months || 1);
+      return sum + per;
+    }, 0);
+    return { activeCount: active.length, variableCount, monthlyTotal };
+  }, [props.templates]);
 
   function openEdit(template: RecurringExpenseTemplateItem) {
-    setForm({
-      id: template.id,
-      template_name: template.template_name,
-      category: template.category,
-      amount: String(template.amount),
-      description_template: template.description_template ?? "",
-      notes_template: template.notes_template ?? "",
-      business_domain: template.business_domain as ExpenseBusinessDomain,
-      project_id: template.project_id ?? "",
-      order_id: template.order_id ?? "",
-      property_id: template.property_id ?? "",
-      included_in_base_price: template.included_in_base_price,
-      billed_to_customer: template.billed_to_customer,
-      project_expense_notes_template: template.project_expense_notes_template ?? "",
-      frequency: template.frequency,
-      create_day_of_month: template.create_day_of_month,
-      expense_day_of_month: template.expense_day_of_month,
-      create_month_of_year: template.create_month_of_year ? String(template.create_month_of_year) : "",
-      expense_month_of_year: template.expense_month_of_year ? String(template.expense_month_of_year) : "",
-      start_date: template.start_date ?? "",
-      end_date: template.end_date ?? "",
-      is_active: template.is_active,
-    });
-    setOpen(true);
+    setEditingTemplate(template);
+    setDialogOpen(true);
   }
 
-  function handleDomainChange(next: ExpenseBusinessDomain | "") {
-    setForm((current) => ({
-      ...current,
-      business_domain: next,
-      project_id: linkRequirement(next) === "project" ? current.project_id : "",
-      property_id: linkRequirement(next) === "property" ? current.property_id : "",
-      order_id: next === "sales" ? current.order_id : "",
-    }));
-  }
-
-  async function save() {
-    if (!canSave) return;
-    setSaving(true);
+  async function remove() {
+    const id = confirmDeleteId;
+    if (!id) return;
+    setDeleting(true);
     try {
-      const res = await fetch("/api/recurring-expenses/save", {
+      const res = await fetch("/api/recurring-expenses/delete", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: form.id,
-          template_name: form.template_name.trim(),
-          category: form.category.trim(),
-          amount: amountNumber,
-          description_template: form.description_template.trim() || null,
-          notes_template: form.notes_template.trim() || null,
-          business_domain: form.business_domain,
-          project_id: requirement === "project" ? form.project_id : null,
-          property_id: requirement === "property" ? form.property_id : null,
-          order_id: form.business_domain === "sales" ? form.order_id || null : null,
-          included_in_base_price: form.included_in_base_price,
-          billed_to_customer: form.billed_to_customer,
-          project_expense_notes_template: form.project_expense_notes_template.trim() || null,
-          frequency: form.frequency,
-          create_day_of_month: form.create_day_of_month,
-          expense_day_of_month: form.expense_day_of_month,
-          create_month_of_year: form.frequency === "yearly" ? form.create_month_of_year : null,
-          expense_month_of_year: form.frequency === "yearly" ? form.expense_month_of_year : null,
-          start_date: form.start_date || null,
-          end_date: form.end_date || null,
-          is_active: form.is_active,
-        }),
+        body: JSON.stringify({ id }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error("שגיאה בשמירת הוצאה קבועה", { description: toHebrewError(json?.error, "") });
+        toast.error("שגיאה במחיקת הוצאה קבועה", { description: toHebrewError(json?.error, "") });
         return;
       }
-      setOpen(false);
+      setConfirmDeleteId(null);
       router.refresh();
-      toast.success("ההוצאה הקבועה נשמרה");
+      toast.success("ההוצאה הקבועה נמחקה");
     } finally {
-      setSaving(false);
-    }
-  }
-
-  async function remove(id: string) {
-    const ok = window.confirm("למחוק את ההוצאה הקבועה?");
-    if (!ok) return;
-
-    const res = await fetch("/api/recurring-expenses/delete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      toast.error("שגיאה במחיקת הוצאה קבועה", { description: toHebrewError(json?.error, "") });
-      return;
-    }
-    router.refresh();
-    toast.success("ההוצאה הקבועה נמחקה");
-  }
-
-  async function generateNow() {
-    setGenerating(true);
-    try {
-      const res = await fetch("/api/recurring-expenses/generate", {
-        method: "POST",
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error("שגיאה ביצירת הוצאות קבועות", { description: toHebrewError(json?.error, "") });
-        return;
-      }
-      router.refresh();
-      toast.success("המחזור נוצר", {
-        description: `נוצרו ${typeof json?.createdCount === "number" ? json.createdCount : 0} הוצאות.`,
-      });
-    } finally {
-      setGenerating(false);
+      setDeleting(false);
     }
   }
 
   return (
     <div dir="rtl" className="space-y-4 text-right">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="hidden">
-          <h2 className="text-2xl font-semibold">הוצאות קבועות</h2>
-          <div className="text-sm text-muted-foreground">
-            תבניות להוצאות חוזרות חודשיות או שנתיות שנוצרות אוטומטית בתוך המערכת.
+      {/* Summary bar — total monthly recurring commitment + counts */}
+      {!props.missingSchema && props.templates.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-foreground p-4 text-background">
+          <div>
+            <div className="text-xs opacity-70">סה״כ התחייבות חודשית קבועה</div>
+            <div className="text-2xl font-bold tabular-nums">{formatCurrency(summary.monthlyTotal)}</div>
+          </div>
+          <div className="text-sm opacity-90">
+            <div className="font-medium">
+              {summary.activeCount} תבניות פעילות{summary.variableCount ? ` · ${summary.variableCount} בסכום משתנה` : ""}
+            </div>
+            <div className="text-xs opacity-60">הסכומים הקבועים מזינים אוטומטית את היומן.</div>
           </div>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:self-start">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void generateNow()}
-            disabled={generating || props.missingSchema}
-            className="flex-row-reverse gap-2"
-          >
-            <CalendarPlus2 className="h-4 w-4" />
-            {generating ? "מייצר..." : "צור מחזור נוכחי"}
-          </Button>
-          <Button type="button" onClick={openCreate} disabled={props.missingSchema}>
-            הוצאה קבועה חדשה
-          </Button>
-        </div>
-      </div>
+      ) : null}
 
       {props.missingSchema ? (
         <Card>
@@ -350,7 +236,7 @@ export default function RecurringExpensesManager(props: Props) {
       ) : (
         <>
           <div className="space-y-2 md:hidden">
-            {props.templates.map((template) => {
+            {sortedTemplates.map((template) => {
               const linkedLabel =
                 template.project_id
                   ? props.projects.find((item) => item.id === template.project_id)?.label ?? "פרויקט"
@@ -363,32 +249,46 @@ export default function RecurringExpensesManager(props: Props) {
               return (
                 <Card key={template.id} className="overflow-hidden">
                   <CardContent className="space-y-3 p-4 text-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-1">
-                        <div className="font-medium">{template.template_name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {getBusinessDomainLabel(template.business_domain)} • {linkedLabel}
-                        </div>
+                    <div className="text-xs font-semibold text-primary">
+                      מועד תשלום: <span className="tabular-nums">{payScheduleLabel(template)}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <Repeat className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span className="font-semibold">{template.template_name}</span>
                       </div>
-                      <Button type="button" variant="outline" size="sm" onClick={() => openEdit(template)}>
-                        עריכה
-                      </Button>
+                      <div className="text-xs text-muted-foreground">
+                        {getBusinessDomainLabel(template.business_domain)} • {template.category}
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline">{template.frequency === "yearly" ? "שנתי" : "חודשי"}</Badge>
-                      {!template.is_active ? <Badge variant="warning">לא פעיל</Badge> : null}
+                      <Badge variant="neutral">{linkedLabel}</Badge>
+                      <Badge variant="outline">{cadenceLabel(template)}</Badge>
+                      {template.is_active ? <Badge variant="success">פעיל</Badge> : <Badge variant="warning">לא פעיל</Badge>}
                     </div>
                     <div className="grid gap-1 text-xs text-muted-foreground">
                       <div>קטגוריה: <span className="text-foreground">{template.category}</span></div>
-                      <div>סכום: <span className="text-foreground">{formatCurrency(template.amount)}</span></div>
-                      <div>תזמון: <span className="text-foreground">{scheduleLabel(template)}</span></div>
+                      <div>סכום: <span className="text-foreground">{template.is_variable_amount ? "משתנה" : formatCurrency(template.amount)}</span></div>
+                      <div>חשבון: <span className="text-foreground">{(template.account_id && accountNameById.get(template.account_id)) || "—"}</span></div>
                       <div>
                         טווח: <span className="text-foreground">{template.start_date || "ללא התחלה"} | {template.end_date || "ללא סוף"}</span>
                       </div>
+                      {template.description_template ? (
+                        <div>תיאור: <span className="text-foreground">{template.description_template}</span></div>
+                      ) : null}
+                      {template.notes_template ? (
+                        <div>הערות: <span className="text-foreground">{template.notes_template}</span></div>
+                      ) : null}
                     </div>
-                    <div className="flex justify-end gap-2">
-                      <Button type="button" variant="destructive" size="sm" onClick={() => void remove(template.id)}>
-                        מחיקה
+                    <div className="flex justify-end gap-1.5">
+                      <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindTemplate(template)} title="תזכורת" aria-label="תזכורת">
+                        <BellPlus className="h-4 w-4" />
+                      </Button>
+                      <Button type="button" size="icon-sm" variant="secondary" onClick={() => openEdit(template)} title="עריכה" aria-label="עריכה">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button type="button" size="icon-sm" variant="destructive" onClick={() => setConfirmDeleteId(template.id)} title="מחיקה" aria-label="מחיקה">
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </CardContent>
@@ -397,23 +297,21 @@ export default function RecurringExpensesManager(props: Props) {
             })}
           </div>
 
-          <div className="hidden max-h-[70vh] overflow-auto rounded-md border md:block">
+          <div className="hidden max-h-[70vh] overflow-auto rounded-xl border md:block">
             <table dir="rtl" className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
+              <thead className="sticky top-0 z-10 border-b bg-muted/40 text-xs text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2 text-right font-medium">מועד תשלום</th>
                   <th className="px-3 py-2 text-right font-medium">שם תבנית</th>
-                  <th className="px-3 py-2 text-right font-medium">תחום</th>
-                  <th className="px-3 py-2 text-right font-medium">שיוך</th>
-                  <th className="px-3 py-2 text-right font-medium">קטגוריה</th>
+                  <th className="px-3 py-2 text-right font-medium">תחום · קטגוריה</th>
                   <th className="px-3 py-2 text-right font-medium">סכום</th>
-                  <th className="px-3 py-2 text-right font-medium">תדירות</th>
-                  <th className="px-3 py-2 text-right font-medium">תזמון</th>
+                  <th className="px-3 py-2 text-right font-medium">חשבון</th>
                   <th className="px-3 py-2 text-right font-medium">פעיל</th>
                   <th className="px-3 py-2 text-right font-medium">פעולות</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {props.templates.map((template) => {
+                {sortedTemplates.map((template) => {
                   const linkedLabel =
                     template.project_id
                       ? props.projects.find((item) => item.id === template.project_id)?.label ?? "פרויקט"
@@ -424,31 +322,46 @@ export default function RecurringExpensesManager(props: Props) {
                           : "ללא שיוך";
 
                   return (
-                    <tr key={template.id} className="hover:bg-muted/30 align-top">
-                      <td className="px-3 py-2">
-                        <div className="space-y-1">
-                          <div className="font-medium">{template.template_name}</div>
-                          {template.description_template ? (
-                            <div className="line-clamp-2 max-w-[280px] text-xs text-muted-foreground">
-                              {template.description_template}
-                            </div>
-                          ) : null}
-                        </div>
+                    <tr key={template.id} className="align-top hover:bg-secondary/10">
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <div className="text-lg font-bold tabular-nums leading-none">{template.expense_day_of_month}</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{moedSubLabel(template)}</div>
                       </td>
-                      <td className="px-3 py-2">{getBusinessDomainLabel(template.business_domain)}</td>
-                      <td className="px-3 py-2">{linkedLabel}</td>
-                      <td className="px-3 py-2">{template.category}</td>
-                      <td dir="ltr" className="px-3 py-2 whitespace-nowrap text-left tabular-nums">{formatCurrency(template.amount)}</td>
-                      <td className="px-3 py-2">{template.frequency === "yearly" ? "שנתי" : "חודשי"}</td>
-                      <td className="px-3 py-2 max-w-[280px]">{scheduleLabel(template)}</td>
-                      <td className="px-3 py-2">{template.is_active ? "כן" : "לא"}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <div className="flex justify-end gap-2">
-                          <Button type="button" variant="outline" size="sm" onClick={() => openEdit(template)}>
-                            עריכה
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1.5">
+                          <Repeat className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          <span className="font-semibold">{template.template_name}</span>
+                        </div>
+                        {template.description_template ? (
+                          <div className="line-clamp-1 max-w-[260px] text-xs text-muted-foreground">{template.description_template}</div>
+                        ) : null}
+                        <Badge variant="neutral" className="mt-1">{linkedLabel}</Badge>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div>{getBusinessDomainLabel(template.business_domain)}</div>
+                        <div className="text-xs text-muted-foreground">{template.category}</div>
+                      </td>
+                      <td dir="ltr" className="whitespace-nowrap px-3 py-2 text-left">
+                        {template.is_variable_amount ? (
+                          <Badge variant="warning">משתנה</Badge>
+                        ) : (
+                          <span className="font-semibold tabular-nums">{formatCurrency(template.amount)}</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">{(template.account_id && accountNameById.get(template.account_id)) || "—"}</td>
+                      <td className="px-3 py-2">
+                        {template.is_active ? <Badge variant="success">פעיל</Badge> : <Badge variant="warning">לא פעיל</Badge>}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <div className="flex items-center gap-1">
+                          <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindTemplate(template)} title="תזכורת" aria-label="תזכורת">
+                            <BellPlus className="h-4 w-4" />
                           </Button>
-                          <Button type="button" variant="destructive" size="sm" onClick={() => void remove(template.id)}>
-                            מחיקה
+                          <Button type="button" size="icon-sm" variant="secondary" onClick={() => openEdit(template)} title="עריכה" aria-label="עריכה">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button type="button" size="icon-sm" variant="destructive" onClick={() => setConfirmDeleteId(template.id)} title="מחיקה" aria-label="מחיקה">
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </td>
@@ -461,270 +374,39 @@ export default function RecurringExpensesManager(props: Props) {
         </>
       )}
 
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          if (!next && saving) return;
-          setOpen(next);
+      <ExpenseDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editingRecurringTemplate={editingTemplate}
+        defaultRecurring={!editingTemplate}
+        recurringProjects={props.projects}
+        recurringOrders={props.orders}
+        recurringProperties={props.properties}
+        onSaved={() => {
+          setDialogOpen(false);
+          router.refresh();
         }}
-      >
-        <AdaptiveDialog size="formLg">
-          <DialogHeader>
-            <DialogTitle>{form.id ? "עריכת הוצאה קבועה" : "הוצאה קבועה חדשה"}</DialogTitle>
-            <DialogDescription>
-              אפשר להשתמש בטוקנים `{"{{period_key}}"}`, `{"{{expense_date}}"}`, `{"{{expense_month}}"}`.
-            </DialogDescription>
-          </DialogHeader>
+      />
 
-          <form
-            dir="rtl"
-            className="mt-4 space-y-3 text-right"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
-          >
-            <div className="space-y-1">
-              <div className="text-sm font-medium">תחום עסקי *</div>
-              <DomainSelect
-                value={form.business_domain}
-                onChange={(value) => handleDomainChange(value as ExpenseBusinessDomain | "")}
-              />
-            </div>
+      <ConfirmDialog
+        open={Boolean(confirmDeleteId)}
+        onOpenChange={(next) => { if (!next) setConfirmDeleteId(null); }}
+        title="מחיקת הוצאה קבועה"
+        description="ההוצאה הקבועה תימחק ולא ייווצרו ממנה הוצאות חדשות. הוצאות שכבר נוצרו יישארו."
+        confirmLabel="מחיקה"
+        destructive
+        loading={deleting}
+        onConfirm={() => void remove()}
+      />
 
-            {form.business_domain ? (
-              <>
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">שם תבנית *</div>
-                <Input
-                  value={form.template_name}
-                  onChange={(event) => updateForm("template_name", event.target.value)}
-                  placeholder="למשל: שכירות משרד"
-                />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">קטגוריה *</div>
-                <Input
-                  value={form.category}
-                  onChange={(event) => updateForm("category", event.target.value)}
-                  placeholder="שכירות / ביטוח / תקשורת..."
-                />
-              </div>
-            </AdaptiveGrid>
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">סכום *</div>
-              <CurrencyInput
-                type="number"
-                min={0}
-                step="0.01"
-                value={form.amount}
-                onChange={(event) => updateForm("amount", event.target.value)}
-              />
-            </div>
-
-            {requirement === "project" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">פרויקט *</div>
-                <ProjectPicker
-                  projects={props.projects}
-                  value={form.project_id}
-                  onChange={(id) => updateForm("project_id", id)}
-                  emptyLabel="בחר פרויקט..."
-                  allowClear={false}
-                />
-              </div>
-            ) : null}
-
-            {requirement === "property" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">נכס *</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={form.property_id}
-                  onChange={(event) => updateForm("property_id", event.target.value)}
-                >
-                  <option value="">בחר נכס...</option>
-                  {props.properties.map((property) => (
-                    <option key={property.id} value={property.id}>
-                      {property.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
-            {form.business_domain === "sales" ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">הזמנה מקושרת</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={form.order_id}
-                  onChange={(event) => updateForm("order_id", event.target.value)}
-                >
-                  <option value="">ללא הזמנה</option>
-                  {props.orders.map((order) => (
-                    <option key={order.id} value={order.id}>
-                      {order.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">תדירות *</div>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={form.frequency}
-                  onChange={(event) => updateForm("frequency", event.target.value as Frequency)}
-                >
-                  <option value="monthly">חודשי</option>
-                  <option value="yearly">שנתי</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">תאריך התחלה</div>
-                <DateInput value={form.start_date} onChange={(event) => updateForm("start_date", event.target.value)} />
-              </div>
-            </AdaptiveGrid>
-
-            {form.frequency === "yearly" ? (
-              <AdaptiveGrid variant="formTwo">
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">חודש יצירה *</div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={form.create_month_of_year}
-                    onChange={(event) => updateForm("create_month_of_year", event.target.value)}
-                  >
-                    <option value="">בחר חודש...</option>
-                    {MONTH_OPTIONS.map((month) => (
-                      <option key={month.value} value={month.value}>
-                        {month.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-sm font-medium">חודש הוצאה *</div>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={form.expense_month_of_year}
-                    onChange={(event) => updateForm("expense_month_of_year", event.target.value)}
-                  >
-                    <option value="">בחר חודש...</option>
-                    {MONTH_OPTIONS.map((month) => (
-                      <option key={month.value} value={month.value}>
-                        {month.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </AdaptiveGrid>
-            ) : null}
-
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">יום יצירה *</div>
-                <Input
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={String(form.create_day_of_month)}
-                  onChange={(event) => updateForm("create_day_of_month", Number(event.target.value) || 1)}
-                />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">יום הוצאה *</div>
-                <Input
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={String(form.expense_day_of_month)}
-                  onChange={(event) => updateForm("expense_day_of_month", Number(event.target.value) || 1)}
-                />
-              </div>
-            </AdaptiveGrid>
-
-            <AdaptiveGrid variant="formTwo">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">עד תאריך</div>
-                <DateInput value={form.end_date} onChange={(event) => updateForm("end_date", event.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <div className="text-sm font-medium">הערת פרויקט</div>
-                <Input
-                  value={form.project_expense_notes_template}
-                  onChange={(event) => updateForm("project_expense_notes_template", event.target.value)}
-                  placeholder="אופציונלי"
-                />
-              </div>
-            </AdaptiveGrid>
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">תיאור</div>
-              <Textarea
-                value={form.description_template}
-                onChange={(event) => updateForm("description_template", event.target.value)}
-                placeholder="למשל: שכירות משרד עבור {{expense_month}}"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">הערות</div>
-              <Textarea
-                value={form.notes_template}
-                onChange={(event) => updateForm("notes_template", event.target.value)}
-                placeholder="הערות פנימיות קבועות"
-              />
-            </div>
-
-            {form.business_domain === "logistics_projects" ? (
-              <div className="grid gap-2 rounded-xl border p-3 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.included_in_base_price}
-                    onChange={(event) => updateForm("included_in_base_price", event.target.checked)}
-                  />
-                  <span>כלול במחיר הבסיס</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={form.billed_to_customer}
-                    onChange={(event) => updateForm("billed_to_customer", event.target.checked)}
-                  />
-                  <span>מחויב ללקוח</span>
-                </label>
-              </div>
-            ) : null}
-
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.is_active}
-                onChange={(event) => updateForm("is_active", event.target.checked)}
-              />
-              <span>פעיל</span>
-            </label>
-              </>
-            ) : null}
-
-            <DialogFooter className="mt-6">
-              <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={!canSave || saving}>
-                {saving ? "שומר..." : "שמירה"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </AdaptiveDialog>
-      </Dialog>
+      <ReminderFormDialog
+        mode="create"
+        open={Boolean(remindTemplate)}
+        onOpenChange={(o) => { if (!o) setRemindTemplate(null); }}
+        category="task"
+        defaultNote={remindTemplate ? `הוצאה קבועה: ${remindTemplate.template_name}` : undefined}
+        onSaved={() => setRemindTemplate(null)}
+      />
     </div>
   );
 }

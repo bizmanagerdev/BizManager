@@ -44,6 +44,7 @@ export default function ReminderFormDialog({
   value,
   links,
   category = "order",
+  defaultNote,
 }: {
   mode: "create" | "edit";
   open: boolean;
@@ -54,6 +55,8 @@ export default function ReminderFormDialog({
   /** Entity links to attach on create, e.g. { order_id, customer_id }. */
   links?: Record<string, string | null | undefined>;
   category?: string;
+  /** Pre-fill the note on create (e.g. the payment description). */
+  defaultNote?: string;
 }) {
   const { currentUserId } = useAssignableUsers();
   const [remindAt, setRemindAt] = useState("");
@@ -70,7 +73,7 @@ export default function ReminderFormDialog({
       setAssignee(value.assignedTo ?? "");
     } else {
       setRemindAt("");
-      setNote("");
+      setNote(defaultNote ?? "");
       setAssignee(currentUserId ?? "");
     }
     setError(null);
