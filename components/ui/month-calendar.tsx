@@ -94,6 +94,10 @@ type Props = {
   /** Hide the built-in month-nav row — the caller renders its own (e.g. a shared
    *  toolbar). Requires controlled `month`/`onMonthChange`. */
   hideNav?: boolean;
+  /** Optional controlled selected day. When set with onSelect, the caller owns
+   *  the selection (e.g. to jump to a specific day from an external list). */
+  selected?: Date;
+  onSelect?: (day: Date) => void;
   /** Toolbar rendered at the top of the calendar (main) column, above the grid —
    *  so the selected-day side panel rises to the same top edge. */
   toolbar?: ReactNode;
@@ -125,6 +129,8 @@ export default function MonthCalendar({
   month,
   onMonthChange,
   hideNav = false,
+  selected,
+  onSelect,
   toolbar,
   renderSelectedPanel,
   renderDayContent,
@@ -140,7 +146,13 @@ export default function MonthCalendar({
     if (onMonthChange) onMonthChange(next);
     else setInternalMonth(next);
   };
-  const [selectedDate, setSelectedDate] = useState(today);
+  // Selection is controlled when `selected`+`onSelect` are supplied, else internal.
+  const [internalSelected, setInternalSelected] = useState(today);
+  const selectedDate = selected ?? internalSelected;
+  const applySelect = (day: Date) => {
+    if (onSelect) onSelect(day);
+    else setInternalSelected(day);
+  };
 
   // Hover popover (desktop): the cell being hovered + its on-screen rect. A short
   // close delay lets the pointer travel from the cell INTO the popover (to scroll
@@ -191,7 +203,7 @@ export default function MonthCalendar({
   const goToMonth = (next: Date) => {
     setNavDir(monthDate.getTime() > next.getTime() ? "prev" : "next");
     applyMonth(new Date(next.getFullYear(), next.getMonth(), 1));
-    if (next.getFullYear() === today.getFullYear() && next.getMonth() === today.getMonth()) setSelectedDate(today);
+    if (next.getFullYear() === today.getFullYear() && next.getMonth() === today.getMonth()) applySelect(today);
   };
 
   // Horizontal (side) scroll / swipe over the grid steps the month. A time guard
@@ -292,7 +304,7 @@ export default function MonthCalendar({
               <button
                 key={day.toISOString()}
                 type="button"
-                onClick={() => setSelectedDate(day)}
+                onClick={() => applySelect(day)}
                 onMouseEnter={
                   renderDayHover
                     ? (e) => openHover(day, e.currentTarget.getBoundingClientRect())

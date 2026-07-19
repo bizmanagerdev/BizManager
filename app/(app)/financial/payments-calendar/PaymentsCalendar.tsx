@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Plus, Check, Split, ExternalLink, Calendar as CalendarIcon, List as ListIcon, BellPlus } from "lucide-react";
+import { Loader2, Plus, Check, Split, ExternalLink, Calendar as CalendarIcon, List as ListIcon, BellPlus, AlertTriangle, ChevronDown, ChevronLeft } from "lucide-react";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -91,8 +91,20 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
   const [layout, setLayout] = useState<"calendar" | "list">("calendar");
   const accountNameById = useMemo(() => new Map(accounts.map((a) => [a.id, a.name] as const)), [accounts]);
   const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
-  // Month owned here so the calendar and the list stay on the same month.
+  // Month + selected day owned here so the calendar, the list and the
+  // due-payments banner (which jumps to a day) all stay in sync.
   const [monthDate, setMonthDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedDate, setSelectedDate] = useState(today);
+
+  // Jump to a specific day (from the due-payments banner): show the calendar,
+  // move to that month, and select the day so its panel opens.
+  const jumpToDay = (dateIso: string) => {
+    const d = toDateOnly(dateIso);
+    if (!d) return;
+    setLayout("calendar");
+    setMonthDate(new Date(d.getFullYear(), d.getMonth(), 1));
+    setSelectedDate(d);
+  };
 
   const visibleItems = useMemo(() => {
     let list = showPaid ? items : items.filter((i) => i.stage !== "posted");
@@ -272,11 +284,14 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
 
   return (
     <div className="space-y-3">
+      <DuePaymentsBanner items={items} todayIso={todayIso} onJump={jumpToDay} />
       {layout === "calendar" ? (
         <MonthCalendar
           todayIso={todayIso}
           month={monthDate}
           onMonthChange={setMonthDate}
+          selected={selectedDate}
+          onSelect={setSelectedDate}
           hideNav
           toolbar={toolbar}
           renderSelectedPanel={renderSelectedPanel}
@@ -296,6 +311,86 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
           />
         </>
       )}
+    </div>
+  );
+}
+
+// ── Due-payments banner — lists every bill due now (overdue / today / next 3
+//    days) with a link that jumps to its day on the calendar. Mirrors the
+//    `payment_outflow_due` alert rule (expense-origin, unpaid, date ≤ today+3),
+//    so the count matches the nav badge — but here it's expandable + per-item. ──
+const DUE_HEADS_UP_DAYS = 3;
+const BANNER_TONE: Record<"danger" | "warning" | "info", { wrap: string; head: string }> = {
+  danger: { wrap: "border-destructive/30 bg-destructive/[0.04]", head: "text-destructive" },
+  warning: { wrap: "border-warning/40 bg-warning/[0.05]", head: "text-warning-strong" },
+  info: { wrap: "border-border bg-muted/40", head: "text-foreground" },
+};
+
+function DuePaymentsBanner({
+  items,
+  todayIso,
+  onJump,
+}: {
+  items: PaymentCalendarItem[];
+  todayIso: string;
+  onJump: (dateIso: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+
+  const { due, severity } = useMemo(() => {
+    const t = toDateOnly(todayIso) ?? new Date();
+    const todayStr = isoLocal(t);
+    const horizon = isoLocal(new Date(t.getFullYear(), t.getMonth(), t.getDate() + DUE_HEADS_UP_DAYS));
+    const list = items
+      .filter((i) => i.origin === "expense" && i.stage !== "posted" && i.date.slice(0, 10) <= horizon)
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const hasOverdue = list.some((i) => i.date.slice(0, 10) < todayStr);
+    const hasToday = list.some((i) => i.date.slice(0, 10) === todayStr);
+    return { due: list, severity: (hasOverdue ? "danger" : hasToday ? "warning" : "info") as "danger" | "warning" | "info" };
+  }, [items, todayIso]);
+
+  if (due.length === 0) return null;
+  const tone = BANNER_TONE[severity];
+
+  return (
+    <div className={`rounded-xl border ${tone.wrap}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex w-full items-center gap-2 px-3 py-2 text-sm font-semibold ${tone.head}`}
+        aria-expanded={open}
+      >
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span className="flex-1 text-right">תשלומים לתשלום: {due.length}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open ? (
+        <ul className="max-h-72 divide-y overflow-y-auto border-t">
+          {due.map((item) => {
+            const stage = itemStageKey(item);
+            const day = toDateOnly(item.date) ?? new Date(item.date);
+            const amountText = item.variableAmount ? "משתנה" : fmtIls(item.amount);
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => onJump(item.date.slice(0, 10))}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-right transition-colors hover:bg-background/60"
+                >
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
+                  <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {day.getDate()}/{day.getMonth() + 1}
+                  </span>
+                  <span className="shrink-0 text-sm font-semibold tabular-nums">{amountText}</span>
+                  <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
     </div>
   );
 }
