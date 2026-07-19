@@ -9,6 +9,7 @@ import {
 } from "@/lib/collections";
 import { addWorkingDays } from "@/lib/dashboard/week";
 import { getRuleSettings, getDunningStages } from "@/lib/notifications/alert-config";
+import { loadProjectedRecurringExpenses } from "@/lib/payables";
 
 // ---------------------------------------------------------------------------
 // Reminders/Alerts unification — Phase 2: the system-rule engine.
@@ -510,6 +511,37 @@ const paymentOutflowDueRule: SystemRule = {
         behavior: "silent" as Behavior,
         audienceRole: "office" as AudienceRole,
         links: { expense_id: id },
+      });
+    }
+
+    // Recurring bills that are DUE but were never generated into an expense row
+    // (a lapsed prior month, or a template whose create-day hasn't fired). They
+    // exist only as calendar FORECASTS, so the expenses query above can't see them.
+    // Pull the SAME forecast the calendar draws and alert on occurrences within the
+    // horizon — so the badge/bar match the red dots even for un-created recurrences.
+    // (Already-generated occurrences are de-duped out by loadProjectedRecurringExpenses,
+    // so they're only ever counted once — via the expenses branch above.)
+    let forecasts: Awaited<ReturnType<typeof loadProjectedRecurringExpenses>> = [];
+    try {
+      forecasts = await loadProjectedRecurringExpenses(supabase, { referenceDate: ctx.todayIso });
+    } catch {
+      forecasts = [];
+    }
+    for (const f of forecasts) {
+      if (f.date > horizonIso) continue; // only overdue / today / a few days out
+      const overdue = f.date < ctx.todayIso;
+      const dueToday = f.date === ctx.todayIso;
+      const days = Math.round((new Date(f.date).getTime() - new Date(ctx.todayIso).getTime()) / 86_400_000);
+      const when = overdue ? `באיחור ${Math.abs(days)} ימים` : dueToday ? "לתשלום היום" : `בעוד ${days} ימים`;
+      const amountText = f.variableAmount ? "סכום משתנה" : ils(f.amount);
+      items.push({
+        key: `recur:${f.recurringTemplateId}:${f.recurrenceKey}`,
+        title: `תשלום לתשלום: ${f.label}`,
+        content: `${amountText} · ${when} · הוצאה קבועה שטרם נוצרה.`,
+        url: "/financial/payments-calendar",
+        severity: (overdue ? "danger" : dueToday ? "warning" : "info") as Severity,
+        behavior: "silent" as Behavior,
+        audienceRole: "office" as AudienceRole,
       });
     }
     return items;
