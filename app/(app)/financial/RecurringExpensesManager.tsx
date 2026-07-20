@@ -28,6 +28,7 @@ export type RecurringExpenseTemplateItem = {
   amount: number;
   is_variable_amount: boolean;
   auto_paid: boolean;
+  reminder_work_days_before: number | null;
   description_template: string | null;
   notes_template: string | null;
   business_domain: string;
@@ -313,11 +314,14 @@ export default function RecurringExpensesManager(props: Props) {
                       {template.is_active ? <Badge variant="success">פעיל</Badge> : <Badge variant="warning">לא פעיל</Badge>}
                     </div>
                     <div className="grid gap-1 text-xs text-muted-foreground">
-                      <div>סכום: <span className="text-foreground">{template.is_variable_amount ? "משתנה" : formatCurrency(template.amount)}</span></div>
+                      <div>סכום: <span className="text-foreground">{template.is_variable_amount ? (template.amount > 0 ? `~${formatCurrency(template.amount)} (משתנה)` : "משתנה") : formatCurrency(template.amount)}</span></div>
                       <div className="flex items-center gap-2">
                         <span>חשבון: <span className="text-foreground">{(template.account_id && accountNameById.get(template.account_id)) || "—"}</span></span>
                         {template.auto_paid ? <Badge variant="outline">הוראת קבע</Badge> : null}
                       </div>
+                      {template.reminder_work_days_before ? (
+                        <div>תזכורת: <span className="text-foreground">{template.reminder_work_days_before} ימי עבודה לפני</span></div>
+                      ) : null}
                       <div>
                         טווח: <span className="text-foreground">{template.start_date || "ללא התחלה"} | {template.end_date || "ללא סוף"}</span>
                       </div>
@@ -344,7 +348,7 @@ export default function RecurringExpensesManager(props: Props) {
 
           <div className="hidden max-h-[70vh] overflow-auto rounded-xl border md:block">
             <table dir="rtl" className="w-full text-sm">
-              <thead className="sticky top-0 z-10 border-b bg-muted/40 text-xs text-muted-foreground">
+              <thead className="sticky top-0 z-10 border-b-2 bg-muted text-xs font-semibold text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-right font-medium">מועד תשלום</th>
                   <th className="px-3 py-2 text-right font-medium">שם ותיאור</th>
@@ -352,6 +356,7 @@ export default function RecurringExpensesManager(props: Props) {
                   <th className="px-3 py-2 text-right font-medium">סכום</th>
                   <th className="px-3 py-2 text-right font-medium">חשבון</th>
                   <th className="px-3 py-2 text-right font-medium">הוראת קבע</th>
+                  <th className="px-3 py-2 text-right font-medium">תזכורת</th>
                   <th className="px-3 py-2 text-right font-medium">פעיל</th>
                   <th className="px-3 py-2 text-right font-medium">פעולות</th>
                 </tr>
@@ -388,7 +393,10 @@ export default function RecurringExpensesManager(props: Props) {
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right">
                         {template.is_variable_amount ? (
-                          <Badge variant="warning">משתנה</Badge>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {template.amount > 0 ? <span className="font-semibold tabular-nums">~{formatCurrency(template.amount)}</span> : null}
+                            <Badge variant="warning">משתנה</Badge>
+                          </div>
                         ) : (
                           <span className="font-semibold tabular-nums">{formatCurrency(template.amount)}</span>
                         )}
@@ -398,6 +406,15 @@ export default function RecurringExpensesManager(props: Props) {
                         {template.auto_paid ? (
                           <span className="inline-flex items-center gap-1 text-primary">
                             <Check className="h-4 w-4" />הוראת קבע
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {template.reminder_work_days_before ? (
+                          <span className="inline-flex items-center gap-1 text-primary">
+                            <BellPlus className="h-4 w-4" />{template.reminder_work_days_before} ימי עבודה לפני
                           </span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
