@@ -169,9 +169,13 @@ export default function RecurringExpensesManager(props: Props) {
     () => (accountFilter ? props.templates.filter((t) => t.account_id === accountFilter) : props.templates),
     [props.templates, accountFilter]
   );
-  // Ordered by next payment date (soonest first).
+  // Ordered by the day of the month the payment falls on (2nd, 9th, 10th …), then
+  // by next occurrence as a tiebreaker.
   const sortedTemplates = useMemo(
-    () => [...filteredTemplates].sort((a, b) => nextPaymentTime(a) - nextPaymentTime(b)),
+    () =>
+      [...filteredTemplates].sort(
+        (a, b) => (a.expense_day_of_month || 1) - (b.expense_day_of_month || 1) || nextPaymentTime(a) - nextPaymentTime(b)
+      ),
     [filteredTemplates]
   );
   const accountNameById = useMemo(

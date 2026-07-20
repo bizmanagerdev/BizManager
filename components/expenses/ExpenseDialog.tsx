@@ -430,7 +430,10 @@ export function ExpenseDialog({
   // them preserves the in-progress entry with no serialization. Editing always
   // uses the form (express is a fast-create experience). Persisted per browser.
   const [viewMode, setViewMode] = useState<"form" | "express">("express");
-  const [expStepId, setExpStepId] = useState<string>("amount");
+  // "" is a sentinel that isn't any step id → the index clamps to 0, so the flow
+  // always opens on the FIRST step of the current express list (which is no longer
+  // always "amount" now that steps are grouped).
+  const [expStepId, setExpStepId] = useState<string>("");
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("expenseDialogMode");
@@ -745,7 +748,7 @@ export function ExpenseDialog({
     setNewWorkerPhone("");
     setAttachmentFiles([]);
     setErrorMessage("");
-    setExpStepId("amount");
+    setExpStepId("");
     setWorkerSearch("");
     setSourceSearch("");
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1311,22 +1314,40 @@ export function ExpenseDialog({
       s.push("review");
       return s;
     }
+    // Steps are GROUPED by theme so related screens stay together:
+    //   WHAT IS IT (domain → category → name → description)
+    //   → WHEN (schedule)
+    //   → HOW MUCH (all the money screens in one run)
+    //   → details (notes, files) → review.
+    // Same shape for one-time and recurring, so money never gets scattered.
+    // Amount opens the flow (quick capture) — the rest is grouped by theme.
     const s: string[] = ["amount"];
+
+    // — What is it — classification + identity
     if (!isSourceLocked) s.push("domain");
     if (needsSourcePicker) s.push("source");
     if (effectiveDomain) s.push("category");
     if (category === OTHER_CATEGORY) s.push("otherCategory");
     if (finalCategory === CARS_CATEGORY && !presetTagLabel) s.push("tags");
-    s.push("date");
+    s.push("description");
     // One-time vs recurring: the choice reshapes the rest of the flow. Hidden when
-    // editing a template (that's always recurring — can't switch to one-time).
-    if (canRecur && !isEditingTemplate) s.push("recurrence");
+    // the entry point already fixes it (template edit, or the "new recurring" creator).
+    // Kept BEFORE every isRecurring-dependent step so switching adds them AHEAD.
+    if (canRecur && !isEditingTemplate && !defaultRecurring) s.push("recurrence");
+    if (isRecurring) s.push("recurname"); // the template's name (identity)
+
+    // — When — the schedule
+    s.push("date");
     if (isRecurring) {
-      // A template isn't "paid now" — collect only the schedule + which account it
-      // will be paid from; the generated rows start not_paid and get confirmed later.
       s.push("recurfreq");
       if (recurFrequency === "yearly") s.push("recurmonth");
-      s.push("recurvariable", "recurrange", "account");
+      s.push("recurrange");
+    }
+
+    // — How much — the rest of the money screens (amount was captured first)
+    if (isRecurring) {
+      s.push("recurvariable");
+      s.push("account");
       // Fixed-amount bills can be a bank standing order (auto-paid); variable can't.
       if (!recurVariable) s.push("recurpay");
       if (showBillingOptions) s.push("billing");
@@ -1345,8 +1366,9 @@ export function ExpenseDialog({
         if (showBillingOptions) s.push("billing");
       }
     }
-    s.push("description", "notes");
-    if (isRecurring) s.push("recurname"); // name the template (after description, so it can default from it)
+
+    // — Details —
+    s.push("notes");
     if (showAttachments) s.push("files");
     s.push("review");
     return s;
@@ -1356,7 +1378,7 @@ export function ExpenseDialog({
     showBillingOptions, showAttachments, canManageWorkerSessions,
     showSessionTimingFields, showSessionPriceField, selectedWorkerType,
     workerPaymentChoice, installmentRows, canRecur, isRecurring, recurFrequency,
-    isEditingTemplate, recurVariable,
+    isEditingTemplate, recurVariable, defaultRecurring,
   ]);
 
   const rawIndex = expressSteps.indexOf(expStepId);
@@ -1689,8 +1711,8 @@ export function ExpenseDialog({
       case "date":
         return (
           <>
-            {expEyebrow(<CalendarDays className="h-4 w-4" />, "תאריך")}
-            {expTitle("מתי בוצעה ההוצאה?")}
+            {expEyebrow(<CalendarDays className="h-4 w-4" />, isRecurring ? "תאריך התחלה" : "תאריך")}
+            {expTitle(isRecurring ? "ממתי מתחיל?" : "מתי בוצעה ההוצאה?", isRecurring ? "התאריך שממנו נספרים החיובים (וקובע את יום החיוב)" : undefined)}
             <DateInput value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
             <div className="mt-3 flex flex-wrap justify-center gap-2">
               {[["היום", 0], ["אתמול", -1], ["שלשום", -2]].map(([label, days]) => (
