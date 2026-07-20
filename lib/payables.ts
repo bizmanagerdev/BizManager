@@ -310,7 +310,9 @@ export async function loadProjectedRecurringExpenses(
   const items: PaymentCalendarItem[] = [];
   for (const tpl of templates) {
     const isVar = tpl.is_variable_amount === true;
-    const amount = isVar ? 0 : Number(tpl.amount);
+    // For a variable bill the stored amount is an ESTIMATE (e.g. ~mortgage) used
+    // for cash planning — carry it so the forecast/total isn't blind to it.
+    const amount = Number(tpl.amount) || 0;
     if (!isVar && !(Number.isFinite(amount) && amount > 0)) continue;
     const expenseDay = Number(tpl.expense_day_of_month) || 1;
 
@@ -361,7 +363,7 @@ export async function loadProjectedRecurringExpenses(
         date: occ.date,
         amount,
         label,
-        sourceLabel: isVar ? "הוצאה קבועה · סכום משתנה" : "הוצאה קבועה",
+        sourceLabel: "הוצאה קבועה",
         sourceHref: null,
         stage: isPast ? "pending" : "scheduled",
         paymentStatus: "not_paid",

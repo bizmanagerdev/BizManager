@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarDays, Repeat, Plus, RotateCw } from "lucide-react";
+import { CalendarDays, Repeat, Plus, RotateCw, Calculator } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toHebrewError } from "@/lib/error-messages";
@@ -13,7 +13,7 @@ import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import RecurringExpensesManager, {
   type RecurringExpenseTemplateItem,
 } from "@/app/(app)/financial/RecurringExpensesManager";
-import PaymentsCalendar from "./PaymentsCalendar";
+import PaymentsCalendar, { CashNeedsDialog } from "./PaymentsCalendar";
 
 type Option = { id: string; label: string };
 
@@ -51,6 +51,7 @@ export default function PaymentsHubClient({
   const [activeTab, setActiveTab] = useState<TabKey>("calendar");
   const [addOpen, setAddOpen] = useState(false);
   const [newTemplateOpen, setNewTemplateOpen] = useState(false);
+  const [cashOpen, setCashOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   async function generateCycle() {
@@ -88,10 +89,16 @@ export default function PaymentsHubClient({
         </TabsList>
         <div className="flex flex-wrap items-center gap-2">
           {activeTab === "calendar" ? (
-            <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="ml-1 h-4 w-4" />
-              הוסף תשלום
-            </Button>
+            <>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setCashOpen(true)}>
+                <Calculator className="ml-1 h-4 w-4" />
+                כמה צריך?
+              </Button>
+              <Button type="button" size="sm" onClick={() => setAddOpen(true)}>
+                <Plus className="ml-1 h-4 w-4" />
+                הוסף תשלום
+              </Button>
+            </>
           ) : (
             <>
               <Button type="button" size="sm" onClick={() => setNewTemplateOpen(true)} disabled={expenseMissingSchema}>
@@ -127,6 +134,16 @@ export default function PaymentsHubClient({
           missingSchema={expenseMissingSchema}
         />
       </TabsContent>
+
+      {/* Cash-needs calculator (calendar tab) — "how much will I need between X and Y?" */}
+      <CashNeedsDialog
+        key={cashOpen ? "cash-open" : "cash-closed"}
+        open={cashOpen}
+        onOpenChange={setCashOpen}
+        items={items}
+        accounts={accounts}
+        todayIso={todayIso}
+      />
 
       {/* Global quick-add payment (calendar tab) — defaults to today */}
       <ExpenseDialog

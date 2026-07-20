@@ -40,6 +40,19 @@ function fmtIls(value: number) {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(value);
 }
 
+// How an amount reads on a row: a variable bill shows its ESTIMATE as "~₪X"
+// (or "משתנה" when no estimate was given); everything else is the exact amount.
+function amountLabel(item: PaymentCalendarItem): string {
+  if (item.variableAmount) return item.amount > 0 ? `~${fmtIls(item.amount)}` : "משתנה";
+  return fmtIls(item.amount);
+}
+
+function addDaysIso(iso: string, n: number): string {
+  const d = toDateOnly(iso) ?? new Date();
+  d.setDate(d.getDate() + n);
+  return isoLocal(d);
+}
+
 // Delete an expense-origin payment row (e.g. an orphaned recurring bill left
 // behind after its template was deleted). Real expenses only.
 async function deleteExpenseItem(item: PaymentCalendarItem): Promise<boolean> {
@@ -70,7 +83,7 @@ async function deleteExpenseItem(item: PaymentCalendarItem): Promise<boolean> {
 
 // A pre-filled note for a reminder created from a payment.
 function reminderNoteFor(item: PaymentCalendarItem): string {
-  const amt = item.variableAmount ? "סכום משתנה" : fmtIls(item.amount);
+  const amt = amountLabel(item);
   return `תשלום: ${item.label} — ${amt}`;
 }
 
@@ -205,8 +218,10 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
     for (const item of dayItems) {
       const st = itemStageKey(item);
       const cur = byStage.get(st) ?? { amount: 0, variable: false };
-      if (item.variableAmount) cur.variable = true;
-      else cur.amount += item.amount;
+      // A variable bill's estimate counts toward the total (marked "~" so it reads
+      // as approximate); only mark `variable` when it actually has an estimate.
+      cur.amount += item.amount;
+      if (item.variableAmount && item.amount > 0) cur.variable = true;
       byStage.set(st, cur);
     }
     return (
@@ -218,7 +233,7 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
           .filter((s) => byStage.has(s))
           .map((s) => {
             const { amount, variable } = byStage.get(s)!;
-            const text = amount > 0 ? fmtIls(amount) : variable ? "משתנה" : null;
+            const text = amount > 0 ? `${variable ? "~" : ""}${fmtIls(amount)}` : null;
             if (!text) return null;
             return (
               <span key={s} className="flex max-w-full items-center gap-1 text-[10px] font-semibold leading-tight text-foreground">
@@ -248,7 +263,7 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
               <li key={item.id} className="flex items-center gap-1.5 text-xs">
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                <span className="shrink-0 font-medium">{item.variableAmount ? "משתנה" : fmtIls(item.amount)}</span>
+                <span className="shrink-0 font-medium">{amountLabel(item)}</span>
               </li>
             );
           })}
@@ -346,6 +361,7 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
           selected={selectedDate}
           onSelect={setSelectedDate}
           hideNav
+          fixedPanel
           renderSelectedPanel={renderSelectedPanel}
           renderDayContent={renderDayContent}
           renderDayHover={renderDayHover}
@@ -361,6 +377,141 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
         />
       )}
     </div>
+  );
+}
+
+// ── Cash-needs calculator — "how much will I need between X and Y?" ──────────────
+// Sums every not-yet-paid outflow in a date range (honoring the page's account
+// filter via the passed items, plus its own recurring-only toggle). Variable bills
+// contribute their estimate, and the total is marked "~" when any estimate is in it.
+export function CashNeedsDialog({
+  open,
+  onOpenChange,
+  items,
+  accounts,
+  todayIso,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  items: PaymentCalendarItem[];
+  accounts: Account[];
+  todayIso: string;
+}) {
+  // Parent remounts this on open (via key), so the range initializes fresh each time.
+  const [from, setFrom] = useState(todayIso);
+  const [to, setTo] = useState(() => addDaysIso(todayIso, 7));
+  const [recurringOnly, setRecurringOnly] = useState(false);
+  const [accountFilter, setAccountFilter] = useState("");
+
+  const result = useMemo(() => {
+    const lo = from <= to ? from : to;
+    const hi = from <= to ? to : from;
+    const rows = items
+      .filter(
+        (i) =>
+          i.stage !== "posted" &&
+          i.date.slice(0, 10) >= lo &&
+          i.date.slice(0, 10) <= hi &&
+          (!recurringOnly || Boolean(i.recurringTemplateId)) &&
+          (!accountFilter || i.accountId === accountFilter)
+      )
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const total = rows.reduce((sum, i) => sum + i.amount, 0);
+    const hasEstimate = rows.some((i) => i.variableAmount && i.amount > 0);
+    return { total, rows, hasEstimate };
+  }, [items, from, to, recurringOnly, accountFilter]);
+
+  const quickRanges: Array<[string, number]> = [["היום", 0], ["יומיים", 2], ["שבוע", 7], ["חודש", 30]];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <AdaptiveDialog size="formMd">
+        <DialogHeader>
+          <DialogTitle>כמה כסף צריך?</DialogTitle>
+          <DialogDescription>סכום כל התשלומים לתשלום בטווח שנבחר.</DialogDescription>
+        </DialogHeader>
+        <div className="mt-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">מתאריך</div>
+              <DateInput value={from} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <div className="text-sm font-medium">עד תאריך</div>
+              <DateInput value={to} onChange={(e) => setTo(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {quickRanges.map(([label, days]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => { setFrom(todayIso); setTo(addDaysIso(todayIso, days)); }}
+                className="rounded-full border border-input bg-background px-3 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={recurringOnly}
+              onClick={() => setRecurringOnly((v) => !v)}
+              className="flex items-center gap-2 text-sm font-medium text-muted-foreground"
+            >
+              <span className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${recurringOnly ? "bg-primary" : "bg-muted-foreground/30"}`}>
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${recurringOnly ? "right-0.5" : "right-[18px]"}`} />
+              </span>
+              רק הוצאות קבועות
+            </button>
+            {accounts.length > 0 ? (
+              <select
+                value={accountFilter}
+                onChange={(e) => setAccountFilter(e.target.value)}
+                aria-label="סינון לפי חשבון"
+                className="h-9 rounded-lg border bg-background px-2 text-sm text-foreground"
+              >
+                <option value="">כל החשבונות</option>
+                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            ) : null}
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl bg-foreground px-4 py-3 text-background">
+            <div>
+              <div className="text-xs opacity-70">סה״כ נדרש</div>
+              <div className="text-2xl font-bold tabular-nums">{result.hasEstimate ? "~" : ""}{fmtIls(result.total)}</div>
+            </div>
+            <div className="text-xs opacity-70">{result.rows.length} תשלומים{result.hasEstimate ? " · כולל הערכות" : ""}</div>
+          </div>
+
+          {/* Narrow rundown of exactly what's in the total */}
+          {result.rows.length > 0 ? (
+            <ul className="max-h-56 divide-y overflow-y-auto rounded-lg border text-sm">
+              {result.rows.map((i) => {
+                const d = toDateOnly(i.date) ?? new Date(i.date);
+                return (
+                  <li key={i.id} className="flex items-center gap-2 px-2.5 py-1">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STAGE_DOT[itemStageKey(i)]}`} />
+                    <span className="w-9 shrink-0 text-xs tabular-nums text-muted-foreground">{d.getDate()}/{d.getMonth() + 1}</span>
+                    <span className="min-w-0 flex-1 truncate">{i.label}</span>
+                    {i.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
+                    <span className="shrink-0 tabular-nums">{amountLabel(i)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="rounded-lg border p-4 text-center text-sm text-muted-foreground">אין תשלומים בטווח שנבחר.</div>
+          )}
+        </div>
+        <DialogFooter className="mt-4">
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>סגור</Button>
+        </DialogFooter>
+      </AdaptiveDialog>
+    </Dialog>
   );
 }
 
@@ -420,7 +571,7 @@ function DuePaymentsBanner({
           {due.map((item) => {
             const stage = itemStageKey(item);
             const day = toDateOnly(item.date) ?? new Date(item.date);
-            const amountText = item.variableAmount ? "משתנה" : fmtIls(item.amount);
+            const amountText = amountLabel(item);
             return (
               <li key={item.id}>
                 <button
@@ -470,10 +621,13 @@ function PaymentItemCard({
   const canMarkPaid = (Boolean(item.expenseId) || isForecast) && !item.autoPaid;
   const canSplit = Boolean(item.expenseId);
   const canDelete = Boolean(item.expenseId);
-  const metaLine = [item.domainName, item.sourceLabel, accountName ? `מחשבון ${accountName}` : null]
+  // Drop the source label from the meta when a type badge (הוראת קבע / קבועה) already
+  // says the same thing — no info twice.
+  const showsTypeBadge = item.autoPaid || isForecast;
+  const metaLine = [item.domainName, showsTypeBadge ? null : item.sourceLabel, accountName ? `מחשבון ${accountName}` : null]
     .filter(Boolean)
     .join(" • ");
-  const amountText = item.variableAmount ? "סכום משתנה" : fmtIls(item.amount);
+  const amountText = amountLabel(item);
   const noteText = item.notes?.trim() || "";
 
   // Compact single-block row for the list view: title + amount on one line,
@@ -481,17 +635,23 @@ function PaymentItemCard({
   if (compact) {
     return (
       <div className="rounded-lg border bg-background px-2.5 py-1.5">
-        <div className="flex items-center gap-2">
-          <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
-          {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
+        {/* Row 1: name (wraps) + amount. Badges get their own row so nothing crams. */}
+        <div className="flex items-start gap-2">
+          <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
+          <span className="min-w-0 flex-1 text-sm font-medium leading-snug line-clamp-2">{item.label}</span>
           <span className="shrink-0 text-sm font-semibold tabular-nums">{amountText}</span>
         </div>
-        {noteText ? (
-          <div className="mt-0.5 truncate text-xs text-muted-foreground">הערה: {noteText}</div>
+        {item.autoPaid || isForecast || item.variableAmount ? (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
+            {item.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
+          </div>
         ) : null}
-        <div className="mt-0.5 flex items-center justify-between gap-2">
-          <span className="min-w-0 truncate text-xs text-muted-foreground">
+        {noteText ? (
+          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">הערה: {noteText}</div>
+        ) : null}
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {metaLine}
           </span>
           <div className="flex shrink-0 items-center gap-1">
@@ -531,6 +691,7 @@ function PaymentItemCard({
         <span className="font-semibold">{amountText}</span>
         <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
         {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">הוצאה קבועה</Badge> : null}
+        {item.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
         {item.installmentGroupId && item.installmentIndex && item.installmentCount ? (
           <Badge variant="neutral">
             תשלום {item.installmentIndex}/{item.installmentCount}
@@ -659,10 +820,11 @@ function PaymentsMonthList({
                       <div className="flex flex-wrap gap-1">
                         <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
                         {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
+                        {item.variableAmount ? <Badge variant="warning">משתנה</Badge> : null}
                       </div>
                     </td>
                     <td dir="ltr" className="whitespace-nowrap px-3 py-2 text-left font-semibold tabular-nums">
-                      {item.variableAmount ? "משתנה" : fmtIls(item.amount)}
+                      {amountLabel(item)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2">
                       <div className="flex items-center gap-1">
@@ -811,8 +973,9 @@ function PaymentsDayPanel({
         </div>
       </div>
 
-      {/* Body — grows to fill the panel so the add button pins to the bottom */}
-      <div className="mt-3 flex-1">
+      {/* Body — fills the panel and scrolls when there are many payments, so the
+          panel keeps a fixed height and the add button stays pinned at the bottom */}
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
         {items.length > 0 ? (
           <div className="space-y-1.5">
             {items.map((item) => (
@@ -951,8 +1114,9 @@ function MarkPaidDialog({
   const open = Boolean(item);
   const isVariable = Boolean(item?.variableAmount);
 
-  // Clear the entered amount whenever a different item opens.
-  useEffect(() => { setPayAmount(""); setError(""); }, [item?.id]);
+  // On open, seed the amount with the bill's estimate (variable bills) so you can
+  // just tweak it to the real charge instead of typing from scratch.
+  useEffect(() => { setPayAmount(item?.variableAmount && item.amount > 0 ? String(item.amount) : ""); setError(""); }, [item?.id, item?.variableAmount, item?.amount]);
 
   async function submit() {
     if (!item) return;

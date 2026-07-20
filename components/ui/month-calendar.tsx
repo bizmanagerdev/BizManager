@@ -98,6 +98,10 @@ type Props = {
    *  the selection (e.g. to jump to a specific day from an external list). */
   selected?: Date;
   onSelect?: (day: Date) => void;
+  /** When true, the desktop side panel is pinned to the calendar's height (its
+   *  content absolutely fills the column) so a long panel scrolls internally
+   *  instead of growing the row. Off by default (ProjectsCalendar unaffected). */
+  fixedPanel?: boolean;
   /** Toolbar rendered at the top of the calendar (main) column, above the grid —
    *  so the selected-day side panel rises to the same top edge. */
   toolbar?: ReactNode;
@@ -131,6 +135,7 @@ export default function MonthCalendar({
   hideNav = false,
   selected,
   onSelect,
+  fixedPanel = false,
   toolbar,
   renderSelectedPanel,
   renderDayContent,
@@ -353,13 +358,17 @@ export default function MonthCalendar({
         </div>
 
         {/* Selected-day panel — beside the grid on desktop (matches its height),
-            below it on mobile. */}
-        <aside className="min-w-0">
-          {renderSelectedPanel({
-            day: selectedDate,
-            holiday: holidaysByDay.get(selectedIso)?.name ?? null,
-            isToday: isSameDay(selectedDate, today),
-          })}
+            below it on mobile. With fixedPanel, the panel content is absolutely
+            positioned on desktop so it fills (and never exceeds) the calendar's
+            height — a long list scrolls inside it instead of stretching the row. */}
+        <aside className={`min-w-0 ${fixedPanel ? "lg:relative" : ""}`}>
+          <div className={fixedPanel ? "lg:absolute lg:inset-0" : ""}>
+            {renderSelectedPanel({
+              day: selectedDate,
+              holiday: holidaysByDay.get(selectedIso)?.name ?? null,
+              isToday: isSameDay(selectedDate, today),
+            })}
+          </div>
         </aside>
       </div>
 
