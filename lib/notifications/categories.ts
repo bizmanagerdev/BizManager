@@ -12,7 +12,7 @@ export const NOTIF_BUCKETS: Array<{ key: string; label: string }> = [
   { key: "reminders", label: "תזכורות אישיות" },
 ];
 
-const MONEY = new Set(["collection_overdue", "check_deposit_due", "payment_due_today", "payment_outflow_due", "promise_broken", "recurring_expense_confirm"]);
+const MONEY = new Set(["collection_overdue", "check_deposit_due", "payment_due_today", "payment_outflow_due", "recurring_payment_reminder", "promise_broken", "recurring_expense_confirm"]);
 const TASKS = new Set(["task_overdue", "task_due_soon"]);
 const PROJECTS = new Set(["project_deadline", "project_starting", "stale_quote", "project_closed_unbilled"]);
 const OPS = new Set(["low_stock", "unprocessed_items", "vehicle_expiry"]);

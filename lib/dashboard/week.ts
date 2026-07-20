@@ -50,6 +50,22 @@ export function addWorkingDays(date: Date, workingDays: number): Date {
   return value;
 }
 
+/**
+ * N WORK-days before `date` (Fri+Sat don't count). e.g. a payment on Saturday
+ * minus 3 work-days → Tuesday (Thu, Wed, Tue; Fri is skipped). Used for
+ * "remind me N work-days before a payment".
+ */
+export function subtractWorkingDays(date: Date, workingDays: number): Date {
+  const value = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  let removed = 0;
+  while (removed < workingDays) {
+    value.setDate(value.getDate() - 1);
+    const day = value.getDay();
+    if (day !== 5 && day !== 6) removed += 1;
+  }
+  return value;
+}
+
 export type WeekDayBucket = { day: Date; isToday: boolean; entries: CalendarEntry[] };
 
 export type WeekView = {

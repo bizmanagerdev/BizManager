@@ -24,6 +24,7 @@ type Payload = {
   interval_months?: number | string | null;
   is_variable_amount?: boolean | null;
   auto_paid?: boolean | null;
+  reminder_work_days_before?: number | string | null;
   create_day_of_month?: number | string | null;
   expense_day_of_month?: number | string | null;
   create_month_of_year?: number | string | null;
@@ -123,6 +124,13 @@ export async function POST(req: Request) {
     // Bank standing order (הוראת קבע): generated rows are auto-marked paid. Meaningless
     // for a variable-amount bill (amount unknown until paid), so they're exclusive.
     const autoPaid = !isVariableAmount && body.auto_paid === true;
+    // Monthly reminder: N WORK-days before each occurrence (0/empty = off).
+    const reminderWorkDaysBefore = (() => {
+      const parsed = typeof body.reminder_work_days_before === "number" ? body.reminder_work_days_before
+        : typeof body.reminder_work_days_before === "string" ? Number(body.reminder_work_days_before) : NaN;
+      if (!Number.isFinite(parsed) || parsed <= 0) return null;
+      return Math.min(30, Math.floor(parsed));
+    })();
     // Variable-amount templates (e.g. taxes) may have amount 0 — the amount is set
     // at pay time. Non-variable still require a positive amount.
     const effectiveAmount = isVariableAmount ? (Number.isFinite(amount) && amount > 0 ? amount : 0) : amount;
@@ -148,6 +156,7 @@ export async function POST(req: Request) {
       amount: effectiveAmount,
       is_variable_amount: isVariableAmount,
       auto_paid: autoPaid,
+      reminder_work_days_before: reminderWorkDaysBefore,
       description_template: descriptionTemplate,
       notes_template: notesTemplate,
       business_domain: businessDomain,

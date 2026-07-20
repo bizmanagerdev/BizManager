@@ -5,6 +5,7 @@ import {
   addDays,
   isSameDay,
   addWorkingDays,
+  subtractWorkingDays,
   buildWeekView,
 } from "@/lib/dashboard/week";
 import type { CalendarEntry } from "@/lib/projectSchedule";
@@ -15,6 +16,31 @@ import type { CalendarEntry } from "@/lib/projectSchedule";
 function entry(over: Partial<CalendarEntry> & { id: string; kind: "project" | "task" }): CalendarEntry {
   return { startDate: null, endDate: null, ...over } as unknown as CalendarEntry;
 }
+
+describe("subtractWorkingDays — N work-days before (Fri+Sat don't count)", () => {
+  it("a Saturday minus 3 work-days lands on the Tuesday (Fri is skipped)", () => {
+    // 2026-07-25 is a Saturday. Thu(23), Wed(22), Tue(21) → Tuesday.
+    const sat = new Date(2026, 6, 25);
+    expect(sat.getDay()).toBe(6);
+    const result = subtractWorkingDays(sat, 3);
+    expect(result.getDay()).toBe(2); // Tuesday
+    expect(result.getDate()).toBe(21);
+  });
+
+  it("skips the weekend when counting back across it", () => {
+    // Monday 2026-07-20 minus 1 work-day → Thursday 2026-07-16 (skips Sun? no —
+    // back from Mon: Sun(19)? Sun IS a work day in Israel). Mon→Sun = 1 work day.
+    const mon = new Date(2026, 6, 20);
+    expect(mon.getDay()).toBe(1);
+    const result = subtractWorkingDays(mon, 1);
+    expect(result.getDay()).toBe(0); // Sunday (a work day in Israel)
+  });
+
+  it("0 work-days returns the same day", () => {
+    const d = new Date(2026, 6, 20);
+    expect(subtractWorkingDays(d, 0).getTime()).toBe(new Date(2026, 6, 20).getTime());
+  });
+});
 
 describe("date helpers", () => {
   it("toDateOnly parses a YYYY-MM-DD prefix and rejects junk", () => {

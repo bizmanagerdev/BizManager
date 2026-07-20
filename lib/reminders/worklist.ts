@@ -435,6 +435,7 @@ const RULE_NAV_URL: Record<string, string> = {
   promise_broken: "/collections",
   check_deposit_due: "/checks",
   payment_outflow_due: "/financial/payments-calendar",
+  recurring_payment_reminder: "/financial/payments-calendar",
   recurring_expense_confirm: "/financial",
   unprocessed_items: "/financial/statements",
   // projects

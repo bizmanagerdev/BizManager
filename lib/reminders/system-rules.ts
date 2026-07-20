@@ -7,7 +7,7 @@ import {
   getPaymentsDueToday,
   isOpenOrderStatus,
 } from "@/lib/collections";
-import { addWorkingDays } from "@/lib/dashboard/week";
+import { addWorkingDays, subtractWorkingDays, toDateOnly } from "@/lib/dashboard/week";
 import { getRuleSettings, getDunningStages } from "@/lib/notifications/alert-config";
 import { loadProjectedRecurringExpenses } from "@/lib/payables";
 
@@ -549,6 +549,86 @@ const paymentOutflowDueRule: SystemRule = {
   },
 };
 
+function isoOf(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// The next occurrence date (on/after `today`) of a recurring template, honoring
+// yearly / monthly / every-N-months (phased off start_date, else created_at).
+function nextRecurringOccurrence(tpl: Row, today: Date): { date: Date; key: string } | null {
+  const day = getNumber(tpl, "expense_day_of_month") ?? 1;
+  const frequency = getString(tpl, "frequency");
+  if (frequency === "yearly") {
+    const month = (getNumber(tpl, "expense_month_of_year") ?? 1) - 1;
+    for (const year of [today.getFullYear(), today.getFullYear() + 1]) {
+      const last = new Date(year, month + 1, 0).getDate();
+      const d = new Date(year, month, Math.min(Math.max(1, day), last));
+      if (d >= today) return { date: d, key: String(year) };
+    }
+    return null;
+  }
+  const interval = Math.max(1, getNumber(tpl, "interval_months") ?? 1);
+  const anchorStr = getString(tpl, "start_date") || (getString(tpl, "created_at") ?? "").slice(0, 10) || null;
+  const anchor = (anchorStr ? toDateOnly(anchorStr) : null) ?? today;
+  const anchorIdx = anchor.getFullYear() * 12 + anchor.getMonth();
+  for (let i = 0; i < 24; i++) {
+    const base = new Date(today.getFullYear(), today.getMonth() + i, 1);
+    const diff = base.getFullYear() * 12 + base.getMonth() - anchorIdx;
+    if (diff < 0 || diff % interval !== 0) continue;
+    const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+    const d = new Date(base.getFullYear(), base.getMonth(), Math.min(Math.max(1, day), last));
+    if (d >= today) return { date: d, key: isoOf(d).slice(0, 7) };
+  }
+  return null;
+}
+
+const recurringPaymentReminderRule: SystemRule = {
+  key: "recurring_payment_reminder",
+  label: "תזכורות לתשלומים קבועים",
+  async evaluate(supabase, ctx) {
+    // Per-bill monthly reminder: "remind me N WORK-days before this bill's date".
+    // Each period we surface a heads-up from its remind-day up to the payment day.
+    const { data, error } = await supabase
+      .from("recurring_expense_templates")
+      .select("id,template_name,category,amount,is_variable_amount,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,created_at,reminder_work_days_before")
+      .eq("is_active", true)
+      .not("reminder_work_days_before", "is", null)
+      .gt("reminder_work_days_before", 0)
+      .range(0, 999);
+    // Column may not exist pre-migration → treat as "no reminders".
+    if (error) {
+      if ((error.message ?? "").toLowerCase().includes("reminder_work_days_before")) return [];
+      throwIf(error, "recurring_expense_templates(reminder)");
+    }
+    const items: SystemReminderItem[] = [];
+    for (const t of (data ?? []) as Row[]) {
+      const n = getNumber(t, "reminder_work_days_before") ?? 0;
+      if (n <= 0) continue;
+      const occ = nextRecurringOccurrence(t, ctx.today);
+      if (!occ) continue;
+      const remindIso = isoOf(subtractWorkingDays(occ.date, n));
+      const occIso = isoOf(occ.date);
+      if (ctx.todayIso < remindIso || ctx.todayIso > occIso) continue; // outside the heads-up window
+      const id = getString(t, "id") ?? "";
+      const name = getString(t, "template_name") || getString(t, "category") || "תשלום קבוע";
+      const isVar = getBoolean(t, "is_variable_amount") === true;
+      const amount = getNumber(t, "amount") ?? 0;
+      const amountText = isVar ? (amount > 0 ? `~${ils(amount)}` : "סכום משתנה") : ils(amount);
+      items.push({
+        key: `${id}:${occ.key}`,
+        title: `תשלום קרוב: ${name}`,
+        content: `${amountText} · צפוי ב-${occIso}.`,
+        url: "/financial/payments-calendar",
+        severity: "warning" as Severity,
+        behavior: "ping_once" as Behavior,
+        audienceRole: "office" as AudienceRole,
+        links: { expense_id: null },
+      });
+    }
+    return items;
+  },
+};
+
 const recurringExpenseConfirmRule: SystemRule = {
   key: "recurring_expense_confirm",
   label: "אישור תשלום הוצאות קבועות",
@@ -884,6 +964,7 @@ export const SYSTEM_RULES: SystemRule[] = [
   checkDepositDueRule,
   paymentDueTodayRule,
   paymentOutflowDueRule,
+  recurringPaymentReminderRule,
   promiseBrokenRule,
   recurringExpenseConfirmRule,
   // New coverage (Phase 5): tasks & projects
