@@ -173,6 +173,7 @@ export type EditingRecurringTemplateData = {
   amount: number | string | null;
   is_variable_amount: boolean;
   auto_paid?: boolean;
+  reminder_work_days_before?: number | null;
   description_template: string | null;
   notes_template: string | null;
   business_domain: string | null;
@@ -419,6 +420,7 @@ export function ExpenseDialog({
   const [projectNotesTemplate, setProjectNotesTemplate] = useState(""); // project domain only
   const [recurVariable, setRecurVariable] = useState(false); // amount known only at pay time (taxes)
   const [recurAutoPaid, setRecurAutoPaid] = useState(false); // bank standing order (הוראת קבע) → auto-marked paid
+  const [recurReminderDays, setRecurReminderDays] = useState(""); // monthly reminder: N work-days before ("" = off)
   const [billToCustomerAmount, setBillToCustomerAmount] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
@@ -714,6 +716,7 @@ export function ExpenseDialog({
     setProjectNotesTemplate("");
     setRecurVariable(false);
     setRecurAutoPaid(false);
+    setRecurReminderDays("");
     // Recurring override: template edit forces recurring on + hydrates its schedule;
     // a NEW expense opened with defaultRecurring starts on the recurring path.
     if (editingRecurringTemplate) {
@@ -728,6 +731,7 @@ export function ExpenseDialog({
       setProjectNotesTemplate(t.project_expense_notes_template ?? "");
       setRecurVariable(t.is_variable_amount === true);
       setRecurAutoPaid(t.auto_paid === true);
+      setRecurReminderDays(t.reminder_work_days_before ? String(t.reminder_work_days_before) : "");
     } else if (defaultRecurring) {
       setIsRecurring(true);
     }
@@ -1054,9 +1058,12 @@ export function ExpenseDialog({
           id: editingRecurringTemplate?.id ?? undefined,
           template_name: templateName.trim() || finalCategory,
           category: finalCategory,
-          amount: recurVariable ? 0 : amountNumber,
+          // For a variable bill this is the ESTIMATE (base) used for planning; the
+          // real amount is captured when it's paid.
+          amount: amountNumber,
           is_variable_amount: recurVariable,
           auto_paid: recurAutoPaid && !recurVariable,
+          reminder_work_days_before: recurReminderDays ? Number(recurReminderDays) : null,
           description_template: description.trim() || null,
           notes_template: notes.trim() || null,
           business_domain: effectiveDomain,
@@ -1342,6 +1349,7 @@ export function ExpenseDialog({
       s.push("recurfreq");
       if (recurFrequency === "yearly") s.push("recurmonth");
       s.push("recurrange");
+      s.push("recurremind");
     }
 
     // — How much — the rest of the money screens (amount was captured first)
@@ -1576,18 +1584,10 @@ export function ExpenseDialog({
             {expEyebrow(<Wallet className="h-4 w-4" />, "סכום")}
             {expTitle("כמה עלתה ההוצאה?", "אפשר להשאיר 0 ולקבוע אחר כך")}
             {expAmountHero(amount)}
-            {/* Allow proceeding at 0 — e.g. a recurring bill whose amount changes
-                each time (taxes). Real amount is enforced at submit for one-offs. */}
+            {/* Allow proceeding at 0 — a recurring bill whose amount changes each
+                time (mortgage/CC) keeps this as an ESTIMATE for planning; the real
+                amount is entered when it's paid. One-offs must have a real amount. */}
             {expKeypad(setAmount, false)}
-            {canRecur ? (
-              <button
-                type="button"
-                onClick={() => { setIsRecurring(true); setRecurVariable(true); setAmount(""); expressAdvance(); }}
-                className="mx-auto mt-3 block text-sm font-semibold text-primary hover:underline"
-              >
-                תשלום חוזר בסכום משתנה
-              </button>
-            ) : null}
           </>
         );
       case "domain":
@@ -1812,7 +1812,19 @@ export function ExpenseDialog({
             {expTitle("הסכום קבוע או משתנה?", "משתנה = ייקבע בעת התשלום, כמו מס")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {expCard({ badge: 1, title: "סכום קבוע", sub: Number(amount) > 0 ? ils(Number(amount)) : undefined, selected: !recurVariable, onClick: () => { setRecurVariable(false); expressAdvance(); } })}
-              {expCard({ badge: 2, title: "סכום משתנה", sub: "ייקבע בעת התשלום", selected: recurVariable, onClick: () => { setRecurVariable(true); setRecurAutoPaid(false); expressAdvance(); } })}
+              {expCard({ badge: 2, title: "סכום משתנה", sub: Number(amount) > 0 ? `הערכה ${ils(Number(amount))} · הסופי בתשלום` : "הזינו הערכה למעלה · הסופי בתשלום", selected: recurVariable, onClick: () => { setRecurVariable(true); setRecurAutoPaid(false); expressAdvance(); } })}
+            </div>
+          </>
+        );
+      case "recurremind":
+        return (
+          <>
+            {expEyebrow(null, "תזכורת")}
+            {expTitle("תזכורת חודשית לפני התשלום?", "כמה ימי עבודה לפני — שישי/שבת לא נספרים")}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {([["ללא", ""], ["יום 1", "1"], ["2 ימים", "2"], ["3 ימים", "3"], ["5 ימים", "5"]] as const).map(([label, val]) =>
+                expCard({ key: val || "none", title: label, selected: recurReminderDays === val, onClick: () => { setRecurReminderDays(val); expressAdvance(); } })
+              )}
             </div>
           </>
         );
@@ -2285,7 +2297,7 @@ export function ExpenseDialog({
           : isRecurring
             ? [
                 ["שם", templateName.trim() || description.trim() || finalCategory || "—"],
-                ["סכום", recurVariable ? "סכום משתנה" : ils(Number(amount) || 0)],
+                ["סכום", recurVariable ? (Number(amount) > 0 ? `~${ils(Number(amount))} (משוער)` : "משתנה") : ils(Number(amount) || 0)],
                 ...(recurAutoPaid ? [["תשלום", "הוראת קבע — יסומן כשולם אוטומטית"] as [string, string]] : []),
                 ["תחום", getBusinessDomainLabel(effectiveDomain)],
                 ...(sourceLabel ? [sourceLabel] : []),
@@ -2446,18 +2458,25 @@ export function ExpenseDialog({
           className="mt-4 space-y-3"
           onSubmit={(e) => { e.preventDefault(); void handleSubmit(); }}
         >
-          {/* Amount hero — first, like the mockup (normal expenses). Hidden for a
-              variable-amount recurring template (the amount is set at pay time). */}
-          {!isWorkerPayment && !(isRecurring && recurVariable) ? (
+          {/* Amount hero — first, like the mockup. For a variable recurring bill this
+              is the ESTIMATE (base) used for planning; the real amount is set at pay. */}
+          {!isWorkerPayment ? (
             <div className={cn("rounded-xl border p-3 transition-colors", (Number(amount) || 0) > 0 ? "border-success/50 bg-success/5" : "bg-muted/20")}>
               <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                <Wallet className="h-3.5 w-3.5" />סכום ההוצאה <span className="text-destructive">*</span>
+                <Wallet className="h-3.5 w-3.5" />
+                {isRecurring && recurVariable ? (
+                  <span>סכום משוער (בערך)</span>
+                ) : (
+                  <span>סכום ההוצאה <span className="text-destructive">*</span></span>
+                )}
               </div>
               <div className="mt-2">
                 <CurrencyInput type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="h-12 text-2xl font-bold" />
               </div>
               <div className="mt-1.5 text-xs text-muted-foreground">
-                {(Number(amount) || 0) > 0 ? `סכום: ${ils(Number(amount))}` : "הקלד את הסכום ששולם עבור ההוצאה"}
+                {isRecurring && recurVariable
+                  ? "הערכה לתכנון תזרים — הסכום הסופי ייקבע בעת התשלום."
+                  : (Number(amount) || 0) > 0 ? `סכום: ${ils(Number(amount))}` : "הקלד את הסכום ששולם עבור ההוצאה"}
               </div>
             </div>
           ) : null}
@@ -2902,9 +2921,9 @@ export function ExpenseDialog({
                       onChange={(e) => { setRecurVariable(e.target.checked); if (e.target.checked) setRecurAutoPaid(false); }}
                     />
                     <span>
-                      <span className="block font-medium">סכום משתנה</span>
+                      <span className="block font-medium">סכום משתנה (משוער)</span>
                       <span className="block text-xs text-muted-foreground">
-                        לתשלומים שהסכום שלהם משתנה (כמו מס) — יופיע ביומן כתזכורת, והסכום ייקבע בעת התשלום.
+                        לתשלומים שהסכום שלהם משתנה (משכנתא, אשראי, מס) — הסכום שלמעלה משמש כהערכה לתכנון, והסכום הסופי נקבע בתשלום.
                       </span>
                     </span>
                   </label>
@@ -2932,6 +2951,21 @@ export function ExpenseDialog({
                     onChange={setAccountId}
                     onLoaded={setAccountsList}
                   />
+
+                  {/* Monthly reminder: N work-days before each payment */}
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">תזכורת חודשית לפני התשלום</div>
+                    <div className="flex items-center gap-2">
+                      <Input value={recurReminderDays} onChange={(e) => setRecurReminderDays(e.target.value)} placeholder="0" className="w-20" />
+                      <span className="text-sm text-muted-foreground">ימי עבודה לפני (0 = ללא תזכורת)</span>
+                    </div>
+                    {recurReminderDays && Number(recurReminderDays) > 0 ? (
+                      <div className="text-xs text-muted-foreground">
+                        התראה חוזרת בכל חודש, {Number(recurReminderDays)} ימי עבודה לפני מועד החיוב (שישי/שבת לא נספרים).
+                      </div>
+                    ) : null}
+                  </div>
+
                   {showBillingOptions ? (
                     <div className="space-y-1">
                       <div className="text-sm font-medium">הערת פרויקט</div>
