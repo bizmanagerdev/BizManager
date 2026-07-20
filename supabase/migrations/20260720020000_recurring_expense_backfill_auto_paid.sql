@@ -44,7 +44,10 @@ begin
   values (
     p_expense_date, t.amount, t.category,
     public.recurring_expense_apply_tokens(t.description_template, p_key, p_expense_date),
-    t.business_domain, t.project_id, t.order_id, t.property_id, t.account_id,
+    -- The template stores the domain as text; expenses.business_domain is an enum,
+    -- and a text VARIABLE won't implicitly cast to it inside PL/pgSQL (only bare
+    -- string literals do — which is why the old inline generator silently failed).
+    coalesce(t.business_domain, 'general_business')::public.business_domain_enum, t.project_id, t.order_id, t.property_id, t.account_id,
     public.recurring_expense_apply_tokens(t.notes_template, p_key, p_expense_date),
     t.created_by, t.id, p_key,
     case when p_paid then 'paid' else 'not_paid' end,

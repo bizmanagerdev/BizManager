@@ -37,6 +37,10 @@ export type PaymentCalendarItem = {
   installmentGroupId: string | null;
   installmentIndex: number | null;
   installmentCount: number | null;
+  // The expense's linked target (if any) — needed to delete it via /api/expenses/delete.
+  expenseProjectId: string | null;
+  expenseOrderId: string | null;
+  expensePropertyId: string | null;
   workerUserId: string | null; // set on wage items + projected salaries
   // Recurring-template FORECAST fields. Present ⇒ this is an upcoming recurring
   // occurrence that hasn't been generated yet. It has no expenseId; "mark paid"
@@ -82,6 +86,9 @@ export function toPaymentCalendarItems(entries: FinancialEntry[], todayIso: stri
       installmentGroupId: entry.expenseInstallmentGroupId ?? null,
       installmentIndex: entry.expenseInstallmentIndex ?? null,
       installmentCount: entry.expenseInstallmentCount ?? null,
+      expenseProjectId: entry.expenseProjectId ?? null,
+      expenseOrderId: entry.expenseOrderId ?? null,
+      expensePropertyId: entry.expensePropertyId ?? null,
       workerUserId: entry.workerUserId ?? null,
       // Generated-from-a-recurring-template expenses carry the template id (has an
       // expenseId, so it's NOT a forecast — the "recurring only" filter still catches it).
@@ -223,6 +230,9 @@ export async function loadProjectedSalaries(
         installmentGroupId: null,
         installmentIndex: null,
         installmentCount: null,
+        expenseProjectId: null,
+        expenseOrderId: null,
+        expensePropertyId: null,
         workerUserId: userId,
         recurringTemplateId: null,
         recurrenceKey: null,
@@ -368,6 +378,9 @@ export async function loadProjectedRecurringExpenses(
         installmentGroupId: null,
         installmentIndex: null,
         installmentCount: null,
+        expenseProjectId: null,
+        expenseOrderId: null,
+        expensePropertyId: null,
         workerUserId: null,
         recurringTemplateId: tpl.id,
         recurrenceKey: occ.key,

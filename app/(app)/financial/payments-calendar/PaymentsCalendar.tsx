@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Plus, Check, Split, ExternalLink, Calendar as CalendarIcon, List as ListIcon, BellPlus, AlertTriangle, ChevronDown, ChevronLeft } from "lucide-react";
+import { Loader2, Plus, Check, Split, ExternalLink, Calendar as CalendarIcon, List as ListIcon, BellPlus, AlertTriangle, ChevronDown, ChevronLeft, Trash2 } from "lucide-react";
 import ReminderFormDialog from "@/components/reminders/ReminderFormDialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +38,34 @@ import { SplitPaymentDialog } from "./SplitPaymentDialog";
 
 function fmtIls(value: number) {
   return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 }).format(value);
+}
+
+// Delete an expense-origin payment row (e.g. an orphaned recurring bill left
+// behind after its template was deleted). Real expenses only.
+async function deleteExpenseItem(item: PaymentCalendarItem): Promise<boolean> {
+  if (!item.expenseId) return false;
+  try {
+    const res = await fetch("/api/expenses/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: item.expenseId,
+        project_id: item.expenseProjectId,
+        order_id: item.expenseOrderId,
+        property_id: item.expensePropertyId,
+      }),
+    });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      toast.error(toHebrewError(json.error, "מחיקת התשלום נכשלה."));
+      return false;
+    }
+    toast.success("התשלום נמחק");
+    return true;
+  } catch (err) {
+    toast.error(toHebrewError(err, "מחיקת התשלום נכשלה."));
+    return false;
+  }
 }
 
 // A pre-filled note for a reminder created from a payment.
@@ -423,6 +452,7 @@ function PaymentItemCard({
   onMarkPaid,
   onSplit,
   onRemind,
+  onDelete,
   compact = false,
   accountName,
 }: {
@@ -430,6 +460,7 @@ function PaymentItemCard({
   onMarkPaid: () => void;
   onSplit: () => void;
   onRemind: () => void;
+  onDelete: () => void;
   compact?: boolean;
   accountName?: string;
 }) {
@@ -438,6 +469,7 @@ function PaymentItemCard({
   // Auto-paid (הוראת קבע) needs no approval → no mark-paid button.
   const canMarkPaid = (Boolean(item.expenseId) || isForecast) && !item.autoPaid;
   const canSplit = Boolean(item.expenseId);
+  const canDelete = Boolean(item.expenseId);
   const metaLine = [item.domainName, item.sourceLabel, accountName ? `מחשבון ${accountName}` : null]
     .filter(Boolean)
     .join(" • ");
@@ -481,6 +513,11 @@ function PaymentItemCard({
             <Button type="button" size="icon-sm" variant="secondary" onClick={onRemind} title="תזכורת" aria-label="תזכורת">
               <BellPlus className="h-4 w-4" />
             </Button>
+            {canDelete ? (
+              <Button type="button" size="icon-sm" variant="destructive" onClick={onDelete} title="מחיקה" aria-label="מחיקה">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -531,6 +568,12 @@ function PaymentItemCard({
           <BellPlus className="ml-1 h-3.5 w-3.5" />
           תזכורת
         </Button>
+        {canDelete ? (
+          <Button type="button" size="sm" variant="destructive" onClick={onDelete}>
+            <Trash2 className="ml-1 h-3.5 w-3.5" />
+            מחיקה
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -554,6 +597,8 @@ function PaymentsMonthList({
   const [splitOpen, setSplitOpen] = useState(false);
   const [markItem, setMarkItem] = useState<PaymentCalendarItem | null>(null);
   const [remindItem, setRemindItem] = useState<PaymentCalendarItem | null>(null);
+  const [deleteItem, setDeleteItem] = useState<PaymentCalendarItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Only this month's payments, sorted by date ascending.
   const monthItems = useMemo(() => {
@@ -590,6 +635,7 @@ function PaymentsMonthList({
                 // Auto-paid (הוראת קבע) needs no approval → no mark-paid button.
   const canMarkPaid = (Boolean(item.expenseId) || isForecast) && !item.autoPaid;
                 const canSplit = Boolean(item.expenseId);
+                const canDelete = Boolean(item.expenseId);
                 const day = toDateOnly(item.date) ?? new Date(item.date);
                 const accountName = item.accountId ? accountNameById.get(item.accountId) : undefined;
                 const meta = [item.domainName, item.sourceLabel, accountName ? `מחשבון ${accountName}` : null]
@@ -638,6 +684,11 @@ function PaymentsMonthList({
                         <Button type="button" size="icon-sm" variant="secondary" onClick={() => setRemindItem(item)} title="תזכורת" aria-label="תזכורת">
                           <BellPlus className="h-4 w-4" />
                         </Button>
+                        {canDelete ? (
+                          <Button type="button" size="icon-sm" variant="destructive" onClick={() => setDeleteItem(item)} title="מחיקה" aria-label="מחיקה">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -682,6 +733,26 @@ function PaymentsMonthList({
           onMutate();
         }}
       />
+
+      <ConfirmDialog
+        open={Boolean(deleteItem)}
+        onOpenChange={(o) => { if (!o && !deleting) setDeleteItem(null); }}
+        title="מחיקת תשלום"
+        description={deleteItem ? `למחוק את "${deleteItem.label}"? הפעולה אינה הפיכה.` : ""}
+        confirmLabel="מחיקה"
+        destructive
+        loading={deleting}
+        onConfirm={async () => {
+          if (!deleteItem) return;
+          setDeleting(true);
+          const ok = await deleteExpenseItem(deleteItem);
+          setDeleting(false);
+          if (ok) {
+            setDeleteItem(null);
+            onMutate();
+          }
+        }}
+      />
     </div>
   );
 }
@@ -715,6 +786,8 @@ function PaymentsDayPanel({
   const [splitOpen, setSplitOpen] = useState(false);
   const [markItem, setMarkItem] = useState<PaymentCalendarItem | null>(null);
   const [remindItem, setRemindItem] = useState<PaymentCalendarItem | null>(null);
+  const [deleteItem, setDeleteItem] = useState<PaymentCalendarItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const dayIso = isoLocal(day);
 
@@ -754,6 +827,7 @@ function PaymentsDayPanel({
                   setSplitOpen(true);
                 }}
                 onRemind={() => setRemindItem(item)}
+                onDelete={() => setDeleteItem(item)}
               />
             ))}
           </div>
@@ -830,6 +904,27 @@ function PaymentsDayPanel({
         links={remindItem?.expenseId ? { expense_id: remindItem.expenseId } : {}}
         defaultNote={remindItem ? reminderNoteFor(remindItem) : undefined}
         onSaved={() => setRemindItem(null)}
+      />
+
+      {/* Delete this expense (e.g. an orphaned recurring bill) */}
+      <ConfirmDialog
+        open={Boolean(deleteItem)}
+        onOpenChange={(o) => { if (!o && !deleting) setDeleteItem(null); }}
+        title="מחיקת תשלום"
+        description={deleteItem ? `למחוק את "${deleteItem.label}"? הפעולה אינה הפיכה.` : ""}
+        confirmLabel="מחיקה"
+        destructive
+        loading={deleting}
+        onConfirm={async () => {
+          if (!deleteItem) return;
+          setDeleting(true);
+          const ok = await deleteExpenseItem(deleteItem);
+          setDeleting(false);
+          if (ok) {
+            setDeleteItem(null);
+            onMutate();
+          }
+        }}
       />
     </div>
   );
