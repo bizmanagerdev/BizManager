@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Repeat, Pencil, Trash2, BellPlus } from "lucide-react";
+import { Repeat, Pencil, Trash2, BellPlus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,6 +27,7 @@ export type RecurringExpenseTemplateItem = {
   category: string;
   amount: number;
   is_variable_amount: boolean;
+  auto_paid: boolean;
   description_template: string | null;
   notes_template: string | null;
   business_domain: string;
@@ -145,6 +146,15 @@ function moedSubLabel(t: RecurringExpenseTemplateItem): string {
   return `כל ${n} חודשים`;
 }
 
+// The sub-line under the template name: the description, and only when it adds
+// information beyond the name (a bill named "ארנונה" with description "ארנונה"
+// shows just the name). Category is a classification for reports — not shown here.
+function secondaryLines(t: RecurringExpenseTemplateItem): string[] {
+  const name = t.template_name?.trim() ?? "";
+  const desc = t.description_template?.trim() ?? "";
+  return desc && desc !== name ? [desc] : [];
+}
+
 export default function RecurringExpensesManager(props: Props) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -152,11 +162,17 @@ export default function RecurringExpensesManager(props: Props) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [remindTemplate, setRemindTemplate] = useState<RecurringExpenseTemplateItem | null>(null);
+  const [accountFilter, setAccountFilter] = useState("");
 
+  // Bank-account scope for the list + summary.
+  const filteredTemplates = useMemo(
+    () => (accountFilter ? props.templates.filter((t) => t.account_id === accountFilter) : props.templates),
+    [props.templates, accountFilter]
+  );
   // Ordered by next payment date (soonest first).
   const sortedTemplates = useMemo(
-    () => [...props.templates].sort((a, b) => nextPaymentTime(a) - nextPaymentTime(b)),
-    [props.templates]
+    () => [...filteredTemplates].sort((a, b) => nextPaymentTime(a) - nextPaymentTime(b)),
+    [filteredTemplates]
   );
   const accountNameById = useMemo(
     () => new Map(props.accounts.map((a) => [a.id, a.name] as const)),
@@ -164,8 +180,9 @@ export default function RecurringExpensesManager(props: Props) {
   );
   // Total monthly commitment (fixed-amount templates only), normalized to a month:
   // yearly ÷ 12, every-N-months ÷ N. Variable templates are counted separately.
+  // Respects the account filter so the total reflects what's shown.
   const summary = useMemo(() => {
-    const active = props.templates.filter((t) => t.is_active);
+    const active = filteredTemplates.filter((t) => t.is_active);
     const variableCount = active.filter((t) => t.is_variable_amount).length;
     const monthlyTotal = active.reduce((sum, t) => {
       if (t.is_variable_amount) return sum;
@@ -173,7 +190,7 @@ export default function RecurringExpensesManager(props: Props) {
       return sum + per;
     }, 0);
     return { activeCount: active.length, variableCount, monthlyTotal };
-  }, [props.templates]);
+  }, [filteredTemplates]);
 
   function openEdit(template: RecurringExpenseTemplateItem) {
     setEditingTemplate(template);
@@ -221,6 +238,24 @@ export default function RecurringExpensesManager(props: Props) {
         </div>
       ) : null}
 
+      {/* Bank-account filter */}
+      {!props.missingSchema && props.templates.length > 0 && props.accounts.length > 0 ? (
+        <div className="flex items-center justify-end gap-2">
+          <span className="text-xs text-muted-foreground">חשבון:</span>
+          <select
+            value={accountFilter}
+            onChange={(e) => setAccountFilter(e.target.value)}
+            aria-label="סינון לפי חשבון"
+            className="h-9 rounded-lg border bg-background px-2 text-sm text-foreground"
+          >
+            <option value="">כל החשבונות</option>
+            {props.accounts.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
       {props.missingSchema ? (
         <Card>
           <CardContent className="p-4 text-sm text-muted-foreground">
@@ -231,6 +266,12 @@ export default function RecurringExpensesManager(props: Props) {
         <Card>
           <CardContent className="p-4 text-sm text-muted-foreground">
             אין עדיין הוצאות קבועות. אפשר להתחיל משכירות, משכורות, ביטוחים, רכב, אינטרנט או כל הוצאה שחוזרת כל חודש או כל שנה.
+          </CardContent>
+        </Card>
+      ) : sortedTemplates.length === 0 ? (
+        <Card>
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            אין הוצאות קבועות בחשבון שנבחר.
           </CardContent>
         </Card>
       ) : (
@@ -257,25 +298,25 @@ export default function RecurringExpensesManager(props: Props) {
                         <Repeat className="h-3.5 w-3.5 shrink-0 text-primary" />
                         <span className="font-semibold">{template.template_name}</span>
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {getBusinessDomainLabel(template.business_domain)} • {template.category}
-                      </div>
+                      {secondaryLines(template).map((line, i) => (
+                        <div key={i} className="text-xs text-muted-foreground">{line}</div>
+                      ))}
+                      <div className="text-xs text-muted-foreground">{getBusinessDomainLabel(template.business_domain)}</div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Badge variant="neutral">{linkedLabel}</Badge>
+                      {linkedLabel ? <Badge variant="neutral">{linkedLabel}</Badge> : null}
                       <Badge variant="outline">{cadenceLabel(template)}</Badge>
                       {template.is_active ? <Badge variant="success">פעיל</Badge> : <Badge variant="warning">לא פעיל</Badge>}
                     </div>
                     <div className="grid gap-1 text-xs text-muted-foreground">
-                      <div>קטגוריה: <span className="text-foreground">{template.category}</span></div>
                       <div>סכום: <span className="text-foreground">{template.is_variable_amount ? "משתנה" : formatCurrency(template.amount)}</span></div>
-                      <div>חשבון: <span className="text-foreground">{(template.account_id && accountNameById.get(template.account_id)) || "—"}</span></div>
+                      <div className="flex items-center gap-2">
+                        <span>חשבון: <span className="text-foreground">{(template.account_id && accountNameById.get(template.account_id)) || "—"}</span></span>
+                        {template.auto_paid ? <Badge variant="outline">הוראת קבע</Badge> : null}
+                      </div>
                       <div>
                         טווח: <span className="text-foreground">{template.start_date || "ללא התחלה"} | {template.end_date || "ללא סוף"}</span>
                       </div>
-                      {template.description_template ? (
-                        <div>תיאור: <span className="text-foreground">{template.description_template}</span></div>
-                      ) : null}
                       {template.notes_template ? (
                         <div>הערות: <span className="text-foreground">{template.notes_template}</span></div>
                       ) : null}
@@ -302,10 +343,11 @@ export default function RecurringExpensesManager(props: Props) {
               <thead className="sticky top-0 z-10 border-b bg-muted/40 text-xs text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-right font-medium">מועד תשלום</th>
-                  <th className="px-3 py-2 text-right font-medium">שם תבנית</th>
-                  <th className="px-3 py-2 text-right font-medium">תחום · קטגוריה</th>
+                  <th className="px-3 py-2 text-right font-medium">שם ותיאור</th>
+                  <th className="px-3 py-2 text-right font-medium">תחום · שיוך</th>
                   <th className="px-3 py-2 text-right font-medium">סכום</th>
                   <th className="px-3 py-2 text-right font-medium">חשבון</th>
+                  <th className="px-3 py-2 text-right font-medium">הוראת קבע</th>
                   <th className="px-3 py-2 text-right font-medium">פעיל</th>
                   <th className="px-3 py-2 text-right font-medium">פעולות</th>
                 </tr>
@@ -319,7 +361,7 @@ export default function RecurringExpensesManager(props: Props) {
                         ? props.properties.find((item) => item.id === template.property_id)?.label ?? "נכס"
                         : template.order_id
                           ? props.orders.find((item) => item.id === template.order_id)?.label ?? "הזמנה"
-                          : "ללא שיוך";
+                          : null;
 
                   return (
                     <tr key={template.id} className="align-top hover:bg-secondary/10">
@@ -332,16 +374,15 @@ export default function RecurringExpensesManager(props: Props) {
                           <Repeat className="h-3.5 w-3.5 shrink-0 text-primary" />
                           <span className="font-semibold">{template.template_name}</span>
                         </div>
-                        {template.description_template ? (
-                          <div className="line-clamp-1 max-w-[260px] text-xs text-muted-foreground">{template.description_template}</div>
-                        ) : null}
-                        <Badge variant="neutral" className="mt-1">{linkedLabel}</Badge>
+                        {secondaryLines(template).map((line, i) => (
+                          <div key={i} className="line-clamp-1 max-w-[260px] text-xs text-muted-foreground">{line}</div>
+                        ))}
                       </td>
                       <td className="px-3 py-2">
                         <div>{getBusinessDomainLabel(template.business_domain)}</div>
-                        <div className="text-xs text-muted-foreground">{template.category}</div>
+                        {linkedLabel ? <Badge variant="neutral" className="mt-1">{linkedLabel}</Badge> : null}
                       </td>
-                      <td dir="ltr" className="whitespace-nowrap px-3 py-2 text-left">
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
                         {template.is_variable_amount ? (
                           <Badge variant="warning">משתנה</Badge>
                         ) : (
@@ -349,6 +390,15 @@ export default function RecurringExpensesManager(props: Props) {
                         )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2">{(template.account_id && accountNameById.get(template.account_id)) || "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {template.auto_paid ? (
+                          <span className="inline-flex items-center gap-1 text-primary">
+                            <Check className="h-4 w-4" />הוראת קבע
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2">
                         {template.is_active ? <Badge variant="success">פעיל</Badge> : <Badge variant="warning">לא פעיל</Badge>}
                       </td>

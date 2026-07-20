@@ -23,6 +23,7 @@ type Payload = {
   frequency?: Frequency | null;
   interval_months?: number | string | null;
   is_variable_amount?: boolean | null;
+  auto_paid?: boolean | null;
   create_day_of_month?: number | string | null;
   expense_day_of_month?: number | string | null;
   create_month_of_year?: number | string | null;
@@ -119,6 +120,9 @@ export async function POST(req: Request) {
     const endDate = normalizeText(body.end_date);
     const isActive = body.is_active === false ? false : true;
     const isVariableAmount = body.is_variable_amount === true;
+    // Bank standing order (הוראת קבע): generated rows are auto-marked paid. Meaningless
+    // for a variable-amount bill (amount unknown until paid), so they're exclusive.
+    const autoPaid = !isVariableAmount && body.auto_paid === true;
     // Variable-amount templates (e.g. taxes) may have amount 0 — the amount is set
     // at pay time. Non-variable still require a positive amount.
     const effectiveAmount = isVariableAmount ? (Number.isFinite(amount) && amount > 0 ? amount : 0) : amount;
@@ -143,6 +147,7 @@ export async function POST(req: Request) {
       category,
       amount: effectiveAmount,
       is_variable_amount: isVariableAmount,
+      auto_paid: autoPaid,
       description_template: descriptionTemplate,
       notes_template: notesTemplate,
       business_domain: businessDomain,

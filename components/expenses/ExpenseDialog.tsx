@@ -172,6 +172,7 @@ export type EditingRecurringTemplateData = {
   category: string | null;
   amount: number | string | null;
   is_variable_amount: boolean;
+  auto_paid?: boolean;
   description_template: string | null;
   notes_template: string | null;
   business_domain: string | null;
@@ -417,6 +418,7 @@ export function ExpenseDialog({
   const [recurActive, setRecurActive] = useState(true); // is_active (template edit)
   const [projectNotesTemplate, setProjectNotesTemplate] = useState(""); // project domain only
   const [recurVariable, setRecurVariable] = useState(false); // amount known only at pay time (taxes)
+  const [recurAutoPaid, setRecurAutoPaid] = useState(false); // bank standing order (הוראת קבע) → auto-marked paid
   const [billToCustomerAmount, setBillToCustomerAmount] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<FinancialAttachment[]>([]);
@@ -708,6 +710,7 @@ export function ExpenseDialog({
     setRecurActive(true);
     setProjectNotesTemplate("");
     setRecurVariable(false);
+    setRecurAutoPaid(false);
     // Recurring override: template edit forces recurring on + hydrates its schedule;
     // a NEW expense opened with defaultRecurring starts on the recurring path.
     if (editingRecurringTemplate) {
@@ -721,6 +724,7 @@ export function ExpenseDialog({
       setRecurActive(t.is_active !== false);
       setProjectNotesTemplate(t.project_expense_notes_template ?? "");
       setRecurVariable(t.is_variable_amount === true);
+      setRecurAutoPaid(t.auto_paid === true);
     } else if (defaultRecurring) {
       setIsRecurring(true);
     }
@@ -1045,10 +1049,11 @@ export function ExpenseDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           id: editingRecurringTemplate?.id ?? undefined,
-          template_name: templateName.trim() || description.trim() || finalCategory,
+          template_name: templateName.trim() || finalCategory,
           category: finalCategory,
           amount: recurVariable ? 0 : amountNumber,
           is_variable_amount: recurVariable,
+          auto_paid: recurAutoPaid && !recurVariable,
           description_template: description.trim() || null,
           notes_template: notes.trim() || null,
           business_domain: effectiveDomain,
@@ -1322,6 +1327,8 @@ export function ExpenseDialog({
       s.push("recurfreq");
       if (recurFrequency === "yearly") s.push("recurmonth");
       s.push("recurvariable", "recurrange", "account");
+      // Fixed-amount bills can be a bank standing order (auto-paid); variable can't.
+      if (!recurVariable) s.push("recurpay");
       if (showBillingOptions) s.push("billing");
     } else {
       // Installments come BEFORE the payment questions: splitting turns the expense
@@ -1349,7 +1356,7 @@ export function ExpenseDialog({
     showBillingOptions, showAttachments, canManageWorkerSessions,
     showSessionTimingFields, showSessionPriceField, selectedWorkerType,
     workerPaymentChoice, installmentRows, canRecur, isRecurring, recurFrequency,
-    isEditingTemplate,
+    isEditingTemplate, recurVariable,
   ]);
 
   const rawIndex = expressSteps.indexOf(expStepId);
@@ -1642,7 +1649,7 @@ export function ExpenseDialog({
         return (
           <>
             {expEyebrow(domIcon ? (() => { const I = domIcon; return <I className="h-4 w-4" />; })() : null, getBusinessDomainLabel(effectiveDomain))}
-            {expTitle("איזו קטגוריה?", "קטגוריות מתוך התחום שבחרת")}
+            {expTitle("איזו קטגוריה?", isRecurring ? "לסיווג ולדוחות — לא השם שיוצג" : "קטגוריות מתוך התחום שבחרת")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {categoryOptions.map((c, i) =>
                 expCard({
@@ -1763,7 +1770,7 @@ export function ExpenseDialog({
           </>
         );
       case "recurname": {
-        const derivedName = description.trim() || finalCategory || "הוצאה קבועה";
+        const derivedName = finalCategory || description.trim() || "הוצאה קבועה";
         return (
           <>
             {expEyebrow(<Paperclip className="h-4 w-4" />, "שם תבנית")}
@@ -1783,7 +1790,18 @@ export function ExpenseDialog({
             {expTitle("הסכום קבוע או משתנה?", "משתנה = ייקבע בעת התשלום, כמו מס")}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {expCard({ badge: 1, title: "סכום קבוע", sub: Number(amount) > 0 ? ils(Number(amount)) : undefined, selected: !recurVariable, onClick: () => { setRecurVariable(false); expressAdvance(); } })}
-              {expCard({ badge: 2, title: "סכום משתנה", sub: "ייקבע בעת התשלום", selected: recurVariable, onClick: () => { setRecurVariable(true); expressAdvance(); } })}
+              {expCard({ badge: 2, title: "סכום משתנה", sub: "ייקבע בעת התשלום", selected: recurVariable, onClick: () => { setRecurVariable(true); setRecurAutoPaid(false); expressAdvance(); } })}
+            </div>
+          </>
+        );
+      case "recurpay":
+        return (
+          <>
+            {expEyebrow(<Wallet className="h-4 w-4" />, "תשלום")}
+            {expTitle("איך משלמים?", "הוראת קבע = ייחשב כשולם אוטומטית ביום החיוב")}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {expCard({ badge: 1, title: "אישור ידני", sub: "יופיע ביומן לאישור תשלום", selected: !recurAutoPaid, onClick: () => { setRecurAutoPaid(false); expressAdvance(); } })}
+              {expCard({ badge: 2, title: "הוראת קבע", sub: "יסומן כשולם אוטומטית", selected: recurAutoPaid, onClick: () => { setRecurAutoPaid(true); expressAdvance(); } })}
             </div>
           </>
         );
@@ -1930,11 +1948,14 @@ export function ExpenseDialog({
           </>
         );
       case "description": {
-        const sugg = [finalCategory || "הוצאה שוטפת", "תשלום לספק", "רכישה חד-פעמית"].filter(Boolean);
+        // A recurring template already has a name + category; the description is
+        // just optional extra detail — don't suggest the category (that's what led
+        // to name = category = description all being the same).
+        const sugg = isRecurring ? [] : [finalCategory || "הוצאה שוטפת", "תשלום לספק", "רכישה חד-פעמית"].filter(Boolean);
         return (
           <>
             {expEyebrow(<Paperclip className="h-4 w-4" />, "תיאור")}
-            {expTitle("על מה ההוצאה?", "בחרו הצעה או כתבו חופשי")}
+            {expTitle(isRecurring ? "פירוט נוסף?" : "על מה ההוצאה?", isRecurring ? "לא חובה — השם כבר מזהה את התבנית" : "בחרו הצעה או כתבו חופשי")}
             <div className="mb-3 flex flex-wrap justify-center gap-2">
               {sugg.map((c) => (
                 <button
@@ -2243,6 +2264,7 @@ export function ExpenseDialog({
             ? [
                 ["שם", templateName.trim() || description.trim() || finalCategory || "—"],
                 ["סכום", recurVariable ? "סכום משתנה" : ils(Number(amount) || 0)],
+                ...(recurAutoPaid ? [["תשלום", "הוראת קבע — יסומן כשולם אוטומטית"] as [string, string]] : []),
                 ["תחום", getBusinessDomainLabel(effectiveDomain)],
                 ...(sourceLabel ? [sourceLabel] : []),
                 ["קטגוריה", finalCategory || "—"],
@@ -2795,7 +2817,7 @@ export function ExpenseDialog({
                       onChange={(e) => setTemplateName(e.target.value)}
                       placeholder="למשל: שכירות משרד"
                     />
-                    <div className="text-xs text-muted-foreground">אם ריק — ייגזר מהתיאור או מהקטגוריה.</div>
+                    <div className="text-xs text-muted-foreground">השם שיופיע ברשימת ההוצאות הקבועות. אם ריק — ייגזר מהקטגוריה.</div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
@@ -2855,7 +2877,7 @@ export function ExpenseDialog({
                       type="checkbox"
                       className="mt-0.5"
                       checked={recurVariable}
-                      onChange={(e) => setRecurVariable(e.target.checked)}
+                      onChange={(e) => { setRecurVariable(e.target.checked); if (e.target.checked) setRecurAutoPaid(false); }}
                     />
                     <span>
                       <span className="block font-medium">סכום משתנה</span>
@@ -2864,6 +2886,24 @@ export function ExpenseDialog({
                       </span>
                     </span>
                   </label>
+
+                  {/* Bank standing order: auto-mark paid, no manual confirmation */}
+                  {!recurVariable ? (
+                    <label className="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={recurAutoPaid}
+                        onChange={(e) => setRecurAutoPaid(e.target.checked)}
+                      />
+                      <span>
+                        <span className="block font-medium">משולם אוטומטית (הוראת קבע)</span>
+                        <span className="block text-xs text-muted-foreground">
+                          יורד מהבנק אוטומטית — ההוצאה תיווצר כבר מסומנת כשולם ביום החיוב, בלי צורך לאשר.
+                        </span>
+                      </span>
+                    </label>
+                  ) : null}
 
                   <AccountSelect
                     value={accountId}
@@ -2886,11 +2926,17 @@ export function ExpenseDialog({
                     </label>
                   ) : null}
                   <p className="text-xs text-muted-foreground">
-                    {recurFrequency === "yearly"
-                      ? `ייווצר בכל שנה ב-${Number((expenseDate || todayIso()).slice(8, 10)) || 1}/${MONTH_OPTIONS.find((m) => m.value === recurMonth)?.label ?? ""}, ויופיע ביומן לאישור תשלום.`
-                      : recurInterval > 1
-                        ? `ייווצר כל ${recurInterval} חודשים ביום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1}, ויופיע ביומן לאישור תשלום.`
-                        : `ייווצר בכל חודש ביום ${Number((expenseDate || todayIso()).slice(8, 10)) || 1}, ויופיע ביומן לאישור תשלום.`}
+                    {(() => {
+                      const day = Number((expenseDate || todayIso()).slice(8, 10)) || 1;
+                      const when =
+                        recurFrequency === "yearly"
+                          ? `בכל שנה ב-${day}/${MONTH_OPTIONS.find((m) => m.value === recurMonth)?.label ?? ""}`
+                          : recurInterval > 1
+                            ? `כל ${recurInterval} חודשים ביום ${day}`
+                            : `בכל חודש ביום ${day}`;
+                      const tail = recurAutoPaid ? "וייחשב כשולם אוטומטית (הוראת קבע)" : "ויופיע ביומן לאישור תשלום";
+                      return `ייווצר ${when}, ${tail}.`;
+                    })()}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     אפשר להשתמש בטוקנים בתיאור/הערות: {"{{expense_month}}"} · {"{{expense_date}}"} · {"{{period_key}}"}.

@@ -10,7 +10,9 @@ import {
   isClosedOrderStatus,
   isExcludedOrderStatus,
   matchesEntryFilters,
+  buildForecastMonthly,
 } from "@/lib/financial/entries";
+import { isFutureEntry } from "@/lib/financial/utils";
 import type { FinancialEntry, PaymentRow } from "@/lib/financial/types";
 
 // ─── Refund handling (regression: refunds must NOT count as income) ───────────
@@ -66,6 +68,51 @@ describe("aggregateProfitLoss — refunds are contra-revenue", () => {
     expect(pl.cashRevenue).toBe(700); // 1000 − 300, NOT 1300
     expect(pl.accrualRevenue).toBe(700);
     expect(pl.cashExpense).toBe(0); // a refund is not an expense
+  });
+});
+
+// ─── Projected outflow forecasts (salaries + recurring) — future-only ─────────
+// These are injected into the /financial FUTURE/forecast views. The contract the
+// engine relies on: a projection is inherently "future" (so it can never fall into
+// the actual bucket), the stage filter routes it correctly, and the forecast tab
+// buckets it by its month. The "never in the P&L" half is guaranteed structurally
+// (getFinancialPageData never feeds projections to aggregateProfitLoss) and locked
+// by golden-cases; here we lock the future-side helpers.
+
+function makeProjectedOutflow(overrides: Partial<FinancialEntry> = {}): FinancialEntry {
+  return {
+    id: "recur_proj:t1:2026-08", type: "outflow", amount: 560, signedAmount: -560,
+    businessDomain: null, domainName: "הוצאות קבועות", flowDate: "2026-08-02",
+    recordedDate: "2026-08-02", dueDate: "2026-08-02", stage: "scheduled",
+    sourceKind: "general", sourceId: null, sourceLabel: "הוצאה קבועה", sourceHref: null,
+    description: "ארנונה", origin: "expense", reference: null, paymentMethod: null,
+    paymentMethodLabel: null, paymentStatus: "not_paid", recordedByName: null,
+    customerId: null, searchText: "ארנונה", ...overrides,
+  };
+}
+
+describe("projected outflow forecasts — never actual, always future", () => {
+  const ref = "2026-07-19";
+  const baseFilters = { from: null, to: null, domain: null, sourceId: null, type: null, query: "", referenceDate: ref };
+
+  it("a scheduled (future) projection is future, not actual", () => {
+    expect(isFutureEntry(makeProjectedOutflow(), ref)).toBe(true);
+  });
+
+  it("a past-due unpaid projection is STILL future (pending ≠ posted)", () => {
+    const overdue = makeProjectedOutflow({ flowDate: "2026-06-02", stage: "pending" });
+    expect(isFutureEntry(overdue, ref)).toBe(true);
+  });
+
+  it("the stage filter routes projections: excluded from actual, kept for future", () => {
+    const p = makeProjectedOutflow();
+    expect(matchesEntryFilters(p, { ...baseFilters, stage: "actual" })).toBe(false);
+    expect(matchesEntryFilters(p, { ...baseFilters, stage: "future" })).toBe(true);
+  });
+
+  it("buildForecastMonthly buckets the projection into its own month", () => {
+    const fc = buildForecastMonthly([makeProjectedOutflow()], { referenceDate: ref, months: 6 });
+    expect(fc.find((f) => f.month === "2026-08")?.change).toBe(-560);
   });
 });
 

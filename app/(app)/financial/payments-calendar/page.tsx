@@ -56,7 +56,7 @@ export default async function PaymentsCalendarPage() {
   const [expResult, projectsResult, propertiesResult, ordersResult, accounts] = await Promise.all([
     supabase
       .from("recurring_expense_templates")
-      .select("id,template_name,category,amount,is_variable_amount,description_template,notes_template,business_domain,project_id,order_id,property_id,account_id,included_in_base_price,billed_to_customer,project_expense_notes_template,frequency,interval_months,create_day_of_month,expense_day_of_month,create_month_of_year,expense_month_of_year,start_date,end_date,is_active")
+      .select("id,template_name,category,amount,is_variable_amount,auto_paid,description_template,notes_template,business_domain,project_id,order_id,property_id,account_id,included_in_base_price,billed_to_customer,project_expense_notes_template,frequency,interval_months,create_day_of_month,expense_day_of_month,create_month_of_year,expense_month_of_year,start_date,end_date,is_active")
       .order("created_at", { ascending: true }),
     supabase.from("project_dashboard_view").select("id,name,customer_name")
       .order("updated_at", { ascending: false }).range(0, 999),
@@ -77,6 +77,7 @@ export default async function PaymentsCalendarPage() {
         category: getString(r, "category") ?? "",
         amount: getNumber(r, "amount") ?? 0,
         is_variable_amount: r.is_variable_amount === true,
+        auto_paid: r.auto_paid === true,
         description_template: getString(r, "description_template"),
         notes_template: getString(r, "notes_template"),
         business_domain: getString(r, "business_domain") ?? "general_business",

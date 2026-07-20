@@ -329,7 +329,8 @@ export async function loadDomainCashBreakdown(
 
 export async function getFinancialPageData(
   supabase: SupabaseClient,
-  filters: FinancialPageFilters = {}
+  filters: FinancialPageFilters = {},
+  injected: { projectedOutflowEntries?: FinancialEntry[] } = {}
 ): Promise<FinancialPageData> {
   const from = normalizeDate(filters.from);
   const to = normalizeDate(filters.to);
@@ -379,10 +380,42 @@ export async function getFinancialPageData(
   const filteredEntries = entries.filter((entry) =>
     matchesEntryFilters(entry, { from, to, domain, sourceId, type, stage, query, referenceDate })
   );
-  const actualEntries = filteredEntries.filter((entry) => !isFutureEntry(entry, referenceDate));
-  const futureEntries = filteredEntries.filter((entry) => isFutureEntry(entry, referenceDate));
   const forecastEndIso = to || addDaysToIso(referenceDate, 30);
-  const forecastEntries = filteredEntries.filter((entry) => entry.flowDate <= forecastEndIso);
+
+  // ── Expected OUTFLOW forecasts (projected salaries + recurring bills) ─────────
+  // Injected into the FUTURE-facing views ONLY — the near-future ledger, the
+  // future/forecast summaries, per-domain future, and the forecast tab — so
+  // "what's leaving" shows next to expected income (receivables). They are NEVER
+  // added to actual, the P&L/trend, or the full journal, which stay real-only
+  // (the golden reconciliation numbers can't move). Every projection is stage
+  // scheduled/pending, so it also never counts as actual cash by construction.
+  // Bounded to the caller's horizon. Projected salaries drop any month that
+  // already has a real wage entry; recurring self-de-dupes against materialized rows.
+  const realWageMonths = new Set<string>();
+  for (const entry of entries) {
+    if ((entry.origin === "worker_owed" || entry.origin === "worker_payment") && entry.workerUserId) {
+      realWageMonths.add(`${entry.workerUserId}:${entry.flowDate.slice(0, 7)}`);
+    }
+  }
+  const projections = (injected.projectedOutflowEntries ?? []).filter(
+    (p) => !(p.origin === "worker_owed" && p.workerUserId && realWageMonths.has(`${p.workerUserId}:${p.flowDate.slice(0, 7)}`))
+  );
+  // Respect the ledger's active filters for the list/summaries; the P&L-style
+  // forecast tab only honours the domain filter (like domainEntries).
+  const projFiltered = projections.filter((p) =>
+    matchesEntryFilters(p, { from, to, domain, sourceId, type, stage, query, referenceDate })
+  );
+  const projDomainEntries = projections.filter((p) => !domain || p.businessDomain === domain);
+
+  const actualEntries = filteredEntries.filter((entry) => !isFutureEntry(entry, referenceDate));
+  const futureEntries = [
+    ...filteredEntries.filter((entry) => isFutureEntry(entry, referenceDate)),
+    ...projFiltered,
+  ];
+  const forecastEntries = [
+    ...filteredEntries.filter((entry) => entry.flowDate <= forecastEndIso),
+    ...projFiltered.filter((p) => p.flowDate <= forecastEndIso),
+  ];
   const openReceivableEntries = filteredEntries.filter(
     (entry) => entry.type === "inflow" && entry.stage === "pending" &&
       (entry.origin === "project_receivable" || entry.origin === "order_receivable")
@@ -393,6 +426,9 @@ export async function getFinancialPageData(
       ((entry.origin === "payment" && entry.stage !== "posted") ||
         ((entry.origin === "project_receivable" || entry.origin === "order_receivable") && entry.stage === "scheduled"))
   );
+  // Liability buckets stay REAL-ONLY: "התחייבויות פתוחות" means debts already
+  // created (and feeds the net-worth calc), and the מאזן tab is accounting, not a
+  // forecast — projected bills that don't exist yet must not inflate them.
   const openLiabilityEntries = filteredEntries.filter((entry) => entry.type === "outflow" && entry.stage === "pending");
   const scheduledLiabilityEntries = filteredEntries.filter((entry) => entry.type === "outflow" && entry.stage === "scheduled");
   const sourceCount = new Set(filteredEntries.map((entry) => entry.sourceId).filter((value): value is string => Boolean(value))).size;
@@ -417,7 +453,7 @@ export async function getFinancialPageData(
     todayIso: referenceDate,
     actualSummary: summarizeEntries(actualEntries),
     futureSummary: summarizeEntries(futureEntries),
-    totalSummary: summarizeEntries(filteredEntries),
+    totalSummary: summarizeEntries([...filteredEntries, ...projFiltered]),
     forecastSummary: summarizeEntries(forecastEntries),
     forecastEndIso,
     openReceivablesSummary: summarizeEntries(openReceivableEntries),
@@ -425,7 +461,7 @@ export async function getFinancialPageData(
     openLiabilitiesSummary: summarizeEntries(openLiabilityEntries),
     scheduledLiabilitiesSummary: summarizeEntries(scheduledLiabilityEntries),
     loansSummary,
-    domainGroups: buildDomainGroups(filteredEntries, referenceDate),
+    domainGroups: buildDomainGroups([...filteredEntries, ...projFiltered], referenceDate),
     // P&L, monthly trend and forecast are driven by date/domain only (they need both
     // inflow+outflow and posted+pending), so they ignore the type/stage/source/q filters.
     profitLoss: aggregateProfitLoss(domainEntries, { from, to }),
@@ -445,7 +481,7 @@ export async function getFinancialPageData(
       to: to && to < referenceDate ? to : referenceDate,
     }),
     // Forward projection: next 6 months of scheduled/pending items (date filter N/A).
-    forecastMonthly: buildForecastMonthly(domainEntries, { referenceDate, months: 6 }),
+    forecastMonthly: buildForecastMonthly([...domainEntries, ...projDomainEntries], { referenceDate, months: 6 }),
     domainOptions,
     sourceKind,
     sourceOptions,

@@ -529,6 +529,7 @@ const paymentOutflowDueRule: SystemRule = {
     }
     for (const f of forecasts) {
       if (f.date > horizonIso) continue; // only overdue / today / a few days out
+      if (f.autoPaid) continue; // bank standing order — auto-paid, nothing to chase
       const overdue = f.date < ctx.todayIso;
       const dueToday = f.date === ctx.todayIso;
       const days = Math.round((new Date(f.date).getTime() - new Date(ctx.todayIso).getTime()) / 86_400_000);

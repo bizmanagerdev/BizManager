@@ -88,6 +88,7 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
   const router = useRouter();
   const [showPaid, setShowPaid] = useState(false);
   const [recurringOnly, setRecurringOnly] = useState(false);
+  const [accountFilter, setAccountFilter] = useState("");
   const [layout, setLayout] = useState<"calendar" | "list">("calendar");
   const accountNameById = useMemo(() => new Map(accounts.map((a) => [a.id, a.name] as const)), [accounts]);
   const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
@@ -106,11 +107,17 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
     setSelectedDate(d);
   };
 
+  // Bank-account scope applies to the whole view (calendar, list, total, banner).
+  const accountScopedItems = useMemo(
+    () => (accountFilter ? items.filter((i) => i.accountId === accountFilter) : items),
+    [items, accountFilter]
+  );
+
   const visibleItems = useMemo(() => {
-    let list = showPaid ? items : items.filter((i) => i.stage !== "posted");
+    let list = showPaid ? accountScopedItems : accountScopedItems.filter((i) => i.stage !== "posted");
     if (recurringOnly) list = list.filter((i) => i.recurringTemplateId);
     return list;
-  }, [items, showPaid, recurringOnly]);
+  }, [accountScopedItems, showPaid, recurringOnly]);
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, PaymentCalendarItem[]>();
@@ -268,6 +275,20 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
   );
   const showPaidToggle = toggle(showPaid, () => setShowPaid((v) => !v), "הצג ששולמו");
   const recurringOnlyToggle = toggle(recurringOnly, () => setRecurringOnly((v) => !v), "רק קבועות");
+  const accountFilterControl =
+    accounts.length > 0 ? (
+      <select
+        value={accountFilter}
+        onChange={(e) => setAccountFilter(e.target.value)}
+        aria-label="סינון לפי חשבון"
+        className="h-9 rounded-lg border bg-background px-2 text-sm text-foreground"
+      >
+        <option value="">כל החשבונות</option>
+        {accounts.map((a) => (
+          <option key={a.id} value={a.id}>{a.name}</option>
+        ))}
+      </select>
+    ) : null;
 
   // Compact toolbar: month nav (right) · toggles (middle) · total pill (far left).
   const toolbar = (
@@ -275,6 +296,7 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
       <MonthNav month={monthDate} todayDate={today} onChange={setMonthDate} />
       <div className="flex flex-wrap items-center gap-3">
         {viewToggle}
+        {accountFilterControl}
         {recurringOnlyToggle}
         {showPaidToggle}
       </div>
@@ -284,7 +306,9 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
 
   return (
     <div className="space-y-3">
-      <DuePaymentsBanner items={items} todayIso={todayIso} onJump={jumpToDay} />
+      <DuePaymentsBanner items={accountScopedItems} todayIso={todayIso} onJump={jumpToDay} />
+      {/* Full-width toolbar (above both views) — one row, spans the whole page. */}
+      {toolbar}
       {layout === "calendar" ? (
         <MonthCalendar
           todayIso={todayIso}
@@ -293,23 +317,19 @@ export default function PaymentsCalendar({ items, todayIso, projects, properties
           selected={selectedDate}
           onSelect={setSelectedDate}
           hideNav
-          toolbar={toolbar}
           renderSelectedPanel={renderSelectedPanel}
           renderDayContent={renderDayContent}
           renderDayHover={renderDayHover}
           legend={legend}
         />
       ) : (
-        <>
-          {toolbar}
-          <PaymentsMonthList
-            items={visibleItems}
-            month={monthDate}
-            accountNameById={accountNameById}
-            onMutate={afterMutation}
-            legend={legend}
-          />
-        </>
+        <PaymentsMonthList
+          items={visibleItems}
+          month={monthDate}
+          accountNameById={accountNameById}
+          onMutate={afterMutation}
+          legend={legend}
+        />
       )}
     </div>
   );
@@ -335,14 +355,16 @@ function DuePaymentsBanner({
   todayIso: string;
   onJump: (dateIso: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  // Collapsed by default — a quiet header you expand when you want the list.
+  const [open, setOpen] = useState(false);
 
   const { due, severity } = useMemo(() => {
     const t = toDateOnly(todayIso) ?? new Date();
     const todayStr = isoLocal(t);
     const horizon = isoLocal(new Date(t.getFullYear(), t.getMonth(), t.getDate() + DUE_HEADS_UP_DAYS));
     const list = items
-      .filter((i) => i.origin === "expense" && i.stage !== "posted" && i.date.slice(0, 10) <= horizon)
+      // Auto-paid (הוראת קבע) bills need no action, so they're not "to pay".
+      .filter((i) => i.origin === "expense" && !i.autoPaid && i.stage !== "posted" && i.date.slice(0, 10) <= horizon)
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const hasOverdue = list.some((i) => i.date.slice(0, 10) < todayStr);
     const hasToday = list.some((i) => i.date.slice(0, 10) === todayStr);
@@ -413,7 +435,8 @@ function PaymentItemCard({
 }) {
   const stage = itemStageKey(item);
   const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
-  const canMarkPaid = Boolean(item.expenseId) || isForecast;
+  // Auto-paid (הוראת קבע) needs no approval → no mark-paid button.
+  const canMarkPaid = (Boolean(item.expenseId) || isForecast) && !item.autoPaid;
   const canSplit = Boolean(item.expenseId);
   const metaLine = [item.domainName, item.sourceLabel, accountName ? `מחשבון ${accountName}` : null]
     .filter(Boolean)
@@ -429,7 +452,7 @@ function PaymentItemCard({
         <div className="flex items-center gap-2">
           <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span>
-          {isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
+          {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
           <span className="shrink-0 text-sm font-semibold tabular-nums">{amountText}</span>
         </div>
         {noteText ? (
@@ -470,7 +493,7 @@ function PaymentItemCard({
         <span className="font-medium">{item.label}</span>
         <span className="font-semibold">{amountText}</span>
         <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
-        {isForecast ? <Badge variant="neutral">הוצאה קבועה</Badge> : null}
+        {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">הוצאה קבועה</Badge> : null}
         {item.installmentGroupId && item.installmentIndex && item.installmentCount ? (
           <Badge variant="neutral">
             תשלום {item.installmentIndex}/{item.installmentCount}
@@ -564,7 +587,8 @@ function PaymentsMonthList({
               {monthItems.map((item) => {
                 const stage = itemStageKey(item);
                 const isForecast = Boolean(item.recurringTemplateId) && !item.expenseId;
-                const canMarkPaid = Boolean(item.expenseId) || isForecast;
+                // Auto-paid (הוראת קבע) needs no approval → no mark-paid button.
+  const canMarkPaid = (Boolean(item.expenseId) || isForecast) && !item.autoPaid;
                 const canSplit = Boolean(item.expenseId);
                 const day = toDateOnly(item.date) ?? new Date(item.date);
                 const accountName = item.accountId ? accountNameById.get(item.accountId) : undefined;
@@ -588,7 +612,7 @@ function PaymentsMonthList({
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
                         <Badge variant={STAGE_BADGE[stage]}>{STAGE_LABEL[stage]}</Badge>
-                        {isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
+                        {item.autoPaid ? <Badge variant="outline">הוראת קבע</Badge> : isForecast ? <Badge variant="neutral">קבועה</Badge> : null}
                       </div>
                     </td>
                     <td dir="ltr" className="whitespace-nowrap px-3 py-2 text-left font-semibold tabular-nums">

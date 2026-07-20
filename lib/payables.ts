@@ -5,7 +5,7 @@ import {
   type FinancialEntryStage,
   type FinancialEntryOrigin,
 } from "@/lib/financial";
-import { getBusinessDomainLabel } from "@/lib/expenses";
+import { getBusinessDomainLabel, type ExpenseBusinessDomain } from "@/lib/expenses";
 
 // ── Payments calendar item ─────────────────────────────────────────────────────
 // One outgoing obligation placed on a calendar day. Sourced from the single
@@ -46,6 +46,10 @@ export type PaymentCalendarItem = {
   // A variable-amount forecast (e.g. taxes): amount is unknown until paid. Shown as
   // "סכום משתנה"; mark-paid asks for the actual amount.
   variableAmount: boolean;
+  // True for a bank standing-order (הוראת קבע) occurrence: it auto-creates as PAID
+  // on its date, so it's shown for cash flow but is NOT something "to pay" (no
+  // manual action / no due-payment alert).
+  autoPaid: boolean;
 };
 
 /**
@@ -84,6 +88,7 @@ export function toPaymentCalendarItems(entries: FinancialEntry[], todayIso: stri
       recurringTemplateId: entry.expenseRecurringTemplateId ?? null,
       recurrenceKey: null,
       variableAmount: false,
+      autoPaid: false,
     }));
 }
 
@@ -222,6 +227,7 @@ export async function loadProjectedSalaries(
         recurringTemplateId: null,
         recurrenceKey: null,
         variableAmount: false,
+        autoPaid: false,
       });
     }
   }
@@ -242,7 +248,7 @@ export async function loadProjectedRecurringExpenses(
 ): Promise<PaymentCalendarItem[]> {
   const { data: tplRows, error } = await supabase
     .from("recurring_expense_templates")
-    .select("id,template_name,category,amount,is_variable_amount,description_template,notes_template,business_domain,account_id,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,end_date,created_at,is_active")
+    .select("id,template_name,category,amount,is_variable_amount,auto_paid,description_template,notes_template,business_domain,account_id,frequency,interval_months,expense_day_of_month,expense_month_of_year,start_date,end_date,created_at,is_active")
     .eq("is_active", true);
   if (error || !tplRows?.length) return [];
 
@@ -252,6 +258,7 @@ export async function loadProjectedRecurringExpenses(
     category: string | null;
     amount: number | string | null;
     is_variable_amount: boolean | null;
+    auto_paid: boolean | null;
     description_template: string | null;
     notes_template: string | null;
     business_domain: string | null;
@@ -365,10 +372,62 @@ export async function loadProjectedRecurringExpenses(
         recurringTemplateId: tpl.id,
         recurrenceKey: occ.key,
         variableAmount: isVar,
+        autoPaid: tpl.auto_paid === true,
       });
     }
   }
   return items;
+}
+
+// Convert a projected outflow calendar item into a FinancialEntry so the money
+// engine can fold the forecast into its FUTURE/forecast views (never actual/P&L).
+function projectedItemToEntry(item: PaymentCalendarItem): FinancialEntry {
+  return {
+    id: item.id,
+    type: "outflow",
+    amount: item.amount,
+    signedAmount: -item.amount,
+    businessDomain: (item.businessDomain as ExpenseBusinessDomain | null) ?? null,
+    domainName: item.domainName,
+    flowDate: item.date,
+    recordedDate: item.date,
+    dueDate: item.date,
+    stage: item.stage,
+    sourceKind: "general",
+    sourceId: null,
+    sourceLabel: item.sourceLabel,
+    sourceHref: item.sourceHref,
+    description: item.label,
+    origin: item.origin,
+    reference: null,
+    paymentMethod: null,
+    paymentMethodLabel: null,
+    paymentStatus: item.paymentStatus,
+    recordedByName: null,
+    customerId: null,
+    searchText: item.label,
+    workerUserId: item.workerUserId,
+    expenseRecurringTemplateId: item.recurringTemplateId,
+  };
+}
+
+/**
+ * Projected OUTFLOW forecasts (upcoming monthly salaries + recurring bills) as
+ * FinancialEntry[], for the /financial future/forecast views — so expected money
+ * going OUT shows there too, symmetric with expected income (receivables). All
+ * stage `scheduled`/`pending`, so they never count as actual cash or hit the P&L.
+ * Bounded to `months` (6). Recurring self-de-dupes against materialized rows;
+ * salaries are de-duped later (the engine drops months with a real wage entry).
+ */
+export async function loadProjectedOutflowEntries(
+  supabase: SupabaseClient,
+  { referenceDate, months = 6 }: { referenceDate: string; months?: number }
+): Promise<FinancialEntry[]> {
+  const [salaries, recurring] = await Promise.all([
+    loadProjectedSalaries(supabase, { referenceDate, existingItems: [], months }).catch(() => []),
+    loadProjectedRecurringExpenses(supabase, { referenceDate, months }).catch(() => []),
+  ]);
+  return [...salaries, ...recurring].map(projectedItemToEntry);
 }
 
 /**

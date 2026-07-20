@@ -20,6 +20,7 @@ import {
 import { loadDomainProof, type DomainProofMap } from "@/lib/financial/domainProof";
 import { loadCustomerRanking, type CustomerRankingReport } from "@/lib/financial/customerRanking";
 import { ensureRecurringExpensesForDate } from "@/lib/recurring-expenses";
+import { loadProjectedOutflowEntries } from "@/lib/payables";
 
 type Row = Record<string, unknown>;
 
@@ -78,22 +79,36 @@ export default async function CashFlowPageContent({
   const customerPage = firstValue(searchParams.customer_page)?.trim() ?? "";
   const initialFilters = normalizeFinancialSearchParams(searchParams);
 
-  if (profile.role === "admin" || profile.role === "office") {
+  // Expected outgoing money (upcoming salaries + recurring bills) to show in the
+  // future/forecast views alongside expected income — 6-month horizon, calendar-
+  // parity. Only for the roles that can see cash flow; never blocks the page.
+  const canSeeCashflow = profile.role === "admin" || profile.role === "office";
+  if (canSeeCashflow) {
     await ensureRecurringExpensesForDate(supabase);
   }
+  const projectedOutflowEntries = canSeeCashflow
+    ? await loadProjectedOutflowEntries(supabase, {
+        referenceDate: new Date().toISOString().slice(0, 10),
+        months: 6,
+      }).catch(() => [])
+    : [];
 
-  const data = await getFinancialPageData(supabase, {
-    customerId: customerId || null,
-    from: initialFilters.from || null,
-    to: initialFilters.to || null,
-    domain: initialFilters.domain || null,
-    sourceId: initialFilters.sourceId || null,
-    type: initialFilters.type === "all" ? null : initialFilters.type,
-    stage: initialFilters.stage === "all" ? null : initialFilters.stage,
-    q: initialFilters.q || null,
-    ledgerPage: initialFilters.ledgerPage,
-    upcomingPage: initialFilters.upcomingPage,
-  });
+  const data = await getFinancialPageData(
+    supabase,
+    {
+      customerId: customerId || null,
+      from: initialFilters.from || null,
+      to: initialFilters.to || null,
+      domain: initialFilters.domain || null,
+      sourceId: initialFilters.sourceId || null,
+      type: initialFilters.type === "all" ? null : initialFilters.type,
+      stage: initialFilters.stage === "all" ? null : initialFilters.stage,
+      q: initialFilters.q || null,
+      ledgerPage: initialFilters.ledgerPage,
+      upcomingPage: initialFilters.upcomingPage,
+    },
+    { projectedOutflowEntries }
+  );
 
   const canManageExpenses = profile.role === "admin" || profile.role === "office";
   const canViewCashflow = profile.role === "admin";
