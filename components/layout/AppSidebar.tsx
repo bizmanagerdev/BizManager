@@ -1,19 +1,18 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
-import { BrandMark } from "@/components/ui/brand-mark";
 import { cn } from "@/lib/utils";
 import { useNavCounts, type NavCount } from "@/lib/ui/nav-counts-store";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
+import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
 
 interface Props {
   items: SidebarNavItem[];
-  appName?: string;
-  logo?: ReactNode;
 }
 
 const linkBase =
@@ -29,14 +28,131 @@ const FILTER_SHARED_ROUTES = new Set(["/financial", "/financial/reports"]);
 // Lower = more urgent, for picking a group's roll-up tone.
 const SEVERITY_ORDER: Record<NavCount["severity"], number> = { danger: 0, warning: 1, info: 2 };
 
+type FlyoutState = {
+  item: SidebarNavItem;
+  /** Viewport coords, in the RTL sense: the panel's right edge sits at `right`. */
+  top: number;
+  right: number;
+};
+
+type HoverHandlers = {
+  onMouseEnter: (event: { currentTarget: HTMLElement }) => void;
+  onMouseLeave: () => void;
+};
+
+// One row shape for everything the flyout shows, so a hovered tab looks EXACTLY
+// like the same tab does in the expanded sidebar — same height, size and colors.
+const flyoutRow = cn(linkBase, "shrink-0");
+
+/**
+ * The hover flyout for the collapsed rail: a real panel in the sidebar's own
+ * visual language (dark surface, same rows) rather than the browser's tiny
+ * delayed tooltip. For a group it lists the sub-tabs and they're clickable; for a
+ * plain tab it's just the name.
+ *
+ * Portalled to <body> and positioned `fixed` because the nav is a scroll
+ * container (it would clip the panel) and the sidebar's backdrop-filter makes it
+ * a containing block for fixed children.
+ */
+function NavFlyout({
+  state,
+  navCounts,
+  onEnter,
+  onLeave,
+}: {
+  state: FlyoutState;
+  navCounts: Record<string, NavCount>;
+  onEnter: () => void;
+  onLeave: () => void;
+}) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+
+  const sharedQuery = FILTER_SHARED_ROUTES.has(pathname) ? searchParams.toString() : "";
+  const children = state.item.children ?? [];
+
+  return createPortal(
+    <div
+      dir="rtl"
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      // Never taller than what's left below the anchor — a long group (פיננסי has
+      // nine sub-tabs) scrolls inside the panel instead of running off-screen.
+      style={{ top: state.top, right: state.right, maxHeight: `calc(100vh - ${state.top}px - 1rem)` }}
+      className={cn(
+        "scroll-slim fixed z-50 flex min-w-[12rem] flex-col overflow-y-auto overscroll-contain shadow-elevated",
+        // A single tab needs no container — it IS the row, so the blue pill floats
+        // on its own instead of sitting as light-blue-on-dark-blue. A group still
+        // gets the dark panel to hold its header + list together.
+        children.length === 0
+          ? "rounded-lg"
+          : "rounded-2xl border border-sidebar-border/80 bg-sidebar p-1.5"
+      )}
+    >
+      {children.length === 0 ? (
+        // A plain tab: the flyout IS the nav row, in the sidebar's own styling.
+        <NavLink
+          to={state.item.url}
+          end={state.item.url === "/"}
+          onClick={onLeave}
+          // Standalone row: it carries the filled look itself (nothing behind it).
+          className={cn(flyoutRow, "whitespace-nowrap bg-secondary text-secondary-foreground")}
+          activeClassName={linkActive}
+          pendingClassName={linkPending}
+        >
+          <state.item.icon className="h-4 w-4 shrink-0" />
+          <span>{state.item.title}</span>
+          {navCounts[state.item.url] ? (
+            <NavCountBadge badge={navCounts[state.item.url]} collapsed={false} />
+          ) : null}
+        </NavLink>
+      ) : (
+        <>
+          {/* Header, deliberately NOT row-shaped: no icon, muted and smaller with
+              a hairline under it, so it reads as the group's name rather than as a
+              pressed nav row. */}
+          <div className="mb-1 border-b border-sidebar-border/70 px-2.5 pb-1.5 pt-1 text-xs font-semibold tracking-wide text-sidebar-foreground/55">
+            <span className="whitespace-nowrap">{state.item.title}</span>
+          </div>
+          {children.map((child) => (
+            <NavLink
+              key={child.url + child.title}
+              to={
+                sharedQuery && FILTER_SHARED_ROUTES.has(child.url)
+                  ? { pathname: child.url, query: sharedQuery }
+                  : child.url
+              }
+              end={child.url === "/financial"}
+              onClick={onLeave}
+              className={cn(flyoutRow, "whitespace-nowrap")}
+              activeClassName={linkActive}
+              pendingClassName={linkPending}
+            >
+              <child.icon className="h-4 w-4 shrink-0" />
+              <span>{child.title}</span>
+              {navCounts[child.url] ? <NavCountBadge badge={navCounts[child.url]} collapsed={false} /> : null}
+            </NavLink>
+          ))}
+        </>
+      )}
+    </div>,
+    document.body
+  );
+}
+
 function NavGroup({
   item,
   collapsed,
   navCounts,
+  hover,
 }: {
   item: SidebarNavItem;
   collapsed: boolean;
   navCounts: Record<string, NavCount>;
+  hover: (item: SidebarNavItem) => HoverHandlers;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -67,34 +183,31 @@ function NavGroup({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
+        // Icons-only mode has no labels, so hovering pops the sub-tabs out.
+        {...hover(item)}
         className={cn(
           linkBase,
           "w-full",
-          collapsed && "justify-center px-0 lg:justify-start lg:px-2.5",
+          collapsed && "justify-center px-0",
           childActive && "text-secondary-foreground"
         )}
       >
         <item.icon className="h-4 w-4 shrink-0" />
-        <span className={cn("flex-1 text-right", collapsed ? "hidden lg:inline" : "inline")}>{item.title}</span>
+        <span className={cn("flex-1 text-right", collapsed ? "hidden" : "inline")}>{item.title}</span>
         {rollup && !expanded ? <NavCountBadge badge={rollup} collapsed={collapsed} /> : null}
         <ChevronDown
           className={cn(
             "h-4 w-4 shrink-0 transition-transform",
             expanded ? "" : "-rotate-90",
-            collapsed ? "hidden lg:block" : "block"
+            collapsed ? "hidden" : "block"
           )}
         />
       </button>
       {expanded ? (
         <div
-          className={cn(
-            "mt-0.5 space-y-0.5",
-            // Indent + a vertical guide line so children clearly read as sub-items
-            // (only when labels are visible; icon-only mode stays un-indented).
-            collapsed
-              ? "lg:ms-[1.15rem] lg:border-s lg:border-sidebar-border/50 lg:ps-2"
-              : "ms-[1.15rem] border-s border-sidebar-border/50 ps-2"
-          )}
+          // No indent: children align with their parent tab and read as sub-items
+          // from the leading dot + smaller text alone, which leaves room for the label.
+          className="mt-0.5 space-y-0.5"
         >
           {children.map((child) => (
             <NavLink
@@ -106,8 +219,8 @@ function NavGroup({
               }
               end={child.url === "/financial"}
               className={cn(
-                "flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] text-sidebar-foreground/75 transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground",
-                collapsed && "justify-center px-0 lg:justify-start lg:px-2"
+                "flex h-8 items-center gap-2 rounded-lg px-2.5 text-[13px] text-sidebar-foreground/75 transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground",
+                collapsed && "justify-center px-0"
               )}
               activeClassName="bg-secondary text-secondary-foreground font-medium"
               pendingClassName={linkPending}
@@ -116,11 +229,11 @@ function NavGroup({
                 aria-hidden
                 className={cn(
                   "h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-50",
-                  collapsed ? "hidden lg:block" : "block"
+                  collapsed ? "hidden" : "block"
                 )}
               />
               <child.icon className="h-3.5 w-3.5 shrink-0" />
-              <span className={cn(collapsed ? "hidden lg:inline" : "inline")}>{child.title}</span>
+              <span className={cn(collapsed ? "hidden" : "inline")}>{child.title}</span>
               {navCounts[child.url] ? <NavCountBadge badge={navCounts[child.url]} collapsed={collapsed} /> : null}
             </NavLink>
           ))}
@@ -144,7 +257,7 @@ function NavCountBadge({ badge, collapsed }: { badge: NavCount; collapsed: boole
         "ms-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none",
         tone,
         // When icons-only, float the pill as a small dot-count over the icon.
-        collapsed ? "hidden lg:inline-flex" : "inline-flex"
+        collapsed ? "hidden" : "inline-flex"
       )}
     >
       {badge.count > 99 ? "99+" : badge.count}
@@ -152,62 +265,113 @@ function NavCountBadge({ badge, collapsed }: { badge: NavCount; collapsed: boole
   );
 }
 
-export function AppSidebar({ items, appName = "BizH", logo }: Props) {
-  const [collapsed, setCollapsed] = useState(true);
+export function AppSidebar({ items }: Props) {
+  // Shared with the top bar's brand corner so the two stay the same width.
+  const { collapsed, toggle: toggleCollapsed } = useSidebarCollapse();
   const navCounts = useNavCounts();
+
+  // Hover flyout for the collapsed rail. The small close delay lets the pointer
+  // travel from the icon into the panel without it vanishing underneath.
+  const [flyout, setFlyout] = useState<FlyoutState | null>(null);
+  const closeTimer = useRef<number | null>(null);
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setFlyout(null), 140);
+  }, [cancelClose]);
+  useEffect(() => cancelClose, [cancelClose]);
+  useEffect(() => {
+    if (!collapsed) setFlyout(null);
+  }, [collapsed]);
+
+  const hover = useCallback(
+    (item: SidebarNavItem): HoverHandlers => ({
+      onMouseEnter: (event) => {
+        if (!collapsed) return;
+        cancelClose();
+        const rect = event.currentTarget.getBoundingClientRect();
+        setFlyout({
+          item,
+          // Nudge up so the panel's first row lines up with the hovered icon.
+          top: Math.max(8, rect.top - 6),
+          right: window.innerWidth - rect.left + 8,
+        });
+      },
+      onMouseLeave: scheduleClose,
+    }),
+    [collapsed, cancelClose, scheduleClose]
+  );
 
   return (
     <aside
       className={cn(
-        "sticky top-0 hidden h-screen self-start md:flex shrink-0 flex-col border-e border-sidebar-border/80 bg-sidebar/95 backdrop-blur-xl transition-all duration-200",
-        collapsed ? "w-16 lg:w-56" : "w-56"
+        // Sits UNDER the full-width top bar (60px): the brand corner in that bar
+        // is the light patch above it, so the rail itself starts straight at the nav.
+        "sticky top-[60px] hidden h-[calc(100vh-60px)] self-start md:flex shrink-0 flex-col border-e border-sidebar-border/80 bg-sidebar/95 backdrop-blur-xl transition-all duration-200",
+        collapsed ? RAIL_WIDTH.collapsed : RAIL_WIDTH.expanded
       )}
     >
-      <div className="flex h-14 items-center border-b border-sidebar-border/80 px-3">
-        <div className="flex items-center gap-2 overflow-hidden">
-          {logo ?? <BrandMark size="lg" />}
-          <span
-            className={cn(
-              "block whitespace-nowrap text-sm font-semibold text-white",
-              collapsed ? "hidden lg:inline" : "inline"
-            )}
-          >
-            {appName}
-          </span>
-        </div>
-      </div>
-
-      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
+      <nav className="scroll-slim flex-1 space-y-1 overflow-y-auto overscroll-contain px-2 py-3">
         {items.map((item) =>
           item.children && item.children.length > 0 ? (
-            <NavGroup key={item.title} item={item} collapsed={collapsed} navCounts={navCounts} />
+            <NavGroup
+              key={item.title}
+              item={item}
+              collapsed={collapsed}
+              navCounts={navCounts}
+              hover={hover}
+            />
           ) : (
             <NavLink
               key={item.title}
               to={item.url}
               end={item.url === "/"}
-              className={cn(linkBase, collapsed && "justify-center px-0 lg:justify-start lg:px-2.5")}
+              {...hover(item)}
+              className={cn(linkBase, collapsed && "justify-center px-0")}
               activeClassName={linkActive}
               pendingClassName={linkPending}
             >
               <item.icon className="h-4 w-4 shrink-0" />
-              <span className={cn(collapsed ? "hidden lg:inline" : "inline")}>{item.title}</span>
+              <span className={cn(collapsed ? "hidden" : "inline")}>{item.title}</span>
               {navCounts[item.url] ? <NavCountBadge badge={navCounts[item.url]} collapsed={collapsed} /> : null}
             </NavLink>
           )
         )}
       </nav>
 
-      <div className="border-t border-sidebar-border/80 p-2 lg:hidden">
+      {/* Collapse toggle — works at every screen size (it used to be phone-only,
+          so on desktop the labels could never be hidden). Collapsed = icons only. */}
+      <div className="border-t border-sidebar-border/80 p-2">
         <Button
           variant="ghost"
-          size="icon-sm"
-          onClick={() => setCollapsed(!collapsed)}
-          className="w-full rounded-xl text-sidebar-foreground hover:bg-sidebar-accent hover:text-white"
+          size="sm"
+          onClick={toggleCollapsed}
+          title={collapsed ? "הרחבת התפריט" : "כיווץ התפריט"}
+          aria-label={collapsed ? "הרחבת התפריט" : "כיווץ התפריט"}
+          aria-expanded={!collapsed}
+          className={cn(
+            "w-full rounded-xl text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
+            collapsed ? "justify-center px-0" : "justify-start gap-2 px-2.5"
+          )}
         >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          {collapsed ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          {collapsed ? null : <span className="text-sm">כיווץ התפריט</span>}
         </Button>
       </div>
+
+      {flyout ? (
+        <NavFlyout
+          state={flyout}
+          navCounts={navCounts}
+          onEnter={cancelClose}
+          onLeave={scheduleClose}
+        />
+      ) : null}
     </aside>
   );
 }

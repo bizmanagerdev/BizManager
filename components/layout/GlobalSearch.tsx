@@ -265,7 +265,7 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
       {!mobileOnly ? (
         <div ref={desktopRef} className={cn("relative hidden flex-1 lg:flex", className)}>
           <div className="relative w-full">
-            <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground/50" />
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -280,7 +280,10 @@ export function GlobalSearch({ className, desktopOnly = false, mobileOnly = fals
                 }
               }}
               placeholder="חיפוש בכל המערכת..."
-              className="h-10 rounded-xl border-border/60 bg-background/80 ps-9 shadow-sm shadow-primary/5 focus-visible:ring-2"
+              // Recessed into the dark top bar rather than a bright white box:
+              // search is a tool you reach for, not the first thing that should
+              // grab the eye. Lifts slightly on hover/focus.
+              className="h-10 rounded-xl border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none transition-colors placeholder:text-sidebar-foreground/45 hover:bg-white/[0.1] focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
             />
           </div>
           {open ? (

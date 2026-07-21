@@ -238,7 +238,8 @@ export function TopNavigationProgress() {
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-[120] h-1 bg-transparent">
       <div
-        className="h-full bg-primary shadow-[0_0_10px_rgb(var(--primary)/0.6)] transition-[width] duration-150 ease-out"
+        // Sits ON the navy top bar, so it has to be light to be seen at all.
+        className="h-full bg-secondary shadow-[0_0_10px_rgb(var(--secondary)/0.7)] transition-[width] duration-150 ease-out"
         style={{ width: `${progress}%` }}
       />
     </div>

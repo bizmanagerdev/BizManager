@@ -1,6 +1,10 @@
 // One standard for every icon button in the top bar, so they read as a set:
 // same hit area, same glyph size, same stroke weight, same hover.
 //
+// The bar shares the SIDEBAR's surface (see TopBar), so these use the sidebar's
+// own foreground + hover tokens — a top-bar glyph and a sidebar item should look
+// like the same control, because they are.
+//
 // Note on sizing: Button's base class carries `[&_svg]:size-4`, a descendant
 // rule that outranks plain utilities — so per-icon `h-6 w-6`-style classes are
 // silently dead and every glyph lands at 16px regardless. Don't add size classes
@@ -9,7 +13,7 @@
 
 /** Ghost, circular, transparent — the shared top-bar icon button shell. Use with size="icon-sm". */
 export const TOPBAR_ICON_BUTTON =
-  "group rounded-full !bg-transparent !border-transparent !shadow-none text-foreground transition-all hover:!bg-accent hover:scale-110";
+  "group rounded-full !bg-transparent !border-transparent !shadow-none !text-sidebar-foreground transition-all hover:!bg-sidebar-accent hover:!text-white hover:scale-110";
 
 /** The one stroke weight for top-bar glyphs. */
 export const TOPBAR_ICON_STROKE = 2.5;

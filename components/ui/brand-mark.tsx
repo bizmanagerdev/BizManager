@@ -1,11 +1,12 @@
 import { cn } from "@/lib/utils";
 
 type Props = {
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
   className?: string;
 };
 
 const SIZE = {
+  xs: "h-3.5 w-5",
   sm: "h-7 w-10",
   md: "h-9 w-12",
   lg: "h-10 w-14",

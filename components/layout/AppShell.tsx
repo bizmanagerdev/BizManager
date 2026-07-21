@@ -13,10 +13,12 @@ import NotificationsRealtime from "@/components/notifications/NotificationsRealt
 import FontScaleSync from "@/components/layout/FontScaleSync";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 import { useNavItems } from "@/components/layout/nav-items";
+import { SidebarCollapseProvider } from "@/components/layout/sidebar-collapse-context";
 
 type Props = {
   children: ReactNode;
   appName?: string;
+  companyName?: string;
   userName?: string;
   viewerRole?: string;
   avatarColor?: string | null;
@@ -36,6 +38,7 @@ const NestedAppShellContext = createContext(false);
 export default function AppShell({
   children,
   appName,
+  companyName,
   userName,
   viewerRole,
   avatarColor,
@@ -56,7 +59,11 @@ export default function AppShell({
 
   return (
     <NestedAppShellContext.Provider value={true}>
-      <div className="flex min-h-screen w-full bg-transparent">
+     <SidebarCollapseProvider>
+      {/* Column layout: the top bar is a FULL-WIDTH rail across the whole viewport
+          (it spans over the sidebar too, and carries the brand), with the sidebar
+          and the content sitting side by side underneath it. */}
+      <div className="flex min-h-screen w-full flex-col bg-transparent">
         <Suspense fallback={null}>
           <TopNavigationProgress />
         </Suspense>
@@ -65,24 +72,37 @@ export default function AppShell({
         <FontScaleSync />
         <ConnectionToasts />
         <ConnectionTelemetry />
-        {sidebar.length > 0 && (
-          // Suspense boundary required because AppSidebar reads useSearchParams
-          // (to carry financial filters between Flow/Reports links).
-          <Suspense fallback={null}>
-            <AppSidebar items={sidebar} appName={appName} />
-          </Suspense>
-        )}
-        <div className="flex flex-1 flex-col min-w-0">
-          <TopBar userName={userName} viewerRole={viewerRole} initialColor={avatarColor} showSearch={showSearch} />
-          <OfflineBanner />
-          <main className="flex-1">
-            <div className="mx-auto w-full max-w-[1600px] p-4 pb-24 md:p-6 md:pb-6 lg:p-8 lg:pb-8">
-              {children}
-            </div>
-          </main>
-          {bottom.length > 0 && <BottomNav items={bottom} moreItems={more} />}
+        <TopBar
+          appName={appName}
+          companyName={companyName}
+          hasSidebar={sidebar.length > 0}
+          userName={userName}
+          viewerRole={viewerRole}
+          initialColor={avatarColor}
+          showSearch={showSearch}
+        />
+        <OfflineBanner />
+        <div className="flex min-w-0 flex-1">
+          {sidebar.length > 0 && (
+            // Suspense boundary required because AppSidebar reads useSearchParams
+            // (to carry financial filters between Flow/Reports links).
+            <Suspense fallback={null}>
+              <AppSidebar items={sidebar} />
+            </Suspense>
+          )}
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* The curve at the sidebar/top-bar junction is carried by the sidebar
+                itself (rounded-se), so the page background shows through it. */}
+            <main className="flex-1 bg-background">
+              <div className="mx-auto w-full max-w-[1600px] p-4 pb-24 md:p-6 md:pb-6 lg:p-8 lg:pb-8">
+                {children}
+              </div>
+            </main>
+            {bottom.length > 0 && <BottomNav items={bottom} moreItems={more} />}
+          </div>
         </div>
       </div>
+     </SidebarCollapseProvider>
     </NestedAppShellContext.Provider>
   );
 }
