@@ -16,10 +16,14 @@ interface Props {
 }
 
 const linkBase =
-  "flex h-10 items-center gap-2.5 rounded-lg px-2.5 text-sm text-sidebar-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground hover:shadow-sm";
+  "flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm text-sidebar-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground hover:shadow-sm";
 const linkActive =
   "bg-secondary text-secondary-foreground font-medium shadow-md shadow-secondary/30 hover:ring-2 hover:ring-white/50 hover:ring-offset-2 hover:ring-offset-sidebar";
 const linkPending = "bg-white/10 opacity-70";
+// Sub-tab row — smaller than a top-level row. Shared with the hover flyout so a
+// sub-tab is never bigger in the pop-out than it is in the sidebar itself.
+const subLinkBase =
+  "flex h-7 items-center gap-2 rounded-lg px-2.5 text-[13px] text-sidebar-foreground/75 transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground";
 
 // Routes that share one filter bar (Flow + Reports) — switching between them via
 // the sidebar carries the current filters (date/domain/…) so context isn't lost.
@@ -40,9 +44,10 @@ type HoverHandlers = {
   onMouseLeave: () => void;
 };
 
-// One row shape for everything the flyout shows, so a hovered tab looks EXACTLY
-// like the same tab does in the expanded sidebar — same height, size and colors.
-const flyoutRow = cn(linkBase, "shrink-0");
+// Flyout rows reuse the sidebar's own classes, so a row in the pop-out is the
+// exact same size and color as that row in the expanded sidebar.
+const flyoutTopRow = cn(linkBase, "shrink-0 whitespace-nowrap");
+const flyoutSubRow = cn(subLinkBase, "shrink-0 whitespace-nowrap");
 
 /**
  * The hover flyout for the collapsed rail: a real panel in the sidebar's own
@@ -99,7 +104,7 @@ function NavFlyout({
           end={state.item.url === "/"}
           onClick={onLeave}
           // Standalone row: it carries the filled look itself (nothing behind it).
-          className={cn(flyoutRow, "whitespace-nowrap bg-secondary text-secondary-foreground")}
+          className={cn(flyoutTopRow, "bg-secondary text-secondary-foreground")}
           activeClassName={linkActive}
           pendingClassName={linkPending}
         >
@@ -127,11 +132,11 @@ function NavFlyout({
               }
               end={child.url === "/financial"}
               onClick={onLeave}
-              className={cn(flyoutRow, "whitespace-nowrap")}
-              activeClassName={linkActive}
+              className={flyoutSubRow}
+              activeClassName="bg-secondary text-secondary-foreground font-medium"
               pendingClassName={linkPending}
             >
-              <child.icon className="h-4 w-4 shrink-0" />
+              <child.icon className="h-3.5 w-3.5 shrink-0" />
               <span>{child.title}</span>
               {navCounts[child.url] ? <NavCountBadge badge={navCounts[child.url]} collapsed={false} /> : null}
             </NavLink>
@@ -218,10 +223,7 @@ function NavGroup({
                   : child.url
               }
               end={child.url === "/financial"}
-              className={cn(
-                "flex h-8 items-center gap-2 rounded-lg px-2.5 text-[13px] text-sidebar-foreground/75 transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground",
-                collapsed && "justify-center px-0"
-              )}
+              className={cn(subLinkBase, collapsed && "justify-center px-0")}
               activeClassName="bg-secondary text-secondary-foreground font-medium"
               pendingClassName={linkPending}
             >
@@ -316,7 +318,12 @@ export function AppSidebar({ items }: Props) {
         collapsed ? RAIL_WIDTH.collapsed : RAIL_WIDTH.expanded
       )}
     >
-      <nav className="scroll-slim flex-1 space-y-1 overflow-y-auto overscroll-contain px-2 py-3">
+      <nav
+        className={cn(
+          "scroll-slim flex-1 space-y-0.5 overflow-y-auto overscroll-contain py-2",
+          collapsed ? "px-1.5" : "px-2"
+        )}
+      >
         {items.map((item) =>
           item.children && item.children.length > 0 ? (
             <NavGroup

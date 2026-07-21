@@ -29,4 +29,4 @@ export function useSidebarCollapse() {
 }
 
 /** Rail width, kept in one place so the brand corner and the sidebar agree. */
-export const RAIL_WIDTH = { collapsed: "w-16", expanded: "w-44" } as const;
+export const RAIL_WIDTH = { collapsed: "w-14", expanded: "w-40" } as const;

@@ -98,7 +98,7 @@ export default function AppShell({
                 {children}
               </div>
             </main>
-            {bottom.length > 0 && <BottomNav items={bottom} moreItems={more} />}
+            {bottom.length > 0 && <BottomNav items={bottom} moreItems={more} viewerRole={viewerRole} />}
           </div>
         </div>
       </div>

@@ -175,16 +175,32 @@ export function TopBar({
         </div>
       ) : null}
 
+      {/* The back arrow is alone on the leading (right) edge; everything else is
+          one cluster on the far edge, in this order inward: search, +, refresh,
+          alarm, then you. */}
       <BackButton />
-      {showSearch ? <GlobalSearch desktopOnly className="max-w-md flex-1" /> : null}
 
       <div className="flex-1" />
 
-      {/* End edge, in reading order: the + (leading, since it's the action), then
-          the glyph tools (refresh, inbox), then a hairline, then the avatar. The
-          rule says "these are tools, that is you" — same idea as Gmail's rail. */}
       <div className="flex items-center gap-2">
-        <QuickCreateMenu viewerRole={viewerRole} />
+        {showSearch ? (
+          <GlobalSearch
+            mobileOnly
+            className="!text-sidebar-foreground hover:!bg-sidebar-accent hover:!text-white"
+          />
+        ) : null}
+        {/* Fixed width, not flex-1: inside this shrink-to-fit cluster a
+            `flex-1 basis-0` box would collapse to nothing. */}
+        {showSearch ? (
+          <GlobalSearch desktopOnly className="w-[22rem] max-w-[32vw] flex-none" />
+        ) : null}
+
+        {/* Desktop only — on mobile the bottom nav's centre + is the quick-create,
+            and two of them in one screen is one too many. There's no bottom nav
+            from md up, so this stays the only door to it there. */}
+        <div className="hidden md:block">
+          <QuickCreateMenu viewerRole={viewerRole} />
+        </div>
 
         <RefreshButton />
 
@@ -286,79 +302,77 @@ export function TopBar({
           </HoverPanelContent>
         </HoverPanel>
 
-        {/* Hairline between the tools and you. */}
-        <span aria-hidden className="mx-0.5 h-6 w-px shrink-0 bg-sidebar-border" />
-
-        {/* Hover reveals the account menu, same as the inbox and the + — and for
-            the same reason those use HoverPanel rather than a real menu: a menu
-            grabs focus on open, which would swallow keystrokes from the search
-            box sitting right next to it. Click still works, and on touch (no
-            hover) the tap is the only interaction. */}
-        <HoverPanel open={userPanel.open} onOpenChange={userPanel.setOpen}>
-          <HoverPanelTrigger asChild>
-            {/* Just the circle — the name lives inside the panel, where it's
-                actually useful. Gmail-style: tap the avatar, get your details. */}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="h-9 w-9 rounded-full p-0 hover:bg-sidebar-accent"
-              type="button"
-              aria-label={userName ? `החשבון שלי — ${userName}` : "החשבון שלי"}
-              id="topbar-user-trigger"
-              {...userPanel.triggerProps}
-            >
-              {userName ? (
-                <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="sm" />
-              ) : (
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
-                  <User className="h-3.5 w-3.5" fill="currentColor" strokeWidth={2.2} />
-                </div>
-              )}
-            </Button>
-          </HoverPanelTrigger>
-          <HoverPanelContent dir="rtl" className="w-60 rounded-xl p-1.5 text-right" {...userPanel.panelProps}>
-            {/* Who you're signed in as — the panel's most common question. */}
-            <div className="flex items-center gap-2.5 px-2 py-2">
-              {userName ? <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="sm" /> : null}
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold">{userName ?? "משתמש"}</div>
-                {me?.email ? <div className="truncate text-xs text-muted-foreground">{me.email}</div> : null}
-              </div>
-            </div>
-            <div className="-mx-1 my-1 h-px bg-muted" />
-
-            {/* One entry per errand — these are the profile's tabs. */}
-            {USER_MENU_LINKS.filter((link) => !link.gate || link.gate(me)).map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="flex items-center rounded-lg px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                onClick={() => {
-                  userPanel.hide();
-                  emitNavigationStart();
-                }}
-              >
-                <link.icon className="me-2 h-4 w-4 text-muted-foreground" />
-                {link.label}
-              </Link>
-            ))}
-
-            <div className="-mx-1 my-1 h-px bg-muted" />
-            <form action="/api/auth/logout" method="post">
-              <button
-                type="submit"
-                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
-              >
-                <LogOut className="me-2 h-4 w-4" />
-                התנתקות
-              </button>
-            </form>
-          </HoverPanelContent>
-        </HoverPanel>
-
         <PwaInstallButton />
 
-        {showSearch ? <GlobalSearch mobileOnly className="!text-sidebar-foreground hover:!bg-sidebar-accent hover:!text-white" /> : null}
+      {/* Hairline between the tools and you. */}
+      <span aria-hidden className="mx-0.5 h-6 w-px shrink-0 bg-sidebar-border" />
+
+      {/* Hover reveals the account menu, same as the inbox and the + — and for
+          the same reason those use HoverPanel rather than a real menu: a menu
+          grabs focus on open, which would swallow keystrokes from the search
+          box sitting right next to it. Click still works, and on touch (no
+          hover) the tap is the only interaction. */}
+      <HoverPanel open={userPanel.open} onOpenChange={userPanel.setOpen}>
+        <HoverPanelTrigger asChild>
+          {/* Just the circle — the name lives inside the panel, where it's
+              actually useful. Gmail-style: tap the avatar, get your details. */}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="h-9 w-9 rounded-full p-0 hover:bg-sidebar-accent"
+            type="button"
+            aria-label={userName ? `החשבון שלי — ${userName}` : "החשבון שלי"}
+            id="topbar-user-trigger"
+            {...userPanel.triggerProps}
+          >
+            {userName ? (
+              <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="sm" />
+            ) : (
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+                <User className="h-3.5 w-3.5" fill="currentColor" strokeWidth={2.2} />
+              </div>
+            )}
+          </Button>
+        </HoverPanelTrigger>
+        <HoverPanelContent dir="rtl" className="w-60 rounded-xl p-1.5 text-right" {...userPanel.panelProps}>
+          {/* Who you're signed in as — the panel's most common question. */}
+          <div className="flex items-center gap-2.5 px-2 py-2">
+            {userName ? <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="sm" /> : null}
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold">{userName ?? "משתמש"}</div>
+              {me?.email ? <div className="truncate text-xs text-muted-foreground">{me.email}</div> : null}
+            </div>
+          </div>
+          <div className="-mx-1 my-1 h-px bg-muted" />
+
+          {/* One entry per errand — these are the profile's tabs. */}
+          {USER_MENU_LINKS.filter((link) => !link.gate || link.gate(me)).map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="flex items-center rounded-lg px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+              onClick={() => {
+                userPanel.hide();
+                emitNavigationStart();
+              }}
+            >
+              <link.icon className="me-2 h-4 w-4 text-muted-foreground" />
+              {link.label}
+            </Link>
+          ))}
+
+          <div className="-mx-1 my-1 h-px bg-muted" />
+          <form action="/api/auth/logout" method="post">
+            <button
+              type="submit"
+              className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
+            >
+              <LogOut className="me-2 h-4 w-4" />
+              התנתקות
+            </button>
+          </form>
+        </HoverPanelContent>
+      </HoverPanel>
       </div>
     </header>
   );

@@ -169,9 +169,11 @@ export default function DashboardCustomizer({
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="outline" size="sm">
+        {/* Icon-only on phones so the greeting beside it keeps the full width;
+            the label comes back once there's room for it. */}
+        <Button variant="outline" size="sm" aria-label="התאמת לוח" className="px-2.5 sm:px-3">
           <SlidersHorizontal className="h-4 w-4" />
-          התאמת לוח
+          <span className="hidden sm:inline">התאמת לוח</span>
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="flex w-full flex-col gap-0 sm:max-w-md">

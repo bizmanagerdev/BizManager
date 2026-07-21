@@ -102,17 +102,20 @@ const SIDEBAR_ITEMS: SidebarNavItem[] = [
   { title: "הגדרות ניהול", url: "/settings", icon: Settings },
 ];
 
+// Three tabs + עוד, with the centre "+" taking the middle slot — so the bar
+// reads דשבורד · פרויקטים · [+] · מכירות · עוד. Five thumb targets, no more:
+// everything else lives behind עוד.
 const BOTTOM_NAV_ITEMS: SidebarNavItem[] = [
   { title: "דשבורד", url: "/dashboard", icon: LayoutDashboard },
   { title: "פרויקטים", url: "/projects", icon: FolderKanban },
   { title: "מכירות", url: "/sales", icon: ShoppingCart },
-  { title: "לקוחות", url: "/customers", icon: Users },
-  { title: "גבייה", url: "/collections", icon: Coins },
 ];
 
 const BOTTOM_NAV_MORE_ITEMS: SidebarNavItem[] = [
+  { title: "לקוחות", url: "/customers", icon: Users },
   { title: "יומן", url: "/calendar", icon: CalendarDays },
   { title: "משימות", url: "/tasks", icon: ListTodo },
+  { title: "גבייה", url: "/collections", icon: Coins },
   { title: "תיעוד פניות", url: "/communications", icon: MessageCircle },
   { title: "דירות", url: "/properties", icon: Home },
   { title: "רכבים", url: "/vehicles", icon: Car },
