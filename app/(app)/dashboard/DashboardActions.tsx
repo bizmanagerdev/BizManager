@@ -20,44 +20,27 @@ import type { SessionFormState } from "@/app/(app)/payroll/SalaryCenter.types";
 import type { SalaryCenterProjectOption, SalaryCenterUserRow } from "@/lib/payroll-center";
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
 import NewProjectClient, { mapProjectCustomer, type ProjectCustomerOption } from "@/app/(app)/projects/NewProjectClient";
-import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { HEBREW } from "./DashboardActions.constants";
-import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import type { UserRole } from "@/lib/auth/requireProfile";
-import {
-  type ExpenseBusinessDomain,
-} from "@/lib/expenses";
-import { DomainSelect } from "@/components/financial/DomainSelect";
 import { type SalaryAgreementRow } from "@/lib/payroll";
 import type { WorkerDebtItemRow } from "@/lib/payroll-center";
 import {
   payrollWorkerTypeAllowsSessions,
   type PayrollWorkerType,
 } from "@/lib/payroll-worker-type";
-import { type FinancialAttachment } from "@/lib/payments";
-import {
-  getString,
-  getTodayDate,
-  isImageAttachment,
-  normalizeDateOnly,
-  nowLocal,
-  uploadFinancialAttachment,
-} from "./DashboardActions.helpers";
+import { getTodayDate, nowLocal } from "./DashboardActions.helpers";
 import { buildWeekView } from "@/lib/dashboard/week";
 import {
-  buildIncomePayload,
   buildWorkerPaymentAllocations,
   sortOpenWorkerDebt,
   sumOpenOwed,
-  validateIncomeForm,
   validateWorkerPaymentForm,
 } from "./DashboardActions.forms";
 import { WeekOverviewDialog, WorkerPaymentDialog } from "./DashboardActions.dialogs";
-import AccountSelect from "@/components/financial/AccountSelect";
-import { defaultAccountForMethod, type Account } from "@/lib/accounts";
-import { offlineFetch } from "@/lib/offline-queue";
+import { IncomeDialog } from "@/components/financial/IncomeDialog";
+import { type Account } from "@/lib/accounts";
 import type { CalendarEntry } from "@/lib/projectSchedule";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,15 +49,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DateInput } from "@/components/ui/date-input";
-import { Input } from "@/components/ui/input";
-import { CurrencyInput } from "@/components/ui/currency-input";
-import { Textarea } from "@/components/ui/textarea";
 import { CreateCustomerDialog } from "@/components/customers/CreateCustomerDialog";
 import { type ProjectPickerOption } from "@/components/projects/ProjectPicker";
 import { TaskUpsertDialog } from "@/components/tasks/TaskUpsertDialog";
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
-import { TagPicker } from "@/components/tags/TagPicker";
 
 type Row = Record<string, unknown>;
 
@@ -105,9 +83,6 @@ export type OpenSessionInfo = {
   id: string;
   clock_in: string;
 };
-
-const fieldClass =
-  "h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm outline-none transition-all focus:border-destructive/40 focus:ring-2 focus:ring-ring";
 
 export default function DashboardActions({
   customers,
@@ -175,26 +150,6 @@ export default function DashboardActions({
 
   const [accountsList, setAccountsList] = useState<Account[]>([]);
 
-  const [incomeSubmitting, setIncomeSubmitting] = useState(false);
-  const [incomeError, setIncomeError] = useState<string | null>(null);
-  const [incomeBusinessDomain, setIncomeBusinessDomain] = useState<ExpenseBusinessDomain | "">("");
-  const [incomeProjectId, setIncomeProjectId] = useState("");
-  const [incomeProjectQuery, setIncomeProjectQuery] = useState("");
-  const [incomeOrderId, setIncomeOrderId] = useState("");
-  const [incomePropertyId, setIncomePropertyId] = useState("");
-  const [incomeAmount, setIncomeAmount] = useState("");
-  const [incomeDate, setIncomeDate] = useState(getTodayDate());
-  const [incomeMethod, setIncomeMethod] = useState("");
-  const [incomeAccountId, setIncomeAccountId] = useState("");
-  const [incomeDueDate, setIncomeDueDate] = useState("");
-  const [incomeRequiresSplit, setIncomeRequiresSplit] = useState(false);
-  const [incomeReference, setIncomeReference] = useState("");
-  const [incomeCheckNumber, setIncomeCheckNumber] = useState("");
-  const [incomeCheckPhotoFiles, setIncomeCheckPhotoFiles] = useState<File[]>([]);
-  const [incomeNotes, setIncomeNotes] = useState("");
-  const [incomeAttachmentFiles, setIncomeAttachmentFiles] = useState<File[]>([]);
-  const [incomeExistingAttachments, setIncomeExistingAttachments] = useState<FinancialAttachment[]>([]);
-  const [incomeTagIds, setIncomeTagIds] = useState<string[]>([]);
   const [selfSessionSubmitting, setSelfSessionSubmitting] = useState(false);
   // Salary-unlock context for the shared <SessionEditorDialog/> (price + mark-paid sit
   // behind <SalaryProtected/>, same as the payroll workers page). Managers can unlock.
@@ -226,10 +181,6 @@ export default function DashboardActions({
   const [workerPaymentSubmitting, setWorkerPaymentSubmitting] = useState(false);
   const [workerPaymentError, setWorkerPaymentError] = useState<string | null>(null);
 
-  const projectById = useMemo(
-    () => new Map(projects.map((project) => [project.id, project])),
-    [projects]
-  );
   const projectPickerOptions: ProjectPickerOption[] = useMemo(
     () =>
       projects.map((project) => ({
@@ -240,15 +191,6 @@ export default function DashboardActions({
       })),
     [projects]
   );
-  const filteredIncomeProjects = useMemo(() => {
-    const q = incomeProjectQuery.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter((project) => {
-      const name = project.name.toLowerCase();
-      const customer = project.customerName.toLowerCase();
-      return name.includes(q) || customer.includes(q);
-    });
-  }, [incomeProjectQuery, projects]);
   // Buckets derived from the shared weekView (logic now lives in lib/dashboard/week).
   const weeklyGeneralEntries = weekView.generalEntries;
   const weeklyBuckets = weekView.days;
@@ -330,112 +272,6 @@ export default function DashboardActions({
   useEffect(() => {
     setAvailableUsers(users);
   }, [users]);
-
-  function resetIncomeForm() {
-    setIncomeError(null);
-    setIncomeBusinessDomain("");
-    setIncomeProjectId("");
-    setIncomeProjectQuery("");
-    setIncomeOrderId("");
-    setIncomePropertyId("");
-    setIncomeAmount("");
-    setIncomeDate(getTodayDate());
-    setIncomeMethod("");
-    setIncomeAccountId("");
-    setIncomeDueDate("");
-    setIncomeRequiresSplit(false);
-    setIncomeReference("");
-    setIncomeCheckNumber("");
-    setIncomeCheckPhotoFiles([]);
-    setIncomeNotes("");
-    setIncomeAttachmentFiles([]);
-    setIncomeExistingAttachments([]);
-    setIncomeTagIds([]);
-  }
-
-  async function createIncome() {
-    setIncomeError(null);
-    const linkedProjectId = incomeBusinessDomain === "logistics_projects" ? incomeProjectId : "";
-    const linkedOrderId = incomeBusinessDomain === "sales" ? incomeOrderId : "";
-    const linkedPropertyId = incomeBusinessDomain === "property_management" ? incomePropertyId : "";
-
-    const validationError = validateIncomeForm({
-      incomeBusinessDomain,
-      linkedProjectId,
-      linkedPropertyId,
-      incomeDate,
-      incomeMethod,
-      incomeDueDate,
-      incomeAmount,
-      accountsCount: accountsList.length,
-      incomeAccountId,
-    });
-    if (validationError) {
-      setIncomeError(validationError);
-      return;
-    }
-    const amount = Number(incomeAmount);
-
-    setIncomeSubmitting(true);
-    try {
-      const result = await offlineFetch(
-        "/api/payments/create",
-        buildIncomePayload({
-          incomeBusinessDomain,
-          linkedProjectId,
-          linkedOrderId,
-          linkedPropertyId,
-          projectType: projectById.get(linkedProjectId)?.type ?? null,
-          amount,
-          incomeDate,
-          incomeDueDate,
-          incomeRequiresSplit,
-          incomeMethod,
-          incomeAccountId,
-          incomeReference,
-          incomeCheckNumber,
-          incomeNotes,
-          incomeTagIds,
-        }),
-        HEBREW.incomeNew,
-        { idempotent: true }
-      );
-      if (result.queued) {
-        setIncomeOpen(false);
-        resetIncomeForm();
-        return;
-      }
-      if (!result.ok) {
-        setIncomeError(toHebrewError(result.error, HEBREW.incomeCreateFailed));
-        return;
-      }
-      const json = result.data as { payment?: Row };
-      if (!json.payment) {
-        setIncomeError(HEBREW.incomeCreateFailed);
-        return;
-      }
-
-      const paymentId = getString(json.payment, "id");
-      for (const file of incomeAttachmentFiles) {
-        if (!paymentId) break;
-        await uploadFinancialAttachment("payment", paymentId, file);
-      }
-      if (incomeMethod === "check" && paymentId && incomeCheckPhotoFiles.length > 0) {
-        for (const file of incomeCheckPhotoFiles) {
-          await uploadFinancialAttachment("payment", paymentId, file);
-        }
-      }
-
-      setIncomeOpen(false);
-      resetIncomeForm();
-      router.refresh();
-      toast.success(HEBREW.incomeSaved);
-    } catch (error: unknown) {
-      setIncomeError(toHebrewError(error, HEBREW.saveErrorUnknown));
-    } finally {
-      setIncomeSubmitting(false);
-    }
-  }
 
   // "Open shift" is a self-service action — only show it to workers whose pay
   // type actually tracks sessions (קבלנות / שעתי), not monthly-payslip or staff
@@ -881,315 +717,14 @@ export default function DashboardActions({
         onSaved={() => router.refresh()}
       />
 
-      <Dialog
+      <IncomeDialog
         open={incomeOpen}
-        onOpenChange={(open) => {
-          if (!open && incomeSubmitting) return;
-          setIncomeOpen(open);
-          if (!open) resetIncomeForm();
-        }}
-      >
-        <AdaptiveDialog size="formXl">
-          <DialogHeader>
-            <DialogTitle>{HEBREW.incomeNew}</DialogTitle>
-            <DialogDescription>{HEBREW.incomeDialogDescription}</DialogDescription>
-          </DialogHeader>
-
-          <fieldset disabled={incomeSubmitting} className="contents">
-            <div className="grid gap-4">
-              <label className="space-y-2 text-sm">
-                <span>{HEBREW.domain} *</span>
-                <DomainSelect
-                  value={incomeBusinessDomain}
-                  onChange={(next) => {
-                    const nextDomain = next as ExpenseBusinessDomain | "";
-                    setIncomeBusinessDomain(nextDomain);
-                    if (nextDomain !== "logistics_projects") {
-                      setIncomeProjectId("");
-                      setIncomeProjectQuery("");
-                    }
-                    if (nextDomain !== "sales") setIncomeOrderId("");
-                    if (nextDomain !== "property_management") setIncomePropertyId("");
-                    if (nextDomain !== "general_business") setIncomeTagIds([]);
-                  }}
-                />
-              </label>
-
-              {incomeBusinessDomain === "logistics_projects" ? (
-                <div className="space-y-2 text-sm">
-                  <span>{HEBREW.project} *</span>
-                  <Input
-                    value={incomeProjectQuery}
-                    onChange={(e) => setIncomeProjectQuery(e.target.value)}
-                    placeholder="חיפוש..."
-                  />
-                  <div className="max-h-56 space-y-1 overflow-auto rounded-md border p-1">
-                    {filteredIncomeProjects.map((project) => (
-                      <button
-                        key={project.id}
-                        type="button"
-                        onClick={() => {
-                          setIncomeProjectId(project.id);
-                          setIncomeProjectQuery(project.name);
-                        }}
-                        className={`w-full rounded-lg border px-3 py-2 text-right text-sm transition-all duration-200 ${
-                          project.id === incomeProjectId
-                            ? "border-primary/20 bg-primary text-primary-foreground shadow-sm shadow-primary/25"
-                            : "border-border bg-accent/40 text-accent-foreground hover:bg-accent"
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-baseline gap-x-2">
-                          <span className="font-medium">{project.name}</span>
-                          {project.customerName ? (
-                            <span
-                              className={`text-xs ${
-                                project.id === incomeProjectId
-                                  ? "text-primary-foreground/70"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
-                              · {project.customerName}
-                            </span>
-                          ) : null}
-                          {normalizeDateOnly(project.startDate) ? (
-                            <span
-                              className={`text-xs ${
-                                project.id === incomeProjectId
-                                  ? "text-primary-foreground/70"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
-                              · {normalizeDateOnly(project.startDate)}
-                            </span>
-                          ) : null}
-                        </div>
-                      </button>
-                    ))}
-                    {filteredIncomeProjects.length === 0 ? (
-                      <div className="p-2 text-sm text-muted-foreground">לא נמצאו פרויקטים לחיפוש הזה.</div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-
-              {incomeBusinessDomain === "sales" ? (
-                <label className="space-y-2 text-sm">
-                  <span>הזמנה</span>
-                  <select
-                    className={fieldClass}
-                    value={incomeOrderId}
-                    onChange={(e) => setIncomeOrderId(e.target.value)}
-                  >
-                    <option value="">ללא הזמנה</option>
-                    {orders.map((order) => (
-                      <option key={order.id} value={order.id}>
-                        {order.name}
-                        {order.subtitle ? ` | ${order.subtitle}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
-              {incomeBusinessDomain === "property_management" ? (
-                <label className="space-y-2 text-sm">
-                  <span>נכס *</span>
-                  <select
-                    className={fieldClass}
-                    value={incomePropertyId}
-                    onChange={(e) => setIncomePropertyId(e.target.value)}
-                  >
-                    <option value="">בחרו נכס</option>
-                    {properties.map((property) => (
-                      <option key={property.id} value={property.id}>
-                        {property.name}
-                        {property.subtitle ? ` | ${property.subtitle}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
-              {incomeBusinessDomain ? (
-                <>
-                  <AdaptiveGrid variant="formTwoLoose">
-                    <label className="space-y-2 text-sm">
-                      <span>{HEBREW.amount} *</span>
-                      <CurrencyInput
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={incomeAmount}
-                        onChange={(e) => setIncomeAmount(e.target.value)}
-                      />
-                    </label>
-
-                    <label className="space-y-2 text-sm">
-                      <span>{HEBREW.paymentMethod} *</span>
-                      <select
-                        className={fieldClass}
-                        value={incomeMethod}
-                        onChange={(e) => {
-                          const m = e.target.value;
-                          setIncomeMethod(m);
-                          setIncomeAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
-                        }}
-                      >
-                        <option value=""></option>
-                        <option value="bank_transfer">{HEBREW.bankTransfer}</option>
-                        <option value="cash">{HEBREW.cash}</option>
-                        <option value="check">{HEBREW.check}</option>
-                        <option value="credit_card">{HEBREW.creditCard}</option>
-                        <option value="other">{HEBREW.other}</option>
-                      </select>
-                      {incomeMethod === "check" ? (
-                        <span className="block text-xs text-muted-foreground">
-                          {"צ'ק יירשם כממתין לפירעון עד תאריך הפירעון."}
-                        </span>
-                      ) : null}
-                    </label>
-                    <AccountSelect
-                      required
-                      value={incomeAccountId}
-                      onChange={setIncomeAccountId}
-                      onLoaded={(list) => {
-                        setAccountsList(list);
-                        setIncomeAccountId((prev) => prev || defaultAccountForMethod(list, incomeMethod));
-                      }}
-                    />
-                  </AdaptiveGrid>
-
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.date} *</span>
-                    <DateInput
-                      value={incomeDate}
-                      onChange={(e) => setIncomeDate(e.target.value)}
-                    />
-                  </label>
-
-                  {incomeMethod ? (
-                    <AdaptiveGrid variant="formTwoLoose">
-                      <label className="space-y-2 text-sm">
-                        <span>
-                          {incomeMethod === "check"
-                            ? `${HEBREW.paymentDueDate} *`
-                            : "תאריך פירעון צפוי (אופציונלי)"}
-                        </span>
-                        <DateInput
-                          value={incomeDueDate}
-                          onChange={(e) => setIncomeDueDate(e.target.value)}
-                        />
-                        {incomeMethod !== "check" ? (
-                          <span className="block text-[11px] text-muted-foreground">
-                            לתשלומים עתידיים (למשל שוטף+30) — נרשמים כממתינים עד התאריך הזה.
-                          </span>
-                        ) : null}
-                      </label>
-
-                      <label className="space-y-2 text-sm">
-                        <span>{HEBREW.reference}</span>
-                        <Input
-                          value={incomeReference}
-                          onChange={(e) => setIncomeReference(e.target.value)}
-                        />
-                      </label>
-                    </AdaptiveGrid>
-                  ) : null}
-
-                  {incomeMethod === "check" ? (
-                    <CheckDetailsFields
-                      checkNumber={incomeCheckNumber}
-                      onCheckNumberChange={setIncomeCheckNumber}
-                      photoFiles={incomeCheckPhotoFiles}
-                      onPhotoFilesChange={setIncomeCheckPhotoFiles}
-                      disabled={incomeSubmitting}
-                    />
-                  ) : null}
-
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={incomeRequiresSplit}
-                      onChange={(e) => setIncomeRequiresSplit(e.target.checked)}
-                    />
-                    <span>{HEBREW.includesVat}</span>
-                  </label>
-
-                  <label className="space-y-2 text-sm">
-                    <span>{HEBREW.notes}</span>
-                    <Textarea value={incomeNotes} onChange={(e) => setIncomeNotes(e.target.value)} />
-                  </label>
-
-                  {incomeBusinessDomain === "general_business" ? (
-                    <TagPicker value={incomeTagIds} onChange={setIncomeTagIds} />
-                  ) : null}
-
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium">קבצים מצורפים (אופציונלי)</div>
-                    <div className="flex items-center gap-2">
-                      <FileUploadActions
-                        files={incomeAttachmentFiles}
-                        multiple
-                        onFilesSelected={setIncomeAttachmentFiles}
-                        chooseLabel={incomeAttachmentFiles.length > 0 || incomeExistingAttachments.length > 0 ? "הוסף קבצים" : "העלה קבצים"}
-                        chooseVariant="outline"
-                        size="sm"
-                      />
-                      {incomeAttachmentFiles.length > 0 ? (
-                        <Button type="button" variant="secondary" size="sm" onClick={() => setIncomeAttachmentFiles([])}>
-                          נקה בחירה
-                        </Button>
-                      ) : null}
-                    </div>
-                    {incomeExistingAttachments.length > 0 ? (
-                      <div className="space-y-2">
-                        <div className="text-xs text-muted-foreground">קבצים קיימים</div>
-                        <div className="flex flex-wrap gap-2">
-                          {incomeExistingAttachments.map((attachment) => (
-                            <a
-                              key={attachment.document_id}
-                              href={attachment.url ?? "#"}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="rounded-md border px-2 py-1 text-xs text-primary hover:bg-accent"
-                            >
-                              {attachment.file_name ?? "קובץ"}
-                            </a>
-                          ))}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {incomeExistingAttachments
-                            .filter((attachment) => attachment.url && isImageAttachment(attachment))
-                            .map((attachment) => (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                key={`${attachment.document_id}-preview`}
-                                src={attachment.url ?? ""}
-                                alt={attachment.file_name ?? "קובץ"}
-                                className="h-20 w-20 rounded-lg border object-cover"
-                              />
-                            ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </fieldset>
-
-          {incomeError ? <p className="text-sm text-destructive">{incomeError}</p> : null}
-
-          <div className="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setIncomeOpen(false)} disabled={incomeSubmitting}>
-              {HEBREW.cancel}
-            </Button>
-            <Button type="button" onClick={() => void createIncome()} disabled={incomeSubmitting}>
-              {incomeSubmitting ? HEBREW.saving : HEBREW.saveIncome}
-            </Button>
-          </div>
-        </AdaptiveDialog>
-      </Dialog>
+        onOpenChange={setIncomeOpen}
+        projects={projects}
+        orders={orders}
+        properties={properties}
+        onSaved={() => router.refresh()}
+      />
     </>
   );
 }

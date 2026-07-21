@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bell, ChevronDown, Clock, LogOut, User, Wallet } from "lucide-react";
+import { Bell, Clock, LogOut, User, Wallet } from "lucide-react";
 import { InitialsAvatar } from "@/components/dashboard/InitialsAvatar";
 import { getAvatarColorCache, setAvatarColorCache, subscribeAvatarColor } from "@/lib/ui/avatar-color";
 import { BackButton } from "@/components/layout/BackButton";
 import { RefreshButton } from "@/components/layout/RefreshButton";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
+import { QuickCreateMenu } from "@/components/layout/QuickCreateMenu";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
 import PwaInstallButton from "@/components/pwa/PwaInstallButton";
@@ -37,12 +38,14 @@ let meInFlight: Promise<void> | null = null;
 
 type Props = {
   userName?: string;
+  viewerRole?: string;
   initialColor?: string | null;
   showSearch?: boolean;
 };
 
 export function TopBar({
   userName,
+  viewerRole,
   initialColor,
   showSearch = true,
 }: Props) {
@@ -129,8 +132,12 @@ export function TopBar({
 
       <div className="flex-1" />
 
-      {/* End edge, in reading order: refresh, bell, then the user menu. */}
+      {/* End edge, in reading order: the + (leading, since it's the action), then
+          the glyph tools (refresh, inbox), then a hairline, then the avatar. The
+          rule says "these are tools, that is you" — same idea as Gmail's rail. */}
       <div className="flex items-center gap-2">
+        <QuickCreateMenu viewerRole={viewerRole} />
+
         <RefreshButton />
 
         <HoverPanel open={inboxPanel.open} onOpenChange={inboxPanel.setOpen}>
@@ -231,13 +238,19 @@ export function TopBar({
           </HoverPanelContent>
         </HoverPanel>
 
+        {/* Hairline between the tools and you. */}
+        <span aria-hidden className="mx-0.5 h-6 w-px shrink-0 bg-border" />
+
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
+            {/* Just the circle — the name lives inside the menu, where it's
+                actually useful. Gmail-style: tap the avatar, get your details. */}
             <Button
               variant="ghost"
-              size="sm"
-              className="gap-2 rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/25 hover:bg-primary/90 hover:text-primary-foreground"
+              size="icon-sm"
+              className="h-9 w-9 rounded-full p-0 hover:bg-accent"
               type="button"
+              aria-label={userName ? `החשבון שלי — ${userName}` : "החשבון שלי"}
               id="topbar-user-trigger"
             >
               {userName ? (
@@ -247,8 +260,6 @@ export function TopBar({
                   <User className="h-3.5 w-3.5" fill="currentColor" strokeWidth={2.2} />
                 </div>
               )}
-              {userName && <span className="hidden text-sm lg:inline">{userName}</span>}
-              <ChevronDown className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-60 rounded-xl p-1.5">

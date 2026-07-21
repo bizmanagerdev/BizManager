@@ -21,7 +21,6 @@ import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
-import { offlineUpload } from "@/lib/offline-upload";
 import {
   Card,
   CardContent,
@@ -36,16 +35,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CustomerPicker } from "@/components/customers/CustomerPicker";
 import { ProjectPicker } from "@/components/projects/ProjectPicker";
-import { TagPicker } from "@/components/tags/TagPicker";
 import { formatShortDateTime } from "@/lib/date";
-import { EXPENSE_BUSINESS_DOMAINS, getBusinessDomainLabel } from "@/lib/expenses";
+import { getBusinessDomainLabel } from "@/lib/expenses";
 import { DomainSelect } from "@/components/financial/DomainSelect";
-import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel, inferDefaultDocumentCategory } from "@/lib/documents";
+import { UploadDocumentDialog } from "@/components/documents/UploadDocumentDialog";
+import { DOCUMENT_CATEGORIES, getDocumentCategoryLabel } from "@/lib/documents";
 
 export type DocumentArchiveFilters = {
   customer_id: string;
@@ -252,19 +250,7 @@ export default function DocumentsArchiveClient({
   const [tagFilter, setTagFilter] = useState("");
   const [groupBy, setGroupBy] = useState("entity");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadBusinessDomain, setUploadBusinessDomain] = useState(
-    (EXPENSE_BUSINESS_DOMAINS as readonly string[]).includes(initialFilters.business_domain)
-      ? initialFilters.business_domain
-      : "logistics_projects"
-  );
-  const [uploadCategory, setUploadCategory] = useState("");
-  const [uploadProjectId, setUploadProjectId] = useState(initialFilters.project_id);
-  const [uploadPropertyId, setUploadPropertyId] = useState(initialFilters.property_id);
   const [uploadProjectOptions, setUploadProjectOptions] = useState<ArchiveTargetOption[]>(projectOptions);
-  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
-  const [uploadTagIds, setUploadTagIds] = useState<string[]>([]);
-  const [uploadRefYear, setUploadRefYear] = useState("");
   const [editDialogDoc, setEditDialogDoc] = useState<DocumentArchiveItem | null>(null);
   const [editTagValue, setEditTagValue] = useState("");
   const [editDomainDoc, setEditDomainDoc] = useState<DocumentArchiveItem | null>(null);
@@ -343,40 +329,14 @@ export default function DocumentsArchiveClient({
   }, [documents, propertyOptions]);
   const showProjectFilter = businessDomain === "logistics_projects";
   const showPropertyFilter = businessDomain === "property_management";
-  const showUploadProjectField = uploadBusinessDomain === "logistics_projects";
-  const showUploadPropertyField = uploadBusinessDomain === "property_management";
 
-  function resetUploadForm() {
-    setUploadCategory("");
-    setUploadBusinessDomain(
-      (EXPENSE_BUSINESS_DOMAINS as readonly string[]).includes(businessDomain)
-        ? businessDomain
-        : "logistics_projects"
-    );
-    setUploadProjectId(initialFilters.project_id);
-    setUploadPropertyId(initialFilters.property_id);
-    setUploadFiles([]);
-    setUploadTagIds([]);
-    setUploadRefYear("");
+  // Switching domain invalidates a project/property filter that no longer
+  // applies — clear it here, at the one place the domain can change.
+  function changeBusinessDomain(next: string) {
+    setBusinessDomain(next);
+    if (next !== "logistics_projects") setProjectId("");
+    if (next !== "property_management") setPropertyId("");
   }
-
-  useEffect(() => {
-    if (!showProjectFilter && projectId) {
-      setProjectId("");
-    }
-    if (!showPropertyFilter && propertyId) {
-      setPropertyId("");
-    }
-  }, [projectId, propertyId, showProjectFilter, showPropertyFilter]);
-
-  useEffect(() => {
-    if (!showUploadProjectField && uploadProjectId) {
-      setUploadProjectId("");
-    }
-    if (!showUploadPropertyField && uploadPropertyId) {
-      setUploadPropertyId("");
-    }
-  }, [showUploadProjectField, showUploadPropertyField, uploadProjectId, uploadPropertyId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -487,78 +447,6 @@ export default function DocumentsArchiveClient({
     setFileKind("");
     setYearFilter("");
     setGroupBy("entity");
-  }
-
-  async function startUpload() {
-    if (uploading || uploadFiles.length === 0) return;
-
-    const category = uploadCategory.trim();
-    const projectId = uploadProjectId.trim();
-    const propertyId = uploadPropertyId.trim();
-
-    if (showUploadProjectField && !projectId) {
-      toast.error("יש לבחור פרויקט");
-      return;
-    }
-
-    if (showUploadPropertyField && !propertyId) {
-      toast.error("יש לבחור נכס");
-      return;
-    }
-
-    setUploading(true);
-    const files = uploadFiles;
-    const toastId = toast.loading("מעלה קבצים...");
-
-    try {
-      // uploaded = genuinely sent this session; queued = saved on the device for
-      // replay when the connection returns (ConnectionToasts announces it).
-      let uploaded = 0;
-      for (let i = 0; i < files.length; i += 1) {
-        const file = files[i]!;
-        const fields: Record<string, string> = { business_domain: uploadBusinessDomain };
-        if (showUploadProjectField) fields.project_id = projectId;
-        if (showUploadPropertyField) fields.property_id = propertyId;
-        if (category) fields.category = category;
-        if (uploadTagIds.length > 0) fields.tag_ids = JSON.stringify(uploadTagIds);
-        if (uploadRefYear.trim()) fields.ref_year = uploadRefYear.trim();
-
-        toast.loading(`מעלה קבצים... (${i + 1}/${files.length})`, { id: toastId });
-
-        const result = await offlineUpload("/api/documents/upload", {
-          fields,
-          file,
-          label: file.name,
-        });
-
-        if (result.queued) {
-          // Saved on device — treat as done, don't count as an upload.
-        } else if (result.ok) {
-          uploaded += 1;
-        } else {
-          toast.error("שגיאה בהעלאת קובץ", {
-            id: toastId,
-            description: result.error,
-          });
-          return;
-        }
-      }
-
-      if (uploaded > 0) {
-        toast.success("הקבצים הועלו", { id: toastId });
-      } else {
-        // Everything was queued for later — the global connection toast covers it.
-        toast.dismiss(toastId);
-      }
-      setUploadDialogOpen(false);
-      resetUploadForm();
-      router.refresh();
-    } catch (errorValue: unknown) {
-      const description = toHebrewError(errorValue);
-      toast.error("שגיאה בהעלאת קובץ", { id: toastId, description });
-    } finally {
-      setUploading(false);
-    }
   }
 
   async function saveTag() {
@@ -673,10 +561,7 @@ export default function DocumentsArchiveClient({
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="default"
-                onClick={() => {
-                  resetUploadForm();
-                  setUploadDialogOpen(true);
-                }}
+                onClick={() => setUploadDialogOpen(true)}
               >
                 <Upload className="h-4 w-4" />
                 העלאת קבצים
@@ -717,7 +602,7 @@ export default function DocumentsArchiveClient({
           <AdaptiveGrid variant="customersFilters">
             <div className="space-y-1">
               <div className="text-sm font-medium">תחום</div>
-              <DomainSelect value={businessDomain} onChange={setBusinessDomain} emptyLabel="כל התחומים" ariaLabel="סינון לפי תחום" />
+              <DomainSelect value={businessDomain} onChange={changeBusinessDomain} emptyLabel="כל התחומים" ariaLabel="סינון לפי תחום" />
             </div>
 
             {vehicleTagOptions.length > 0 ? (
@@ -989,143 +874,16 @@ export default function DocumentsArchiveClient({
         ))
       )}
 
-      <Dialog
+      <UploadDocumentDialog
         open={uploadDialogOpen}
-        onOpenChange={(open) => {
-          if (!open && uploading) return;
-          setUploadDialogOpen(open);
-          if (!open) {
-            resetUploadForm();
-          }
-        }}
-      >
-        <AdaptiveDialog size="formMd">
-          <DialogHeader>
-            <DialogTitle>העלאת קבצים</DialogTitle>
-            <DialogDescription>בחירת קבצים להוספה לארכיון המסמכים המרכזי.</DialogDescription>
-          </DialogHeader>
-          <div className="mt-4 space-y-4">
-            <div className="space-y-1">
-              <div className="text-sm font-medium">תחום</div>
-              <DomainSelect
-                value={uploadBusinessDomain}
-                onChange={(value) => {
-                  setUploadBusinessDomain(value);
-                  if (value !== "general_business") {
-                    setUploadTagIds([]);
-                    setUploadRefYear("");
-                  }
-                }}
-                ariaLabel="תחום למסמך חדש"
-              />
-            </div>
-
-            {showUploadProjectField ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">פרויקט</div>
-                <ProjectPicker
-                  value={uploadProjectId}
-                  onChange={setUploadProjectId}
-                  allowClear={false}
-                  placeholder="בחר פרויקט"
-                  searchPlaceholder="חיפוש פרויקט..."
-                  projects={uploadProjectOptions.map((option) => ({ id: option.id, label: option.label }))}
-                />
-                {!uploadProjectId.trim() ? (
-                  <div className="text-xs text-destructive">יש לבחור פרויקט לקישור הקבצים</div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {showUploadPropertyField ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">נכס</div>
-                <SearchableSelect
-                  value={uploadPropertyId}
-                  onChange={setUploadPropertyId}
-                  ariaLabel="בחירת נכס"
-                  placeholder="בחר נכס"
-                  searchPlaceholder="חיפוש נכס..."
-                  options={propertyFilterOptions.map((option) => ({ value: option.id, label: option.label }))}
-                />
-                {!uploadPropertyId.trim() ? (
-                  <div className="text-xs text-destructive">יש לבחור נכס לקישור הקבצים</div>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">קטגוריה</div>
-              <SelectField value={uploadCategory} onChange={setUploadCategory} ariaLabel="קטגוריית מסמך">
-                <option value="">ללא קטגוריה</option>
-                {DOCUMENT_CATEGORIES.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </SelectField>
-            </div>
-
-            {uploadBusinessDomain === "general_business" ? (
-              <TagPicker value={uploadTagIds} onChange={setUploadTagIds} />
-            ) : null}
-
-            {uploadBusinessDomain === "general_business" && uploadTagIds.length > 0 ? (
-              <div className="space-y-1">
-                <div className="text-sm font-medium">שנת המסמך (לחיפוש לפי שנה)</div>
-                <Input
-                  inputMode="numeric"
-                  value={uploadRefYear}
-                  onChange={(event) => setUploadRefYear(event.target.value)}
-                />
-              </div>
-            ) : null}
-
-            <div className="space-y-1">
-              <div className="text-sm font-medium">קבצים</div>
-              <div className="flex items-center justify-between gap-2">
-                <FileUploadActions
-                  files={uploadFiles}
-                  multiple
-                  onFilesSelected={(files) => {
-                    setUploadFiles(files);
-                    if (files.length > 0 && !uploadCategory) {
-                      setUploadCategory(inferDefaultDocumentCategory(files[0]?.name));
-                    }
-                  }}
-                  chooseLabel="בחר קבצים"
-                />
-                <div className="text-xs text-muted-foreground">{uploadFiles.length} קבצים</div>
-              </div>
-              {uploadFiles.length > 0 ? (
-                <div className="text-xs text-muted-foreground truncate">
-                  {uploadFiles.slice(0, 3).map((file) => file.name).join(", ")}
-                  {uploadFiles.length > 3 ? ` +${uploadFiles.length - 3}` : ""}
-                </div>
-              ) : (
-                <div className="text-xs text-destructive">בחר לפחות קובץ אחד</div>
-              )}
-            </div>
-          </div>
-          <DialogFooter className="mt-6">
-            <Button type="button" variant="secondary" disabled={uploading} onClick={() => setUploadDialogOpen(false)}>
-              ביטול
-            </Button>
-            <Button
-              type="button"
-              disabled={
-                uploading ||
-                uploadFiles.length === 0 ||
-                (showUploadProjectField && !uploadProjectId.trim()) ||
-                (showUploadPropertyField && !uploadPropertyId.trim())
-              }
-              onClick={() => void startUpload()}
-            >
-              {uploading ? "מעלה..." : "העלאה"}
-            </Button>
-          </DialogFooter>
-        </AdaptiveDialog>
-      </Dialog>
+        onOpenChange={setUploadDialogOpen}
+        projects={uploadProjectOptions.map((option) => ({ id: option.id, label: option.label }))}
+        properties={propertyFilterOptions.map((option) => ({ id: option.id, label: option.label }))}
+        defaultDomain={businessDomain}
+        defaultProjectId={initialFilters.project_id}
+        defaultPropertyId={initialFilters.property_id}
+        onUploaded={() => router.refresh()}
+      />
 
       <Dialog
         open={Boolean(editDialogDoc)}
