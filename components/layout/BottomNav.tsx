@@ -33,8 +33,8 @@ export function BottomNav({ items, moreItems = [] }: Props) {
               to={item.url}
               end={item.url === "/"}
               className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl py-1 text-muted-foreground transition-all duration-200 hover:bg-secondary hover:text-secondary-foreground"
-              activeClassName="bg-primary text-primary-foreground shadow-md shadow-primary/25 hover:ring-2 hover:ring-secondary hover:ring-offset-2 hover:ring-offset-background"
-              pendingClassName="bg-primary/10 opacity-70"
+              activeClassName="bg-secondary text-secondary-foreground shadow-md shadow-secondary/25 hover:ring-2 hover:ring-secondary hover:ring-offset-2 hover:ring-offset-background"
+              pendingClassName="bg-secondary/10 opacity-70"
             >
               <item.icon className="h-[22px] w-[22px] shrink-0" />
               <span className="w-full truncate text-center text-[11px] font-medium leading-none">{item.title}</span>
@@ -74,7 +74,7 @@ export function BottomNav({ items, moreItems = [] }: Props) {
                         to={item.url}
                         className="flex min-w-0 flex-col items-center gap-1.5 rounded-2xl p-3 text-muted-foreground transition-colors hover:bg-secondary hover:text-secondary-foreground"
                         activeClassName="bg-primary text-primary-foreground hover:ring-2 hover:ring-secondary hover:ring-offset-2 hover:ring-offset-background"
-                        pendingClassName="bg-primary/10 opacity-70"
+                        pendingClassName="bg-secondary/10 opacity-70"
                         onClick={() => setMoreOpen(false)}
                       >
                         <item.icon className="h-6 w-6 shrink-0" />

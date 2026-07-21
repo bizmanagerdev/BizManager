@@ -27,7 +27,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1D2848",
+  // The browser's own bar sits directly above our top bar, so it must be the
+  // SAME navy — this is --primary (#0A1020). Next metadata can't read a CSS
+  // variable, so if --primary ever changes, change this literal with it.
+  themeColor: "#0A1020",
 };
 
 export default function RootLayout({

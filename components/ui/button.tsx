@@ -10,17 +10,19 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // Buttons wear SECONDARY (the sky blue) — that is what secondary is FOR.
+        // Primary is the dark navy of text and chrome and is never a button fill.
         default:
-          "bg-primary text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/90 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/25",
+          "bg-secondary text-secondary-foreground shadow-md shadow-secondary/20 hover:bg-secondary/90 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-secondary/25",
         destructive:
           "bg-destructive text-destructive-foreground shadow-md shadow-destructive/20 hover:bg-destructive/90 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-destructive/25",
         outline:
-          "border-primary/30 bg-background text-primary shadow-sm hover:bg-primary/5 hover:border-primary/50 hover:-translate-y-0.5",
+          "border-secondary/30 bg-background text-secondary shadow-sm hover:bg-secondary/5 hover:border-secondary/50 hover:-translate-y-0.5",
         secondary:
           "bg-secondary text-secondary-foreground shadow-md shadow-secondary/20 hover:bg-secondary/90 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-secondary/25",
         ghost:
-          "text-primary hover:bg-primary/10",
-        link: "text-primary underline-offset-4 hover:underline",
+          "text-secondary hover:bg-secondary/10",
+        link: "text-secondary underline-offset-4 hover:underline",
         success:
           "bg-success text-success-foreground shadow-md shadow-success/20 hover:bg-success/90 hover:-translate-y-0.5",
         /* Soft "outline" variants — base colors come from STATUS_PILL_CLASSES (same source as

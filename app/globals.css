@@ -46,6 +46,36 @@
        breakpoint (lg) — making a mobile layout suddenly jump to the tablet/desktop
        2-column layout on an interaction. */
     scrollbar-gutter: stable;
+
+    /* The page scrollbar follows the document direction, so in this RTL app it
+       renders on the LEFT edge (the convention on Hebrew/Arabic sites) instead of
+       cutting into the sidebar side. Style it as a slim overlay pill — the same
+       language as the sidebar's .scroll-slim — rather than the chunky default
+       Chrome bar. Firefox gets the thin variant via scrollbar-width/color. */
+    direction: rtl;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--foreground) / 0.2) transparent;
+  }
+
+  html::-webkit-scrollbar {
+    width: 8px;
+  }
+  html::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  html::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--foreground) / 0.18);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+    transition: background-color 200ms ease;
+  }
+  html::-webkit-scrollbar-thumb:hover,
+  html::-webkit-scrollbar-thumb:active {
+    background-color: rgb(var(--foreground) / 0.38);
+  }
+  html::-webkit-scrollbar-button {
+    display: none;
   }
 
   /* Long unbreakable strings (URLs, IBANs, long numbers) wrap instead of pushing
@@ -145,11 +175,22 @@
     --popover: var(--white);
     --popover-foreground: var(--primary-3);
 
-    /* Brand — primary base shifted to primary-4 (one tone lighter than -3) */
-    --primary: var(--primary-4);
+    /* TWO brand colors, and only two.
+       PRIMARY = the dark navy. It is the TEXT color and the CHROME color
+       (sidebar + top bar) — the same navy in both, never a different rung.
+       SECONDARY = the sky blue. It is the BUTTON color — every filled button,
+       the active nav item, the dashboard quick-action tiles.
+
+       Primary is --primary-1 (#0A1020) — the dark navy the sidebar has worn all
+       along. It used to point at --primary-4 (#283561), a middle rung that was
+       neither the chrome navy nor the text navy, which is how the app ended up
+       showing three different blues. Don't reintroduce a third.
+
+       (--foreground stays --primary-3 for body copy: near-black #0A1020 is right
+       for a full-bleed chrome panel, too heavy for paragraphs.) */
+    --primary: var(--primary-1);
     --primary-foreground: var(--white);
 
-    /* Brand — secondary base shifted to secondary-5 (one tone lighter than -4) */
     --secondary: var(--secondary-5);
     --secondary-foreground: var(--white);
 
@@ -220,7 +261,12 @@
 
     --radius: 0.9rem;
 
-    --sidebar-background: var(--primary-1);
+    /* Chrome (sidebar + top bar) is THE primary color — the same navy as every
+       primary button, not a darker tone of it. It used to point at --primary-1,
+       which is why the chrome and the buttons were visibly two different blues:
+       "primary" was being treated as a family name instead of one color.
+       There is one primary and one secondary. Keep it that way. */
+    --sidebar-background: var(--primary);
     --sidebar-foreground: var(--secondary-9);
     --sidebar-primary: var(--secondary-5);
     --sidebar-primary-foreground: var(--white);
@@ -343,13 +389,42 @@
     mask-composite: exclude;
     pointer-events: none;
   }
-}
-aside > div:first-child > div > span {
-  display: none !important;
-}
 
-header.sticky > div:first-child > span {
-  display: none !important;
+  /* Ultra-thin, overlay-style scrollbar for the sidebar nav. The track is
+     invisible and takes no layout width (overlay), the thumb is a 3px pill that
+     stays nearly transparent until you hover the sidebar — so the nav reads as
+     one clean column instead of having a chunky second scrollbar next to the
+     page's own. Firefox gets the same via scrollbar-width/color. */
+  .scroll-slim {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--white) / 0.14) transparent;
+    scrollbar-gutter: auto;
+  }
+  .scroll-slim::-webkit-scrollbar {
+    width: 3px;
+    height: 3px;
+  }
+  .scroll-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-slim::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--white) / 0.12);
+    border-radius: 9999px;
+    transition: background-color 200ms ease;
+  }
+  .scroll-slim:hover::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--white) / 0.32);
+  }
+  .scroll-slim::-webkit-scrollbar-thumb:hover,
+  .scroll-slim::-webkit-scrollbar-thumb:active {
+    background-color: rgb(var(--white) / 0.5);
+  }
+  .scroll-slim:hover {
+    scrollbar-color: rgb(var(--white) / 0.32) transparent;
+  }
+  .scroll-slim::-webkit-scrollbar-button {
+    display: none;
+  }
 }
 
 /* Bigger, consistent dropdown arrow on EVERY native <select> across all pages and
