@@ -8,6 +8,13 @@ function greetingForHour(hour: number) {
   return "ערב טוב";
 }
 
+// "יום שלישי · 21 ביולי 2026"
+function formatToday(date: Date) {
+  const weekday = new Intl.DateTimeFormat("he-IL", { weekday: "long" }).format(date);
+  const rest = new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long", year: "numeric" }).format(date);
+  return `${weekday} · ${rest}`;
+}
+
 // No reactive source — the greeting is read once per render from the local clock.
 const subscribe = () => () => {};
 
@@ -21,9 +28,11 @@ const subscribe = () => () => {};
 export default function DashboardGreeting({
   name,
   initialGreeting,
+  initialDate,
 }: {
   name: string;
   initialGreeting: string;
+  initialDate?: string;
 }) {
   const greeting = useSyncExternalStore(
     subscribe,
@@ -31,10 +40,30 @@ export default function DashboardGreeting({
     () => initialGreeting
   );
 
+  // Full Hebrew date, read from the same client clock as the greeting (server
+  // snapshot keeps SSR and hydration identical).
+  const today = useSyncExternalStore(subscribe, () => formatToday(new Date()), () => initialDate ?? "");
+
   return (
-    <h1 className="truncate text-xl font-semibold">
-      {greeting}
-      {name ? `, ${name}` : ""}
-    </h1>
+    // Phones get a smaller heading that WRAPS (never truncates — a cut-off name
+    // like "ערב ט…" is worse than two lines), and only the date; the "here's
+    // what's happening" tail is desktop-only so the subline stays one clean row.
+    <div className="min-w-0">
+      {/* One flowing line of text — the wave is part of the sentence, not a
+          separate flex item, so it never claims a line of its own on a phone. */}
+      <h1 className="text-xl font-bold leading-snug tracking-tight sm:text-2xl md:text-3xl">
+        {greeting}
+        {name ? `, ${name}` : ""}
+        <span aria-hidden className="ms-2 align-middle text-[0.75em]">
+          👋
+        </span>
+      </h1>
+      {today ? (
+        <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
+          {today}
+          <span className="hidden sm:inline"> · הנה מה שקורה היום</span>
+        </p>
+      ) : null}
+    </div>
   );
 }

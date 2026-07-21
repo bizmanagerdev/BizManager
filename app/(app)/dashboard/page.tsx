@@ -28,18 +28,25 @@ export default async function DashboardPage() {
   const firstName = profile.full_name?.trim().split(/\s+/)[0] ?? "";
   const currentHour = new Date().getHours();
   const greeting = currentHour < 12 ? "בוקר טוב" : currentHour < 18 ? "צהריים טובים" : "ערב טוב";
+  const now = new Date();
+  const greetingDate = `${new Intl.DateTimeFormat("he-IL", { weekday: "long" }).format(now)} · ${new Intl.DateTimeFormat(
+    "he-IL",
+    { day: "numeric", month: "long", year: "numeric" }
+  ).format(now)}`;
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <PageStack>
         <section className="flex items-start justify-between gap-3">
           {/* min-w-0 lets this flex item shrink below its content so a long
-              (unbreakable) name truncates instead of pushing the row — and the
-              whole page — wider than a phone screen. */}
-          <div className="min-w-0 text-right">
-            <DashboardGreeting name={firstName} initialGreeting={greeting} />
+              (unbreakable) name wraps instead of pushing the row — and the whole
+              page — wider than a phone screen. */}
+          <div className="min-w-0 flex-1 text-right">
+            <DashboardGreeting name={firstName} initialGreeting={greeting} initialDate={greetingDate} />
           </div>
-          <DashboardCustomizer role={profile.role} initialPrefs={dashboardPrefs} />
+          <div className="shrink-0">
+            <DashboardCustomizer role={profile.role} initialPrefs={dashboardPrefs} />
+          </div>
         </section>
 
         {/* Quick actions — instant. Buttons render now; dialog data streams in. */}
