@@ -18,12 +18,15 @@ import {
   AdaptiveGrid,
   PageStack,
 } from "@/components/layout/page-layout";
-import { NavLink } from "@/components/NavLink";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { Card, CardContent } from "@/components/ui/card";
+import { ChevronLeft, FolderKanban, Pencil, Plus, Search, ShoppingCart, SlidersHorizontal } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { SwipeActions } from "@/components/ui/swipe-actions";
+import { useSetPageTitle } from "@/components/layout/page-title-context";
+import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { AddressLink } from "@/components/ui/address-link";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
@@ -92,6 +95,7 @@ export default function CustomersClient({
   };
 }) {
   const router = useRouter();
+  const [swipedRow, setSwipedRow] = useState<string | null>(null);
   const {
     search: searchCustomerIndex,
     loading: customerIndexLoading,
@@ -348,35 +352,63 @@ export default function CustomersClient({
     window.location.href = customerDetailsHref(customerId);
   }
 
+  // Names the page in the mobile top bar (no sidebar on a phone to say where you
+  // are). The count rides along as the subtitle and follows the active filter.
+  useSetPageTitle("לקוחות", `${totalCount ?? filtered.length} לקוחות`);
+
   return (
     <PageStack>
-      <div className="space-y-3 lg:hidden">
-        <div className="min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <label className="text-sm text-muted-foreground">חיפוש לקוחות</label>
-            {indexStale ? <StaleDataBadge savedAt={indexSavedAt} /> : null}
-          </div>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="שם, טלפון, אימייל או כתובת"
-            className="mt-1 h-11"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
+      {/* Mobile toolbar lives INSIDE the dark header (see PageHeaderToolbar), so
+          the page doesn't repeat the heading area in a second lighter strip. No
+          "חיפוש לקוחות" label and no total line here either — the placeholder and
+          the header subtitle already say both. */}
+      <PageHeaderToolbar>
+        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
+          {/* The + is the section's primary action, so it carries a solid
+              SECONDARY fill. The filter beside it is a toggle, so it stays
+              recessed until it's on — the two aren't the same kind of control and
+              shouldn't look alike. */}
           <Button
             type="button"
-            variant="outline"
-            className="h-11"
+            size="icon"
+            aria-label="הוספת לקוח"
+            className="h-10 w-10 shrink-0 rounded-xl"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+          {/* Icon + a short "חיפוש..." — what it searches over is discoverable by
+              using it, and spelling out every field ate the whole bar. */}
+          <div className="relative w-full min-w-0 max-w-[13rem]">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="חיפוש..."
+              className="h-10 w-full rounded-xl border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none placeholder:text-sidebar-foreground/60 focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+            />
+          </div>
+          {/* Filters read as ON via a sky fill — the one place colour is earned. */}
+          <Button
+            type="button"
+            size="icon"
+            aria-label={filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
+            className={
+              filtersOpen
+                ? "h-10 w-10 shrink-0 rounded-xl"
+                : "h-10 w-10 shrink-0 rounded-xl !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+            }
             onClick={() => setFiltersOpen((x) => !x)}
           >
-            {filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
-          </Button>
-          <Button type="button" className="h-11" onClick={() => setCreateOpen(true)}>
-            הוספת לקוח
+            <SlidersHorizontal className="h-4 w-4" />
           </Button>
         </div>
-      </div>
+        {indexStale ? (
+          <div className="mt-2 flex justify-end">
+            <StaleDataBadge savedAt={indexSavedAt} />
+          </div>
+        ) : null}
+      </PageHeaderToolbar>
 
       <AdaptiveGrid variant="customersToolbar" className="hidden lg:grid">
         <AdaptiveCell variant="customersPrimary">
@@ -443,7 +475,7 @@ export default function CustomersClient({
         </div>
       ) : null}
 
-      <div className="text-sm text-muted-foreground">
+      <div className="hidden text-sm text-muted-foreground lg:block">
         {(() => {
           const usingApiSearch = apiSearchRows !== null;
           const hasActiveFilter =
@@ -461,38 +493,69 @@ export default function CustomersClient({
         })()}
       </div>
 
+      {/* Mobile list. The four action buttons that used to sit under every card
+          are now behind a swipe — the card stays compact so more customers fit
+          on a screen, which is the whole point of the list. */}
       <div className="grid grid-cols-1 gap-2 xl:hidden">
+        <p className="px-1 text-[11px] text-muted-foreground">
+          החלק כרטיס ימינה לפעולות · הקש לפרטים
+        </p>
         {filtered.map((row) => {
           const id = s(row, "customer_id");
           const customerName = s(row, "customer_name") || "לקוח";
           const linkedMorningClientId = s(row, "morning_client_id");
           const openBalance = n(row, "open_balance");
           const phone = s(row, "phone");
-          const email = s(row, "email");
           const ordersCount = n(row, "orders_count");
           const projectsCount = n(row, "projects_count");
+          const rowKey = id || customerName;
           return (
-            <Card key={id || customerName} className="min-w-0 overflow-hidden border-border/70 shadow-sm">
-              <CardContent className="space-y-2 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <NavLink
-                    to={customerDetailsHref(id)}
-                    className="min-w-0 flex-1 text-right leading-tight"
-                  >
-                    <div className="truncate text-sm font-semibold">{customerName}</div>
-                    {phone || email ? (
-                      <div className="truncate text-xs text-muted-foreground">
-                        {phone || "-"}
-                        {email ? ` • ${email}` : ""}
-                      </div>
+            <SwipeActions
+              key={rowKey}
+              className="border border-border/70 shadow-sm"
+              open={swipedRow === rowKey}
+              onOpenChange={(next) => setSwipedRow(next ? rowKey : null)}
+              actions={[
+                {
+                  key: "project",
+                  label: "פרויקט",
+                  icon: <FolderKanban className="h-5 w-5" />,
+                  className: "bg-secondary",
+                  onSelect: () => router.push(`/projects?create=1&customer_id=${encodeURIComponent(id)}`),
+                },
+                {
+                  key: "order",
+                  label: "הזמנה",
+                  icon: <ShoppingCart className="h-5 w-5" />,
+                  className: "bg-secondary/80",
+                  onSelect: () => router.push(`/sales/orders/new?customer_id=${encodeURIComponent(id)}`),
+                },
+                {
+                  key: "edit",
+                  label: "עריכה",
+                  icon: <Pencil className="h-5 w-5" />,
+                  className: "bg-muted-foreground",
+                  onSelect: () => openEdit(row),
+                },
+              ]}
+            >
+              <button
+                type="button"
+                onClick={() => openCustomerDetails(id)}
+                className="flex w-full min-w-0 items-center gap-3 p-3 text-right"
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="truncate text-sm font-semibold">{customerName}</div>
+                  {phone ? <div className="truncate text-xs text-muted-foreground">{phone}</div> : null}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {ordersCount > 0 ? (
+                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{ordersCount} הזמנות</Badge>
                     ) : null}
-                  </NavLink>
-                  <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                    {projectsCount > 0 ? (
+                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{projectsCount} פרויקטים</Badge>
+                    ) : null}
                     {row.requires_prepayment === true ? (
                       <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>תשלום מראש</Badge>
-                    ) : null}
-                    {openBalance > 0 ? (
-                      <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>חוב פתוח</Badge>
                     ) : null}
                     {row.active === false ? (
                       <Badge className={`${customerFlagBadgeClass("danger")} px-1.5 py-0 text-[10px]`}>לא פעיל</Badge>
@@ -502,46 +565,15 @@ export default function CustomersClient({
                     ) : null}
                   </div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-muted-foreground">הזמנות:</span>
-                    <span className="font-medium">{ordersCount}</span>
+                <div className="shrink-0 text-left">
+                  <div className={`text-sm font-semibold ${openBalance > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                    {ils(openBalance)}
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-muted-foreground">פרויקטים:</span>
-                    <span className="font-medium">{projectsCount}</span>
-                  </div>
-                  <div className="flex items-baseline gap-1 col-span-2">
-                    <span className="text-muted-foreground">יתרה:</span>
-                    <span className={`font-medium ${openBalance > 0 ? "text-destructive" : ""}`}>{ils(openBalance)}</span>
-                  </div>
+                  <div className="text-[10px] text-muted-foreground">{openBalance > 0 ? "יתרה" : "אין יתרה"}</div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <Button type="button" size="sm" className="h-9 rounded-lg" onClick={() => openCustomerDetails(id)}>
-                    פרטי לקוח
-                  </Button>
-                  <Button asChild type="button" size="sm" variant="outline" className="h-9 rounded-lg">
-                    <Link href={`/sales/orders/new?customer_id=${encodeURIComponent(id)}`}>+ הזמנה</Link>
-                  </Button>
-                  <Button asChild type="button" size="sm" variant="outline" className="h-9 rounded-lg">
-                    <Link href={`/projects?create=1&customer_id=${encodeURIComponent(id)}`}>+ פרויקט</Link>
-                  </Button>
-                  {linkedMorningClientId ? (
-                    <Button asChild type="button" size="sm" variant="outline" className="h-9 rounded-lg">
-                      <a href={morningClientUrl(linkedMorningClientId)} target="_blank" rel="noreferrer">
-                        Morning
-                      </a>
-                    </Button>
-                  ) : (
-                    <Button type="button" size="sm" variant="outline" className="h-9 rounded-lg" onClick={() => openEdit(row)}>
-                      עריכה
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
+            </SwipeActions>
           );
         })}
       </div>
