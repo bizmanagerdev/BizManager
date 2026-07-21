@@ -14,6 +14,8 @@ import FontScaleSync from "@/components/layout/FontScaleSync";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 import { useNavItems } from "@/components/layout/nav-items";
 import { SidebarCollapseProvider } from "@/components/layout/sidebar-collapse-context";
+import { PageTitleProvider } from "@/components/layout/page-title-context";
+import { PAGE_HEADER_TOOLBAR_ID } from "@/components/layout/PageHeaderToolbar";
 
 type Props = {
   children: ReactNode;
@@ -60,6 +62,7 @@ export default function AppShell({
   return (
     <NestedAppShellContext.Provider value={true}>
      <SidebarCollapseProvider>
+      <PageTitleProvider>
       {/* Column layout: the top bar is a FULL-WIDTH rail across the whole viewport
           (it spans over the sidebar too, and carries the brand), with the sidebar
           and the content sitting side by side underneath it. */}
@@ -80,6 +83,13 @@ export default function AppShell({
           viewerRole={viewerRole}
           initialColor={avatarColor}
           showSearch={showSearch}
+        />
+        {/* Slot for a page's own search/filter row, rendered as part of the dark
+            header so the two read as one block. `empty:hidden` keeps it out of
+            the layout entirely on pages that don't use it. */}
+        <div
+          id={PAGE_HEADER_TOOLBAR_ID}
+          className="sticky top-[60px] z-20 bg-sidebar px-3 py-2.5 empty:hidden md:hidden"
         />
         <OfflineBanner />
         <div className="flex min-w-0 flex-1">
@@ -102,6 +112,7 @@ export default function AppShell({
           </div>
         </div>
       </div>
+      </PageTitleProvider>
      </SidebarCollapseProvider>
     </NestedAppShellContext.Provider>
   );

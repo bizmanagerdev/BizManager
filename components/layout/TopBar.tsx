@@ -17,6 +17,7 @@ import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from 
 import { useAlerts } from "@/lib/ui/alerts-store";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
+import { usePageTitle } from "@/components/layout/page-title-context";
 import { cn } from "@/lib/utils";
 
 // The top-bar glyph for the inbox. Most-looked-at icon in the app, so it lives
@@ -69,6 +70,7 @@ export function TopBar({
   showSearch = true,
 }: Props) {
   const { collapsed } = useSidebarCollapse();
+  const pageTitle = usePageTitle();
   const { alerts, count, loading: alertsLoading, error: alertsError } = useAlerts();
 
   // The signed-in user's chosen avatar color (null = auto). The (app) layout
@@ -184,9 +186,20 @@ export function TopBar({
         // below it and collapse.
         <GlobalSearch desktopOnly className="w-[20rem] max-w-[30vw] flex-none" />
       ) : null}
-      {/* Mobile: the search bar itself fills the room between the arrow and the
-          icons, instead of that space sitting empty behind a lone magnifier. */}
-      {showSearch ? <GlobalSearch mobileOnly className="min-w-0 flex-1" /> : null}
+      {/* Mobile: the bar says WHERE YOU ARE. There's no sidebar on a phone, so
+          without this the header is an anonymous row of icons. Pages declare it
+          via useSetPageTitle(); when none is set the space just stays empty and
+          the search fills it as before. */}
+      {pageTitle ? (
+        <div className="flex min-w-0 flex-1 flex-col items-center justify-center text-center leading-tight lg:hidden">
+          <span className="w-full truncate text-[17px] font-semibold text-white">{pageTitle.title}</span>
+          {pageTitle.subtitle ? (
+            <span className="w-full truncate text-[12px] text-sidebar-foreground/70">{pageTitle.subtitle}</span>
+          ) : null}
+        </div>
+      ) : showSearch ? (
+        <GlobalSearch mobileOnly className="min-w-0 flex-1" />
+      ) : null}
 
       {/* Desktop only: the search box is a fixed width there, so this is what
           pushes the icon cluster to the far edge. On mobile the search bar above
