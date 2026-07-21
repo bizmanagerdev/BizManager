@@ -32,6 +32,7 @@ import {
 } from "@/lib/payroll-worker-type";
 import { getTodayDate, nowLocal } from "./DashboardActions.helpers";
 import { buildWeekView } from "@/lib/dashboard/week";
+import { QUICK_TILE_CLASS, QuickTileContent } from "@/components/ui/quick-tile";
 import {
   buildWorkerPaymentAllocations,
   sortOpenWorkerDebt,
@@ -421,99 +422,90 @@ export default function DashboardActions({
         <Button
           type="button"
           variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+          className={QUICK_TILE_CLASS}
           onClick={() => setWeekOverviewOpen(true)}
         >
-          <FolderKanban className="!h-9 !w-9" strokeWidth={2.2} />
-          <span className="font-semibold">{HEBREW.thisWeek}</span>
+          <QuickTileContent icon={FolderKanban} label={HEBREW.thisWeek} />
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+          className={QUICK_TILE_CLASS}
           onClick={() => {
             emitNavigationStart();
             router.push("/sales?tab=deliveries");
           }}
         >
-          <ShoppingCart className="!h-9 !w-9" strokeWidth={2.2} />
-          <span className="font-semibold">{HEBREW.ordersByCity}</span>
+          <QuickTileContent icon={ShoppingCart} label={HEBREW.ordersByCity} />
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+          className={QUICK_TILE_CLASS}
           onClick={() => setProjectOpen(true)}
         >
-          <FolderKanban className="!h-9 !w-9" strokeWidth={2.2} />
-          <span className="font-semibold">{HEBREW.projectNew}</span>
+          <QuickTileContent icon={FolderKanban} label={HEBREW.projectNew} />
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+          className={QUICK_TILE_CLASS}
           onClick={() => {
             setOrderActionLocked(false);
             setOrderOpen(true);
           }}
         >
-          <ShoppingCart className="!h-9 !w-9" strokeWidth={2.2} />
-          <span className="font-semibold">{HEBREW.orderNew}</span>
+          <QuickTileContent icon={ShoppingCart} label={HEBREW.orderNew} />
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+          className={QUICK_TILE_CLASS}
           onClick={() => setExpenseOpen(true)}
         >
-          <ArrowUpCircle className="!h-9 !w-9 text-destructive" strokeWidth={2.4} />
-          <span className="font-semibold">{HEBREW.expenseNew}</span>
+          <QuickTileContent icon={ArrowUpCircle} label={HEBREW.expenseNew} tone="expense" />
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+          className={QUICK_TILE_CLASS}
           onClick={() => setIncomeOpen(true)}
         >
-          <ArrowDownCircle className="!h-9 !w-9 text-success" strokeWidth={2.4} />
-          <span className="font-semibold">{HEBREW.incomeNew}</span>
+          <QuickTileContent icon={ArrowDownCircle} label={HEBREW.incomeNew} tone="income" />
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+          className={QUICK_TILE_CLASS}
           onClick={() => setCreateCustomerOpen(true)}
         >
-          <UserPlus className="!h-9 !w-9" strokeWidth={2.2} />
-          <span className="font-semibold">לקוח חדש</span>
+          <QuickTileContent icon={UserPlus} label="לקוח חדש" />
         </Button>
 
         <Button
           type="button"
           variant="outline"
-          className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+          className={QUICK_TILE_CLASS}
           onClick={() => setTaskOpen(true)}
         >
-          <ListTodo className="!h-9 !w-9" strokeWidth={2.2} />
-          <span className="font-semibold">{HEBREW.taskNew}</span>
+          <QuickTileContent icon={ListTodo} label={HEBREW.taskNew} />
         </Button>
 
         {canStartOwnSession ? (
           <Button
             type="button"
             variant="outline"
-            className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+            className={QUICK_TILE_CLASS}
             onClick={() => void startOwnSession()}
             disabled={Boolean(currentOpenSession) || selfSessionSubmitting}
           >
-            <PlayCircle className="!h-9 !w-9" strokeWidth={2.2} />
-            <span className="font-semibold">{HEBREW.selfSessionStart}</span>
+            <QuickTileContent icon={PlayCircle} label={HEBREW.selfSessionStart} />
           </Button>
         ) : null}
 
@@ -521,11 +513,10 @@ export default function DashboardActions({
           <Button
             type="button"
             variant="outline"
-            className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+            className={QUICK_TILE_CLASS}
             onClick={() => setManualSessionOpen(true)}
           >
-            <Clock3 className="!h-9 !w-9" strokeWidth={2.2} />
-            <span className="font-semibold">{HEBREW.manualSessionNew}</span>
+            <QuickTileContent icon={Clock3} label={HEBREW.manualSessionNew} />
           </Button>
         ) : null}
 
@@ -533,14 +524,13 @@ export default function DashboardActions({
           <Button
             type="button"
             variant="outline"
-            className="h-auto aspect-square w-full max-w-[7rem] mx-auto flex-col items-center justify-center gap-2 rounded-2xl border-transparent !bg-primary !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal p-2 text-center text-xs leading-tight hover:!bg-primary/90"
+            className={QUICK_TILE_CLASS}
             onClick={() => {
               resetWorkerPaymentForm();
               setWorkerPaymentOpen(true);
             }}
           >
-            <Banknote className="!h-9 !w-9" strokeWidth={2.2} />
-            <span className="font-semibold">תשלום לעובד</span>
+            <QuickTileContent icon={Banknote} label="תשלום לעובד" />
           </Button>
         ) : null}
       </AdaptiveGrid>

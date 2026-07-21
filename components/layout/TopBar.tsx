@@ -13,15 +13,11 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
 import PwaInstallButton from "@/components/pwa/PwaInstallButton";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
 import { useAlerts } from "@/lib/ui/alerts-store";
+import { BrandMark } from "@/components/ui/brand-mark";
+import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
+import { cn } from "@/lib/utils";
 
 // The top-bar glyph for the inbox. Most-looked-at icon in the app, so it lives
 // in one named place: swap this line + the lucide import to change it
@@ -36,7 +32,27 @@ type Me = { email: string | null; canTrackSessions: boolean; canViewSalary: bool
 let meCache: Me | null = null;
 let meInFlight: Promise<void> | null = null;
 
+const USER_MENU_LINKS: {
+  href: string;
+  label: string;
+  icon: typeof User;
+  gate?: (me: Me | null) => boolean;
+}[] = [
+  { href: "/profile", label: "הפרופיל שלי", icon: User },
+  { href: "/profile?tab=notifications", label: "הגדרות התראות", icon: Bell },
+  {
+    href: "/profile?tab=sessions",
+    label: "נוכחות ומשמרות",
+    icon: Clock,
+    gate: (me) => me?.canTrackSessions === true,
+  },
+  { href: "/profile?tab=salary", label: "שכר ותלושים", icon: Wallet, gate: (me) => me?.canViewSalary === true },
+];
+
 type Props = {
+  appName?: string;
+  companyName?: string;
+  hasSidebar?: boolean;
   userName?: string;
   viewerRole?: string;
   initialColor?: string | null;
@@ -44,11 +60,15 @@ type Props = {
 };
 
 export function TopBar({
+  appName = "BizH",
+  companyName = "חברת הלר",
+  hasSidebar = true,
   userName,
   viewerRole,
   initialColor,
   showSearch = true,
 }: Props) {
+  const { collapsed } = useSidebarCollapse();
   const { alerts, count, loading: alertsLoading, error: alertsError } = useAlerts();
 
   // The signed-in user's chosen avatar color (null = auto). The (app) layout
@@ -92,6 +112,7 @@ export function TopBar({
 
   // Hover peeks at the list; clicking the icon goes straight to /inbox.
   const inboxPanel = useHoverPanel();
+  const userPanel = useHoverPanel();
 
   const [me, setMe] = useState<Me | null>(meCache);
   useEffect(() => {
@@ -123,10 +144,37 @@ export function TopBar({
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-2 border-b border-border/70 bg-background bg-gradient-to-r from-primary/[0.04] via-background/95 to-secondary/[0.05] px-4 backdrop-blur-xl">
-      {/* RTL: the first child sits on the RIGHT. Back arrow, then the search —
-          both anchored to the start edge. Brand mark intentionally omitted (the
-          sidebar carries it on desktop). */}
+    // The top bar and the sidebar are ONE chrome surface: same background token,
+    // same foreground, same border. Two different navies meeting where they touch
+    // is exactly the mismatch this avoids. `primary` is reserved for ACTIONS
+    // (buttons, quick-action tiles) and is never used as a chrome color.
+    //
+    // The panels that drop OUT of the bar — inbox, profile, the + grid — stay on
+    // the normal light popover surface; only the rail itself is dark.
+    <header className="sticky top-0 z-30 flex h-[60px] shrink-0 items-center gap-2 border-b border-sidebar-border/80 bg-sidebar/95 px-4 text-sidebar-foreground backdrop-blur-xl">
+      {/* RTL: the first child sits on the RIGHT. The brand corner sits directly
+          above the sidebar and is the ONLY light patch in the dark chrome — it
+          opens up the corner where the rail meets the bar instead of leaving a
+          solid navy block there. Its width tracks the rail's so the two line up. */}
+      {hasSidebar ? (
+        <div
+          className={cn(
+            "-my-[1px] -ms-4 me-2 hidden h-[calc(100%+2px)] shrink-0 items-center gap-2.5 self-stretch bg-background text-foreground md:flex",
+            // Collapsed: the mark is centered so it lines up with the icon column
+            // of the rail below it. Expanded: mark + name, left-aligned.
+            collapsed ? `${RAIL_WIDTH.collapsed} justify-center px-0` : `${RAIL_WIDTH.expanded} px-3`
+          )}
+        >
+          <BrandMark size="sm" />
+          <div className={cn("min-w-0 leading-tight", collapsed ? "hidden" : "block")}>
+            <div className="truncate text-sm font-bold tracking-tight">{appName}</div>
+            {companyName ? (
+              <div className="truncate text-[11px] text-muted-foreground">{companyName}</div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       <BackButton />
       {showSearch ? <GlobalSearch desktopOnly className="max-w-md flex-1" /> : null}
 
@@ -171,7 +219,7 @@ export function TopBar({
                   <InboxIcon strokeWidth={TOPBAR_ICON_STROKE} />
                   {activeAlertCount > 0 ? (
                     <span
-                      className="absolute -top-2 -end-2 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground ring-2 ring-background"
+                      className="absolute -top-2 -end-2 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-none text-destructive-foreground ring-2 ring-sidebar"
                       aria-hidden
                     >
                       {activeAlertCount > 99 ? "99+" : activeAlertCount}
@@ -239,19 +287,25 @@ export function TopBar({
         </HoverPanel>
 
         {/* Hairline between the tools and you. */}
-        <span aria-hidden className="mx-0.5 h-6 w-px shrink-0 bg-border" />
+        <span aria-hidden className="mx-0.5 h-6 w-px shrink-0 bg-sidebar-border" />
 
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            {/* Just the circle — the name lives inside the menu, where it's
+        {/* Hover reveals the account menu, same as the inbox and the + — and for
+            the same reason those use HoverPanel rather than a real menu: a menu
+            grabs focus on open, which would swallow keystrokes from the search
+            box sitting right next to it. Click still works, and on touch (no
+            hover) the tap is the only interaction. */}
+        <HoverPanel open={userPanel.open} onOpenChange={userPanel.setOpen}>
+          <HoverPanelTrigger asChild>
+            {/* Just the circle — the name lives inside the panel, where it's
                 actually useful. Gmail-style: tap the avatar, get your details. */}
             <Button
               variant="ghost"
               size="icon-sm"
-              className="h-9 w-9 rounded-full p-0 hover:bg-accent"
+              className="h-9 w-9 rounded-full p-0 hover:bg-sidebar-accent"
               type="button"
               aria-label={userName ? `החשבון שלי — ${userName}` : "החשבון שלי"}
               id="topbar-user-trigger"
+              {...userPanel.triggerProps}
             >
               {userName ? (
                 <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="sm" />
@@ -261,9 +315,9 @@ export function TopBar({
                 </div>
               )}
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-60 rounded-xl p-1.5">
-            {/* Who you're signed in as — the menu's most common question. */}
+          </HoverPanelTrigger>
+          <HoverPanelContent dir="rtl" className="w-60 rounded-xl p-1.5 text-right" {...userPanel.panelProps}>
+            {/* Who you're signed in as — the panel's most common question. */}
             <div className="flex items-center gap-2.5 px-2 py-2">
               {userName ? <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="sm" /> : null}
               <div className="min-w-0">
@@ -271,60 +325,40 @@ export function TopBar({
                 {me?.email ? <div className="truncate text-xs text-muted-foreground">{me.email}</div> : null}
               </div>
             </div>
-            <DropdownMenuSeparator />
+            <div className="-mx-1 my-1 h-px bg-muted" />
 
-            {/* One entry per errand — these are the profile's three tabs. */}
-            <DropdownMenuItem asChild>
-              <Link href="/profile" className="flex items-center" onClick={() => emitNavigationStart()}>
-                <User className="me-2 h-4 w-4 text-muted-foreground" />
-                הפרופיל שלי
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
+            {/* One entry per errand — these are the profile's tabs. */}
+            {USER_MENU_LINKS.filter((link) => !link.gate || link.gate(me)).map((link) => (
               <Link
-                href="/profile?tab=notifications"
-                className="flex items-center"
-                onClick={() => emitNavigationStart()}
+                key={link.href}
+                href={link.href}
+                className="flex items-center rounded-lg px-3 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                onClick={() => {
+                  userPanel.hide();
+                  emitNavigationStart();
+                }}
               >
-                <Bell className="me-2 h-4 w-4 text-muted-foreground" />
-                הגדרות התראות
+                <link.icon className="me-2 h-4 w-4 text-muted-foreground" />
+                {link.label}
               </Link>
-            </DropdownMenuItem>
-            {/* These two mirror the profile's own gates — a pay type that doesn't
-                punch in has no shifts tab, and one with no payslips has no salary
-                tab. Showing either unconditionally would link to nothing. */}
-            {me?.canTrackSessions ? (
-              <DropdownMenuItem asChild>
-                <Link href="/profile?tab=sessions" className="flex items-center" onClick={() => emitNavigationStart()}>
-                  <Clock className="me-2 h-4 w-4 text-muted-foreground" />
-                  נוכחות ומשמרות
-                </Link>
-              </DropdownMenuItem>
-            ) : null}
-            {me?.canViewSalary ? (
-              <DropdownMenuItem asChild>
-                <Link href="/profile?tab=salary" className="flex items-center" onClick={() => emitNavigationStart()}>
-                  <Wallet className="me-2 h-4 w-4 text-muted-foreground" />
-                  שכר ותלושים
-                </Link>
-              </DropdownMenuItem>
-            ) : null}
+            ))}
 
-            <DropdownMenuSeparator />
+            <div className="-mx-1 my-1 h-px bg-muted" />
             <form action="/api/auth/logout" method="post">
-              <DropdownMenuItem asChild className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-                <button type="submit" className="flex w-full items-center rounded-lg px-3 py-2">
-                  <LogOut className="me-2 h-4 w-4" />
-                  התנתקות
-                </button>
-              </DropdownMenuItem>
+              <button
+                type="submit"
+                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
+              >
+                <LogOut className="me-2 h-4 w-4" />
+                התנתקות
+              </button>
             </form>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </HoverPanelContent>
+        </HoverPanel>
 
         <PwaInstallButton />
 
-        {showSearch ? <GlobalSearch mobileOnly /> : null}
+        {showSearch ? <GlobalSearch mobileOnly className="!text-sidebar-foreground hover:!bg-sidebar-accent hover:!text-white" /> : null}
       </div>
     </header>
   );

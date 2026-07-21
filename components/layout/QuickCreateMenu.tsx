@@ -21,15 +21,11 @@ import {
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
+import { QUICK_TILE_CLASS_SM, QuickTileContent } from "@/components/ui/quick-tile";
 import {
   EMPTY_QUICK_CREATE_DATA,
   type QuickCreateAction,
@@ -57,14 +53,11 @@ const MENU_ITEMS: MenuItem[] = [
   { action: "document", label: "מסמך", icon: Upload },
 ];
 
-// ── Tile colors ─────────────────────────────────────────────────────────────
-// ONE place to decide what each tile looks like. The tile body stays primary
-// blue so the grid reads as a single block (same as the dashboard); the GLYPH
-// carries the meaning — money out is red, money in is green, matching the
-// dashboard exactly. To recolor an action, add a line here and nothing else.
-const TILE_ICON_COLOR: Partial<Record<QuickCreateAction, string>> = {
-  expense: "!text-destructive",
-  income: "!text-success",
+// The only colored glyphs — money in / money out. Everything else stays white.
+const TILE_TONE: Partial<Record<QuickCreateAction, "income" | "expense">> = {
+  income: "income",
+  expense: "expense",
+  collect: "income",
 };
 
 // Reading the ledger is admin/office-only — the API would 403 a worker, so don't
@@ -97,7 +90,9 @@ function loadQuickCreateData(): Promise<QuickCreateData | null> {
 export function QuickCreateMenu({ viewerRole }: { viewerRole?: string }) {
   const privileged = viewerRole === "admin" || viewerRole === "office";
   const items = privileged ? MENU_ITEMS : MENU_ITEMS.filter((item) => !ADMIN_OR_OFFICE_ACTIONS.has(item.action));
-  const [menuOpen, setMenuOpen] = useState(false);
+  // Hover reveals the whole grid; clicking the + still toggles it, and on touch
+  // (where there is no hover) the tap is the only interaction.
+  const panel = useHoverPanel();
   const [action, setAction] = useState<QuickCreateAction | null>(null);
   const [data, setData] = useState<QuickCreateData | null>(dataCache);
   // Once mounted, keep the dialog host mounted — remounting it would reset any
@@ -126,15 +121,11 @@ export function QuickCreateMenu({ viewerRole }: { viewerRole?: string }) {
 
   return (
     <>
-      <DropdownMenu
-        modal={false}
-        open={menuOpen}
-        onOpenChange={(open) => {
-          setMenuOpen(open);
-          if (open) prefetch();
-        }}
-      >
-        <DropdownMenuTrigger asChild>
+      <HoverPanel open={panel.open} onOpenChange={(open) => {
+        panel.setOpen(open);
+        if (open) prefetch();
+      }}>
+        <HoverPanelTrigger asChild>
           <Button
             type="button"
             variant="ghost"
@@ -145,33 +136,41 @@ export function QuickCreateMenu({ viewerRole }: { viewerRole?: string }) {
             className={`${TOPBAR_ICON_BUTTON} h-9 w-9 [&_svg]:!size-5`}
             aria-label="הוספה מהירה"
             id="topbar-quick-create-trigger"
-            onPointerEnter={prefetch}
+            {...panel.triggerProps}
+            onPointerEnter={() => {
+              prefetch();
+              panel.show();
+            }}
           >
             <Plus strokeWidth={TOPBAR_ICON_STROKE} />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-auto rounded-2xl p-2">
-          {/* Same square blue tiles as the dashboard quick actions, two per row. */}
+        </HoverPanelTrigger>
+        <HoverPanelContent align="end" className="w-auto rounded-2xl p-2" {...panel.panelProps}>
+          {/* Same tiles as the dashboard quick actions, two per row. */}
           <div className="grid grid-cols-2 gap-2">
             {items.map((item) => (
-              <DropdownMenuItem
+              <Button
                 key={item.action}
-                onSelect={() => {
+                type="button"
+                variant="outline"
+                className={QUICK_TILE_CLASS_SM}
+                onClick={() => {
+                  panel.hide();
                   prefetch();
                   setAction(item.action);
                 }}
-                className="h-auto aspect-square w-[4.5rem] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border-transparent !bg-primary p-1.5 text-center text-[0.7rem] leading-tight !text-primary-foreground shadow-md shadow-primary/30 !whitespace-normal focus:!bg-primary/90 hover:!bg-primary/90"
               >
-                <item.icon
-                  className={`!h-7 !w-7 ${TILE_ICON_COLOR[item.action] ?? ""}`}
-                  strokeWidth={2.2}
+                <QuickTileContent
+                  icon={item.icon}
+                  label={item.label}
+                  tone={TILE_TONE[item.action]}
+                  size="sm"
                 />
-                <span className="font-semibold">{item.label}</span>
-              </DropdownMenuItem>
+              </Button>
             ))}
           </div>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </HoverPanelContent>
+      </HoverPanel>
 
       {/* Never hand a half-loaded picker to the user (project/customer lists come
           from the same fetch) — hold the action behind a short loading dialog
