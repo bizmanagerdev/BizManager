@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from "@/components/ui/hover-panel";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { AdaptiveDialog } from "@/components/layout/page-layout";
 import { Dialog, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TOPBAR_ICON_BUTTON, TOPBAR_ICON_STROKE } from "@/components/layout/topbar-icon";
@@ -145,77 +144,62 @@ export function QuickCreateMenu({
 
   return (
     <>
-      {variant === "fab" ? (
-        // A bottom sheet, NOT the hover popover the top bar uses. On touch the
-        // hover-open racing the click-toggle made the panel flash open and shut,
-        // and an eight-tile popover anchored to the bottom bar got shoved around
-        // by collision detection so tiles ended up off-screen. A sheet is anchored
-        // to the viewport, so neither can happen.
-        <Sheet
-          open={panel.open}
-          onOpenChange={(open) => {
-            panel.setOpen(open);
-            if (open) prefetch();
-          }}
+      <HoverPanel
+        open={panel.open}
+        onOpenChange={(open) => {
+          panel.setOpen(open);
+          if (open) prefetch();
+        }}
+      >
+        <HoverPanelTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className={
+              variant === "fab"
+                ? // The one filled, raised control in the bottom bar — it's the
+                  // primary action on mobile, so it reads as a button, not a glyph.
+                  "h-[52px] w-[52px] -translate-y-3 rounded-2xl bg-secondary text-secondary-foreground shadow-lg shadow-secondary/30 ring-4 ring-sidebar hover:bg-secondary hover:text-secondary-foreground [&_svg]:!size-7"
+                : // Same transparent glyph treatment as its neighbours (no fill — the
+                  // user vetoed a colored blob up here); only the size is bumped, since
+                  // it's the one button you act with rather than glance at.
+                  `${TOPBAR_ICON_BUTTON} [&_svg]:!size-5`
+            }
+            aria-label="הוספה מהירה"
+            id={variant === "fab" ? "bottomnav-quick-create-trigger" : "topbar-quick-create-trigger"}
+            // Hover-to-open only makes sense with a real pointer. On the touch FAB
+            // it raced the trigger's click-toggle, so the panel flashed open and
+            // shut — there, tapping is the only interaction.
+            {...(variant === "fab"
+              ? { onPointerDown: prefetch }
+              : {
+                  ...panel.triggerProps,
+                  onPointerEnter: () => {
+                    prefetch();
+                    panel.show();
+                  },
+                })}
+          >
+            <Plus strokeWidth={TOPBAR_ICON_STROKE} />
+          </Button>
+        </HoverPanelTrigger>
+        <HoverPanelContent
+          align={variant === "fab" ? "center" : "end"}
+          side={variant === "fab" ? "top" : "bottom"}
+          // Keep it on screen without letting it be shoved somewhere odd, and cap
+          // the height so it can never run past the viewport.
+          collisionPadding={12}
+          className="w-auto rounded-2xl p-2"
+          // No mouse-leave close on the FAB: on touch that fires while scrolling.
+          {...(variant === "fab" ? {} : panel.panelProps)}
         >
-          <SheetTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              // The one filled, raised control in the bar — it's the primary action
-              // on mobile, so it reads as a button rather than a glyph.
-              className="h-[52px] w-[52px] -translate-y-3 rounded-2xl bg-secondary text-secondary-foreground shadow-lg shadow-secondary/30 ring-4 ring-sidebar hover:bg-secondary hover:text-secondary-foreground [&_svg]:!size-7"
-              aria-label="הוספה מהירה"
-              id="bottomnav-quick-create-trigger"
-              onPointerDown={prefetch}
-            >
-              <Plus strokeWidth={TOPBAR_ICON_STROKE} />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="bottom" className="rounded-t-[2rem] p-0">
-            <SheetHeader className="border-b border-border/60 px-6 py-4 text-right">
-              <SheetTitle>הוספה מהירה</SheetTitle>
-            </SheetHeader>
-            <div className="grid max-h-[60svh] grid-cols-4 justify-items-center gap-3 overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4">
-              {tiles}
-            </div>
-          </SheetContent>
-        </Sheet>
-      ) : (
-        <HoverPanel
-          open={panel.open}
-          onOpenChange={(open) => {
-            panel.setOpen(open);
-            if (open) prefetch();
-          }}
-        >
-          <HoverPanelTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              // Same transparent glyph treatment as its neighbours (no fill — the
-              // user vetoed a colored blob up here); only the size is bumped, since
-              // it's the one button you act with rather than glance at.
-              className={`${TOPBAR_ICON_BUTTON} h-9 w-9 [&_svg]:!size-5`}
-              aria-label="הוספה מהירה"
-              id="topbar-quick-create-trigger"
-              {...panel.triggerProps}
-              onPointerEnter={() => {
-                prefetch();
-                panel.show();
-              }}
-            >
-              <Plus strokeWidth={TOPBAR_ICON_STROKE} />
-            </Button>
-          </HoverPanelTrigger>
-          <HoverPanelContent align="end" className="w-auto rounded-2xl p-2" {...panel.panelProps}>
-            {/* Same tiles as the dashboard quick actions, two per row. */}
-            <div className="grid grid-cols-2 gap-2">{tiles}</div>
-          </HoverPanelContent>
-        </HoverPanel>
-      )}
+          {/* Same tiles as the dashboard quick actions, two per row. */}
+          <div className="grid max-h-[70svh] grid-cols-2 gap-2 overflow-y-auto overscroll-contain">
+            {tiles}
+          </div>
+        </HoverPanelContent>
+      </HoverPanel>
 
       {/* Never hand a half-loaded picker to the user (project/customer lists come
           from the same fetch) — hold the action behind a short loading dialog

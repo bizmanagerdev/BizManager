@@ -175,26 +175,25 @@ export function TopBar({
         </div>
       ) : null}
 
-      {/* The back arrow is alone on the leading (right) edge; everything else is
-          one cluster on the far edge, in this order inward: search, +, refresh,
-          alarm, then you. */}
+      {/* Leading (right) edge: back arrow, then the search right beside it —
+          search belongs with navigation, not with the action/notification
+          cluster. Everything else sits on the far edge. */}
       <BackButton />
+      {showSearch ? (
+        // Fixed width, not flex-1: a `flex-1 basis-0` box would fight the spacer
+        // below it and collapse.
+        <GlobalSearch desktopOnly className="w-[20rem] max-w-[30vw] flex-none" />
+      ) : null}
+      {/* Mobile: the search bar itself fills the room between the arrow and the
+          icons, instead of that space sitting empty behind a lone magnifier. */}
+      {showSearch ? <GlobalSearch mobileOnly className="min-w-0 flex-1" /> : null}
 
-      <div className="flex-1" />
+      {/* Desktop only: the search box is a fixed width there, so this is what
+          pushes the icon cluster to the far edge. On mobile the search bar above
+          already does that. */}
+      <div className="hidden flex-1 lg:block" />
 
       <div className="flex items-center gap-2">
-        {showSearch ? (
-          <GlobalSearch
-            mobileOnly
-            className="!text-sidebar-foreground hover:!bg-sidebar-accent hover:!text-white"
-          />
-        ) : null}
-        {/* Fixed width, not flex-1: inside this shrink-to-fit cluster a
-            `flex-1 basis-0` box would collapse to nothing. */}
-        {showSearch ? (
-          <GlobalSearch desktopOnly className="w-[22rem] max-w-[32vw] flex-none" />
-        ) : null}
-
         {/* Desktop only — on mobile the bottom nav's centre + is the quick-create,
             and two of them in one screen is one too many. There's no bottom nav
             from md up, so this stays the only door to it there. */}
@@ -202,7 +201,11 @@ export function TopBar({
           <QuickCreateMenu viewerRole={viewerRole} />
         </div>
 
-        <RefreshButton />
+        {/* Desktop only — on a phone you pull the page down to refresh, so the
+            glyph is just another target competing for a narrow bar. */}
+        <div className="hidden md:block">
+          <RefreshButton />
+        </div>
 
         <HoverPanel open={inboxPanel.open} onOpenChange={inboxPanel.setOpen}>
           <HoverPanelTrigger asChild>
@@ -319,17 +322,17 @@ export function TopBar({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="h-9 w-9 rounded-full p-0 hover:bg-sidebar-accent"
+            className="h-10 w-10 rounded-full p-0 hover:bg-secondary"
             type="button"
             aria-label={userName ? `החשבון שלי — ${userName}` : "החשבון שלי"}
             id="topbar-user-trigger"
             {...userPanel.triggerProps}
           >
             {userName ? (
-              <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="sm" />
+              <InitialsAvatar name={userName} colorKey={userName} color={avatarColor} size="md" />
             ) : (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
-                <User className="h-3.5 w-3.5" fill="currentColor" strokeWidth={2.2} />
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+                <User className="h-4 w-4" fill="currentColor" strokeWidth={2.2} />
               </div>
             )}
           </Button>
