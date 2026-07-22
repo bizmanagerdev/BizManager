@@ -1,26 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo } from "react";
-import { Check, Eye, MapPin, Phone } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
+import { Banknote, Check, Eye, MapPin, Phone } from "lucide-react";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
+import { useSetPageTitle } from "@/components/layout/page-title-context";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
+import { ContactLink } from "@/components/ui/contact-link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+
 import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui/cities";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreDeliveries } from "@/app/(app)/sales/actions";
 import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
+import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
+import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
 
 type CustomerGroup = {
+  customerId: string;
   customerName: string;
   customerPhone: string | null;
   address: string;
   orders: DeliveryItem[];
+  /** Standing arrival directions + saved drop-off pin, carried from the customer. */
+  deliveryInstructions: string | null;
+  deliveryLat: number | null;
+  deliveryLng: number | null;
 };
 
 type RegionLink = {
@@ -47,10 +57,14 @@ function buildCustomerGroups(cityDeliveries: DeliveryItem[]) {
         return map;
       }
       map.set(customerKey, {
+        customerId: delivery.customerId,
         customerName: delivery.customerName,
         customerPhone: delivery.customerPhone,
         address: delivery.address,
         orders: [delivery],
+        deliveryInstructions: delivery.deliveryInstructions,
+        deliveryLat: delivery.deliveryLat,
+        deliveryLng: delivery.deliveryLng,
       });
       return map;
     }, new Map<string, CustomerGroup>())
@@ -83,19 +97,18 @@ function groupDeliveries(deliveries: DeliveryItem[], regionFilter: string | null
   });
 }
 
+// Higher than the orders list's 3: this IS the packing list, so the driver should
+// see the load. The cap only exists to stop a huge order from burying the card.
+const DELIVERY_ITEMS_LIMIT = 8;
+
 function formatCurrency(value: number | null) {
   if (value === null) return "-";
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
     currency: "ILS",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-function phoneHref(value: string | null) {
-  if (!value) return null;
-  const normalized = value.replace(/[^\d+]/g, "");
-  return normalized ? `tel:${normalized}` : null;
 }
 
 export default function SalesDeliveriesQueue({
@@ -148,13 +161,43 @@ export default function SalesDeliveriesQueue({
   // Desktop shows one column per region (south · center · north, read RTL). When
   // a region filter is active we only render that region. Empty known regions
   // still get a column so the three lists stay side by side.
+  const router = useRouter();
+
+  // One shared editor for the whole queue — a card sets its target rather than
+  // each card mounting its own dialog.
+  const [locationTarget, setLocationTarget] = useState<{
+    customerId: string;
+    customerName: string;
+    instructions: string | null;
+    pin: DeliveryPin | null;
+  } | null>(null);
+
   const citiesByRegion = new Map(deliveriesByRegion);
   const columnRegions = regionFilter
     ? deliveriesByRegion.map(([region]) => region)
     : ["דרום", "מרכז", "צפון", ...(citiesByRegion.has("לא ידוע") ? ["לא ידוע"] : [])];
 
+  // Names the page in the mobile top bar; the count follows the region filter.
+  useSetPageTitle(
+    "משלוחים",
+    regionFilter ? `${totalVisible} באזור ${regionFilter}` : `${totalCount} משלוחים`
+  );
   return (
     <div className="space-y-3">
+      {locationTarget ? (
+        <DeliveryLocationDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setLocationTarget(null);
+          }}
+          customerId={locationTarget.customerId}
+          customerName={locationTarget.customerName}
+          initialInstructions={locationTarget.instructions}
+          initialPin={locationTarget.pin}
+          onSaved={() => router.refresh()}
+        />
+      ) : null}
+
       {/* Region filter tabs */}
       <div className="flex flex-wrap items-center gap-2">
         {regionLinks.map(({ label, href, active }) => (
@@ -183,20 +226,20 @@ export default function SalesDeliveriesQueue({
         <div className={regionFilter ? "space-y-3" : "grid grid-cols-1 items-start gap-4 lg:grid-cols-3"}>
         {columnRegions.map((region) => {
           const cities = citiesByRegion.get(region) ?? [];
-          const regionTotal = cities.reduce(
-            (sum, [, groups]) => sum + groups.reduce((s, [, g]) => s + g.orders.length, 0),
-            0
-          );
           const regionCustomers = cities.reduce((sum, [, groups]) => sum + groups.length, 0);
 
+          const regionIsEmpty = cities.length === 0;
+
           return (
-            <div key={region} className="min-w-0 space-y-2">
-              {/* Region column header */}
-              <div className="flex items-center justify-between gap-2 px-1">
+            <div
+              key={region}
+              className={`min-w-0 space-y-2 ${regionIsEmpty ? "hidden lg:block" : ""}`}
+            >
+              {/* Region column header — boxed, so the eye can tell "this is a
+                  region" from "this is a stop" without reading either. */}
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2">
                 <span className="text-sm font-bold text-foreground">{region}</span>
-                <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                  {regionCustomers} לקוחות • {regionTotal} משלוחים
-                </span>
+                <span className="text-xs text-muted-foreground">{regionCustomers} לקוחות</span>
               </div>
 
               {cities.length === 0 ? (
@@ -207,166 +250,228 @@ export default function SalesDeliveriesQueue({
 
               {/* Cities in region */}
               {cities.map(([city, customerGroups]) => (
-                <Card key={city} className="overflow-hidden">
-                  <CardContent className="space-y-3 p-3 sm:p-4">
-                    <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                          <MapPin className="h-4 w-4" />
-                        </div>
-                        <h3 className="text-base font-bold">{city}</h3>
-                      </div>
-                      <span className="shrink-0 rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                        {customerGroups.length} לקוחות •{" "}
-                        {customerGroups.reduce((sum, [, group]) => sum + group.orders.length, 0)} משלוחים
-                      </span>
-                    </div>
+                <div key={city} className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <h3 className="flex min-w-0 items-center gap-1.5 text-base font-bold">
+                      <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{city}</span>
+                    </h3>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {customerGroups.length} עצירות
+                    </span>
+                  </div>
 
-                    <ul className="space-y-3">
+                  <ul className="space-y-2">
                       {customerGroups.map(([customerKey, group]) => {
-                        const customerPhoneHref = phoneHref(group.customerPhone);
                         const displayAddress = formatDeliveryAddress({ address: group.address, city });
 
                         const hasMultipleOrders = group.orders.length > 1;
+                        const groupPin = pinFrom(group.deliveryLat, group.deliveryLng);
 
                         return (
                           <li key={customerKey}>
-                            <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
-                              {/* Customer header: name + phone, and amount (single) / count (multi) */}
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-bold">{group.customerName}</div>
-                                  {group.customerPhone ? (
-                                    customerPhoneHref ? (
-                                      <a
-                                        href={customerPhoneHref}
-                                        className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                                      >
-                                        <Phone className="h-3 w-3" />
-                                        <span dir="ltr">{group.customerPhone}</span>
-                                      </a>
-                                    ) : (
-                                      <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                        <Phone className="h-3 w-3" />
-                                        <span dir="ltr">{group.customerPhone}</span>
-                                      </span>
-                                    )
-                                  ) : null}
+                            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+                              {/* WHERE leads — on a delivery run the address is what
+                                  you act on; the customer is how you confirm it. Waze
+                                  sits opposite as the one navigation affordance. */}
+                              <div className="flex items-start gap-3 p-3">
+                                {/* A saved pin beats the address string — it's what
+                                    stops Waze dropping the driver at the wrong
+                                    entrance or the far side of a divided road. */}
+                                {groupPin ? (
+                                  <a
+                                    href={wazeLinkForPin(groupPin)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-secondary px-2.5 py-1.5 text-secondary-foreground no-underline"
+                                  >
+                                    <WazeIcon className="h-4 w-4" />
+                                    <span className="text-[10px] font-semibold leading-none">נקודה</span>
+                                  </a>
+                                ) : displayAddress ? (
+                                  <AddressLink
+                                    address={group.address}
+                                    city={city}
+                                    className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-secondary px-2.5 py-1.5 text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
+                                  >
+                                    <WazeIcon className="h-4 w-4" />
+                                    <span className="text-[10px] font-semibold leading-none">וייז</span>
+                                  </AddressLink>
+                                ) : null}
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-bold leading-snug">
+                                    {group.address || group.customerName}
+                                  </div>
                                   {displayAddress ? (
-                                    <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                                      <WazeIcon className="h-3.5 w-3.5 shrink-0" />
-                                      <span className="truncate">
-                                        <AddressLink address={displayAddress} />
-                                      </span>
-                                    </div>
+                                    <div className="text-xs text-muted-foreground">{group.customerName}</div>
                                   ) : null}
+                                  {hasMultipleOrders ? (
+                                    <span className="mt-1 inline-flex rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                      {group.orders.length} משלוחים
+                                    </span>
+                                  ) : null}
+
+                                  {/* The part an address can't say. Tap to edit — it
+                                      saves on the CUSTOMER, so the next driver to
+                                      come here inherits whatever this one worked out. */}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setLocationTarget({
+                                        customerId: group.customerId,
+                                        customerName: group.customerName,
+                                        instructions: group.deliveryInstructions,
+                                        pin: groupPin,
+                                      })
+                                    }
+                                    className="mt-1 flex w-full items-start gap-1 text-right text-xs text-muted-foreground hover:text-foreground"
+                                  >
+                                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                    <span className="min-w-0">
+                                      {group.deliveryInstructions ?? (
+                                        <span className="text-secondary">הוספת הוראות הגעה</span>
+                                      )}
+                                    </span>
+                                  </button>
                                 </div>
-                                {hasMultipleOrders ? (
-                                  <span className="shrink-0 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                                    {group.orders.length} משלוחים
-                                  </span>
-                                ) : (
-                                  <div className="flex shrink-0 flex-col items-end gap-1">
-                                    <span className="text-base font-bold">
-                                      {formatCurrency(group.orders[0]?.totalAmount ?? null)}
+                              </div>
+
+                              {/* Who to call, as one tappable block — on the road this
+                                  is a thumb target, not a line of text. */}
+                              {group.customerPhone ? (
+                                <div className="border-t border-border/60 p-3">
+                                  <ContactLink
+                                    kind="tel"
+                                    value={group.customerPhone}
+                                    className="flex items-center gap-2.5 rounded-xl bg-muted/50 p-2"
+                                  >
+                                    {/* Leading (right) edge, directly under the Waze
+                                        tile: the two things you do at a stop line up in
+                                        one column of tap targets instead of zig-zagging
+                                        across the card. */}
+                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-success text-success-foreground">
+                                      <Phone className="h-4 w-4" />
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-sm font-semibold">
+                                        {group.customerName}
+                                      </span>
+                                      {/* dir=ltr keeps the digits in dialling order, but
+                                          it also left-aligns the box — text-right pulls
+                                          it back under the name. */}
+                                      <span dir="ltr" className="block text-right text-xs text-muted-foreground">
+                                        {group.customerPhone}
+                                      </span>
+                                    </span>
+                                  </ContactLink>
+                                </div>
+                              ) : null}
+
+                              {/* One ruled block per order, same zone rhythm as the
+                                  orders list: money, then contents, then actions. */}
+                              {group.orders.map((delivery) => (
+                                <div
+                                  key={delivery.id}
+                                  title={delivery.notes ?? undefined}
+                                  className="divide-y divide-border/60 border-t border-border/60"
+                                >
+                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 p-3">
+                                    <span className="text-sm font-bold">
+                                      {formatCurrency(delivery.totalAmount)}
                                     </span>
                                     <span
-                                      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(group.orders[0]?.paymentStatus ?? "unpaid")}`}
+                                      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
                                     >
-                                      {paymentStatusLabel(group.orders[0]?.paymentStatus ?? "unpaid")}
+                                      {paymentStatusLabel(delivery.paymentStatus)}
                                     </span>
-                                    {group.orders[0]?.collectOnDelivery ? (
-                                      <span className="inline-flex rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
-                                        גבייה ע&quot;י הנהג
+                                    {/* The one thing the driver must not miss. */}
+                                    {delivery.collectOnDelivery ? (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
+                                        <Banknote className="h-3.5 w-3.5 shrink-0" />
+                                        גבייה במסירה
                                       </span>
                                     ) : null}
                                   </div>
-                                )}
-                              </div>
 
-                              {/* Orders */}
-                              <div className={hasMultipleOrders ? "mt-3 space-y-2" : "mt-3"}>
-                                {group.orders.map((delivery) => (
-                                  <div
-                                    key={delivery.id}
-                                    title={delivery.notes ?? undefined}
-                                    className={hasMultipleOrders ? "rounded-lg border border-border/70 p-2" : ""}
-                                  >
-                                    {hasMultipleOrders ? (
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-sm font-bold">
-                                          {formatCurrency(delivery.totalAmount)}
-                                        </span>
+                                  {/* Same rules as the orders list: no "1×" (a quantity
+                                      of one is the default, and printing it made the
+                                      chips read as broken data), and the list is capped
+                                      so it can't dribble into lonely single-chip lines.
+                                      Unlike orders, nothing is hidden — the driver needs
+                                      the full load — so the cap only applies past a
+                                      point where the card would stop being scannable. */}
+                                  {delivery.items.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1 p-3 text-xs">
+                                      {delivery.items.slice(0, DELIVERY_ITEMS_LIMIT).map((item, itemIndex) => (
                                         <span
-                                          className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
+                                          key={`${delivery.id}-${itemIndex}`}
+                                          className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
                                         >
-                                          {paymentStatusLabel(delivery.paymentStatus)}
-                                        </span>
-                                        {delivery.collectOnDelivery ? (
-                                          <span className="inline-flex rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
-                                            גבייה ע&quot;י הנהג
+                                          {item.quantity > 1 ? (
+                                            <span className="font-semibold">{item.quantity}</span>
+                                          ) : null}
+                                          <span>
+                                            {item.name}
+                                            {item.notes ? ` (${item.notes})` : ""}
                                           </span>
-                                        ) : null}
-                                      </div>
-                                    ) : null}
-
-                                    {delivery.items.length > 0 ? (
-                                      <div className="mt-2 rounded-lg bg-muted/50 p-2">
-                                        <div className="flex flex-wrap gap-1 text-xs">
-                                          {delivery.items.map((item, itemIndex) => (
-                                            <span
-                                              key={`${delivery.id}-${itemIndex}`}
-                                              className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
-                                            >
-                                              <span className="font-semibold">{item.quantity}</span>
-                                              <span>
-                                                {item.name}
-                                                {item.notes ? ` (${item.notes})` : ""}
-                                              </span>
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ) : null}
-
-                                    <div className="mt-2 grid grid-cols-3 gap-2 border-t border-border/60 pt-2">
-                                      <OrderConfirmDialog
-                                        orderId={delivery.id}
-                                        customerName={delivery.customerName}
-                                        buttonVariant="default"
-                                        buttonClassName="w-full gap-1"
-                                        buttonLabel={
-                                          <>
-                                            <Check className="h-4 w-4" />
-                                            אספקה
-                                          </>
-                                        }
-                                      />
-                                      <Button
-                                        asChild
-                                        type="button"
-                                        variant="secondary"
-                                        size="sm"
-                                        className="w-full gap-1"
-                                        onClick={() => emitNavigationStart()}
-                                      >
-                                        <Link href={`/sales/orders/${delivery.id}`}>
-                                          <Eye className="h-4 w-4" />
-                                          פרטים
+                                        </span>
+                                      ))}
+                                      {delivery.items.length > DELIVERY_ITEMS_LIMIT ? (
+                                        <Link
+                                          href={`/sales/orders/${delivery.id}`}
+                                          onClick={() => emitNavigationStart()}
+                                          className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground hover:text-foreground"
+                                        >
+                                          +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
                                         </Link>
-                                      </Button>
-                                      <DeliveryShareActions delivery={delivery} className="w-full" />
+                                      ) : null}
                                     </div>
+                                  ) : null}
+
+                                  {/* The delivery itself is the primary act, so it takes
+                                      the filled button and the room; look-and-share stay
+                                      as glyphs beside it. */}
+                                  <div className="flex items-center gap-2 p-3">
+                                    {/* Glyphs, not labelled buttons: the label would
+                                        crowd out the primary action beside them. */}
+                                    <DeliveryShareActions
+                                      delivery={delivery}
+                                      label=""
+                                      className="h-9 w-9 shrink-0 p-0"
+                                    />
+                                    <Button
+                                      asChild
+                                      type="button"
+                                      variant="secondary"
+                                      size="icon-sm"
+                                      aria-label="פרטי ההזמנה"
+                                      onClick={() => emitNavigationStart()}
+                                    >
+                                      <Link href={`/sales/orders/${delivery.id}`}>
+                                        <Eye className="h-4 w-4" />
+                                      </Link>
+                                    </Button>
+                                    <OrderConfirmDialog
+                                      orderId={delivery.id}
+                                      customerName={delivery.customerName}
+                                      buttonVariant="default"
+                                      buttonClassName="ms-auto gap-1.5"
+                                      buttonLabel={
+                                        <>
+                                          <Check className="h-4 w-4" />
+                                          סמן כסופק
+                                        </>
+                                      }
+                                    />
                                   </div>
-                                ))}
-                              </div>
+                                </div>
+                              ))}
                             </div>
                           </li>
                         );
                       })}
-                    </ul>
-                  </CardContent>
-                </Card>
+                  </ul>
+                </div>
               ))}
             </div>
           );

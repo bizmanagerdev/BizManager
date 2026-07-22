@@ -207,7 +207,13 @@ export async function loadProjectsPage(
       expenses_billed_separately: expensesBilledSeparately,
       no_charge: noCharge,
       paid_total: paidTotal,
+      // NOTE: amount_due is the full PRICE, not a balance — the payment-status
+      // math below compares paidTotal against it. The two fields that actually
+      // answer "how much is still owed / already late" are these:
       amount_due: amountDue,
+      outstanding_amount:
+        toNumber(financialRow?.outstanding_amount) ?? Math.max(customerTotalPrice - paidTotal, 0),
+      overdue_amount: toNumber(financialRow?.overdue_amount) ?? 0,
       payment_status_list: paymentStatus,
       payment_terms: paymentTermsByProjectId.get(projectId) ?? null,
       due_date: dueDateByProjectId.get(projectId) ?? null,

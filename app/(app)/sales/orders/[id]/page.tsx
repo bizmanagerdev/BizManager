@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { AddressLink } from "@/components/ui/address-link";
+import { ContactLink } from "@/components/ui/contact-link";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,6 +64,7 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
     currency: "ILS",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
 }
@@ -572,9 +574,7 @@ export default async function SalesOrderPage({
               {customerPhone ? (
                 <>
                   {" · "}
-                  <a href={`tel:${customerPhone}`} dir="ltr" className="hover:underline">
-                    {customerPhone}
-                  </a>
+                  <ContactLink kind="tel" value={customerPhone} dir="ltr" className="hover:underline" />
                 </>
               ) : null}
               {" · "}הוזמן <span className="font-medium text-foreground">{formatDate(orderDate)}</span>
@@ -793,31 +793,52 @@ export default async function SalesOrderPage({
                     .join(" · ")}
                 </div>
               ) : null}
+              {/* Same contact block as the customer page: whole row is the tap
+                  target, icon included. */}
               <div className="space-y-1.5 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  {customerPhone ? (
-                    <a href={`tel:${customerPhone}`} dir="ltr" className="font-medium hover:underline">
-                      {customerPhone}
-                    </a>
-                  ) : (
+                {customerPhone ? (
+                  <ContactLink
+                    kind="tel"
+                    value={customerPhone}
+                    className="flex items-center gap-1.5 py-0.5 hover:text-primary"
+                  >
+                    <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span dir="ltr" className="font-medium">{customerPhone}</span>
+                  </ContactLink>
+                ) : (
+                  <div className="flex items-center gap-1.5 py-0.5">
+                    <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="text-muted-foreground">-</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  {customerEmail ? (
-                    <span className="truncate font-medium">{customerEmail}</span>
-                  ) : (
+                  </div>
+                )}
+
+                {customerEmail ? (
+                  <ContactLink
+                    kind="mailto"
+                    value={customerEmail}
+                    className="flex items-center gap-1.5 py-0.5 hover:text-primary"
+                  >
+                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span dir="ltr" className="truncate font-medium">{customerEmail}</span>
+                  </ContactLink>
+                ) : (
+                  <div className="flex items-center gap-1.5 py-0.5">
+                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="text-muted-foreground">-</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium">
-                    {fullAddress ? <AddressLink address={fullAddress} /> : "-"}
-                  </span>
-                </div>
+                  </div>
+                )}
+
+                {fullAddress ? (
+                  <AddressLink address={fullAddress} className="flex items-center gap-1.5 py-0.5">
+                    <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate font-medium">{fullAddress}</span>
+                  </AddressLink>
+                ) : (
+                  <div className="flex items-center gap-1.5 py-0.5">
+                    <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="text-muted-foreground">-</span>
+                  </div>
+                )}
               </div>
             </div>
 

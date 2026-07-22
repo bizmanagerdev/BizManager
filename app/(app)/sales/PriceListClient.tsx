@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useSetPageTitle } from "@/components/layout/page-title-context";
 
 type CategoryOption = {
   id: string;
@@ -51,6 +52,7 @@ function formatCurrency(value: number | null) {
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
     currency: "ILS",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
 }
@@ -801,6 +803,9 @@ export default function PriceListClient({
       setDeleteLoadingId("");
     }
   }
+
+  // Names the page in the mobile top bar.
+  useSetPageTitle("מחירון");
 
   return (
     <div className="space-y-3">

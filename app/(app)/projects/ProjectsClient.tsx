@@ -8,12 +8,17 @@ import { toast } from "sonner";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useOfflineRows } from "@/hooks/useOfflineRows";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
+import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
+import PageAlertBar from "@/components/reminders/PageAlertBar";
+import { useSetPageTitle } from "@/components/layout/page-title-context";
+import { SwipeActions } from "@/components/ui/swipe-actions";
 import { loadMoreProjects } from "@/app/(app)/projects/actions";
 import type { ProjectsFilters } from "@/app/(app)/projects/loadProjects";
-import { CheckCircle2, FileText, FolderKanban, MessageCircle, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { CheckCircle2, FileText, FolderKanban, MessageCircle, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { paymentStatusClasses, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
+import { cn } from "@/lib/utils";
 import {
   AdaptiveDialog,
   AdaptiveGrid,
@@ -22,7 +27,7 @@ import {
 } from "@/components/layout/page-layout";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -120,6 +125,22 @@ function formatDate(value: string | null) {
     year: "numeric",
   }).format(date);
 }
+
+/** Compact 22.06.26 form — the mobile card's footer has no room for a 4-digit year. */
+function formatDateShort(value: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("he-IL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  }).format(date);
+}
+
+// Badges on the mobile card sit as a caption above the title, so they're dialled
+// down from the standalone badge: tighter padding, smaller text, medium weight.
+const CARD_BADGE = "px-2 py-0.5 text-[11px] font-medium";
 
 function projectDisplayName(row: ProjectRow) {
   return getString(row, "name") ?? "פרויקט";
@@ -351,6 +372,8 @@ export default function ProjectsClient({
   const setStatus = (next: string) => pushFilters({ status: next });
   const setSort = (next: SortMode) => pushFilters({ sort: next });
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  // One swiped-open row at a time, like a native list.
+  const [swipedRow, setSwipedRow] = useState<string | null>(null);
 
   // Project create/edit now run through the shared <NewProjectClient/> wizard, so
   // this component only tracks dialog open/submit state — the wizard owns the form.
@@ -565,6 +588,14 @@ export default function ProjectsClient({
     }
   }
 
+  // Names the page in the mobile top bar and carries the count as the subtitle,
+  // so the tab you're on and how much is in it are both visible without the page
+  // repeating them.
+  useSetPageTitle(
+    activeTab === "quotes" ? "הצעות מחיר" : activeTab === "closed" ? "פרויקטים סגורים" : "פרויקטים",
+    `${(activeTab === "quotes" ? tabCounts?.quotes : activeTab === "closed" ? tabCounts?.closed : tabCounts?.projects) ?? rows.length} ${activeTab === "quotes" ? "הצעות" : "פרויקטים"}`
+  );
+
   return (
     <PageStack>
       <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -576,30 +607,70 @@ export default function ProjectsClient({
           </TabsList>
         </div>
 
+        {/* Create / search / filter live in the dark header, same as customers —
+            the page no longer restates its own heading area below the bar. The
+            mobile tabs ride along underneath them, so the header is one block:
+            what you're looking at, then the controls for it. The portal keeps
+            React context, so these triggers still talk to the <Tabs> above. */}
+        <PageHeaderToolbar>
+          <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
+          {/* Labelled, so it can't be mistaken for the bottom nav's big generic +
+              just below it — this one adds a project (or a quote on that tab). */}
+          <Button
+            type="button"
+            aria-label={activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
+            className="h-10 shrink-0 gap-1 rounded-xl px-2.5"
+            onClick={() => openCreateDialog(activeTab)}
+          >
+            <Plus className="h-4 w-4" />
+            <span className="text-xs">{activeTab === "quotes" ? "הצעה" : "פרויקט"}</span>
+          </Button>
+          <div className="relative w-full min-w-0 max-w-[13rem]">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="חיפוש..."
+              className="h-10 w-full rounded-xl border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none placeholder:text-sidebar-foreground/60 focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+            />
+          </div>
+          <Button
+            type="button"
+            size="icon"
+            aria-label={mobileFiltersOpen ? "הסתרת סינון" : "סינון"}
+            aria-expanded={mobileFiltersOpen}
+            aria-controls="projects-mobile-filters"
+            className={
+              mobileFiltersOpen
+                ? "h-10 w-10 shrink-0 rounded-xl"
+                : "h-10 w-10 shrink-0 rounded-xl !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+            }
+            onClick={() => setMobileFiltersOpen((current) => !current)}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </Button>
+          </div>
+        </PageHeaderToolbar>
+
+        {/* On the LIGHT page surface, not inside the dark header. It portals away
+            above, so these tabs are the first thing under it — the requested order
+            — without adding a third navy row to an already heavy header. */}
         <TabsList variant="underline" className="justify-start md:hidden">
-          <TabsTrigger value="quotes"><FileText className="h-4 w-4" />הצעות ({quoteCount})</TabsTrigger>
-          <TabsTrigger value="projects"><FolderKanban className="h-4 w-4" />פרויקטים ({projectCount})</TabsTrigger>
-          <TabsTrigger value="closed"><CheckCircle2 className="h-4 w-4" />סגורים ({closedCount})</TabsTrigger>
+          <TabsTrigger value="quotes" className="!text-sm">
+            <FileText className="h-4 w-4" />הצעות ({quoteCount})
+          </TabsTrigger>
+          <TabsTrigger value="projects" className="!text-sm">
+            <FolderKanban className="h-4 w-4" />פרויקטים ({projectCount})
+          </TabsTrigger>
+          <TabsTrigger value="closed" className="!text-sm">
+            <CheckCircle2 className="h-4 w-4" />סגורים ({closedCount})
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
+      <PageAlertBar keys={["project_closed_unbilled", "project_deadline", "project_starting", "stale_quote"]} />
+
       <div className="space-y-3 md:hidden">
-        <Button type="button" className="h-11 w-full" onClick={() => openCreateDialog(activeTab)}>
-          {activeTab === "quotes" ? "הצעת מחיר חדשה" : "הוספת פרויקט"}
-        </Button>
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 justify-center gap-2"
-            onClick={() => setMobileFiltersOpen((current) => !current)}
-            aria-expanded={mobileFiltersOpen}
-            aria-controls="projects-mobile-filters"
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            {mobileFiltersOpen ? "הסתרת חיפוש וסינון" : "חיפוש וסינון"}
-          </Button>
-        </div>
 
         {hasActiveToolbarFilters && !mobileFiltersOpen ? (
           <div className="rounded-xl border border-border/60 bg-card px-3 py-2 text-xs text-muted-foreground">
@@ -613,21 +684,11 @@ export default function ProjectsClient({
             `${mobileFiltersOpen ? "grid" : "hidden"} gap-3 rounded-xl border border-border/60 bg-card p-3 shadow-sm`
           ).trim()}
         >
-          <div className="min-w-0">
-            <div className="flex items-center justify-between gap-2">
-              <label className="text-sm text-muted-foreground">חיפוש</label>
-              {offline ? <StaleDataBadge savedAt={savedAt} /> : null}
+          {offline ? (
+            <div className="flex justify-end">
+              <StaleDataBadge savedAt={savedAt} />
             </div>
-            <div className="relative mt-1">
-              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="חיפוש לפי לקוח או פרויקט..."
-                className="h-11 pr-9"
-              />
-            </div>
-          </div>
+          ) : null}
 
           <div className="min-w-0">
             <label className="text-sm text-muted-foreground">סטטוס</label>
@@ -736,7 +797,7 @@ export default function ProjectsClient({
         </div>
       </AdaptiveStack>
 
-      <div className="text-sm text-muted-foreground">
+      <div className="hidden text-sm text-muted-foreground md:block">
         {activeTab === "quotes"
           ? `נמצאו ${tabCounts?.quotes ?? rows.length} הצעות מחיר`
           : activeTab === "closed"
@@ -944,185 +1005,178 @@ export default function ProjectsClient({
       </Card>
 
       <div className="grid gap-2.5 xl:hidden">
+        <p className="px-1 text-[11px] text-muted-foreground">
+          החלק כרטיס ימינה לפעולות · הקש לפתיחה
+        </p>
         {rows.map((row) => {
           const id = getString(row, "id") ?? "";
           const profit = profitValue(row);
           const actualPrice = actualPriceValue(row);
           const currentStatus = statusValue(row);
-          const openTasks = getNumber(row, "open_tasks");
+          // Only the genuinely-LATE slice, never amount_due (the full price) and
+          // never the outstanding balance — with nothing paid yet those both equal
+          // the price, which just repeats the מחיר column below.
+          const overdueAmount = getNumber(row, "overdue_amount") ?? 0;
+          const overdueLabel =
+            canSeeMoney && overdueAmount > 0
+              ? `באיחור ${formatIls(overdueAmount)}`
+              : "תשלום באיחור";
+          const totalTasks = getNumber(row, "total_tasks") ?? 0;
+          const completedTasks = getNumber(row, "completed_tasks") ?? 0;
           const paymentStatus = paymentStatusValue(row);
           const collectionStatus = getString(row, "collection_status") ?? paymentStatus;
-          const startDate = formatDate(getString(row, "start_date"));
+          const startDate = formatDateShort(getString(row, "start_date"));
           const detailHref = `/projects/${id}${activeTab === "projects" ? "" : `?view=${activeTab}`}`;
 
+          // Deliberately short: the swipe carries only what you'd do FROM the
+          // list. Reminder, log-call and delete live inside the project itself —
+          // they're decisions you make with the project open, not in passing.
+          const actions = [
+            currentStatus === "quote"
+              ? {
+                  key: "approve",
+                  label: "אישור",
+                  icon: <CheckCircle2 className="h-5 w-5" />,
+                  className: "bg-secondary",
+                  onSelect: () => openApproveQuote(row),
+                }
+              : {
+                  key: "sheet",
+                  label: "דף עבודה",
+                  icon: <FileText className="h-5 w-5" />,
+                  className: "bg-secondary",
+                  onSelect: () => {
+                    emitNavigationStart();
+                    router.push(`/projects/${id}/export?mode=worker`);
+                  },
+                },
+            {
+              key: "edit",
+              label: "עריכה",
+              icon: <Pencil className="h-5 w-5" />,
+              className: "bg-secondary-2",
+              onSelect: () => openEditProject(row),
+            },
+          ];
+
           return (
-            <Card key={id} className="overflow-hidden border-border/70 shadow-sm transition-shadow hover:shadow-md">
-              <CardContent className="p-4">
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-base font-semibold">{projectDisplayName(row)}</div>
-                        <div className="mt-1 truncate text-sm text-muted-foreground">{clientDisplayName(row)}</div>
-                        {clientPhone(row) ? (
+            <SwipeActions
+              key={id}
+              className="border border-border/70 shadow-sm"
+              actions={actions}
+              open={swipedRow === id}
+              onOpenChange={(next) => setSwipedRow(next ? id : null)}
+            >
+              <div
+                role="link"
+                tabIndex={0}
+                className="block cursor-pointer p-4"
+                onClick={(event) => {
+                  if (shouldIgnoreRowNavigation(event.target)) return;
+                  emitNavigationStart();
+                  router.push(detailHref);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  if (shouldIgnoreRowNavigation(event.target)) return;
+                  event.preventDefault();
+                  emitNavigationStart();
+                  router.push(detailHref);
+                }}
+              >
+                <div className="space-y-3">
+                  {/* Glance line — the two statuses, nothing else. Tighter and
+                      lighter than a standalone badge: on a card they're a caption,
+                      not a headline. */}
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <StatusBadge value={currentStatus} type="project" className={CARD_BADGE} />
+                    {paymentStatus === "unpriced" || paymentStatus === "no_charge" ? (
+                      <Badge className={cn(paymentStatusBadgeClasses(paymentStatus), CARD_BADGE)}>
+                        {paymentStatusLabel(paymentStatus)}
+                      </Badge>
+                    ) : (
+                      <Badge className={cn(collectionStatusClasses(collectionStatus), CARD_BADGE)}>
+                        {/* ONE payment signal per card. When it's genuinely late the
+                            pill carries the overdue figure itself, so there's no
+                            second red block repeating the same story. Nothing else
+                            here says WHAT is late (the desktop table has a תשלום
+                            column for that), so the pill spells it out. */}
+                        {collectionStatus === "overdue"
+                          ? overdueLabel
+                          : collectionStatusLabel(collectionStatus)}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Start-aligned, not centred: a list wants one vertical edge to
+                      scan down. Centring every card turns the column into tiles. */}
+                  <div>
+                    <div className="text-base font-semibold leading-snug">{projectDisplayName(row)}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {clientDisplayName(row)}
+                      {clientPhone(row) ? (
+                        <>
+                          {" · "}
                           <a
                             href={`tel:${clientPhone(row)}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="mt-0.5 block truncate text-xs text-muted-foreground hover:underline"
+                            className="hover:underline"
                           >
                             {clientPhone(row)}
                           </a>
-                        ) : null}
-                      </div>
-                      <div className="shrink-0 text-xs text-muted-foreground">#{id.slice(0, 8)}</div>
+                        </>
+                      ) : null}
                     </div>
+                  </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
-                        <div className="text-xs text-muted-foreground">תאריך התחלה</div>
-                        <div className="mt-1 font-medium">{startDate}</div>
+                  {/* Hidden entirely when the project has no tasks — an empty bar
+                      says nothing and just adds a row to every card. */}
+                  {totalTasks > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-success transition-all"
+                          style={{ width: `${Math.round((completedTasks / totalTasks) * 100)}%` }}
+                        />
                       </div>
-                      <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
-                        <div className="text-xs text-muted-foreground">משימות פתוחות</div>
-                        <div className="mt-1 font-medium">{openTasks === null ? "-" : openTasks}</div>
-                      </div>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {completedTasks}/{totalTasks} משימות
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {/* Nothing truncates here: the figures are short and fixed-shape,
+                      so they get whitespace-nowrap and the row spreads them out.
+                      Truncating money to "0,780…" is worse than no figure at all. */}
+                  <div className="flex items-center gap-3 border-t border-border/60 pt-2.5">
+                    <div className="flex flex-1 items-center justify-between gap-3">
                       {canSeeMoney ? (
-                        <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
-                          <div className="text-xs text-muted-foreground">מחיר</div>
-                          <div className="mt-1 font-medium">
+                        <div className="whitespace-nowrap">
+                          <div className="text-[10px] text-muted-foreground">רווח</div>
+                          <div
+                            className={`text-[13px] font-semibold ${profit !== null && profit < 0 ? "text-destructive" : ""}`}
+                          >
+                            {profit === null ? "-" : formatIls(profit)}
+                          </div>
+                        </div>
+                      ) : null}
+                      {canSeeMoney ? (
+                        <div className="whitespace-nowrap">
+                          <div className="text-[10px] text-muted-foreground">מחיר</div>
+                          <div className="text-[13px] font-semibold">
                             {actualPrice === null ? "-" : formatIls(actualPrice)}
                           </div>
                         </div>
                       ) : null}
-                      {currentStatus === "quote" || canSeeMoney ? (
-                        <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
-                          <div className="text-xs text-muted-foreground">
-                            {currentStatus === "quote" ? "סטטוס הצעה" : "רווח"}
-                          </div>
-                          <div className={`mt-1 font-medium ${profit !== null && profit < 0 ? "text-destructive" : ""}`}>
-                            {currentStatus === "quote"
-                              ? statusLabel(currentStatus)
-                              : profit === null
-                                ? "-"
-                                : formatIls(profit)}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded-xl border border-border/60 bg-background/70 p-2.5">
-                          <div className="text-xs text-muted-foreground">תשלום</div>
-                          <div className="mt-1">
-                            {paymentStatus === "unpriced" || paymentStatus === "no_charge" ? (
-                              <Badge className={paymentStatusBadgeClasses(paymentStatus)}>
-                                {paymentStatusLabel(paymentStatus)}
-                              </Badge>
-                            ) : (
-                              <Badge className={collectionStatusClasses(collectionStatus)}>
-                                {collectionStatusLabel(collectionStatus)}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                      <div className="whitespace-nowrap">
+                        <div className="text-[10px] text-muted-foreground">התחלה</div>
+                        <div className="text-[13px] font-semibold">{startDate}</div>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button asChild type="button" className="col-span-2 h-11 rounded-xl">
-                      <Link href={detailHref} prefetch onClick={() => emitNavigationStart()}>
-                        פתיחת פרויקט
-                      </Link>
-                    </Button>
-
-                    <AddReminderButton
-                      entityType="project"
-                      entityId={id}
-                      customerId={getString(row, "customer_id")}
-                      label={projectDisplayName(row)}
-                      className="h-11 w-full justify-center rounded-xl"
-                    />
-                    <LogCommunicationButton
-                      entityType="project"
-                      entityId={id}
-                      customerId={getString(row, "customer_id")}
-                      defaultTopic="general"
-                      className="h-11 w-full justify-center rounded-xl"
-                    />
-
-                    {currentStatus === "quote" ? (
-                      <>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          className="h-11 rounded-xl"
-                          onClick={() => openApproveQuote(row)}
-                        >
-                          אישור הצעה
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-11 rounded-xl"
-                          onClick={() => openEditProject(row)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          עריכה
-                        </Button>
-                        <DeleteProjectButton
-                          projectId={id}
-                          projectName={projectDisplayName(row)}
-                          className="col-span-2 h-11 w-full rounded-xl"
-                          ariaLabel="מחיקת הצעת מחיר"
-                          onDeleted={() => removeProject(id)}
-                        >
-                          מחיקת הצעה
-                        </DeleteProjectButton>
-                      </>
-                    ) : (
-                      <>
-                        <Button asChild type="button" variant="outline" className="h-11 rounded-xl">
-                          <Link
-                            href={`/projects/${id}/export?mode=worker`}
-                            prefetch
-                            onClick={() => emitNavigationStart()}
-                          >
-                            <MessageCircle className="h-4 w-4" />
-                            WhatsApp
-                          </Link>
-                        </Button>
-                        <Button asChild type="button" variant="outline" className="h-11 rounded-xl">
-                          <Link
-                            href={`/projects/${id}/export?mode=worker`}
-                            prefetch
-                            onClick={() => emitNavigationStart()}
-                          >
-                            <FileText className="h-4 w-4" />
-                            דף עבודה
-                          </Link>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-11 rounded-xl"
-                          onClick={() => openEditProject(row)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          עריכה
-                        </Button>
-                        <DeleteProjectButton
-                          projectId={id}
-                          projectName={projectDisplayName(row)}
-                          className="h-11 w-full rounded-xl"
-                          ariaLabel="מחיקת פרויקט"
-                          onDeleted={() => removeProject(id)}
-                        >
-                          מחיקה
-                        </DeleteProjectButton>
-                      </>
-                    )}
-                  </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </SwipeActions>
           );
         })}
       </div>

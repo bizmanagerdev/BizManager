@@ -2,10 +2,14 @@ import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import MorningCustomerCard from "@/components/morning/MorningCustomerCard";
 import { AddressLink } from "@/components/ui/address-link";
+import { ContactLink } from "@/components/ui/contact-link";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CustomerDeliveryDetails } from "./CustomerDeliveryDetails";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { pinFrom } from "@/lib/delivery-location";
+import { whatsappHref } from "@/lib/whatsapp";
 import { formatRelativeDateLabel, formatShortDate } from "@/lib/date";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import {
@@ -197,7 +201,7 @@ export default async function CustomerDetailsPage({
     supabase
       .from("customers")
       .select(
-        "id,name,name_for_invoice,registration_number,email,phone,whatsapp,address,notes,active,requires_prepayment,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error"
+        "id,name,name_for_invoice,registration_number,email,phone,whatsapp,address,delivery_instructions,delivery_lat,delivery_lng,notes,active,requires_prepayment,morning_client_id,morning_synced_at,morning_match_status,morning_last_sync_error"
       )
       .eq("id", id)
       .maybeSingle(),
@@ -468,6 +472,8 @@ export default async function CustomerDetailsPage({
   const customerWhatsapp = s(customer as Row, "whatsapp");
   const requiresPrepayment = customer?.requires_prepayment === true;
   const address = s(customer as Row, "address");
+  const deliveryInstructions = s(customer as Row, "delivery_instructions") || null;
+  const deliveryPin = pinFrom((customer as Row)?.delivery_lat, (customer as Row)?.delivery_lng);
   const invoiceName = s(customer as Row, "name_for_invoice");
   const registrationNumber = s(customer as Row, "registration_number");
   const notes = s(customer as Row, "notes");
@@ -605,9 +611,12 @@ export default async function CustomerDetailsPage({
             <p className="text-xs text-muted-foreground">
               {customerPhone ? (
                 <>
-                  <a href={`tel:${customerPhone}`} dir="ltr" className="font-medium text-foreground hover:underline">
-                    {customerPhone}
-                  </a>
+                  <ContactLink
+                    kind="tel"
+                    value={customerPhone}
+                    dir="ltr"
+                    className="font-medium text-foreground hover:underline"
+                  />
                   {" · "}
                 </>
               ) : null}
@@ -1042,40 +1051,80 @@ export default async function CustomerDetailsPage({
                   ))}
                 </div>
               ) : null}
+              {/* Each row is one tap target, icon included — on a phone a 3.5-unit
+                  glyph sitting next to the link is a miss waiting to happen. */}
               <div className="space-y-1.5 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  {customerPhone ? (
-                    <a href={`tel:${customerPhone}`} dir="ltr" className="font-medium hover:underline">
-                      {customerPhone}
-                    </a>
-                  ) : (
+                {customerPhone ? (
+                  <ContactLink
+                    kind="tel"
+                    value={customerPhone}
+                    className="flex items-center gap-1.5 py-0.5 hover:text-primary"
+                  >
+                    <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span dir="ltr" className="font-medium">{customerPhone}</span>
+                  </ContactLink>
+                ) : (
+                  <div className="flex items-center gap-1.5 py-0.5">
+                    <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="text-muted-foreground">-</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  {customerWhatsapp ? (
+                  </div>
+                )}
+
+                {customerWhatsapp ? (
+                  <a
+                    href={whatsappHref(customerWhatsapp) ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 py-0.5 hover:text-primary"
+                    title="פתיחת וואטסאפ"
+                  >
+                    <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span dir="ltr" className="font-medium">{customerWhatsapp}</span>
-                  ) : (
+                  </a>
+                ) : (
+                  <div className="flex items-center gap-1.5 py-0.5">
+                    <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="text-muted-foreground">-</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  {customerEmail ? (
+                  </div>
+                )}
+
+                {customerEmail ? (
+                  <ContactLink
+                    kind="mailto"
+                    value={customerEmail}
+                    className="flex items-center gap-1.5 py-0.5 hover:text-primary"
+                  >
+                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span dir="ltr" className="truncate font-medium">{customerEmail}</span>
-                  ) : (
+                  </ContactLink>
+                ) : (
+                  <div className="flex items-center gap-1.5 py-0.5">
+                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="text-muted-foreground">-</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium">
-                    {address ? <AddressLink address={address} /> : "-"}
-                  </span>
-                </div>
+                  </div>
+                )}
+
+                {/* AddressLink already owns the Waze href, so the icon goes inside it
+                    as its child rather than being wrapped in a second anchor. */}
+                {address ? (
+                  <AddressLink address={address} className="flex items-center gap-1.5 py-0.5">
+                    <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate font-medium">{address}</span>
+                  </AddressLink>
+                ) : (
+                  <div className="flex items-center gap-1.5 py-0.5">
+                    <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="text-muted-foreground">-</span>
+                  </div>
+                )}
               </div>
+
+              <CustomerDeliveryDetails
+                customerId={id}
+                customerName={customerName}
+                instructions={deliveryInstructions}
+                pin={deliveryPin}
+              />
             </div>
 
             {activeContacts.length === 0 && inactiveContacts.length === 0 ? (

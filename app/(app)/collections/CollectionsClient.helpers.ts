@@ -4,6 +4,7 @@
 // it and get "now", preserving the original behavior.
 
 import { formatShortDate } from "@/lib/date";
+import { whatsappHref } from "@/lib/whatsapp";
 import { getBusinessDomainLabel } from "@/lib/expenses";
 import { normalizePaymentMethodValue } from "@/lib/orders/paymentStatus";
 import type { CollectionCustomerGroup } from "@/lib/collections";
@@ -76,12 +77,7 @@ export function daysSince(dateIso: string | null, now: Date = new Date()): numbe
 
 /** Build a wa.me link from an Israeli phone/whatsapp number with a prefilled message. */
 export function whatsappLink(number: string | null, message: string): string | null {
-  if (!number) return null;
-  let digits = number.replace(/\D/g, "");
-  if (!digits) return null;
-  if (digits.startsWith("0")) digits = `972${digits.slice(1)}`;
-  else if (!digits.startsWith("972")) digits = `972${digits}`;
-  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+  return whatsappHref(number, message);
 }
 
 // Subtle row/card tint by worst aging bucket, so the riskiest debts stand out.

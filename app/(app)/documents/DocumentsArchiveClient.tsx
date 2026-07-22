@@ -206,7 +206,7 @@ function SelectField({
 }) {
   return (
     <select
-      className="flex h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm transition-all duration-200 focus-visible:border-destructive/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="flex h-11 w-full rounded-xl border border-input bg-background/80 px-4 py-2 text-sm shadow-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       value={value}
       onChange={(event) => onChange(event.target.value)}
       aria-label={ariaLabel}

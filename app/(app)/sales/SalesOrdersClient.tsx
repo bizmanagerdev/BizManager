@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Bell, Check, ChevronDown, Eye, MessageSquare, Search } from "lucide-react";
+import { Bell, Check, ChevronDown, MessageSquare, Pencil, Plus, Search } from "lucide-react";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useOfflineRows } from "@/hooks/useOfflineRows";
 import StaleDataBadge from "@/components/layout/StaleDataBadge";
+import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
+import { useSetPageTitle } from "@/components/layout/page-title-context";
+import { SwipeActions } from "@/components/ui/swipe-actions";
 import { loadMoreOrders } from "@/app/(app)/sales/actions";
 import type { OrdersFilters } from "@/app/(app)/sales/loadOrders";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
@@ -17,6 +20,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ContactLink } from "@/components/ui/contact-link";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -151,18 +155,25 @@ function OrderProductList({
 
   if (chips) {
     return (
+      // Capped, not wrapped indefinitely: an uncapped list dribbled into lines
+      // holding a single lonely chip, which read as broken data rather than as a
+      // list. A "+N נוספים" chip is one line and says the same thing.
       <div className={`flex flex-wrap gap-1 text-xs ${className ?? ""}`}>
         {shown.map((product, idx) => (
           <span
             key={`${product.name}-${idx}`}
-            className="inline-flex items-center rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
+            className="inline-flex items-center whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
           >
-            {product.quantity > 0 ? `${product.quantity}× ` : ""}
+            {/* A quantity of 1 is the default — printing it on every chip is noise
+                that also made "1 שקיות" read as a data error. */}
+            {product.quantity > 1 ? `${product.quantity} ` : ""}
             {product.name}
           </span>
         ))}
         {remaining > 0 ? (
-          <span className="inline-flex items-center px-1 text-muted-foreground/80">ועוד {remaining}…</span>
+          <span className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground">
+            +{remaining} נוספים
+          </span>
         ) : null}
       </div>
     );
@@ -206,6 +217,7 @@ function formatCurrency(value: number | null) {
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
     currency: "ILS",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
 }
@@ -254,6 +266,10 @@ function shouldShowPaymentAction(row: OrderView) {
   return row.remainingBalance > 0.009 || row.totalPaid > row.totalAmount + 0.009;
 }
 
+// The status each tab is BY DEFINITION full of — repeating it on every card says
+// nothing. Anything else (בוטלה, בטיפול, במשלוח…) is worth flagging and still shows.
+const EXPECTED_STATUS_BY_VIEW = { open: "draft", closed: "delivered" } as const;
+
 export default function SalesOrdersClient({
   orders,
   initialHasMore = false,
@@ -264,6 +280,8 @@ export default function SalesOrdersClient({
   customerId = null,
   totalCount,
   canRemind = false,
+  view = "open",
+  tabLabel = "הזמנות",
 }: {
   orders: Row[];
   initialHasMore?: boolean;
@@ -274,10 +292,17 @@ export default function SalesOrdersClient({
   customerId?: string | null;
   totalCount?: number;
   canRemind?: boolean;
+  /** Which list this is — the tab already says it, so the matching status badge
+   *  ("פתוח" on the open tab, "סופק" on the closed one) is noise on every card. */
+  view?: "open" | "closed";
+  /** Which sales tab we're on — names the page in the mobile header. */
+  tabLabel?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(initialQuery);
+  // One swiped-open row at a time, like a native list.
+  const [swipedRow, setSwipedRow] = useState<string | null>(null);
   const [paymentSnapshot] = useState(() => new Map<string, number>());
   // One shared reminder dialog for the whole list; a row's bell button sets its target.
   const [reminderTarget, setReminderTarget] = useState<{ id: string; customerId: string; label: string } | null>(null);
@@ -484,13 +509,38 @@ export default function SalesOrdersClient({
     );
   }, [offline, query, orderRows]);
 
+  // Names the page in the mobile top bar, with the count as the subtitle.
+  useSetPageTitle(tabLabel, `${totalCount ?? filteredRows.length} הזמנות`);
+
   // Only surface the stock column/badge when at least one shown order is short.
   const anyOutOfStock = filteredRows.some((row) => row.outOfStock);
   const outOfStockBadgeClasses = getStatusColorClasses("danger");
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
+      {/* Mobile: new-order + search ride in the dark header (see the customers
+          and projects pages), so the list starts right under the bar. */}
+      <PageHeaderToolbar>
+        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
+          <Button asChild type="button" className="h-10 shrink-0 gap-1 rounded-xl px-3">
+            <Link href="/sales/orders/new" onClick={() => emitNavigationStart()}>
+              <Plus className="h-4 w-4" />
+              הזמנה
+            </Link>
+          </Button>
+          <div className="relative w-full min-w-0 max-w-[13rem]">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="חיפוש..."
+              className="h-10 w-full rounded-xl border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none placeholder:text-sidebar-foreground/60 focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+            />
+          </div>
+        </div>
+      </PageHeaderToolbar>
+
+      <div className="hidden space-y-2 xl:block">
         {offline ? (
           <div className="flex justify-end">
             <StaleDataBadge savedAt={savedAt} />
@@ -505,10 +555,10 @@ export default function SalesOrdersClient({
             className="h-11 pr-10"
           />
         </div>
-
       </div>
 
-      <div className="text-sm text-muted-foreground">נמצאו {totalCount ?? filteredRows.length} הזמנות</div>
+      {/* The header subtitle carries this count on mobile. */}
+      <div className="hidden text-sm text-muted-foreground xl:block">נמצאו {totalCount ?? filteredRows.length} הזמנות</div>
 
       {filteredRows.length === 0 ? (
         <Card>
@@ -744,140 +794,202 @@ export default function SalesOrdersClient({
           </Card>
 
           <div className="grid grid-cols-1 gap-2 xl:hidden">
+            <p className="px-1 text-[11px] text-muted-foreground">
+              החלק כרטיס ימינה לפעולות · הקש לפתיחה
+            </p>
             {filteredRows.map((row) => {
               const showConfirm = isActiveOrder(row.status);
               const showPayment = !showConfirm && shouldShowPaymentAction(row);
+              const actions = [
+                ...(showConfirm
+                  ? [
+                      {
+                        key: "confirm",
+                        className: "bg-secondary",
+                        node: (
+                          <OrderConfirmDialog
+                            orderId={row.id}
+                            customerName={row.customerName}
+                            buttonVariant="default"
+                            buttonLabel={
+                              <>
+                                <Check className="h-5 w-5" />
+                                אספקה
+                              </>
+                            }
+                            buttonClassName="!bg-transparent"
+                          />
+                        ),
+                      },
+                    ]
+                  : showPayment
+                    ? [
+                        {
+                          key: "pay",
+                          className: "bg-secondary",
+                          node: (
+                            <OrderPaymentDialog
+                              orderId={row.id}
+                              totalAmount={row.totalAmount}
+                              paidAmount={row.totalPaid}
+                              buttonClassName="!bg-transparent"
+                            />
+                          ),
+                        },
+                      ]
+                    : []),
+                {
+                  key: "edit",
+                  label: "עריכה",
+                  icon: <Pencil className="h-5 w-5" />,
+                  className: "bg-secondary-2",
+                  onSelect: () => {
+                    emitNavigationStart();
+                    router.push(`/sales/orders/${row.id}/edit`);
+                  },
+                },
+              ];
+
               return (
-                <Card key={row.id} className="min-w-0 overflow-hidden border-border/70 shadow-sm">
-                  <CardContent className="space-y-2 p-3">
-                    {/* Header: name / invoice-name / phone  +  status badges stacked */}
-                    <div className="flex items-start justify-between gap-2">
+                <SwipeActions
+                  key={row.id}
+                  className="border border-border/70 shadow-sm"
+                  actions={actions}
+                  open={swipedRow === row.id}
+                  onOpenChange={(next) => setSwipedRow(next ? row.id : null)}
+                >
+                  <div
+                    role="link"
+                    tabIndex={0}
+                    className="cursor-pointer divide-y divide-border/60 p-3 [&>*]:py-2 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0"
+                    onClick={(event) => {
+                      if (shouldIgnoreRowNavigation(event.target)) return;
+                      emitNavigationStart();
+                      router.push(`/sales/orders/${row.id}`);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      if (shouldIgnoreRowNavigation(event.target)) return;
+                      event.preventDefault();
+                      emitNavigationStart();
+                      router.push(`/sales/orders/${row.id}`);
+                    }}
+                  >
+                    {/* Compact card. Two rules:
+                        1. NOTHING truncates — names, cities and product chips
+                           wrap onto another line rather than becoming "…". The
+                           row is what you scan by, so a clipped name is useless.
+                        2. The money row adapts: an order that's settled shows
+                           just its total, one still owing leads with the balance
+                           and shows the total as context. Same information, one
+                           line shorter in the common case. */}
+                    {/* Top line: WHO on the leading (right) edge — it's what you
+                        scan the list by — and WHEN tucked small into the far
+                        corner. The date is reference, not headline, so it takes
+                        the smallest type on the card. */}
+                    <div className="flex items-baseline justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-bold leading-tight">{row.customerName}</div>
+                        <div className="text-sm font-bold leading-snug">{row.customerName}</div>
                         {row.customerNameForInvoice && row.customerNameForInvoice !== row.customerName ? (
-                          <div className="truncate text-xs text-muted-foreground">לחשבונית: {row.customerNameForInvoice}</div>
+                          <div className="text-xs leading-snug text-muted-foreground">
+                            לחשבונית: {row.customerNameForInvoice}
+                          </div>
                         ) : null}
-                        <div className="truncate text-xs text-muted-foreground">{row.customerPhone ?? "-"}</div>
+                        {row.customerPhone || row.customerCity ? (
+                          <div className="text-xs text-muted-foreground">
+                            {/* Tappable, like the phone on a project card — on a
+                                delivery or collection you call from the list, not
+                                after opening the order. */}
+                            {row.customerPhone ? (
+                              <ContactLink
+                                kind="tel"
+                                value={row.customerPhone}
+                                onClick={(e) => e.stopPropagation()}
+                                className="hover:underline"
+                              />
+                            ) : null}
+                            {row.customerPhone && row.customerCity ? " · " : null}
+                            {row.customerCity}
+                          </div>
+                        ) : null}
                       </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        <StatusBadge value={row.status} type="order" className={`${orderStatusBadgeClasses(row.status)} px-2 py-0.5 text-xs`} />
-                        <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-2 py-0.5 text-xs`}>
-                          {orderCollectionStatusLabel(row.collectionStatus)}
-                        </Badge>
-                        {row.pendingMethods.includes("check") ? (
-                          <Badge variant="info" className="gap-1 px-2 py-0.5 text-xs">
-                            צ׳ק{row.pendingCheckNumber ? ` מס׳ ${row.pendingCheckNumber}` : ""}
-                          </Badge>
+                      <span className="shrink-0 text-[10px] leading-4 text-muted-foreground">
+                        {formatOrderDate(row.orderDate)}
+                      </span>
+                    </div>
+
+                    {/* Only what's EXCEPTIONAL about the order — a status that isn't
+                        the one this tab implies, or a stock problem. Nothing here on
+                        a normal order, so the card stays short. */}
+                    {row.status !== EXPECTED_STATUS_BY_VIEW[view] || row.outOfStock ? (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {row.status !== EXPECTED_STATUS_BY_VIEW[view] ? (
+                          <StatusBadge
+                            value={row.status}
+                            type="order"
+                            className={`${orderStatusBadgeClasses(row.status)} px-2 py-0 text-[11px]`}
+                          />
                         ) : null}
                         {row.outOfStock ? (
-                          <Badge className={`${outOfStockBadgeClasses} px-2 py-0.5 text-xs`}>חוסר במלאי</Badge>
+                          <Badge className={`${outOfStockBadgeClasses} px-2 py-0 text-[11px]`}>חוסר במלאי</Badge>
                         ) : null}
                       </div>
+                    ) : null}
+
+                    {/* Money line: the figure leads, its statuses trail. No "סכום"
+                        label — the ₪ already says what it is, and dropping it is what
+                        buys the badges enough room to stay on one line instead of
+                        stacking. These orders are paid all-or-nothing, so a balance
+                        equal to the total would just print the same number twice;
+                        "נותר" only earns its place on a genuinely PART-paid order. */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                      <span className="text-sm font-bold">{formatCurrency(row.totalAmount)}</span>
+                      {row.totalPaid > 0.009 && row.remainingBalance > 0.009 ? (
+                        <span className="text-xs font-semibold text-destructive">
+                          נותר {formatCurrency(row.remainingBalance)}
+                        </span>
+                      ) : null}
+                      {/* Paid-or-not sits WITH the figure it describes — pushed to
+                          the far edge it read as unrelated to the amount. */}
+                      <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-2 py-0 text-[11px]`}>
+                        {orderCollectionStatusLabel(row.collectionStatus)}
+                      </Badge>
+                      {row.pendingMethods.includes("check") ? (
+                        <Badge variant="info" className="px-2 py-0 text-[11px]">
+                          צ׳ק{row.pendingCheckNumber ? ` ${row.pendingCheckNumber}` : ""}
+                        </Badge>
+                      ) : null}
                     </div>
 
-                    {/* Facts grid: label above value */}
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-y border-border/60 py-2">
-                      <div className="min-w-0">
-                        <div className="text-[10px] text-muted-foreground">עיר</div>
-                        <div className="truncate text-sm font-semibold">{row.customerCity ?? "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-muted-foreground">תאריך</div>
-                        <div className="text-sm font-semibold">{formatOrderDate(row.orderDate)}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-muted-foreground">יתרה</div>
-                        <div className={`text-sm font-semibold ${row.remainingBalance > 0 ? "text-destructive" : ""}`}>
-                          {formatCurrency(row.remainingBalance)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-muted-foreground">סכום</div>
-                        <div className="text-sm font-semibold">{formatCurrency(row.totalAmount)}</div>
-                      </div>
-                    </div>
 
                     {row.products.length > 0 ? (
-                      <div className="rounded-md bg-muted/40 px-2 py-1.5">
-                        <div className="mb-1 text-[10px] font-medium text-muted-foreground">מוצרים</div>
+                      <div>
                         <OrderProductList products={row.products} chips />
                       </div>
                     ) : null}
 
+                    {/* Ruled off from the products above it — a note is commentary on
+                        the order, not another line of its contents. */}
                     {row.comments.length > 0 ? (
-                      <div className="rounded-md bg-muted/40 px-2 py-1.5">
-                        <div className="mb-0.5 text-[10px] font-medium text-muted-foreground">תגובות</div>
-                        <OrderCommentPreview comments={row.comments} />
-                      </div>
+                      <OrderCommentPreview comments={row.comments} />
                     ) : null}
 
-                    {/* Invoice status row */}
-                    <div className="flex items-center">
-                      <InvoiceQuickMenu orderId={row.id} needsInvoice={row.needsInvoice} invoiceSentAt={row.invoiceSentAt} />
+                    {/* Last row on the card: everything above it is read, this is the
+                        one thing you SET. A bare dropdown mid-card read as a stray
+                        button — the label anchors it, and the footer position keeps
+                        the control out of the content you scan. */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-muted-foreground">סטטוס הנפקה:</span>
+                      <InvoiceQuickMenu
+                        orderId={row.id}
+                        needsInvoice={row.needsInvoice}
+                        invoiceSentAt={row.invoiceSentAt}
+                        showSentDate={false}
+                      />
                     </div>
 
-                    {/* Actions */}
-                    <div className="grid grid-cols-2 gap-2">
-                      {showConfirm ? (
-                        <OrderConfirmDialog
-                          orderId={row.id}
-                          customerName={row.customerName}
-                          buttonVariant="default"
-                          buttonLabel={
-                            <>
-                              <Check className="h-4 w-4" />
-                              אספקה
-                            </>
-                          }
-                          buttonClassName="h-9 w-full gap-1 rounded-lg"
-                        />
-                      ) : showPayment ? (
-                        <OrderPaymentDialog
-                          orderId={row.id}
-                          totalAmount={row.totalAmount}
-                          paidAmount={row.totalPaid}
-                          buttonClassName="h-9 w-full rounded-lg"
-                        />
-                      ) : null}
-                      <Button
-                        asChild
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-9 gap-1 rounded-lg"
-                        onClick={() => emitNavigationStart()}
-                      >
-                        <Link href={`/sales/orders/${row.id}`}>
-                          <Eye className="h-4 w-4" />
-                          צפייה
-                        </Link>
-                      </Button>
-                      {canRemind ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-9 gap-1 rounded-lg"
-                          onClick={() =>
-                            setReminderTarget({ id: row.id, customerId: row.customerId, label: row.customerName })
-                          }
-                        >
-                          <Bell className="h-4 w-4 text-warning" />
-                          תזכורת
-                        </Button>
-                      ) : null}
-                      {canRemind ? (
-                        <LogCommunicationButton
-                          entityType="order"
-                          entityId={row.id}
-                          customerId={row.customerId}
-                          defaultTopic="sales"
-                          className="h-9 gap-1 rounded-lg"
-                        />
-                      ) : null}
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </SwipeActions>
               );
             })}
           </div>

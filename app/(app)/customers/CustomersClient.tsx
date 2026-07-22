@@ -529,14 +529,14 @@ export default function CustomersClient({
                   key: "order",
                   label: "הזמנה",
                   icon: <ShoppingCart className="h-5 w-5" />,
-                  className: "bg-secondary/80",
+                  className: "bg-secondary-3",
                   onSelect: () => router.push(`/sales/orders/new?customer_id=${encodeURIComponent(id)}`),
                 },
                 {
                   key: "edit",
                   label: "עריכה",
                   icon: <Pencil className="h-5 w-5" />,
-                  className: "bg-muted-foreground",
+                  className: "bg-secondary-2",
                   onSelect: () => openEdit(row),
                 },
               ]}
@@ -547,8 +547,8 @@ export default function CustomersClient({
                 className="flex w-full min-w-0 items-center gap-3 p-3 text-right"
               >
                 <div className="min-w-0 flex-1 space-y-1">
-                  <div className="truncate text-sm font-semibold">{customerName}</div>
-                  {phone ? <div className="truncate text-xs text-muted-foreground">{phone}</div> : null}
+                  <div className="text-sm font-semibold leading-snug">{customerName}</div>
+                  {phone ? <div className="text-xs text-muted-foreground">{phone}</div> : null}
                   <div className="flex flex-wrap items-center gap-1.5">
                     {ordersCount > 0 ? (
                       <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{ordersCount} הזמנות</Badge>

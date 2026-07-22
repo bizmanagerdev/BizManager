@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useSetPageTitle } from "@/components/layout/page-title-context";
 
 type Row = Record<string, unknown>;
 
@@ -510,6 +511,8 @@ export default function SalesInventoryClient({
     }
   }
 
+  // Names the page in the mobile top bar.
+  useSetPageTitle("מלאי", `${totalCount ?? initialItems.length} מוצרים`);
   return (
     <div className="space-y-4">
       {lowStockItems.length > 0 ? (
@@ -617,8 +620,8 @@ export default function SalesInventoryClient({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold leading-tight">{item.productName}</div>
-                          <div className="truncate text-xs text-muted-foreground">
+                          <div className="text-sm font-semibold leading-snug">{item.productName}</div>
+                          <div className="text-xs text-muted-foreground">
                             {item.sku ? `מק״ט: ${item.sku}` : ""}
                             {item.sku && isLow ? " • " : ""}
                             {isLow ? <span className="font-medium text-destructive">מלאי נמוך</span> : null}
@@ -970,10 +973,10 @@ export default function SalesInventoryClient({
                         <div key={id} className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-background p-3 shadow-sm">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-semibold leading-tight">
+                              <div className="text-sm font-semibold leading-tight">
                                 {(movementProductId && productNameById.get(movementProductId)) ?? movementProductId ?? "-"}
                               </div>
-                              <div className="truncate text-xs text-muted-foreground">
+                              <div className="text-xs text-muted-foreground">
                                 {formatSourceType(getString(row, "source_type"))} • {formatDateTime(getString(row, "created_at"))}
                               </div>
                             </div>
@@ -1013,7 +1016,7 @@ export default function SalesInventoryClient({
                               ) : null}
                             </div>
                           </div>
-                          <div className="mt-1 truncate text-xs text-muted-foreground">{renderMovementInfo(row)}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{renderMovementInfo(row)}</div>
                         </div>
                       );
                     })}

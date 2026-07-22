@@ -8,6 +8,7 @@ import { DateTimeInput } from "@/components/ui/date-input";
 import { Textarea } from "@/components/ui/textarea";
 import { AssigneeSelect } from "@/components/collections/AssigneeSelect";
 import { useAssignableUsers } from "@/hooks/useAssignableUsers";
+import { whatsappHref } from "@/lib/whatsapp";
 import {
   Dialog,
   DialogContent,
@@ -25,15 +26,6 @@ function formatCurrency(value: number) {
     currency: "ILS",
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function waLink(number: string | null, message: string): string | null {
-  if (!number) return null;
-  let digits = number.replace(/\D/g, "");
-  if (!digits) return null;
-  if (digits.startsWith("0")) digits = `972${digits.slice(1)}`;
-  else if (!digits.startsWith("972")) digits = `972${digits}`;
-  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
 
 // Bar + dialogs for acting on several selected debtors at once: blast a WhatsApp
@@ -179,7 +171,7 @@ export default function BulkActions({
             {targets.map((g) => {
               const base = `שלום, נותרה יתרה לתשלום בסך ${formatCurrency(g.outstanding_amount)}. נשמח להסדרת התשלום. תודה!`;
               const msg = note.trim() ? `${base}\n${note.trim()}` : base;
-              const link = waLink(g.customer_whatsapp ?? g.customer_phone, msg);
+              const link = whatsappHref(g.customer_whatsapp ?? g.customer_phone, msg);
               return (
                 <div
                   key={g.customer_id}

@@ -151,7 +151,8 @@ type IncomeCreateFormState = {
 const currencyFormatter = new Intl.NumberFormat("he-IL", {
   style: "currency",
   currency: "ILS",
-  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
 });
 
 function formatCurrency(value: number) {

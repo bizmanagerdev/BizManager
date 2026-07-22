@@ -75,10 +75,13 @@ export default function PageAlertBar({ keys }: { keys: string[] }) {
       {shown.map((a) => (
         <div
           key={a.id}
-          className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${TONE[a.severity] ?? TONE.warning}`}
+          className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-[13px] sm:text-sm ${TONE[a.severity] ?? TONE.warning}`}
         >
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          <Link href={a.href} className="flex-1 font-medium hover:underline">
+          {/* One line, always: the banner is a nudge, and a wrapped two-line strip
+              pushes the page content down. The full text is on the target page (and
+              in the tooltip), so clipping the tail costs nothing. */}
+          <Link href={a.href} title={a.title} className="min-w-0 flex-1 truncate font-medium hover:underline">
             {a.title}
           </Link>
           <button

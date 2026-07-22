@@ -281,8 +281,12 @@ export function collectionStatusLabel(status: string) {
 
 function getCollectionStatusColor(status: string): StatusColor {
   switch (status) {
+    // Amber, not red. Red carries exactly one meaning in this app — "they owe you
+    // / it's late". An overpayment is worth a second look (duplicate or wrong
+    // amount), but it is the opposite of a debt, and sharing the alarm colour
+    // between the two makes both harder to read at a glance.
     case "overpaid":
-      return "danger"; // flag it red — overpayment usually means a duplicate/wrong payment
+      return "warning";
     case "collected":
       return "success";
     case "partial":

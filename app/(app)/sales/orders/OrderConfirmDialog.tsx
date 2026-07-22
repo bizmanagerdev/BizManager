@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, Delete, Trash2, Truck } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Delete, MapPin, Trash2, Truck } from "lucide-react";
 import * as Sentry from "@sentry/nextjs";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { formatPin, pinFrom, type DeliveryPin } from "@/lib/delivery-location";
 import LoadingDots from "@/app/(app)/sales/orders/LoadingDots";
 import {
   ORDER_PAYMENT_METHOD_OPTIONS,
@@ -83,6 +84,7 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
     currency: "ILS",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
 }
@@ -168,6 +170,42 @@ export default function OrderConfirmDialog({
   const [refundReferenceNumber, setRefundReferenceNumber] = useState("");
   const [refundNotes, setRefundNotes] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
+  // Arrival details are about the PLACE, so they save on the customer, not here.
+  const [arrivalInstructions, setArrivalInstructions] = useState("");
+  const [arrivalPin, setArrivalPin] = useState<DeliveryPin | null>(null);
+  const [capturingPin, setCapturingPin] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  // What the customer had when we opened — so we only write on an actual change.
+  const [initialArrival, setInitialArrival] = useState<{
+    instructions: string;
+    pin: DeliveryPin | null;
+  }>({ instructions: "", pin: null });
+
+  function captureArrivalPin() {
+    if (!navigator.geolocation) {
+      setPinError("המכשיר הזה לא תומך באיתור מיקום.");
+      return;
+    }
+    setCapturingPin(true);
+    setPinError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setArrivalPin({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setCapturingPin(false);
+      },
+      (geoError) => {
+        setCapturingPin(false);
+        // Name the permission case — "failed" sends people looking for a bug when
+        // the browser is simply waiting to be allowed.
+        setPinError(
+          geoError.code === geoError.PERMISSION_DENIED
+            ? "הגישה למיקום נחסמה. אפשרו מיקום לאתר בהגדרות הדפדפן."
+            : "לא הצלחנו לקבוע את המיקום."
+        );
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
   const [deliveryDate, setDeliveryDate] = useState(getTodayDate());
   const [deliveryImages, setDeliveryImages] = useState<File[]>([]);
   const [productQuery, setProductQuery] = useState("");
@@ -266,6 +304,31 @@ export default function OrderConfirmDialog({
       ),
     [lines]
   );
+
+  // Seed the arrival fields from whatever this customer already has saved, so
+  // the driver edits the standing directions instead of silently blanking them.
+  const arrivalCustomerId = data?.initialOrder.customer_id ?? "";
+  useEffect(() => {
+    if (!open || !arrivalCustomerId) return;
+    let active = true;
+    void fetch(`/api/customers/delivery-location?customer_id=${encodeURIComponent(arrivalCustomerId)}`, {
+      cache: "no-store",
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json: { instructions?: string | null; lat?: number | null; lng?: number | null } | null) => {
+        if (!active || !json) return;
+        const pin = pinFrom(json.lat, json.lng);
+        setArrivalInstructions(json.instructions ?? "");
+        setArrivalPin(pin);
+        setInitialArrival({ instructions: json.instructions ?? "", pin });
+      })
+      .catch(() => {
+        /* offline — the driver can still type directions, they just start empty */
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, arrivalCustomerId]);
 
   const totalAmount = subtotal - (data?.initialOrder.discount_amount ?? 0);
   const paymentAmountNumber = Number(paymentAmount || 0);
@@ -370,6 +433,28 @@ export default function OrderConfirmDialog({
     setSubmitting(true);
     try {
       const orderId = data.initialOrder.id;
+
+      // Arrival details belong to the customer, so they go to their own endpoint
+      // before the order save. Fire-and-forget on failure: a GPS pin not sticking
+      // must never block confirming a delivery that physically happened.
+      const arrivalChanged =
+        arrivalInstructions.trim() !== (initialArrival.instructions ?? "") ||
+        arrivalPin?.lat !== initialArrival.pin?.lat ||
+        arrivalPin?.lng !== initialArrival.pin?.lng;
+      if (arrivalChanged && data.initialOrder.customer_id) {
+        void fetch("/api/customers/delivery-location", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            customer_id: data.initialOrder.customer_id,
+            instructions: arrivalInstructions.trim() || null,
+            lat: arrivalPin?.lat ?? null,
+            lng: arrivalPin?.lng ?? null,
+          }),
+        }).catch(() => {
+          /* best-effort — the delivery confirmation is what matters here */
+        });
+      }
 
       const payload = {
         order_id: orderId,
@@ -899,14 +984,48 @@ export default function OrderConfirmDialog({
         );
       case "comments":
         return (
-          <div className="space-y-1">
-            <label className="text-sm font-medium">הערות אספקה</label>
-            <Textarea
-              value={deliveryNotes}
-              onChange={(e) => setDeliveryNotes(e.target.value)}
-              rows={5}
-              placeholder="הערות למסירה, חוסרים, מצב אספקה..."
-            />
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">הערות אספקה</label>
+              <Textarea
+                value={deliveryNotes}
+                onChange={(e) => setDeliveryNotes(e.target.value)}
+                rows={4}
+                placeholder="הערות למסירה, חוסרים, מצב אספקה..."
+              />
+              <p className="text-xs text-muted-foreground">נשמר על ההזמנה הזו בלבד.</p>
+            </div>
+
+            {/* Separate on purpose: the notes above describe THIS delivery, while
+                these describe the PLACE. Saving them on the customer is what lets
+                the next driver benefit from what this one just worked out — and
+                standing at the door is the one moment someone actually knows. */}
+            <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/20 p-3">
+              <div className="text-sm font-medium">פרטי הגעה — נשמר ללקוח להמשך</div>
+              <Textarea
+                value={arrivalInstructions}
+                onChange={(e) => setArrivalInstructions(e.target.value)}
+                rows={2}
+                placeholder="לדוגמה: לעקוף את הבניין מימין, שער כחול בחניון"
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={captureArrivalPin}
+                  disabled={capturingPin}
+                >
+                  <MapPin className="h-4 w-4" />
+                  {capturingPin ? "מאתר..." : "שמור את המיקום שאני נמצא בו"}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {arrivalPin ? `נקודה נשמרה: ${formatPin(arrivalPin)}` : "לא נשמרה נקודה"}
+                </span>
+              </div>
+              {pinError ? <p className="text-xs text-destructive">{pinError}</p> : null}
+            </div>
           </div>
         );
       case "review":

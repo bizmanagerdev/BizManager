@@ -16,6 +16,7 @@ function formatCurrency(value: number | null) {
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
     currency: "ILS",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
 }
@@ -217,6 +218,16 @@ export default function DeliveryShareActions({
                 <WazeIcon size={62} style={{ color: "#33ccff" }} />
               </span>
               <span>{address}</span>
+            </div>
+          ) : null}
+
+          {/* The arrival directions travel WITH the slip. Sharing a delivery to a
+              driver on WhatsApp is often the only thing they'll have in hand, so
+              leaving "around the corner, blue gate" behind in the app defeats it. */}
+          {delivery.deliveryInstructions ? (
+            <div style={slipRowStyle}>
+              <span style={slipIconStyle}>📍</span>
+              <span>{delivery.deliveryInstructions}</span>
             </div>
           ) : null}
 

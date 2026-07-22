@@ -180,6 +180,8 @@ export default async function SalesPage({
         initialHasMore={hasMore}
         initialQuery={searchQuery}
         showPaymentStatusFilter={activeTab === "closed"}
+        view={activeTab === "closed" ? "closed" : "open"}
+        tabLabel={activeTab === "closed" ? "הזמנות סגורות" : "הזמנות"}
         initialPaymentFilter={paymentStatusFilter}
         initialInvoiceFilter={invoiceFilter}
         customerId={customerId}
@@ -278,7 +280,7 @@ export default async function SalesPage({
             {customerName ? (
               <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
             ) : null}
-            <Button asChild className="max-sm:w-full">
+            <Button asChild className="hidden xl:inline-flex">
               <Link href="/sales/orders/new">הזמנה חדשה</Link>
             </Button>
           </div>

@@ -37,6 +37,7 @@ function formatAmount(value: number | string | null | undefined, currency = "ILS
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
     currency: currency || "ILS",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
 }

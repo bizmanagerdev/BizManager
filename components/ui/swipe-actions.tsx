@@ -21,14 +21,21 @@ import { cn } from "@/lib/utils";
 
 export type SwipeAction = {
   key: string;
-  label: string;
-  icon: ReactNode;
-  onSelect: () => void;
+  /**
+   * A ready-made control to drop into the tile — for actions that ARE a
+   * component with their own dialog (add-reminder, log-call, delete) and so
+   * can't be reduced to an onSelect callback. When set, label/icon/onSelect are
+   * ignored and the node is expected to fill the tile.
+   */
+  node?: ReactNode;
+  label?: string;
+  icon?: ReactNode;
+  onSelect?: () => void;
   /** Background + text classes for the action tile. */
   className?: string;
 };
 
-const ACTION_WIDTH = 76; // px per action tile
+const DEFAULT_ACTION_WIDTH = 76; // px per action tile
 /** Past this fraction of the strip, releasing snaps OPEN instead of closed. */
 const OPEN_THRESHOLD = 0.4;
 /** Movement before we commit to "this is a horizontal swipe". */
@@ -40,6 +47,7 @@ export function SwipeActions({
   className,
   onOpenChange,
   open,
+  actionWidth = DEFAULT_ACTION_WIDTH,
 }: {
   actions: SwipeAction[];
   children: ReactNode;
@@ -47,8 +55,10 @@ export function SwipeActions({
   /** Controlled open state — lets a list keep only one row open at a time. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Narrow the tiles when a row carries more than ~3 actions. */
+  actionWidth?: number;
 }) {
-  const stripWidth = actions.length * ACTION_WIDTH;
+  const stripWidth = actions.length * actionWidth;
 
   const [dragOffset, setDragOffset] = useState<number | null>(null);
   const startX = useRef(0);
@@ -103,25 +113,38 @@ export function SwipeActions({
     <div className={cn("relative min-w-0 overflow-hidden rounded-2xl", className)}>
       {/* The strip sits UNDER the card, pinned to the left (RTL end) edge. */}
       <div className="absolute inset-y-0 left-0 flex" style={{ width: stripWidth }} aria-hidden={!isOpen}>
-        {actions.map((action) => (
-          <button
-            key={action.key}
-            type="button"
-            tabIndex={isOpen ? 0 : -1}
-            onClick={() => {
-              onOpenChange?.(false);
-              action.onSelect();
-            }}
-            className={cn(
-              "flex h-full flex-col items-center justify-center gap-1 text-[11px] font-semibold text-white transition-opacity",
-              action.className ?? "bg-secondary"
-            )}
-            style={{ width: ACTION_WIDTH }}
-          >
-            {action.icon}
-            <span className="px-1 text-center leading-tight">{action.label}</span>
-          </button>
-        ))}
+        {actions.map((action) =>
+          action.node ? (
+            <div
+              key={action.key}
+              className={cn(
+                "flex h-full items-center justify-center [&_button]:h-full [&_button]:w-full [&_button]:flex-col [&_button]:gap-1 [&_button]:rounded-none [&_button]:!border-0 [&_button]:!text-[11px] [&_button]:!font-semibold [&_button]:!text-white [&_button]:!shadow-none [&>div]:h-full [&>div]:w-full [&>div]:space-y-0",
+                action.className ?? "bg-secondary"
+              )}
+              style={{ width: actionWidth }}
+            >
+              {action.node}
+            </div>
+          ) : (
+            <button
+              key={action.key}
+              type="button"
+              tabIndex={isOpen ? 0 : -1}
+              onClick={() => {
+                onOpenChange?.(false);
+                action.onSelect?.();
+              }}
+              className={cn(
+                "flex h-full flex-col items-center justify-center gap-1 text-[11px] font-semibold text-white transition-opacity",
+                action.className ?? "bg-secondary"
+              )}
+              style={{ width: actionWidth }}
+            >
+              {action.icon}
+              <span className="px-1 text-center leading-tight">{action.label}</span>
+            </button>
+          )
+        )}
       </div>
 
       <div

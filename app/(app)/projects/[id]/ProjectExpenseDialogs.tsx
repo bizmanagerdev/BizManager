@@ -395,7 +395,7 @@ export function AddIncomeDialog({
                         style: "currency",
                         currency: "ILS",
                         minimumFractionDigits: 0,
-                        maximumFractionDigits: 2,
+    maximumFractionDigits: 2,
                       }).format(n);
                     return (
                       <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">

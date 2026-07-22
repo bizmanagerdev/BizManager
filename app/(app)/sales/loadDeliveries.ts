@@ -40,6 +40,11 @@ export type DeliveryItem = {
   address: string;
   /** The order's products, so the driver sees what to load/deliver. */
   items: DeliveryOrderItem[];
+  /** Standing arrival directions for this customer ("around the corner, blue gate"). */
+  deliveryInstructions: string | null;
+  /** The saved drop-off pin — navigation prefers it over the address string. */
+  deliveryLat: number | null;
+  deliveryLng: number | null;
 };
 
 export type DeliveriesFilters = { customerId: string | null };
@@ -108,8 +113,33 @@ export async function loadDeliveriesPage(
       city: getString(row, "customer_city") ?? "ללא עיר",
       address: getString(row, "customer_address") ?? "-",
       items: [] as DeliveryOrderItem[],
+      deliveryInstructions: null as string | null,
+      deliveryLat: null as number | null,
+      deliveryLng: null as number | null,
     }))
     .filter((row) => row.id);
+
+  // Arrival directions + drop-off pin live on the CUSTOMER (see the
+  // customer_delivery_location migration) so they survive from one delivery to
+  // the next. Fetched here rather than added to delivery_overview_view — a
+  // second small query by id beats redefining a view other pages depend on.
+  if (deliveries.length > 0) {
+    const customerIds = Array.from(new Set(deliveries.map((d) => d.customerId).filter(Boolean)));
+    if (customerIds.length > 0) {
+      const { data: customerRows } = await supabase
+        .from("customers")
+        .select("id,delivery_instructions,delivery_lat,delivery_lng")
+        .in("id", customerIds);
+      const byId = new Map(((customerRows ?? []) as Row[]).map((row) => [getString(row, "id") ?? "", row]));
+      for (const delivery of deliveries) {
+        const row = byId.get(delivery.customerId);
+        if (!row) continue;
+        delivery.deliveryInstructions = getString(row, "delivery_instructions");
+        delivery.deliveryLat = getNumber(row, "delivery_lat");
+        delivery.deliveryLng = getNumber(row, "delivery_lng");
+      }
+    }
+  }
 
   // Attach each order's products so the driver sees what to load/deliver.
   if (deliveries.length > 0) {
