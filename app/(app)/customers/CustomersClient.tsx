@@ -368,14 +368,16 @@ export default function CustomersClient({
               SECONDARY fill. The filter beside it is a toggle, so it stays
               recessed until it's on — the two aren't the same kind of control and
               shouldn't look alike. */}
+          {/* Labelled "לקוח" so it can't be mistaken for the bottom nav's big
+              generic + a few centimetres below it — this one adds a customer. */}
           <Button
             type="button"
-            size="icon"
             aria-label="הוספת לקוח"
-            className="h-10 w-10 shrink-0 rounded-xl"
+            className="h-10 shrink-0 gap-1 rounded-xl px-2.5"
             onClick={() => setCreateOpen(true)}
           >
             <Plus className="h-4 w-4" />
+            <span className="text-xs">לקוח</span>
           </Button>
           {/* Icon + a short "חיפוש..." — what it searches over is discoverable by
               using it, and spelling out every field ate the whole bar. */}
