@@ -209,10 +209,13 @@ export async function POST(req: Request) {
     const orderId = typeof body.order_id === "string" ? body.order_id : "";
 
     if (!orderId) {
-      return NextResponse.json({ error: "Missing order_id" }, { status: 400 });
+      return NextResponse.json({ error: "חסר מזהה הזמנה." }, { status: 400 });
     }
 
-    const access = await requireRouteAccess();
+    // Deleting an order (with its payments, documents and stock movements) is
+    // destructive and irreversible — restrict to back-office (admin/office); a
+    // field/delivery worker must not be able to delete orders.
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase, user, profile } = access.value;
 
@@ -245,7 +248,7 @@ export async function POST(req: Request) {
       });
     }
 
-    if (data !== true) return NextResponse.json({ error: "Delete failed" }, { status: 400 });
+    if (data !== true) return NextResponse.json({ error: "מחיקת ההזמנה נכשלה." }, { status: 400 });
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {

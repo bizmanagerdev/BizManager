@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
-import { Banknote, Check, Eye, MapPin, Phone } from "lucide-react";
+import { Banknote, Check, ChevronDown, Eye, MapPin, Phone } from "lucide-react";
 import { WazeIcon } from "@/components/ui/waze-icon";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import DeliveryShareActions from "@/app/(app)/sales/DeliveryShareActions";
@@ -12,6 +12,7 @@ import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { AddressLink } from "@/components/ui/address-link";
 import { ContactLink } from "@/components/ui/contact-link";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui/cities";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
@@ -177,10 +178,17 @@ export default function SalesDeliveriesQueue({
     pin: DeliveryPin | null;
   } | null>(null);
 
+  // Desktop table: each region is a collapsible section inside one big table.
+  const [collapsedRegions, setCollapsedRegions] = useState<Record<string, boolean>>({});
+  const toggleRegion = (region: string) =>
+    setCollapsedRegions((prev) => ({ ...prev, [region]: !prev[region] }));
+
   const citiesByRegion = new Map(deliveriesByRegion);
-  const columnRegions = regionFilter
-    ? deliveriesByRegion.map(([region]) => region)
-    : ["דרום", "מרכז", "צפון", ...(citiesByRegion.has("לא ידוע") ? ["לא ידוע"] : [])];
+  // Full-width sections stacked one after another, ordered south → center → north
+  // (then "unknown"). Empty regions are dropped entirely — no title, no placeholder.
+  const orderedRegions = (["דרום", "מרכז", "צפון", "לא ידוע"] as const)
+    .map((region) => [region, citiesByRegion.get(region) ?? []] as const)
+    .filter(([, cities]) => cities.length > 0);
 
   // Names the page in the mobile top bar; the count follows the region filter.
   useSetPageTitle(
@@ -228,30 +236,220 @@ export default function SalesDeliveriesQueue({
       {deliveriesByRegion.length === 0 ? (
         <p className="text-sm text-muted-foreground">אין כרגע הזמנות מקובצות למשלוחים.</p>
       ) : (
-        <div className={regionFilter ? "space-y-3" : "grid grid-cols-1 items-start gap-4 lg:grid-cols-3"}>
-        {columnRegions.map((region) => {
-          const cities = citiesByRegion.get(region) ?? [];
+        <>
+        {/* Desktop (xl+): a column table per region, stacked south → center →
+            north. Mobile keeps the richer stop cards below. */}
+        <div className="hidden xl:block">
+          <Card className="overflow-hidden border-border/70 shadow-sm">
+            <div className="max-h-[75vh] overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-muted text-muted-foreground">
+                  <tr className="border-b border-border/70 text-right">
+                    <th className="px-4 py-3 font-medium">לקוח</th>
+                    <th className="px-4 py-3 font-medium">עיר</th>
+                    <th className="px-4 py-3 font-medium">כתובת</th>
+                    <th className="px-4 py-3 font-medium">מוצרים</th>
+                    <th className="px-4 py-3 font-medium">סכום</th>
+                    <th className="px-4 py-3 font-medium">פעולות</th>
+                  </tr>
+                </thead>
+                {orderedRegions.map(([region, cities]) => {
+                  const regionCustomers = cities.reduce((sum, [, groups]) => sum + groups.length, 0);
+                  const rows = cities.flatMap(([city, customerGroups]) =>
+                    customerGroups.flatMap(([, group]) => {
+                      const groupPin = pinFrom(group.deliveryLat, group.deliveryLng);
+                      return group.orders.map((delivery) => ({ city, group, groupPin, delivery }));
+                    })
+                  );
+                  const collapsed = collapsedRegions[region] === true;
+                  return (
+                    <tbody key={region} className="divide-y divide-border/70">
+                      {/* Collapsible region header row spanning the whole table. */}
+                      <tr
+                        className="cursor-pointer bg-muted/40 hover:bg-muted/60"
+                        onClick={() => toggleRegion(region)}
+                      >
+                        <td colSpan={6} className="px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            <ChevronDown
+                              className={`h-4 w-4 shrink-0 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+                            />
+                            <span className="text-sm font-bold text-foreground">{region}</span>
+                            <span className="text-xs text-muted-foreground">
+                              · {regionCustomers} לקוחות · {rows.length} משלוחים
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      {collapsed
+                        ? null
+                        : rows.map(({ city, group, groupPin, delivery }) => {
+                        const unpaidPrepayment =
+                          delivery.requiresPrepayment && delivery.paymentStatus !== "paid";
+                        const partiallyDelivered = delivery.status === "partially_delivered";
+                        const displayAddress = formatDeliveryAddress({ address: group.address, city });
+                        return (
+                          <tr
+                            key={delivery.id}
+                            className={`align-top ${unpaidPrepayment ? PREPAYMENT_ROW_CLASSES : ""}`}
+                          >
+                            <td className="px-4 py-3">
+                              <div className="font-medium">{group.customerName}</div>
+                              {group.customerPhone ? (
+                                <ContactLink
+                                  kind="tel"
+                                  value={group.customerPhone}
+                                  className="text-xs text-muted-foreground hover:underline"
+                                />
+                              ) : null}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3">{city}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                {groupPin ? (
+                                  <a
+                                    href={wazeLinkForPin(groupPin)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-secondary px-2 py-1 text-xs text-secondary-foreground no-underline"
+                                  >
+                                    <WazeIcon className="h-3.5 w-3.5" />
+                                    נקודה
+                                  </a>
+                                ) : displayAddress ? (
+                                  <AddressLink
+                                    address={group.address}
+                                    city={city}
+                                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-secondary px-2 py-1 text-xs text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
+                                  >
+                                    <WazeIcon className="h-3.5 w-3.5" />
+                                    וייז
+                                  </AddressLink>
+                                ) : null}
+                                <span className="min-w-0">{displayAddress || "-"}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap items-center gap-1 text-xs">
+                                {partiallyDelivered ? (
+                                  <span className="rounded-full border border-warning bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
+                                    יתרת אספקה
+                                  </span>
+                                ) : null}
+                                {delivery.items.slice(0, DELIVERY_ITEMS_LIMIT).map((item, idx) => {
+                                  const partiallyDone = item.delivered > 0 && item.delivered < item.quantity;
+                                  return (
+                                    <span
+                                      key={`${delivery.id}-${idx}`}
+                                      className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
+                                    >
+                                      {item.quantity > 1 ? <span className="font-semibold">{item.quantity}</span> : null}
+                                      <span>
+                                        {item.name}
+                                        {item.notes ? ` (${item.notes})` : ""}
+                                      </span>
+                                      {partiallyDone ? (
+                                        <span className="font-semibold text-warning-soft-foreground">
+                                          נמסר {item.delivered}
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  );
+                                })}
+                                {delivery.items.length > DELIVERY_ITEMS_LIMIT ? (
+                                  <Link
+                                    href={`/sales/orders/${delivery.id}`}
+                                    onClick={() => emitNavigationStart()}
+                                    className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground hover:text-foreground"
+                                  >
+                                    +{delivery.items.length - DELIVERY_ITEMS_LIMIT} נוספים
+                                  </Link>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="space-y-1">
+                                <div className="font-semibold">{formatCurrency(delivery.totalAmount)}</div>
+                                <div className="flex flex-wrap gap-1">
+                                  {unpaidPrepayment ? (
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prepaymentBadgeClasses}`}
+                                    >
+                                      {PREPAYMENT_UNPAID_LABEL}
+                                    </span>
+                                  ) : null}
+                                  <span
+                                    className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
+                                  >
+                                    {paymentStatusLabel(delivery.paymentStatus)}
+                                  </span>
+                                  {delivery.collectOnDelivery ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
+                                      <Banknote className="h-3.5 w-3.5 shrink-0" />
+                                      גבייה במסירה
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <DeliveryShareActions
+                                  delivery={delivery}
+                                  label=""
+                                  className="h-9 w-9 shrink-0 p-0"
+                                />
+                                <Button
+                                  asChild
+                                  type="button"
+                                  variant="secondary"
+                                  size="icon-sm"
+                                  aria-label="פרטי ההזמנה"
+                                  onClick={() => emitNavigationStart()}
+                                >
+                                  <Link href={`/sales/orders/${delivery.id}`}>
+                                    <Eye className="h-4 w-4" />
+                                  </Link>
+                                </Button>
+                                <OrderConfirmDialog
+                                  orderId={delivery.id}
+                                  customerName={delivery.customerName}
+                                  buttonVariant="default"
+                                  buttonClassName="gap-1.5"
+                                  buttonLabel={
+                                    <>
+                                      <Check className="h-4 w-4" />
+                                      סמן כסופק
+                                    </>
+                                  }
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  );
+                })}
+              </table>
+            </div>
+          </Card>
+        </div>
+
+        {/* Mobile (< xl): stop cards grouped region → city → customer. */}
+        <div className="space-y-4 xl:hidden">
+        {orderedRegions.map(([region, cities]) => {
           const regionCustomers = cities.reduce((sum, [, groups]) => sum + groups.length, 0);
 
-          const regionIsEmpty = cities.length === 0;
-
           return (
-            <div
-              key={region}
-              className={`min-w-0 space-y-2 ${regionIsEmpty ? "hidden lg:block" : ""}`}
-            >
-              {/* Region column header — boxed, so the eye can tell "this is a
-                  region" from "this is a stop" without reading either. */}
+            <div key={region} className="min-w-0 space-y-2">
+              {/* Region header — boxed, so the eye can tell "this is a region"
+                  from "this is a stop" without reading either. Empty regions are
+                  filtered out upstream, so every section here has stops. */}
               <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2">
                 <span className="text-sm font-bold text-foreground">{region}</span>
                 <span className="text-xs text-muted-foreground">{regionCustomers} לקוחות</span>
               </div>
-
-              {cities.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-border/60 p-4 text-center text-xs text-muted-foreground">
-                  אין משלוחים באזור זה
-                </p>
-              ) : null}
 
               {/* Cities in region */}
               {cities.map(([city, customerGroups]) => (
@@ -300,7 +498,6 @@ export default function SalesDeliveriesQueue({
                                     className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-secondary px-2.5 py-1.5 text-secondary-foreground no-underline hover:!text-secondary-foreground hover:!no-underline"
                                   >
                                     <WazeIcon className="h-4 w-4" />
-                                    <span className="text-[10px] font-semibold leading-none">וייז</span>
                                   </AddressLink>
                                 ) : null}
                                 <div className="min-w-0 flex-1">
@@ -377,6 +574,7 @@ export default function SalesDeliveriesQueue({
                               {group.orders.map((delivery) => {
                                 const unpaidPrepayment =
                                   delivery.requiresPrepayment && delivery.paymentStatus !== "paid";
+                                const partiallyDelivered = delivery.status === "partially_delivered";
                                 return (
                                 <div
                                   key={delivery.id}
@@ -420,8 +618,17 @@ export default function SalesDeliveriesQueue({
                                       the full load — so the cap only applies past a
                                       point where the card would stop being scannable. */}
                                   {delivery.items.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1 p-3 text-xs">
-                                      {delivery.items.slice(0, DELIVERY_ITEMS_LIMIT).map((item, itemIndex) => (
+                                    <div className="flex flex-wrap items-center gap-1 p-3 text-xs">
+                                      {/* The remaining-delivery flag lives WITH the products —
+                                          that's what it qualifies (what's still owed). */}
+                                      {partiallyDelivered ? (
+                                        <span className="rounded-full border border-warning bg-warning-soft px-2 py-0.5 text-[11px] font-semibold text-warning-soft-foreground">
+                                          יתרת אספקה
+                                        </span>
+                                      ) : null}
+                                      {delivery.items.slice(0, DELIVERY_ITEMS_LIMIT).map((item, itemIndex) => {
+                                        const partiallyDone = item.delivered > 0 && item.delivered < item.quantity;
+                                        return (
                                         <span
                                           key={`${delivery.id}-${itemIndex}`}
                                           className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
@@ -433,8 +640,15 @@ export default function SalesDeliveriesQueue({
                                             {item.name}
                                             {item.notes ? ` (${item.notes})` : ""}
                                           </span>
+                                          {/* What's already been handed over on this line. */}
+                                          {partiallyDone ? (
+                                            <span className="font-semibold text-warning-soft-foreground">
+                                              נמסר {item.delivered}
+                                            </span>
+                                          ) : null}
                                         </span>
-                                      ))}
+                                        );
+                                      })}
                                       {delivery.items.length > DELIVERY_ITEMS_LIMIT ? (
                                         <Link
                                           href={`/sales/orders/${delivery.id}`}
@@ -497,6 +711,7 @@ export default function SalesDeliveriesQueue({
           );
         })}
         </div>
+        </>
       )}
 
       {hasMore ? <div ref={sentinelRef} className="h-1" /> : null}

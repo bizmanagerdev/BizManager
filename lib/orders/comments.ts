@@ -38,8 +38,11 @@ export function parseOrderComments(notes: string | null | undefined): OrderComme
       const newline = c.indexOf("\n");
       const firstLine = newline === -1 ? c : c.slice(0, newline);
       const rest = newline === -1 ? "" : c.slice(newline + 1);
-      // A real header looks like "<author> · <date…>" where the date starts D/M/Y.
-      const header = firstLine.match(/^(.+?) · (\d{1,2}\/\d{1,2}\/\d{2,4}.*)$/);
+      // A real header looks like "<author> · <date…>" where the date starts
+      // D/M/Y. The Hebrew (he-IL) timestamp separates with DOTS ("24.07.2026,
+      // 12:26"), so accept "." "/" or "-" — matching only slashes silently
+      // dropped every attributed comment back to an unattributed legacy note.
+      const header = firstLine.match(/^(.+?) · (\d{1,2}[./-]\d{1,2}[./-]\d{2,4}.*)$/);
       if (header) {
         return { author_name: header[1].trim() || null, created_at: header[2].trim(), body: rest.trim() };
       }
@@ -57,4 +60,33 @@ export function appendOrderComment(
   const block = `${comment.author_name ?? "משתמש"} · ${comment.created_at}\n${comment.body.trim()}`;
   const base = (notes ?? "").trim();
   return base ? `${base}${SEPARATOR}${block}` : block;
+}
+
+/** Serialize one comment back into its notes block (inverse of the parser). */
+function serializeOrderComment(comment: OrderComment): string {
+  const hasHeader = Boolean(comment.author_name || comment.created_at);
+  if (!hasHeader) return comment.body.trim();
+  return `${comment.author_name ?? "משתמש"} · ${comment.created_at ?? ""}\n${comment.body.trim()}`;
+}
+
+/** Serialize a full comment list back into the notes string (drops empty ones). */
+export function serializeOrderComments(comments: OrderComment[]): string {
+  return comments
+    .map(serializeOrderComment)
+    .filter((block) => block.trim().length > 0)
+    .join(SEPARATOR);
+}
+
+/**
+ * Locate a comment inside a parsed list by content (author + timestamp + body)
+ * rather than by index, so an edit/delete can't hit the wrong one if the thread
+ * shifted between load and action. Returns -1 when it's no longer present.
+ */
+export function findOrderCommentIndex(comments: OrderComment[], target: OrderComment): number {
+  return comments.findIndex(
+    (comment) =>
+      (comment.author_name ?? null) === (target.author_name ?? null) &&
+      (comment.created_at ?? null) === (target.created_at ?? null) &&
+      comment.body === target.body
+  );
 }

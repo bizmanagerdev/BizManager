@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as Payload;
     const orderId = typeof body.order_id === "string" ? body.order_id.trim() : "";
     if (!orderId) {
-      return NextResponse.json({ error: "Missing order_id" }, { status: 400 });
+      return NextResponse.json({ error: "חסר מזהה הזמנה." }, { status: 400 });
     }
 
     const update: Record<string, unknown> = {};
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     }
 
     if (Object.keys(update).length === 0) {
-      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+      return NextResponse.json({ error: "אין שדות לעדכון." }, { status: 400 });
     }
 
     const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });

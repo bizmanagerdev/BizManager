@@ -1,6 +1,7 @@
 import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
+import { attachProductStock } from "@/lib/orders/productStock";
 
 function parseLimit(value: string | null) {
   const parsed = Number(value ?? "50");
@@ -34,5 +35,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
   }
 
-  return NextResponse.json({ products: data ?? [] });
+  const products = await attachProductStock(supabase, (data ?? []) as Record<string, unknown>[]);
+  return NextResponse.json({ products });
 }

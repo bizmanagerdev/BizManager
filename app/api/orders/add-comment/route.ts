@@ -21,7 +21,7 @@ export async function POST(req: Request) {
       const message = typeof body.message === "string" ? body.message.trim() : "";
 
       if (!orderId || !message) {
-        return NextResponse.json({ error: "Missing order_id or message" }, { status: 400 });
+        return NextResponse.json({ error: "חסר תוכן להוספה." }, { status: 400 });
       }
 
       const { data: orderRow, error: readError } = await supabase
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (readError) return NextResponse.json({ error: toHebrewError(readError.message) }, { status: 400 });
-      if (!orderRow) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+      if (!orderRow) return NextResponse.json({ error: "ההזמנה לא נמצאה." }, { status: 404 });
 
       const authorName = profile.full_name ?? profile.email ?? null;
       const createdAt = formatOrderCommentTimestamp(new Date());

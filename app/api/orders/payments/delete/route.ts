@@ -11,10 +11,12 @@ export async function POST(req: Request) {
     const orderId = typeof body.order_id === "string" ? body.order_id.trim() : "";
 
     if (!paymentId || !orderId) {
-      return NextResponse.json({ error: "Missing id or order_id" }, { status: 400 });
+      return NextResponse.json({ error: "חסר מזהה תשלום או הזמנה." }, { status: 400 });
     }
 
-    const access = await requireRouteAccess();
+    // Deleting a recorded payment is a financial correction — restrict to
+    // back-office (admin/office); field/delivery workers must not remove money rows.
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase, profile } = access.value;
 
@@ -26,7 +28,7 @@ export async function POST(req: Request) {
 
     if (existingError) return NextResponse.json({ error: toHebrewError(existingError.message) }, { status: 400 });
     if (!existing?.id || existing.order_id !== orderId) {
-      return NextResponse.json({ error: "Payment not found for order" }, { status: 404 });
+      return NextResponse.json({ error: "התשלום לא נמצא עבור ההזמנה." }, { status: 404 });
     }
 
     const { error: deleteError } = await supabase

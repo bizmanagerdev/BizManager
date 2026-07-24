@@ -14,7 +14,13 @@ export type PaymentStatus =
 export type ProjectStatus = "quote" | "planned" | "active" | "on_hold" | "completed" | "cancelled";
 export type TaskStatus = "todo" | "in_progress" | "blocked" | "done" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
-export type OrderStatus = "draft" | "reserved" | "delivered" | "closed" | "cancelled";
+export type OrderStatus =
+  | "draft"
+  | "reserved"
+  | "partially_delivered"
+  | "delivered"
+  | "closed"
+  | "cancelled";
 
 function normalizeValue(value: string | null | undefined) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -33,6 +39,10 @@ export function normalizeOrderStatus(status: string | null | undefined): OrderSt
     case "בטיפול":
     case "במשלוח":
       return "reserved";
+    case "partially_delivered":
+    case "סופק חלקית":
+    case "סופקה חלקית":
+      return "partially_delivered";
     case "delivered":
     case "סופקה":
       return "delivered";
@@ -127,6 +137,8 @@ export function getOrderStatusColor(status: string): StatusColor {
     case "draft":
       return "danger";
     case "reserved":
+      return "warning";
+    case "partially_delivered":
       return "warning";
     case "delivered":
       return "success";
@@ -226,6 +238,8 @@ export function getOrderStatusLabel(status: string) {
       return "פתוח";
     case "reserved":
       return "בהזמנה";
+    case "partially_delivered":
+      return "סופק חלקית";
     case "delivered":
       return "סופק";
     case "closed":

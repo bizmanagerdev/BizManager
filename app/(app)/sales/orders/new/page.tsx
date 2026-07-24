@@ -1,6 +1,7 @@
 ﻿import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import NewOrderClient from "@/app/(app)/sales/orders/new/NewOrderClient";
+import { attachProductStock } from "@/lib/orders/productStock";
 
 type Row = Record<string, unknown>;
 
@@ -121,6 +122,10 @@ export default async function NewSalesOrderPage({
         .range(0, 49),
     ]);
 
+  // Attach live stock (on-hand − reserved) so the wizard can show availability
+  // and warn on shortfalls while building the order.
+  const productsWithStock = await attachProductStock(supabase, (products ?? []) as Row[]);
+
   let customerList = (customers ?? []) as Row[];
   if (prefillCustomerId && !customerList.some((row) => row.id === prefillCustomerId)) {
     const { data: prefillCustomer } = await supabase
@@ -138,7 +143,7 @@ export default async function NewSalesOrderPage({
       <div className="space-y-4">
         <NewOrderClient
           customers={customerList}
-          products={(products ?? []) as Row[]}
+          products={productsWithStock}
           customersError={customersError?.message ?? null}
           productsError={productsError?.message ?? null}
           mode="create"

@@ -66,8 +66,11 @@ import { WazeIcon } from "@/components/ui/waze-icon";
 type Row = Record<string, unknown>;
 
 type OrderLine = {
+  /** Empty for an off-catalog ("custom") line — that line's name is `description`. */
   product_id: string;
   product_name: string;
+  /** Free-text name for a custom line (empty for catalog products). */
+  description?: string;
   quantity_ordered: number;
   unit_price: number;
   discount_amount: number;
@@ -214,7 +217,19 @@ export default function NewOrderClient({
   }
 
   const [productQuery, setProductQuery] = useState("");
-  const [lines, setLines] = useState<OrderLine[]>(initialOrder?.items ?? []);
+  // Off-catalog lines arrive from the server with an empty product_id; give each a
+  // synthetic `custom:<uuid>` id so they don't collide on "" (discount mode, keys).
+  const [lines, setLines] = useState<OrderLine[]>(() =>
+    (initialOrder?.items ?? []).map((line) =>
+      !line.product_id
+        ? {
+            ...line,
+            product_id: `custom:${crypto.randomUUID()}`,
+            description: line.description || line.product_name,
+          }
+        : line
+    )
+  );
   const [newPayments, setNewPayments] = useState<PaymentDraft[]>([]);
   const [paymentAccountsList, setPaymentAccountsList] = useState<Account[]>([]);
   // Editable notes for already-saved payments (edit mode). Keyed by payment id,
@@ -367,7 +382,8 @@ export default function NewOrderClient({
               const name = getString(row, ["name", "product_name", "title", "sku"]) ?? "מוצר";
               const code = getString(row, ["sku", "code", "barcode"]);
               const unitPrice = getNumber(row, ["base_price"]) ?? 0;
-              return { id, name, code, unitPrice, stock: null };
+              const stock = getNumber(row, ["available_quantity", "stock", "quantity", "in_stock"]);
+              return { id, name, code, unitPrice, stock };
             })
             .filter((row): row is ProductOption => Boolean(row.id));
 
@@ -413,6 +429,13 @@ export default function NewOrderClient({
     [lines]
   );
 
+  // product_id → available stock (on-hand − reserved), for the shortfall warning.
+  // null means "untracked" (no inventory row) — we never warn on those.
+  const availableByProductId = useMemo(
+    () => new Map(productOptions.map((p) => [p.id, p.stock])),
+    [productOptions]
+  );
+
   // The API already filters by name/email/phone/address/contacts — return results directly.
   // Local re-filtering would incorrectly exclude contact-matched customers (whose customer fields don't contain the query).
   const filteredCustomers = useMemo(() => customerOptions.slice(0, 50), [customerOptions]);
@@ -429,7 +452,8 @@ export default function NewOrderClient({
   const totalUnits = useMemo(() => lines.reduce((sum, line) => sum + line.quantity_ordered, 0), [lines]);
   const orderDiscountNumber = Number(orderDiscount || 0);
   const effectiveOrderDiscount = Number.isFinite(orderDiscountNumber) ? orderDiscountNumber : 0;
-  const totalAmount = subtotal - effectiveOrderDiscount;
+  // Floor at 0 — a discount larger than the goods must never show a negative total.
+  const totalAmount = Math.max(0, subtotal - effectiveOrderDiscount);
   const existingPaidTotal = useMemo(
     () => initialPayments.reduce((sum, payment) => sum + payment.amount_total, 0),
     [initialPayments]
@@ -479,16 +503,39 @@ export default function NewOrderClient({
     });
   }
 
+  // Off-catalog ("custom") line: a one-off charge like "משלוח" with a free-text
+  // name and price, no product_id (so it never touches stock). Uses a synthetic
+  // `custom:<uuid>` id for stable React keys / per-line discount mode.
+  function addCustomLine() {
+    setLines((prev) => [
+      ...prev,
+      {
+        product_id: `custom:${crypto.randomUUID()}`,
+        product_name: "",
+        description: "",
+        quantity_ordered: 1,
+        unit_price: 0,
+        discount_amount: 0,
+        notes: "",
+      },
+    ]);
+  }
+
   function updateLine(index: number, patch: Partial<OrderLine>) {
     setLines((prev) =>
       prev.map((line, i) => {
         if (i !== index) return line;
         const next = { ...line, ...patch };
+        const quantity = toPositiveInt(next.quantity_ordered);
+        const unitPrice = toNonNegativeInt(next.unit_price);
+        // Clamp the ₪ discount to the line's gross so a too-large discount can't
+        // drive the line (and the order subtotal) negative.
+        const discount = Math.min(toNonNegativeInt(next.discount_amount), quantity * unitPrice);
         return {
           ...next,
-          quantity_ordered: toPositiveInt(next.quantity_ordered),
-          unit_price: toNonNegativeInt(next.unit_price),
-          discount_amount: toNonNegativeInt(next.discount_amount),
+          quantity_ordered: quantity,
+          unit_price: unitPrice,
+          discount_amount: discount,
         };
       })
     );
@@ -584,13 +631,19 @@ export default function NewOrderClient({
     const invalidLine = lines.find(
       (line) =>
         !line.product_id ||
+        // Off-catalog line must have a name.
+        (line.product_id.startsWith("custom:") && !line.product_name.trim()) ||
         !Number.isFinite(line.quantity_ordered) ||
         line.quantity_ordered <= 0 ||
         !Number.isFinite(line.unit_price)
     );
 
     if (invalidLine) {
-      setSubmitError("אחת משורות ההזמנה אינה תקינה.");
+      setSubmitError(
+        invalidLine.product_id.startsWith("custom:") && !invalidLine.product_name.trim()
+          ? "יש להזין שם לכל שורה חופשית."
+          : "אחת משורות ההזמנה אינה תקינה."
+      );
       return;
     }
 
@@ -639,9 +692,14 @@ export default function NewOrderClient({
 
     setSubmitting(true);
     try {
+      // Idempotency-Key: lets the server dedupe a network retry of a create so a
+      // flaky connection can't produce two orders (the server caches the first
+      // response and returns it for any replay of the same key).
+      const idempotencyHeaders: Record<string, string> = { "content-type": "application/json" };
+      if (!isEditMode) idempotencyHeaders["Idempotency-Key"] = crypto.randomUUID();
       const res = await fetch(isEditMode ? "/api/orders/update" : "/api/orders/create", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: idempotencyHeaders,
         body: JSON.stringify({
           order_id: initialOrder?.id,
           customer_id: customerId,
@@ -667,13 +725,18 @@ export default function NewOrderClient({
                 : null,
             notes: payment.notes.trim() || null,
           })),
-          items: lines.map((line) => ({
-            product_id: line.product_id,
-            quantity_ordered: line.quantity_ordered,
-            unit_price: line.unit_price,
-            discount_amount: line.discount_amount,
-            notes: line.notes.trim() || null,
-          })),
+          items: lines.map((line) => {
+            const isCustom = line.product_id.startsWith("custom:");
+            return {
+              // Custom lines send no product_id; their name rides in `description`.
+              product_id: isCustom ? "" : line.product_id,
+              description: isCustom ? line.product_name.trim() : "",
+              quantity_ordered: line.quantity_ordered,
+              unit_price: line.unit_price,
+              discount_amount: line.discount_amount,
+              notes: line.notes.trim() || null,
+            };
+          }),
           // Note-only edits to already-saved payments (only the ones that changed).
           existing_payment_notes: initialPayments
             .filter((payment) => (existingPaymentNotes[payment.id] ?? "") !== (payment.notes ?? ""))
@@ -1201,7 +1264,18 @@ export default function NewOrderClient({
               <CardTitle className="flex items-center gap-2 text-base">
                 <ShoppingCart className="h-5 w-5 text-primary" /> פריטי הזמנה
               </CardTitle>
-              <Badge variant="info">{totalUnits}</Badge>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={addCustomLine}
+                  disabled={actionLocked}
+                >
+                  <Plus className="me-1 h-3.5 w-3.5" /> שורה חופשית
+                </Button>
+                <Badge variant="info">{totalUnits}</Badge>
+              </div>
             </CardHeader>
             <CardContent className={cn("space-y-3", lines.length > 0 && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col")}>
               {lines.length === 0 ? (
@@ -1217,12 +1291,33 @@ export default function NewOrderClient({
                     const lineTotal = gross - line.discount_amount;
                     const mode = lineDiscountModes[line.product_id] ?? "amount";
                     const percentValue = gross > 0 ? Math.round((line.discount_amount / gross) * 100) : 0;
+                    const available = availableByProductId.get(line.product_id);
+                    const shortfall =
+                      typeof available === "number" && line.quantity_ordered > available;
+                    const isCustom = line.product_id.startsWith("custom:");
                     return (
                       <div key={`${line.product_id}-${index}`} className="space-y-2 border-b border-border/60 pb-3 last:border-0 last:pb-0">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="min-w-0 truncate text-sm font-medium text-foreground">{line.product_name}</p>
+                          {isCustom ? (
+                            <Input
+                              value={line.product_name}
+                              disabled={actionLocked}
+                              onChange={(e) =>
+                                updateLine(index, { product_name: e.target.value, description: e.target.value })
+                              }
+                              placeholder="שם השורה (למשל: משלוח)"
+                              className="h-8 min-w-0"
+                            />
+                          ) : (
+                            <p className="min-w-0 truncate text-sm font-medium text-foreground">{line.product_name}</p>
+                          )}
                           <span className="shrink-0 text-sm font-semibold text-foreground">{formatCurrency(lineTotal)}</span>
                         </div>
+                        {shortfall ? (
+                          <p className="text-xs font-medium text-destructive-soft-foreground">
+                            חסר במלאי — במלאי {available}, הוזמנו {line.quantity_ordered}
+                          </p>
+                        ) : null}
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5">
                             <button
@@ -1385,7 +1480,11 @@ export default function NewOrderClient({
                           step="1"
                           value={orderDiscount}
                           disabled={actionLocked}
-                          onChange={(e) => setOrderDiscount(String(toNonNegativeInt(Number(e.target.value || 0))))}
+                          onChange={(e) =>
+                            setOrderDiscount(
+                              String(Math.min(toNonNegativeInt(Number(e.target.value || 0)), Math.max(subtotal, 0)))
+                            )
+                          }
                           className="h-8"
                           placeholder="0"
                         />

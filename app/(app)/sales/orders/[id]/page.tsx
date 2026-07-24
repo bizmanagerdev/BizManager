@@ -33,7 +33,8 @@ import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
 import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
 import InvoiceQuickMenu from "@/app/(app)/sales/orders/InvoiceQuickMenu";
-import OrderNotesEditor from "@/app/(app)/sales/orders/[id]/OrderNotesEditor";
+import OrderCommentsThread from "@/app/(app)/sales/orders/[id]/OrderCommentsThread";
+import OrderShareActions from "@/app/(app)/sales/orders/[id]/OrderShareActions";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { OrderPaymentActionsClient } from "@/app/(app)/sales/orders/OrderPaymentActionsClient";
 import type { PaymentItem } from "@/app/(app)/sales/orders/OrderPaymentActionsClient";
@@ -242,7 +243,7 @@ export default async function SalesOrderPage({
       .maybeSingle(),
     supabase
       .from("order_items")
-      .select("id,order_id,product_id,quantity_ordered,unit_price,discount_amount,line_total,notes")
+      .select("id,order_id,product_id,description,quantity_ordered,quantity_delivered,unit_price,discount_amount,line_total,notes")
       .eq("order_id", id),
     supabase
       .from("payments")
@@ -431,6 +432,25 @@ export default async function SalesOrderPage({
   const customerEmail = getString((customer as Row) ?? {}, "email");
   const fullAddress = formatAddressForDisplay(getString((customer as Row) ?? {}, "address"));
   const orderNotes = getString((order as Row) ?? {}, "notes");
+
+  // Comment avatars should use each author's CHOSEN color (users.avatar_color),
+  // matching the color they picked everywhere else. Comments store only the
+  // author's display name, so we resolve name/email → color here. The users
+  // table is small, so one plain read (only when there are notes) is fine.
+  const commentAuthorColors: Record<string, string> = {};
+  if (orderNotes) {
+    const { data: userRows } = await supabase.from("users").select("full_name,email,avatar_color");
+    for (const row of (userRows ?? []) as Row[]) {
+      const color =
+        typeof row.avatar_color === "string" && row.avatar_color.trim() ? row.avatar_color.trim() : null;
+      if (!color) continue;
+      const fullName = typeof row.full_name === "string" ? row.full_name.trim() : "";
+      const email = typeof row.email === "string" ? row.email.trim() : "";
+      if (fullName) commentAuthorColors[fullName] = color;
+      if (email) commentAuthorColors[email] = color;
+    }
+  }
+
   const orderDate = getString((order as Row) ?? {}, "order_date");
   const orderNeedsInvoice =
     typeof (order as Row)?.needs_invoice === "boolean" ? ((order as Row).needs_invoice as boolean) : null;
@@ -536,6 +556,33 @@ export default async function SalesOrderPage({
     0
   );
 
+  // Serializable order summary for the WhatsApp-share + print/PDF actions.
+  const shareItems = ((orderItems ?? []) as Row[]).map((item) => {
+    const productId = getString(item, "product_id") ?? "";
+    const product = productMap.get(productId);
+    const quantity = getNumber(item, "quantity_ordered") ?? 0;
+    const unitPrice = getNumber(item, "unit_price") ?? 0;
+    return {
+      name:
+        getString((product ?? {}) as Row, "name") ??
+        getString((product ?? {}) as Row, "product_name") ??
+        getString(item, "description") ??
+        productId,
+      quantity,
+      lineTotal: getNumber(item, "line_total") ?? quantity * unitPrice,
+    };
+  });
+  const orderShareData = {
+    orderNumber: id.slice(0, 8),
+    orderDate: formatDate(orderDate),
+    customerName,
+    customerPhone,
+    items: shareItems,
+    totalAmount,
+    totalPaid,
+    remainingBalance,
+  };
+
   // Per-entity activity timeline (admin only, mirroring /activity access). Shows
   // this order's own change history plus payments recorded against it.
   const orderActivity =
@@ -561,7 +608,15 @@ export default async function SalesOrderPage({
                 מכירות
               </Link>
               <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
-              <h1 className="text-lg font-bold text-foreground">הזמנה #{id.slice(0, 8)}</h1>
+              <h1 className="min-w-0 truncate text-lg font-bold text-foreground">
+                {customerId ? (
+                  <Link href={`/customers/${customerId}`} className="hover:underline">
+                    {customerName}
+                  </Link>
+                ) : (
+                  customerName
+                )}
+              </h1>
             </nav>
             {order ? (
               <div className="flex shrink-0 gap-1.5">
@@ -574,6 +629,7 @@ export default async function SalesOrderPage({
                     <Copy className="h-4 w-4" />
                   </Link>
                 </Button>
+                <OrderShareActions order={orderShareData} />
                 <OrderEditDialog
                   orderId={id}
                   buttonLabel={<PencilLine className="h-4 w-4" />}
@@ -587,16 +643,7 @@ export default async function SalesOrderPage({
             ) : null}
           </div>
           <p className="text-xs text-muted-foreground">
-            {customerId ? (
-              <Link
-                href={`/customers/${customerId}`}
-                className="font-semibold text-foreground hover:underline"
-              >
-                {customerName}
-              </Link>
-            ) : (
-              <span className="font-semibold text-foreground">{customerName}</span>
-            )}
+            <span className="font-semibold text-foreground">הזמנה #{id.slice(0, 8)}</span>
             {customerPhone ? (
               <>
                 {" · "}
@@ -656,6 +703,7 @@ export default async function SalesOrderPage({
                       orderId={id}
                       buttonLabel="אישור אספקה"
                       buttonClassName={FULL_PRIMARY_TRIGGER_CLASSES}
+                      authorName={profile.full_name ?? profile.email ?? null}
                     />
                   ) : null
                 }
@@ -892,6 +940,7 @@ export default async function SalesOrderPage({
                   orderId={id}
                   buttonLabel="אספקת הזמנה"
                   buttonClassName={FULL_PRIMARY_TRIGGER_CLASSES}
+                  authorName={profile.full_name ?? profile.email ?? null}
                 />
               ) : null}
             </SectionCard>
@@ -918,12 +967,18 @@ export default async function SalesOrderPage({
                       const productName =
                         getString((product ?? {}) as Row, "name") ??
                         getString((product ?? {}) as Row, "product_name") ??
+                        // Off-catalog (custom) line: its name is the description.
+                        getString(item as Row, "description") ??
                         productId;
                       const quantity = getNumber(item as Row, "quantity_ordered") ?? 0;
+                      const delivered = getNumber(item as Row, "quantity_delivered") ?? 0;
                       const unitPrice = getNumber(item as Row, "unit_price") ?? 0;
                       const lineTotal = getNumber(item as Row, "line_total") ?? quantity * unitPrice;
                       const lineDiscountAmount = getNumber(item as Row, "discount_amount") ?? 0;
                       const lineNotes = getString(item as Row, "notes");
+                      // Show fulfillment only while a line is unfinished — a fully
+                      // delivered (or untouched) line doesn't need "נמסר X מתוך Y".
+                      const showDelivery = delivered > 0 && delivered < quantity;
 
                       return (
                         <div
@@ -942,6 +997,11 @@ export default async function SalesOrderPage({
                                   ? ` · הנחה -${formatCurrency(lineDiscountAmount)}`
                                   : ""}
                               </div>
+                              {showDelivery ? (
+                                <div className="mt-0.5 text-xs font-medium text-warning-soft-foreground">
+                                  נמסר {delivered} מתוך {quantity} · נותר {quantity - delivered}
+                                </div>
+                              ) : null}
                               {lineNotes ? (
                                 <div className="mt-0.5 flex items-start gap-1 text-xs text-primary">
                                   <MessageSquareText className="mt-0.5 h-3 w-3 shrink-0" />
@@ -1038,8 +1098,8 @@ export default async function SalesOrderPage({
               )}
             </SectionCard>
 
-            <SectionCard icon={<PencilLine className="h-4 w-4" />} title="הערות">
-              <OrderNotesEditor orderId={id} initialNotes={orderNotes} />
+            <SectionCard icon={<PencilLine className="h-4 w-4" />} title="הערות ותגובות">
+              <OrderCommentsThread orderId={id} initialNotes={orderNotes} authorColors={commentAuthorColors} />
             </SectionCard>
 
             {profile.role === "admin" ? (

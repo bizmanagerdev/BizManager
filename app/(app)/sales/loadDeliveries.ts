@@ -18,7 +18,10 @@ const CLOSED_ORDER_STATUSES = [
 
 export type DeliveryOrderItem = {
   name: string;
+  /** Ordered quantity for this line. */
   quantity: number;
+  /** How much of this line was already handed over (partial deliveries). */
+  delivered: number;
   notes: string | null;
 };
 
@@ -150,7 +153,7 @@ export async function loadDeliveriesPage(
     const orderIds = deliveries.map((delivery) => delivery.id);
     const { data: itemRows } = await supabase
       .from("order_items")
-      .select("order_id,product_id,quantity_ordered,notes")
+      .select("order_id,product_id,quantity_ordered,quantity_delivered,notes")
       .in("order_id", orderIds);
 
     const productIds = Array.from(
@@ -176,10 +179,13 @@ export async function loadDeliveriesPage(
       const orderId = getString(row, "order_id");
       if (!orderId) continue;
       const productId = getString(row, "product_id") ?? "";
+      // Carry ordered + delivered so the card can show "ordered vs already handed
+      // over" and the driver sees exactly what's still owed.
       const list = itemsByOrder.get(orderId) ?? [];
       list.push({
         name: productNameById.get(productId) || "מוצר",
         quantity: getNumber(row, "quantity_ordered") ?? 0,
+        delivered: getNumber(row, "quantity_delivered") ?? 0,
         notes: getString(row, "notes"),
       });
       itemsByOrder.set(orderId, list);

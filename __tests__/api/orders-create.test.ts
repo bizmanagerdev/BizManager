@@ -62,20 +62,20 @@ describe("POST /api/orders/create — validation runs before auth", () => {
   it("400 on missing required fields, without ever calling the auth gate", async () => {
     const res = await post({ customer_id: "", order_date: "", items: [] });
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/Missing required/);
+    expect((await res.json()).error).toMatch(/לפחות פריט/);
     expect(requireRouteAccess).not.toHaveBeenCalled();
   });
 
   it("400 on an invalid order item", async () => {
     const res = await post({ ...VALID, items: [{ product_id: "", quantity_ordered: 1, unit_price: 100 }] });
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/Invalid order item/);
+    expect((await res.json()).error).toMatch(/הפריטים|פריט.*אינו תקין/);
   });
 
   it("400 on an invalid payment payload", async () => {
     const res = await post({ ...VALID, payments: [{ amount_total: 0, payment_date: "2024-05-01", payment_method: "cash" }] });
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/Invalid payment/);
+    expect((await res.json()).error).toMatch(/התשלומים|תשלום.*אינו תקין/);
   });
 });
 
@@ -100,11 +100,13 @@ describe("POST /api/orders/create — RPC & persistence", () => {
     expect(json.payment_status).toBe("unpaid"); // nothing paid yet
   });
 
-  it("blocks creation when the customer requires prepayment and isn't fully paid", async () => {
+  it("still creates the order for a prepayment customer with a balance (flagged red, not blocked)", async () => {
+    // Pay-ahead customers are no longer blocked at create — the order goes through
+    // and is flagged red in the lists until paid. See lib/orders/prepayment.
     grant(makeSupabase({ customers: { data: { requires_prepayment: true }, error: null } }, { data: "order-1", error: null }));
     const res = await post(VALID);
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/prepayment/);
+    expect(res.status).toBe(200);
+    expect((await res.json()).order_id).toBe("order-1");
   });
 
   it("surfaces a helpful hint when the RPC function is missing", async () => {

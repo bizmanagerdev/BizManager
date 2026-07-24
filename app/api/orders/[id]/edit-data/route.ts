@@ -2,6 +2,7 @@ import { toHebrewError } from "@/lib/error-messages";
 import { NextResponse } from "next/server";
 import { requireRouteAccess } from "@/lib/auth/requireRouteAccess";
 import { STORAGE_BUCKET } from "@/lib/storage";
+import { attachProductStock } from "@/lib/orders/productStock";
 
 type Row = Record<string, unknown>;
 
@@ -45,12 +46,12 @@ export async function GET(
   ] = await Promise.all([
     supabase
       .from("orders")
-      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,notes")
+      .select("id,customer_id,order_date,status,payment_status,payment_terms,due_date,discount_amount,needs_invoice,notes")
       .eq("id", id)
       .maybeSingle(),
     supabase
       .from("order_items")
-      .select("id,order_id,product_id,quantity_ordered,unit_price,discount_amount,notes")
+      .select("id,order_id,product_id,description,quantity_ordered,quantity_delivered,unit_price,discount_amount,notes")
       .eq("order_id", id),
     supabase
       .from("payments")
@@ -130,12 +131,15 @@ export async function GET(
         .filter(([key]) => key)
     ).values()
   );
-  const products = Array.from(
-    new Map(
-      [...((selectedProducts ?? []) as Row[]), ...((baseProducts ?? []) as Row[])]
-        .map((row) => [getString(row as Row, ["id"]) ?? "", row] as const)
-        .filter(([key]) => key)
-    ).values()
+  const products = await attachProductStock(
+    supabase,
+    Array.from(
+      new Map(
+        [...((selectedProducts ?? []) as Row[]), ...((baseProducts ?? []) as Row[])]
+          .map((row) => [getString(row as Row, ["id"]) ?? "", row] as const)
+          .filter(([key]) => key)
+      ).values()
+    )
   );
 
   const productsById = new Map<string, Row>();
@@ -161,15 +165,26 @@ export async function GET(
     payment_terms: getString(order as Row, ["payment_terms"]),
     due_date: (getString(order as Row, ["due_date"]) ?? "").slice(0, 10) || null,
     discount_amount: getNumber(order as Row, ["discount_amount"]) ?? 0,
+    // Must round-trip so editing a "צריך חשבונית" order and saving doesn't reset
+    // the flag to false (the wizard reads initialOrder.needs_invoice).
+    needs_invoice:
+      typeof (order as Row)?.needs_invoice === "boolean"
+        ? ((order as Row).needs_invoice as boolean)
+        : null,
     notes: getString(order as Row, ["notes"]) ?? "",
     items: (orderItems ?? []).map((item) => {
       const productId = getString(item as Row, ["product_id"]) ?? "";
+      const description = getString(item as Row, ["description"]) ?? "";
       const product = productsById.get(productId) ?? {};
       return {
         product_id: productId,
+        // Off-catalog (custom) lines have no product_id — their name is the
+        // free-text description, which doubles as the display name.
+        description,
         product_name:
-          getString(product as Row, ["name", "product_name", "title", "sku"]) ?? productId,
+          getString(product as Row, ["name", "product_name", "title", "sku"]) ?? (description || productId),
         quantity_ordered: getNumber(item as Row, ["quantity_ordered"]) ?? 1,
+        quantity_delivered: getNumber(item as Row, ["quantity_delivered"]) ?? 0,
         unit_price: getNumber(item as Row, ["unit_price"]) ?? 0,
         discount_amount: getNumber(item as Row, ["discount_amount"]) ?? 0,
         notes: getString(item as Row, ["notes"]) ?? "",

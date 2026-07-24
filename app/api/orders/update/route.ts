@@ -9,7 +9,7 @@ import {
   derivePaymentStatus,
   hasInvalidPaymentEntry,
   normalizePaymentEntries,
-  sumPayments,
+  splitPaymentAmounts,
 } from "@/lib/orders/paymentStatus";
 import {
   tryAutoIssueInvoiceForOrder,
@@ -23,7 +23,12 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 type OrderItemPayload = {
   product_id?: string;
+  /** Free-text name for an off-catalog ("custom") line — no product_id. */
+  description?: string | null;
   quantity_ordered?: number | string;
+  /** Sent by the אישור אספקה flow (partial delivery); omitted by normal edits so
+   *  the RPC preserves prior delivered progress. */
+  quantity_delivered?: number | string;
   unit_price?: number | string;
   discount_amount?: number | string;
   notes?: string | null;
@@ -143,7 +148,7 @@ export async function POST(req: Request) {
       const rawFiles = form.getAll("delivery_images");
 
       if (typeof payload !== "string") {
-        return NextResponse.json({ error: "Missing payload" }, { status: 400 });
+        return NextResponse.json({ error: "המידע חסר." }, { status: 400 });
       }
 
       body = JSON.parse(payload) as UpdateOrderPayload;
@@ -163,37 +168,48 @@ export async function POST(req: Request) {
 
     const items = Array.isArray(body.items) ? body.items : [];
     if (!orderId || !customerId || !orderDate || items.length === 0) {
-      return NextResponse.json({ error: "Missing required order fields" }, { status: 400 });
+      return NextResponse.json({ error: "יש לבחור לקוח, תאריך ולפחות פריט אחד." }, { status: 400 });
     }
     if (!Number.isFinite(discountAmount) || discountAmount < 0) {
-      return NextResponse.json({ error: "Invalid discount amount" }, { status: 400 });
+      return NextResponse.json({ error: "סכום ההנחה אינו תקין." }, { status: 400 });
     }
     if (hasInvalidPaymentEntry(payments)) {
-      return NextResponse.json({ error: "Invalid payment payload" }, { status: 400 });
+      return NextResponse.json({ error: "אחד התשלומים אינו תקין." }, { status: 400 });
     }
     if (hasInvalidRefundEntry(refunds)) {
-      return NextResponse.json({ error: "Invalid refund payload" }, { status: 400 });
+      return NextResponse.json({ error: "אחד ההחזרים אינו תקין." }, { status: 400 });
     }
     const invalidDeliveryImage = deliveryImages.find((file) => !file.type.startsWith("image/"));
     if (invalidDeliveryImage) {
-      return NextResponse.json({ error: "Delivery attachment must be an image" }, { status: 400 });
+      return NextResponse.json({ error: "הקובץ המצורף חייב להיות תמונה." }, { status: 400 });
     }
     const oversizedDeliveryImage = deliveryImages.find((file) => file.size > MAX_IMAGE_BYTES);
     if (oversizedDeliveryImage) {
-      return NextResponse.json({ error: `Image too large (max ${MAX_IMAGE_BYTES} bytes)` }, { status: 413 });
+      return NextResponse.json({ error: "התמונה גדולה מדי (עד 20MB)." }, { status: 413 });
     }
 
-    const normalizedItems = items.map((item) => ({
-      product_id: typeof item.product_id === "string" ? item.product_id : "",
-      quantity_ordered: toPositiveInt(item.quantity_ordered),
-      unit_price: toNonNegativeInt(item.unit_price),
-      discount_amount: toNonNegativeInt(item.discount_amount ?? 0),
-      notes: typeof item.notes === "string" ? item.notes.trim() : null,
-    }));
+    const normalizedItems = items.map((item) => {
+      const base = {
+        product_id: typeof item.product_id === "string" ? item.product_id : "",
+        description: typeof item.description === "string" ? item.description.trim() : "",
+        quantity_ordered: toPositiveInt(item.quantity_ordered),
+        unit_price: toNonNegativeInt(item.unit_price),
+        discount_amount: toNonNegativeInt(item.discount_amount ?? 0),
+        notes: typeof item.notes === "string" ? item.notes.trim() : null,
+      };
+      // Only forward quantity_delivered when the caller actually sent it — its
+      // absence tells the RPC to keep the line's prior delivered amount.
+      if (item.quantity_delivered !== undefined && item.quantity_delivered !== null) {
+        return { ...base, quantity_delivered: toNonNegativeInt(item.quantity_delivered) };
+      }
+      return base;
+    });
 
+    // A line is valid as either a catalog product OR an off-catalog custom line
+    // (a description with no product_id).
     const invalidItem = normalizedItems.find(
       (item) =>
-        !item.product_id ||
+        (!item.product_id && !item.description) ||
         !Number.isFinite(item.quantity_ordered) ||
         item.quantity_ordered <= 0 ||
         !Number.isFinite(item.unit_price) ||
@@ -202,7 +218,7 @@ export async function POST(req: Request) {
         item.discount_amount < 0
     );
     if (invalidItem) {
-      return NextResponse.json({ error: "Invalid order item payload" }, { status: 400 });
+      return NextResponse.json({ error: "אחד הפריטים בהזמנה אינו תקין." }, { status: 400 });
     }
 
     const uploadedDocuments: UploadedDocument[] = [];
@@ -211,22 +227,61 @@ export async function POST(req: Request) {
       (sum, item) => sum + item.quantity_ordered * item.unit_price - item.discount_amount,
       0
     );
-    const totalAmount = subtotal - discountAmount;
+    // Floor at 0 so a discount larger than the goods can't create a negative total
+    // that derivePaymentStatus would then read as fully שולם.
+    const totalAmount = Math.max(0, subtotal - discountAmount);
 
     const { data: existingPayments, error: existingPaymentsError } = await supabase
       .from("payments")
-      .select("amount_total")
+      .select("amount_total,net_amount,payment_status,due_date")
       .eq("order_id", orderId);
 
     if (existingPaymentsError) {
       return NextResponse.json({ error: toHebrewError(existingPaymentsError.message) }, { status: 400 });
     }
 
+    // Build the new payment / refund rows up front so (a) the stored payment_status
+    // counts COLLECTED money only — a future-dated check / net-term line is
+    // 'pending' and must not stamp the order שולם (matches order_overview_view) —
+    // and (b) the exact same rows are inserted below.
     // Pay-ahead customers (customers.requires_prepayment) are intentionally NOT
-    // blocked here — the order is allowed through and flagged red in the UI until
-    // paid, rather than being refused (which lost sales). See lib/orders/prepayment.
-    const totalPaidAfterSave =
-      sumPayments(existingPayments ?? []) + sumPayments(payments) - sumPayments(refunds);
+    // blocked here — the order is flagged red in the UI until paid rather than
+    // refused (which lost sales). See lib/orders/prepayment.
+    const paymentInserts = payments.map((payment) =>
+      buildPaymentInsert({
+        amountTotal: payment.amount_total,
+        businessDomain: "sales",
+        orderId,
+        paymentDate: payment.payment_date!,
+        paymentMethod: payment.payment_method!,
+        dueDate: payment.due_date,
+        referenceNumber: payment.reference_number,
+        checkNumber: payment.payment_method === "check" ? payment.check_number : null,
+        notes: payment.notes,
+        recordedBy: user.id,
+        accountId: payment.account_id,
+      })
+    );
+    const refundInserts = refunds.map((refund) =>
+      buildPaymentInsert({
+        amountTotal: refund.amount_total * -1,
+        businessDomain: "sales",
+        orderId,
+        paymentDate: refund.payment_date!,
+        paymentMethod: refund.payment_method!,
+        dueDate: refund.due_date,
+        referenceNumber: refund.reference_number,
+        checkNumber: refund.payment_method === "check" ? refund.check_number : null,
+        notes: refund.notes ? `Refund: ${refund.notes}` : "Refund",
+        recordedBy: user.id,
+        accountId: refund.account_id,
+      })
+    );
+    const totalPaidAfterSave = splitPaymentAmounts([
+      ...(existingPayments ?? []),
+      ...paymentInserts,
+      ...refundInserts,
+    ] as Parameters<typeof splitPaymentAmounts>[0]).collected;
 
     const paymentStatus = derivePaymentStatus(totalAmount, totalPaidAfterSave);
 
@@ -374,34 +429,25 @@ export async function POST(req: Request) {
         );
       }
 
-      const hint =
-        error.message.includes("update_sales_order") || error.message.includes("function")
-          ? "Missing DB function update_sales_order. Run db/sql/update_sales_order_rpc.sql"
-          : error.message;
-      return NextResponse.json({ error: hint }, { status: 400 });
+      const missingRpc =
+        error.message.includes("update_sales_order") || error.message.includes("function");
+      if (missingRpc) {
+        return NextResponse.json(
+          {
+            error:
+              "חסרה פונקציית מסד הנתונים update_sales_order. יש להריץ db/sql/update_sales_order_rpc.sql",
+          },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({ error: toHebrewError(error.message) }, { status: 400 });
     }
 
     const insertedPaymentIds: string[] = [];
-    if (payments.length > 0) {
+    if (paymentInserts.length > 0) {
       const { data: insertedPaymentRows, error: paymentsInsertError } = await supabase
         .from("payments")
-        .insert(
-          payments.map((payment) => ({
-            ...buildPaymentInsert({
-              amountTotal: payment.amount_total,
-              businessDomain: "sales",
-              orderId,
-              paymentDate: payment.payment_date!,
-              paymentMethod: payment.payment_method!,
-              dueDate: payment.due_date,
-              referenceNumber: payment.reference_number,
-              checkNumber: payment.payment_method === "check" ? payment.check_number : null,
-              notes: payment.notes,
-              recordedBy: user.id,
-              accountId: payment.account_id,
-            }),
-          }))
-        )
+        .insert(paymentInserts)
         .select("id");
 
       if (paymentsInsertError) {
@@ -415,24 +461,8 @@ export async function POST(req: Request) {
       }
     }
 
-    if (refunds.length > 0) {
-      const { error: refundsInsertError } = await supabase.from("payments").insert(
-        refunds.map((refund) => ({
-          ...buildPaymentInsert({
-            amountTotal: refund.amount_total * -1,
-            businessDomain: "sales",
-            orderId,
-            paymentDate: refund.payment_date!,
-            paymentMethod: refund.payment_method!,
-            dueDate: refund.due_date,
-            referenceNumber: refund.reference_number,
-            checkNumber: refund.payment_method === "check" ? refund.check_number : null,
-            notes: refund.notes ? `Refund: ${refund.notes}` : "Refund",
-            recordedBy: user.id,
-            accountId: refund.account_id,
-          }),
-        }))
-      );
+    if (refundInserts.length > 0) {
+      const { error: refundsInsertError } = await supabase.from("payments").insert(refundInserts);
 
       if (refundsInsertError) {
         await cleanupUploadedDocument(supabase, uploadedDocuments);

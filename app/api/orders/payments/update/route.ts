@@ -32,19 +32,21 @@ export async function POST(req: Request) {
     const amountNumber = typeof body.amount_total === "number" ? body.amount_total : Number(body.amount_total);
 
     if (!paymentId || !orderId) {
-      return NextResponse.json({ error: "Missing id or order_id" }, { status: 400 });
+      return NextResponse.json({ error: "חסר מזהה תשלום או הזמנה." }, { status: 400 });
     }
     if (!Number.isFinite(amountNumber) || amountNumber === 0) {
-      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+      return NextResponse.json({ error: "הסכום אינו תקין." }, { status: 400 });
     }
     if (!paymentDate || !paymentMethod) {
-      return NextResponse.json({ error: "Missing payment_date or payment_method" }, { status: 400 });
+      return NextResponse.json({ error: "יש להזין תאריך ואמצעי תשלום." }, { status: 400 });
     }
     if (paymentMethod === "check" && !dueDate) {
       return NextResponse.json({ error: "יש להזין תאריך פירעון לצ'ק" }, { status: 400 });
     }
 
-    const access = await requireRouteAccess();
+    // Editing a recorded payment is a financial correction — restrict to
+    // back-office (admin/office); field/delivery workers must not alter money rows.
+    const access = await requireRouteAccess({ allowedRoles: ["admin", "office"] });
     if (!access.ok) return access.response;
     const { supabase, user, profile } = access.value;
 
@@ -56,7 +58,7 @@ export async function POST(req: Request) {
 
     if (existingError) return NextResponse.json({ error: toHebrewError(existingError.message) }, { status: 400 });
     if (!existing?.id || existing.order_id !== orderId) {
-      return NextResponse.json({ error: "Payment not found for order" }, { status: 404 });
+      return NextResponse.json({ error: "התשלום לא נמצא עבור ההזמנה." }, { status: 404 });
     }
 
     const { recorded_by: _ignored, ...paymentValues } = buildPaymentInsert({

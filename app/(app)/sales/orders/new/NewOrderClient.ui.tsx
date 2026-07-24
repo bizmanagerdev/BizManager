@@ -104,6 +104,7 @@ export const ORDER_STATUS_OPTIONS = [
   { value: "confirmed", label: "מאושר" },
   { value: "processing", label: "בטיפול" },
   { value: "out_for_delivery", label: "במשלוח" },
+  { value: "partially_delivered", label: "סופק חלקית" },
   { value: "delivered", label: "סופק" },
   { value: "completed", label: "הושלם" },
   { value: "closed", label: "סגור" },

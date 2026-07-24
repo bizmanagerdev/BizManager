@@ -27,10 +27,12 @@ type EditPayload = {
     status: string;
     payment_status: string;
     discount_amount: number;
+    needs_invoice: boolean | null;
     notes: string;
     items: {
       product_id: string;
       product_name: string;
+      description?: string;
       quantity_ordered: number;
       unit_price: number;
       discount_amount: number;
@@ -109,7 +111,6 @@ export default function OrderEditDialog({
         buttonLabel={buttonLabel}
         title={title}
         description={description}
-        defaultStatus={initialStatusOverride ?? "delivered"}
       />
     );
   }

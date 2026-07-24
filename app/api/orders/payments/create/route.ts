@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     const dueDate = typeof body.due_date === "string" && body.due_date.trim() ? body.due_date.trim() : null;
 
     if (!orderId) {
-      return NextResponse.json({ error: "Missing order_id" }, { status: 400 });
+      return NextResponse.json({ error: "חסר מזהה הזמנה." }, { status: 400 });
     }
     if (
       !payment ||
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
         !payment.payment_method
     ) {
       return NextResponse.json(
-        { error: "Missing payment amount, date, or method" },
+        { error: "יש להזין סכום, תאריך ואמצעי תשלום." },
         { status: 400 }
       );
     }

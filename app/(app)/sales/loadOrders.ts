@@ -40,39 +40,34 @@ export type OrdersPageResult = {
   error: string | null;
 };
 
+export type OrderProductSummary = { name: string; quantity: number; delivered: number };
+
 /**
- * For a set of (open) order ids, return those that contain at least one line item
- * whose product is currently oversold — i.e. available (on_hand - reserved) < 0.
- * Backorders are allowed, so a negative available is how we flag "this order
- * contains out-of-stock items".
+ * One read of order_items for the whole page, ordered by line position for stable
+ * display. Both the per-order product summary and the out-of-stock flag are
+ * derived from these same rows (previously two separate reads of the same table).
  */
-async function computeOutOfStockOrderIds(
-  supabase: SupabaseClient,
-  openOrderIds: string[]
-): Promise<Set<string>> {
-  if (openOrderIds.length === 0) return new Set();
-
-  const { data: items } = await supabase
+async function fetchOrderItems(supabase: SupabaseClient, orderIds: string[]): Promise<Row[]> {
+  if (orderIds.length === 0) return [];
+  const { data } = await supabase
     .from("order_items")
-    .select("order_id,product_id,quantity_ordered")
-    .in("order_id", openOrderIds);
-  const itemRows = (items ?? []) as Row[];
+    .select("id,order_id,product_id,quantity_ordered,quantity_delivered")
+    .in("order_id", orderIds)
+    .order("id", { ascending: true });
+  return (data ?? []) as Row[];
+}
 
-  const productIds = Array.from(
-    new Set(
-      itemRows
-        .map((r) => (typeof r.product_id === "string" ? r.product_id : null))
-        .filter((v): v is string => Boolean(v))
-    )
-  );
-  if (productIds.length === 0) return new Set();
-
+/** available (on_hand − reserved) per product, for the out-of-stock flag. */
+async function fetchInventoryAvailability(
+  supabase: SupabaseClient,
+  productIds: string[]
+): Promise<Map<string, number>> {
+  const availableByProduct = new Map<string, number>();
+  if (productIds.length === 0) return availableByProduct;
   const { data: inv } = await supabase
     .from("inventory")
     .select("product_id,quantity_on_hand,quantity_reserved")
     .in("product_id", productIds);
-
-  const availableByProduct = new Map<string, number>();
   for (const r of (inv ?? []) as Row[]) {
     const pid = typeof r.product_id === "string" ? r.product_id : null;
     if (!pid) continue;
@@ -80,69 +75,61 @@ async function computeOutOfStockOrderIds(
     const reserved = Number(r.quantity_reserved ?? 0) || 0;
     availableByProduct.set(pid, onHand - reserved);
   }
+  return availableByProduct;
+}
 
+/** product id → display name. */
+async function fetchProductNames(
+  supabase: SupabaseClient,
+  productIds: string[]
+): Promise<Map<string, string>> {
+  const nameByProduct = new Map<string, string>();
+  if (productIds.length === 0) return nameByProduct;
+  const { data: products } = await supabase.from("products").select("id,name").in("id", productIds);
+  for (const p of (products ?? []) as Row[]) {
+    const pid = typeof p.id === "string" ? p.id : null;
+    const name = typeof p.name === "string" ? p.name : null;
+    if (pid && name) nameByProduct.set(pid, name);
+  }
+  return nameByProduct;
+}
+
+/**
+ * Orders (open only) containing at least one oversold line — available < 0.
+ * Backorders are allowed, so a negative available is how we flag "out of stock".
+ */
+function deriveOutOfStockOrderIds(
+  itemRows: Row[],
+  openOrderIds: Set<string>,
+  availableByProduct: Map<string, number>
+): Set<string> {
   const oos = new Set<string>();
   for (const it of itemRows) {
-    const pid = typeof it.product_id === "string" ? it.product_id : null;
     const orderId = typeof it.order_id === "string" ? it.order_id : null;
-    if (!pid || !orderId) continue;
+    if (!orderId || !openOrderIds.has(orderId)) continue;
+    const pid = typeof it.product_id === "string" ? it.product_id : null;
+    if (!pid) continue;
     const avail = availableByProduct.get(pid);
     if (avail !== undefined && avail < 0) oos.add(orderId);
   }
   return oos;
 }
 
-export type OrderProductSummary = { name: string; quantity: number };
-
-/**
- * For a set of order ids, return a compact per-order product list
- * (product name + ordered quantity) so the list view can show what's in each
- * order without opening it. Ordered by line position for stable display.
- */
-async function fetchOrderProductSummaries(
-  supabase: SupabaseClient,
-  orderIds: string[]
-): Promise<Map<string, OrderProductSummary[]>> {
+/** Compact per-order product list (name + ordered quantity) for the list view. */
+function buildOrderProductSummaries(
+  itemRows: Row[],
+  nameByProduct: Map<string, string>
+): Map<string, OrderProductSummary[]> {
   const result = new Map<string, OrderProductSummary[]>();
-  if (orderIds.length === 0) return result;
-
-  const { data: items } = await supabase
-    .from("order_items")
-    .select("id,order_id,product_id,quantity_ordered")
-    .in("order_id", orderIds)
-    .order("id", { ascending: true });
-  const itemRows = (items ?? []) as Row[];
-  if (itemRows.length === 0) return result;
-
-  const productIds = Array.from(
-    new Set(
-      itemRows
-        .map((r) => (typeof r.product_id === "string" ? r.product_id : null))
-        .filter((v): v is string => Boolean(v))
-    )
-  );
-
-  const nameByProduct = new Map<string, string>();
-  if (productIds.length > 0) {
-    const { data: products } = await supabase
-      .from("products")
-      .select("id,name")
-      .in("id", productIds);
-    for (const p of (products ?? []) as Row[]) {
-      const pid = typeof p.id === "string" ? p.id : null;
-      const name = typeof p.name === "string" ? p.name : null;
-      if (pid && name) nameByProduct.set(pid, name);
-    }
-  }
-
   for (const it of itemRows) {
     const orderId = typeof it.order_id === "string" ? it.order_id : null;
     if (!orderId) continue;
     const pid = typeof it.product_id === "string" ? it.product_id : null;
     const name = (pid && nameByProduct.get(pid)) || "פריט";
     const quantity = Number(it.quantity_ordered ?? 0) || 0;
+    const delivered = Number(it.quantity_delivered ?? 0) || 0;
     const list = result.get(orderId) ?? [];
-    list.push({ name, quantity });
+    list.push({ name, quantity, delivered });
     result.set(orderId, list);
   }
   return result;
@@ -285,31 +272,44 @@ export async function loadOrdersPage(
   const { data, error, count } = await ordersQuery.range(from, to);
   const rows = (data ?? []) as Row[];
 
-  const orderDueById = await fetchOrderDueDates(
-    supabase,
-    rows.map((r) => (typeof r.order_id === "string" ? r.order_id : "")).filter(Boolean)
-  );
-  // Flag orders that contain out-of-stock (oversold) items. Only open orders
-  // reserve stock, so closed/delivered/cancelled orders are never flagged.
-  const openOrderIds = rows
-    .filter((r) => !CLOSED_ORDER_STATUSES.includes(String(r.status ?? "").toLowerCase()))
-    .map((r) => (typeof r.order_id === "string" ? r.order_id : ""))
-    .filter(Boolean);
-  const outOfStockIds = await computeOutOfStockOrderIds(supabase, openOrderIds);
-
   const allOrderIds = rows
     .map((r) => (typeof r.order_id === "string" ? r.order_id : ""))
     .filter(Boolean);
+  // Only open orders reserve stock, so closed/delivered/cancelled are never
+  // flagged out-of-stock.
+  const openOrderIds = new Set(
+    rows
+      .filter((r) => !CLOSED_ORDER_STATUSES.includes(String(r.status ?? "").toLowerCase()))
+      .map((r) => (typeof r.order_id === "string" ? r.order_id : ""))
+      .filter(Boolean)
+  );
   const customerIds = Array.from(
     new Set(
       rows.map((r) => (typeof r.customer_id === "string" ? r.customer_id : "")).filter(Boolean)
     )
   );
-  const [productsByOrder, pendingMethodsByOrder, prepaymentCustomerIds] = await Promise.all([
-    fetchOrderProductSummaries(supabase, allOrderIds),
-    fetchOrderPendingMethods(supabase, allOrderIds),
-    fetchPrepaymentCustomerIds(supabase, customerIds),
-  ]);
+
+  // Single order_items read feeds BOTH the product summaries and the OOS flag.
+  const itemRows = await fetchOrderItems(supabase, allOrderIds);
+  const productIds = Array.from(
+    new Set(
+      itemRows
+        .map((r) => (typeof r.product_id === "string" ? r.product_id : null))
+        .filter((v): v is string => Boolean(v))
+    )
+  );
+
+  const [orderDueById, availableByProduct, nameByProduct, pendingMethodsByOrder, prepaymentCustomerIds] =
+    await Promise.all([
+      fetchOrderDueDates(supabase, allOrderIds),
+      fetchInventoryAvailability(supabase, productIds),
+      fetchProductNames(supabase, productIds),
+      fetchOrderPendingMethods(supabase, allOrderIds),
+      fetchPrepaymentCustomerIds(supabase, customerIds),
+    ]);
+
+  const outOfStockIds = deriveOutOfStockOrderIds(itemRows, openOrderIds, availableByProduct);
+  const productsByOrder = buildOrderProductSummaries(itemRows, nameByProduct);
 
   const rowsWithDue = rows.map((r) => {
     const orderId = typeof r.order_id === "string" ? r.order_id : "";

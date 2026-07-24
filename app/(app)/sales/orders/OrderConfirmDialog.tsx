@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, Delete, MapPin, Trash2, Truck } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Delete, MapPin, Truck } from "lucide-react";
 import * as Sentry from "@sentry/nextjs";
 import { FileUploadActions } from "@/components/ui/file-upload-actions";
 import { Button } from "@/components/ui/button";
@@ -32,15 +32,21 @@ import {
 import AccountSelect from "@/components/financial/AccountSelect";
 import { defaultAccountForMethod, type Account } from "@/lib/accounts";
 import { formatShortDate } from "@/lib/date";
+import { appendOrderComment, formatOrderCommentTimestamp } from "@/lib/orders/comments";
 
 type OrderItem = {
   product_id: string;
   product_name: string;
   quantity_ordered: number;
+  /** How much of this line has already been delivered in prior partial deliveries. */
+  quantity_delivered: number;
   unit_price: number;
   discount_amount: number;
   notes: string;
 };
+
+/** An order line plus the quantity being delivered in THIS confirmation. */
+type ConfirmLine = OrderItem & { delivered_now: number };
 
 type PaymentRow = {
   id: string;
@@ -56,13 +62,6 @@ type DeliveryImage = {
   file_name: string | null;
   uploaded_at: string | null;
   url: string | null;
-};
-
-type ProductSearchResult = {
-  id: string;
-  name: string;
-  sku: string | null;
-  base_price: number | null;
 };
 
 type EditPayload = {
@@ -104,16 +103,9 @@ function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function normalizeQty(value: string) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 1;
-  return Math.max(1, Math.round(parsed));
-}
-
-
 // Wizard step headings — eyebrow ("שלב N · <eyebrow>") + the big question title.
 const STEP_META: Record<string, { eyebrow: string; title: string; description?: string }> = {
-  items: { eyebrow: "פריטים סופיים", title: "מה נמסר בפועל?", description: "עדכן כמויות, הסר או הוסף מוצרים שסופקו." },
+  items: { eyebrow: "כמות שנמסרה", title: "מה נמסר בפועל?", description: "סמן כמה נמסר מכל פריט. מה שלא נמסר יישאר פתוח למשלוח." },
   paidChoice: { eyebrow: "תשלום", title: "האם נגבה תשלום במסירה?" },
   amount: { eyebrow: "תשלום", title: "כמה נגבה במסירה?" },
   paymentDate: { eyebrow: "תשלום", title: "מתי שולם?" },
@@ -134,9 +126,9 @@ export default function OrderConfirmDialog({
   buttonClassName,
   buttonVariant = "outline",
   title = "אישור אספקת הזמנה",
-  description = "עדכון כמויות סופיות, תשלום, החזר והוכחת אספקה במסך אחד.",
-  defaultStatus = "delivered",
+  description = "עדכון כמויות שנמסרו, תשלום, החזר והוכחת אספקה במסך אחד.",
   customerName,
+  authorName,
 }: {
   orderId: string;
   buttonLabel?: React.ReactNode;
@@ -144,8 +136,9 @@ export default function OrderConfirmDialog({
   buttonVariant?: React.ComponentProps<typeof Button>["variant"];
   title?: string;
   description?: string;
-  defaultStatus?: string;
   customerName?: string | null;
+  /** Who's confirming — used to attribute the delivery note in the order thread. */
+  authorName?: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -155,7 +148,7 @@ export default function OrderConfirmDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<EditPayload | null>(null);
-  const [lines, setLines] = useState<OrderItem[]>([]);
+  const [lines, setLines] = useState<ConfirmLine[]>([]);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(getTodayDate());
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -208,35 +201,6 @@ export default function OrderConfirmDialog({
   }
   const [deliveryDate, setDeliveryDate] = useState(getTodayDate());
   const [deliveryImages, setDeliveryImages] = useState<File[]>([]);
-  const [productQuery, setProductQuery] = useState("");
-  const [productResults, setProductResults] = useState<ProductSearchResult[]>([]);
-  const [productSearching, setProductSearching] = useState(false);
-
-  // Debounced product search so products can be added (not just quantities edited).
-  useEffect(() => {
-    if (!open) return;
-    const query = productQuery.trim();
-    if (!query) {
-      setProductResults([]);
-      setProductSearching(false);
-      return;
-    }
-    setProductSearching(true);
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/products/search?q=${encodeURIComponent(query)}&limit=20`, {
-          cache: "no-store",
-        });
-        const json = (await res.json().catch(() => ({}))) as { products?: ProductSearchResult[] };
-        setProductResults(Array.isArray(json.products) ? json.products : []);
-      } catch {
-        setProductResults([]);
-      } finally {
-        setProductSearching(false);
-      }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [open, productQuery]);
 
   useEffect(() => {
     if (!open) return;
@@ -268,7 +232,14 @@ export default function OrderConfirmDialog({
 
   useEffect(() => {
     if (!data) return;
-    setLines(data.initialOrder.items);
+    // Default each line's "delivered now" to whatever is still owed, so the common
+    // "delivered everything" case is already filled in.
+    setLines(
+      data.initialOrder.items.map((item) => ({
+        ...item,
+        delivered_now: Math.max(item.quantity_ordered - Math.max(item.quantity_delivered || 0, 0), 0),
+      }))
+    );
     setPaymentAmount("");
     setPaymentDate(getTodayDate());
     setPaymentMethod("");
@@ -281,11 +252,12 @@ export default function OrderConfirmDialog({
     setRefundNotes("");
     setPaymentAccountId("");
     setRefundAccountId("");
-    setDeliveryNotes(data.initialOrder.notes ?? "");
+    // Start EMPTY: this box is a NEW delivery note, not the existing order thread.
+    // Seeding it from data.initialOrder.notes (which is the attributed comment log)
+    // and writing it back on confirm used to overwrite the whole thread.
+    setDeliveryNotes("");
     setDeliveryDate(getTodayDate());
     setDeliveryImages([]);
-    setProductQuery("");
-    setProductResults([]);
     setStepId("items");
     setPaidNow(false);
     setError(null);
@@ -339,44 +311,36 @@ export default function OrderConfirmDialog({
   const finalPaidAfterRefund = projectedPaid - refundToRecord;
   const finalRemainingAfterRefund = Math.max(totalAmount - finalPaidAfterRefund, 0);
   const finalPaymentStatus = derivePaymentStatus(totalAmount, finalPaidAfterRefund);
-  const finalStatus = defaultStatus || "delivered";
 
-  function updateQuantity(index: number, nextValue: string) {
+  // Per-line delivery math: what was already delivered, what's still owed, and how
+  // much is being delivered in THIS confirmation (clamped to the remaining qty).
+  const deliveryLines = useMemo(
+    () =>
+      lines.map((line) => {
+        const already = Math.max(line.quantity_delivered || 0, 0);
+        const remaining = Math.max(line.quantity_ordered - already, 0);
+        const now = Math.min(Math.max(line.delivered_now || 0, 0), remaining);
+        return { line, already, remaining, now, finalDelivered: already + now };
+      }),
+    [lines]
+  );
+  const totalOrdered = lines.reduce((sum, line) => sum + line.quantity_ordered, 0);
+  const totalFinalDelivered = deliveryLines.reduce((sum, d) => sum + d.finalDelivered, 0);
+  const totalDeliveredNow = deliveryLines.reduce((sum, d) => sum + d.now, 0);
+  // Everything owed is now delivered → close it as "delivered"; otherwise it stays
+  // open as "partially_delivered" so it keeps showing in orders + the deliveries queue.
+  const isFullyDelivered = totalOrdered > 0 && totalFinalDelivered + 0.0000001 >= totalOrdered;
+  const finalStatus = isFullyDelivered ? "delivered" : "partially_delivered";
+
+  function setDeliveredNow(index: number, nextValue: string) {
+    const parsed = Number(nextValue);
     setLines((prev) =>
       prev.map((line, lineIndex) =>
-        lineIndex === index ? { ...line, quantity_ordered: normalizeQty(nextValue) } : line
+        lineIndex === index
+          ? { ...line, delivered_now: Number.isFinite(parsed) ? Math.max(0, parsed) : 0 }
+          : line
       )
     );
-  }
-
-  function removeLine(index: number) {
-    setLines((prev) => prev.filter((_, lineIndex) => lineIndex !== index));
-  }
-
-  function addProduct(product: ProductSearchResult) {
-    setLines((prev) => {
-      const existingIndex = prev.findIndex((line) => line.product_id === product.id);
-      if (existingIndex >= 0) {
-        return prev.map((line, lineIndex) =>
-          lineIndex === existingIndex
-            ? { ...line, quantity_ordered: line.quantity_ordered + 1 }
-            : line
-        );
-      }
-      return [
-        ...prev,
-        {
-          product_id: product.id,
-          product_name: product.name,
-          quantity_ordered: 1,
-          unit_price: product.base_price ?? 0,
-          discount_amount: 0,
-          notes: "",
-        },
-      ];
-    });
-    setProductQuery("");
-    setProductResults([]);
   }
 
   async function submit() {
@@ -388,9 +352,8 @@ export default function OrderConfirmDialog({
       return;
     }
 
-    const invalidLine = lines.find((line) => !line.product_id || line.quantity_ordered <= 0);
-    if (invalidLine) {
-      setError("יש להשלים כמויות תקינות לכל הפריטים.");
+    if (totalDeliveredNow <= 0) {
+      setError("יש לסמן כמות שנמסרה בפריט אחד לפחות.");
       return;
     }
 
@@ -456,6 +419,17 @@ export default function OrderConfirmDialog({
         });
       }
 
+      // Append the delivery note to the existing thread instead of replacing it.
+      // Empty note → keep the original notes untouched (never clobber the thread).
+      const trimmedDeliveryNote = deliveryNotes.trim();
+      const mergedNotes = trimmedDeliveryNote
+        ? appendOrderComment(data.initialOrder.notes ?? "", {
+            author_name: authorName ?? null,
+            created_at: formatOrderCommentTimestamp(new Date()),
+            body: trimmedDeliveryNote,
+          })
+        : data.initialOrder.notes ?? "";
+
       const payload = {
         order_id: orderId,
         customer_id: data.initialOrder.customer_id,
@@ -464,10 +438,11 @@ export default function OrderConfirmDialog({
         payment_status: finalPaymentStatus,
         delivery_date: deliveryDate || getTodayDate(),
         discount_amount: data.initialOrder.discount_amount,
-        notes: deliveryNotes.trim(),
-        items: lines.map((line) => ({
+        notes: mergedNotes,
+        items: deliveryLines.map(({ line, finalDelivered }) => ({
           product_id: line.product_id,
           quantity_ordered: line.quantity_ordered,
+          quantity_delivered: finalDelivered,
           unit_price: line.unit_price,
           discount_amount: line.discount_amount,
           notes: line.notes,
@@ -577,9 +552,7 @@ export default function OrderConfirmDialog({
     switch (id) {
       case "items":
         if (lines.length === 0) return "לא ניתן לאשר הזמנה ללא פריטים.";
-        if (lines.some((line) => !line.product_id || line.quantity_ordered <= 0)) {
-          return "יש להשלים כמויות תקינות לכל הפריטים.";
-        }
+        if (totalDeliveredNow <= 0) return "יש לסמן כמות שנמסרה בפריט אחד לפחות.";
         return null;
       case "amount":
         if (!(pendingPaymentAmount > 0)) return "יש להזין סכום תשלום.";
@@ -645,82 +618,42 @@ export default function OrderConfirmDialog({
         return (
           <div className="space-y-2">
             {lines.length === 0 ? (
-              <p className="text-sm text-muted-foreground">אין פריטים — הוסף מוצר כדי לאשר אספקה.</p>
+              <p className="text-sm text-muted-foreground">אין פריטים בהזמנה זו.</p>
             ) : null}
-            {lines.map((line, index) => {
-              const lineTotal = line.quantity_ordered * line.unit_price - line.discount_amount;
-              return (
-                <div
-                  key={`${line.product_id}-${index}`}
-                  className="grid gap-3 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-[1fr_120px_140px_40px]"
-                >
-                  <div>
-                    <div className="font-medium">{line.product_name}</div>
-                    <div className="text-xs text-muted-foreground">מחיר יחידה: {formatCurrency(line.unit_price)}</div>
-                    {line.notes ? <div className="mt-1 text-xs text-muted-foreground">הערות: {line.notes}</div> : null}
+            {deliveryLines.map(({ line, already, remaining, now }, index) => (
+              <div
+                key={`${line.product_id}-${index}`}
+                className="grid gap-3 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-[1fr_130px]"
+              >
+                <div>
+                  <div className="font-medium">{line.product_name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    הוזמן: {line.quantity_ordered}
+                    {already > 0 ? ` · נמסר עד כה: ${already}` : ""}
+                    {" · נותר: "}
+                    <span className={remaining > 0 ? "font-semibold text-foreground" : ""}>{remaining}</span>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">כמות</label>
-                    <Input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={line.quantity_ordered}
-                      onChange={(e) => updateQuantity(index, e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs font-medium">סה״כ שורה</div>
-                    <div className="h-10 rounded-md border bg-muted/20 px-3 py-2 text-sm">{formatCurrency(lineTotal)}</div>
-                  </div>
-                  <div className="flex items-end justify-end sm:pb-0.5">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      className="h-9 w-9 p-0"
-                      title="הסרת מוצר"
-                      aria-label="הסרת מוצר"
-                      onClick={() => removeLine(index)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  {line.notes ? <div className="mt-1 text-xs text-muted-foreground">הערות: {line.notes}</div> : null}
                 </div>
-              );
-            })}
-            <div className="space-y-2 border-t border-border/60 pt-3">
-              <label className="text-sm font-medium">הוספת מוצר</label>
-              <Input
-                value={productQuery}
-                onChange={(e) => setProductQuery(e.target.value)}
-                placeholder="חיפוש מוצר לפי שם, מק״ט או ברקוד..."
-              />
-              {productSearching ? <p className="text-xs text-muted-foreground">מחפש...</p> : null}
-              {!productSearching && productQuery.trim() && productResults.length === 0 ? (
-                <p className="text-xs text-muted-foreground">לא נמצאו מוצרים.</p>
-              ) : null}
-              {productResults.length > 0 ? (
-                <div className="max-h-48 divide-y divide-border/60 overflow-y-auto rounded-xl border border-border/70 bg-background/70">
-                  {productResults.map((product) => (
-                    <button
-                      key={product.id}
-                      type="button"
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-right text-sm hover:bg-muted/40"
-                      onClick={() => addProduct(product)}
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">{product.name}</span>
-                        {product.sku ? (
-                          <span className="block text-xs text-muted-foreground">מק״ט: {product.sku}</span>
-                        ) : null}
-                      </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">{formatCurrency(product.base_price ?? 0)}</span>
-                    </button>
-                  ))}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">נמסר כעת</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max={remaining}
+                    step="1"
+                    value={now}
+                    disabled={remaining <= 0}
+                    onChange={(e) => setDeliveredNow(index, e.target.value)}
+                  />
                 </div>
-              ) : null}
-            </div>
+              </div>
+            ))}
+            {!isFullyDelivered && totalDeliveredNow > 0 ? (
+              <p className="rounded-lg border border-warning/40 bg-warning-soft/60 p-2 text-xs text-warning-soft-foreground">
+                אספקה חלקית — ההזמנה תישאר פתוחה (סופק חלקית) ותמשיך להופיע במשלוחים עד להשלמת היתרה.
+              </p>
+            ) : null}
           </div>
         );
       case "paidChoice":
@@ -1033,8 +966,16 @@ export default function OrderConfirmDialog({
           <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm">
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground">סטטוס אחרי שמירה</span>
-              <span className="font-medium">סופקה</span>
+              <span className="font-medium">{isFullyDelivered ? "סופק" : "סופק חלקית"}</span>
             </div>
+            {!isFullyDelivered ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">נמסר מתוך ההזמנה</span>
+                <span className="font-medium">
+                  {totalFinalDelivered} / {totalOrdered}
+                </span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground">סטטוס תשלום</span>
               <span className={`rounded-full border px-2 py-1 text-xs ${paymentStatusClasses(finalPaymentStatus)}`}>

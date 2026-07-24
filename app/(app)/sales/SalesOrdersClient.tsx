@@ -116,7 +116,7 @@ type OrderView = {
   outOfStock: boolean;
   /** Customer is flagged "pay ahead" (customers.requires_prepayment). */
   requiresPrepayment: boolean;
-  products: { name: string; quantity: number }[];
+  products: { name: string; quantity: number; delivered: number }[];
   pendingMethods: string[];
   pendingCheckNumber: string | null;
   comments: OrderComment[];
@@ -124,8 +124,9 @@ type OrderView = {
 
 const PRODUCTS_PREVIEW_LIMIT = 3;
 
-// The order's latest comment, shown on the list card so notes are visible without
-// opening the order. Comments live in the order's notes field (see lib/orders/comments).
+// The order's full comment thread, shown on the list card/row so every note is
+// visible without opening the order. Comments live in the order's notes field
+// (see lib/orders/comments); each body is clamped so one long note can't dominate.
 function OrderCommentPreview({
   comments,
   className,
@@ -134,16 +135,17 @@ function OrderCommentPreview({
   className?: string;
 }) {
   if (comments.length === 0) return null;
-  const latest = comments[comments.length - 1];
-  const older = comments.length - 1;
   return (
-    <div className={`flex items-start gap-1 text-xs text-muted-foreground ${className ?? ""}`}>
-      <MessageSquare className="mt-0.5 h-3 w-3 shrink-0" />
-      <span className="line-clamp-2 min-w-0">
-        {latest.author_name ? <span className="font-medium">{latest.author_name}: </span> : null}
-        <span className="text-muted-foreground/90">{latest.body}</span>
-        {older > 0 ? <span className="ms-1 opacity-70">(+{older})</span> : null}
-      </span>
+    <div className={`space-y-1 ${className ?? ""}`}>
+      {comments.map((comment, index) => (
+        <div key={`comment-${index}`} className="flex items-start gap-1 text-xs text-muted-foreground">
+          <MessageSquare className="mt-0.5 h-3 w-3 shrink-0 opacity-70" />
+          <span className="line-clamp-2 min-w-0">
+            {comment.author_name ? <span className="font-medium">{comment.author_name}: </span> : null}
+            <span className="text-muted-foreground/90">{comment.body}</span>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -153,7 +155,7 @@ function OrderProductList({
   className,
   chips = false,
 }: {
-  products: { name: string; quantity: number }[];
+  products: { name: string; quantity: number; delivered?: number }[];
   className?: string;
   chips?: boolean;
 }) {
@@ -167,17 +169,29 @@ function OrderProductList({
       // holding a single lonely chip, which read as broken data rather than as a
       // list. A "+N נוספים" chip is one line and says the same thing.
       <div className={`flex flex-wrap gap-1 text-xs ${className ?? ""}`}>
-        {shown.map((product, idx) => (
-          <span
-            key={`${product.name}-${idx}`}
-            className="inline-flex items-center whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
-          >
-            {/* A quantity of 1 is the default — printing it on every chip is noise
-                that also made "1 שקיות" read as a data error. */}
-            {product.quantity > 1 ? `${product.quantity} ` : ""}
-            {product.name}
-          </span>
-        ))}
+        {shown.map((product, idx) => {
+          const delivered = product.delivered ?? 0;
+          const partiallyDone = delivered > 0 && delivered < product.quantity;
+          return (
+            <span
+              key={`${product.name}-${idx}`}
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border/60 bg-background px-2 py-0.5 text-foreground"
+            >
+              {/* A quantity of 1 is the default — printing it on every chip is noise
+                  that also made "1 שקיות" read as a data error. */}
+              <span>
+                {product.quantity > 1 ? `${product.quantity} ` : ""}
+                {product.name}
+              </span>
+              {/* Delivered-so-far, so the list shows what was ordered vs handed over. */}
+              {partiallyDone ? (
+                <span className="font-semibold text-warning-soft-foreground">
+                  נמסר {delivered}
+                </span>
+              ) : null}
+            </span>
+          );
+        })}
         {remaining > 0 ? (
           <span className="inline-flex items-center whitespace-nowrap rounded-md border border-dashed border-border/60 px-2 py-0.5 text-muted-foreground">
             +{remaining} נוספים
@@ -189,12 +203,19 @@ function OrderProductList({
 
   return (
     <ul className={`space-y-0.5 text-xs text-muted-foreground ${className ?? ""}`}>
-      {shown.map((product, idx) => (
-        <li key={`${product.name}-${idx}`} className="truncate">
-          {product.quantity > 0 ? `${product.quantity}× ` : ""}
-          {product.name}
-        </li>
-      ))}
+      {shown.map((product, idx) => {
+        const delivered = product.delivered ?? 0;
+        const partiallyDone = delivered > 0 && delivered < product.quantity;
+        return (
+          <li key={`${product.name}-${idx}`} className="truncate">
+            {product.quantity > 0 ? `${product.quantity}× ` : ""}
+            {product.name}
+            {partiallyDone ? (
+              <span className="text-warning-soft-foreground"> · נמסר {delivered}</span>
+            ) : null}
+          </li>
+        );
+      })}
       {remaining > 0 ? <li className="text-muted-foreground/80">ועוד {remaining}…</li> : null}
     </ul>
   );
@@ -245,6 +266,10 @@ function normalizeOrderStatus(value: string | null) {
     case "במשלוח":
     case "out_for_delivery":
       return "out_for_delivery";
+    case "סופק חלקית":
+    case "סופקה חלקית":
+    case "partially_delivered":
+      return "partially_delivered";
     case "סופקה":
     case "delivered":
       return "delivered";
@@ -491,9 +516,10 @@ export default function SalesOrdersClient({
                 const name = typeof item.name === "string" ? item.name : null;
                 if (!name) return null;
                 const quantity = Number(item.quantity ?? 0) || 0;
-                return { name, quantity };
+                const delivered = Number(item.delivered ?? 0) || 0;
+                return { name, quantity, delivered };
               })
-              .filter((p): p is { name: string; quantity: number } => p !== null)
+              .filter((p): p is { name: string; quantity: number; delivered: number } => p !== null)
           : [],
         pendingMethods: Array.isArray(row.pending_payment_methods)
           ? (row.pending_payment_methods as unknown[]).filter((m): m is string => typeof m === "string")
@@ -605,7 +631,7 @@ export default function SalesOrdersClient({
                     <th className="px-4 py-3 font-medium">לקוח</th>
                     <th className="px-4 py-3 font-medium">עיר ותאריך</th>
                     <th className="px-4 py-3 font-medium">מוצרים</th>
-                    <th className="px-4 py-3 font-medium">תגובות</th>
+                    <th className="px-4 py-3 font-medium">הערות ותגובות</th>
                     <th className="px-4 py-3 font-medium">סטטוס הזמנה</th>
                     {anyOutOfStock ? <th className="px-4 py-3 font-medium">מלאי</th> : null}
                     <th className="px-4 py-3 font-medium">
