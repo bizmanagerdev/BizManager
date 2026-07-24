@@ -363,11 +363,10 @@ export function AppSidebar({ items }: Props) {
           aria-expanded={!collapsed}
           className={cn(
             "w-full rounded-xl text-sidebar-foreground hover:bg-sidebar-accent hover:text-white",
-            collapsed ? "justify-center px-0" : "justify-start gap-2 px-2.5"
+            collapsed ? "justify-center px-0" : "justify-end px-2.5"
           )}
         >
           {collapsed ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          {collapsed ? null : <span className="text-sm">כיווץ התפריט</span>}
         </Button>
       </div>
 

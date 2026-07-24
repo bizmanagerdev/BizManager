@@ -62,7 +62,7 @@ type Props = {
 
 export function TopBar({
   appName = "BizH",
-  companyName = "חברת הלר",
+  companyName = "יעקב הלר",
   hasSidebar = true,
   userName,
   viewerRole,
@@ -159,9 +159,11 @@ export function TopBar({
           opens up the corner where the rail meets the bar instead of leaving a
           solid navy block there. Its width tracks the rail's so the two line up. */}
       {hasSidebar ? (
-        <div
+        <Link
+          href="/dashboard"
+          aria-label={appName}
           className={cn(
-            "-my-[1px] -ms-4 me-2 hidden h-[calc(100%+2px)] shrink-0 items-center gap-2.5 self-stretch bg-background text-foreground md:flex",
+            "-my-[1px] -ms-4 me-2 hidden h-[calc(100%+2px)] shrink-0 cursor-pointer items-center gap-2.5 self-stretch bg-background text-foreground md:flex",
             // Collapsed: the mark is centered so it lines up with the icon column
             // of the rail below it. Expanded: mark + name, left-aligned.
             collapsed ? `${RAIL_WIDTH.collapsed} justify-center px-0` : `${RAIL_WIDTH.expanded} px-3`
@@ -174,7 +176,7 @@ export function TopBar({
               <div className="truncate text-[11px] text-muted-foreground">{companyName}</div>
             ) : null}
           </div>
-        </div>
+        </Link>
       ) : null}
 
       {/* Leading (right) edge: back arrow, then the search right beside it —
