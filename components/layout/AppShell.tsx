@@ -89,7 +89,7 @@ export default function AppShell({
             the layout entirely on pages that don't use it. */}
         <div
           id={PAGE_HEADER_TOOLBAR_ID}
-          className="sticky top-[60px] z-20 bg-sidebar px-3 py-2.5 empty:hidden md:hidden"
+          className="sticky top-[60px] z-20 flex h-[52px] items-center bg-sidebar px-3 empty:hidden md:hidden"
         />
         <OfflineBanner />
         <div className="flex min-w-0 flex-1">

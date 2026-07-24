@@ -38,6 +38,8 @@ import {
   paymentMethodLabel,
   paymentStatusLabel,
 } from "@/lib/orders/paymentStatus";
+import { PREPAYMENT_WIZARD_WARNING } from "@/lib/orders/prepayment";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CheckDetailsFields } from "@/components/payments/CheckDetailsFields";
 import { uploadCheckPhotos } from "@/lib/payments/uploadCheckPhotos";
 import { PAYMENT_TERMS_OPTIONS, computeDueDate } from "@/lib/paymentTerms";
@@ -222,6 +224,9 @@ export default function NewOrderClient({
   );
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Pay-ahead reminder shown at save when the customer requires prepayment and a
+  // balance remains — the user acknowledges it to create the order anyway.
+  const [prepaymentConfirmOpen, setPrepaymentConfirmOpen] = useState(false);
 
   const actionLocked = submitting;
 
@@ -559,7 +564,7 @@ export default function NewOrderClient({
     setNewPayments((prev) => prev.filter((_, i) => i !== index));
   }
 
-  async function submitOrder() {
+  async function submitOrder(confirmedPrepayment = false) {
     if (submitting) return;
     setSubmitError(null);
 
@@ -623,8 +628,12 @@ export default function NewOrderClient({
       return;
     }
 
-    if (selectedCustomer?.requiresPrepayment && remainingBalance > 0.009) {
-      setSubmitError("לקוח זה מוגדר לתשלום מראש. יש להשלים את מלוא התשלום לפני שמירת ההזמנה.");
+    // Pay-ahead customers are NOT blocked at save — losing the sale is worse than
+    // the risk. But before saving with an open balance we surface a reminder the
+    // user must acknowledge ("create anyway"); the order is then flagged red in
+    // the lists/deliveries queue until it's paid.
+    if (!confirmedPrepayment && selectedCustomer?.requiresPrepayment && remainingBalance > 0.009) {
+      setPrepaymentConfirmOpen(true);
       return;
     }
 
@@ -793,6 +802,20 @@ export default function NewOrderClient({
 
   return (
     <div ref={topRef} className={cn("flex flex-col gap-5", !embedded && "pb-28 md:pb-0")}>
+      <ConfirmDialog
+        open={prepaymentConfirmOpen}
+        onOpenChange={setPrepaymentConfirmOpen}
+        destructive
+        title="לקוח בתשלום מראש"
+        description={`${selectedCustomer?.name ?? "הלקוח"} מסומן לתשלום מראש ונשארה יתרה לתשלום. ההזמנה תיווצר ותסומן באדום עד לגבייה — אין לספק לפני התשלום. ליצור בכל זאת?`}
+        confirmLabel="צור בכל זאת"
+        cancelLabel="חזרה לתשלום"
+        loading={submitting}
+        onConfirm={() => {
+          setPrepaymentConfirmOpen(false);
+          void submitOrder(true);
+        }}
+      />
       <div
         className={cn(
           // Mobile: a flush, full-width bar that scrolls WITH the page (not pinned),
@@ -1666,8 +1689,8 @@ export default function NewOrderClient({
               ))}
 
 {selectedCustomer?.requiresPrepayment ? (
-                <div className="rounded-xl border border-warning/40 bg-warning-soft p-3 text-sm text-warning-soft-foreground">
-                  לקוח זה מסומן לתשלום מראש, ולכן אי אפשר לשמור את ההזמנה כל עוד נשארת יתרה פתוחה.
+                <div className="rounded-xl border border-destructive bg-destructive-soft p-3 text-sm text-destructive-soft-foreground">
+                  {PREPAYMENT_WIZARD_WARNING}
                 </div>
               ) : null}
             </CardContent>

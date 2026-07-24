@@ -6,8 +6,9 @@ import type { ReactNode } from "react";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMorePriceList } from "@/app/(app)/sales/actions";
 import type { ProductsFilters } from "@/app/(app)/sales/loadProducts";
-import { Loader2, Pencil, Send, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Search, Send, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PageHeaderToolbar } from "@/components/layout/PageHeaderToolbar";
 import { toHebrewError } from "@/lib/error-messages";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -100,6 +101,7 @@ export default function PriceListClient({
   });
   const [categories, setCategories] = useState<CategoryOption[]>(initialCategories);
   const [query, setQuery] = useState(initialQuery);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   function pushFilters(next: { q?: string; category?: string }) {
     const params = new URLSearchParams(searchParams.toString());
@@ -804,19 +806,70 @@ export default function PriceListClient({
     }
   }
 
-  // Names the page in the mobile top bar.
-  useSetPageTitle("מחירון");
+  // Names the page in the mobile top bar, with the count as the subtitle.
+  useSetPageTitle("מחירון", `${totalCount ?? filtered.length} מוצרים`);
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+      {/* Mobile: add + search + filter toggle ride INSIDE the dark header (see
+          PageHeaderToolbar), matching the orders / customers / projects pages so
+          the header reads as one block instead of a second lighter strip. */}
+      <PageHeaderToolbar>
+        <div className="mx-auto flex w-full max-w-md items-center justify-center gap-2">
+          {/* Labelled "מוצר" so it can't be mistaken for the bottom nav's big
+              generic + — this one adds a product to the price list. */}
+          <Button
+            type="button"
+            aria-label="הוספת מוצר"
+            className="h-10 shrink-0 gap-1 rounded-xl px-2.5"
+            onClick={openCreateDialog}
+          >
+            <Plus className="h-4 w-4" />
+            <span className="text-xs">מוצר</span>
+          </Button>
+          <div className="relative w-full min-w-0 max-w-[13rem]">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="חיפוש..."
+              className="h-10 w-full rounded-xl border-white/10 bg-white/[0.06] ps-9 text-sidebar-foreground shadow-none placeholder:text-sidebar-foreground/60 focus-visible:bg-white/[0.12] focus-visible:ring-1 focus-visible:ring-white/25"
+            />
+          </div>
+          {/* Filter reads as ON via a sky fill; recessed while off, so it doesn't
+              compete with the primary add button. Badge marks an active category. */}
+          <Button
+            type="button"
+            size="icon"
+            aria-label={filtersOpen ? "הסתר מסננים" : "הצג מסננים"}
+            className={
+              filtersOpen || categoryFilter
+                ? "relative h-10 w-10 shrink-0 rounded-xl"
+                : "relative h-10 w-10 shrink-0 rounded-xl !border-white/10 !bg-white/[0.06] !text-sidebar-foreground !shadow-none hover:!bg-white/[0.14]"
+            }
+            onClick={() => setFiltersOpen((x) => !x)}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            {categoryFilter ? (
+              <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-secondary ring-2 ring-sidebar" />
+            ) : null}
+          </Button>
+        </div>
+      </PageHeaderToolbar>
+
+      {/* Desktop toolbar — the sidebar already says where you are, so the page
+          gets its own search / filter / actions row from md up. */}
+      <div className="hidden md:flex md:flex-col md:gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="חיפוש מוצר לפי שם או קוד"
-            className="h-11 sm:max-w-sm"
-          />
+          <div className="relative sm:max-w-sm">
+            <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="חיפוש מוצר לפי שם או קוד"
+              className="h-11 pr-10"
+            />
+          </div>
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
@@ -840,6 +893,36 @@ export default function PriceListClient({
           </Button>
         </div>
       </div>
+
+      {/* Mobile collapsible filters — the category picker and share action that
+          don't fit in the header live here, revealed by the filter toggle. */}
+      {filtersOpen ? (
+        <div className="flex flex-col gap-2 md:hidden">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="">כל הקטגוריות</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 w-full"
+            onClick={() => void sharePriceList()}
+            disabled={shareLoading}
+          >
+            {shareLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            <span>שליחת מחירון</span>
+          </Button>
+        </div>
+      ) : null}
+
       {shareError ? <p className="text-sm text-destructive">{shareError}</p> : null}
       {shareMessage ? <p className="text-sm text-muted-foreground">{shareMessage}</p> : null}
 

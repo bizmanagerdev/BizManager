@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { toHebrewError } from "@/lib/error-messages";
 import { formatDeliveryAddress } from "@/lib/ui/cities";
 import { paymentStatusLabel } from "@/lib/orders/paymentStatus";
+import { pinFrom, wazeLinkForPin } from "@/lib/delivery-location";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 
 function formatCurrency(value: number | null) {
@@ -31,10 +32,21 @@ const SLIP_LABEL = "#475569";
 const SLIP_TEXT = "#1e293b";
 
 const slipRowStyle: CSSProperties = {
+  // align to the TOP, not center: a value that wraps to two lines (a long address,
+  // a note) must grow the row downward, never draw over the icon or the next row.
   display: "flex",
-  alignItems: "center",
+  alignItems: "flex-start",
   gap: "18px",
   marginBottom: "14px",
+};
+// Every text value in a row. flex:1 + minWidth:0 makes it wrap INSIDE its own
+// column instead of overflowing the row, and break-word stops an unbreakable
+// string (a long link) from pushing the layout wider than the canvas.
+const slipValueStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  overflowWrap: "break-word",
+  wordBreak: "break-word",
 };
 const slipIconStyle: CSSProperties = {
   fontSize: "62px",
@@ -59,13 +71,27 @@ export default function DeliveryShareActions({
   const slipRef = useRef<HTMLDivElement>(null);
   const [renderingImage, setRenderingImage] = useState(false);
 
-  // When renderingImage flips on, the off-screen slip is mounted; capture it,
-  // hand it to the share sheet (or download), then unmount.
+  // The latest delivery, read inside the capture WITHOUT making it an effect
+  // dependency. Depending on `delivery` (a fresh object on every list re-render)
+  // used to tear the effect down mid-capture, so the finally that resets the
+  // spinner never ran and the button span forever.
+  const deliveryRef = useRef(delivery);
+  deliveryRef.current = delivery;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Runs once each time renderingImage flips true. Deps are ONLY [renderingImage]
+  // so nothing else can cancel it; the spinner is always reset in finally.
   useEffect(() => {
     if (!renderingImage) return;
-    let cancelled = false;
 
     const run = async () => {
+      const current = deliveryRef.current;
       try {
         if ("fonts" in document) await document.fonts.ready;
         const node = slipRef.current;
@@ -82,59 +108,113 @@ export default function DeliveryShareActions({
         }
 
         const { toBlob } = await import("html-to-image");
-        const blob = await toBlob(node, {
-          pixelRatio: 2,
-          backgroundColor: "#ffffff",
-          cacheBust: true,
-          width: node.offsetWidth,
-          height: node.offsetHeight,
-        });
-        if (cancelled || !blob) {
-          if (!blob) toast.error("יצירת התמונה נכשלה.");
+        // Race the capture against a timeout so a hung html-to-image (it can stall
+        // indefinitely on some engines) surfaces as an error instead of an
+        // endlessly-spinning button.
+        const blob = await Promise.race([
+          toBlob(node, {
+            pixelRatio: 2,
+            backgroundColor: "#ffffff",
+            cacheBust: true,
+            width: node.offsetWidth,
+            height: node.offsetHeight,
+            // The slip uses only system fonts (system-ui / Segoe UI), so there's
+            // nothing to embed. Skipping the font step removes html-to-image's most
+            // common stall — it fetches and inlines @font-face CSS, which can hang
+            // indefinitely and is exactly the kind of intermittent freeze seen here.
+            skipFonts: true,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), 15000)
+          ),
+        ]);
+        if (!blob) {
+          toast.error("יצירת התמונה נכשלה.");
           return;
         }
 
-        const fileName = `משלוח-${delivery.customerName}.png`.replace(/[\\/:*?"<>|]/g, "-");
+        const fileName = `משלוח-${current.customerName}.png`.replace(/[\\/:*?"<>|]/g, "-");
         const file = new File([blob], fileName, { type: "image/png" });
-        // Only the image — the slip already contains every detail. Including text
-        // here makes WhatsApp post a separate second message.
         const shareData = {
-          title: `משלוח — ${delivery.customerName}`,
+          title: `משלוח — ${current.customerName}`,
           files: [file],
         };
 
+        const saveFile = () => {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = fileName;
+          link.click();
+          URL.revokeObjectURL(url);
+        };
+
+        // Touch devices (phones, the Android app's WebView) get the real native
+        // share sheet — that opens WhatsApp directly and works reliably there.
+        const isTouch =
+          typeof window !== "undefined" &&
+          window.matchMedia?.("(pointer: coarse)").matches === true &&
+          (navigator.maxTouchPoints ?? 0) > 0;
+
         if (
+          isTouch &&
           typeof navigator !== "undefined" &&
           "canShare" in navigator &&
           navigator.canShare(shareData)
         ) {
-          await navigator.share(shareData);
-          return;
+          try {
+            const HUNG = Symbol("hung");
+            const outcome = await Promise.race([
+              navigator.share(shareData).then(() => "shared" as const),
+              new Promise<typeof HUNG>((resolve) => setTimeout(() => resolve(HUNG), 6000)),
+            ]);
+            if (outcome !== HUNG) return;
+          } catch (shareError: unknown) {
+            if (shareError instanceof Error && shareError.name === "AbortError") return;
+          }
         }
 
-        // No share sheet (desktop) → download the image so it can be attached.
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = fileName;
-        link.click();
-        URL.revokeObjectURL(url);
-        toast.success("התמונה הורדה למכשיר.");
+        // Desktop: the OS share picker for images is broken in current Chrome (it
+        // hangs), so don't call it. Copy the image to the clipboard and open WhatsApp
+        // Web — paste it into a chat with Ctrl+V. The image also downloads as a
+        // backup for anyone whose browser can't copy images.
+        let copied = false;
+        try {
+          if (navigator.clipboard && "ClipboardItem" in window) {
+            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+            copied = true;
+          }
+        } catch {
+          // Clipboard blocked (tab not focused / no permission) — download covers it.
+        }
+        saveFile();
+        toast.success(
+          copied
+            ? "התמונה הועתקה. פתחו וואטסאפ והדביקו בצ׳אט (Ctrl+V)"
+            : "התמונה הורדה. צרפו אותה בוואטסאפ.",
+          {
+            duration: 10000,
+            action: {
+              label: "פתח וואטסאפ ווב",
+              onClick: () => window.open("https://web.whatsapp.com/", "_blank", "noopener"),
+            },
+          }
+        );
       } catch (error: unknown) {
         if (error instanceof Error && error.name === "AbortError") return;
         toast.error(toHebrewError(error, "שיתוף התמונה נכשל."));
       } finally {
-        if (!cancelled) setRenderingImage(false);
+        // ALWAYS clear the spinner — a stuck spinner is worse than a rare
+        // setState-after-unmount warning (guarded by mountedRef anyway).
+        if (mountedRef.current) setRenderingImage(false);
       }
     };
 
     void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [renderingImage, delivery]);
+  }, [renderingImage]);
 
   const address = formatDeliveryAddress({ address: delivery.address, city: delivery.city });
+  const slipPin = pinFrom(delivery.deliveryLat, delivery.deliveryLng);
 
   return (
     <>
@@ -190,15 +270,19 @@ export default function DeliveryShareActions({
           <div
             style={{
               display: "flex",
-              alignItems: "center",
+              alignItems: "flex-start",
               gap: "18px",
               borderBottom: "5px solid #e2e8f0",
               paddingBottom: "18px",
               marginBottom: "22px",
             }}
           >
-            <span style={{ fontSize: "80px", lineHeight: 1 }}>🚚</span>
-            <span style={{ fontSize: "68px", fontWeight: 700 }}>{delivery.customerName}</span>
+            <span style={{ fontSize: "72px", lineHeight: 1.2, flexShrink: 0 }}>🚚</span>
+            {/* A long customer name wraps here rather than colliding with the phone
+                row below it — flex:1 + minWidth:0 keeps it inside its own column. */}
+            <span style={{ ...slipValueStyle, fontSize: "60px", fontWeight: 700, lineHeight: 1.2 }}>
+              {delivery.customerName}
+            </span>
           </div>
 
           {delivery.customerPhone ? (
@@ -206,7 +290,10 @@ export default function DeliveryShareActions({
               <span style={slipIconStyle}>
                 <Phone size={58} color="#000000" fill="#000000" strokeWidth={1.5} />
               </span>
-              <span dir="ltr" style={{ unicodeBidi: "embed" }}>
+              {/* dir=ltr keeps the digits in dialling order; textAlign right pulls
+                  the number back to the start edge so it lines up with every other
+                  row instead of hanging off on the left. */}
+              <span dir="ltr" style={{ ...slipValueStyle, unicodeBidi: "embed", textAlign: "right" }}>
                 {delivery.customerPhone}
               </span>
             </div>
@@ -217,7 +304,7 @@ export default function DeliveryShareActions({
               <span style={slipIconStyle}>
                 <WazeIcon size={62} style={{ color: "#33ccff" }} />
               </span>
-              <span>{address}</span>
+              <span style={slipValueStyle}>{address}</span>
             </div>
           ) : null}
 
@@ -227,13 +314,28 @@ export default function DeliveryShareActions({
           {delivery.deliveryInstructions ? (
             <div style={slipRowStyle}>
               <span style={slipIconStyle}>📍</span>
-              <span>{delivery.deliveryInstructions}</span>
+              <span style={slipValueStyle}>{delivery.deliveryInstructions}</span>
+            </div>
+          ) : null}
+
+          {/* The exact drop-off pin, as text. It can't be tapped from an image —
+              the share sheet also sends it as a link — but it means the precise
+              spot is still legible on the picture alone, e.g. if it's forwarded. */}
+          {slipPin ? (
+            <div style={slipRowStyle}>
+              <span style={slipIconStyle}>🎯</span>
+              <span
+                dir="ltr"
+                style={{ ...slipValueStyle, unicodeBidi: "embed", fontSize: "42px", color: SLIP_LABEL }}
+              >
+                {wazeLinkForPin(slipPin)}
+              </span>
             </div>
           ) : null}
 
           <div style={slipRowStyle}>
             <span style={slipIconStyle}>💰</span>
-            <span>
+            <span style={slipValueStyle}>
               <span style={{ fontWeight: 700 }}>{formatCurrency(delivery.totalAmount)}</span>
               <span style={{ color: SLIP_LABEL }}> · {paymentStatusLabel(delivery.paymentStatus)}</span>
             </span>
@@ -269,10 +371,16 @@ export default function DeliveryShareActions({
               {delivery.items.map((item, index) => (
                 <div
                   key={index}
-                  style={{ display: "flex", gap: "16px", marginBottom: "10px", paddingInlineStart: "76px" }}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "16px",
+                    marginBottom: "10px",
+                    paddingInlineStart: "76px",
+                  }}
                 >
                   <span style={{ flexShrink: 0 }}>•</span>
-                  <span>{formatItem(item)}</span>
+                  <span style={slipValueStyle}>{formatItem(item)}</span>
                 </div>
               ))}
             </div>
@@ -291,7 +399,7 @@ export default function DeliveryShareActions({
               }}
             >
               <span style={slipIconStyle}>📝</span>
-              <span>{delivery.notes}</span>
+              <span style={slipValueStyle}>{delivery.notes}</span>
             </div>
           ) : null}
         </div>

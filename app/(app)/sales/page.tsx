@@ -271,12 +271,21 @@ export default async function SalesPage({
     );
   }
 
+  // Orders/closed/price-list tabs mount a 52px mobile search toolbar into the
+  // dark header (sticky at top-[60px], just under the 60px top bar); the tab bar
+  // must sit BELOW it there (top-[112px] = 60 + 52). Desktop hides that toolbar
+  // (md:hidden), and inventory/deliveries never mount it, so those stick
+  // directly under the 60px top bar.
+  const hasMobileToolbar =
+    activeTab === "orders" || activeTab === "closed" || activeTab === "price-list";
+  const tabsStickyTop = hasMobileToolbar ? "top-[112px] md:top-[60px]" : "top-[60px]";
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-4">
-        <div className="flex flex-col-reverse gap-3 border-b border-border/60 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+        <div className={`sticky ${tabsStickyTop} z-20 -mx-4 -mt-4 flex h-[52px] items-end justify-between gap-3 border-b border-border/60 bg-background px-4 md:-mx-6 md:mt-0 md:px-6 lg:-mx-8 lg:px-8`}>
           <SalesTabsNav activeTab={activeTab} counts={salesTabCounts} searchParams={params} />
-          <div className="flex flex-wrap items-center gap-3 max-sm:w-full sm:pb-2">
+          <div className="flex flex-wrap items-center gap-3 pb-2">
             {customerName ? (
               <div className="text-base font-medium sm:text-lg">לקוח: {customerName}</div>
             ) : null}

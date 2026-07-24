@@ -551,63 +551,66 @@ export default async function SalesOrderPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 space-y-1">
-            <nav className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-label="ניווט">
+        <div className="space-y-2">
+          <div className="flex items-start justify-between gap-2">
+            <nav
+              className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground"
+              aria-label="ניווט"
+            >
               <Link href="/sales" className="hover:text-foreground hover:underline">
                 מכירות
               </Link>
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
               <h1 className="text-lg font-bold text-foreground">הזמנה #{id.slice(0, 8)}</h1>
             </nav>
-            <p className="text-xs text-muted-foreground">
-              {customerId ? (
-                <Link
-                  href={`/customers/${customerId}`}
-                  className="font-semibold text-foreground hover:underline"
-                >
-                  {customerName}
-                </Link>
-              ) : (
-                <span className="font-semibold text-foreground">{customerName}</span>
-              )}
-              {customerPhone ? (
-                <>
-                  {" · "}
-                  <ContactLink kind="tel" value={customerPhone} dir="ltr" className="hover:underline" />
-                </>
-              ) : null}
-              {" · "}הוזמן <span className="font-medium text-foreground">{formatDate(orderDate)}</span>
-              {formatRelativeDateLabel(orderDate) ? ` (${formatRelativeDateLabel(orderDate)})` : ""}
-              {orderCreatedByName ? (
-                <>
-                  {" · "}הוזן ע&quot;י <span className="font-medium text-foreground">{orderCreatedByName}</span>
-                </>
-              ) : null}
-            </p>
+            {order ? (
+              <div className="flex shrink-0 gap-1.5">
+                <Button asChild size="sm" variant="outline" className="h-9 w-9 p-0">
+                  <Link
+                    href={`/sales/orders/new?duplicate=${id}`}
+                    title="שכפול הזמנה"
+                    aria-label="שכפול הזמנה"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <OrderEditDialog
+                  orderId={id}
+                  buttonLabel={<PencilLine className="h-4 w-4" />}
+                  buttonClassName="h-9 w-9 p-0"
+                />
+                {profile.role === "admin" || profile.role === "office" ? (
+                  <LogCommunicationButton entityType="order" entityId={id} customerId={customerId} defaultTopic="sales" iconOnly />
+                ) : null}
+                <DeleteOrderButton orderId={id} iconOnly />
+              </div>
+            ) : null}
           </div>
-          {order ? (
-            <div className="flex shrink-0 gap-1.5">
-              <Button asChild size="sm" variant="outline" className="h-9 w-9 p-0">
-                <Link
-                  href={`/sales/orders/new?duplicate=${id}`}
-                  title="שכפול הזמנה"
-                  aria-label="שכפול הזמנה"
-                >
-                  <Copy className="h-4 w-4" />
-                </Link>
-              </Button>
-              <OrderEditDialog
-                orderId={id}
-                buttonLabel={<PencilLine className="h-4 w-4" />}
-                buttonClassName="h-9 w-9 p-0"
-              />
-              {profile.role === "admin" || profile.role === "office" ? (
-                <LogCommunicationButton entityType="order" entityId={id} customerId={customerId} defaultTopic="sales" iconOnly />
-              ) : null}
-              <DeleteOrderButton orderId={id} iconOnly />
-            </div>
-          ) : null}
+          <p className="text-xs text-muted-foreground">
+            {customerId ? (
+              <Link
+                href={`/customers/${customerId}`}
+                className="font-semibold text-foreground hover:underline"
+              >
+                {customerName}
+              </Link>
+            ) : (
+              <span className="font-semibold text-foreground">{customerName}</span>
+            )}
+            {customerPhone ? (
+              <>
+                {" · "}
+                <ContactLink kind="tel" value={customerPhone} dir="ltr" className="hover:underline" />
+              </>
+            ) : null}
+            {" · "}הוזמן <span className="font-medium text-foreground">{formatDate(orderDate)}</span>
+            {formatRelativeDateLabel(orderDate) ? ` (${formatRelativeDateLabel(orderDate)})` : ""}
+            {orderCreatedByName ? (
+              <>
+                {" · "}הוזן ע&quot;י <span className="font-medium text-foreground">{orderCreatedByName}</span>
+              </>
+            ) : null}
+          </p>
         </div>
 
         {orderError ? <p className="text-sm text-destructive">שגיאת הזמנה: {orderError.message}</p> : null}

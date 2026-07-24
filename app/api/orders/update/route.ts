@@ -213,29 +213,20 @@ export async function POST(req: Request) {
     );
     const totalAmount = subtotal - discountAmount;
 
-    const [
-      { data: existingPayments, error: existingPaymentsError },
-      { data: customer, error: customerError },
-    ] = await Promise.all([
-      supabase.from("payments").select("amount_total").eq("order_id", orderId),
-      supabase.from("customers").select("requires_prepayment").eq("id", customerId).maybeSingle(),
-    ]);
+    const { data: existingPayments, error: existingPaymentsError } = await supabase
+      .from("payments")
+      .select("amount_total")
+      .eq("order_id", orderId);
 
     if (existingPaymentsError) {
       return NextResponse.json({ error: toHebrewError(existingPaymentsError.message) }, { status: 400 });
     }
-    if (customerError) {
-      return NextResponse.json({ error: toHebrewError(customerError.message) }, { status: 400 });
-    }
 
+    // Pay-ahead customers (customers.requires_prepayment) are intentionally NOT
+    // blocked here — the order is allowed through and flagged red in the UI until
+    // paid, rather than being refused (which lost sales). See lib/orders/prepayment.
     const totalPaidAfterSave =
       sumPayments(existingPayments ?? []) + sumPayments(payments) - sumPayments(refunds);
-    if (customer?.requires_prepayment === true && totalPaidAfterSave + 0.009 < totalAmount) {
-      return NextResponse.json(
-        { error: "Customer requires prepayment. Collect full payment before saving the order." },
-        { status: 400 }
-      );
-    }
 
     const paymentStatus = derivePaymentStatus(totalAmount, totalPaidAfterSave);
 

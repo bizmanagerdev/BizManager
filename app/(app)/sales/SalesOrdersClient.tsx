@@ -33,6 +33,12 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
 import { getOrderStatusColor } from "@/lib/ui/status-colors";
 import { formatOrderDate } from "@/lib/orders/format";
+import {
+  isUnpaidPrepayment,
+  PREPAYMENT_UNPAID_LABEL,
+  prepaymentBadgeClasses,
+  PREPAYMENT_ROW_CLASSES,
+} from "@/lib/orders/prepayment";
 import { parseOrderComments, type OrderComment } from "@/lib/orders/comments";
 import OrderReminderDialog from "@/components/orders/OrderReminderDialog";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
@@ -108,6 +114,8 @@ type OrderView = {
   invoiceSentAt: string | null;
   deliveryConfirmedAt: string | null;
   outOfStock: boolean;
+  /** Customer is flagged "pay ahead" (customers.requires_prepayment). */
+  requiresPrepayment: boolean;
   products: { name: string; quantity: number }[];
   pendingMethods: string[];
   pendingCheckNumber: string | null;
@@ -475,6 +483,7 @@ export default function SalesOrdersClient({
         invoiceSentAt: getString(row, ["invoice_sent_at"]),
         deliveryConfirmedAt: getString(row, ["delivery_confirmed_at"]),
         outOfStock: row.out_of_stock === true,
+        requiresPrepayment: row.customer_requires_prepayment === true,
         products: Array.isArray(row.products)
           ? (row.products as unknown[])
               .map((p) => {
@@ -667,7 +676,11 @@ export default function SalesOrdersClient({
                   {filteredRows.map((row) => (
                     <tr
                       key={row.id}
-                      className="cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20"
+                      className={`cursor-pointer align-top hover:bg-muted/20 focus-visible:bg-muted/20 ${
+                        isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance)
+                          ? PREPAYMENT_ROW_CLASSES
+                          : ""
+                      }`}
                       tabIndex={0}
                       role="link"
                       onClick={(event) => {
@@ -727,6 +740,9 @@ export default function SalesOrdersClient({
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap items-center gap-1.5">
+                          {isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance) ? (
+                            <Badge className={prepaymentBadgeClasses}>{PREPAYMENT_UNPAID_LABEL}</Badge>
+                          ) : null}
                           <Badge className={collectionStatusClasses(row.collectionStatus)}>
                             {orderCollectionStatusLabel(row.collectionStatus)}
                           </Badge>
@@ -853,7 +869,11 @@ export default function SalesOrdersClient({
               return (
                 <SwipeActions
                   key={row.id}
-                  className="border border-border/70 shadow-sm"
+                  className={`shadow-sm ${
+                    isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance)
+                      ? `border-2 border-destructive ${PREPAYMENT_ROW_CLASSES}`
+                      : "border border-border/70"
+                  }`}
                   actions={actions}
                   open={swipedRow === row.id}
                   onOpenChange={(next) => setSwipedRow(next ? row.id : null)}
@@ -951,6 +971,11 @@ export default function SalesOrdersClient({
                       ) : null}
                       {/* Paid-or-not sits WITH the figure it describes — pushed to
                           the far edge it read as unrelated to the amount. */}
+                      {isUnpaidPrepayment(row.requiresPrepayment, row.remainingBalance) ? (
+                        <Badge className={`${prepaymentBadgeClasses} px-2 py-0 text-[11px]`}>
+                          {PREPAYMENT_UNPAID_LABEL}
+                        </Badge>
+                      ) : null}
                       <Badge className={`${collectionStatusClasses(row.collectionStatus)} px-2 py-0 text-[11px]`}>
                         {orderCollectionStatusLabel(row.collectionStatus)}
                       </Badge>

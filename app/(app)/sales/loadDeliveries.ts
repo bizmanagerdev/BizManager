@@ -40,6 +40,8 @@ export type DeliveryItem = {
   address: string;
   /** The order's products, so the driver sees what to load/deliver. */
   items: DeliveryOrderItem[];
+  /** Customer is flagged "pay ahead" (customers.requires_prepayment). */
+  requiresPrepayment: boolean;
   /** Standing arrival directions for this customer ("around the corner, blue gate"). */
   deliveryInstructions: string | null;
   /** The saved drop-off pin — navigation prefers it over the address string. */
@@ -113,6 +115,7 @@ export async function loadDeliveriesPage(
       city: getString(row, "customer_city") ?? "ללא עיר",
       address: getString(row, "customer_address") ?? "-",
       items: [] as DeliveryOrderItem[],
+      requiresPrepayment: false,
       deliveryInstructions: null as string | null,
       deliveryLat: null as number | null,
       deliveryLng: null as number | null,
@@ -128,7 +131,7 @@ export async function loadDeliveriesPage(
     if (customerIds.length > 0) {
       const { data: customerRows } = await supabase
         .from("customers")
-        .select("id,delivery_instructions,delivery_lat,delivery_lng")
+        .select("id,delivery_instructions,delivery_lat,delivery_lng,requires_prepayment")
         .in("id", customerIds);
       const byId = new Map(((customerRows ?? []) as Row[]).map((row) => [getString(row, "id") ?? "", row]));
       for (const delivery of deliveries) {
@@ -137,6 +140,7 @@ export async function loadDeliveriesPage(
         delivery.deliveryInstructions = getString(row, "delivery_instructions");
         delivery.deliveryLat = getNumber(row, "delivery_lat");
         delivery.deliveryLng = getNumber(row, "delivery_lng");
+        delivery.requiresPrepayment = row.requires_prepayment === true;
       }
     }
   }

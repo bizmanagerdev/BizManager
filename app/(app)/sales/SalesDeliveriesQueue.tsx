@@ -17,6 +17,11 @@ import { DELIVERY_REGIONS, formatDeliveryAddress, getCityRegion } from "@/lib/ui
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { loadMoreDeliveries } from "@/app/(app)/sales/actions";
 import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
+import {
+  PREPAYMENT_UNPAID_LABEL,
+  prepaymentBadgeClasses,
+  PREPAYMENT_ROW_CLASSES,
+} from "@/lib/orders/prepayment";
 import type { DeliveryItem } from "@/app/(app)/sales/loadDeliveries";
 import { pinFrom, wazeLinkForPin, type DeliveryPin } from "@/lib/delivery-location";
 import { DeliveryLocationDialog } from "@/components/orders/DeliveryLocationDialog";
@@ -369,16 +374,30 @@ export default function SalesDeliveriesQueue({
 
                               {/* One ruled block per order, same zone rhythm as the
                                   orders list: money, then contents, then actions. */}
-                              {group.orders.map((delivery) => (
+                              {group.orders.map((delivery) => {
+                                const unpaidPrepayment =
+                                  delivery.requiresPrepayment && delivery.paymentStatus !== "paid";
+                                return (
                                 <div
                                   key={delivery.id}
                                   title={delivery.notes ?? undefined}
-                                  className="divide-y divide-border/60 border-t border-border/60"
+                                  className={`divide-y divide-border/60 border-t border-border/60 ${
+                                    unpaidPrepayment ? PREPAYMENT_ROW_CLASSES : ""
+                                  }`}
                                 >
                                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 p-3">
                                     <span className="text-sm font-bold">
                                       {formatCurrency(delivery.totalAmount)}
                                     </span>
+                                    {/* Pay-ahead customer, still owing: do NOT hand over
+                                        the goods before it's paid. */}
+                                    {unpaidPrepayment ? (
+                                      <span
+                                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${prepaymentBadgeClasses}`}
+                                      >
+                                        {PREPAYMENT_UNPAID_LABEL}
+                                      </span>
+                                    ) : null}
                                     <span
                                       className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${paymentStatusClasses(delivery.paymentStatus)}`}
                                     >
@@ -465,7 +484,8 @@ export default function SalesDeliveriesQueue({
                                     />
                                   </div>
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </li>
                         );

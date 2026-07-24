@@ -180,6 +180,30 @@ async function fetchOrderPendingMethods(
 }
 
 /**
+ * For a set of customer ids, return the set that is flagged "pay ahead"
+ * (customers.requires_prepayment). Lets the list paint an unpaid pay-ahead order
+ * red as a "don't deliver without payment" reminder. Fetched here rather than
+ * added to order_overview_view — a small by-id query beats redefining a view
+ * several pages depend on.
+ */
+async function fetchPrepaymentCustomerIds(
+  supabase: SupabaseClient,
+  customerIds: string[]
+): Promise<Set<string>> {
+  if (customerIds.length === 0) return new Set();
+  const { data } = await supabase
+    .from("customers")
+    .select("id")
+    .in("id", customerIds)
+    .eq("requires_prepayment", true);
+  return new Set(
+    ((data ?? []) as Row[])
+      .map((r) => (typeof r.id === "string" ? r.id : ""))
+      .filter(Boolean)
+  );
+}
+
+/**
  * Load one page of the orders list (open or closed), with each order's effective
  * due date attached for the late-status badge. Shared by the initial server
  * render (page 1) and the fetch-on-scroll server action (page >= 2).
@@ -276,13 +300,20 @@ export async function loadOrdersPage(
   const allOrderIds = rows
     .map((r) => (typeof r.order_id === "string" ? r.order_id : ""))
     .filter(Boolean);
-  const [productsByOrder, pendingMethodsByOrder] = await Promise.all([
+  const customerIds = Array.from(
+    new Set(
+      rows.map((r) => (typeof r.customer_id === "string" ? r.customer_id : "")).filter(Boolean)
+    )
+  );
+  const [productsByOrder, pendingMethodsByOrder, prepaymentCustomerIds] = await Promise.all([
     fetchOrderProductSummaries(supabase, allOrderIds),
     fetchOrderPendingMethods(supabase, allOrderIds),
+    fetchPrepaymentCustomerIds(supabase, customerIds),
   ]);
 
   const rowsWithDue = rows.map((r) => {
     const orderId = typeof r.order_id === "string" ? r.order_id : "";
+    const customerId = typeof r.customer_id === "string" ? r.customer_id : "";
     const pending = pendingMethodsByOrder.get(orderId);
     return {
       ...r,
@@ -291,6 +322,7 @@ export async function loadOrdersPage(
       products: productsByOrder.get(orderId) ?? [],
       pending_payment_methods: pending?.methods ?? [],
       pending_check_number: pending?.checkNumber ?? null,
+      customer_requires_prepayment: prepaymentCustomerIds.has(customerId),
     };
   });
 
