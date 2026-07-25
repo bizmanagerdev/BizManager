@@ -163,12 +163,15 @@ function NavGroup({
   const searchParams = useSearchParams();
   const children = item.children ?? [];
   const childActive = children.some((c) => pathname === c.url || pathname.startsWith(`${c.url}/`));
-  const [open, setOpen] = useState(false);
+  // null = follow the auto-expand default; true/false = the user's explicit choice,
+  // which must win even when a child route is active (otherwise the chevron can't
+  // collapse the group you're currently inside).
+  const [open, setOpen] = useState<boolean | null>(null);
   // Carry the live query string only between the filter-sharing financial routes.
   const sharedQuery =
     FILTER_SHARED_ROUTES.has(pathname) ? searchParams.toString() : "";
-  // Auto-expand whenever a child route is active (no effect needed).
-  const expanded = open || childActive;
+  // Auto-expand whenever a child route is active — unless the user overrode it.
+  const expanded = open ?? childActive;
 
   // Roll the children's counts up onto the group header, so a badge on a nested
   // route (e.g. /collections under "פיננסי") isn't invisible while collapsed.
@@ -187,7 +190,7 @@ function NavGroup({
     <div>
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen((value) => !(value ?? childActive))}
         // Icons-only mode has no labels, so hovering pops the sub-tabs out.
         {...hover(item)}
         className={cn(

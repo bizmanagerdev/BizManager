@@ -13,7 +13,9 @@ import {
   resolveAuditTitles,
   resolveUserDisplayNamesForValues,
   type AuditFeedItem,
+  type AuditGroup,
   type AuditLogRow,
+  type PresenceRosterUser,
 } from "@/lib/audit";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import OnlineUsersCard from "./OnlineUsersCard";
@@ -69,6 +71,13 @@ function actionColor(action: string) {
   }
 }
 
+// System/automated rows (actor "מערכת") are always grey, deliberately distinct
+// from the blue "update" — a scheduled recheck isn't a person editing something.
+function badgeColor(item: AuditFeedItem) {
+  if (item.actorName === "מערכת") return "bg-muted text-muted-foreground";
+  return actionColor(item.action);
+}
+
 // One feed row's body (badge · entity · actor · details · time). Wrapped in a
 // link to the affected entity when the row has a viewable target.
 function ActivityRow({ item }: { item: AuditFeedItem }) {
@@ -76,7 +85,7 @@ function ActivityRow({ item }: { item: AuditFeedItem }) {
     <div className="flex items-start justify-between gap-3">
       <div className="flex items-start gap-2 flex-1 min-w-0">
         <span
-          className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${actionColor(item.action)}`}
+          className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${badgeColor(item)}`}
         >
           {item.actionLabel}
         </span>
@@ -126,7 +135,7 @@ function ActivityChildRow({ item }: { item: AuditFeedItem }) {
     <div className="flex items-center justify-between gap-2">
       <div className="flex min-w-0 items-center gap-2">
         <span
-          className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-medium ${actionColor(item.action)}`}
+          className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-medium ${badgeColor(item)}`}
         >
           {item.actionLabel}
         </span>
@@ -151,6 +160,40 @@ function ActivityChildRow({ item }: { item: AuditFeedItem }) {
   return body;
 }
 
+// A feed entry is either a normal (possibly grouped) action, or a batch of
+// consecutive automated/system rows collapsed into a single expandable card.
+type RenderNode =
+  | { type: "group"; group: AuditGroup }
+  | { type: "sysBatch"; id: string; rows: AuditFeedItem[]; latest: string | null };
+
+// Collapse runs of consecutive system-actor rows (changed_by null → "מערכת", the
+// reminder-sync churn) into one "N עדכוני מערכת" card, so hourly automated
+// updates don't each get their own row. A lone system row is left as-is.
+function batchSystemGroups(groups: AuditGroup[]): RenderNode[] {
+  const out: RenderNode[] = [];
+  let run: AuditGroup[] = [];
+  const flush = () => {
+    if (run.length === 0) return;
+    if (run.length >= 2) {
+      const rows = run.map((g) => g.header);
+      out.push({ type: "sysBatch", id: `sys:${rows[0].id}`, rows, latest: rows[0].createdAt });
+    } else {
+      out.push({ type: "group", group: run[0] });
+    }
+    run = [];
+  };
+  for (const g of groups) {
+    const isSystem = g.header.actorName === "מערכת" && g.children.length === 0;
+    if (isSystem) run.push(g);
+    else {
+      flush();
+      out.push({ type: "group", group: g });
+    }
+  }
+  flush();
+  return out;
+}
+
 type Props = {
   items: AuditFeedItem[];
   totalCount: number;
@@ -166,6 +209,7 @@ type Props = {
   // The selected worker's changed_by values (users.id + auth_user_id), so the
   // live feed and infinite scroll can honor the worker filter too.
   actorFilterValues: string[];
+  roster: PresenceRosterUser[];
 };
 
 export default function ActivityClient({
@@ -179,6 +223,7 @@ export default function ActivityClient({
   currentAction,
   currentWorker,
   actorFilterValues,
+  roster,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -204,6 +249,9 @@ export default function ActivityClient({
 
   // Which grouped cards have their side-effect rows expanded.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // "רק פעולות משתמשים" — hide automated/system-actor rows (changed_by null).
+  const [usersOnly, setUsersOnly] = useState(false);
 
   // Fold any newly-arrived first-page rows (from the 15s safety refresh below)
   // into the accumulated list, keeping newest-first order and never duplicating.
@@ -284,6 +332,9 @@ export default function ActivityClient({
           async (payload) => {
             const row = payload.new as AuditLogRow;
             if (!row?.id) return;
+            // Login/logout show in the bar — keep them out of the live feed unless
+            // explicitly filtered to auth.
+            if (row.table_name === "auth" && currentTable !== "auth") return;
             // Respect the active filters.
             if (currentTable && row.table_name !== currentTable) return;
             if (currentAction && row.action !== currentAction) return;
@@ -329,12 +380,23 @@ export default function ActivityClient({
   // Merge realtime rows ahead of the accumulated server rows, dropping any the
   // server already included (avoids a flash of duplicates).
   const existingIds = new Set(serverItems.map((i) => i.id));
-  const displayItems = [...extraItems.filter((i) => !existingIds.has(i.id)), ...serverItems];
-  const liveCount = displayItems.length - serverItems.length;
+  const mergedItems = [...extraItems.filter((i) => !existingIds.has(i.id)), ...serverItems];
+  const liveCount = mergedItems.length - serverItems.length;
+
+  // Feed hygiene: login/logout now live in the "מחוברים כעת" bar, so keep them
+  // out of the feed (unless explicitly filtered to auth). System-actor rows
+  // (changed_by null → "מערכת") stay in the feed but get batched below; the
+  // "רק פעולות משתמשים" toggle drops them entirely.
+  const displayItems = mergedItems.filter((i) => {
+    if (i.tableName === "auth" && currentTable !== "auth") return false;
+    if (usersOnly && i.actorName === "מערכת") return false;
+    return true;
+  });
 
   // Collapse side-effect rows (order items, stock movements, …) under the action
   // that caused them.
   const groups = groupAuditFeedItems(displayItems);
+  const renderNodes = batchSystemGroups(groups);
   function toggleExpanded(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -356,7 +418,7 @@ export default function ActivityClient({
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
-      <OnlineUsersCard />
+      <OnlineUsersCard roster={roster} />
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -390,6 +452,15 @@ export default function ActivityClient({
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
+          <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm shadow-sm">
+            <input
+              type="checkbox"
+              checked={usersOnly}
+              onChange={(e) => setUsersOnly(e.target.checked)}
+              className="h-4 w-4 accent-secondary"
+            />
+            רק פעולות משתמשים
+          </label>
         </div>
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -421,8 +492,54 @@ export default function ActivityClient({
 
       {!error && displayItems.length > 0 && (
         <div className="space-y-2">
-          {groups.map((group) => {
-            const { header, children } = group;
+          {renderNodes.map((node) => {
+            // A batch of automated system rows → one collapsed, expandable card.
+            if (node.type === "sysBatch") {
+              const isExpanded = expanded.has(node.id);
+              return (
+                <Card key={node.id} className={isPending ? "opacity-60 transition-opacity" : ""}>
+                  <CardContent className="py-3 px-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2 flex-1 min-w-0">
+                        <span className="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
+                          מערכת
+                        </span>
+                        <div className="min-w-0 text-sm font-medium">
+                          {`${node.rows.length} עדכוני מערכת`}
+                        </div>
+                      </div>
+                      <time
+                        className="shrink-0 text-xs text-muted-foreground whitespace-nowrap"
+                        title={formatFullDate(node.latest)}
+                      >
+                        {formatRelativeTime(node.latest)}
+                      </time>
+                    </div>
+                    <div className="mt-2 border-t pt-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(node.id)}
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                        />
+                        {isExpanded ? "הסתר" : `הצג ${node.rows.length} עדכונים`}
+                      </button>
+                      {isExpanded && (
+                        <div className="mt-2 space-y-1.5 pr-2">
+                          {node.rows.map((r) => (
+                            <ActivityChildRow key={r.id} item={r} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            }
+
+            const { header, children } = node.group;
             const isExpanded = expanded.has(header.id);
             return (
               <Card key={header.id} className={isPending ? "opacity-60 transition-opacity" : ""}>

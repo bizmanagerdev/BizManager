@@ -1,5 +1,6 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { logAuditEvent } from "@/lib/audit";
 import {
   computeSourceCollection,
   fetchOrderDueDates,
@@ -1149,5 +1150,37 @@ export async function syncSystemReminders(supabase: SupabaseClient, now: Date): 
       results.push({ rule: rule.key, active: 0, inserted: 0, resolved: 0, refreshed: 0, error: (err as Error)?.message ?? "failed" });
     }
   }
+
+  // Reminders are no longer audited row-by-row (trg_audit_reminders was dropped
+  // in migration 20260724040000 — it flooded the activity feed). Instead, when a
+  // sync batch actually changed something, log ONE summary row. Renders in the
+  // feed as "המערכת עדכנה N תזכורות".
+  const totals = results.reduce(
+    (acc, r) => {
+      acc.inserted += r.inserted;
+      acc.refreshed += r.refreshed;
+      acc.resolved += r.resolved;
+      return acc;
+    },
+    { inserted: 0, refreshed: 0, resolved: 0 }
+  );
+  const changed = totals.inserted + totals.refreshed + totals.resolved;
+  if (changed > 0) {
+    await logAuditEvent({
+      supabase,
+      tableName: "system",
+      recordId: "00000000-0000-0000-0000-000000000000",
+      action: "reminders_synced",
+      changedBy: null,
+      userRole: null,
+      newData: {
+        count: changed,
+        inserted: totals.inserted,
+        refreshed: totals.refreshed,
+        resolved: totals.resolved,
+      },
+    });
+  }
+
   return results;
 }

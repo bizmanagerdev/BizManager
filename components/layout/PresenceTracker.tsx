@@ -21,10 +21,19 @@ export default function PresenceTracker({ userName, viewerRole }: Props) {
     const supabase = createSupabaseBrowserClient();
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
+    // Persist "last active" so admins can see when each user was last using the
+    // system even after they've disconnected (ephemeral presence only covers
+    // who's connected right now). Fired on mount and on an interval.
+    const touch = () => {
+      void supabase.rpc("touch_last_seen");
+    };
+
     void (async () => {
       const { data } = await supabase.auth.getUser();
       const userId = data.user?.id;
       if (!userId || !active) return;
+
+      touch();
 
       channel = supabase.channel(PRESENCE_CHANNEL, {
         config: { presence: { key: userId } },
@@ -42,8 +51,16 @@ export default function PresenceTracker({ userName, viewerRole }: Props) {
       });
     })();
 
+    // Heartbeat every 60s while the tab is open (only when visible, so a
+    // backgrounded tab doesn't keep a user looking "active" indefinitely).
+    const heartbeat = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      touch();
+    }, 60_000);
+
     return () => {
       active = false;
+      clearInterval(heartbeat);
       if (channel) void supabase.removeChannel(channel);
     };
   }, [userName, viewerRole]);

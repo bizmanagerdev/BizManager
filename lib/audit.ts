@@ -106,9 +106,24 @@ export function entityLabel(tableName: string) {
     case "recurring_expense_templates": return "הוצאה קבועה";
     case "recurring_task_templates": return "משימה קבועה";
     case "communications": return "תקשורת";
+    case "communication_logs": return "תקשורת";
+    case "task_comments": return "תגובה";
+    case "task_members": return "משתתף במשימה";
+    case "task_time_reports": return "דיווח זמן";
+    case "loans": return "הלוואה";
+    case "loan_repayments": return "החזר הלוואה";
+    case "accounts": return "חשבון";
+    case "entity_tags": return "תיוג";
+    case "card_statements": return "דף אשראי";
+    case "expense_installments": return "תשלום הוצאה";
+    case "push_alert_config": return "הגדרת התראה";
+    case "contacts": return "איש קשר";
+    case "document_links": return "קישור מסמך";
     case "morning_documents": return "מסמך Morning";
     case "morning_settings": return "הגדרות Morning";
+    case "reminders": return "תזכורת";
     case "auth": return "מערכת";
+    case "system": return "מערכת";
     default: return tableName;
   }
 }
@@ -119,6 +134,8 @@ export function actionLabel(action: string) {
       return "התחבר";
     case "logout":
       return "התנתק";
+    case "reminders_synced":
+      return "רענון תזכורות";
     case "create":
     case "INSERT":
       return "נוצר";
@@ -262,6 +279,22 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
       if (device) parts.push(device);
       break;
     }
+    case "system": {
+      // One row summarizing a reminders-sync batch (see system-rules.ts).
+      const count = Number(d.count);
+      if (Number.isFinite(count) && count > 0) {
+        parts.push(`${count.toLocaleString("he-IL")} תזכורות עודכנו`);
+      }
+      const bits: string[] = [];
+      const inserted = Number(d.inserted);
+      const refreshed = Number(d.refreshed);
+      const resolved = Number(d.resolved);
+      if (Number.isFinite(inserted) && inserted > 0) bits.push(`${inserted} חדשות`);
+      if (Number.isFinite(refreshed) && refreshed > 0) bits.push(`${refreshed} רועננו`);
+      if (Number.isFinite(resolved) && resolved > 0) bits.push(`${resolved} נסגרו`);
+      if (bits.length) parts.push(bits.join(", "));
+      break;
+    }
   }
 
   return parts.join(" · ");
@@ -310,6 +343,7 @@ function hrefFromParentKey(parentKey: string | null): string | null {
     case "project": return `/projects/${id}`;
     case "customer": return `/customers/${id}`;
     case "worker": return `/payroll/workers/${id}`;
+    case "task": return `/tasks/${id}`;
     default: return null;
   }
 }
@@ -366,6 +400,43 @@ export function buildParentKey(
       const u = fk("user_id");
       return u ? `worker:${u}` : null;
     }
+    case "task_comments":
+    case "task_members":
+    case "task_time_reports": {
+      const t = fk("task_id");
+      return t ? `task:${t}` : null;
+    }
+    case "expenses": {
+      const o = fk("order_id");
+      if (o) return `order:${o}`;
+      const p = fk("project_id");
+      if (p) return `project:${p}`;
+      const c = fk("customer_id");
+      if (c) return `customer:${c}`;
+      return null;
+    }
+    case "communications":
+    case "communication_logs":
+    case "inquiries": {
+      const c = fk("customer_id");
+      if (c) return `customer:${c}`;
+      const p = fk("project_id");
+      if (p) return `project:${p}`;
+      const o = fk("order_id");
+      if (o) return `order:${o}`;
+      return null;
+    }
+    case "reminders": {
+      // A reminder points at whatever it's about; task is handled directly in
+      // buildHref, so here we resolve its business parent for grouping/linking.
+      const c = fk("customer_id");
+      if (c) return `customer:${c}`;
+      const p = fk("project_id");
+      if (p) return `project:${p}`;
+      const o = fk("order_id");
+      if (o) return `order:${o}`;
+      return null;
+    }
     default: return null;
   }
 }
@@ -382,7 +453,26 @@ export function buildHref(
   switch (tableName) {
     case "tasks": return `/tasks/${recordId}`;
     case "users": return `/payroll/workers/${recordId}`;
+    // Login/logout rows: record_id is the user's users.id → open their profile.
+    case "auth": return `/payroll/workers/${recordId}`;
     case "documents": return "/documents";
+    case "vehicles": return `/vehicles/${recordId}`;
+    case "properties": return "/properties";
+    case "products":
+    case "product_categories":
+    case "inventory_movements": return "/inventory";
+    case "expenses":
+    case "recurring_expense_templates":
+    case "accounts":
+    case "expense_installments": return "/financial";
+    case "loans":
+    case "loan_repayments": return "/financial/loans";
+    case "card_statements": return `/financial/statements/${recordId}`;
+    case "worker_payments":
+    case "salary_agreements":
+    case "payroll_periods":
+    case "payslips":
+    case "payslip_items": return "/payroll";
     default: return null;
   }
 }
@@ -885,6 +975,70 @@ export async function getAuditActorOptions(
   return rows
     .filter((r) => typeof r.id === "string" && r.id)
     .map((r) => ({ value: r.id, label: actorDisplayName(r) }));
+}
+
+// ── Presence roster ──────────────────────────────────────────────────────────
+// Backs the "מחוברים כעת" bar: everyone active within the last 30 days plus their
+// most-recent login (a session's start). The client overlays live Realtime
+// presence to mark who is connected right now (blue) vs. last-active + how long
+// their last session ran.
+export type PresenceRosterUser = {
+  id: string;
+  authUserId: string | null;
+  name: string;
+  role: string | null;
+  avatarColor: string | null;
+  lastSeenAt: string | null;
+  lastLoginAt: string | null;
+};
+
+type RosterUserRow = AuditActorRow & { role?: string | null; last_seen_at?: string | null };
+
+export async function getUserPresenceRoster(
+  supabase: SupabaseClient
+): Promise<PresenceRosterUser[]> {
+  const sinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: userRows } = await supabase
+    .from("users")
+    .select("id,auth_user_id,full_name,email,role,avatar_color,last_seen_at")
+    .gt("last_seen_at", sinceIso)
+    .order("last_seen_at", { ascending: false })
+    .range(0, 199);
+
+  const users = (userRows ?? []) as RosterUserRow[];
+  if (users.length === 0) return [];
+
+  // Latest login per user = session start. Login rows are written app-side with
+  // changed_by = users.id (see /api/auth/login), so match on users.id.
+  const userIds = users.map((u) => u.id).filter((v): v is string => Boolean(v));
+  const lastLogin = new Map<string, string>();
+  if (userIds.length) {
+    const { data: logins } = await supabase
+      .from("audit_logs")
+      .select("changed_by,created_at")
+      .eq("table_name", "auth")
+      .eq("action", "login")
+      .in("changed_by", userIds)
+      .order("created_at", { ascending: false })
+      .range(0, 999);
+    for (const row of (logins ?? []) as Array<{ changed_by?: string | null; created_at?: string | null }>) {
+      const cb = row.changed_by;
+      if (typeof cb === "string" && cb && !lastLogin.has(cb) && typeof row.created_at === "string") {
+        lastLogin.set(cb, row.created_at);
+      }
+    }
+  }
+
+  return users.map((u) => ({
+    id: u.id,
+    authUserId: typeof u.auth_user_id === "string" ? u.auth_user_id : null,
+    name: actorDisplayName(u),
+    role: typeof u.role === "string" ? u.role : null,
+    avatarColor:
+      typeof u.avatar_color === "string" && u.avatar_color.trim() ? u.avatar_color.trim() : null,
+    lastSeenAt: typeof u.last_seen_at === "string" ? u.last_seen_at : null,
+    lastLoginAt: lastLogin.get(u.id) ?? null,
+  }));
 }
 
 export function buildAuditFeedItem(

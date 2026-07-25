@@ -6,6 +6,7 @@ import {
   AUDIT_TABLE_OPTIONS,
   getAuditActorOptions,
   getAuditFeedPaginated,
+  getUserPresenceRoster,
   resolveActorFilterValues,
 } from "@/lib/audit";
 import ActivityClient from "./ActivityClient";
@@ -31,7 +32,7 @@ export default async function ActivityPage({
 
   const actorFilterValues = worker ? await resolveActorFilterValues(supabase, worker) : [];
 
-  const [result, workerOptions] = await Promise.all([
+  const [result, workerOptions, roster] = await Promise.all([
     getAuditFeedPaginated(supabase, {
       page,
       tableName: tableName || null,
@@ -39,6 +40,7 @@ export default async function ActivityPage({
       changedByValues: actorFilterValues.length ? actorFilterValues : null,
     }),
     getAuditActorOptions(supabase),
+    getUserPresenceRoster(supabase),
   ]);
 
   return (
@@ -57,6 +59,7 @@ export default async function ActivityPage({
         currentAction={action}
         currentWorker={worker}
         actorFilterValues={actorFilterValues}
+        roster={roster}
       />
     </AppShell>
   );
