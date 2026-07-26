@@ -62,6 +62,7 @@ function actionColor(action: string) {
       return "bg-success-soft text-success-soft-foreground"; // green — נוצר / התחבר
     case "update":
     case "status_changed":
+    case "reminders_synced":
       return "bg-info-soft text-info-soft-foreground"; // blue — עודכן
     case "priority_changed":
       return "bg-warning-soft text-warning-soft-foreground"; // amber
@@ -76,10 +77,11 @@ function actionColor(action: string) {
   }
 }
 
-// System/automated rows (actor "מערכת") are always grey, deliberately distinct
-// from the blue "update" — a scheduled recheck isn't a person editing something.
+// The action badge is colored by the ACTION only (blue update, green create, …) —
+// even for automated "מערכת" rows, so a system update matches every other update.
+// What marks a row as automated is the grey "מערכת" chip in the user column, not
+// the action badge or the row's accent stripe.
 function badgeColor(item: AuditFeedItem) {
-  if (item.actorName === "מערכת") return "bg-muted text-muted-foreground";
   return actionColor(item.action);
 }
 
@@ -87,7 +89,6 @@ function badgeColor(item: AuditFeedItem) {
 // stripe on the table row's start edge so create / update / delete are scannable
 // at a glance without reading the badge. Mirrors actionColor's mapping.
 function accentColorVar(item: AuditFeedItem): string {
-  if (item.actorName === "מערכת") return "var(--muted-foreground)";
   const a = item.action.toLowerCase();
   if (a.startsWith("morning")) return "var(--warning-soft-foreground)";
   switch (a) {
@@ -97,6 +98,7 @@ function accentColorVar(item: AuditFeedItem): string {
       return "var(--success-soft-foreground)";
     case "update":
     case "status_changed":
+    case "reminders_synced":
       return "var(--info-soft-foreground)";
     case "priority_changed":
       return "var(--warning-soft-foreground)";
@@ -132,12 +134,28 @@ function ActorCell({ item }: { item: AuditFeedItem }) {
         className="h-6 w-6 text-[10px]"
       />
       <span className="font-medium text-foreground">{item.actorName}</span>
-      {item.actorRole && (
-        <Badge variant="outline" className="py-0 text-[10px]">
-          {item.actorRole}
-        </Badge>
-      )}
     </span>
+  );
+}
+
+// The old→new field changes as two aligned stacks (used for the table's before /
+// after columns). `side` picks which value to show; the "before" side carries the
+// field label so the row reads "סטטוס: פתוח" → "הושלם" across the two columns.
+function ChangeStack({ item, side }: { item: AuditFeedItem; side: "before" | "after" }) {
+  if (item.changes.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-0.5 leading-tight">
+      {item.changes.map((c, i) => (
+        <span key={i} className="whitespace-nowrap">
+          <span className="text-muted-foreground">{`${c.label}: `}</span>
+          {side === "before" ? (
+            <span className="text-foreground/80">{c.before}</span>
+          ) : (
+            <span className="font-medium text-foreground">{c.after}</span>
+          )}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -293,14 +311,14 @@ function ActivityTableChildRow({ item }: { item: AuditFeedItem }) {
           {item.actionLabel}
         </span>
       </td>
-      <td className="px-3 py-1 align-top" colSpan={3}>
+      <td className="px-3 py-1 align-top" colSpan={5}>
         {item.href ? (
           <Link href={item.href} className="hover:underline">{inner}</Link>
         ) : (
           inner
         )}
       </td>
-      <td className="whitespace-nowrap px-3 py-1 text-left align-top text-[10px] tabular-nums text-muted-foreground">
+      <td className="whitespace-nowrap px-3 py-1 text-right align-top text-[10px] tabular-nums text-muted-foreground">
         {formatRelativeTime(item.createdAt)}
       </td>
     </tr>
@@ -742,7 +760,9 @@ export default function ActivityClient({
             <colgroup>
               <col className="w-[6rem]" />
               <col />
-              <col className="w-[10rem]" />
+              <col className="w-[11rem]" />
+              <col />
+              <col />
               <col />
               <col className="w-[7rem]" />
             </colgroup>
@@ -750,33 +770,32 @@ export default function ActivityClient({
                 The wrapper can't clip with overflow-hidden or the header wouldn't
                 stick, so the header cells carry the top rounding instead. */}
             <thead className="sticky top-[60px] z-20">
-              <tr className="border-b border-border/60 bg-[rgb(var(--secondary-10))] text-xs font-medium text-muted-foreground shadow-sm">
-                <th className="px-3 py-2 text-right rounded-tr-lg">פעולה</th>
-                <th className="px-3 py-2 text-right">פריט</th>
-                <th className="px-3 py-2 text-right">משתמש</th>
-                <th className="px-3 py-2 text-right">פרטים</th>
-                <th className="whitespace-nowrap px-3 py-2 text-left rounded-tl-lg">זמן</th>
+              <tr className="border-b-2 border-border bg-[rgb(var(--secondary-10))] text-sm font-semibold text-foreground shadow-sm">
+                <th className="px-3 py-3.5 text-right rounded-tr-lg">פעולה</th>
+                <th className="px-3 py-3.5 text-right">רשומה</th>
+                <th className="px-3 py-3.5 text-right">משתמש</th>
+                <th className="px-3 py-3.5 text-right">פרטים</th>
+                <th className="px-3 py-3.5 text-right">לפני</th>
+                <th className="px-3 py-3.5 text-right">אחרי</th>
+                <th className="whitespace-nowrap px-3 py-3.5 text-right rounded-tl-lg">זמן</th>
               </tr>
             </thead>
             <tbody>
-              {renderNodes.map((node, idx) => {
-                // Zebra striping: every other node row gets a faint tint so the eye
-                // can track a row straight across the five columns. Hover overrides it.
-                const zebra = idx % 2 === 1 ? "bg-secondary/[0.04]" : "";
+              {renderNodes.map((node) => {
                 if (node.type === "sysBatch") {
                   const isExpanded = expanded.has(node.id);
                   return (
                     <Fragment key={node.id}>
-                      <tr className={`border-b border-border/40 last:border-0 hover:bg-secondary/10 ${zebra}`}>
+                      <tr className="border-b border-border/40 last:border-0 hover:bg-secondary/10">
                         <td
-                          className="px-3 py-1.5 align-top"
+                          className="px-3 py-1.5 align-middle"
                           style={{ boxShadow: `inset -3px 0 0 0 rgb(${accentColorVar(node.rows[0])})` }}
                         >
-                          <span className="inline-block rounded bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                          <span className="inline-block rounded bg-info-soft px-2 py-0.5 text-xs font-medium text-info-soft-foreground">
                             עודכן
                           </span>
                         </td>
-                        <td className="px-3 py-1.5 align-top" colSpan={2}>
+                        <td className="whitespace-nowrap px-3 py-2 align-middle">
                           <button
                             type="button"
                             onClick={() => toggleExpanded(node.id)}
@@ -788,13 +807,19 @@ export default function ActivityClient({
                             {`${node.rows.length} עדכוני מערכת`}
                           </button>
                         </td>
-                        <td className="px-3 py-1.5 align-top">
-                          <span className="inline-block rounded bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                            מערכת
+                        <td className="whitespace-nowrap px-3 py-2 align-middle">
+                          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
+                              מ
+                            </span>
+                            <span>מערכת</span>
                           </span>
                         </td>
+                        <td className="px-3 py-2" />
+                        <td className="px-3 py-2" />
+                        <td className="px-3 py-2" />
                         <td
-                          className="whitespace-nowrap px-3 py-1.5 text-left align-top text-xs tabular-nums text-muted-foreground"
+                          className="whitespace-nowrap px-3 py-2 text-right align-middle text-xs tabular-nums text-muted-foreground"
                           title={formatFullDate(node.latest)}
                         >
                           {formatRelativeTime(node.latest)}
@@ -812,13 +837,13 @@ export default function ActivityClient({
                 return (
                   <Fragment key={header.id}>
                     <tr
-                      className={`border-b border-border/40 last:border-0 ${zebra} ${
+                      className={`border-b border-border/40 last:border-0 ${
                         clickable ? "cursor-pointer hover:bg-secondary/15" : "hover:bg-secondary/10"
                       }`}
                       onClick={clickable ? () => router.push(header.href!) : undefined}
                     >
                       <td
-                        className="px-3 py-1.5 align-top"
+                        className="px-3 py-2 align-middle"
                         style={{ boxShadow: `inset -3px 0 0 0 rgb(${accentColorVar(header)})` }}
                       >
                         <span
@@ -827,8 +852,8 @@ export default function ActivityClient({
                           {header.actionLabel}
                         </span>
                       </td>
-                      <td className="px-3 py-1.5 align-top">
-                        <div className="break-words leading-tight">
+                      <td className="px-3 py-2 align-middle">
+                        <div className="whitespace-nowrap leading-tight">
                           <span className="font-medium text-foreground">{header.entityLabel}</span>
                           {header.title && (
                             <>
@@ -836,33 +861,39 @@ export default function ActivityClient({
                               <span className="font-semibold text-foreground">{header.title}</span>
                             </>
                           )}
+                          {children.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpanded(header.id);
+                              }}
+                              className="ms-2 inline-flex items-center gap-0.5 align-middle text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              <ChevronDown
+                                className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                              />
+                              {isExpanded ? "הסתר" : `+${children.length}`}
+                            </button>
+                          )}
                         </div>
-                        {children.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleExpanded(header.id);
-                            }}
-                            className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            <ChevronDown
-                              className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                            />
-                            {isExpanded ? "הסתר שינויים" : `ועוד ${children.length} שינויים נלווים`}
-                          </button>
-                        )}
                       </td>
-                      <td className="px-3 py-1.5 align-top text-xs text-muted-foreground">
+                      <td className="whitespace-nowrap px-3 py-2 align-middle text-xs text-muted-foreground">
                         <ActorCell item={header} />
                       </td>
-                      <td className="px-3 py-1.5 align-top text-xs text-foreground/70">
-                        {header.details ? (
-                          <DetailsText text={header.details} className="leading-tight" />
+                      <td className="whitespace-nowrap px-3 py-2 align-middle text-xs text-foreground/70">
+                        {header.baseDetails ? (
+                          <DetailsText text={header.baseDetails} className="leading-tight" />
                         ) : null}
                       </td>
+                      <td className="px-3 py-2 align-middle text-xs">
+                        <ChangeStack item={header} side="before" />
+                      </td>
+                      <td className="px-3 py-2 align-middle text-xs">
+                        <ChangeStack item={header} side="after" />
+                      </td>
                       <td
-                        className="whitespace-nowrap px-3 py-1.5 text-left align-top text-xs tabular-nums text-muted-foreground"
+                        className="whitespace-nowrap px-3 py-2 text-right align-middle text-xs tabular-nums text-muted-foreground"
                         title={formatFullDate(header.createdAt)}
                       >
                         {formatRelativeTime(header.createdAt)}

@@ -35,6 +35,10 @@ type LogAuditParams = {
   newData?: AuditLogValue;
 };
 
+// A single field change on an update row, kept structured so the table can show
+// the old value and the new value in two separate columns.
+export type AuditChange = { label: string; before: string; after: string };
+
 export type AuditFeedItem = {
   id: string;
   tableName: string;
@@ -43,7 +47,15 @@ export type AuditFeedItem = {
   actionLabel: string;
   entityLabel: string;
   summary: string;
+  // Full human line (base info + "field: old → new" changes) — used by the mobile
+  // cards and any single-string surface.
   details: string;
+  // Just the base info (amount, description, session length…) WITHOUT the field
+  // changes — the desktop table shows this in the item column, changes in their
+  // own before/after columns.
+  baseDetails: string;
+  // Structured field changes (empty unless it's an update with tracked fields).
+  changes: AuditChange[];
   actorName: string;
   actorRole: string | null;
   // The actor's chosen avatar color (users.avatar_color), so the feed avatar
@@ -119,6 +131,8 @@ export function entityLabel(tableName: string) {
     case "push_alert_config": return "הגדרת התראה";
     case "contacts": return "איש קשר";
     case "document_links": return "קישור מסמך";
+    case "fcm_tokens":
+    case "push_subscriptions": return "מכשיר";
     case "morning_documents": return "מסמך Morning";
     case "morning_settings": return "הגדרות Morning";
     case "reminders": return "תזכורת";
@@ -805,7 +819,8 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
 // Order controls how changes are listed; first matches win.
 const CHANGE_FIELDS = Object.keys(CHANGE_FIELD_LABELS);
 
-// Masculine, project-wide (see feedback-hebrew-gender-agreement).
+// Masculine, project-wide (see feedback-hebrew-gender-agreement). Covers every
+// stored status value we might diff so no raw English leaks into the feed.
 const STATUS_VALUE_LABELS: Record<string, string> = {
   open: "פתוח", closed: "סגור", active: "פעיל", inactive: "לא פעיל",
   pending: "ממתין", in_progress: "בתהליך", completed: "הושלם", done: "הושלם",
@@ -813,6 +828,19 @@ const STATUS_VALUE_LABELS: Record<string, string> = {
   cancelled: "בוטל", canceled: "בוטל", paid: "שולם", unpaid: "לא שולם",
   partial: "חלקי", draft: "טיוטה", new: "חדש", lost: "אבוד", won: "זכה",
   low: "נמוכה", medium: "בינונית", high: "גבוהה", urgent: "דחופה",
+  // order fulfilment / delivery statuses
+  delivered: "נמסר", shipped: "נשלח", collected: "נאסף", ready: "מוכן",
+  processing: "בעיבוד", confirmed: "אושר", in_transit: "במשלוח",
+  returned: "הוחזר", refunded: "זוכה", not_paid: "לא שולם",
+  approved: "אושר", rejected: "נדחה", sent: "נשלח", overdue: "באיחור",
+  issued: "הונפק", needs_invoice: "דורש חשבונית", scheduled: "מתוזמן",
+  failed: "נכשל", success: "הצליח", contacted: "נוצר קשר", promised: "הובטח",
+  // payment methods
+  cash: "מזומן", credit: "אשראי", credit_card: "אשראי", card: "אשראי",
+  check: "צ׳ק", cheque: "צ׳ק", bank_transfer: "העברה בנקאית", transfer: "העברה",
+  bit: "ביט", paybox: "פייבוקס", other: "אחר",
+  // booleans (needs_invoice, is_official, …)
+  true: "כן", false: "לא",
 };
 
 function formatChangeValue(field: string, value: AuditLogValue): string {
@@ -829,25 +857,36 @@ function isUpdateAction(action: string): boolean {
   return action === "update" || action === "UPDATE" || action === "status_changed" || action === "priority_changed";
 }
 
-function buildChanges(oldData: AuditLogValue, newData: AuditLogValue): string {
-  if (!oldData || typeof oldData !== "object" || Array.isArray(oldData)) return "";
-  if (!newData || typeof newData !== "object" || Array.isArray(newData)) return "";
+function buildChangeList(oldData: AuditLogValue, newData: AuditLogValue): AuditChange[] {
+  if (!oldData || typeof oldData !== "object" || Array.isArray(oldData)) return [];
+  if (!newData || typeof newData !== "object" || Array.isArray(newData)) return [];
   const o = oldData as Record<string, AuditLogValue>;
   const n = newData as Record<string, AuditLogValue>;
 
-  const parts: string[] = [];
+  const out: AuditChange[] = [];
+  const seen = new Set<string>();
   for (const field of CHANGE_FIELDS) {
     if (!(field in o) && !(field in n)) continue;
     const before = o[field] ?? null;
     const after = n[field] ?? null;
     if (JSON.stringify(before) === JSON.stringify(after)) continue;
-    const part = `${CHANGE_FIELD_LABELS[field]}: ${formatChangeValue(field, before)} → ${formatChangeValue(field, after)}`;
+    const change: AuditChange = {
+      label: CHANGE_FIELD_LABELS[field],
+      before: formatChangeValue(field, before),
+      after: formatChangeValue(field, after),
+    };
     // Skip duplicates (e.g. agreed_base_price + actual_price both → "מחיר").
-    if (parts.includes(part)) continue;
-    parts.push(part);
-    if (parts.length >= 3) break;
+    const key = `${change.label}|${change.before}|${change.after}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(change);
+    if (out.length >= 3) break;
   }
-  return parts.join(" · ");
+  return out;
+}
+
+function changeListToString(changes: AuditChange[]): string {
+  return changes.map((c) => `${c.label}: ${c.before} → ${c.after}`).join(" · ");
 }
 
 function actorDisplayName(actor: AuditActorRow) {
@@ -1122,9 +1161,9 @@ export function buildAuditFeedItem(
 ): AuditFeedItem {
   const base = buildDetails(row.table_name, row.new_data ?? null);
   const changes = isUpdateAction(row.action)
-    ? buildChanges(row.old_data ?? null, row.new_data ?? null)
-    : "";
-  const details = [base, changes].filter(Boolean).join(" · ");
+    ? buildChangeList(row.old_data ?? null, row.new_data ?? null)
+    : [];
+  const details = [base, changeListToString(changes)].filter(Boolean).join(" · ");
 
   const parentKey = buildParentKey(
     row.table_name,
@@ -1142,6 +1181,8 @@ export function buildAuditFeedItem(
     entityLabel: entityLabel(row.table_name),
     summary: buildSummary(row.table_name, row.action),
     details,
+    baseDetails: base,
+    changes,
     actorName: row.changed_by ? actorName ?? "משתמש" : "מערכת",
     actorRole: row.user_role,
     actorColor: row.changed_by ? actorColor : null,
@@ -1538,6 +1579,60 @@ export const AUDIT_ACTION_OPTIONS = [
   { value: "logout", label: "התנתקות" },
 ] as const;
 
+function formatDurationHe(ms: number): string {
+  const min = Math.round(ms / 60000);
+  if (min < 1) return "פחות מדקה";
+  if (min < 60) return `${min} דק'`;
+  const hrs = Math.floor(min / 60);
+  const rem = min % 60;
+  return rem ? `${hrs} שע' ${rem} דק'` : `${hrs} שע'`;
+}
+
+// For logout rows, fill in "how long they were logged in" (logout time − the most
+// recent login before it). auth rows store the user's id in record_id, and the
+// login/logout pair are both written app-side, so we pair by record_id. Mutates
+// the passed items; a no-op (no query) when the page has no logout rows.
+async function enrichLogoutDurations(
+  supabase: SupabaseClient,
+  items: AuditFeedItem[]
+): Promise<void> {
+  const logouts = items.filter(
+    (i) => i.tableName === "auth" && i.action === "logout" && i.createdAt && i.recordId
+  );
+  if (logouts.length === 0) return;
+
+  const userIds = Array.from(new Set(logouts.map((i) => i.recordId)));
+  const { data } = await supabase
+    .from("audit_logs")
+    .select("record_id,created_at")
+    .eq("table_name", "auth")
+    .eq("action", "login")
+    .in("record_id", userIds)
+    .order("created_at", { ascending: false })
+    .range(0, 999);
+
+  const loginsByUser = new Map<string, number[]>();
+  for (const r of (data ?? []) as Array<{ record_id?: string; created_at?: string }>) {
+    if (typeof r.record_id === "string" && typeof r.created_at === "string") {
+      const t = new Date(r.created_at).getTime();
+      if (!Number.isNaN(t)) {
+        const arr = loginsByUser.get(r.record_id) ?? [];
+        arr.push(t); // already newest-first from the query order
+        loginsByUser.set(r.record_id, arr);
+      }
+    }
+  }
+
+  for (const item of logouts) {
+    const logoutT = new Date(item.createdAt as string).getTime();
+    const prior = (loginsByUser.get(item.recordId) ?? []).find((t) => t < logoutT);
+    if (prior === undefined) continue;
+    const label = `היה מחובר ${formatDurationHe(logoutT - prior)}`;
+    item.baseDetails = label;
+    item.details = item.details ? `${label} · ${item.details}` : label;
+  }
+}
+
 export async function getAuditFeedPaginated(
   supabase: SupabaseClient,
   {
@@ -1594,8 +1689,11 @@ export async function getAuditFeedPaginated(
   const totalCount = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
 
+  const items = normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors);
+  await enrichLogoutDurations(supabase, items);
+
   return {
-    items: normalizeAuditRows(rows, actorInfo.names, titles, actorInfo.colors),
+    items,
     totalCount,
     page: safePage,
     totalPages,
