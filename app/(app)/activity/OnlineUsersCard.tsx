@@ -63,6 +63,15 @@ export default function OnlineUsersCard({ roster }: { roster: PresenceRosterUser
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   // Whether the offline "seen this month" list is fully expanded.
   const [showAll, setShowAll] = useState(false);
+  // The viewer's own auth id — they're obviously online (they're looking at this),
+  // so we always show them connected instantly without waiting for the heartbeat
+  // round-trip / server refresh.
+  const [viewerId, setViewerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    void supabase.auth.getUser().then(({ data }) => setViewerId(data.user?.id ?? null));
+  }, []);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -106,10 +115,12 @@ export default function OnlineUsersCard({ roster }: { roster: PresenceRosterUser
       const presence =
         liveByAuth.get(u.id) ?? (u.authUserId ? liveByAuth.get(u.authUserId) ?? null : null);
       if (presence) seen.add(presence.authId);
-      // "Online" = the live Realtime socket ONLY (like WhatsApp): it drops the
-      // instant the user disconnects or logs out — no stale window. last_seen is
-      // used only for the "נראה לאחרונה" label below, never to keep someone "online".
-      const activeNow = !!presence;
+      const isViewer = !!viewerId && (u.id === viewerId || u.authUserId === viewerId);
+      // Online = the server's live-session heartbeat (u.activeNow — reliable, since
+      // Realtime presence doesn't connect in prod), plus the presence socket when it
+      // does work, plus the viewer themselves (they're here). Logout ends the session
+      // server-side, so it drops without a stale window.
+      const activeNow = u.activeNow || !!presence || isViewer;
       const lastSessionMs =
         u.sessionStartedAt && u.sessionLastSeenAt
           ? new Date(u.sessionLastSeenAt).getTime() - new Date(u.sessionStartedAt).getTime()
@@ -150,7 +161,7 @@ export default function OnlineUsersCard({ roster }: { roster: PresenceRosterUser
     return merged;
     // nowMs isn't used here anymore (active is server-decided); the relative-time
     // labels below read nowMs directly and re-render on its 30s tick.
-  }, [roster, live]);
+  }, [roster, live, viewerId]);
 
   const activeCount = rows.filter((r) => r.activeNow).length;
   const inactiveRows = rows.filter((r) => !r.activeNow);

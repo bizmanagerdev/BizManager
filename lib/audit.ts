@@ -1050,34 +1050,47 @@ export async function getUserPresenceRoster(
   // Latest session per user → active state + accurate current-session start.
   const { data: sessRows } = await supabase
     .from("user_sessions")
-    .select("user_id,started_at,last_seen_at")
+    .select("user_id,started_at,last_seen_at,ended_at")
     .gt("last_seen_at", sinceIso)
     .order("last_seen_at", { ascending: false })
     .range(0, 4999);
-  const latestSession = new Map<string, { startedAt: string; lastSeenAt: string }>();
+  const latestSession = new Map<
+    string,
+    { startedAt: string; lastSeenAt: string; endedAt: string | null }
+  >();
   for (const s of (sessRows ?? []) as Array<{
     user_id?: string;
     started_at?: string;
     last_seen_at?: string;
+    ended_at?: string | null;
   }>) {
     if (
       typeof s.user_id === "string" && s.user_id && !latestSession.has(s.user_id) &&
       typeof s.started_at === "string" && typeof s.last_seen_at === "string"
     ) {
-      latestSession.set(s.user_id, { startedAt: s.started_at, lastSeenAt: s.last_seen_at });
+      latestSession.set(s.user_id, {
+        startedAt: s.started_at,
+        lastSeenAt: s.last_seen_at,
+        endedAt: typeof s.ended_at === "string" ? s.ended_at : null,
+      });
     }
   }
 
   const roster = users.map((u) => {
     const sess = latestSession.get(u.id);
-    // Newest of users.last_seen_at and the session's last_seen_at.
+    // Newest of users.last_seen_at and the session's last_seen_at (label only).
     const times = [u.last_seen_at, sess?.lastSeenAt].filter(
       (t): t is string => typeof t === "string" && Boolean(t)
     );
     const lastSeenAt = times.length
       ? times.reduce((a, b) => (new Date(a).getTime() >= new Date(b).getTime() ? a : b))
       : null;
-    const activeNow = !!lastSeenAt && nowMs - new Date(lastSeenAt).getTime() < 2 * 60 * 1000;
+    // Online = a LIVE session (not ended by logout) that heartbeat'd within 2 min.
+    // Decided on the server clock; independent of the flaky presence socket.
+    const activeNow =
+      !!sess &&
+      !sess.endedAt &&
+      nowMs - new Date(sess.lastSeenAt).getTime() < 2 * 60 * 1000;
     return {
       id: u.id,
       authUserId: typeof u.auth_user_id === "string" ? u.auth_user_id : null,

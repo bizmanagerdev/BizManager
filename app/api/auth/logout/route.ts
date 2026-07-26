@@ -55,6 +55,14 @@ export async function POST(req: Request) {
     // Auditing must never break sign-out.
   }
 
+  // End the user's live sessions so the presence bar drops them immediately
+  // instead of showing "online" until their last heartbeat ages out (~2 min).
+  try {
+    await supabase.rpc("end_my_sessions");
+  } catch {
+    // Never block sign-out on this.
+  }
+
   await supabase.auth.signOut();
   return response;
 }
