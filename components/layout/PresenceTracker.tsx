@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export const PRESENCE_CHANNEL = "presence:online";
@@ -16,29 +16,53 @@ type Props = {
  * Keyed by the auth user id so multiple tabs collapse into a single online user.
  */
 export default function PresenceTracker({ userName, viewerRole }: Props) {
+  // One session id per browser tab (survives re-renders). Drives user_sessions so
+  // "active now" is server-authoritative — the admin bar sees this user regardless
+  // of whether ephemeral Realtime presence connected.
+  const sessionIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    let active = true;
     const supabase = createSupabaseBrowserClient();
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    // The user this tab is currently tracking. Follows the live auth session, so
+    // logging into a different account (even in another tab) hands presence over
+    // to the new account and stops advertising the logged-out one.
+    let trackedId: string | null = null;
 
-    // Persist "last active" so admins can see when each user was last using the
-    // system even after they've disconnected (ephemeral presence only covers
-    // who's connected right now). Fired on mount and on an interval.
-    const touch = () => {
-      void supabase.rpc("touch_last_seen");
+    const beat = async () => {
+      const sid = sessionIdRef.current;
+      if (!sid) return;
+      const ua = typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 300) : null;
+      const { error } = await supabase.rpc("session_heartbeat", {
+        p_session_id: sid,
+        p_user_agent: ua,
+      });
+      if (error) console.warn("[presence] session_heartbeat failed:", error.message);
     };
 
-    void (async () => {
-      const { data } = await supabase.auth.getUser();
-      const userId = data.user?.id;
-      if (!userId || !active) return;
+    const stopTracking = async () => {
+      if (!channel) return;
+      const c = channel;
+      channel = null;
+      await supabase.removeChannel(c);
+    };
 
-      touch();
+    // Advertise + heartbeat as `userId` (or clear everything when signed out).
+    const trackAs = async (userId: string | null) => {
+      if (userId === trackedId) return;
+      await stopTracking();
+      trackedId = userId;
+      if (!userId) return;
+
+      // Fresh session id per identity so switching accounts never reuses a row.
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        sessionIdRef.current = crypto.randomUUID();
+      }
+      void beat();
 
       channel = supabase.channel(PRESENCE_CHANNEL, {
         config: { presence: { key: userId } },
       });
-
       channel.subscribe((status) => {
         if (status === "SUBSCRIBED") {
           void channel?.track({
@@ -49,19 +73,26 @@ export default function PresenceTracker({ userName, viewerRole }: Props) {
           });
         }
       });
-    })();
+    };
 
-    // Heartbeat every 60s while the tab is open (only when visible, so a
-    // backgrounded tab doesn't keep a user looking "active" indefinitely).
+    // onAuthStateChange emits the current session on subscribe (INITIAL_SESSION)
+    // and again on every SIGNED_IN / SIGNED_OUT / token change — so this always
+    // reflects whoever is logged in right now. Deferred to avoid the documented
+    // deadlock when calling Supabase inside the callback.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const uid = session?.user?.id ?? null;
+      setTimeout(() => void trackAs(uid), 0);
+    });
+
     const heartbeat = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-      touch();
+      void beat();
     }, 60_000);
 
     return () => {
-      active = false;
       clearInterval(heartbeat);
-      if (channel) void supabase.removeChannel(channel);
+      sub.subscription.unsubscribe();
+      void stopTracking();
     };
   }, [userName, viewerRole]);
 

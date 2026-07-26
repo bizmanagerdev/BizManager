@@ -900,6 +900,37 @@ async function getActorNames(supabase: SupabaseClient, actorIds: string[]) {
   return new Map(Object.entries(resolved));
 }
 
+// Like resolveUserDisplayNamesForValues but returns each actor's chosen avatar
+// color, keyed by both id and auth_user_id. Used by the live feed so a row that
+// arrives via realtime carries the actor's color immediately (not just after the
+// next server refresh).
+export async function resolveUserColorsForValues(
+  supabase: SupabaseClient,
+  values: string[]
+) {
+  const uniqueValues = Array.from(new Set(values.filter(Boolean)));
+  if (uniqueValues.length === 0) return {} as Record<string, string>;
+
+  const [byIdResult, byAuthUserIdResult] = await Promise.all([
+    supabase.from("users").select("id,auth_user_id,avatar_color").in("id", uniqueValues),
+    supabase.from("users").select("id,auth_user_id,avatar_color").in("auth_user_id", uniqueValues),
+  ]);
+
+  const map: Record<string, string> = {};
+  for (const row of [
+    ...((byIdResult.data ?? []) as AuditActorRow[]),
+    ...((byAuthUserIdResult.data ?? []) as AuditActorRow[]),
+  ]) {
+    const color =
+      typeof row.avatar_color === "string" && row.avatar_color.trim() ? row.avatar_color.trim() : null;
+    if (!color) continue;
+    if (typeof row.id === "string" && row.id) map[row.id] = color;
+    if (typeof row.auth_user_id === "string" && row.auth_user_id) map[row.auth_user_id] = color;
+  }
+
+  return map;
+}
+
 // Like getActorNames but also resolves each actor's chosen avatar color, in the
 // same pair of queries. changed_by holds a mix of users.id and auth_user_id, so
 // both maps are keyed by both ids (see resolveUserDisplayNamesForValues).
@@ -978,10 +1009,11 @@ export async function getAuditActorOptions(
 }
 
 // ── Presence roster ──────────────────────────────────────────────────────────
-// Backs the "מחוברים כעת" bar: everyone active within the last 30 days plus their
-// most-recent login (a session's start). The client overlays live Realtime
-// presence to mark who is connected right now (blue) vs. last-active + how long
-// their last session ran.
+// Backs the "מחוברים כעת" bar. "Active now" is server-authoritative — a user_sessions
+// heartbeat within the last 2 min — so the viewer sees themselves regardless of
+// whether flaky Realtime presence connected. Everyone active in the last 30 days
+// is listed; inactive ones show last-seen. sessionStartedAt gives an accurate
+// "connected for X" (real session length, not cookie lifetime).
 export type PresenceRosterUser = {
   id: string;
   authUserId: string | null;
@@ -989,7 +1021,14 @@ export type PresenceRosterUser = {
   role: string | null;
   avatarColor: string | null;
   lastSeenAt: string | null;
-  lastLoginAt: string | null;
+  // "Active now" decided on the SERVER clock (heartbeat within 2 min), so a viewer
+  // whose device clock is skewed can't wrongly flip connected users to offline.
+  activeNow: boolean;
+  // The user's most-recent session's start + last heartbeat (whether or not it's
+  // still active), so the bar can show "connected for X" while online and "last
+  // session lasted Y" once offline. Null when they have no session yet.
+  sessionStartedAt: string | null;
+  sessionLastSeenAt: string | null;
 };
 
 type RosterUserRow = AuditActorRow & { role?: string | null; last_seen_at?: string | null };
@@ -997,48 +1036,69 @@ type RosterUserRow = AuditActorRow & { role?: string | null; last_seen_at?: stri
 export async function getUserPresenceRoster(
   supabase: SupabaseClient
 ): Promise<PresenceRosterUser[]> {
-  const sinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const nowMs = Date.now();
+  const since = nowMs - 30 * 24 * 60 * 60 * 1000;
+  const sinceIso = new Date(since).toISOString();
+
   const { data: userRows } = await supabase
     .from("users")
     .select("id,auth_user_id,full_name,email,role,avatar_color,last_seen_at")
-    .gt("last_seen_at", sinceIso)
-    .order("last_seen_at", { ascending: false })
-    .range(0, 199);
-
+    .range(0, 999);
   const users = (userRows ?? []) as RosterUserRow[];
   if (users.length === 0) return [];
 
-  // Latest login per user = session start. Login rows are written app-side with
-  // changed_by = users.id (see /api/auth/login), so match on users.id.
-  const userIds = users.map((u) => u.id).filter((v): v is string => Boolean(v));
-  const lastLogin = new Map<string, string>();
-  if (userIds.length) {
-    const { data: logins } = await supabase
-      .from("audit_logs")
-      .select("changed_by,created_at")
-      .eq("table_name", "auth")
-      .eq("action", "login")
-      .in("changed_by", userIds)
-      .order("created_at", { ascending: false })
-      .range(0, 999);
-    for (const row of (logins ?? []) as Array<{ changed_by?: string | null; created_at?: string | null }>) {
-      const cb = row.changed_by;
-      if (typeof cb === "string" && cb && !lastLogin.has(cb) && typeof row.created_at === "string") {
-        lastLogin.set(cb, row.created_at);
-      }
+  // Latest session per user → active state + accurate current-session start.
+  const { data: sessRows } = await supabase
+    .from("user_sessions")
+    .select("user_id,started_at,last_seen_at")
+    .gt("last_seen_at", sinceIso)
+    .order("last_seen_at", { ascending: false })
+    .range(0, 4999);
+  const latestSession = new Map<string, { startedAt: string; lastSeenAt: string }>();
+  for (const s of (sessRows ?? []) as Array<{
+    user_id?: string;
+    started_at?: string;
+    last_seen_at?: string;
+  }>) {
+    if (
+      typeof s.user_id === "string" && s.user_id && !latestSession.has(s.user_id) &&
+      typeof s.started_at === "string" && typeof s.last_seen_at === "string"
+    ) {
+      latestSession.set(s.user_id, { startedAt: s.started_at, lastSeenAt: s.last_seen_at });
     }
   }
 
-  return users.map((u) => ({
-    id: u.id,
-    authUserId: typeof u.auth_user_id === "string" ? u.auth_user_id : null,
-    name: actorDisplayName(u),
-    role: typeof u.role === "string" ? u.role : null,
-    avatarColor:
-      typeof u.avatar_color === "string" && u.avatar_color.trim() ? u.avatar_color.trim() : null,
-    lastSeenAt: typeof u.last_seen_at === "string" ? u.last_seen_at : null,
-    lastLoginAt: lastLogin.get(u.id) ?? null,
-  }));
+  const roster = users.map((u) => {
+    const sess = latestSession.get(u.id);
+    // Newest of users.last_seen_at and the session's last_seen_at.
+    const times = [u.last_seen_at, sess?.lastSeenAt].filter(
+      (t): t is string => typeof t === "string" && Boolean(t)
+    );
+    const lastSeenAt = times.length
+      ? times.reduce((a, b) => (new Date(a).getTime() >= new Date(b).getTime() ? a : b))
+      : null;
+    const activeNow = !!lastSeenAt && nowMs - new Date(lastSeenAt).getTime() < 2 * 60 * 1000;
+    return {
+      id: u.id,
+      authUserId: typeof u.auth_user_id === "string" ? u.auth_user_id : null,
+      name: actorDisplayName(u),
+      role: typeof u.role === "string" ? u.role : null,
+      avatarColor:
+        typeof u.avatar_color === "string" && u.avatar_color.trim() ? u.avatar_color.trim() : null,
+      lastSeenAt,
+      activeNow,
+      sessionStartedAt: sess?.startedAt ?? null,
+      sessionLastSeenAt: sess?.lastSeenAt ?? null,
+    };
+  });
+
+  return roster
+    .filter((u) => u.lastSeenAt && new Date(u.lastSeenAt).getTime() > since)
+    .sort((a, b) => {
+      const at = a.lastSeenAt ? new Date(a.lastSeenAt).getTime() : 0;
+      const bt = b.lastSeenAt ? new Date(b.lastSeenAt).getTime() : 0;
+      return bt - at;
+    });
 }
 
 export function buildAuditFeedItem(
@@ -1528,4 +1588,18 @@ export async function getAuditFeedPaginated(
     totalPages,
     error: null as string | null,
   };
+}
+
+// Count of audit rows recorded since local midnight — the "N פעולות היום" the
+// activity header shows. A head-only count query, so it's cheap. Returns 0 on
+// error rather than throwing; the subtitle just shows "0 פעולות היום".
+export async function getAuditActionsTodayCount(supabase: SupabaseClient): Promise<number> {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const { count, error } = await supabase
+    .from("audit_logs")
+    .select("id", { count: "exact", head: true })
+    .gte("created_at", start.toISOString());
+  if (error) return 0;
+  return count ?? 0;
 }

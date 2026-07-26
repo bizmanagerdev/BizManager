@@ -9,6 +9,7 @@ import OfflineBanner from "@/components/layout/OfflineBanner";
 import ConnectionToasts from "@/components/layout/ConnectionToasts";
 import ConnectionTelemetry from "@/components/pwa/ConnectionTelemetry";
 import PresenceTracker from "@/components/layout/PresenceTracker";
+import SessionWatcher from "@/components/layout/SessionWatcher";
 import NotificationsRealtime from "@/components/notifications/NotificationsRealtime";
 import FontScaleSync from "@/components/layout/FontScaleSync";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
@@ -71,6 +72,7 @@ export default function AppShell({
           <TopNavigationProgress />
         </Suspense>
         <PresenceTracker userName={userName} viewerRole={viewerRole} />
+        <SessionWatcher />
         <NotificationsRealtime />
         <FontScaleSync />
         <ConnectionToasts />

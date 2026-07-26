@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   AUDIT_ACTION_OPTIONS,
   AUDIT_TABLE_OPTIONS,
+  getAuditActionsTodayCount,
   getAuditActorOptions,
   getAuditFeedPaginated,
   getUserPresenceRoster,
@@ -32,7 +34,11 @@ export default async function ActivityPage({
 
   const actorFilterValues = worker ? await resolveActorFilterValues(supabase, worker) : [];
 
-  const [result, workerOptions, roster] = await Promise.all([
+  // Roster reads every user's session/last-seen — use the service-role client so
+  // RLS (users self/office-only SELECT) doesn't hide colleagues from the bar.
+  const rosterClient = createSupabaseAdminClient() ?? supabase;
+
+  const [result, workerOptions, roster, todayCount] = await Promise.all([
     getAuditFeedPaginated(supabase, {
       page,
       tableName: tableName || null,
@@ -40,7 +46,8 @@ export default async function ActivityPage({
       changedByValues: actorFilterValues.length ? actorFilterValues : null,
     }),
     getAuditActorOptions(supabase),
-    getUserPresenceRoster(supabase),
+    getUserPresenceRoster(rosterClient),
+    getAuditActionsTodayCount(supabase),
   ]);
 
   return (
@@ -60,6 +67,7 @@ export default async function ActivityPage({
         currentWorker={worker}
         actorFilterValues={actorFilterValues}
         roster={roster}
+        todayCount={todayCount}
       />
     </AppShell>
   );
