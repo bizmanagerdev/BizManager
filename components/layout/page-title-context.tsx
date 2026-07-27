@@ -18,7 +18,7 @@ import {
   type ReactNode,
 } from "react";
 
-export type PageTitle = { title: string; subtitle?: string } | null;
+export type PageTitle = { title: string; subtitle?: string; action?: ReactNode } | null;
 
 type Store = {
   pageTitle: PageTitle;
@@ -43,10 +43,10 @@ export function usePageTitle() {
  * Clears itself on unmount so a page that doesn't set one shows nothing rather
  * than inheriting the previous page's heading.
  */
-export function useSetPageTitle(title: string, subtitle?: string) {
+export function useSetPageTitle(title: string, subtitle?: string, action?: ReactNode) {
   const { setPageTitle } = useContext(PageTitleContext);
   useEffect(() => {
-    setPageTitle({ title, subtitle });
+    setPageTitle({ title, subtitle, action });
     return () => setPageTitle(null);
-  }, [setPageTitle, title, subtitle]);
+  }, [setPageTitle, title, subtitle, action]);
 }

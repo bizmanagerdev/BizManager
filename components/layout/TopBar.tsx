@@ -203,12 +203,16 @@ export function TopBar({
         <GlobalSearch mobileOnly className="min-w-0 flex-1" />
       ) : null}
 
+      {/* A page-declared action (e.g. the calendar's ⋮ menu) — sits right after the
+          page title. */}
+      {pageTitle?.action ? <div className="shrink-0">{pageTitle.action}</div> : null}
+
       {/* Desktop only: the search box is a fixed width there, so this is what
           pushes the icon cluster to the far edge. On mobile the search bar above
           already does that. */}
       <div className="hidden flex-1 lg:block" />
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         {/* Desktop only — on mobile the bottom nav's centre + is the quick-create,
             and two of them in one screen is one too many. There's no bottom nav
             from md up, so this stays the only door to it there. */}

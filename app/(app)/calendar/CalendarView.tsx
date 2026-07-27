@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Plus, CalendarDays } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Plus, MoreVertical } from "lucide-react";
 import type { CalendarEntry, CalendarEntryKind } from "@/lib/projectSchedule";
 import {
   hebrewDayLabel,
@@ -25,6 +25,16 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // ── Event-kind metadata ───────────────────────────────────────────────────────
 // Single source of truth for label / plural / color per kind, so the summary
@@ -43,7 +53,7 @@ const KIND_META: Record<
   task: { label: "משימה", plural: "משימות", dot: "bg-warning", edge: "border-e-warning" },
 };
 
-const WEEK_DAYS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
+const WEEK_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
 type Filter = Kind | "all";
 
@@ -71,13 +81,22 @@ function useIsDesktop() {
  */
 export default function CalendarView({
   entries,
+  allEntries = null,
   todayIso,
 }: {
   entries: CalendarEntry[];
+  /** When provided (admin/office), the header שלי/הכל menu is shown. */
+  allEntries?: CalendarEntry[] | null;
   todayIso: string;
 }) {
   const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
   const isDesktop = useIsDesktop();
+
+  // Scope (שלי/הכל) — chosen from the header ⋮ menu; only offered when the caller
+  // supplied everyone's entries.
+  const [scope, setScope] = useState<"mine" | "all">("mine");
+  const canToggleScope = allEntries !== null;
+  const shownEntries = scope === "all" && allEntries ? allEntries : entries;
 
   const [selected, setSelected] = useState(today);
   const [filter, setFilter] = useState<Filter>("all");
@@ -98,7 +117,7 @@ export default function CalendarView({
   // clutter smeared across the grid rather than a dated event.
   const normalized = useMemo<DayEntry[]>(
     () =>
-      entries
+      shownEntries
         .map((e) => {
           const start = toDateOnly(e.startDate);
           const end = toDateOnly(e.endDate) ?? start;
@@ -112,7 +131,7 @@ export default function CalendarView({
           }
           return true;
         }),
-    [entries]
+    [shownEntries]
   );
 
   const entriesOnDay = useMemo(
@@ -120,12 +139,44 @@ export default function CalendarView({
     [normalized]
   );
 
-  function scrollToToday() {
+  // A transient month label flashed right after a page change, then hidden. Driven
+  // from the paging actions (not a [month] effect) to avoid set-state-in-effect.
+  const [peek, setPeek] = useState(false);
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showPeek = useCallback(() => {
+    setPeek(true);
+    if (peekTimer.current) clearTimeout(peekTimer.current);
+    peekTimer.current = setTimeout(() => setPeek(false), 1400);
+  }, []);
+  useEffect(
+    () => () => {
+      if (peekTimer.current) clearTimeout(peekTimer.current);
+    },
+    []
+  );
+
+  const scrollToToday = useCallback(() => {
     setNavDir("prev");
     setSelected(today);
     setFilter("all");
     setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
-  }
+    showPeek();
+  }, [today, showPeek]);
+
+  // Header carries a jump-to-today button, so listen for its event.
+  useEffect(() => {
+    const onToday = () => scrollToToday();
+    window.addEventListener("bizh:calendar-today", onToday);
+    return () => window.removeEventListener("bizh:calendar-today", onToday);
+  }, [scrollToToday]);
+
+  // Adding from inside the day sheet: close the sheet so the create dialog opens
+  // ON TOP of the page instead of hidden behind the sheet.
+  useEffect(() => {
+    const onQuick = () => setSheetOpen(false);
+    window.addEventListener("bizh:quick-create", onQuick);
+    return () => window.removeEventListener("bizh:quick-create", onQuick);
+  }, []);
 
   // Gestures on the calendar: a two-finger pinch zooms the cells; a one-finger
   // vertical swipe (or a wheel notch) steps the month — but only while the content
@@ -147,6 +198,7 @@ export default function CalendarView({
       lastStep = now;
       setNavDir(delta > 0 ? "next" : "prev");
       setMonth((m) => new Date(m.getFullYear(), m.getMonth() + delta, 1));
+      showPeek();
     };
 
     const onTouchStart = (e: TouchEvent) => {
@@ -192,16 +244,16 @@ export default function CalendarView({
       el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("wheel", onWheel);
     };
-  }, []);
+  }, [showPeek]);
 
+  // Tapping a day only SELECTS it (updates the date row + counts). The day's list
+  // pops up only when a filter chip is tapped (see pickKind).
   function selectDay(day: Date) {
     setSelected(day);
     setFilter("all");
-    if (!isDesktop) setSheetOpen(true);
   }
 
-  // The summary-card count tiles ARE the filter (incl. an explicit "הכל"). Tapping
-  // one filters the day's list to that kind; on mobile it also opens the sheet.
+  // Tapping a filter chip (הכל / a kind) opens the day sheet, filtered to it.
   function pickKind(next: Filter) {
     setFilter(next);
     if (!isDesktop) setSheetOpen(true);
@@ -214,21 +266,37 @@ export default function CalendarView({
   );
   const selectedParsha = useMemo(() => hebrewParsha(selected), [selected]);
 
-  // Header carries the Gregorian day only (kept short so it never truncates to
-  // an ellipsis). The Hebrew date lives in the day cells + desktop panel.
   const hebShort = hebrewFullDate(selected).replace(/\s+\S+$/, "");
-  useSetPageTitle("יומן", fmtFullDay(selected));
+  // Header subtitle = the VIEWED month (Gregorian + Hebrew), updating as you page.
+  const hebMonth = useMemo(
+    () => hebrewFullDate(new Date(month.getFullYear(), month.getMonth(), 15)).replace(/^\S+\s/, ""),
+    [month]
+  );
+  // A single ⋮ menu in the header (jump-to-today + scope) — one icon keeps the
+  // title uncramped so the full month + Hebrew year shows without truncating.
+  const headerAction = useMemo(
+    () => <HeaderMenu canToggleScope={canToggleScope} scope={scope} onScope={setScope} />,
+    [canToggleScope, scope]
+  );
+  // Hebrew month + year only, so it always fits the header with no ellipsis (the
+  // full Gregorian + Hebrew shows in the paging peek).
+  useSetPageTitle("יומן", hebMonth, headerAction);
 
   return (
     // Cancel the app shell's bottom padding on this page so the calendar can fill
     // to the bottom nav without the page itself ever scrolling.
     <div className="-mb-24 space-y-3 md:mb-0">
       <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="relative min-w-0">
-          {/* Sticky day toolbar — straight on the page (no card, no navy): jump to
-              today + the labeled count filters for the selected day. Stays put while
-              the months scroll. Mobile only; desktop uses the side panel. */}
-          <div className="sticky top-[7rem] z-40 -mx-4 border-b bg-background/95 px-4 py-2 backdrop-blur lg:hidden">
+        {/* Mobile: a fixed-height flex column (chrome above + bottom nav reserved)
+            so the calendar flex-child fills exactly — no bottom gap, no page
+            scroll. Desktop: normal flow beside the side panel. */}
+        <div className="flex h-[calc(100dvh-9.25rem)] min-w-0 flex-col md:block md:h-auto">
+          {/* Selected-day date (Gregorian + Hebrew) + the labeled count filters. */}
+          <div className="-mx-4 shrink-0 space-y-1.5 border-b bg-background px-2 py-1.5 lg:hidden">
+            <div className="flex items-baseline justify-between gap-2 px-1 text-xs">
+              <span className="font-semibold text-foreground">{fmtFullDay(selected)}</span>
+              <span className="text-muted-foreground">{hebrewFullDate(selected)}</span>
+            </div>
             <FilterToolbar entries={selectedEntries} filter={filter} onPick={pickKind} />
           </div>
 
@@ -236,8 +304,17 @@ export default function CalendarView({
               month (no arrows). Full-bleed on phones, a bordered card from md up. */}
           <div
             ref={scrollRef}
-            className="-mx-4 h-[calc(100dvh-14.5rem)] touch-none overflow-hidden border-b md:mx-0 md:h-[calc(100vh-11rem)] md:rounded-2xl md:border md:border-t"
+            className="relative -mx-4 min-h-0 flex-1 touch-none overflow-hidden border-b md:mx-0 md:h-[calc(100vh-11rem)] md:flex-none md:rounded-2xl md:border md:border-t"
           >
+            {/* Transient "which month" label — shows on a page change, then fades. */}
+            {peek ? (
+              <div className="pointer-events-none absolute inset-x-0 top-2 z-30 flex animate-in fade-in-0 justify-center">
+                <span className="rounded-full bg-sidebar/90 px-3 py-1 text-xs font-semibold text-sidebar-foreground shadow-lg backdrop-blur">
+                  {fmtMonthYear(month)} · {hebMonth}
+                </span>
+              </div>
+            ) : null}
+
             {/* Pinch scales only the cell text (em-based), so the month grid stays
                 fixed and a full month is always in view. */}
             <div style={{ fontSize: `${zoom}rem` }} className="h-full">
@@ -252,7 +329,6 @@ export default function CalendarView({
                   today={today}
                   selected={selected}
                   onSelect={selectDay}
-                  onToday={scrollToToday}
                   entriesOnDay={entriesOnDay}
                 />
               </div>
@@ -304,20 +380,60 @@ export default function CalendarView({
   );
 }
 
-// ── One month in the scroll stack (sticky bar + weekday row + grid) ────────────
+// ── Header ⋮ menu: jump to today + choose the scope (my items vs everyone's) ────
+function HeaderMenu({
+  canToggleScope,
+  scope,
+  onScope,
+}: {
+  canToggleScope: boolean;
+  scope: "mine" | "all";
+  onScope: (next: "mine" | "all") => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="אפשרויות"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-white/10"
+        >
+          <MoreVertical className="h-5 w-5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="text-right">
+        <DropdownMenuItem
+          onSelect={() => window.dispatchEvent(new CustomEvent("bizh:calendar-today"))}
+        >
+          היום
+        </DropdownMenuItem>
+        {canToggleScope ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>הצגה</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={scope} onValueChange={(v) => onScope(v as "mine" | "all")}>
+              <DropdownMenuRadioItem value="mine">שלי</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="all">הכל</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// ── One month: weekday row + day grid ──────────────────────────────────────────
 function MonthBlock({
   month,
   today,
   selected,
   onSelect,
-  onToday,
   entriesOnDay,
 }: {
   month: Date;
   today: Date;
   selected: Date;
   onSelect: (day: Date) => void;
-  onToday: () => void;
   entriesOnDay: (day: Date) => DayEntry[];
 }) {
   // Only render the weeks this month actually spans (5 or 6) — so a month that
@@ -342,35 +458,13 @@ function MonthBlock({
     [calendarDays]
   );
 
-  // Hebrew month + year for the bar, e.g. "תמוז תשפ״ו" (drop the day off a full date).
-  const hebMonth = hebrewFullDate(new Date(month.getFullYear(), month.getMonth(), 15)).replace(
-    /^\S+\s/,
-    ""
-  );
-
   return (
-    // One full-height page per month (snap target) so a whole month fits on screen
-    // at once — the 6 week-rows share the leftover height and never overflow.
-    <section className="flex h-[calc(100dvh-14.5rem)] flex-col md:h-[calc(100vh-11rem)]">
-      {/* Month bar: name + Hebrew month + the "today" jump — one tight row. */}
-      <div className="flex items-center justify-between gap-2 px-3 py-1.5">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold text-foreground">{fmtMonthYear(month)}</span>
-          <span className="text-xs text-muted-foreground">{hebMonth}</span>
-        </div>
-        <button
-          type="button"
-          onClick={onToday}
-          className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-secondary-foreground transition-colors hover:bg-secondary/90"
-        >
-          <CalendarDays className="h-3.5 w-3.5" />
-          היום
-        </button>
-      </div>
-
-      <div className="grid grid-cols-7 border-y bg-muted text-center text-[11px] font-medium text-muted-foreground">
+    // Fills the parent so a whole month is on screen at once — the week-rows share
+    // the leftover height. The month name lives in the app header (no month bar).
+    <section className="flex h-full flex-col">
+      <div className="grid shrink-0 grid-cols-7 border-b bg-muted text-center text-[10px] font-medium text-muted-foreground">
         {WEEK_DAYS.map((d) => (
-          <div key={d} className="py-1">
+          <div key={d} className="overflow-hidden whitespace-nowrap px-0.5 py-1">
             {d}
           </div>
         ))}
@@ -378,7 +472,7 @@ function MonthBlock({
 
       {/* Days fill the remaining height as equal rows, so the month always fits. */}
       <div
-        className="grid flex-1 grid-cols-7 gap-px bg-border"
+        className="grid min-h-0 flex-1 grid-cols-7 gap-px bg-border"
         style={{ gridTemplateRows: `repeat(${weeks}, minmax(0, 1fr))` }}
       >
         {calendarDays.map((day) => {
@@ -401,9 +495,9 @@ function MonthBlock({
               type="button"
               onClick={() => onSelect(day)}
               title={holiday ?? undefined}
-              className={`relative flex flex-col items-center justify-center gap-0.5 overflow-hidden px-0.5 pb-3 pt-4 text-center transition-colors ${
+              className={`relative flex flex-col gap-px overflow-hidden rounded px-0.5 pb-[1em] pt-[1.35em] text-start transition-colors ${
                 !inMonth
-                  ? "bg-muted/20 text-muted-foreground/45"
+                  ? "bg-muted/10 text-muted-foreground/70"
                   : isMajor
                     ? "bg-muted/40"
                     : "bg-background"
@@ -424,23 +518,27 @@ function MonthBlock({
                 {hebrewDayLabel(day)}
               </span>
 
-              {/* Middle info: holiday / Shabbat parsha, then the event dots + count. */}
+              {/* Holiday / Shabbat parsha, then the day's items by title (as many as
+                  fit — the cell clips the overflow, no ellipsis). */}
               {holiday ? (
-                <span className="text-[0.55em] leading-tight text-primary/80">{holiday}</span>
+                <span className="overflow-hidden whitespace-nowrap text-[0.55em] font-medium leading-tight text-primary/80">
+                  {holiday}
+                </span>
               ) : parsha ? (
-                <span className="text-[0.55em] leading-tight text-muted-foreground">{parsha}</span>
+                <span className="overflow-hidden whitespace-nowrap text-[0.55em] leading-tight text-muted-foreground">
+                  {parsha}
+                </span>
               ) : null}
 
-              {dayEntries.length > 0 ? (
-                <div className="flex items-center gap-0.5">
-                  {KIND_ORDER.filter((k) => dayEntries.some((e) => e.kind === k)).map((k) => (
-                    <span key={k} className={`h-1 w-1 rounded-full ${KIND_META[k].dot}`} />
-                  ))}
-                  <span className="text-[0.55em] leading-none text-muted-foreground">
-                    {dayEntries.length}
-                  </span>
-                </div>
-              ) : null}
+              {dayEntries.map((e) => (
+                <span
+                  key={`${e.kind}-${e.id}`}
+                  className="flex items-center gap-0.5 overflow-hidden whitespace-nowrap text-[0.52em] leading-tight text-foreground/80"
+                >
+                  <span className={`h-1 w-1 shrink-0 rounded-full ${KIND_META[e.kind].dot}`} />
+                  <span className="min-w-0 flex-1 overflow-hidden">{e.title}</span>
+                </span>
+              ))}
             </button>
           );
         })}
@@ -465,7 +563,7 @@ function FilterToolbar({
     count: entries.filter((e) => e.kind === kind).length,
   }));
   return (
-    <div className="flex flex-nowrap items-center justify-center gap-1 overflow-x-auto">
+    <div className="flex flex-nowrap items-center justify-between gap-1 overflow-x-auto">
       <FilterPill active={filter === "all"} label="הכל" count={entries.length} onClick={() => onPick("all")} />
       {counts.map(({ kind, count }) => (
         <FilterPill
