@@ -271,6 +271,30 @@ export default function CalendarView({
     if (!isDesktop) setSheetOpen(true);
   }
 
+  // Long-press / right-click a day → a small menu (see details / add event → kind).
+  const [ctxDay, setCtxDay] = useState<Date | null>(null);
+  const [ctxMode, setCtxMode] = useState<"root" | "add">("root");
+  function openContext(day: Date) {
+    setCtxMode("root");
+    setCtxDay(day);
+  }
+  function contextSeeDetails() {
+    if (ctxDay) {
+      setSelected(ctxDay);
+      setFilter("all");
+      setSheetOpen(true);
+    }
+    setCtxDay(null);
+  }
+  function contextAdd(action: "task" | "project" | "reminder") {
+    if (ctxDay) {
+      window.dispatchEvent(
+        new CustomEvent("bizh:quick-create", { detail: { action, dueDate: isoLocal(ctxDay) } })
+      );
+    }
+    setCtxDay(null);
+  }
+
   const selectedEntries = entriesOnDay(selected);
   const selectedHoliday = useMemo(
     () => getHolidaysInRange(selected, selected).get(isoLocal(selected))?.name ?? null,
@@ -361,6 +385,7 @@ export default function CalendarView({
                   today={today}
                   selected={selected}
                   onSelect={selectDay}
+                  onLongPress={openContext}
                   entriesOnDay={entriesOnDay}
                 />
               </div>
@@ -408,7 +433,52 @@ export default function CalendarView({
         filter={filter}
         onFilter={setFilter}
       />
+
+      {/* Long-press / right-click a day → see details or add an event. */}
+      <Sheet open={ctxDay !== null} onOpenChange={(open) => !open && setCtxDay(null)}>
+        <SheetContent side="bottom" className="rounded-t-[1.5rem] p-4">
+          <SheetHeader className="mb-3 text-start">
+            <SheetTitle>{ctxDay ? fmtFullDay(ctxDay) : ""}</SheetTitle>
+          </SheetHeader>
+          {ctxMode === "root" ? (
+            <div className="space-y-2">
+              <ContextButton onClick={contextSeeDetails}>ראה פרטים</ContextButton>
+              <ContextButton onClick={() => setCtxMode("add")}>
+                <Plus className="h-4 w-4" />
+                הוסף אירוע
+              </ContextButton>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <ContextButton onClick={() => contextAdd("task")}>
+                <span className="h-2 w-2 rounded-full bg-warning" />
+                משימה
+              </ContextButton>
+              <ContextButton onClick={() => contextAdd("project")}>
+                <span className="h-2 w-2 rounded-full bg-success" />
+                פרויקט
+              </ContextButton>
+              <ContextButton onClick={() => contextAdd("reminder")}>
+                <span className="h-2 w-2 rounded-full bg-info" />
+                תזכורת
+              </ContextButton>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
+  );
+}
+
+function ContextButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded-xl border p-3 text-start text-sm font-medium transition-colors hover:bg-secondary/5"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -448,14 +518,25 @@ function MonthBlock({
   today,
   selected,
   onSelect,
+  onLongPress,
   entriesOnDay,
 }: {
   month: Date;
   today: Date;
   selected: Date;
   onSelect: (day: Date) => void;
+  onLongPress: (day: Date) => void;
   entriesOnDay: (day: Date) => DayEntry[];
 }) {
+  // Long-press (or right-click) a day → context menu. One shared timer since only
+  // one cell is pressed at a time.
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressPos = useRef<{ x: number; y: number } | null>(null);
+  const longFired = useRef(false);
+  const cancelPress = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  };
   // Only render the weeks this month actually spans (5 or 6) — so a month that
   // fits in 5 weeks doesn't tack on a whole extra week of the next month.
   const { calendarDays, weeks } = useMemo(() => {
@@ -513,11 +594,39 @@ function MonthBlock({
             <button
               key={day.toISOString()}
               type="button"
-              onClick={() => onSelect(day)}
+              onClick={() => {
+                if (longFired.current) {
+                  longFired.current = false;
+                  return;
+                }
+                onSelect(day);
+              }}
+              onPointerDown={(e) => {
+                longFired.current = false;
+                pressPos.current = { x: e.clientX, y: e.clientY };
+                cancelPress();
+                pressTimer.current = setTimeout(() => {
+                  longFired.current = true;
+                  onLongPress(day);
+                }, 450);
+              }}
+              onPointerMove={(e) => {
+                if (!pressPos.current || !pressTimer.current) return;
+                if (Math.hypot(e.clientX - pressPos.current.x, e.clientY - pressPos.current.y) > 10) {
+                  cancelPress();
+                }
+              }}
+              onPointerUp={cancelPress}
+              onPointerCancel={cancelPress}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                longFired.current = true;
+                onLongPress(day);
+              }}
               title={holiday ?? undefined}
               className={`relative flex flex-col gap-px overflow-hidden rounded px-0.5 pb-[1em] pt-[1.35em] text-start transition-colors ${
                 !inMonth
-                  ? "bg-muted/20 text-foreground/70"
+                  ? "bg-secondary/5 text-muted-foreground"
                   : isMajor
                     ? "bg-muted/40"
                     : "bg-background"
@@ -535,11 +644,7 @@ function MonthBlock({
 
               {/* Hebrew date — bottom-left corner (dark & readable on out-of-month
                   cells too, so those days don't blur into the tint). */}
-              <span
-                className={`absolute bottom-0.5 end-1 text-[0.6em] leading-none ${
-                  inMonth ? "text-muted-foreground" : "text-foreground/70"
-                }`}
-              >
+              <span className="absolute bottom-0.5 end-1 text-[0.6em] leading-none text-muted-foreground">
                 {hebrewDayLabel(day)}
               </span>
 
