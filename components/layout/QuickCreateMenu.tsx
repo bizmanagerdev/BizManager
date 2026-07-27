@@ -102,6 +102,9 @@ export function QuickCreateMenu({
   const panel = useHoverPanel();
   const [action, setAction] = useState<QuickCreateAction | null>(null);
   const [data, setData] = useState<QuickCreateData | null>(dataCache);
+  // A due date carried in from an external trigger (the calendar's "add to this
+  // day"); cleared when the dialog closes so it never leaks into the + menu.
+  const [taskDueDate, setTaskDueDate] = useState<string | undefined>(undefined);
   // Once mounted, keep the dialog host mounted — remounting it would reset any
   // in-progress wizard draft state the user might reopen to.
   const [dialogsMounted, setDialogsMounted] = useState(false);
@@ -126,6 +129,26 @@ export function QuickCreateMenu({
     });
   }, []);
 
+  // Other pages can open a quick-create dialog (optionally pre-dated) by firing a
+  // `bizh:quick-create` window event — e.g. the calendar's "הוספה ליום זה". Only
+  // the top-bar instance handles it, so the twin FAB copy doesn't open a second
+  // dialog. See app/(app)/calendar/CalendarView.tsx.
+  useEffect(() => {
+    if (variant !== "topbar") return;
+    function onQuickCreate(event: Event) {
+      const detail = (event as CustomEvent<{ action?: QuickCreateAction; dueDate?: string }>).detail;
+      if (!detail?.action) return;
+      // Fall back to a task if the caller asked for something this role can't create.
+      const action =
+        ADMIN_OR_OFFICE_ACTIONS.has(detail.action) && !privileged ? "task" : detail.action;
+      prefetch();
+      setTaskDueDate(action === "task" ? detail.dueDate : undefined);
+      setAction(action);
+    }
+    window.addEventListener("bizh:quick-create", onQuickCreate);
+    return () => window.removeEventListener("bizh:quick-create", onQuickCreate);
+  }, [variant, prefetch, privileged]);
+
   const tiles = items.map((item) => (
     <Button
       key={item.action}
@@ -135,6 +158,7 @@ export function QuickCreateMenu({
       onClick={() => {
         panel.hide();
         prefetch();
+        setTaskDueDate(undefined);
         setAction(item.action);
       }}
     >
@@ -204,7 +228,13 @@ export function QuickCreateMenu({
       {/* Never hand a half-loaded picker to the user (project/customer lists come
           from the same fetch) — hold the action behind a short loading dialog
           until the data is in, then open the real form. */}
-      <Dialog open={action !== null && data === null} onOpenChange={() => setAction(null)}>
+      <Dialog
+        open={action !== null && data === null}
+        onOpenChange={() => {
+          setAction(null);
+          setTaskDueDate(undefined);
+        }}
+      >
         <AdaptiveDialog size="formSm">
           <DialogHeader>
             <DialogTitle>טוען...</DialogTitle>
@@ -218,8 +248,12 @@ export function QuickCreateMenu({
       {dialogsMounted ? (
         <QuickCreateDialogs
           action={data ? action : null}
-          onClose={() => setAction(null)}
+          onClose={() => {
+            setAction(null);
+            setTaskDueDate(undefined);
+          }}
           data={data ?? EMPTY_QUICK_CREATE_DATA}
+          taskDefaultDueDate={taskDueDate}
         />
       ) : null}
     </>

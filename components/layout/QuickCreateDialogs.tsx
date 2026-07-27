@@ -33,10 +33,13 @@ export default function QuickCreateDialogs({
   action,
   onClose,
   data,
+  taskDefaultDueDate,
 }: {
   action: QuickCreateAction | null;
   onClose: () => void;
   data: QuickCreateData;
+  /** Pre-fill a new task's due date (e.g. "add to this day" on the calendar). */
+  taskDefaultDueDate?: string;
 }) {
   const router = useRouter();
   // While a wizard is mid-submit its dialog must not be dismissable — closing it
@@ -92,6 +95,7 @@ export default function QuickCreateDialogs({
         }}
         mode="create"
         wizard
+        defaultDueDate={taskDefaultDueDate}
         currentUserId={data.currentUserId ?? undefined}
         // Only workers with system access can be assigned a task; no-access
         // (payroll-only) workers are excluded from the pickers.

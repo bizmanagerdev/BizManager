@@ -105,6 +105,8 @@ type Props = {
   // Pre-fill status / title for board quick-add and the create stepper.
   defaultStatus?: TaskStatus;
   defaultSubject?: string;
+  // Pre-fill the due date for a NEW task (e.g. "add to this day" on the calendar).
+  defaultDueDate?: string;
   // The signed-in user — enables the optional "add me as a member" toggle.
   currentUserId?: string;
   // Guided step-by-step creation (Next → Next → Save). Defaults to false.
@@ -360,7 +362,7 @@ export function TaskUpsertDialog(props: Props) {
     setBusinessDomain(allowedDomains.includes(nextDomain) ? nextDomain : (allowedDomains[0] ?? defaultDomain));
     setSubject(props.defaultSubject?.trim() ? props.defaultSubject : draft?.subject ?? "");
     setDescription(draft?.description ?? "");
-    setDueDate(draft?.dueDate ?? "");
+    setDueDate(draft?.dueDate ?? props.defaultDueDate ?? "");
     setDueTime(draft?.dueTime ?? "");
     const draftCity = draft?.city ?? "";
     setCity(draftCity);

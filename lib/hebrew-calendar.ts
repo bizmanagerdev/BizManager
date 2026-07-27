@@ -9,6 +9,14 @@ function toIsoLocal(date: Date) {
   ).padStart(2, "0")}`;
 }
 
+// @hebcal renders pointed Hebrew (with niqqud + cantillation), e.g. "פָּרָשַׁת עֵקֶב".
+// The app shows plain Hebrew everywhere, so strip the niqqud + te'amim (the
+// U+0591–U+05C7 combining block); base letters and gereshayim (״) are kept.
+const NIQQUD = /[֑-ׇֽֿׁׂׅׄ]/g;
+function stripNikud(text: string): string {
+  return text.replace(NIQQUD, "");
+}
+
 /** Hebrew day-of-month numeral for a Gregorian date, e.g. "כ״ב". */
 export function hebrewDayLabel(date: Date): string {
   return gematriya(new HDate(date).getDate());
@@ -16,7 +24,33 @@ export function hebrewDayLabel(date: Date): string {
 
 /** Full Hebrew date for a Gregorian date, e.g. "כ״ב סִיוָן תשפ״ו". */
 export function hebrewFullDate(date: Date): string {
-  return new HDate(date).renderGematriya();
+  return stripNikud(new HDate(date).renderGematriya());
+}
+
+/**
+ * Weekly Torah portion read on the Shabbat of the given date's week, e.g.
+ * "פָּרָשַׁת דְּבָרִים". Returns null when there's no parsha that week (e.g. a
+ * festival Shabbat). Used by the calendar's day-summary hero.
+ */
+export function hebrewParsha(date: Date): string | null {
+  // The parsha belongs to the week's Shabbat — walk forward to Saturday.
+  const sat = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  sat.setDate(sat.getDate() + (6 - sat.getDay()));
+  try {
+    const events = HebrewCalendar.calendar({
+      start: sat,
+      end: sat,
+      il: true,
+      sedrot: true,
+      noHolidays: true,
+    });
+    for (const ev of events) {
+      if ((ev.getFlags() & flags.PARSHA_HASHAVUA) !== 0) return stripNikud(ev.render("he"));
+    }
+  } catch {
+    // @hebcal can throw around year boundaries — treat as "no parsha".
+  }
+  return null;
 }
 
 // Curated list — @hebcal surfaces a LOT of trivia (Jabotinsky Day, Rosh Hashana
@@ -80,8 +114,8 @@ export function getHolidaysInRange(start: Date, end: Date): Map<string, HolidayI
     const iso = toIsoLocal(ev.getDate().greg());
     // First (most significant) event per day wins; a later MAJOR upgrades it.
     const existing = byDay.get(iso);
-    if (!existing) byDay.set(iso, { name: ev.render("he"), major });
-    else if (major && !existing.major) byDay.set(iso, { name: ev.render("he"), major });
+    if (!existing) byDay.set(iso, { name: stripNikud(ev.render("he")), major });
+    else if (major && !existing.major) byDay.set(iso, { name: stripNikud(ev.render("he")), major });
   }
   return byDay;
 }
