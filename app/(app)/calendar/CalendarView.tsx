@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Plus, MoreVertical } from "lucide-react";
+import { Plus, MoreVertical, CalendarDays } from "lucide-react";
 import type { CalendarEntry, CalendarEntryKind } from "@/lib/projectSchedule";
 import {
   hebrewDayLabel,
@@ -28,11 +28,9 @@ import { useSetPageTitle } from "@/components/layout/page-title-context";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -141,12 +139,12 @@ export default function CalendarView({
 
   // A transient month label flashed right after a page change, then hidden. Driven
   // from the paging actions (not a [month] effect) to avoid set-state-in-effect.
-  const [peek, setPeek] = useState(false);
+  const [peek, setPeek] = useState<"month" | "year" | null>(null);
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showPeek = useCallback(() => {
-    setPeek(true);
+  const showPeek = useCallback((mode: "month" | "year") => {
+    setPeek(mode);
     if (peekTimer.current) clearTimeout(peekTimer.current);
-    peekTimer.current = setTimeout(() => setPeek(false), 1400);
+    peekTimer.current = setTimeout(() => setPeek(null), 1400);
   }, []);
   useEffect(
     () => () => {
@@ -160,15 +158,8 @@ export default function CalendarView({
     setSelected(today);
     setFilter("all");
     setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
-    showPeek();
+    showPeek("month");
   }, [today, showPeek]);
-
-  // Header carries a jump-to-today button, so listen for its event.
-  useEffect(() => {
-    const onToday = () => scrollToToday();
-    window.addEventListener("bizh:calendar-today", onToday);
-    return () => window.removeEventListener("bizh:calendar-today", onToday);
-  }, [scrollToToday]);
 
   // Adding from inside the day sheet: close the sheet so the create dialog opens
   // ON TOP of the page instead of hidden behind the sheet.
@@ -188,6 +179,7 @@ export default function CalendarView({
       Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
     let pinchDist = 0;
     let pinchZoom = 1;
+    let swipeX: number | null = null;
     let swipeY: number | null = null;
     let wheelAcc = 0;
     let lastStep = 0;
@@ -198,15 +190,17 @@ export default function CalendarView({
       lastStep = now;
       setNavDir(delta > 0 ? "next" : "prev");
       setMonth((m) => new Date(m.getFullYear(), m.getMonth() + delta, 1));
-      showPeek();
+      showPeek(Math.abs(delta) >= 12 ? "year" : "month");
     };
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
         pinchDist = dist(e.touches);
         pinchZoom = zoomRef.current;
+        swipeX = null;
         swipeY = null;
       } else if (e.touches.length === 1) {
+        swipeX = e.touches[0].clientX;
         swipeY = e.touches[0].clientY;
       }
     };
@@ -219,18 +213,36 @@ export default function CalendarView({
       }
     };
     const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length === 0 && swipeY != null) {
-        const dy = (e.changedTouches[0]?.clientY ?? swipeY) - swipeY;
-        if (Math.abs(dy) > 40) step(dy < 0 ? 1 : -1); // swipe up → next month
+      if (e.touches.length === 0 && swipeX != null && swipeY != null) {
+        const t = e.changedTouches[0];
+        const dx = (t?.clientX ?? swipeX) - swipeX;
+        const dy = (t?.clientY ?? swipeY) - swipeY;
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 45) {
+          step(dx < 0 ? -12 : 12); // swipe right → next year, swipe left → previous
+        } else if (Math.abs(dy) > 40) {
+          step(dy < 0 ? 1 : -1); // up → next month, down → previous month
+        }
       }
       if (e.touches.length < 2) pinchDist = 0;
-      if (e.touches.length === 0) swipeY = null;
+      if (e.touches.length === 0) {
+        swipeX = null;
+        swipeY = null;
+      }
     };
     const onWheel = (e: WheelEvent) => {
-      wheelAcc += e.deltaY;
-      if (Math.abs(wheelAcc) > 60) {
-        step(wheelAcc > 0 ? 1 : -1);
-        wheelAcc = 0;
+      // Horizontal wheel steps the year; vertical steps the month.
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        wheelAcc += e.deltaX;
+        if (Math.abs(wheelAcc) > 60) {
+          step(wheelAcc < 0 ? -12 : 12);
+          wheelAcc = 0;
+        }
+      } else {
+        wheelAcc += e.deltaY;
+        if (Math.abs(wheelAcc) > 60) {
+          step(wheelAcc > 0 ? 1 : -1);
+          wheelAcc = 0;
+        }
       }
     };
 
@@ -267,20 +279,23 @@ export default function CalendarView({
   const selectedParsha = useMemo(() => hebrewParsha(selected), [selected]);
 
   const hebShort = hebrewFullDate(selected).replace(/\s+\S+$/, "");
-  // Header subtitle = the VIEWED month (Gregorian + Hebrew), updating as you page.
+  // Header = Gregorian month/year (title) + Hebrew month/year (subtitle), both of
+  // the VIEWED month, updating as you page — like the reference calendar.
+  const gregLabel = useMemo(
+    () => new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(month),
+    [month]
+  );
   const hebMonth = useMemo(
     () => hebrewFullDate(new Date(month.getFullYear(), month.getMonth(), 15)).replace(/^\S+\s/, ""),
     [month]
   );
-  // A single ⋮ menu in the header (jump-to-today + scope) — one icon keeps the
-  // title uncramped so the full month + Hebrew year shows without truncating.
+  // Header (between back arrow + title): just the ⋮ scope menu — keeps the title
+  // roomy. Jump-to-today lives in the selected-day row instead.
   const headerAction = useMemo(
-    () => <HeaderMenu canToggleScope={canToggleScope} scope={scope} onScope={setScope} />,
+    () => (canToggleScope ? <ScopeMenu scope={scope} onScope={setScope} /> : null),
     [canToggleScope, scope]
   );
-  // Hebrew month + year only, so it always fits the header with no ellipsis (the
-  // full Gregorian + Hebrew shows in the paging peek).
-  useSetPageTitle("יומן", hebMonth, headerAction);
+  useSetPageTitle(gregLabel, hebMonth, headerAction);
 
   return (
     // Cancel the app shell's bottom padding on this page so the calendar can fill
@@ -291,11 +306,22 @@ export default function CalendarView({
             so the calendar flex-child fills exactly — no bottom gap, no page
             scroll. Desktop: normal flow beside the side panel. */}
         <div className="flex h-[calc(100dvh-9.25rem)] min-w-0 flex-col md:block md:h-auto">
-          {/* Selected-day date (Gregorian + Hebrew) + the labeled count filters. */}
+          {/* Selected-day row: jump-to-today (left) + the day's Gregorian + Hebrew
+              date (right), then the labeled count filters. */}
           <div className="-mx-4 shrink-0 space-y-1.5 border-b bg-background px-2 py-1.5 lg:hidden">
-            <div className="flex items-baseline justify-between gap-2 px-1 text-xs">
-              <span className="font-semibold text-foreground">{fmtFullDay(selected)}</span>
-              <span className="text-muted-foreground">{hebrewFullDate(selected)}</span>
+            <div className="flex items-center justify-between gap-2 px-1">
+              <span className="min-w-0 overflow-hidden whitespace-nowrap text-sm">
+                <span className="font-semibold text-foreground">{fmtFullDay(selected)}</span>
+                <span className="text-muted-foreground"> · {hebShort}</span>
+              </span>
+              <button
+                type="button"
+                onClick={scrollToToday}
+                className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground transition-colors hover:bg-secondary/90"
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                היום
+              </button>
             </div>
             <FilterToolbar entries={selectedEntries} filter={filter} onPick={pickKind} />
           </div>
@@ -306,12 +332,18 @@ export default function CalendarView({
             ref={scrollRef}
             className="relative -mx-4 min-h-0 flex-1 touch-none overflow-hidden border-b md:mx-0 md:h-[calc(100vh-11rem)] md:flex-none md:rounded-2xl md:border md:border-t"
           >
-            {/* Transient "which month" label — shows on a page change, then fades. */}
+            {/* Transient month/year label — shows on a page change, then fades. A
+                year jump shows the year big so it's obvious you switched years. */}
             {peek ? (
               <div className="pointer-events-none absolute inset-x-0 top-2 z-30 flex animate-in fade-in-0 justify-center">
-                <span className="rounded-full bg-sidebar/90 px-3 py-1 text-xs font-semibold text-sidebar-foreground shadow-lg backdrop-blur">
-                  {fmtMonthYear(month)} · {hebMonth}
-                </span>
+                <div className="flex flex-col items-center gap-0.5 rounded-2xl bg-sidebar/90 px-4 py-2 text-sidebar-foreground shadow-lg backdrop-blur">
+                  {peek === "year" ? (
+                    <span className="text-2xl font-bold leading-none">{month.getFullYear()}</span>
+                  ) : null}
+                  <span className="text-xs font-semibold">
+                    {fmtMonthYear(month)} · {hebMonth}
+                  </span>
+                </div>
               </div>
             ) : null}
 
@@ -380,13 +412,11 @@ export default function CalendarView({
   );
 }
 
-// ── Header ⋮ menu: jump to today + choose the scope (my items vs everyone's) ────
-function HeaderMenu({
-  canToggleScope,
+// ── Header ⋮ menu: choose the scope (my items vs everyone's) ───────────────────
+function ScopeMenu({
   scope,
   onScope,
 }: {
-  canToggleScope: boolean;
   scope: "mine" | "all";
   onScope: (next: "mine" | "all") => void;
 }) {
@@ -395,28 +425,18 @@ function HeaderMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="אפשרויות"
+          aria-label="הצגה"
           className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-white/10"
         >
           <MoreVertical className="h-5 w-5" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="text-right">
-        <DropdownMenuItem
-          onSelect={() => window.dispatchEvent(new CustomEvent("bizh:calendar-today"))}
-        >
-          היום
-        </DropdownMenuItem>
-        {canToggleScope ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>הצגה</DropdownMenuLabel>
-            <DropdownMenuRadioGroup value={scope} onValueChange={(v) => onScope(v as "mine" | "all")}>
-              <DropdownMenuRadioItem value="mine">שלי</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="all">הכל</DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </>
-        ) : null}
+        <DropdownMenuLabel>הצגה</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={scope} onValueChange={(v) => onScope(v as "mine" | "all")}>
+          <DropdownMenuRadioItem value="mine">שלי</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="all">הכל</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -462,7 +482,7 @@ function MonthBlock({
     // Fills the parent so a whole month is on screen at once — the week-rows share
     // the leftover height. The month name lives in the app header (no month bar).
     <section className="flex h-full flex-col">
-      <div className="grid shrink-0 grid-cols-7 border-b bg-muted text-center text-[10px] font-medium text-muted-foreground">
+      <div className="grid shrink-0 grid-cols-7 border-b bg-muted text-center text-[11px] font-medium text-muted-foreground">
         {WEEK_DAYS.map((d) => (
           <div key={d} className="overflow-hidden whitespace-nowrap px-0.5 py-1">
             {d}
@@ -497,7 +517,7 @@ function MonthBlock({
               title={holiday ?? undefined}
               className={`relative flex flex-col gap-px overflow-hidden rounded px-0.5 pb-[1em] pt-[1.35em] text-start transition-colors ${
                 !inMonth
-                  ? "bg-muted/10 text-muted-foreground/70"
+                  ? "bg-muted/20 text-foreground/70"
                   : isMajor
                     ? "bg-muted/40"
                     : "bg-background"
@@ -513,8 +533,13 @@ function MonthBlock({
                 {day.getDate()}
               </span>
 
-              {/* Hebrew date — bottom-left corner */}
-              <span className="absolute bottom-0.5 end-1 text-[0.6em] leading-none text-muted-foreground">
+              {/* Hebrew date — bottom-left corner (dark & readable on out-of-month
+                  cells too, so those days don't blur into the tint). */}
+              <span
+                className={`absolute bottom-0.5 end-1 text-[0.6em] leading-none ${
+                  inMonth ? "text-muted-foreground" : "text-foreground/70"
+                }`}
+              >
                 {hebrewDayLabel(day)}
               </span>
 

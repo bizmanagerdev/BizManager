@@ -183,6 +183,9 @@ export function TopBar({
           search belongs with navigation, not with the action/notification
           cluster. Everything else sits on the far edge. */}
       <BackButton />
+      {/* A page-declared action (e.g. the calendar's today tile + ⋮ menu) — sits
+          between the back arrow and the page title. */}
+      {pageTitle?.action ? <div className="shrink-0">{pageTitle.action}</div> : null}
       {showSearch ? (
         // Fixed width, not flex-1: a `flex-1 basis-0` box would fight the spacer
         // below it and collapse.
@@ -202,10 +205,6 @@ export function TopBar({
       ) : showSearch ? (
         <GlobalSearch mobileOnly className="min-w-0 flex-1" />
       ) : null}
-
-      {/* A page-declared action (e.g. the calendar's ⋮ menu) — sits right after the
-          page title. */}
-      {pageTitle?.action ? <div className="shrink-0">{pageTitle.action}</div> : null}
 
       {/* Desktop only: the search box is a fixed width there, so this is what
           pushes the icon cluster to the far edge. On mobile the search bar above
