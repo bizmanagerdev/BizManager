@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Plus, MoreVertical, CalendarDays } from "lucide-react";
+import { Plus, MoreVertical, CalendarDays, Search } from "lucide-react";
 import type { CalendarEntry, CalendarEntryKind } from "@/lib/projectSchedule";
 import {
   hebrewDayLabel,
@@ -28,11 +28,11 @@ import { useSetPageTitle } from "@/components/layout/page-title-context";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 
 // ── Event-kind metadata ───────────────────────────────────────────────────────
 // Single source of truth for label / plural / color per kind, so the summary
@@ -271,6 +271,28 @@ export default function CalendarView({
     if (!isDesktop) setSheetOpen(true);
   }
 
+  // Search across the calendar's items (from the ⋮ menu) → jump to the match's day.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchResults = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return shownEntries
+      .filter((e) => `${e.title} ${e.subtitle ?? ""}`.toLowerCase().includes(q))
+      .slice(0, 60);
+  }, [query, shownEntries]);
+  function jumpToEntry(entry: CalendarEntry) {
+    const d = toDateOnly(entry.startDate);
+    if (d) {
+      setNavDir("next");
+      setMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+      setSelected(d);
+      setFilter("all");
+    }
+    setSearchOpen(false);
+    setQuery("");
+  }
+
   // Long-press / right-click a day → a small menu (see details / add event → kind).
   const [ctxDay, setCtxDay] = useState<Date | null>(null);
   const [ctxMode, setCtxMode] = useState<"root" | "add">("root");
@@ -313,10 +335,17 @@ export default function CalendarView({
     () => hebrewFullDate(new Date(month.getFullYear(), month.getMonth(), 15)).replace(/^\S+\s/, ""),
     [month]
   );
-  // Header (between back arrow + title): just the ⋮ scope menu — keeps the title
-  // roomy. Jump-to-today lives in the selected-day row instead.
+  // Header (between back arrow + title): the ⋮ menu — search + scope. Jump-to-today
+  // lives in the selected-day row instead.
   const headerAction = useMemo(
-    () => (canToggleScope ? <ScopeMenu scope={scope} onScope={setScope} /> : null),
+    () => (
+      <HeaderMenu
+        canToggleScope={canToggleScope}
+        scope={scope}
+        onScope={setScope}
+        onSearch={() => setSearchOpen(true)}
+      />
+    ),
     [canToggleScope, scope]
   );
   useSetPageTitle(gregLabel, hebMonth, headerAction);
@@ -466,6 +495,59 @@ export default function CalendarView({
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Search across the calendar's items → tap a result to jump to its day. */}
+      <Sheet
+        open={searchOpen}
+        onOpenChange={(open) => {
+          setSearchOpen(open);
+          if (!open) setQuery("");
+        }}
+      >
+        <SheetContent side="bottom" className="max-h-[85svh] overflow-y-auto rounded-t-[1.5rem] p-4">
+          <SheetHeader className="mb-3 text-start">
+            <SheetTitle>חיפוש</SheetTitle>
+          </SheetHeader>
+          <div className="relative">
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="חיפוש..."
+              className="ps-9"
+            />
+          </div>
+          <div className="mt-3 space-y-2">
+            {query.trim() === "" ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">הקלד כדי לחפש ביומן</div>
+            ) : searchResults.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">לא נמצאו תוצאות</div>
+            ) : (
+              searchResults.map((e) => {
+                const d = toDateOnly(e.startDate);
+                return (
+                  <button
+                    key={`${e.kind}-${e.id}`}
+                    type="button"
+                    onClick={() => jumpToEntry(e)}
+                    className="flex w-full items-center gap-2 rounded-xl border p-3 text-start transition-colors hover:bg-secondary/5"
+                  >
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${KIND_META[e.kind].dot}`} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{e.title}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {d ? fmtFullDay(d) : ""} · {KIND_META[e.kind].label}
+                        {e.subtitle ? ` · ${e.subtitle}` : ""}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -482,31 +564,55 @@ function ContextButton({ onClick, children }: { onClick: () => void; children: R
   );
 }
 
-// ── Header ⋮ menu: choose the scope (my items vs everyone's) ───────────────────
-function ScopeMenu({
+// ── Header ⋮ menu: search the calendar + choose the scope ──────────────────────
+function HeaderMenu({
+  canToggleScope,
   scope,
   onScope,
+  onSearch,
 }: {
+  canToggleScope: boolean;
   scope: "mine" | "all";
   onScope: (next: "mine" | "all") => void;
+  onSearch: () => void;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="הצגה"
+          aria-label="אפשרויות"
           className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-white/10"
         >
           <MoreVertical className="h-5 w-5" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="text-right">
-        <DropdownMenuLabel>הצגה</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={scope} onValueChange={(v) => onScope(v as "mine" | "all")}>
-          <DropdownMenuRadioItem value="mine">שלי</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="all">הכל</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
+        <DropdownMenuItem onSelect={onSearch} className="gap-2">
+          <Search className="h-4 w-4" />
+          חיפוש
+        </DropdownMenuItem>
+        {canToggleScope ? (
+          <>
+            <DropdownMenuSeparator />
+            <div className="flex gap-1 rounded-full bg-muted p-1">
+              {(["mine", "all"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onScope(s)}
+                  className={`flex-1 rounded-full px-3 py-1 text-sm transition-colors ${
+                    scope === s
+                      ? "bg-background font-medium text-foreground shadow-sm"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {s === "mine" ? "שלי" : "הכל"}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

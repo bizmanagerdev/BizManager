@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,7 @@ export default function ReminderFormDialog({
   links,
   category = "order",
   defaultNote,
+  defaultRemindAt,
 }: {
   mode: "create" | "edit";
   open: boolean;
@@ -57,6 +58,8 @@ export default function ReminderFormDialog({
   category?: string;
   /** Pre-fill the note on create (e.g. the payment description). */
   defaultNote?: string;
+  /** Pre-fill the remind date/time on create (e.g. a calendar day). */
+  defaultRemindAt?: string;
 }) {
   const { currentUserId } = useAssignableUsers();
   const [remindAt, setRemindAt] = useState("");
@@ -64,6 +67,16 @@ export default function ReminderFormDialog({
   const [assignee, setAssignee] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const noteRef = useRef<HTMLInputElement>(null);
+
+  // When the date is already chosen (opened from the calendar), land on the note
+  // field so the user just types what to be reminded about.
+  useEffect(() => {
+    if (open && mode === "create" && defaultRemindAt) {
+      const t = setTimeout(() => noteRef.current?.focus(), 60);
+      return () => clearTimeout(t);
+    }
+  }, [open, mode, defaultRemindAt]);
 
   useEffect(() => {
     if (!open) return;
@@ -72,7 +85,7 @@ export default function ReminderFormDialog({
       setNote(value.content ?? "");
       setAssignee(value.assignedTo ?? "");
     } else {
-      setRemindAt("");
+      setRemindAt(defaultRemindAt ? isoToLocalInput(defaultRemindAt) : "");
       setNote(defaultNote ?? "");
       setAssignee(currentUserId ?? "");
     }
@@ -90,6 +103,10 @@ export default function ReminderFormDialog({
     setError(null);
     if (!remindAt) {
       setError("יש לבחור תאריך ושעה לתזכורת.");
+      return;
+    }
+    if (!note.trim()) {
+      setError("יש להזין פרטים לתזכורת.");
       return;
     }
     setSubmitting(true);
@@ -129,8 +146,8 @@ export default function ReminderFormDialog({
       <DialogContent dir="rtl" className="w-[calc(100vw-1rem)] max-w-md p-4 text-right sm:p-6">
         <DialogHeader>
           <DialogTitle>{mode === "edit" ? "עריכת תזכורת" : "תזכורת חדשה"}</DialogTitle>
-          <DialogDescription>
-            {mode === "edit" ? "עדכון מועד, פרטים או אחראי." : "קביעת תזכורת מעקב."}
+          <DialogDescription className={mode === "edit" ? undefined : "sr-only"}>
+            {mode === "edit" ? "עדכון מועד, פרטים או אחראי." : "תזכורת חדשה"}
           </DialogDescription>
         </DialogHeader>
 
@@ -140,8 +157,8 @@ export default function ReminderFormDialog({
             <DateTimeInput value={remindAt} onChange={(e) => setRemindAt(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">על מה להזכיר?</label>
-            <Input value={note} onChange={(e) => setNote(e.target.value)} />
+            <label className="text-sm font-medium">על מה להזכיר? *</label>
+            <Input ref={noteRef} value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium">אחראי</label>

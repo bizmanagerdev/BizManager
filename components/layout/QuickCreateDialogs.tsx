@@ -33,13 +33,14 @@ export default function QuickCreateDialogs({
   action,
   onClose,
   data,
-  taskDefaultDueDate,
+  quickCreateDate,
 }: {
   action: QuickCreateAction | null;
   onClose: () => void;
   data: QuickCreateData;
-  /** Pre-fill a new task's due date (e.g. "add to this day" on the calendar). */
-  taskDefaultDueDate?: string;
+  /** Pre-fill the date on a new task / reminder / project (e.g. a calendar day),
+   *  as `YYYY-MM-DD`. */
+  quickCreateDate?: string;
 }) {
   const router = useRouter();
   // While a wizard is mid-submit its dialog must not be dismissable — closing it
@@ -95,7 +96,7 @@ export default function QuickCreateDialogs({
         }}
         mode="create"
         wizard
-        defaultDueDate={taskDefaultDueDate}
+        defaultDueDate={quickCreateDate}
         currentUserId={data.currentUserId ?? undefined}
         // Only workers with system access can be assigned a task; no-access
         // (payroll-only) workers are excluded from the pickers.
@@ -189,6 +190,7 @@ export default function QuickCreateDialogs({
               managers={projectWizardManagers}
               currentUserId={data.currentUserId ?? undefined}
               defaultProjectManagerId={defaultProjectManagerId}
+              defaultStartDate={quickCreateDate}
               draftKey="quick-create-project"
               onActionLockedChange={setSubmitLocked}
               onCancel={() => {
@@ -218,6 +220,7 @@ export default function QuickCreateDialogs({
         mode="create"
         category="general"
         open={action === "reminder"}
+        defaultRemindAt={quickCreateDate ? `${quickCreateDate}T09:00` : undefined}
         onOpenChange={(open) => {
           if (!open) onClose();
         }}

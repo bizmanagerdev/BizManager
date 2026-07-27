@@ -104,7 +104,7 @@ export function QuickCreateMenu({
   const [data, setData] = useState<QuickCreateData | null>(dataCache);
   // A due date carried in from an external trigger (the calendar's "add to this
   // day"); cleared when the dialog closes so it never leaks into the + menu.
-  const [taskDueDate, setTaskDueDate] = useState<string | undefined>(undefined);
+  const [quickDate, setQuickDate] = useState<string | undefined>(undefined);
   // Once mounted, keep the dialog host mounted — remounting it would reset any
   // in-progress wizard draft state the user might reopen to.
   const [dialogsMounted, setDialogsMounted] = useState(false);
@@ -142,7 +142,7 @@ export function QuickCreateMenu({
       const action =
         ADMIN_OR_OFFICE_ACTIONS.has(detail.action) && !privileged ? "task" : detail.action;
       prefetch();
-      setTaskDueDate(action === "task" ? detail.dueDate : undefined);
+      setQuickDate(detail.dueDate);
       setAction(action);
     }
     window.addEventListener("bizh:quick-create", onQuickCreate);
@@ -158,7 +158,7 @@ export function QuickCreateMenu({
       onClick={() => {
         panel.hide();
         prefetch();
-        setTaskDueDate(undefined);
+        setQuickDate(undefined);
         setAction(item.action);
       }}
     >
@@ -232,7 +232,7 @@ export function QuickCreateMenu({
         open={action !== null && data === null}
         onOpenChange={() => {
           setAction(null);
-          setTaskDueDate(undefined);
+          setQuickDate(undefined);
         }}
       >
         <AdaptiveDialog size="formSm">
@@ -250,10 +250,10 @@ export function QuickCreateMenu({
           action={data ? action : null}
           onClose={() => {
             setAction(null);
-            setTaskDueDate(undefined);
+            setQuickDate(undefined);
           }}
           data={data ?? EMPTY_QUICK_CREATE_DATA}
-          taskDefaultDueDate={taskDueDate}
+          quickCreateDate={quickDate}
         />
       ) : null}
     </>

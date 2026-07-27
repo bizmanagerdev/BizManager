@@ -283,6 +283,7 @@ export default function NewProjectClient({
   initialProject = null,
   initialStatus,
   initialCustomerId,
+  defaultStartDate,
   draftKey,
   projectTypeOptions = DEFAULT_PROJECT_TYPE_OPTIONS,
   statusOptions = DEFAULT_STATUS_OPTIONS,
@@ -300,6 +301,8 @@ export default function NewProjectClient({
   initialStatus?: string;
   /** Create mode: open with this customer already selected. */
   initialCustomerId?: string;
+  /** Create mode: open with this start date (e.g. a calendar day). */
+  defaultStartDate?: string;
   /** Create mode: persist the in-progress form under this localStorage key so it
    *  survives going offline / leaving the app / a reload. Omit to disable. */
   draftKey?: string;
@@ -399,7 +402,7 @@ export default function NewProjectClient({
     initialProject?.project_manager_id ?? restoredDraft?.projectManagerId ?? defaultProjectManagerId ?? currentUserId ?? ""
   );
   const [startDate, setStartDate] = useState(
-    initialProject?.start_date ?? restoredDraft?.startDate ?? todayIso()
+    initialProject?.start_date ?? defaultStartDate ?? restoredDraft?.startDate ?? todayIso()
   );
   const [endDate, setEndDate] = useState(
     initialProject?.end_date ?? restoredDraft?.endDate ?? (isEditMode ? "" : todayIso())
