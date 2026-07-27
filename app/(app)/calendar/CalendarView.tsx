@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Plus, ChevronRight, ChevronLeft } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Plus, CalendarDays } from "lucide-react";
 import type { CalendarEntry, CalendarEntryKind } from "@/lib/projectSchedule";
 import {
   hebrewDayLabel,
@@ -79,10 +79,20 @@ export default function CalendarView({
   const today = useMemo(() => toDateOnly(todayIso) ?? new Date(), [todayIso]);
   const isDesktop = useIsDesktop();
 
-  const [month, setMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selected, setSelected] = useState(today);
   const [filter, setFilter] = useState<Filter>("all");
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // One month on screen at a time; a scroll / swipe steps to the next or previous
+  // month. Always opens on the current month. `navDir` drives the slide direction.
+  const [month, setMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const [navDir, setNavDir] = useState<"next" | "prev">("next");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Two-finger pinch scales ONLY the calendar text/boxes (not the page). Held in a
+  // ref too so the gesture handler reads the live value without re-subscribing.
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
 
   // Multi-week projects (a start→end band ≥ 7 days) are dropped — they read as
   // clutter smeared across the grid rather than a dated event.
@@ -105,25 +115,86 @@ export default function CalendarView({
     [entries]
   );
 
-  const calendarDays = useMemo(() => {
-    const first = new Date(month.getFullYear(), month.getMonth(), 1);
-    const gridStart = new Date(first);
-    gridStart.setDate(first.getDate() - first.getDay());
-    return Array.from({ length: 42 }, (_, i) => {
-      const d = new Date(gridStart);
-      d.setDate(gridStart.getDate() + i);
-      return d;
-    });
-  }, [month]);
-
-  const holidays = useMemo(
-    () => getHolidaysInRange(calendarDays[0], calendarDays[calendarDays.length - 1]),
-    [calendarDays]
+  const entriesOnDay = useMemo(
+    () => (day: Date) => normalized.filter((e) => day >= e.start && day <= e.end),
+    [normalized]
   );
 
-  function entriesOnDay(day: Date) {
-    return normalized.filter((e) => day >= e.start && day <= e.end);
+  function scrollToToday() {
+    setNavDir("prev");
+    setSelected(today);
+    setFilter("all");
+    setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
   }
+
+  // Gestures on the calendar: a two-finger pinch zooms the cells; a one-finger
+  // vertical swipe (or a wheel notch) steps the month — but only while the content
+  // isn't scrollable (i.e. not zoomed past the frame), so a zoomed month can pan.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const dist = (t: TouchList) =>
+      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const scrollable = () => el.scrollHeight - el.clientHeight > 4;
+    let pinchDist = 0;
+    let pinchZoom = 1;
+    let swipeY: number | null = null;
+    let wheelAcc = 0;
+    let lastStep = 0;
+
+    const step = (delta: number) => {
+      const now = performance.now();
+      if (now - lastStep < 350) return;
+      lastStep = now;
+      setNavDir(delta > 0 ? "next" : "prev");
+      setMonth((m) => new Date(m.getFullYear(), m.getMonth() + delta, 1));
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        pinchDist = dist(e.touches);
+        pinchZoom = zoomRef.current;
+        swipeY = null;
+      } else if (e.touches.length === 1) {
+        swipeY = e.touches[0].clientY;
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchDist > 0) {
+        e.preventDefault();
+        const next = Math.min(1.8, Math.max(0.7, (pinchZoom * dist(e.touches)) / pinchDist));
+        zoomRef.current = next;
+        setZoom(next);
+      }
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0 && swipeY != null && !scrollable()) {
+        const dy = (e.changedTouches[0]?.clientY ?? swipeY) - swipeY;
+        if (Math.abs(dy) > 50) step(dy < 0 ? 1 : -1); // swipe up → next month
+      }
+      if (e.touches.length < 2) pinchDist = 0;
+      if (e.touches.length === 0) swipeY = null;
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (scrollable()) return; // a zoomed month scrolls instead of paging
+      wheelAcc += e.deltaY;
+      if (Math.abs(wheelAcc) > 60) {
+        step(wheelAcc > 0 ? 1 : -1);
+        wheelAcc = 0;
+      }
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, []);
 
   function selectDay(day: Date) {
     setSelected(day);
@@ -138,159 +209,70 @@ export default function CalendarView({
     if (!isDesktop) setSheetOpen(true);
   }
 
-  function stepMonth(delta: number) {
-    setMonth(new Date(month.getFullYear(), month.getMonth() + delta, 1));
-  }
-
-  const onCurrentMonth =
-    month.getFullYear() === today.getFullYear() && month.getMonth() === today.getMonth();
-
   const selectedEntries = entriesOnDay(selected);
-  const selectedHoliday = holidays.get(isoLocal(selected))?.name ?? null;
+  const selectedHoliday = useMemo(
+    () => getHolidaysInRange(selected, selected).get(isoLocal(selected))?.name ?? null,
+    [selected]
+  );
+  const selectedParsha = useMemo(() => hebrewParsha(selected), [selected]);
 
-  // The top-bar subtitle reflects the SELECTED day's item count.
-  const dayCount = selectedEntries.length;
-  useSetPageTitle("יומן", `${dayCount} ${dayCount === 1 ? "פריט" : "פריטים"}`);
+  // Header carries the Gregorian day only (kept short so it never truncates to
+  // an ellipsis). The Hebrew date lives in the day cells + desktop panel.
+  const hebShort = hebrewFullDate(selected).replace(/\s+\S+$/, "");
+  useSetPageTitle("יומן", fmtFullDay(selected));
 
   return (
     <div className="space-y-3">
-      {/* Mobile: navy day-summary hero above the grid. On desktop it moves INTO the
-          side panel (below) so all the day's info lives in one column, matching the
-          payments calendar. */}
-      <div className="lg:hidden">
-        <DaySummaryCard
-          day={selected}
-          entries={selectedEntries}
-          holiday={selectedHoliday}
-          isToday={isSameDay(selected, today)}
-          filter={filter}
-          onPick={pickKind}
-        />
-      </div>
-
-      {/* Desktop: [month-nav + grid] in the main column beside a full-height day
-          panel; mobile: a single stacked column. */}
       <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="min-w-0 space-y-3">
-          {/* Month navigation */}
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => stepMonth(-1)}
-              aria-label="חודש קודם"
-              className="flex h-9 w-9 items-center justify-center rounded-xl border bg-background text-muted-foreground transition-colors hover:bg-secondary/10"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold">{fmtMonthYear(month)}</span>
-              {!onCurrentMonth && (
-                <button
-                  type="button"
-                  onClick={() => setMonth(new Date(today.getFullYear(), today.getMonth(), 1))}
-                  className="rounded-lg border bg-background px-2.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary/10"
-                >
-                  היום
-                </button>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => stepMonth(1)}
-              aria-label="חודש הבא"
-              className="flex h-9 w-9 items-center justify-center rounded-xl border bg-background text-muted-foreground transition-colors hover:bg-secondary/10"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
+        <div className="relative min-w-0">
+          {/* Sticky day toolbar — straight on the page (no card, no navy): jump to
+              today + the labeled count filters for the selected day. Stays put while
+              the months scroll. Mobile only; desktop uses the side panel. */}
+          <div className="sticky top-[7rem] z-40 -mx-4 border-b bg-background/95 px-4 py-2 backdrop-blur lg:hidden">
+            <FilterToolbar entries={selectedEntries} filter={filter} onPick={pickKind} />
           </div>
 
-          {/* Month grid — full-bleed on phones (counters the page's p-4 gutter) so
-              the calendar uses the whole screen width; a bordered card from md up. */}
-          <div className="-mx-4 overflow-hidden border-y md:mx-0 md:rounded-2xl md:border">
-          <div className="grid grid-cols-7 border-b bg-muted/40 text-center text-xs font-medium text-muted-foreground">
-            {WEEK_DAYS.map((d) => (
-              <div key={d} className="py-1.5">
-                {d}
+          {/* One month at a time — a scroll / swipe steps to the next or previous
+              month (no arrows). Full-bleed on phones, a bordered card from md up. */}
+          <div
+            ref={scrollRef}
+            className="-mx-4 h-[calc(100svh-15rem)] touch-pan-y overflow-x-hidden overflow-y-auto border-b md:mx-0 md:h-[calc(100vh-11rem)] md:rounded-2xl md:border md:border-t"
+          >
+            <div style={{ zoom }}>
+              <div
+                key={`${month.getFullYear()}-${month.getMonth()}`}
+                className={`animate-in fade-in-0 duration-200 ${
+                  navDir === "next" ? "slide-in-from-bottom-3" : "slide-in-from-top-3"
+                }`}
+              >
+                <MonthBlock
+                  month={month}
+                  today={today}
+                  selected={selected}
+                  onSelect={selectDay}
+                  onToday={scrollToToday}
+                  entriesOnDay={entriesOnDay}
+                />
               </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-px bg-border">
-            {calendarDays.map((day) => {
-              const inMonth = day.getMonth() === month.getMonth();
-              const isToday = isSameDay(day, today);
-              const isSelected = isSameDay(day, selected);
-              const info = holidays.get(isoLocal(day));
-              const holiday = info?.name ?? null;
-              const isMajor = Boolean(info?.major) && inMonth;
-              const dayEntries = inMonth ? entriesOnDay(day) : [];
-
-              return (
-                <button
-                  key={day.toISOString()}
-                  type="button"
-                  onClick={() => selectDay(day)}
-                  title={holiday ?? undefined}
-                  className={`flex min-h-[4.25rem] flex-col gap-0.5 px-1 py-1.5 text-start transition-colors ${
-                    !inMonth
-                      ? "bg-muted/20 text-muted-foreground/45"
-                      : isMajor
-                        ? "bg-muted/40"
-                        : "bg-background"
-                  } ${isSelected ? "z-10 ring-2 ring-inset ring-secondary" : "hover:bg-secondary/10"}`}
-                >
-                  <div className="flex w-full items-center justify-between gap-1">
-                    <span
-                      className={`flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-sm font-medium ${
-                        isToday ? "bg-primary text-primary-foreground" : ""
-                      }`}
-                    >
-                      {day.getDate()}
-                    </span>
-                    <span className="text-[10px] leading-none text-muted-foreground">
-                      {hebrewDayLabel(day)}
-                    </span>
-                  </div>
-
-                  {holiday ? (
-                    <span className="text-[9px] leading-tight text-primary/80">{holiday}</span>
-                  ) : null}
-
-                  {/* Colored dots (one per kind present) + a count — no titles, so
-                      nothing ever truncates in the narrow cells. Full titles show
-                      when the day is opened. */}
-                  {dayEntries.length > 0 ? (
-                    <div className="mt-auto flex items-center gap-0.5">
-                      {KIND_ORDER.filter((k) => dayEntries.some((e) => e.kind === k)).map((k) => (
-                        <span key={k} className={`h-1.5 w-1.5 rounded-full ${KIND_META[k].dot}`} />
-                      ))}
-                      <span className="text-[9px] leading-none text-muted-foreground">
-                        {dayEntries.length}
-                      </span>
-                    </div>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
+            </div>
           </div>
         </div>
 
-        {/* Desktop: full-height day panel beside the grid — navy summary + detail
-            in one column, matching the payments calendar. Scrolls internally on
-            desktop so a long day list never grows the calendar row. */}
+        {/* Desktop: full-height day panel beside the grid. Light header (day +
+            filters) over the detail list — no dark card. */}
         <aside className="relative hidden min-w-0 lg:block">
-          {/* One card: dark-blue summary header seamlessly on top of the light
-              detail body (chips + list + add), matching the payments calendar. */}
           <div className="flex flex-col overflow-hidden rounded-2xl border shadow-card lg:absolute lg:inset-0 lg:overflow-y-auto">
-            <DaySummaryCard
-              embedded
-              day={selected}
-              entries={selectedEntries}
-              holiday={selectedHoliday}
-              isToday={isSameDay(selected, today)}
-              filter={filter}
-              onPick={pickKind}
-            />
+            <div className="border-b bg-secondary/5 px-4 py-3">
+              <div className="mb-2">
+                <div className="font-semibold">{fmtFullDay(selected)}</div>
+                <div className="text-xs text-muted-foreground">
+                  {hebShort}
+                  {selectedParsha ? ` · ${selectedParsha}` : ""}
+                  {selectedHoliday ? ` · ${selectedHoliday}` : ""}
+                </div>
+              </div>
+              <FilterToolbar entries={selectedEntries} filter={filter} onPick={setFilter} />
+            </div>
             <div className="flex-1 bg-card p-4">
               <DayDetail
                 day={selected}
@@ -320,100 +302,185 @@ export default function CalendarView({
   );
 }
 
-// ── Navy day-summary hero ──────────────────────────────────────────────────────
-function DaySummaryCard({
-  day,
+// ── One month in the scroll stack (sticky bar + weekday row + grid) ────────────
+function MonthBlock({
+  month,
+  today,
+  selected,
+  onSelect,
+  onToday,
+  entriesOnDay,
+}: {
+  month: Date;
+  today: Date;
+  selected: Date;
+  onSelect: (day: Date) => void;
+  onToday: () => void;
+  entriesOnDay: (day: Date) => DayEntry[];
+}) {
+  const calendarDays = useMemo(() => {
+    const first = new Date(month.getFullYear(), month.getMonth(), 1);
+    const gridStart = new Date(first);
+    gridStart.setDate(first.getDate() - first.getDay());
+    return Array.from({ length: 42 }, (_, i) => {
+      const d = new Date(gridStart);
+      d.setDate(gridStart.getDate() + i);
+      return d;
+    });
+  }, [month]);
+
+  const holidays = useMemo(
+    () => getHolidaysInRange(calendarDays[0], calendarDays[calendarDays.length - 1]),
+    [calendarDays]
+  );
+
+  // Hebrew month + year for the bar, e.g. "תמוז תשפ״ו" (drop the day off a full date).
+  const hebMonth = hebrewFullDate(new Date(month.getFullYear(), month.getMonth(), 15)).replace(
+    /^\S+\s/,
+    ""
+  );
+
+  return (
+    // One full-height page per month (snap target) so a whole month fits on screen
+    // at once — the 6 week-rows share the leftover height and never overflow.
+    <section className="flex h-[calc(100svh-15rem)] flex-col md:h-[calc(100vh-11rem)]">
+      {/* Month bar: name + Hebrew month + the "today" jump — one tight row. */}
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-semibold text-foreground">{fmtMonthYear(month)}</span>
+          <span className="text-xs text-muted-foreground">{hebMonth}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onToday}
+          className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-secondary-foreground transition-colors hover:bg-secondary/90"
+        >
+          <CalendarDays className="h-3.5 w-3.5" />
+          היום
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 border-y bg-muted text-center text-[11px] font-medium text-muted-foreground">
+        {WEEK_DAYS.map((d) => (
+          <div key={d} className="py-1">
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Days fill the remaining height as 6 equal rows, so the month always fits. */}
+      <div className="grid flex-1 grid-cols-7 grid-rows-6 gap-px bg-border">
+        {calendarDays.map((day) => {
+          const inMonth = day.getMonth() === month.getMonth();
+          const isToday = isSameDay(day, today);
+          const isSelected = isSameDay(day, selected);
+          const info = holidays.get(isoLocal(day));
+          const holiday = info?.name ?? null;
+          const isMajor = Boolean(info?.major) && inMonth;
+          const dayEntries = inMonth ? entriesOnDay(day) : [];
+          // On each Shabbat, name the week's parsha (bare name, no "פרשת" prefix).
+          const parsha =
+            inMonth && day.getDay() === 6
+              ? hebrewParsha(day)?.replace(/^פרשת\s+/, "") ?? null
+              : null;
+
+          return (
+            <button
+              key={day.toISOString()}
+              type="button"
+              onClick={() => onSelect(day)}
+              title={holiday ?? undefined}
+              className={`relative flex flex-col items-center justify-center gap-0.5 overflow-hidden px-0.5 pb-3 pt-4 text-center transition-colors ${
+                !inMonth
+                  ? "bg-muted/20 text-muted-foreground/45"
+                  : isMajor
+                    ? "bg-muted/40"
+                    : "bg-background"
+              } ${isSelected ? "z-10 ring-2 ring-inset ring-secondary" : "hover:bg-secondary/10"}`}
+            >
+              {/* English date — top-right corner */}
+              <span
+                className={`absolute start-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-0.5 text-[10px] font-medium ${
+                  isToday ? "bg-primary text-primary-foreground" : ""
+                }`}
+              >
+                {day.getDate()}
+              </span>
+
+              {/* Hebrew date — bottom-left corner */}
+              <span className="absolute bottom-0.5 end-1 text-[9px] leading-none text-muted-foreground">
+                {hebrewDayLabel(day)}
+              </span>
+
+              {/* Middle info: holiday / Shabbat parsha, then the event dots + count. */}
+              {holiday ? (
+                <span className="text-[8px] leading-tight text-primary/80">{holiday}</span>
+              ) : parsha ? (
+                <span className="text-[8px] leading-tight text-muted-foreground">{parsha}</span>
+              ) : null}
+
+              {dayEntries.length > 0 ? (
+                <div className="flex items-center gap-0.5">
+                  {KIND_ORDER.filter((k) => dayEntries.some((e) => e.kind === k)).map((k) => (
+                    <span key={k} className={`h-1 w-1 rounded-full ${KIND_META[k].dot}`} />
+                  ))}
+                  <span className="text-[8px] leading-none text-muted-foreground">
+                    {dayEntries.length}
+                  </span>
+                </div>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// ── The day's count filters, in one narrow non-wrapping row (today lives in the
+// month bar, so this row is purely the filters). ───────────────────────────────
+function FilterToolbar({
   entries,
-  holiday,
-  isToday,
   filter,
   onPick,
-  embedded = false,
 }: {
-  day: Date;
   entries: DayEntry[];
-  holiday: string | null;
-  isToday: boolean;
-  /** Active filter — the matching count tile lights up. */
   filter: Filter;
   onPick: (filter: Filter) => void;
-  /** When true, render as the flat dark header of a combined card (no rounding /
-   *  shadow of its own) instead of a standalone hero. */
-  embedded?: boolean;
 }) {
-  const weekday = new Intl.DateTimeFormat("he-IL", { weekday: "long" }).format(day);
-  const parsha = useMemo(() => hebrewParsha(day), [day]);
   const counts = KIND_ORDER.map((kind) => ({
     kind,
     count: entries.filter((e) => e.kind === kind).length,
   }));
-
   return (
-    <div
-      className={`bg-sidebar p-3 text-sidebar-foreground ${
-        embedded ? "" : "rounded-[1.5rem] shadow-card"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        {/* Date (right in RTL) */}
-        <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-bold leading-none">{day.getDate()}</span>
-          <div>
-            <div className="text-lg font-semibold leading-tight">{weekday}</div>
-            <div className="text-xs text-sidebar-foreground/70">{hebrewFullDate(day)}</div>
-          </div>
-        </div>
-
-        {/* Today + parsha (left in RTL) — wraps rather than truncating. */}
-        <div className="flex min-w-0 flex-col items-end gap-1 text-end">
-          {isToday ? (
-            <span className="inline-flex rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold text-secondary-foreground">
-              היום
-            </span>
-          ) : null}
-          {(parsha || holiday) && (
-            <span className="text-xs leading-tight text-sidebar-foreground/85">
-              {[parsha, holiday].filter(Boolean).join(" · ")}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Count tiles ARE the filter — "הכל" plus one per kind; the active one lights up. */}
-      <div className="mt-2 grid grid-cols-4 gap-1.5">
-        <SummaryTile
-          active={filter === "all"}
-          count={entries.length}
-          label="הכל"
-          onClick={() => onPick("all")}
+    <div className="flex flex-nowrap items-center justify-center gap-1 overflow-x-auto">
+      <FilterPill active={filter === "all"} label="הכל" count={entries.length} onClick={() => onPick("all")} />
+      {counts.map(({ kind, count }) => (
+        <FilterPill
+          key={kind}
+          active={filter === kind}
+          label={KIND_META[kind].plural}
+          count={count}
+          dot={KIND_META[kind].dot}
+          onClick={() => onPick(kind)}
         />
-        {counts.map(({ kind, count }) => (
-          <SummaryTile
-            key={kind}
-            active={filter === kind}
-            count={count}
-            label={KIND_META[kind].plural}
-            dot={KIND_META[kind].dot}
-            onClick={() => onPick(kind)}
-          />
-        ))}
-      </div>
+      ))}
     </div>
   );
 }
 
-// A single count tile in the summary header, doubling as a filter button. The
-// active tile is light (inverted) so the current filter reads at a glance.
-function SummaryTile({
+// A labeled filter pill (name + count) so an empty kind reads clearly as "0 X"
+// instead of a bare, meaningless zero.
+function FilterPill({
   active,
-  count,
   label,
+  count,
   dot,
   onClick,
 }: {
   active: boolean;
-  count: number;
   label: string;
+  count: number;
   dot?: string;
   onClick: () => void;
 }) {
@@ -422,25 +489,15 @@ function SummaryTile({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-xl px-1 py-1.5 text-center transition-colors ${
+      className={`flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
         active
-          ? "bg-background text-foreground shadow-sm"
-          : "bg-white/[0.06] text-sidebar-foreground hover:bg-white/[0.12] active:bg-white/[0.16]"
+          ? "border-secondary bg-secondary/10 text-secondary"
+          : "border-border bg-background text-muted-foreground hover:bg-secondary/5"
       }`}
     >
-      {/* Dot rides next to the count (not the label) so the label keeps the whole
-          tile width and never needs truncating. */}
-      <div className="flex items-center justify-center gap-1">
-        {dot ? <span className={`h-1.5 w-1.5 rounded-full ${dot}`} /> : null}
-        <span className="text-lg font-bold leading-none">{count}</span>
-      </div>
-      <div
-        className={`mt-1 text-[10px] leading-tight ${
-          active ? "text-muted-foreground" : "text-sidebar-foreground/70"
-        }`}
-      >
-        {label}
-      </div>
+      {dot ? <span className={`h-1.5 w-1.5 rounded-full ${dot}`} /> : null}
+      <span>{label}</span>
+      <span className="font-bold">{count}</span>
     </button>
   );
 }
