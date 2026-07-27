@@ -135,7 +135,6 @@ export default function CalendarView({
     if (!el) return;
     const dist = (t: TouchList) =>
       Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    const scrollable = () => el.scrollHeight - el.clientHeight > 4;
     let pinchDist = 0;
     let pinchZoom = 1;
     let swipeY: number | null = null;
@@ -144,7 +143,7 @@ export default function CalendarView({
 
     const step = (delta: number) => {
       const now = performance.now();
-      if (now - lastStep < 350) return;
+      if (now - lastStep < 250) return;
       lastStep = now;
       setNavDir(delta > 0 ? "next" : "prev");
       setMonth((m) => new Date(m.getFullYear(), m.getMonth() + delta, 1));
@@ -168,15 +167,14 @@ export default function CalendarView({
       }
     };
     const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length === 0 && swipeY != null && !scrollable()) {
+      if (e.touches.length === 0 && swipeY != null) {
         const dy = (e.changedTouches[0]?.clientY ?? swipeY) - swipeY;
-        if (Math.abs(dy) > 50) step(dy < 0 ? 1 : -1); // swipe up → next month
+        if (Math.abs(dy) > 40) step(dy < 0 ? 1 : -1); // swipe up → next month
       }
       if (e.touches.length < 2) pinchDist = 0;
       if (e.touches.length === 0) swipeY = null;
     };
     const onWheel = (e: WheelEvent) => {
-      if (scrollable()) return; // a zoomed month scrolls instead of paging
       wheelAcc += e.deltaY;
       if (Math.abs(wheelAcc) > 60) {
         step(wheelAcc > 0 ? 1 : -1);
@@ -222,7 +220,9 @@ export default function CalendarView({
   useSetPageTitle("יומן", fmtFullDay(selected));
 
   return (
-    <div className="space-y-3">
+    // Cancel the app shell's bottom padding on this page so the calendar can fill
+    // to the bottom nav without the page itself ever scrolling.
+    <div className="-mb-24 space-y-3 md:mb-0">
       <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="relative min-w-0">
           {/* Sticky day toolbar — straight on the page (no card, no navy): jump to
@@ -236,12 +236,14 @@ export default function CalendarView({
               month (no arrows). Full-bleed on phones, a bordered card from md up. */}
           <div
             ref={scrollRef}
-            className="-mx-4 h-[calc(100svh-15rem)] touch-pan-y overflow-x-hidden overflow-y-auto border-b md:mx-0 md:h-[calc(100vh-11rem)] md:rounded-2xl md:border md:border-t"
+            className="-mx-4 h-[calc(100dvh-14.5rem)] touch-none overflow-hidden border-b md:mx-0 md:h-[calc(100vh-11rem)] md:rounded-2xl md:border md:border-t"
           >
-            <div style={{ zoom }}>
+            {/* Pinch scales only the cell text (em-based), so the month grid stays
+                fixed and a full month is always in view. */}
+            <div style={{ fontSize: `${zoom}rem` }} className="h-full">
               <div
                 key={`${month.getFullYear()}-${month.getMonth()}`}
-                className={`animate-in fade-in-0 duration-200 ${
+                className={`h-full animate-in fade-in-0 duration-200 ${
                   navDir === "next" ? "slide-in-from-bottom-3" : "slide-in-from-top-3"
                 }`}
               >
@@ -318,15 +320,21 @@ function MonthBlock({
   onToday: () => void;
   entriesOnDay: (day: Date) => DayEntry[];
 }) {
-  const calendarDays = useMemo(() => {
+  // Only render the weeks this month actually spans (5 or 6) — so a month that
+  // fits in 5 weeks doesn't tack on a whole extra week of the next month.
+  const { calendarDays, weeks } = useMemo(() => {
     const first = new Date(month.getFullYear(), month.getMonth(), 1);
+    const firstOffset = first.getDay();
+    const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+    const weeks = Math.ceil((firstOffset + daysInMonth) / 7);
     const gridStart = new Date(first);
-    gridStart.setDate(first.getDate() - first.getDay());
-    return Array.from({ length: 42 }, (_, i) => {
+    gridStart.setDate(first.getDate() - firstOffset);
+    const calendarDays = Array.from({ length: weeks * 7 }, (_, i) => {
       const d = new Date(gridStart);
       d.setDate(gridStart.getDate() + i);
       return d;
     });
+    return { calendarDays, weeks };
   }, [month]);
 
   const holidays = useMemo(
@@ -343,7 +351,7 @@ function MonthBlock({
   return (
     // One full-height page per month (snap target) so a whole month fits on screen
     // at once — the 6 week-rows share the leftover height and never overflow.
-    <section className="flex h-[calc(100svh-15rem)] flex-col md:h-[calc(100vh-11rem)]">
+    <section className="flex h-[calc(100dvh-14.5rem)] flex-col md:h-[calc(100vh-11rem)]">
       {/* Month bar: name + Hebrew month + the "today" jump — one tight row. */}
       <div className="flex items-center justify-between gap-2 px-3 py-1.5">
         <div className="flex items-baseline gap-2">
@@ -368,8 +376,11 @@ function MonthBlock({
         ))}
       </div>
 
-      {/* Days fill the remaining height as 6 equal rows, so the month always fits. */}
-      <div className="grid flex-1 grid-cols-7 grid-rows-6 gap-px bg-border">
+      {/* Days fill the remaining height as equal rows, so the month always fits. */}
+      <div
+        className="grid flex-1 grid-cols-7 gap-px bg-border"
+        style={{ gridTemplateRows: `repeat(${weeks}, minmax(0, 1fr))` }}
+      >
         {calendarDays.map((day) => {
           const inMonth = day.getMonth() === month.getMonth();
           const isToday = isSameDay(day, today);
@@ -398,25 +409,26 @@ function MonthBlock({
                     : "bg-background"
               } ${isSelected ? "z-10 ring-2 ring-inset ring-secondary" : "hover:bg-secondary/10"}`}
             >
-              {/* English date — top-right corner */}
+              {/* English date — top-right corner. Text sizes are `em` so a pinch
+                  scales only the text, never the fixed box. */}
               <span
-                className={`absolute start-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-0.5 text-[10px] font-medium ${
-                  isToday ? "bg-primary text-primary-foreground" : ""
+                className={`absolute start-0.5 top-0.5 rounded-full px-1 text-[0.72em] font-medium leading-none ${
+                  isToday ? "bg-primary py-0.5 text-primary-foreground" : ""
                 }`}
               >
                 {day.getDate()}
               </span>
 
               {/* Hebrew date — bottom-left corner */}
-              <span className="absolute bottom-0.5 end-1 text-[9px] leading-none text-muted-foreground">
+              <span className="absolute bottom-0.5 end-1 text-[0.6em] leading-none text-muted-foreground">
                 {hebrewDayLabel(day)}
               </span>
 
               {/* Middle info: holiday / Shabbat parsha, then the event dots + count. */}
               {holiday ? (
-                <span className="text-[8px] leading-tight text-primary/80">{holiday}</span>
+                <span className="text-[0.55em] leading-tight text-primary/80">{holiday}</span>
               ) : parsha ? (
-                <span className="text-[8px] leading-tight text-muted-foreground">{parsha}</span>
+                <span className="text-[0.55em] leading-tight text-muted-foreground">{parsha}</span>
               ) : null}
 
               {dayEntries.length > 0 ? (
@@ -424,7 +436,7 @@ function MonthBlock({
                   {KIND_ORDER.filter((k) => dayEntries.some((e) => e.kind === k)).map((k) => (
                     <span key={k} className={`h-1 w-1 rounded-full ${KIND_META[k].dot}`} />
                   ))}
-                  <span className="text-[8px] leading-none text-muted-foreground">
+                  <span className="text-[0.55em] leading-none text-muted-foreground">
                     {dayEntries.length}
                   </span>
                 </div>
@@ -489,13 +501,13 @@ function FilterPill({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+      className={`flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
         active
           ? "border-secondary bg-secondary/10 text-secondary"
           : "border-border bg-background text-muted-foreground hover:bg-secondary/5"
       }`}
     >
-      {dot ? <span className={`h-1.5 w-1.5 rounded-full ${dot}`} /> : null}
+      {dot ? <span className={`h-2 w-2 rounded-full ${dot}`} /> : null}
       <span>{label}</span>
       <span className="font-bold">{count}</span>
     </button>
