@@ -4,7 +4,7 @@ import { formatShortDate, formatShortDateTime } from "@/lib/date";
 import { paymentStatusClasses, paymentStatusLabel } from "@/lib/orders/paymentStatus";
 import type { WorkSessionRow } from "@/lib/payroll";
 import type { FinancialAttachment, PaymentRow } from "@/lib/payments";
-import type { ExpenseListItem } from "./ProjectTabsClient";
+import type { AssignableUser, ExpenseListItem } from "./ProjectTabsClient";
 
 // Pure formatting/getter/status helpers + the LtrInline span, lifted out of
 // ProjectTabsClient so the component file holds state + orchestration only.
@@ -182,6 +182,30 @@ export function isSessionBillable(session: WorkSessionRow | null | undefined) {
 export function sessionBillToCustomerAmount(session: WorkSessionRow | null | undefined) {
   if (!isSessionBillable(session)) return 0;
   return Math.max(0, toNumber(session?.bill_to_customer_amount) ?? 0);
+}
+
+/**
+ * One-line label for an expense/session row — shared by the on-screen list and
+ * the compact "לחיוב לקוח" print sheet so both read the same.
+ */
+export function expenseItemTitle(
+  item: ExpenseListItem,
+  usersById: Map<string, AssignableUser>
+) {
+  const session = item.source_type === "session" ? item.session : null;
+  if (session) {
+    const user = usersById.get(session.user_id);
+    const name = user?.full_name?.trim() || user?.email || "";
+    return `שכר עובד${name ? ` — ${name}` : ""}`;
+  }
+  const expenseId = getString(item.project_expense, "expense_id");
+  return (
+    getString(item.expense, "description") ??
+    getString(item.expense, "vendor_name") ??
+    getString(item.expense, "vendor") ??
+    getString(item.expense, "category") ??
+    (expenseId ? `הוצאה ${expenseId.slice(0, 8)}` : "הוצאה")
+  );
 }
 
 export function isImageAttachment(attachment: Pick<FinancialAttachment, "file_name" | "document_type">) {

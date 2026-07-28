@@ -53,12 +53,14 @@ import {
 } from "@/lib/payroll-worker-type";
 import type { ExpenseWorkerOption } from "@/components/expenses/ExpenseDialog";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
+import BilledCustomerPrintButton from "./BilledCustomerPrintButton";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import dynamic from "next/dynamic";
 import {
   customerPaymentStatusBadgeClasses,
   customerPaymentStatusLabel,
   deriveCustomerPaymentStatus,
+  expenseItemTitle,
   expenseRecordedByLabel,
   formatDate,
   formatDateTime,
@@ -859,6 +861,28 @@ export default function ProjectTabsClient({
     return map;
   }, [assignableUsers]);
 
+  // Compact print rows for the "לחיוב לקוח" card — date, label and the amount
+  // charged to the customer only.
+  const billedPrintRows = useMemo(
+    () =>
+      billableCustomerItems.map((item) => {
+        const session = item.source_type === "session" ? item.session : null;
+        const date = session
+          ? session.clock_in
+          : getString(item.expense, "expense_date") ??
+            getString(item.expense, "created_at") ??
+            null;
+        return {
+          date: formatDate(date),
+          title: expenseItemTitle(item, usersById),
+          amount: session
+            ? sessionBillToCustomerAmount(session)
+            : toNumber(item.expense?.amount),
+        };
+      }),
+    [billableCustomerItems, usersById]
+  );
+
   // Monthly-salary (payslip) costs attributed to this project, newest month first.
   const monthlySalaryRows = useMemo(() => {
     return [...monthlySalaryItems]
@@ -1188,17 +1212,7 @@ export default function ProjectTabsClient({
         getString(item.expense, "created_at") ??
         null;
 
-    const title = session
-      ? `שכר עובד${(() => {
-          const user = usersById.get(session.user_id);
-          const name = user?.full_name?.trim() || user?.email || "";
-          return name ? ` — ${name}` : "";
-        })()}`
-      : getString(item.expense, "description") ??
-        getString(item.expense, "vendor_name") ??
-        getString(item.expense, "vendor") ??
-        getString(item.expense, "category") ??
-        (expenseId ? `הוצאה ${expenseId.slice(0, 8)}` : "הוצאה");
+    const title = expenseItemTitle(item, usersById);
     const attachments = session
       ? Array.isArray(session.attachments)
         ? session.attachments
@@ -1827,8 +1841,18 @@ export default function ProjectTabsClient({
           </Card>
 
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
               <CardTitle className="text-base">לחיוב לקוח</CardTitle>
+              {billableCustomerItems.length > 0 ? (
+                <BilledCustomerPrintButton
+                  data={{
+                    projectName: overview.name,
+                    customerName: overview.customer_name ?? null,
+                    rows: billedPrintRows,
+                    total: billedExpensesTotal,
+                  }}
+                />
+              ) : null}
             </CardHeader>
             <CardContent className="text-sm xl:flex xl:min-h-[24rem] xl:flex-col">
               {expensesError ? (
