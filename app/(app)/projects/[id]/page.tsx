@@ -33,7 +33,6 @@ import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { WorkSessionRow } from "@/lib/payroll";
 import { getCurrentVatRate } from "@/lib/settings/vat";
 import { Badge } from "@/components/ui/badge";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { ContactLink } from "@/components/ui/contact-link";
 import { CustomerContactCard } from "@/components/customers/CustomerContactCard";
 import { formatShortDate } from "@/lib/date";
@@ -1087,6 +1086,15 @@ export default async function ProjectPage({
               <span className="block whitespace-pre-wrap text-sm font-medium">{projectNotes}</span>
             ) : null}
             {routeHeadline ? <span className="hidden lg:block">{routeHeadline}</span> : null}
+            {!notesOnlyCard ? (
+              <span className="block lg:hidden">
+                {hasItems
+                  ? `${itemsToMove.length} פריטים להעברה`
+                  : hasRoute
+                    ? "מסלול ההובלה"
+                    : "פרטי העבודה"}
+              </span>
+            ) : null}
           </span>
         }
       >
@@ -1223,31 +1231,12 @@ export default async function ProjectPage({
                   </>
                 ) : null}
               </nav>
-              {/* Name + what kind of job it is. When the head row carries the
-                  סטטוס הפרויקט card (no route / load / note to show), the status,
-                  dates and manager live there and are NOT repeated here. When
-                  the third card is the הובלה one instead, this line is the only
-                  place they appear. */}
+              {/* Just the name and the kind of job: status, dates and manager
+                  are on the סטטוס הפרויקט card, which every project has now. */}
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-lg font-bold tracking-tight">{projectName}</h1>
                 <Badge variant="outline">{projectTypeLabel(projectType)}</Badge>
-                {detailsSideCard && status ? (
-                  <StatusBadge value={status} type="project" />
-                ) : null}
               </div>
-              {detailsSideCard ? (
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                  {startDate || endDate ? (
-                    <span dir="ltr">{formatDateRange(startDate, endDate)}</span>
-                  ) : null}
-                  {projectManagerName ? (
-                    <>
-                      {startDate || endDate ? <span>·</span> : null}
-                      <span>מנהל: {projectManagerName}</span>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
 
             {overview ? (
@@ -1304,7 +1293,7 @@ export default async function ProjectPage({
             }
             customerCard={customerSideCard}
             detailsCard={detailsSideCard}
-            statusCard={detailsSideCard ? null : projectStatusCard}
+            statusCard={projectStatusCard}
             activitySection={
               profile.role === "admin" ? (
                 <CollapsibleSection

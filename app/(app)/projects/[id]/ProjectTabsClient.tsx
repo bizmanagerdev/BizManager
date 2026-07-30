@@ -1520,7 +1520,9 @@ export default function ProjectTabsClient({
             needs a second copy of a card. */}
         {detailsCard ? <div className="order-2 lg:order-none">{detailsCard}</div> : null}
         {customerCard ? <div className="order-1 lg:order-none">{customerCard}</div> : null}
-        {statusCard ? <div className="order-2 lg:order-none">{statusCard}</div> : null}
+        {statusCard && !detailsCard ? (
+          <div className="order-2 lg:order-none">{statusCard}</div>
+        ) : null}
         {collectionBand ? <div className="order-3 lg:order-none">{collectionBand}</div> : null}
       </div>
 
@@ -2108,6 +2110,9 @@ export default function ProjectTabsClient({
         </div>
 
         <aside className="order-2 mt-3 space-y-3 lg:order-none lg:mt-0">
+          {/* A הובלה already fills the head row, so its status card sits here,
+              above the money. */}
+          {statusCard && detailsCard ? <div className="hidden lg:block">{statusCard}</div> : null}
           {canSeeFinances ? (
             <div className="hidden lg:block">{financialSummarySection}</div>
           ) : null}
