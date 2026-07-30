@@ -199,7 +199,11 @@ export function TopBar({
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center text-center leading-tight lg:hidden">
           <span className="w-full truncate text-[17px] font-semibold text-white">{pageTitle.title}</span>
           {pageTitle.subtitle ? (
-            <span className="w-full truncate text-[12px] text-sidebar-foreground/70">{pageTitle.subtitle}</span>
+            // Wraps to a second line instead of clipping — record names live here
+            // (e.g. a project's name) and half a name reads as a bug.
+            <span className="line-clamp-2 w-full break-words text-[12px] leading-tight text-sidebar-foreground/70">
+              {pageTitle.subtitle}
+            </span>
           ) : null}
         </div>
       ) : showSearch ? (

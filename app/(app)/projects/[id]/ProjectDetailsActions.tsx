@@ -5,7 +5,7 @@ import { resyncAlerts } from "@/lib/ui/alerts-refresh";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Pencil, Trash2 } from "lucide-react";
+import { Bell, FileText, Pencil, Trash2 } from "lucide-react";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { offlineFetch } from "@/lib/offline-queue";
 import { offlineUpload } from "@/lib/offline-upload";
@@ -31,11 +31,15 @@ import {
 } from "@/components/projects/MovingAddressFields";
 import DeleteProjectButton from "@/app/(app)/projects/DeleteProjectButton";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
+import ProjectShareActions, { type ProjectShareData } from "@/app/(app)/projects/[id]/ProjectShareActions";
 
 type Option = {
   id: string;
   label: string;
 };
+
+/** Anchor of the תזכורות section on the project page — the phone פעולות list links to it. */
+export const REMINDERS_SECTION_ID = "project-reminders";
 
 type ProjectDetails = {
   id: string;
@@ -170,12 +174,18 @@ export default function ProjectDetailsActions({
   managerOptions,
   projectDocuments,
   projectDocumentsError,
+  share,
+  layout = "inline",
 }: {
   project: ProjectDetails;
   customerOptions: Option[];
   managerOptions: Option[];
   projectDocuments: ProjectDocument[];
   projectDocumentsError: string | null;
+  /** Everything שיתוף / הדפסה need — built on the server, where the money lives. */
+  share: ProjectShareData;
+  /** "stacked" = full-width buttons in a 2-up grid, for the phone פעולות section. */
+  layout?: "inline" | "stacked";
 }) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
@@ -317,27 +327,76 @@ export default function ProjectDetailsActions({
     }
   }
 
+  const stacked = layout === "stacked";
+
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Stacked (phone): the four things you do to a project as equal, full-width
+          targets, with delete demoted to a quiet line underneath them. */}
+      <div
+        className={
+          stacked
+            ? "grid grid-cols-2 gap-2 [&_a]:w-full [&_button]:w-full [&>*]:w-full"
+            : "flex flex-wrap items-center gap-2"
+        }
+      >
         {project.status === "quote" ? null : (
-          <Button type="button" variant="outline" size="sm" asChild>
+          <Button type="button" variant="outline" size="sm" className="h-9" asChild>
             <Link href={`/projects/${project.id}/export?mode=worker`} target="_blank" rel="noreferrer">
               <FileText className="h-4 w-4" />
               <span>דף עבודה</span>
             </Link>
           </Button>
         )}
-        <Button type="button" variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+        <ProjectShareActions project={share} />
+        <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => setEditOpen(true)}>
           <Pencil className="h-4 w-4" />
           <span>עריכה</span>
         </Button>
-        <LogCommunicationButton entityType="project" entityId={project.id} customerId={project.customer_id} defaultTopic="general" />
-        <DeleteProjectButton projectId={project.id} projectName={project.name} redirectTo="/projects" size="sm">
-          <Trash2 className="h-4 w-4" />
-          <span>מחיקה</span>
-        </DeleteProjectButton>
+        <LogCommunicationButton
+          entityType="project"
+          entityId={project.id}
+          customerId={project.customer_id}
+          defaultTopic="general"
+          className={stacked ? undefined : "h-9"}
+        />
+        {stacked ? (
+          <Button type="button" variant="outline" size="sm" asChild>
+            <a href={`#${REMINDERS_SECTION_ID}`}>
+              <Bell className="h-4 w-4" />
+              <span>תזכורת</span>
+            </a>
+          </Button>
+        ) : null}
+        {stacked ? null : (
+          <DeleteProjectButton
+            projectId={project.id}
+            projectName={project.name}
+            redirectTo="/projects"
+            size="sm"
+            variant="ghost"
+            className="h-9 border border-destructive/40 hover:bg-destructive/10"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span>מחיקה</span>
+          </DeleteProjectButton>
+        )}
       </div>
+
+      {stacked ? (
+        <div className="mt-2 flex justify-center">
+          <DeleteProjectButton
+            projectId={project.id}
+            projectName={project.name}
+            redirectTo="/projects"
+            size="sm"
+            variant="ghost"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span>מחיקת פרויקט</span>
+          </DeleteProjectButton>
+        </div>
+      ) : null}
 
       <Dialog
         open={editOpen}

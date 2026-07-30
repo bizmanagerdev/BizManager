@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileDown, Loader2, Printer } from "lucide-react";
+import { Loader2, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { toHebrewError } from "@/lib/error-messages";
@@ -87,24 +87,6 @@ function buildSheetMarkup(data: BilledPrintData, generatedAt: string): string {
       S.footAmount
     }">${formatCurrency(data.total)}</td></tr></tfoot>
   </table>`;
-}
-
-function buildPrintHtml(data: BilledPrintData, generatedAt: string): string {
-  return `<!doctype html>
-<html lang="he" dir="rtl">
-<head>
-<meta charset="utf-8" />
-<title>לחיוב לקוח — ${escapeHtml(data.projectName)}</title>
-<style>
-  body { font-family: system-ui, "Segoe UI", Arial, sans-serif; color: #0A1020; margin: 28px; }
-  @media print { body { margin: 12mm; } }
-</style>
-</head>
-<body>
-${buildSheetMarkup(data, generatedAt)}
-<script>window.onload = function () { window.print(); };</script>
-</body>
-</html>`;
 }
 
 function nowLabel() {
@@ -204,56 +186,20 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
     }
   }
 
-  /** Paper printing — a real blob document, so Chrome doesn't stall on about:blank. */
-  function handlePrint() {
-    const html = buildPrintHtml(data, nowLabel());
-    const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-    const win = window.open(url, "_blank", "width=800,height=900");
-    if (win) {
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      return;
-    }
-
-    URL.revokeObjectURL(url);
-    // Browsers that refuse blob popups (older iOS Safari) still take a written doc.
-    const fallback = window.open("", "_blank", "width=800,height=900");
-    if (!fallback) {
-      toast.error("הדפדפן חסם את חלון ההדפסה. יש לאשר חלונות קופצים ולנסות שוב.");
-      return;
-    }
-    fallback.document.write(html);
-    fallback.document.close();
-  }
-
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        onClick={() => void handlePdf()}
-        disabled={building}
-        title="שמירת רשימה מקוצרת כ-PDF"
-      >
-        {building ? (
-          <Loader2 className="ml-1 h-4 w-4 animate-spin" />
-        ) : (
-          <FileDown className="ml-1 h-4 w-4" />
-        )}
-        PDF
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        className="h-9 w-9 p-0"
-        onClick={handlePrint}
-        disabled={building}
-        title="הדפסה"
-        aria-label="הדפסה"
-      >
-        <Printer className="h-4 w-4" />
-      </Button>
-    </div>
+    // Labelled like the buttons beside it — a share glyph alone doesn't say
+    // WHAT gets shared.
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="h-8 px-2 text-xs"
+      onClick={() => void handlePdf()}
+      disabled={building}
+      title="שיתוף לחיוב לקוח (PDF)"
+    >
+      {building ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+      לחיוב לקוח
+    </Button>
   );
 }

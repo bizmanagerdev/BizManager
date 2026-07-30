@@ -1,25 +1,21 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
-import { AddressLink } from "@/components/ui/address-link";
 import { ContactLink } from "@/components/ui/contact-link";
-import { WazeIcon } from "@/components/ui/waze-icon";
 import { Button } from "@/components/ui/button";
+import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
 import {
   Bell,
   ChevronLeft,
   Copy,
-  ExternalLink,
   FileText,
   HandCoins,
   History,
-  Mail,
   MessageSquareText,
   PencilLine,
-  Phone,
   ReceiptText,
   ShoppingCart,
+  Trash2,
   Truck,
-  UserRound,
 } from "lucide-react";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
 import MorningDocumentsPanel from "@/components/morning/MorningDocumentsPanel";
@@ -27,7 +23,8 @@ import { getOrderStatusLabel } from "@/lib/ui/status-colors";
 import { requireProfile } from "@/lib/auth/requireProfile";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import DeleteOrderButton from "@/app/(app)/sales/orders/[id]/DeleteOrderButton";
-import EntityReminders from "@/components/reminders/EntityReminders";
+import OrderRemindersSection from "@/app/(app)/sales/orders/[id]/OrderRemindersSection";
+import { SectionCard } from "@/components/ui/section-card";
 import LogCommunicationButton from "@/components/communications/LogCommunicationButton";
 import OrderPaymentDialog from "@/app/(app)/sales/orders/OrderPaymentDialog";
 import OrderConfirmDialog from "@/app/(app)/sales/orders/OrderConfirmDialog";
@@ -35,6 +32,7 @@ import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
 import InvoiceQuickMenu from "@/app/(app)/sales/orders/InvoiceQuickMenu";
 import OrderCommentsThread from "@/app/(app)/sales/orders/[id]/OrderCommentsThread";
 import OrderShareActions from "@/app/(app)/sales/orders/[id]/OrderShareActions";
+import { CustomerContactCard } from "@/components/customers/CustomerContactCard";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { OrderPaymentActionsClient } from "@/app/(app)/sales/orders/OrderPaymentActionsClient";
 import type { PaymentItem } from "@/app/(app)/sales/orders/OrderPaymentActionsClient";
@@ -104,22 +102,6 @@ function paymentInsertedByLabel(
 }
 
 
-/** Text-only color for the collection status (no badge pill, per user request). */
-function collectionStatusTextClass(status: string) {
-  switch (status) {
-    case "overpaid":
-      return "text-destructive";
-    case "collected":
-      return "text-success-soft-foreground";
-    case "partial":
-      return "text-info-soft-foreground";
-    case "awaiting":
-      return "text-primary";
-    default:
-      return "text-destructive";
-  }
-}
-
 function formatAddressForDisplay(address: string | null) {
   if (!address) return null;
   const parts = address
@@ -130,95 +112,12 @@ function formatAddressForDisplay(address: string | null) {
 }
 
 /** Full-width solid-fill override for dialog trigger buttons whose default variant is outline. */
-const FULL_PRIMARY_TRIGGER_CLASSES =
-  "border-transparent bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground w-full";
+const FULL_SECONDARY_TRIGGER_CLASSES =
+  "border-transparent bg-secondary text-secondary-foreground shadow-md shadow-secondary/20 hover:bg-secondary/90 hover:text-secondary-foreground w-full";
 
-/**
- * Reference-style stat card: icon, small label, big colored value, sub-lines,
- * and an optional full-width action button pinned to the bottom.
- */
-function StatActionCard({
-  icon,
-  label,
-  value,
-  valueClassName,
-  badges,
-  subtitles,
-  details,
-  action,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: React.ReactNode;
-  valueClassName?: string;
-  badges?: React.ReactNode;
-  subtitles?: (string | null)[];
-  details?: { label: string; value: string }[];
-  action?: React.ReactNode;
-}) {
-  const subs = (subtitles ?? []).filter((line): line is string => Boolean(line));
-  return (
-    <div className="flex flex-col gap-3 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <div className="text-xs font-medium text-muted-foreground">{label}</div>
-          <div className="flex flex-wrap items-center gap-2">
-            {typeof value === "string" ? (
-              <div className={`text-lg font-bold leading-snug ${valueClassName ?? ""}`}>{value}</div>
-            ) : (
-              value
-            )}
-            {badges}
-          </div>
-          {subs.map((line) => (
-            <div key={line} className="text-xs text-muted-foreground">
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-      {details && details.length > 0 ? (
-        <div className="space-y-1 border-t border-border/50 pt-2">
-          {details.map((row) => (
-            <div key={row.label} className="flex items-center justify-between gap-2 text-xs">
-              <span className="text-muted-foreground">{row.label}</span>
-              <span className="font-medium">{row.value}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {action ? <div className="mt-auto">{action}</div> : null}
-    </div>
-  );
-}
+/** Anchor of the תזכורות section — the phone פעולות list links to it. */
+const REMINDERS_SECTION_ID = "order-reminders";
 
-function SectionCard({
-  icon,
-  title,
-  aside,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  aside?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="space-y-3 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-primary">{icon}</span>
-          <h2 className="text-sm font-semibold">{title}</h2>
-        </div>
-        {aside}
-      </div>
-      {children}
-    </section>
-  );
-}
 
 export default async function SalesOrderPage({
   params,
@@ -595,6 +494,41 @@ export default async function SalesOrderPage({
         ).items
       : [];
 
+  // The handful of things you do to an order. Rendered twice: inline in the
+  // desktop heading, and — on the phone — as a פעולות section at the foot of the
+  // page, the same shape the project page uses.
+  const canLogCommunication = profile.role === "admin" || profile.role === "office";
+  const orderActionButtons = (
+    <>
+      <Button asChild size="sm" variant="outline" className="h-9">
+        <Link href={`/sales/orders/new?duplicate=${id}`} title="שכפול הזמנה">
+          <Copy className="h-4 w-4" />
+          <span>שכפול</span>
+        </Link>
+      </Button>
+      <OrderShareActions order={orderShareData} />
+      <OrderEditDialog
+        orderId={id}
+        buttonLabel={
+          <>
+            <PencilLine className="h-4 w-4" />
+            <span>עריכה</span>
+          </>
+        }
+        buttonClassName="h-9"
+      />
+      {canLogCommunication ? (
+        <LogCommunicationButton
+          entityType="order"
+          entityId={id}
+          customerId={customerId}
+          defaultTopic="sales"
+          className="h-9"
+        />
+      ) : null}
+    </>
+  );
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-3">
@@ -618,27 +552,19 @@ export default async function SalesOrderPage({
                 )}
               </h1>
             </nav>
+            {/* Desktop only — on the phone these live at the foot of the page,
+                where the project page keeps them. */}
             {order ? (
-              <div className="flex shrink-0 gap-1.5">
-                <Button asChild size="sm" variant="outline" className="h-9 w-9 p-0">
-                  <Link
-                    href={`/sales/orders/new?duplicate=${id}`}
-                    title="שכפול הזמנה"
-                    aria-label="שכפול הזמנה"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Link>
-                </Button>
-                <OrderShareActions order={orderShareData} />
-                <OrderEditDialog
+              <div className="hidden shrink-0 flex-wrap items-center gap-2 lg:flex">
+                {orderActionButtons}
+                <DeleteOrderButton
                   orderId={id}
-                  buttonLabel={<PencilLine className="h-4 w-4" />}
-                  buttonClassName="h-9 w-9 p-0"
-                />
-                {profile.role === "admin" || profile.role === "office" ? (
-                  <LogCommunicationButton entityType="order" entityId={id} customerId={customerId} defaultTopic="sales" iconOnly />
-                ) : null}
-                <DeleteOrderButton orderId={id} iconOnly />
+                  variant="ghost"
+                  className="h-9 border border-destructive/40 hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>מחיקה</span>
+                </DeleteOrderButton>
               </div>
             ) : null}
           </div>
@@ -702,7 +628,7 @@ export default async function SalesOrderPage({
                     <OrderConfirmDialog
                       orderId={id}
                       buttonLabel="אישור אספקה"
-                      buttonClassName={FULL_PRIMARY_TRIGGER_CLASSES}
+                      buttonClassName={FULL_SECONDARY_TRIGGER_CLASSES}
                       authorName={profile.full_name ?? profile.email ?? null}
                     />
                   ) : null
@@ -787,7 +713,7 @@ export default async function SalesOrderPage({
                       orderId={id}
                       totalAmount={totalAmount}
                       paidAmount={totalPaid}
-                      buttonClassName={FULL_PRIMARY_TRIGGER_CLASSES}
+                      buttonClassName={FULL_SECONDARY_TRIGGER_CLASSES}
                     />
                   ) : null
                 }
@@ -815,84 +741,21 @@ export default async function SalesOrderPage({
 
             <div className="grid gap-3 lg:grid-cols-3 lg:items-start">
               <div className="space-y-3 lg:order-2">
-            <div className="space-y-2 rounded-3xl border border-border/70 bg-card/80 p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <UserRound className="h-4 w-4 text-primary" />
-                  <h2 className="text-sm font-semibold">לקוח</h2>
-                </div>
-                {customerId ? (
-                  <Button asChild size="sm" variant="secondary" className="h-8 w-8 p-0">
-                    <Link
-                      href={`/customers/${customerId}`}
-                      title="צפייה בלקוח"
-                      aria-label="צפייה בלקוח"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                ) : null}
-              </div>
-              <div className="text-sm font-semibold">{customerName}</div>
-              {customerNameForInvoice || customerRegistrationNumber ? (
-                <div className="text-xs text-muted-foreground">
-                  {[
-                    customerNameForInvoice ? `שם לחשבונית: ${customerNameForInvoice}` : null,
-                    customerRegistrationNumber ? `ח.פ / ת.ז: ${customerRegistrationNumber}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </div>
-              ) : null}
-              {/* Same contact block as the customer page: whole row is the tap
-                  target, icon included. */}
-              <div className="space-y-1.5 text-xs">
-                {customerPhone ? (
-                  <ContactLink
-                    kind="tel"
-                    value={customerPhone}
-                    className="flex items-center gap-1.5 py-0.5 hover:text-primary"
-                  >
-                    <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span dir="ltr" className="font-medium">{customerPhone}</span>
-                  </ContactLink>
-                ) : (
-                  <div className="flex items-center gap-1.5 py-0.5">
-                    <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="text-muted-foreground">-</span>
-                  </div>
-                )}
+            <CustomerContactCard
+              customerId={customerId}
+              name={customerName}
+              invoiceName={customerNameForInvoice}
+              registrationNumber={customerRegistrationNumber}
+              phone={customerPhone}
+              email={customerEmail}
+              address={fullAddress}
+            />
 
-                {customerEmail ? (
-                  <ContactLink
-                    kind="mailto"
-                    value={customerEmail}
-                    className="flex items-center gap-1.5 py-0.5 hover:text-primary"
-                  >
-                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span dir="ltr" className="truncate font-medium">{customerEmail}</span>
-                  </ContactLink>
-                ) : (
-                  <div className="flex items-center gap-1.5 py-0.5">
-                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="text-muted-foreground">-</span>
-                  </div>
-                )}
-
-                {fullAddress ? (
-                  <AddressLink address={fullAddress} className="flex items-center gap-1.5 py-0.5">
-                    <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate font-medium">{fullAddress}</span>
-                  </AddressLink>
-                ) : (
-                  <div className="flex items-center gap-1.5 py-0.5">
-                    <WazeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="text-muted-foreground">-</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
+            {/* Nothing to say until the delivery actually happens — an empty
+                "טרם אושרה" card is noise. It appears once there's a confirmation,
+                a photo, or the order is no longer awaiting delivery (where this
+                card carries the only way to add delivery photos). */}
+            {orderDeliveryConfirmedAt || deliveryImagesResolved.length > 0 || !needsDeliveryAction ? (
             <SectionCard
               icon={<Truck className="h-4 w-4" />}
               title="אספקה"
@@ -939,11 +802,12 @@ export default async function SalesOrderPage({
                 <OrderConfirmDialog
                   orderId={id}
                   buttonLabel="אספקת הזמנה"
-                  buttonClassName={FULL_PRIMARY_TRIGGER_CLASSES}
+                  buttonClassName={FULL_SECONDARY_TRIGGER_CLASSES}
                   authorName={profile.full_name ?? profile.email ?? null}
                 />
               ) : null}
             </SectionCard>
+            ) : null}
           </div>
 
           <div className="space-y-3 lg:order-1 lg:col-span-2">
@@ -1041,15 +905,12 @@ export default async function SalesOrderPage({
             </SectionCard>
 
             {profile.role === "admin" || profile.role === "office" ? (
-              <SectionCard icon={<Bell className="h-4 w-4" />} title="תזכורות">
-                <EntityReminders
-                  queryKey="order_id"
-                  queryId={id}
-                  links={{ order_id: id, customer_id: customerId ?? undefined }}
-                  category="order"
-                  canManage
-                />
-              </SectionCard>
+              <OrderRemindersSection
+                id={REMINDERS_SECTION_ID}
+                orderId={id}
+                customerId={customerId ?? undefined}
+                canManage
+              />
             ) : null}
 
             <SectionCard
@@ -1120,6 +981,31 @@ export default async function SalesOrderPage({
           </div>
         </div>
           </section>
+        ) : null}
+
+        {/* Phone-only: the heading's action row, at the end of the page and always
+            open — actions behind a fold are actions nobody uses. */}
+        {order ? (
+          <div className="space-y-2 lg:hidden">
+            <div className="text-xs font-medium text-muted-foreground">פעולות</div>
+            <div className="grid grid-cols-2 gap-2 [&_a]:w-full [&_button]:w-full [&>*]:w-full">
+              {orderActionButtons}
+              {canLogCommunication ? (
+                <Button type="button" variant="outline" size="sm" className="h-9" asChild>
+                  <a href={`#${REMINDERS_SECTION_ID}`}>
+                    <Bell className="h-4 w-4" />
+                    <span>תזכורת</span>
+                  </a>
+                </Button>
+              ) : null}
+            </div>
+            <div className="mt-2 flex justify-center">
+              <DeleteOrderButton orderId={id} variant="ghost">
+                <Trash2 className="h-4 w-4" />
+                <span>מחיקת הזמנה</span>
+              </DeleteOrderButton>
+            </div>
+          </div>
         ) : null}
       </div>
     </AppShell>

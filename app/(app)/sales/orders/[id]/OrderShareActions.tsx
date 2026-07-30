@@ -131,22 +131,23 @@ export default function OrderShareActions({ order }: { order: OrderShareData }) 
   return (
     <>
       {waHref ? (
-        <Button asChild size="sm" variant="secondary" className="h-9 w-9 p-0">
-          <a href={waHref} target="_blank" rel="noreferrer" title="שיתוף ללקוח בוואטסאפ" aria-label="שיתוף ללקוח בוואטסאפ">
+        <Button asChild size="sm" variant="outline" className="h-9">
+          <a href={waHref} target="_blank" rel="noreferrer" title="שיתוף ללקוח בוואטסאפ">
             <Share2 className="h-4 w-4" />
+            <span>שיתוף</span>
           </a>
         </Button>
       ) : null}
       <Button
         type="button"
         size="sm"
-        variant="secondary"
-        className="h-9 w-9 p-0"
+        variant="outline"
+        className="h-9"
         onClick={handlePrint}
         title="הדפסה / PDF"
-        aria-label="הדפסה / PDF"
       >
         <Printer className="h-4 w-4" />
+        <span>הדפסה</span>
       </Button>
     </>
   );

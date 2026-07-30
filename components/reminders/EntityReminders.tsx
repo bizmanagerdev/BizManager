@@ -41,27 +41,46 @@ export default function EntityReminders({
   links,
   category = "order",
   canManage,
+  hideAddButton = false,
+  addOpen: addOpenProp,
+  onAddOpenChange,
+  onCountChange,
 }: {
   queryKey: string;
   queryId: string;
   links: Record<string, string | null | undefined>;
   category?: string;
   canManage: boolean;
+  /** Hide the built-in "הוסף תזכורת" — for callers that put a "+" in their own header. */
+  hideAddButton?: boolean;
+  /** Control the add dialog from outside (pairs with hideAddButton). */
+  addOpen?: boolean;
+  onAddOpenChange?: (open: boolean) => void;
+  /** Fires whenever the list is (re)loaded — lets a wrapping section fold itself when empty. */
+  onCountChange?: (count: number) => void;
 }) {
   const [items, setItems] = useState<ReminderRow[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
+  const [addOpenState, setAddOpenState] = useState(false);
+  const addOpen = addOpenProp ?? addOpenState;
+  const setAddOpen = (next: boolean) => {
+    setAddOpenState(next);
+    onAddOpenChange?.(next);
+  };
   const [editing, setEditing] = useState<ReminderFormValue | null>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/reminders/list?${queryKey}=${encodeURIComponent(queryId)}`, { cache: "no-store" });
       const json = (await res.json().catch(() => ({}))) as { items?: ReminderRow[] };
-      setItems(res.ok ? json.items ?? [] : []);
+      const next = res.ok ? json.items ?? [] : [];
+      setItems(next);
+      onCountChange?.(next.length);
     } catch {
       setItems([]);
+      onCountChange?.(0);
     }
-  }, [queryKey, queryId]);
+  }, [queryKey, queryId, onCountChange]);
 
   useEffect(() => {
     void load();
@@ -97,7 +116,7 @@ export default function EntityReminders({
 
   return (
     <div className="space-y-2">
-      {canManage ? (
+      {canManage && !hideAddButton ? (
         <div className="flex justify-end">
           <Button size="sm" variant="secondary" onClick={() => setAddOpen(true)}>
             <Plus className="me-1 h-4 w-4" /> הוסף תזכורת

@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { formatShortDateTime } from "@/lib/date";
 import type { AuditFeedItem } from "@/lib/audit";
 
@@ -23,17 +27,32 @@ function dotClass(action: string) {
 }
 
 /**
- * Compact, server-rendered "what happened to this entity" timeline. Pass the
- * rows from getEntityAuditTrail. Renders nothing when there's no history.
+ * Compact "what happened to this entity" timeline. Pass the rows from
+ * getEntityAuditTrail. Renders nothing when there's no history.
+ *
+ * `previewCount` shows only the newest N with a "show all" button under them —
+ * for long histories on a phone. Omit it to render everything, as before.
  */
-export default function EntityActivityTimeline({ items }: { items: AuditFeedItem[] }) {
+export default function EntityActivityTimeline({
+  items,
+  previewCount,
+}: {
+  items: AuditFeedItem[];
+  previewCount?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
   if (items.length === 0) {
     return <p className="text-xs text-muted-foreground">אין פעילות מתועדת.</p>;
   }
 
+  const collapsed = previewCount !== undefined && !expanded && items.length > previewCount;
+  const visible = collapsed ? items.slice(0, previewCount) : items;
+
   return (
+    <>
     <ol className="space-y-3">
-      {items.map((item) => (
+      {visible.map((item) => (
         <li key={item.id} className="flex gap-3">
           <span className="relative mt-1.5 flex flex-col items-center">
             <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass(item.action)}`} />
@@ -58,5 +77,17 @@ export default function EntityActivityTimeline({ items }: { items: AuditFeedItem
         </li>
       ))}
     </ol>
+    {collapsed ? (
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="mt-3 w-full"
+        onClick={() => setExpanded(true)}
+      >
+        הצג את כל {items.length} הרשומות
+      </Button>
+    ) : null}
+    </>
   );
 }

@@ -1,11 +1,19 @@
 ﻿import dynamic from "next/dynamic";
+import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
 import { requireProfile } from "@/lib/auth/requireProfile";
-import ProjectDetailsActions from "@/app/(app)/projects/[id]/ProjectDetailsActions";
+import ProjectDetailsActions, { REMINDERS_SECTION_ID } from "@/app/(app)/projects/[id]/ProjectDetailsActions";
 import { getEntityAuditTrail, getLatestAuditByRecordIds, resolveUserDisplayNamesForValues } from "@/lib/audit";
 import EntityActivityTimeline from "@/app/(app)/activity/EntityActivityTimeline";
-import EntityReminders from "@/components/reminders/EntityReminders";
-import { Bell, History } from "lucide-react";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import ProjectMobileHeader from "@/app/(app)/projects/[id]/ProjectMobileHeader";
+import ProjectRemindersSection from "@/app/(app)/projects/[id]/ProjectRemindersSection";
+import type { ProjectShareData } from "@/app/(app)/projects/[id]/ProjectShareActions";
+import { ArrowLeft, ChevronLeft, ClipboardList, History, Home, MapPin, StickyNote, Truck } from "lucide-react";
+import { AddressLink } from "@/components/ui/address-link";
+import { StatActionCard } from "@/components/ui/stat-action-card";
+import { ProjectStatusPicker } from "@/components/projects/ProjectStatusPicker";
+import { ItemsToMoveList } from "@/components/projects/ItemsToMoveList";
 import type {
   AssignableUser,
   ExpenseListItem,
@@ -18,19 +26,17 @@ import type {
 } from "@/app/(app)/projects/[id]/ProjectTabsClient";
 import { formatMovingEndpoint } from "@/lib/projects/movingAddress";
 import { PAYMENT_SELECT } from "@/lib/payments";
+import { splitPaymentAmounts } from "@/lib/orders/paymentStatus";
+import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import type { FinancialAttachment } from "@/lib/payments";
 import type { MorningLocalDocument } from "@/lib/morning/types";
 import type { WorkSessionRow } from "@/lib/payroll";
-import { paymentStatusClasses, paymentStatusLabel, splitPaymentAmounts, collectionStatusClasses, collectionStatusLabel } from "@/lib/orders/paymentStatus";
-import { computeSourceCollection } from "@/lib/collections";
-import { paymentTermsLabel } from "@/lib/paymentTerms";
 import { getCurrentVatRate } from "@/lib/settings/vat";
-import { applyProjectVatToBase } from "@/lib/projects/vat";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ContactLink } from "@/components/ui/contact-link";
+import { CustomerContactCard } from "@/components/customers/CustomerContactCard";
 import { formatShortDate } from "@/lib/date";
-import { getProjectStatusLabel } from "@/lib/ui/status-colors";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -99,6 +105,15 @@ function getFirstString(obj: UnknownRow | null | undefined, keys: string[]) {
   return null;
 }
 
+function toNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 // Build attachments for a set of document_links, signing ALL their storage keys
 // in a single createSignedUrls call (instead of one request per attachment).
 async function buildAttachmentsByEntity(
@@ -158,10 +173,6 @@ function isMissingColumnError(error: unknown, columnName: string) {
   );
 }
 
-function projectStatusLabel(status: string) {
-  return getProjectStatusLabel(status);
-}
-
 function projectTypeLabel(type: string | null | undefined) {
   switch (type) {
     case "logistics":
@@ -179,21 +190,15 @@ function formatDate(value: string | null | undefined) {
   return formatShortDate(value, "—");
 }
 
-function formatIls(value: number | string | null | undefined) {
-  const amount =
-    typeof value === "number"
-      ? value
-      : typeof value === "string"
-        ? Number(value.replace(/,/g, "").trim())
-        : null;
-
-  if (amount === null || !Number.isFinite(amount)) return "—";
-
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(amount);
+// A job that starts and ends on the same day reads as one date, not the same
+// date printed twice with a dash between.
+function formatDateRange(start: string | null | undefined, end: string | null | undefined) {
+  const startText = start ? formatDate(start) : null;
+  const endText = end ? formatDate(end) : null;
+  if (startText && endText) {
+    return startText === endText ? startText : `${startText} – ${endText}`;
+  }
+  return startText ?? endText ?? null;
 }
 
 function userDisplayName(row: UnknownRow | null | undefined) {
@@ -202,25 +207,6 @@ function userDisplayName(row: UnknownRow | null | undefined) {
   const email = getFirstString(row, ["email"]);
   if (email && email.trim()) return email.trim();
   return "משתמש";
-}
-
-type CustomerPaymentStatus = "paid" | "partial" | "unpaid" | "unpriced";
-
-function deriveCustomerPaymentStatus(totalDue: number | null, paidTotal: number) {
-  if (totalDue === null || totalDue <= 0) return "unpriced" as const;
-  if (paidTotal + 0.009 >= totalDue) return "paid" as const;
-  if (paidTotal > 0) return "partial" as const;
-  return "unpaid" as const;
-}
-
-function customerPaymentStatusLabel(status: CustomerPaymentStatus) {
-  if (status === "unpriced") return "לא סוכם תשלום";
-  return paymentStatusLabel(status);
-}
-
-function customerPaymentStatusClasses(status: CustomerPaymentStatus) {
-  if (status === "unpriced") return "border-border bg-background text-muted-foreground";
-  return paymentStatusClasses(status);
 }
 
 export default async function ProjectPage({
@@ -239,8 +225,8 @@ export default async function ProjectPage({
     { data: financials },
     { data: workerBalance },
     { data: tasks },
-    { data: projectTasks, error: projectTasksError },
-    { data: assignableUsers, error: assignableUsersError },
+    { data: projectTasks },
+    { data: assignableUsers },
     { data: customers },
     { data: projectExpenses, error: projectExpensesError },
   ] = await Promise.all([
@@ -896,23 +882,33 @@ export default async function ProjectPage({
   // misses any customer past the first 200 and wrongly shows "—".
   const overviewCustomerId =
     typeof overview?.customer_id === "string" ? overview.customer_id : null;
-  const { data: customerPhoneRow } = overviewCustomerId
+  const { data: customerRow } = overviewCustomerId
     ? await supabase
         .from("customer_overview_view")
-        .select("phone")
+        .select("phone,email,address,name_for_invoice")
         .eq("customer_id", overviewCustomerId)
-        .maybeSingle<{ phone: string | null }>()
+        .maybeSingle<{
+          phone: string | null;
+          email: string | null;
+          address: string | null;
+          name_for_invoice: string | null;
+        }>()
     : { data: null };
-  const customerPhone =
-    typeof customerPhoneRow?.phone === "string" && customerPhoneRow.phone.trim()
-      ? customerPhoneRow.phone
-      : null;
+  const cleanField = (value: string | null | undefined) =>
+    typeof value === "string" && value.trim() ? value.trim() : null;
+  const customerPhone = cleanField(customerRow?.phone);
+  const customerWhatsapp = customerPhone;
+  const customerEmail = cleanField(customerRow?.email);
+  const customerAddress = cleanField(customerRow?.address);
+  const customerInvoiceName = cleanField(customerRow?.name_for_invoice);
   const projectNotes =
     typeof overview?.notes === "string" && overview.notes.trim() ? overview.notes.trim() : null;
-  const managerName =
-    typeof overview?.project_manager_name === "string" ? overview.project_manager_name : null;
   const startDate = typeof overview?.start_date === "string" ? overview.start_date : null;
   const endDate = typeof overview?.end_date === "string" ? overview.end_date : null;
+  const projectManagerName =
+    typeof overview?.project_manager_name === "string" && overview.project_manager_name.trim()
+      ? overview.project_manager_name.trim()
+      : null;
   const projectType =
     typeof overview?.project_type === "string" ? overview.project_type : null;
   const itemsToMove = Array.isArray(overview?.items_to_move) ? overview.items_to_move : [];
@@ -926,75 +922,10 @@ export default async function ProjectPage({
     floor: overview?.destination_floor ?? null,
     hasElevator: overview?.destination_has_elevator ?? null,
   });
-  const grossProfit = financials?.gross_profit ?? null;
-  const openTasks =
-    typeof tasks?.open_tasks === "number" || typeof tasks?.open_tasks === "string" ? tasks.open_tasks : 0;
-  // COLLECTION SPLIT: paidTotal = money actually collected; expectedTotal = money
-  // still due on future-dated / uncleared payments (payment_status='pending').
-  const projectPaymentSplit = splitPaymentAmounts(
-    paymentsWithPhotos.map((payment) => ({
-      amount_total: payment.amount_total,
-      net_amount: payment.net_amount,
-      payment_status: payment.payment_status,
-      due_date: payment.due_date,
-    }))
-  );
-  const paidTotal = projectPaymentSplit.collected;
-  const expectedTotal = projectPaymentSplit.pending;
-  const overdueExpectedTotal = projectPaymentSplit.overdue;
-  const agreedBasePrice =
-    typeof overview?.agreed_base_price === "number"
-      ? overview.agreed_base_price
-      : typeof overview?.agreed_base_price === "string"
-        ? Number(overview.agreed_base_price)
-        : null;
-  const actualPrice =
-    typeof overview?.actual_price === "number"
-      ? overview.actual_price
-      : typeof overview?.actual_price === "string"
-        ? Number(overview.actual_price)
-        : null;
-  const expensesBilled =
-    typeof financials?.expenses_billed === "number"
-      ? financials.expenses_billed
-      : typeof financials?.expenses_billed === "string"
-        ? Number(financials.expenses_billed)
-        : 0;
-  const projectVatMode = {
-    priceIncludesVat: overview?.price_includes_vat === true,
-    vatRate: overview?.vat_rate ?? null,
-  };
-  const baseProjectPriceNet =
-    actualPrice !== null && Number.isFinite(actualPrice) && actualPrice > 0
-      ? actualPrice
-      : agreedBasePrice !== null && Number.isFinite(agreedBasePrice) && agreedBasePrice > 0
-        ? agreedBasePrice
-        : null;
-  // Phase 2: when the price includes VAT, the target the customer pays is the gross.
-  const baseProjectPrice =
-    baseProjectPriceNet !== null ? applyProjectVatToBase(baseProjectPriceNet, projectVatMode) : null;
-  const totalCustomerCharge =
-    baseProjectPrice !== null ? baseProjectPrice + (Number.isFinite(expensesBilled) ? expensesBilled : 0) : null;
-  const customerPaymentStatus = deriveCustomerPaymentStatus(totalCustomerCharge, paidTotal);
   const projectDueDate =
     typeof projectDetailsRaw?.due_date === "string" ? projectDetailsRaw.due_date.slice(0, 10) : null;
   const projectPaymentTerms =
     typeof projectDetailsRaw?.payment_terms === "string" ? projectDetailsRaw.payment_terms : null;
-  // Term-aware collection status (תשלום צפוי / באיחור …) for priced projects.
-  const collectionStatus =
-    totalCustomerCharge === null
-      ? null
-      : computeSourceCollection({
-          total: totalCustomerCharge,
-          collected: paidTotal,
-          pending: expectedTotal,
-          overdue: overdueExpectedTotal,
-          outstanding: Math.max(totalCustomerCharge - paidTotal, 0),
-          nextDueDate: null,
-          referenceDate: startDate,
-          dueDate: projectDueDate,
-          today: new Date().toISOString().slice(0, 10),
-        }).status;
   const customerOptions = ((customers ?? []) as UnknownRow[])
     .map((row) => ({
       id: typeof row.customer_id === "string" ? row.customer_id : "",
@@ -1027,165 +958,310 @@ export default async function ProjectPage({
         ).items
       : [];
 
+
+  // Desktop side column. The phone renders the same two things itself (the
+  // header's customer card and the פרטים section above the tabs).
+  // A contact that's actually an email has nothing to dial or WhatsApp.
+  // The customer, as a card at the top of the page body — name, how to reach
+  // them, and a way through to the customer's own page.
+  const customerSideCard = (
+    <CustomerContactCard
+      customerId={overviewCustomerId}
+      name={customerName || "ללא לקוח משויך"}
+      invoiceName={customerInvoiceName}
+      phone={customerPhone}
+      whatsapp={customerWhatsapp}
+      email={customerEmail}
+      address={customerAddress}
+    />
+  );
+
+  // The job itself, as the third card of the head row: where it goes, what's
+  // being moved, and anything written down about it. Renders only when there IS
+  // something to say — otherwise the head row is just לקוח + תשלום.
+  const hasRoute = projectType === "moving" && Boolean(moveOrigin || moveDestination);
+  const hasItems = projectType === "moving" && itemsToMove.length > 0;
+  // Desktop headline: the route on one line, from → to, each behind its own
+  // glyph. The row's height is shared with לקוח and תשלום, so the addresses
+  // ride the headline instead of costing two rows in the body.
+  const routeHeadline = hasRoute ? (
+    // Same weight and rhythm as the customer card's name: this IS the card's
+    // headline, so it wears the headline's type, not body text.
+    <span className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-base font-bold leading-snug">
+      {moveOrigin ? (
+        <AddressLink address={moveOrigin} className="flex min-w-0 items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
+            <Home className="h-3.5 w-3.5" />
+          </span>
+          <span className="min-w-0">{moveOrigin}</span>
+        </AddressLink>
+      ) : null}
+      {moveOrigin && moveDestination ? (
+        <ArrowLeft className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden />
+      ) : null}
+      {moveDestination ? (
+        <AddressLink address={moveDestination} className="flex min-w-0 items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
+            <MapPin className="h-3.5 w-3.5" />
+          </span>
+          <span className="min-w-0">{moveDestination}</span>
+        </AddressLink>
+      ) : null}
+    </span>
+  ) : null;
+
+  // A project with no route and no load — a logistics job, say — has nothing to
+  // put in this card except what someone wrote about it. Then the note IS the
+  // card: a note icon, "הערות", and the text itself, instead of a truck over the
+  // words "פרטי העבודה" twice.
+  const notesOnlyCard = !hasRoute && !hasItems && Boolean(projectNotes);
+
+  // A שיפוצים / לוגיסטיקה project has no route or load to show, which left the
+  // head row with two cards and a hole. This is what the third slot says for
+  // those: where the job stands, when it runs, and how far the work has got.
+  const taskTotal = Number(tasks?.total_tasks ?? 0) || 0;
+  const taskDone = Number(tasks?.completed_tasks ?? 0) || 0;
+  const taskPercent = taskTotal > 0 ? Math.round((taskDone / taskTotal) * 100) : null;
+  const projectStatusCard = (
+    <StatActionCard
+      icon={<ClipboardList className="h-5 w-5" />}
+      label="סטטוס הפרויקט"
+      value={
+        <ProjectStatusPicker
+          projectId={id}
+          status={status}
+          canEdit={profile.role === "admin" || profile.role === "office"}
+        />
+      }
+      details={[
+        {
+          label: "תאריכים",
+          value:
+            startDate || endDate ? (
+              <span dir="ltr">
+                {formatDate(startDate)}
+                {endDate && endDate !== startDate ? ` – ${formatDate(endDate)}` : ""}
+              </span>
+            ) : (
+              "—"
+            ),
+        },
+        { label: "מנהל פרויקט", value: projectManagerName ?? "לא הוגדר" },
+        {
+          label: "משימות",
+          value:
+            taskTotal > 0 ? (
+              <span>
+                {taskDone}/{taskTotal}
+                {taskPercent !== null ? ` · ${taskPercent}%` : ""}
+              </span>
+            ) : (
+              "אין משימות"
+            ),
+        },
+      ]}
+    >
+      {taskTotal > 0 && taskPercent !== null ? (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-success" style={{ width: `${taskPercent}%` }} />
+        </div>
+      ) : null}
+    </StatActionCard>
+  );
+
+  const detailsSideCard =
+    hasRoute || hasItems || projectNotes ? (
+      <StatActionCard
+        icon={notesOnlyCard ? <StickyNote className="h-5 w-5" /> : <Truck className="h-5 w-5" />}
+        label={notesOnlyCard ? "הערות" : projectType === "moving" ? "הובלה" : "פרטי העבודה"}
+        // Desktop: the route is the headline (one line, from → to). Phone: no
+        // headline at all — the label already says "הובלה" and the route sits
+        // right below as stacked rows, so a line reading "פרטי ההובלה" under
+        // "הובלה" said the same thing twice. Notes-only cards put the note here.
+        // A wrapper element, not a fragment: this subtree is built on the server
+        // and handed to a client component, and a fragment's children cross that
+        // boundary as a plain array — which React then flags as a keyless list.
+        value={
+          <span className="block">
+            {notesOnlyCard ? (
+              <span className="block whitespace-pre-wrap text-sm font-medium">{projectNotes}</span>
+            ) : null}
+            {routeHeadline ? <span className="hidden lg:block">{routeHeadline}</span> : null}
+          </span>
+        }
+      >
+        <div className="space-y-3">
+          {/* Phone keeps the stacked route rows it had — the addresses have the
+              full card width here, and the headline above stays the item count.
+              On desktop the route moved up into the headline instead. */}
+          {hasRoute ? (
+            <div className="space-y-2 lg:hidden">
+              {moveOrigin ? (
+                <AddressLink address={moveOrigin} className="flex items-start gap-2 text-sm">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
+                    <Home className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[0.6875rem] text-muted-foreground">מוצא</span>
+                    <span className="block font-medium">{moveOrigin}</span>
+                  </span>
+                </AddressLink>
+              ) : null}
+              {moveDestination ? (
+                <AddressLink address={moveDestination} className="flex items-start gap-2 text-sm">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success-soft-foreground">
+                    <MapPin className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[0.6875rem] text-muted-foreground">יעד</span>
+                    <span className="block font-medium">{moveDestination}</span>
+                  </span>
+                </AddressLink>
+              ) : null}
+            </div>
+          ) : null}
+
+          {hasItems ? (
+            <div
+              className={
+                hasRoute ? "border-t border-border/50 pt-3 lg:border-t-0 lg:pt-0" : undefined
+              }
+            >
+              <ItemsToMoveList items={itemsToMove} />
+            </div>
+          ) : null}
+
+          {/* Skipped when the note is already the card's headline. */}
+          {projectNotes && !notesOnlyCard ? (
+            <div className="rounded-2xl bg-muted/40 px-3 py-2 text-sm">
+              <span className="font-medium">הערות: </span>
+              <span className="whitespace-pre-wrap">{projectNotes}</span>
+            </div>
+          ) : null}
+        </div>
+      </StatActionCard>
+    ) : null;
+
+  // What שיתוף / הדפסה send out. Money only for the roles that may see it, and
+  // "שולם" is collected money only — same rule as the collection card.
+  const canSeeProjectMoney = profile.role === "admin" || profile.role === "office";
+  const shareTotal =
+    toNumber(financials?.customer_total_price) ??
+    toNumber(overview?.actual_price) ??
+    toNumber(overview?.agreed_base_price) ??
+    0;
+  const sharePaid = splitPaymentAmounts(
+    ((payments ?? []) as UnknownRow[]).map((payment) => ({
+      amount_total: toNumber(payment.amount_total) ?? 0,
+      net_amount: toNumber(payment.net_amount),
+      payment_status: typeof payment.payment_status === "string" ? payment.payment_status : null,
+      due_date: typeof payment.due_date === "string" ? payment.due_date : null,
+    }))
+  ).collected;
+  const projectShareData: ProjectShareData = {
+    projectName,
+    customerName: customerName || "ללא לקוח",
+    customerPhone,
+    statusLabel: status ? getProjectStatusLabel(status) : "",
+    typeLabel: projectTypeLabel(projectType),
+    dateRange: formatDateRange(startDate, endDate),
+    managerName: projectManagerName,
+    origin: projectType === "moving" ? moveOrigin : null,
+    destination: projectType === "moving" ? moveDestination : null,
+    itemsToMove,
+    notes: projectNotes,
+    money: canSeeProjectMoney
+      ? { total: shareTotal, paid: sharePaid, balance: Math.max(shareTotal - sharePaid, 0) }
+      : null,
+  };
+
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-5">
-        <Card className="overflow-hidden">
-          <CardContent className="p-5 sm:p-6">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {status ? (
-                      <StatusBadge value={status} type="project" />
-                    ) : null}
-                    <Badge variant="outline">{projectTypeLabel(projectType)}</Badge>
-                  </div>
+        {/* Phone: what the project is, when it runs and who to call. The name is
+            in the top bar; the money is in the collection card and סיכום כספי. */}
+        <ProjectMobileHeader
+          status={status}
+          typeLabel={projectTypeLabel(projectType)}
+          startDateText={startDate ? formatDate(startDate) : null}
+          endDateText={endDate ? formatDate(endDate) : null}
+        />
 
-                  <div>
-                    <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                      {projectName}
-                    </h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {customerName || "ללא לקוח משויך"}
-                      {customerName && customerPhone ? (
-                        <>
-                          {" · "}
-                          <a href={`tel:${customerPhone}`} className="hover:underline">
-                            {customerPhone}
-                          </a>
-                        </>
-                      ) : null}
-                    </p>
-                  </div>
-                </div>
-
-                {overview ? (
-                  <ProjectDetailsActions
-                    project={overview}
-                    customerOptions={customerOptions}
-                    managerOptions={managerOptions}
-                    projectDocuments={normalizedProjectDocuments}
-                    projectDocumentsError={projectDocumentsErrorMessage}
-                  />
+        {/* Desktop heading, same shape as an order: where you are, what this
+            is, and the handful of things you can do to it. */}
+        <div className="hidden flex-col gap-2 lg:flex">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <nav
+                className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground"
+                aria-label="ניווט"
+              >
+                <Link href="/projects" className="hover:text-foreground hover:underline">
+                  פרויקטים
+                </Link>
+                <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
+                {overviewCustomerId ? (
+                  <Link
+                    href={`/customers/${overviewCustomerId}`}
+                    className="text-foreground hover:underline"
+                  >
+                    {customerName || "לקוח"}
+                  </Link>
+                ) : (
+                  <span className="text-foreground">{customerName || "ללא לקוח משויך"}</span>
+                )}
+                {customerPhone ? (
+                  <>
+                    <span>·</span>
+                    <ContactLink
+                      kind={customerPhone.includes("@") ? "mailto" : "tel"}
+                      value={customerPhone}
+                      className="hover:text-foreground hover:underline"
+                    >
+                      <span dir="ltr">{customerPhone}</span>
+                    </ContactLink>
+                  </>
+                ) : null}
+              </nav>
+              {/* Name + what kind of job it is. When the head row carries the
+                  סטטוס הפרויקט card (no route / load / note to show), the status,
+                  dates and manager live there and are NOT repeated here. When
+                  the third card is the הובלה one instead, this line is the only
+                  place they appear. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-bold tracking-tight">{projectName}</h1>
+                <Badge variant="outline">{projectTypeLabel(projectType)}</Badge>
+                {detailsSideCard && status ? (
+                  <StatusBadge value={status} type="project" />
                 ) : null}
               </div>
-
-              <div className="grid grid-cols-2 gap-3 rounded-2xl border border-border/70 bg-background/70 p-3 text-sm sm:grid-cols-2 sm:p-4 lg:flex lg:flex-wrap lg:items-start lg:gap-x-8 lg:gap-y-4">
-                <div className="min-w-0 space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">לקוח:</div>
-                  <div className="font-medium">{customerName || "—"}</div>
+              {detailsSideCard ? (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  {startDate || endDate ? (
+                    <span dir="ltr">{formatDateRange(startDate, endDate)}</span>
+                  ) : null}
+                  {projectManagerName ? (
+                    <>
+                      {startDate || endDate ? <span>·</span> : null}
+                      <span>מנהל: {projectManagerName}</span>
+                    </>
+                  ) : null}
                 </div>
-                <div className="min-w-0 space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">טלפון לקוח:</div>
-                  {customerPhone ? (
-                    <a href={`tel:${customerPhone}`} className="font-medium hover:underline">
-                      {customerPhone}
-                    </a>
-                  ) : (
-                    <div className="font-medium">—</div>
-                  )}
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">תשלום לקוח:</div>
-                  {collectionStatus ? (
-                    <Badge className={collectionStatusClasses(collectionStatus)}>
-                      {collectionStatusLabel(collectionStatus)}
-                    </Badge>
-                  ) : (
-                    <Badge className={customerPaymentStatusClasses(customerPaymentStatus)}>
-                      {customerPaymentStatusLabel(customerPaymentStatus)}
-                    </Badge>
-                  )}
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">צורת תשלום:</div>
-                  <div className="font-medium">{paymentTermsLabel(projectPaymentTerms)}</div>
-                </div>
-                {projectDueDate ? (
-                  <div className="min-w-0 space-y-1">
-                    <div className="text-xs font-medium text-muted-foreground">תאריך פירעון:</div>
-                    <div className="font-medium">{formatDate(projectDueDate)}</div>
-                  </div>
-                ) : null}
-                {profile.role === "admin" && expectedTotal > 0.009 ? (
-                  <div className="min-w-0 space-y-1">
-                    <div className="text-xs font-medium text-muted-foreground">צפוי לגבייה:</div>
-                    <div className="font-medium text-warning-soft-foreground">
-                      {formatIls(expectedTotal)}
-                      {overdueExpectedTotal > 0.009 ? (
-                        <span className="ms-1 text-xs text-destructive">
-                          ({formatIls(overdueExpectedTotal)} באיחור)
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-                <div className="min-w-0 space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">סטטוס:</div>
-                  <div className="font-medium">{status ? projectStatusLabel(status) : "—"}</div>
-                </div>
-                {profile.role === "admin" ? (
-                  <div className="min-w-0 space-y-1">
-                    <div className="text-xs font-medium text-muted-foreground">רווח:</div>
-                    <div className="font-medium">{formatIls(grossProfit)}</div>
-                  </div>
-                ) : null}
-                <div className="min-w-0 space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">משימות פתוחות:</div>
-                  <div className="font-medium">{openTasks}</div>
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">התחלה:</div>
-                  <div className="font-medium">{formatDate(startDate)}</div>
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">סיום:</div>
-                  <div className="font-medium">{formatDate(endDate)}</div>
-                </div>
-                <div className="col-span-2 min-w-0 space-y-1 lg:col-span-1">
-                  <div className="text-xs font-medium text-muted-foreground">מנהל פרויקט:</div>
-                  <div className="font-medium">{managerName || "לא הוגדר"}</div>
-                </div>
-                <div className="col-span-2 min-w-0 space-y-1 lg:min-w-[16rem] lg:max-w-[28rem]">
-                  <div className="text-xs font-medium text-muted-foreground">הערות:</div>
-                  <div className="whitespace-pre-wrap font-medium text-sm">
-                    {projectNotes || "—"}
-                  </div>
-                </div>
-                {projectType === "moving" ? (
-                  <div className="min-w-[16rem] space-y-1">
-                    <div className="text-xs font-medium text-muted-foreground">מסלול ההובלה:</div>
-                    <div className="space-y-1 font-medium">
-                      <div>
-                        <span className="text-muted-foreground">מוצא: </span>
-                        {moveOrigin || "—"}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">יעד: </span>
-                        {moveDestination || "—"}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-                {projectType === "moving" ? (
-                  <div className="col-span-2 min-w-0 space-y-1 lg:min-w-[16rem]">
-                    <div className="text-xs font-medium text-muted-foreground">פריטים להעברה:</div>
-                    {itemsToMove.length > 0 ? (
-                      <ul className="list-inside list-disc space-y-1 font-medium">
-                        {itemsToMove.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="font-medium text-muted-foreground">לא הוגדרו פריטים.</div>
-                    )}
-                  </div>
-                ) : null}
-              </div>
+              ) : null}
             </div>
-          </CardContent>
-        </Card>
+
+            {overview ? (
+              <ProjectDetailsActions
+                project={overview}
+                customerOptions={customerOptions}
+                managerOptions={managerOptions}
+                projectDocuments={normalizedProjectDocuments}
+                projectDocumentsError={projectDocumentsErrorMessage}
+                share={projectShareData}
+              />
+            ) : null}
+          </div>
+        </div>
 
         {overviewError ? (
           <div className="text-destructive text-sm">
@@ -1203,71 +1279,79 @@ export default async function ProjectPage({
             financials={financials ?? null}
             tasks={tasks ?? null}
             projectTasks={projectTasks ?? []}
-            projectTasksError={projectTasksError?.message ?? null}
             projectDocuments={normalizedProjectDocuments}
             projectDocumentsError={projectDocumentsErrorMessage}
             assignableUsers={(assignableUsers as AssignableUser[] | null) ?? []}
-            assignableUsersError={assignableUsersError?.message ?? null}
             expenses={combinedExpenseList}
-            expensesError={
-              projectExpensesError?.message ?? expensesError?.message ?? attendanceSessionsError?.message ?? null
-            }
             expenseRecordedByNameByValue={expenseRecordedByNameByValue}
             expenseAuditById={expenseAuditResult.byRecordId}
             payments={paymentsWithPhotos}
-            paymentsError={paymentsError}
             morningDocuments={morningDocuments}
             morningDocumentsError={
               projectMorningDocumentsError?.message ?? paymentMorningDocumentsError?.message ?? null
             }
             paymentRecordedByNameByValue={paymentRecordedByNameByValue}
             paymentAuditById={paymentAuditResult.byRecordId}
-            paymentAuditError={paymentAuditResult.error}
             workerBalance={workerBalance ?? null}
             salaryAgreements={(salaryAgreements ?? []) as ProjectSalaryAgreement[]}
             monthlySalaryItems={monthlySalaryItems}
+            moneyError={
+              projectExpensesError?.message ??
+              expensesError?.message ??
+              attendanceSessionsError?.message ??
+              paymentsError ??
+              null
+            }
+            customerCard={customerSideCard}
+            detailsCard={detailsSideCard}
+            statusCard={detailsSideCard ? null : projectStatusCard}
+            activitySection={
+              profile.role === "admin" ? (
+                <CollapsibleSection
+                  defaultOpen
+                  title="היסטוריית פעילות"
+                  icon={<History className="h-4 w-4 text-primary" />}
+                  summary={
+                    projectActivity.length > 0 ? (
+                      <span className="text-muted-foreground">{projectActivity.length} רשומות</span>
+                    ) : null
+                  }
+                >
+                  <EntityActivityTimeline items={projectActivity} previewCount={5} />
+                </CollapsibleSection>
+              ) : null
+            }
+            remindersSection={
+              profile.role === "admin" || profile.role === "office" ? (
+                <ProjectRemindersSection
+                  id={REMINDERS_SECTION_ID}
+                  projectId={id}
+                  customerId={typeof overview.customer_id === "string" ? overview.customer_id : undefined}
+                  canManage
+                />
+              ) : null
+            }
           />
         )}
 
-        {overview && (profile.role === "admin" || profile.role === "office") ? (
-          <Card>
-            <CardContent className="space-y-3 p-4 sm:p-5">
-              <div className="flex items-center gap-2">
-                <Bell className="h-4 w-4 text-primary" />
-                <h2 className="text-sm font-semibold">תזכורות</h2>
-              </div>
-              <EntityReminders
-                queryKey="project_id"
-                queryId={id}
-                links={{
-                  project_id: id,
-                  customer_id: typeof overview.customer_id === "string" ? overview.customer_id : undefined,
-                }}
-                category="project"
-                canManage
-              />
-            </CardContent>
-          </Card>
+        {/* Phone-only: the heading card's action row, near the end of the page
+            and always open — actions behind a fold are actions nobody uses.
+            The activity log follows it: it's a lookup, not something you act on. */}
+        {overview ? (
+          <div className="space-y-2 lg:hidden">
+            <div className="text-xs font-medium text-muted-foreground">פעולות</div>
+            <ProjectDetailsActions
+              project={overview}
+              customerOptions={customerOptions}
+              managerOptions={managerOptions}
+              projectDocuments={normalizedProjectDocuments}
+              projectDocumentsError={projectDocumentsErrorMessage}
+              share={projectShareData}
+              layout="stacked"
+            />
+          </div>
         ) : null}
 
-        {profile.role === "admin" && overview ? (
-          <Card>
-            <CardContent className="space-y-3 p-4 sm:p-5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <History className="h-4 w-4 text-primary" />
-                  <h2 className="text-sm font-semibold">היסטוריית פעילות</h2>
-                </div>
-                {projectActivity.length > 0 ? (
-                  <span className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                    {projectActivity.length} רשומות
-                  </span>
-                ) : null}
-              </div>
-              <EntityActivityTimeline items={projectActivity} />
-            </CardContent>
-          </Card>
-        ) : null}
       </div>
     </AppShell>
   );

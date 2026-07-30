@@ -21,6 +21,7 @@ export default function DeleteProjectButton({
   redirectTo,
   onDeleted,
   size = "sm",
+  variant = "destructive",
   className,
   children,
   ariaLabel,
@@ -30,6 +31,8 @@ export default function DeleteProjectButton({
   redirectTo?: string;
   onDeleted?: () => void;
   size?: "default" | "sm" | "lg" | "icon" | "icon-sm";
+  /** "ghost" reads as a quiet last resort — used at the foot of the phone פעולות list. */
+  variant?: "destructive" | "ghost";
   className?: string;
   children?: ReactNode;
   ariaLabel?: string;
@@ -92,11 +95,15 @@ export default function DeleteProjectButton({
       >
         <Button
           type="button"
-          variant="destructive"
+          variant={variant}
           size={size}
           onClick={() => setOpen(true)}
           disabled={loading}
-          className={className}
+          className={
+            variant === "ghost"
+              ? `text-destructive hover:text-destructive ${className ?? ""}`.trim()
+              : className
+          }
           aria-label={ariaLabel}
           title={ariaLabel}
         >

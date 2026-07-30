@@ -1,7 +1,7 @@
 ﻿"use client";
 import { toHebrewError } from "@/lib/error-messages";
 
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
@@ -12,9 +12,16 @@ import { offlineFetch } from "@/lib/offline-queue";
 export default function DeleteOrderButton({
   orderId,
   iconOnly = false,
+  variant = "destructive",
+  className,
+  children,
 }: {
   orderId: string;
   iconOnly?: boolean;
+  /** "ghost" (+ a destructive border) reads as a quiet last resort in an action row. */
+  variant?: "destructive" | "ghost";
+  className?: string;
+  children?: ReactNode;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -55,15 +62,19 @@ export default function DeleteOrderButton({
     <div className="space-y-1">
       <Button
         type="button"
-        variant="destructive"
+        variant={variant}
         size="sm"
-        className={iconOnly ? "h-9 w-9 p-0" : undefined}
+        className={
+          variant === "ghost"
+            ? `text-destructive hover:text-destructive ${className ?? ""}`.trim()
+            : className ?? (iconOnly ? "h-9 w-9 p-0" : undefined)
+        }
         aria-label="מחיקת הזמנה"
         title="מחיקת הזמנה"
         onClick={() => setConfirmOpen(true)}
         disabled={loading}
       >
-        {iconOnly ? <Trash2 className="h-4 w-4" /> : loading ? "מוחק..." : "מחיקת הזמנה"}
+        {loading ? "מוחק..." : children ?? (iconOnly ? <Trash2 className="h-4 w-4" /> : "מחיקת הזמנה")}
       </Button>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
       <ConfirmDialog
