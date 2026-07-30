@@ -1083,11 +1083,15 @@ export default async function ProjectPage({
         value={
           <span className="block">
             {notesOnlyCard ? (
-              <span className="block whitespace-pre-wrap text-sm font-medium">{projectNotes}</span>
+              <span className="block whitespace-pre-wrap text-base font-bold leading-snug">
+                {projectNotes}
+              </span>
             ) : null}
-            {routeHeadline ? <span className="hidden lg:block">{routeHeadline}</span> : null}
+            {routeHeadline ? (
+              <span className="hidden text-lg font-bold leading-snug lg:block">{routeHeadline}</span>
+            ) : null}
             {!notesOnlyCard ? (
-              <span className="block lg:hidden">
+              <span className="block text-lg font-bold leading-snug lg:hidden">
                 {hasItems
                   ? `${itemsToMove.length} פריטים להעברה`
                   : hasRoute

@@ -1520,8 +1520,14 @@ export default function ProjectTabsClient({
             needs a second copy of a card. */}
         {detailsCard ? <div className="order-2 lg:order-none">{detailsCard}</div> : null}
         {customerCard ? <div className="order-1 lg:order-none">{customerCard}</div> : null}
-        {statusCard && !detailsCard ? (
-          <div className="order-2 lg:order-none">{statusCard}</div>
+        {/* Without a route card this is the head row's third card at every
+            width. With one, the head row is full on desktop — so the phone
+            still gets the status card here, and desktop finds it in the side
+            column under the money. */}
+        {statusCard ? (
+          <div className={detailsCard ? "order-4 lg:hidden" : "order-2 lg:order-none"}>
+            {statusCard}
+          </div>
         ) : null}
         {collectionBand ? <div className="order-3 lg:order-none">{collectionBand}</div> : null}
       </div>
