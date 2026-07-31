@@ -17,7 +17,7 @@ import { HoverPanel, HoverPanelContent, HoverPanelTrigger, useHoverPanel } from 
 import { useAlerts } from "@/lib/ui/alerts-store";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { RAIL_WIDTH, useSidebarCollapse } from "@/components/layout/sidebar-collapse-context";
-import { usePageTitle } from "@/components/layout/page-title-context";
+import { useHeaderAction, usePageTitle } from "@/components/layout/page-title-context";
 import { cn } from "@/lib/utils";
 
 // The top-bar glyph for the inbox. Most-looked-at icon in the app, so it lives
@@ -71,6 +71,7 @@ export function TopBar({
 }: Props) {
   const { collapsed } = useSidebarCollapse();
   const pageTitle = usePageTitle();
+  const headerAction = useHeaderAction();
   const { alerts, count, loading: alertsLoading, error: alertsError } = useAlerts();
 
   // The signed-in user's chosen avatar color (null = auto). The (app) layout
@@ -183,9 +184,11 @@ export function TopBar({
           search belongs with navigation, not with the action/notification
           cluster. Everything else sits on the far edge. */}
       <BackButton />
-      {/* A page-declared action (e.g. the calendar's today tile + ⋮ menu) — sits
-          between the back arrow and the page title. */}
-      {pageTitle?.action ? <div className="shrink-0">{pageTitle.action}</div> : null}
+      {/* A page-declared action (e.g. the calendar's ⋮ menu, or a detail page's
+          actions menu) — sits between the back arrow and the page title. */}
+      {pageTitle?.action ?? headerAction ? (
+        <div className="shrink-0">{pageTitle?.action ?? headerAction}</div>
+      ) : null}
       {showSearch ? (
         // Fixed width, not flex-1: a `flex-1 basis-0` box would fight the spacer
         // below it and collapse.

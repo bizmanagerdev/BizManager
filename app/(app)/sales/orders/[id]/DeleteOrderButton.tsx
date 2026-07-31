@@ -15,6 +15,9 @@ export default function DeleteOrderButton({
   variant = "destructive",
   className,
   children,
+  hideTrigger = false,
+  open: openProp,
+  onOpenChange,
 }: {
   orderId: string;
   iconOnly?: boolean;
@@ -22,10 +25,20 @@ export default function DeleteOrderButton({
   variant?: "destructive" | "ghost";
   className?: string;
   children?: ReactNode;
+  /** Render only the confirm dialog — for callers that trigger it from their own menu. */
+  hideTrigger?: boolean;
+  /** Control the confirm dialog from outside (pairs with hideTrigger). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmOpenState, setConfirmOpenState] = useState(false);
+  const confirmOpen = openProp ?? confirmOpenState;
+  const setConfirmOpen = (next: boolean) => {
+    setConfirmOpenState(next);
+    onOpenChange?.(next);
+  };
   const [error, setError] = useState<string | null>(null);
 
   async function onDelete() {
@@ -60,22 +73,24 @@ export default function DeleteOrderButton({
 
   return (
     <div className="space-y-1">
-      <Button
-        type="button"
-        variant={variant}
-        size="sm"
-        className={
-          variant === "ghost"
-            ? `text-destructive hover:text-destructive ${className ?? ""}`.trim()
-            : className ?? (iconOnly ? "h-9 w-9 p-0" : undefined)
-        }
-        aria-label="מחיקת הזמנה"
-        title="מחיקת הזמנה"
-        onClick={() => setConfirmOpen(true)}
-        disabled={loading}
-      >
-        {loading ? "מוחק..." : children ?? (iconOnly ? <Trash2 className="h-4 w-4" /> : "מחיקת הזמנה")}
-      </Button>
+      {hideTrigger ? null : (
+        <Button
+          type="button"
+          variant={variant}
+          size="sm"
+          className={
+            variant === "ghost"
+              ? `text-destructive hover:text-destructive ${className ?? ""}`.trim()
+              : className ?? (iconOnly ? "h-9 w-9 p-0" : undefined)
+          }
+          aria-label="מחיקת הזמנה"
+          title="מחיקת הזמנה"
+          onClick={() => setConfirmOpen(true)}
+          disabled={loading}
+        >
+          {loading ? "מוחק..." : children ?? (iconOnly ? <Trash2 className="h-4 w-4" /> : "מחיקת הזמנה")}
+        </Button>
+      )}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
       <ConfirmDialog
         open={confirmOpen}

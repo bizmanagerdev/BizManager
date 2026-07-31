@@ -63,6 +63,9 @@ export default function LogCommunicationButton({
   className,
   iconOnly = false,
   onSaved,
+  hideTrigger = false,
+  open: openProp,
+  onOpenChange,
 }: {
   entityType: CommEntityType;
   entityId: string;
@@ -71,12 +74,22 @@ export default function LogCommunicationButton({
   className?: string;
   iconOnly?: boolean;
   onSaved?: () => void;
+  /** Render only the dialog — for callers that trigger it from their own menu. */
+  hideTrigger?: boolean;
+  /** Control the dialog from outside (pairs with hideTrigger). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
   const { currentUserId } = useAssignableUsers();
   const resolvedCustomerId = entityType === "customer" ? entityId : customerId ?? "";
 
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (next: boolean) => {
+    setOpenState(next);
+    onOpenChange?.(next);
+  };
   const [channel, setChannel] = useState("phone");
   const [direction, setDirection] = useState<"outgoing" | "incoming" | "missed">("outgoing");
   const [topic, setTopic] = useState(defaultTopic);
@@ -153,18 +166,20 @@ export default function LogCommunicationButton({
 
   return (
     <>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className={className ?? (iconOnly ? "h-9 w-9 p-0" : "h-9")}
-        title="תיעוד שיחה"
-        aria-label="תיעוד שיחה"
-        onClick={() => setOpen(true)}
-      >
-        <Phone className="h-4 w-4 text-success" />
-        {iconOnly ? null : <span className="ms-1">תיעוד שיחה</span>}
-      </Button>
+      {hideTrigger ? null : (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={className ?? (iconOnly ? "h-9 w-9 p-0" : "h-9")}
+          title="תיעוד שיחה"
+          aria-label="תיעוד שיחה"
+          onClick={() => setOpen(true)}
+        >
+          <Phone className="h-4 w-4 text-success" />
+          {iconOnly ? null : <span className="ms-1">תיעוד שיחה</span>}
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent dir="rtl" className="w-[calc(100vw-1rem)] max-w-md p-4 text-right sm:p-6">

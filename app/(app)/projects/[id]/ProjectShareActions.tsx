@@ -158,18 +158,28 @@ function buildPrintHtml(project: ProjectShareData): string {
 </html>`;
 }
 
+/** The WhatsApp link for this project (null when the customer has no phone). */
+export function projectShareHref(project: ProjectShareData) {
+  return whatsappHref(project.customerPhone, buildShareText(project));
+}
+
+/** Open the printable project sheet in its own window. */
+export function printProjectSheet(project: ProjectShareData) {
+  const win = window.open("", "_blank", "width=800,height=900");
+  if (!win) return;
+  win.document.write(buildPrintHtml(project));
+  win.document.close();
+}
+
 /**
  * שיתוף / הדפסה for a project — the same pair the order page carries, so both
  * entities offer the same actions in the same order.
  */
 export default function ProjectShareActions({ project }: { project: ProjectShareData }) {
-  const waHref = whatsappHref(project.customerPhone, buildShareText(project));
+  const waHref = projectShareHref(project);
 
   function handlePrint() {
-    const win = window.open("", "_blank", "width=800,height=900");
-    if (!win) return;
-    win.document.write(buildPrintHtml(project));
-    win.document.close();
+    printProjectSheet(project);
   }
 
   return (

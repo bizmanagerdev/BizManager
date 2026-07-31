@@ -11,10 +11,18 @@
 // stays one line.
 
 import { useState } from "react";
-import { ChevronDown, Paperclip, Pencil, Trash2, Loader2 } from "lucide-react";
+import { ChevronDown, MoreHorizontal, Paperclip, Pencil, Trash2, Loader2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
+import { SwipeActions } from "@/components/ui/swipe-actions";
+import { getStatusColor, getStatusLabel, type StatusColor } from "@/lib/ui/status-colors";
 import type { FinancialAttachment } from "@/lib/payments";
 import { formatIls, formatDate, LtrInline } from "./ProjectTabsClient.helpers";
 
@@ -82,40 +90,41 @@ function Attachments({ attachments }: { attachments: FinancialAttachment[] }) {
 function RowActions({ movement }: { movement: Movement }) {
   if (!movement.onEdit && !movement.onDelete) return null;
   return (
-    <div className="flex shrink-0 items-center gap-1">
-      {movement.onEdit ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={movement.busy}>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className="h-8 w-8 p-0"
-          disabled={movement.busy}
-          onClick={movement.onEdit}
-          title="עריכה"
-          aria-label="עריכה"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </Button>
-      ) : null}
-      {movement.onDelete ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 w-8 border-destructive/40 p-0 text-destructive hover:bg-destructive/10"
-          disabled={movement.busy}
-          onClick={movement.onDelete}
-          title="מחיקה"
-          aria-label="מחיקה"
+          className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+          title="פעולות"
+          aria-label="פעולות"
         >
           {movement.busy ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
-            <Trash2 className="h-3.5 w-3.5" />
+            <MoreHorizontal className="h-4 w-4" />
           )}
         </Button>
-      ) : null}
-    </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-36">
+        {movement.onEdit ? (
+          <DropdownMenuItem onClick={movement.onEdit}>
+            <Pencil className="me-2 h-4 w-4" />
+            עריכה
+          </DropdownMenuItem>
+        ) : null}
+        {movement.onDelete ? (
+          <DropdownMenuItem
+            onClick={movement.onDelete}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="me-2 h-4 w-4" />
+            מחיקה
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -144,11 +153,61 @@ function Details({ movement }: { movement: Movement }) {
   );
 }
 
+const DOT_BY_COLOR: Record<StatusColor, string> = {
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-destructive",
+  info: "bg-info",
+  neutral: "bg-muted-foreground/50",
+};
+
+function StatusDot({ status }: { status: string }) {
+  const color = getStatusColor("payment", status);
+  return (
+    <span
+      className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", DOT_BY_COLOR[color])}
+      title={getStatusLabel("payment", status)}
+      aria-label={getStatusLabel("payment", status)}
+    />
+  );
+}
+
+function ExpandedCard({ movement }: { movement: Movement }) {
+  const recordedBy = movement.extras.find((extra) => extra.label === "נרשם")?.value ?? null;
+  const facts = movement.extras
+    .filter((extra) => extra.label !== "נרשם")
+    .map((extra) => `${extra.label}: ${extra.value}`)
+    .join(" · ");
+  const files = movement.attachments.filter((attachment) => attachment.url);
+
+  return (
+    <div className="mt-2 space-y-1.5 ps-6 text-xs">
+      {/* Date leads: it's what the eye looks for first in a statement. */}
+      <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+        <LtrInline>{formatDate(movement.date)}</LtrInline>
+        {movement.status ? <StatusBadge value={movement.status} type="payment" /> : null}
+        {movement.billed ? <BilledChip /> : null}
+      </div>
+
+      {facts ? <div className="break-words text-muted-foreground">{facts}</div> : null}
+
+      {recordedBy || files.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground">
+          <span className="min-w-0 break-words">{recordedBy ?? ""}</span>
+          {files.length > 0 ? <Attachments attachments={movement.attachments} /> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 const TH = "px-2 py-1.5 text-start text-xs font-medium text-muted-foreground";
 const TD = "px-2 py-2 align-top";
 
 export default function ProjectMovements({ movements }: { movements: Movement[] }) {
   const [openKeys, setOpenKeys] = useState<Record<string, boolean>>({});
+  // One row's actions uncovered at a time, like every other swipe list here.
+  const [swipedKey, setSwipedKey] = useState<string | null>(null);
 
   function toggle(key: string) {
     setOpenKeys((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -172,7 +231,7 @@ export default function ProjectMovements({ movements }: { movements: Movement[] 
               <th className={TH}>פרטים</th>
               <th className={TH}>קובץ מצורף</th>
               <th className={TH + " text-end"}>סכום</th>
-              <th className="w-20 px-2 py-1.5" />
+              <th className={TH + " w-16 text-center"}>פעולות</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -255,13 +314,47 @@ export default function ProjectMovements({ movements }: { movements: Movement[] 
             Boolean(movement.onDelete);
           const open = expandable && Boolean(openKeys[movement.key]);
           return (
-            <li key={movement.key} className="py-2">
+            <li key={movement.key}>
+              <SwipeActions
+                className="rounded-none"
+                open={swipedKey === movement.key}
+                onOpenChange={(next) => setSwipedKey(next ? movement.key : null)}
+                actions={
+                  movement.onEdit || movement.onDelete
+                    ? [
+                        ...(movement.onEdit
+                          ? [
+                              {
+                                key: "edit",
+                                label: "עריכה",
+                                icon: <Pencil className="h-4 w-4" />,
+                                onSelect: movement.onEdit,
+                                className: "bg-secondary text-secondary-foreground",
+                              },
+                            ]
+                          : []),
+                        ...(movement.onDelete
+                          ? [
+                              {
+                                key: "delete",
+                                label: "מחיקה",
+                                icon: <Trash2 className="h-4 w-4" />,
+                                onSelect: movement.onDelete,
+                                className: "bg-destructive text-destructive-foreground",
+                              },
+                            ]
+                          : []),
+                      ]
+                    : []
+                }
+              >
+              <div className="bg-card py-2">
               <button
                 type="button"
                 onClick={() => (expandable ? toggle(movement.key) : undefined)}
                 aria-expanded={open}
                 disabled={!expandable}
-                className="flex w-full items-center gap-2 text-start disabled:cursor-default"
+                className="flex w-full items-start gap-2 text-start disabled:cursor-default"
               >
                 {expandable ? (
                   <ChevronDown
@@ -273,8 +366,10 @@ export default function ProjectMovements({ movements }: { movements: Movement[] 
                 ) : (
                   <span className="h-4 w-4 shrink-0" />
                 )}
-                {/* Three things and no more: what it is, what it was for, how
-                    much. Date, status and the rest wait behind the chevron. */}
+                {/* A dot for the payment state, then what it is, what it was
+                    for, and how much. The spelled-out badge and the date wait
+                    behind the chevron. */}
+                {movement.status ? <StatusDot status={movement.status} /> : null}
                 <span className="min-w-0 flex-1">
                   <span className="block break-words font-medium">{movement.title}</span>
                   {movement.hint ? (
@@ -288,19 +383,9 @@ export default function ProjectMovements({ movements }: { movements: Movement[] 
                 </span>
               </button>
 
-              {open ? (
-                <div className="mt-2 space-y-2 ps-6">
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                    <LtrInline>{formatDate(movement.date)}</LtrInline>
-                    {movement.status ? (
-                      <StatusBadge value={movement.status} type="payment" />
-                    ) : null}
-                    {movement.billed ? <BilledChip /> : null}
-                  </div>
-                  <Details movement={movement} />
-                  <RowActions movement={movement} />
-                </div>
-              ) : null}
+              {open ? <ExpandedCard movement={movement} /> : null}
+              </div>
+              </SwipeActions>
             </li>
           );
         })}

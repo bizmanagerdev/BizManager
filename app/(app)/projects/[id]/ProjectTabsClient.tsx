@@ -849,21 +849,50 @@ export default function ProjectTabsClient({
 
   // Monthly-salary (payslip) costs attributed to this project, newest month first.
   const monthlySalaryRows = useMemo(() => {
+    // A monthly salary isn't spent on the 1st of the month it covers — it's paid
+    // after it, on the day the worker's agreement says (`due_day_of_next_month`,
+    // 9th by convention). Dating it by the period start dropped it to the bottom
+    // of the ledger, weeks before the money left.
+    const payDayByUser = new Map<string, number>();
+    for (const agreement of salaryAgreements) {
+      const day = toNumber(agreement.due_day_of_next_month);
+      if (agreement.user_id && day && day >= 1 && day <= 31) {
+        payDayByUser.set(agreement.user_id, day);
+      }
+    }
+
     return [...monthlySalaryItems]
       .map((item) => {
         const user = item.user_id ? usersById.get(item.user_id) : null;
+        const earned = toNumber(item.earned_amount) ?? 0;
+        const paid = toNumber(item.paid_amount) ?? 0;
+        const payDay = (item.user_id ? payDayByUser.get(item.user_id) : null) ?? 9;
+        let payDate: string | null = null;
+        if (item.period_month) {
+          const [year, month] = item.period_month.split("-").map(Number);
+          if (year && month) {
+            const next = new Date(Date.UTC(year, month, 1));
+            const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
+            next.setUTCDate(Math.min(payDay, lastDay));
+            payDate = next.toISOString().slice(0, 10);
+          }
+        }
         return {
           payslipId: item.payslip_id,
           workerName: user?.full_name?.trim() || user?.email || "עובד",
           periodMonth: item.period_month,
-          earned: toNumber(item.earned_amount) ?? 0,
-          paid: toNumber(item.paid_amount) ?? 0,
+          payDate,
+          paymentStatus:
+            item.payment_status ??
+            (earned > 0 && paid + 0.009 >= earned ? "paid" : paid > 0 ? "partial" : "not_paid"),
+          earned,
+          paid,
           owed: toNumber(item.owed_amount) ?? 0,
         };
       })
       .filter((row) => row.earned > 0)
       .sort((a, b) => (b.periodMonth ?? "").localeCompare(a.periodMonth ?? ""));
-  }, [monthlySalaryItems, usersById]);
+  }, [monthlySalaryItems, usersById, salaryAgreements]);
 
 
   async function deleteExpense(item: ExpenseListItem) {
@@ -1420,25 +1449,27 @@ export default function ProjectTabsClient({
       rows.push({
         key: `payslip:${row.payslipId}`,
         direction: "out",
-        date: row.periodMonth ? `${row.periodMonth}-01` : null,
+        date: row.payDate,
         title: `שכר — ${row.workerName}`,
-        status: null,
+        status: row.paymentStatus,
         billed: false,
         amount: row.earned,
         hint: "משכורת חודשית",
         extras: [
           { label: "חודש", value: row.periodMonth ?? "—" },
-          { label: "שולם", value: formatIls(row.paid) },
-          { label: "יתרה", value: formatIls(row.owed) },
+          ...(row.paid > 0.009 ? [{ label: "שולם", value: formatIls(row.paid) }] : []),
+          ...(row.owed > 0.009 ? [{ label: "יתרה", value: formatIls(row.owed) }] : []),
         ],
         attachments: [],
       });
     }
 
+    // Oldest first: you read a statement down the month, and anything still to
+    // come (a salary due next month) lands at the end on its own.
     return rows.sort((a, b) => {
       const at = a.date ? new Date(a.date).getTime() : 0;
       const bt = b.date ? new Date(b.date).getTime() : 0;
-      return bt - at;
+      return at - bt;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -1457,7 +1488,7 @@ export default function ProjectTabsClient({
     <>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   className="h-8 px-2 text-xs"
                   onClick={() => {
@@ -1470,7 +1501,7 @@ export default function ProjectTabsClient({
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   className="h-8 px-2 text-xs"
                   onClick={() => {
@@ -1560,7 +1591,11 @@ export default function ProjectTabsClient({
             contentClassName="flex max-h-[32rem] flex-col text-sm"
             action={<div className="hidden items-center gap-1.5 lg:flex">{movementActions}</div>}
           >
-            <div className="mb-2 flex flex-wrap items-center gap-1.5 lg:hidden">{movementActions}</div>
+            {/* Phone: one row, three equal columns — these wrapped onto two
+                lines as a flex row and read as a pile. */}
+            <div className="mb-2 grid grid-flow-col auto-cols-fr items-center gap-1.5 lg:hidden [&>*]:w-full [&>*]:px-1">
+              {movementActions}
+            </div>
             {moneyError ? (
               <p className="mb-2 text-sm text-destructive">שגיאה בטעינת תנועות: {moneyError}</p>
             ) : null}

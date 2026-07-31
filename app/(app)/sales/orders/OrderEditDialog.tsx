@@ -57,6 +57,9 @@ export default function OrderEditDialog({
   description = "עדכון לקוח, פריטים ותשלומים בלי לעזוב את רשימת ההזמנות.",
   initialStatusOverride,
   allowOrderStatusEdit = false,
+  hideTrigger = false,
+  open: openProp,
+  onOpenChange,
 }: {
   orderId: string;
   buttonLabel?: React.ReactNode;
@@ -65,9 +68,19 @@ export default function OrderEditDialog({
   description?: string;
   initialStatusOverride?: string;
   allowOrderStatusEdit?: boolean;
+  /** Render only the dialog — for callers that trigger it from their own menu. */
+  hideTrigger?: boolean;
+  /** Control the dialog from outside (pairs with hideTrigger). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (next: boolean) => {
+    setOpenState(next);
+    onOpenChange?.(next);
+  };
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<EditPayload | null>(null);
@@ -117,16 +130,18 @@ export default function OrderEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className={buttonClassName ?? "w-full sm:w-auto"}
-        title={typeof title === "string" ? title : undefined}
-        onClick={() => setOpen(true)}
-      >
-        {buttonLabel}
-      </Button>
+      {hideTrigger ? null : (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={buttonClassName ?? "w-full sm:w-auto"}
+          title={typeof title === "string" ? title : undefined}
+          onClick={() => setOpen(true)}
+        >
+          {buttonLabel}
+        </Button>
+      )}
       <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-5xl overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>

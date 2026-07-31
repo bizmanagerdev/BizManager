@@ -25,6 +25,9 @@ export default function DeleteProjectButton({
   className,
   children,
   ariaLabel,
+  hideTrigger = false,
+  open: openProp,
+  onOpenChange,
 }: {
   projectId: string;
   projectName?: string;
@@ -36,9 +39,19 @@ export default function DeleteProjectButton({
   className?: string;
   children?: ReactNode;
   ariaLabel?: string;
+  /** Render only the confirm dialog — for callers that trigger it from their own menu. */
+  hideTrigger?: boolean;
+  /** Control the confirm dialog from outside (pairs with hideTrigger). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (next: boolean) => {
+    setOpenState(next);
+    onOpenChange?.(next);
+  };
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,22 +106,24 @@ export default function DeleteProjectButton({
           setOpen(next);
         }}
       >
-        <Button
-          type="button"
-          variant={variant}
-          size={size}
-          onClick={() => setOpen(true)}
-          disabled={loading}
-          className={
-            variant === "ghost"
-              ? `text-destructive hover:text-destructive ${className ?? ""}`.trim()
-              : className
-          }
-          aria-label={ariaLabel}
-          title={ariaLabel}
-        >
-          {loading ? "מוחק..." : children ?? "מחיקת פרויקט"}
-        </Button>
+        {hideTrigger ? null : (
+          <Button
+            type="button"
+            variant={variant}
+            size={size}
+            onClick={() => setOpen(true)}
+            disabled={loading}
+            className={
+              variant === "ghost"
+                ? `text-destructive hover:text-destructive ${className ?? ""}`.trim()
+                : className
+            }
+            aria-label={ariaLabel}
+            title={ariaLabel}
+          >
+            {loading ? "מוחק..." : children ?? "מחיקת פרויקט"}
+          </Button>
+        )}
         <DialogContent>
           <DialogHeader>
             <DialogTitle>מחיקת פרויקט</DialogTitle>

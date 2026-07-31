@@ -353,7 +353,9 @@ export default async function ProjectPage({
       ? await supabase
           .from("salary_agreements")
           .select(
-            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours"
+            // due_day_of_next_month is what dates a payslip line in the ledger:
+            // the salary is paid on that day of the month AFTER the one it covers.
+            "id,user_id,salary_type,hourly_rate,monthly_salary,valid_from,valid_to,notes,overtime_rate,standard_daily_hours,due_day_of_next_month"
           )
           .in("user_id", assignableUserIds)
           .order("valid_from", { ascending: false })
@@ -1189,7 +1191,10 @@ export default async function ProjectPage({
 
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
-      <div className="space-y-5">
+      {/* Phone: ONE vertical rhythm — 0.75rem between the header chips and the
+          first card, and between every card, exactly the head row's own gap-3
+          (this is the order page's spacing). Desktop keeps the roomier stack. */}
+      <div className="space-y-3 md:space-y-5">
         {/* Phone: what the project is, when it runs and who to call. The name is
             in the top bar; the money is in the collection card and סיכום כספי. */}
         <ProjectMobileHeader
@@ -1327,22 +1332,19 @@ export default async function ProjectPage({
           />
         )}
 
-        {/* Phone-only: the heading card's action row, near the end of the page
-            and always open — actions behind a fold are actions nobody uses.
-            The activity log follows it: it's a lookup, not something you act on. */}
+        {/* Phone: the same actions, as the top bar's ⋮ menu. Renders nothing on
+            the page itself — it only registers the menu (and keeps its dialogs
+            mounted). */}
         {overview ? (
-          <div className="space-y-2 lg:hidden">
-            <div className="text-xs font-medium text-muted-foreground">פעולות</div>
-            <ProjectDetailsActions
-              project={overview}
-              customerOptions={customerOptions}
-              managerOptions={managerOptions}
-              projectDocuments={normalizedProjectDocuments}
-              projectDocumentsError={projectDocumentsErrorMessage}
-              share={projectShareData}
-              layout="stacked"
-            />
-          </div>
+          <ProjectDetailsActions
+            project={overview}
+            customerOptions={customerOptions}
+            managerOptions={managerOptions}
+            projectDocuments={normalizedProjectDocuments}
+            projectDocumentsError={projectDocumentsErrorMessage}
+            share={projectShareData}
+            layout="menu"
+          />
         ) : null}
 
       </div>

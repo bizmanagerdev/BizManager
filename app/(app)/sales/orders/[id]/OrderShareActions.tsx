@@ -118,14 +118,24 @@ function buildPrintHtml(order: OrderShareData): string {
 </html>`;
 }
 
+/** The WhatsApp link for this order (null when the customer has no phone). */
+export function orderShareHref(order: OrderShareData) {
+  return whatsappHref(order.customerPhone, buildShareText(order));
+}
+
+/** Open the printable order sheet in its own window. */
+export function printOrderSheet(order: OrderShareData) {
+  const win = window.open("", "_blank", "width=800,height=900");
+  if (!win) return;
+  win.document.write(buildPrintHtml(order));
+  win.document.close();
+}
+
 export default function OrderShareActions({ order }: { order: OrderShareData }) {
-  const waHref = whatsappHref(order.customerPhone, buildShareText(order));
+  const waHref = orderShareHref(order);
 
   function handlePrint() {
-    const win = window.open("", "_blank", "width=800,height=900");
-    if (!win) return;
-    win.document.write(buildPrintHtml(order));
-    win.document.close();
+    printOrderSheet(order);
   }
 
   return (

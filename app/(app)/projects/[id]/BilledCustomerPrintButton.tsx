@@ -192,7 +192,7 @@ export default function BilledCustomerPrintButton({ data }: { data: BilledPrintD
     <Button
       type="button"
       size="sm"
-      variant="outline"
+      variant="secondary"
       className="h-8 px-2 text-xs"
       onClick={() => void handlePdf()}
       disabled={building}

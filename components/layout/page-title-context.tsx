@@ -23,19 +23,53 @@ export type PageTitle = { title: string; subtitle?: string; action?: ReactNode }
 type Store = {
   pageTitle: PageTitle;
   setPageTitle: (value: PageTitle) => void;
+  headerAction: ReactNode;
+  setHeaderAction: (value: ReactNode) => void;
 };
 
-const PageTitleContext = createContext<Store>({ pageTitle: null, setPageTitle: () => {} });
+const PageTitleContext = createContext<Store>({
+  pageTitle: null,
+  setPageTitle: () => {},
+  headerAction: null,
+  setHeaderAction: () => {},
+});
 
 export function PageTitleProvider({ children }: { children: ReactNode }) {
   const [pageTitle, setPageTitle] = useState<PageTitle>(null);
-  const value = useMemo(() => ({ pageTitle, setPageTitle }), [pageTitle]);
+  const [headerAction, setHeaderAction] = useState<ReactNode>(null);
+  const value = useMemo(
+    () => ({ pageTitle, setPageTitle, headerAction, setHeaderAction }),
+    [pageTitle, headerAction]
+  );
   return <PageTitleContext.Provider value={value}>{children}</PageTitleContext.Provider>;
 }
 
 /** Read the current page title — for the top bar. */
 export function usePageTitle() {
   return useContext(PageTitleContext).pageTitle;
+}
+
+/** Read the header action — for the top bar. */
+export function useHeaderAction() {
+  return useContext(PageTitleContext).headerAction;
+}
+
+/**
+ * Declare a control for the top bar's action slot (right beside the back arrow)
+ * WITHOUT owning the title — for pages whose title is set elsewhere, like a
+ * detail page whose ⋮ menu is a different component from its tabs.
+ * `node` must be referentially stable (wrap it in useMemo).
+ */
+export function useSetHeaderAction(node: ReactNode) {
+  const { setHeaderAction } = useContext(PageTitleContext);
+  useEffect(() => {
+    // A null node means "I have nothing for the bar" — it must NOT clear a node
+    // another instance registered (detail pages mount their actions twice: the
+    // desktop row and the phone menu).
+    if (node === null || node === undefined) return;
+    setHeaderAction(node);
+    return () => setHeaderAction(null);
+  }, [setHeaderAction, node]);
 }
 
 /**

@@ -1,10 +1,8 @@
 import Link from "next/link";
 import AppShell from "@/components/layout/AppShell";
-import { ContactLink } from "@/components/ui/contact-link";
 import { Button } from "@/components/ui/button";
 import { StatActionCard, collectionStatusTextClass } from "@/components/ui/stat-action-card";
 import {
-  Bell,
   ChevronLeft,
   Copy,
   FileText,
@@ -32,6 +30,7 @@ import OrderEditDialog from "@/app/(app)/sales/orders/OrderEditDialog";
 import InvoiceQuickMenu from "@/app/(app)/sales/orders/InvoiceQuickMenu";
 import OrderCommentsThread from "@/app/(app)/sales/orders/[id]/OrderCommentsThread";
 import OrderShareActions from "@/app/(app)/sales/orders/[id]/OrderShareActions";
+import OrderHeaderMenu from "@/app/(app)/sales/orders/[id]/OrderHeaderMenu";
 import { CustomerContactCard } from "@/components/customers/CustomerContactCard";
 import { STORAGE_BUCKET } from "@/lib/storage";
 import { OrderPaymentActionsClient } from "@/app/(app)/sales/orders/OrderPaymentActionsClient";
@@ -443,7 +442,9 @@ export default async function SalesOrderPage({
   });
 
   // "מה צריך לעשות" — pending actions for this order.
-  const orderIsActive = Boolean(order) && isOpenOrderStatus(getString((order as Row) ?? {}, "status"));
+  const orderStatusValue = getString((order as Row) ?? {}, "status") ?? "";
+  const orderIsActive = Boolean(order) && isOpenOrderStatus(orderStatusValue);
+  const orderIsCancelled = orderStatusValue.trim().toLowerCase() === "cancelled";
   const needsDeliveryAction = orderIsActive;
   const needsPaymentAction = Boolean(order) && remainingBalance > 0.009;
   // An order whose total is 0 but has items is mispriced — surface it instead of
@@ -532,10 +533,14 @@ export default async function SalesOrderPage({
   return (
     <AppShell userName={profile.full_name ?? profile.email ?? undefined} viewerRole={profile.role}>
       <div className="space-y-3">
-        <div className="space-y-2">
+        {/* Desktop chrome only. Everything this line used to say — order date,
+            how long ago, who entered it — is in the סטטוס הזמנה card now. */}
+        <div className="hidden space-y-2 lg:block">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            {/* Desktop only — on the phone the customer name and the order number
+                are in the top bar, so a "מכירות ‹ name" line here is a repeat. */}
             <nav
-              className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground"
+              className="hidden min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground lg:flex"
               aria-label="ניווט"
             >
               <Link href="/sales" className="hover:text-foreground hover:underline">
@@ -568,22 +573,6 @@ export default async function SalesOrderPage({
               </div>
             ) : null}
           </div>
-          <p className="text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">הזמנה #{id.slice(0, 8)}</span>
-            {customerPhone ? (
-              <>
-                {" · "}
-                <ContactLink kind="tel" value={customerPhone} dir="ltr" className="hover:underline" />
-              </>
-            ) : null}
-            {" · "}הוזמן <span className="font-medium text-foreground">{formatDate(orderDate)}</span>
-            {formatRelativeDateLabel(orderDate) ? ` (${formatRelativeDateLabel(orderDate)})` : ""}
-            {orderCreatedByName ? (
-              <>
-                {" · "}הוזן ע&quot;י <span className="font-medium text-foreground">{orderCreatedByName}</span>
-              </>
-            ) : null}
-          </p>
         </div>
 
         {orderError ? <p className="text-sm text-destructive">שגיאת הזמנה: {orderError.message}</p> : null}
@@ -616,12 +605,20 @@ export default async function SalesOrderPage({
                       ? "text-muted-foreground"
                       : "text-success-soft-foreground"
                 }
+                // Everything the old header line carried lives here now: when it
+                // was ordered, how long ago that was, and who entered it.
                 details={[
-                  { label: "תאריך הזמנה", value: formatDate(orderDate) },
+                  {
+                    label: "תאריך הזמנה",
+                    value: `${formatDate(orderDate)}${
+                      formatRelativeDateLabel(orderDate) ? ` (${formatRelativeDateLabel(orderDate)})` : ""
+                    }`,
+                  },
                   { label: "פריטים", value: `${(orderItems ?? []).length} (${totalUnits} יחידות)` },
                   ...(orderDeliveryConfirmedAt
                     ? [{ label: "אספקה אושרה", value: formatDate(orderDeliveryConfirmedAt) }]
                     : []),
+                  ...(orderCreatedByName ? [{ label: 'הוזן ע"י', value: orderCreatedByName }] : []),
                 ]}
                 action={
                   needsDeliveryAction ? (
@@ -634,6 +631,21 @@ export default async function SalesOrderPage({
                   ) : null
                 }
               />
+
+              {/* Phone: who to call sits directly under the status card — the
+                  header no longer carries the number. On desktop the same card
+                  keeps its place at the top of the side column. */}
+              <div className="lg:hidden">
+                <CustomerContactCard
+                  customerId={customerId}
+                  name={customerName}
+                  invoiceName={customerNameForInvoice}
+                  registrationNumber={customerRegistrationNumber}
+                  phone={customerPhone}
+                  email={customerEmail}
+                  address={fullAddress}
+                />
+              </div>
 
               <StatActionCard
                 icon={<HandCoins className="h-5 w-5" />}
@@ -741,21 +753,26 @@ export default async function SalesOrderPage({
 
             <div className="grid gap-3 lg:grid-cols-3 lg:items-start">
               <div className="space-y-3 lg:order-2">
-            <CustomerContactCard
-              customerId={customerId}
-              name={customerName}
-              invoiceName={customerNameForInvoice}
-              registrationNumber={customerRegistrationNumber}
-              phone={customerPhone}
-              email={customerEmail}
-              address={fullAddress}
-            />
+            <div className="hidden lg:block">
+              <CustomerContactCard
+                customerId={customerId}
+                name={customerName}
+                invoiceName={customerNameForInvoice}
+                registrationNumber={customerRegistrationNumber}
+                phone={customerPhone}
+                email={customerEmail}
+                address={fullAddress}
+              />
+            </div>
 
             {/* Nothing to say until the delivery actually happens — an empty
                 "טרם אושרה" card is noise. It appears once there's a confirmation,
-                a photo, or the order is no longer awaiting delivery (where this
-                card carries the only way to add delivery photos). */}
-            {orderDeliveryConfirmedAt || deliveryImagesResolved.length > 0 || !needsDeliveryAction ? (
+                a photo, or the order is closed as delivered (where this card
+                carries the only way to add delivery photos). A cancelled order
+                was never delivered and never will be, so it gets no card. */}
+            {orderDeliveryConfirmedAt ||
+            deliveryImagesResolved.length > 0 ||
+            (!needsDeliveryAction && !orderIsCancelled) ? (
             <SectionCard
               icon={<Truck className="h-4 w-4" />}
               title="אספקה"
@@ -767,13 +784,18 @@ export default async function SalesOrderPage({
                 ) : null
               }
             >
+              {/* Never contradict the status card: an order marked סופק WAS
+                  delivered — it just has no confirmation date, because the
+                  status was set directly instead of through אישור אספקה. */}
               <div className="text-xs text-muted-foreground">
                 {orderDeliveryConfirmedAt
                   ? `אספקה אושרה בתאריך ${formatDate(orderDeliveryConfirmedAt)}`
-                  : "האספקה טרם אושרה."}
+                  : needsDeliveryAction
+                    ? "האספקה טרם אושרה."
+                    : `ההזמנה מסומנת כ"${getOrderStatusLabel(orderStatusValue)}" — לא נרשם תאריך אספקה.`}
               </div>
               {deliveryImagesResolved.length === 0 ? (
-                <p className="text-xs text-muted-foreground">עדיין לא הועלתה תמונת אספקה.</p>
+                <p className="text-xs text-muted-foreground">לא צורפו תמונות אספקה.</p>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
                   {deliveryImagesResolved.map((image) => (
@@ -983,29 +1005,17 @@ export default async function SalesOrderPage({
           </section>
         ) : null}
 
-        {/* Phone-only: the heading's action row, at the end of the page and always
-            open — actions behind a fold are actions nobody uses. */}
+        {/* Phone: the order's number + customer go into the top bar, and these
+            same actions become the ⋮ beside the back arrow. Renders no row. */}
         {order ? (
-          <div className="space-y-2 lg:hidden">
-            <div className="text-xs font-medium text-muted-foreground">פעולות</div>
-            <div className="grid grid-cols-2 gap-2 [&_a]:w-full [&_button]:w-full [&>*]:w-full">
-              {orderActionButtons}
-              {canLogCommunication ? (
-                <Button type="button" variant="outline" size="sm" className="h-9" asChild>
-                  <a href={`#${REMINDERS_SECTION_ID}`}>
-                    <Bell className="h-4 w-4" />
-                    <span>תזכורת</span>
-                  </a>
-                </Button>
-              ) : null}
-            </div>
-            <div className="mt-2 flex justify-center">
-              <DeleteOrderButton orderId={id} variant="ghost">
-                <Trash2 className="h-4 w-4" />
-                <span>מחיקת הזמנה</span>
-              </DeleteOrderButton>
-            </div>
-          </div>
+          <OrderHeaderMenu
+            orderId={id}
+            customerId={customerId ?? undefined}
+            customerName={customerName}
+            share={orderShareData}
+            canManage={canLogCommunication}
+            remindersSectionId={REMINDERS_SECTION_ID}
+          />
         ) : null}
       </div>
     </AppShell>
