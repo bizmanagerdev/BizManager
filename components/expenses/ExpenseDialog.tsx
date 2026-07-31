@@ -2002,7 +2002,7 @@ export function ExpenseDialog({
                 </button>
               ))}
             </div>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="על מה ההוצאה? לדוגמה: חומרי ניקוי לרבעון" />
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
             {expContinue(undefined, "המשך", () => expressGo(1))}
           </>
         );
@@ -3165,7 +3165,7 @@ export function ExpenseDialog({
               </div>
               <div className="space-y-1">
                 <div className="text-sm font-medium">תיאור</div>
-                <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="על מה ההוצאה? לדוגמה: חומרי ניקוי לרבעון" />
+                <Input value={description} onChange={(e) => setDescription(e.target.value)} />
               </div>
 
               {/* Project billing options */}
