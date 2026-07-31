@@ -220,6 +220,7 @@ export default function DocumentsArchiveClient({
   documents,
   error,
   initialFilters,
+  focusDocumentId = null,
   projectOptions,
   propertyOptions,
   vehicleTagOptions = [],
@@ -229,6 +230,8 @@ export default function DocumentsArchiveClient({
   documents: DocumentArchiveItem[];
   error: string | null;
   initialFilters: DocumentArchiveFilters;
+  /** From `?focus=<id>` — open that document's preview straight away. */
+  focusDocumentId?: string | null;
   projectOptions: ArchiveTargetOption[];
   propertyOptions: ArchiveTargetOption[];
   vehicleTagOptions?: ArchiveTargetOption[];
@@ -256,6 +259,17 @@ export default function DocumentsArchiveClient({
   const [editDomainDoc, setEditDomainDoc] = useState<DocumentArchiveItem | null>(null);
   const [editDomainValue, setEditDomainValue] = useState("");
   const [deleteDialogDoc, setDeleteDialogDoc] = useState<DocumentArchiveItem | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<DocumentArchiveItem | null>(null);
+  // A ?focus= deep link (from the activity feed) opens that document's preview
+  // right away — landing on the file itself, not on a scrolled list. Derived, so
+  // it's open on the first paint; `focusDismissed` remembers a close, since the
+  // param stays in the address bar.
+  const [focusDismissed, setFocusDismissed] = useState<string | null>(null);
+  const focusedDoc = useMemo(() => {
+    if (!focusDocumentId || focusDismissed === focusDocumentId) return null;
+    return documents.find((doc) => doc.id === focusDocumentId) ?? null;
+  }, [documents, focusDocumentId, focusDismissed]);
+  const activePreviewDoc = previewDoc ?? focusedDoc;
 
   const deferredQuery = useDeferredValue(query);
   const normalizedQuery = normalizeText(deferredQuery);
@@ -762,7 +776,19 @@ export default function DocumentsArchiveClient({
                 return (
                   <div
                     key={doc.id}
-                    className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border/70 bg-background/70 px-3 py-2"
+                    // Lets /documents?focus=<id> (e.g. from the activity feed)
+                    // land on this exact file — see FocusHighlighter.
+                    data-focus-id={doc.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setPreviewDoc(doc)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setPreviewDoc(doc);
+                      }
+                    }}
+                    className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border/70 bg-background/70 px-3 py-2 transition-colors hover:bg-secondary/10"
                   >
                     {doc.file_kind === "image" && doc.url ? (
                       <a
@@ -771,6 +797,7 @@ export default function DocumentsArchiveClient({
                         rel="noreferrer"
                         className="shrink-0"
                         title="פתיחת התמונה"
+                        onClick={(event) => event.stopPropagation()}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -805,6 +832,7 @@ export default function DocumentsArchiveClient({
                               <Link
                                 key={`${entity.type}:${entity.id}`}
                                 href={entity.href}
+                                onClick={(event) => event.stopPropagation()}
                                 className="text-foreground hover:underline"
                               >
                                 · {entityTypeLabel(entity.type)}: {entity.label}
@@ -824,7 +852,12 @@ export default function DocumentsArchiveClient({
                         ) : null}
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1">
+                    {/* Actions act on the row, not on it — don't let them open
+                        the preview too. */}
+                    <div
+                      className="flex shrink-0 items-center gap-1"
+                      onClick={(event) => event.stopPropagation()}
+                    >
                       {doc.url ? (
                         <Button asChild variant="outline" size="icon" aria-label="פתיחה" title="פתיחה">
                           <a href={doc.url} target="_blank" rel="noreferrer">
@@ -873,6 +906,133 @@ export default function DocumentsArchiveClient({
           </Card>
         ))
       )}
+
+      {/* The document itself: the file rendered inline (image / PDF) plus every
+          detail we hold about it. This is what an activity row for a document
+          opens — the record, not the list it sits in. */}
+      <Dialog
+        open={Boolean(activePreviewDoc)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setPreviewDoc(null);
+          if (focusDocumentId) setFocusDismissed(focusDocumentId);
+        }}
+      >
+        <AdaptiveDialog size="formLg">
+          <DialogHeader>
+            <DialogTitle>{activePreviewDoc?.title ?? "מסמך"}</DialogTitle>
+            <DialogDescription>
+              {activePreviewDoc
+                ? `${getDocumentCategoryLabel(activePreviewDoc.document_type)} · ${fileKindLabel(activePreviewDoc.file_kind)}`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          {activePreviewDoc ? (
+            <div className="mt-4 space-y-4">
+              <div className="overflow-hidden rounded-xl border border-border/70 bg-muted/30">
+                {activePreviewDoc.url && activePreviewDoc.file_kind === "image" ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={activePreviewDoc.url}
+                    alt={activePreviewDoc.title}
+                    className="max-h-[50vh] w-full object-contain"
+                  />
+                ) : activePreviewDoc.url && activePreviewDoc.file_kind === "pdf" ? (
+                  <iframe
+                    src={activePreviewDoc.url}
+                    title={activePreviewDoc.title}
+                    className="h-[50vh] w-full"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-muted-foreground">
+                    <FileText className="h-8 w-8" />
+                    <span>אין תצוגה מקדימה לסוג הקובץ הזה — אפשר לפתוח אותו בכרטיסייה חדשה.</span>
+                  </div>
+                )}
+              </div>
+
+              <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-muted-foreground">שם הקובץ</dt>
+                  <dd className="break-words font-medium">{activePreviewDoc.file_name ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">תאריך העלאה</dt>
+                  <dd className="font-medium">{formatDate(activePreviewDoc.uploaded_at)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">הועלה על ידי</dt>
+                  <dd className="font-medium">{activePreviewDoc.uploaded_by_name ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">תחום</dt>
+                  <dd className="font-medium">
+                    {activePreviewDoc.business_domains.map(getBusinessDomainLabel).join(" · ") || "—"}
+                  </dd>
+                </div>
+                {activePreviewDoc.ref_year ? (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">שנת המסמך</dt>
+                    <dd className="font-medium tabular-nums">{activePreviewDoc.ref_year}</dd>
+                  </div>
+                ) : null}
+                {activePreviewDoc.tags.length > 0 ? (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">רכב / תגיות</dt>
+                    <dd className="font-medium">
+                      {activePreviewDoc.tags.map((tag) => tag.label).join(", ")}
+                    </dd>
+                  </div>
+                ) : null}
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-muted-foreground">שיוכים</dt>
+                  <dd className="flex flex-wrap gap-x-3 gap-y-1 font-medium">
+                    {activePreviewDoc.linked_entities.length > 0
+                      ? activePreviewDoc.linked_entities.map((entity) =>
+                          entity.href ? (
+                            <Link
+                              key={`${entity.type}:${entity.id}`}
+                              href={entity.href}
+                              className="text-secondary hover:underline"
+                            >
+                              {`${entityTypeLabel(entity.type)}: ${entity.label}`}
+                            </Link>
+                          ) : (
+                            <span key={`${entity.type}:${entity.id}`}>
+                              {`${entityTypeLabel(entity.type)}: ${entity.label}`}
+                            </span>
+                          )
+                        )
+                      : "ללא שיוך"}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
+
+          <DialogFooter className="mt-6">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setPreviewDoc(null);
+                if (focusDocumentId) setFocusDismissed(focusDocumentId);
+              }}
+            >
+              סגירה
+            </Button>
+            {activePreviewDoc?.url ? (
+              <Button asChild>
+                <a href={activePreviewDoc.url} target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-4 w-4" />
+                  פתיחה בכרטיסייה חדשה
+                </a>
+              </Button>
+            ) : null}
+          </DialogFooter>
+        </AdaptiveDialog>
+      </Dialog>
 
       <UploadDocumentDialog
         open={uploadDialogOpen}

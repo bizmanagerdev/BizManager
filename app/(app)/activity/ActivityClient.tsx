@@ -65,13 +65,12 @@ function actionColor(action: string) {
     case "reminders_synced":
       return "bg-info-soft text-info-soft-foreground"; // blue — עודכן
     case "priority_changed":
-      return "bg-warning-soft text-warning-soft-foreground"; // amber
+    case "logout":
+      return "bg-warning-soft text-warning-soft-foreground"; // amber — עדיפות / יצא
     case "delete":
       return "bg-destructive-soft text-destructive-soft-foreground"; // red — נמחק
     case "upload":
       return "bg-accent text-accent-foreground";
-    case "logout":
-      return "bg-muted text-muted-foreground";
     default:
       return "bg-muted text-muted-foreground";
   }
@@ -101,6 +100,7 @@ function accentColorVar(item: AuditFeedItem): string {
     case "reminders_synced":
       return "var(--info-soft-foreground)";
     case "priority_changed":
+    case "logout":
       return "var(--warning-soft-foreground)";
     case "delete":
       return "var(--destructive-soft-foreground)";
@@ -470,9 +470,6 @@ export default function ActivityClient({
           async (payload) => {
             const row = payload.new as AuditLogRow;
             if (!row?.id) return;
-            // Login/logout show in the bar — keep them out of the live feed unless
-            // explicitly filtered to auth.
-            if (row.table_name === "auth" && currentTable !== "auth") return;
             // Respect the active filters.
             if (currentTable && row.table_name !== currentTable) return;
             if (currentAction && row.action !== currentAction) return;
@@ -526,12 +523,11 @@ export default function ActivityClient({
   const mergedItems = [...extraItems.filter((i) => !existingIds.has(i.id)), ...serverItems];
   const liveCount = mergedItems.length - serverItems.length;
 
-  // Feed hygiene: login/logout now live in the "מחוברים כעת" bar, so keep them
-  // out of the feed (unless explicitly filtered to auth). System-actor rows
-  // (changed_by null → "מערכת") stay in the feed but get batched below; the
-  // "רק פעולות משתמשים" toggle drops them entirely.
+  // Feed hygiene: login/logout ("נכנס" / "יצא", each carrying how long the person
+  // was active) are part of the feed — the bar above only says who's online right
+  // now, not who worked when. System-actor rows (changed_by null → "מערכת") stay
+  // too but get batched below; "רק פעולות משתמשים" drops them entirely.
   const displayItems = mergedItems.filter((i) => {
-    if (i.tableName === "auth" && currentTable !== "auth") return false;
     if (usersOnly && i.actorName === "מערכת") return false;
     return true;
   });
@@ -786,7 +782,7 @@ export default function ActivityClient({
                   const isExpanded = expanded.has(node.id);
                   return (
                     <Fragment key={node.id}>
-                      <tr className="border-b border-border/40 last:border-0 hover:bg-secondary/10">
+                      <tr className="border-b border-border/40 last:border-0">
                         <td
                           className="px-3 py-1.5 align-middle"
                           style={{ boxShadow: `inset -3px 0 0 0 rgb(${accentColorVar(node.rows[0])})` }}
@@ -836,9 +832,13 @@ export default function ActivityClient({
                 const clickable = !!header.href;
                 return (
                   <Fragment key={header.id}>
+                    {/* Only a row that actually leads somewhere reacts to the
+                        pointer. A row with no destination (a login/logout, say)
+                        stays flat — a hover tint on it reads as "clickable" and
+                        then nothing happens. */}
                     <tr
                       className={`border-b border-border/40 last:border-0 ${
-                        clickable ? "cursor-pointer hover:bg-secondary/15" : "hover:bg-secondary/10"
+                        clickable ? "cursor-pointer hover:bg-secondary/15" : ""
                       }`}
                       onClick={clickable ? () => router.push(header.href!) : undefined}
                     >

@@ -136,7 +136,9 @@ export function entityLabel(tableName: string) {
     case "morning_documents": return "מסמך Morning";
     case "morning_settings": return "הגדרות Morning";
     case "reminders": return "תזכורת";
-    case "auth": return "מערכת";
+    // Login/logout rows: the person is already in the actor column, so the record
+    // column names what happened — "כניסה למערכת · נכנס / יצא".
+    case "auth": return "כניסה למערכת";
     case "system": return "מערכת";
     default: return tableName;
   }
@@ -145,9 +147,9 @@ export function entityLabel(tableName: string) {
 export function actionLabel(action: string) {
   switch (action) {
     case "login":
-      return "התחבר";
+      return "נכנס";
     case "logout":
-      return "התנתק";
+      return "יצא";
     case "reminders_synced":
       return "רענון תזכורות";
     case "create":
@@ -287,8 +289,9 @@ export function buildDetails(tableName: string, newData: AuditLogValue): string 
       break;
     }
     case "auth": {
-      const email = str(d.email);
-      if (email) parts.push(email);
+      // The actor column already names the person, so the email would just be
+      // noise. What matters here is how long they were active, and that's filled
+      // in later by enrichLogoutDurations (it needs a query).
       const device = str(d.device);
       if (device) parts.push(device);
       break;
@@ -358,6 +361,9 @@ function hrefFromParentKey(parentKey: string | null): string | null {
     case "customer": return `/customers/${id}`;
     case "worker": return `/payroll/workers/${id}`;
     case "task": return `/tasks/${id}`;
+    case "vehicle": return `/vehicles/${id}`;
+    case "document": return buildFocusHref("/documents", id);
+    case "expense": return buildFocusHref("/financial", `expense:${id}`);
     default: return null;
   }
 }
@@ -408,6 +414,24 @@ export function buildParentKey(
       }
       return null;
     }
+    // A tag applied to something → that something's page (this is the vehicles
+    // backbone, so a car tag lands on the car).
+    case "entity_tags": {
+      const et = d?.entity_type;
+      const eid = fk("entity_id");
+      if (typeof et === "string" && eid) {
+        switch (et) {
+          case "order": return `order:${eid}`;
+          case "project": return `project:${eid}`;
+          case "customer": return `customer:${eid}`;
+          case "task": return `task:${eid}`;
+          case "vehicle": return `vehicle:${eid}`;
+          case "document": return `document:${eid}`;
+          case "expense": return `expense:${eid}`;
+        }
+      }
+      return null;
+    }
     case "worker_payments":
     case "worker_payment_allocations":
     case "attendance_sessions": {
@@ -429,6 +453,7 @@ export function buildParentKey(
       if (c) return `customer:${c}`;
       return null;
     }
+    case "contacts":
     case "communications":
     case "communication_logs":
     case "inquiries": {
@@ -455,38 +480,80 @@ export function buildParentKey(
   }
 }
 
-// Where clicking the row should go. Prefers the parent entity, then a few
-// entities that are their own destination (tasks, workers, documents).
+// A list page opened AT one specific row. The app shell's FocusHighlighter reads
+// `?focus=<id>` and scrolls to / flashes the element carrying
+// `data-focus-id="<id>"`, so clicking an activity row lands on the record it
+// describes instead of the top of the section. A page that hasn't opted in just
+// ignores the param, so this is always safe to add.
+export function buildFocusHref(path: string, id: string | null | undefined): string {
+  if (!id) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}focus=${encodeURIComponent(id)}`;
+}
+
+// Where clicking the row should go. Prefers the parent entity (an order/project/
+// customer has its own page), then the record's own destination — always the
+// exact record, never just the section it lives in. `data` is the row's
+// new_data/old_data, needed for the tables whose target lives behind a foreign
+// key (a document link points at its document, a movement at its product…).
 export function buildHref(
   tableName: string,
   recordId: string,
-  parentKey: string | null
+  parentKey: string | null,
+  data: Record<string, AuditLogValue> | null = null
 ): string | null {
   const fromParent = hrefFromParentKey(parentKey);
   if (fromParent) return fromParent;
+  const fk = (key: string): string | null => {
+    const v = data?.[key];
+    return typeof v === "string" && v ? v : null;
+  };
   switch (tableName) {
     case "tasks": return `/tasks/${recordId}`;
     case "users": return `/payroll/workers/${recordId}`;
-    // Login/logout rows: record_id is the user's users.id → open their profile.
-    case "auth": return `/payroll/workers/${recordId}`;
-    case "documents": return "/documents";
+    // Login/logout ("נכנס" / "יצא") have nowhere meaningful to go — the event IS
+    // the record. Null keeps the row non-clickable (and un-hovered) rather than
+    // dumping the reader on a payroll page they didn't ask for.
+    case "auth": return null;
+    case "documents": return buildFocusHref("/documents", recordId);
+    // A document attached to something with no page of its own (a task, a
+    // worker's session…) — open the file itself in the archive.
+    case "document_links": return buildFocusHref("/documents", fk("document_id"));
     case "vehicles": return `/vehicles/${recordId}`;
     case "properties": return "/properties";
     case "products":
-    case "product_categories":
-    case "inventory_movements": return "/inventory";
-    case "expenses":
+    case "product_categories": return buildFocusHref("/inventory", recordId);
+    case "inventory_movements": return buildFocusHref("/inventory", fk("product_id"));
+    // The cash-flow rows are keyed "<kind>:<uuid>" (see lib/financial/entries.ts).
+    case "expenses": return buildFocusHref("/financial", `expense:${recordId}`);
+    case "payments": return buildFocusHref("/financial", `payment:${recordId}`);
     case "recurring_expense_templates":
-    case "accounts":
-    case "expense_installments": return "/financial";
-    case "loans":
-    case "loan_repayments": return "/financial/loans";
+    case "accounts": return "/financial";
+    // An installment shows up in the calendar under its parent expense's entry id.
+    case "expense_installments": {
+      const e = fk("expense_id");
+      return buildFocusHref("/financial/payments-calendar", e ? `expense:${e}` : null);
+    }
+    case "loans": return buildFocusHref("/financial/loans", recordId);
+    case "loan_repayments": return buildFocusHref("/financial/loans", fk("loan_id"));
     case "card_statements": return `/financial/statements/${recordId}`;
     case "worker_payments":
     case "salary_agreements":
     case "payroll_periods":
     case "payslips":
     case "payslip_items": return "/payroll";
+    // No page of their own, but a row should never be a dead end — send it to
+    // the screen that owns the record.
+    case "tags": return "/vehicles";
+    case "reminders": return "/inbox";
+    case "communications":
+    case "communication_logs":
+    case "inquiries": return "/communications";
+    case "morning_documents": return "/invoices";
+    case "morning_settings": return "/settings/integrations/morning";
+    case "business_settings":
+    case "push_alert_config":
+    case "fcm_tokens":
+    case "push_subscriptions": return "/settings";
     default: return null;
   }
 }
@@ -1171,6 +1238,8 @@ export function buildAuditFeedItem(
     row.new_data ?? null,
     row.old_data ?? null
   );
+  // Deletes carry their foreign keys in old_data only.
+  const data = recordData(row.new_data ?? null, row.old_data ?? null);
 
   return {
     id: row.id,
@@ -1189,7 +1258,7 @@ export function buildAuditFeedItem(
     createdAt: row.created_at,
     title,
     parentKey,
-    href: buildHref(row.table_name, row.record_id, parentKey),
+    href: buildHref(row.table_name, row.record_id, parentKey, data),
     isChild: CHILD_TABLES.has(row.table_name),
   };
 }
@@ -1575,8 +1644,8 @@ export const AUDIT_ACTION_OPTIONS = [
   { value: "delete", label: "מחיקה" },
   { value: "status_changed", label: "שינוי סטטוס" },
   { value: "upload", label: "העלאה" },
-  { value: "login", label: "התחברות" },
-  { value: "logout", label: "התנתקות" },
+  { value: "login", label: "כניסה למערכת" },
+  { value: "logout", label: "יציאה מהמערכת" },
 ] as const;
 
 function formatDurationHe(ms: number): string {
@@ -1588,10 +1657,12 @@ function formatDurationHe(ms: number): string {
   return rem ? `${hrs} שע' ${rem} דק'` : `${hrs} שע'`;
 }
 
-// For logout rows, fill in "how long they were logged in" (logout time − the most
-// recent login before it). auth rows store the user's id in record_id, and the
-// login/logout pair are both written app-side, so we pair by record_id. Mutates
-// the passed items; a no-op (no query) when the page has no logout rows.
+// For each 'יצא' (logout) row, fill in how long the person was actually active:
+// logout time − the most recent login before it. auth rows store the user's
+// users.id in record_id, and both sides are written app-side, so we pair by it.
+// A 'נכנס' row deliberately carries NO duration — the length belongs on the row
+// that ENDS the visit, not on the one that starts it.
+// Mutates the passed items; a no-op (no query) when the page has no logout rows.
 async function enrichLogoutDurations(
   supabase: SupabaseClient,
   items: AuditFeedItem[]
@@ -1602,33 +1673,39 @@ async function enrichLogoutDurations(
   if (logouts.length === 0) return;
 
   const userIds = Array.from(new Set(logouts.map((i) => i.recordId)));
+  const times = logouts
+    .map((i) => new Date(i.createdAt as string).getTime())
+    .filter((t) => !Number.isNaN(t));
+  // Anchor to this PAGE's window — the newest-first 1000-row cap would otherwise
+  // return only recent logins and match nothing on a page of older rows.
+  const newestLogout = times.length ? Math.max(...times) : Date.now();
+
   const { data } = await supabase
     .from("audit_logs")
     .select("record_id,created_at")
     .eq("table_name", "auth")
     .eq("action", "login")
     .in("record_id", userIds)
+    .lte("created_at", new Date(newestLogout).toISOString())
     .order("created_at", { ascending: false })
     .range(0, 999);
 
   const loginsByUser = new Map<string, number[]>();
-  for (const r of (data ?? []) as Array<{ record_id?: string; created_at?: string }>) {
-    if (typeof r.record_id === "string" && typeof r.created_at === "string") {
-      const t = new Date(r.created_at).getTime();
-      if (!Number.isNaN(t)) {
-        const arr = loginsByUser.get(r.record_id) ?? [];
-        arr.push(t); // already newest-first from the query order
-        loginsByUser.set(r.record_id, arr);
-      }
-    }
+  for (const r of (data ?? []) as unknown as Array<{ record_id?: string; created_at?: string }>) {
+    if (typeof r.record_id !== "string" || typeof r.created_at !== "string") continue;
+    const t = new Date(r.created_at).getTime();
+    if (Number.isNaN(t)) continue;
+    const arr = loginsByUser.get(r.record_id) ?? [];
+    arr.push(t); // already newest-first from the query order
+    loginsByUser.set(r.record_id, arr);
   }
 
   for (const item of logouts) {
     const logoutT = new Date(item.createdAt as string).getTime();
     const prior = (loginsByUser.get(item.recordId) ?? []).find((t) => t < logoutT);
     if (prior === undefined) continue;
-    const label = `היה מחובר ${formatDurationHe(logoutT - prior)}`;
-    item.baseDetails = label;
+    const label = `היה פעיל ${formatDurationHe(logoutT - prior)}`;
+    item.baseDetails = item.baseDetails ? `${label} · ${item.baseDetails}` : label;
     item.details = item.details ? `${label} · ${item.details}` : label;
   }
 }

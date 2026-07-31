@@ -23,6 +23,8 @@ type DocumentsSearchParams = {
   entity_type?: string;
   type?: string;
   q?: string;
+  /** Deep link (activity feed): open THIS document's preview on arrival. */
+  focus?: string;
 };
 
 type DocumentRow = {
@@ -628,6 +630,7 @@ export default async function DocumentsPage({
         documents={archiveItems}
         error={errorMessage}
         initialFilters={initialFilters}
+        focusDocumentId={normalizeString(params.focus) || null}
         projectOptions={uploadProjectOptions}
         propertyOptions={uploadPropertyOptions}
         vehicleTagOptions={vehicleTagOptions}

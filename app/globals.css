@@ -427,6 +427,35 @@
   }
 }
 
+/* Deep-link focus flash: when a page is opened with `?focus=<id>` the shell's
+   FocusHighlighter scrolls to the row carrying `data-focus-id="<id>"` and adds
+   this class for a few seconds, so you land ON the record you clicked instead of
+   having to hunt for it. Background-color (not outline/ring) is the effect,
+   because it's the one thing that paints identically on a <tr>, a <div> card and
+   an <article>. Unlayered so it wins over the row's own background utility. */
+@keyframes focus-flash-pulse {
+  0%,
+  100% {
+    background-color: rgb(var(--secondary) / 0.05);
+  }
+  50% {
+    background-color: rgb(var(--secondary) / 0.28);
+  }
+}
+
+.focus-flash {
+  animation: focus-flash-pulse 1.2s ease-in-out 3;
+  scroll-margin-top: 7rem;
+  scroll-margin-bottom: 6rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focus-flash {
+    animation: none;
+    background-color: rgb(var(--secondary) / 0.18);
+  }
+}
+
 /* Bigger, consistent dropdown arrow on EVERY native <select> across all pages and
    dialogs (the styled SearchableSelect dropdowns get their larger chevron from the
    component). Unlayered so it overrides Tailwind's appearance/padding utilities.

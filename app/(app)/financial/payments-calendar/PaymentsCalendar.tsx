@@ -634,7 +634,7 @@ function PaymentItemCard({
   // source + icon actions on the next. Icon-only buttons keep rows narrow.
   if (compact) {
     return (
-      <div className="rounded-lg border bg-background px-2.5 py-1.5">
+      <div className="rounded-lg border bg-background px-2.5 py-1.5" data-focus-id={item.id}>
         {/* Row 1: name (wraps) + amount. Badges get their own row so nothing crams. */}
         <div className="flex items-start gap-2">
           <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} />
@@ -803,7 +803,7 @@ function PaymentsMonthList({
                   .filter(Boolean)
                   .join(" • ");
                 return (
-                  <tr key={item.id} className="align-top hover:bg-secondary/10">
+                  <tr key={item.id} data-focus-id={item.id} className="align-top hover:bg-secondary/10">
                     <td className="whitespace-nowrap px-3 py-2">
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-lg font-bold tabular-nums">{day.getDate()}</span>

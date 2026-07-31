@@ -573,6 +573,8 @@ export default function SalesInventoryClient({
                       return (
                         <tr
                           key={item.productId}
+                          // Lets /inventory?focus=<productId> land on this row.
+                          data-focus-id={item.productId}
                           className={isLow ? "bg-destructive-soft/70 hover:bg-destructive-soft" : "hover:bg-muted/30"}
                         >
                           <td className="px-3 py-2">{item.productName}</td>
@@ -616,6 +618,7 @@ export default function SalesInventoryClient({
                   return (
                     <div
                       key={item.productId}
+                      data-focus-id={item.productId}
                       className={`min-w-0 overflow-hidden rounded-lg border ${isLow ? "border-destructive/50 bg-destructive-soft/40" : "border-border/70 bg-background"} p-3 shadow-sm`}
                     >
                       <div className="flex items-start justify-between gap-2">

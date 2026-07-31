@@ -870,7 +870,8 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
             const counterparty =
               (loan.direction === "taken" ? loan.lender : loan.borrower)?.trim() || "ללא שם";
             return (
-              <Card key={loan.id}>
+              // data-focus-id lets /financial/loans?focus=<id> land on this loan.
+              <Card key={loan.id} data-focus-id={loan.id}>
                 <CardContent className="flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">

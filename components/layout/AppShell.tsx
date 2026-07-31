@@ -12,6 +12,7 @@ import PresenceTracker from "@/components/layout/PresenceTracker";
 import SessionWatcher from "@/components/layout/SessionWatcher";
 import NotificationsRealtime from "@/components/notifications/NotificationsRealtime";
 import FontScaleSync from "@/components/layout/FontScaleSync";
+import FocusHighlighter from "@/components/layout/FocusHighlighter";
 import type { SidebarNavItem } from "@/components/layout/nav-items";
 import { useNavItems } from "@/components/layout/nav-items";
 import { SidebarCollapseProvider } from "@/components/layout/sidebar-collapse-context";
@@ -75,6 +76,10 @@ export default function AppShell({
         <SessionWatcher />
         <NotificationsRealtime />
         <FontScaleSync />
+        {/* Suspense boundary required: FocusHighlighter reads useSearchParams. */}
+        <Suspense fallback={null}>
+          <FocusHighlighter />
+        </Suspense>
         <ConnectionToasts />
         <ConnectionTelemetry />
         <TopBar

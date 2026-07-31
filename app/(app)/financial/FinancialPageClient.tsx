@@ -306,6 +306,23 @@ export default function FinancialPageClient({
   ].filter(Boolean).length;
   const upcomingEntries = data.upcomingEntries;
   const ledgerEntries = data.ledgerEntries;
+
+  // Deep link from the activity feed: /financial?focus=expense:<uuid> must OPEN
+  // that expense's own dialog — the whole record, exactly as if it had been
+  // clicked here — not merely scroll the page down to its row. Derived (not an
+  // effect) so the dialog is already open on the first paint, and so closing it
+  // doesn't fight the URL. `focusDismissed` remembers the close, since the param
+  // stays in the address bar.
+  const focusId = searchParams.get("focus");
+  const [focusDismissed, setFocusDismissed] = useState<string | null>(null);
+  const focusExpense = useMemo(() => {
+    if (!focusId || focusDismissed === focusId) return null;
+    const entry =
+      ledgerEntries.find((e) => e.id === focusId) ?? upcomingEntries.find((e) => e.id === focusId);
+    // Not an expense (or filtered out of the loaded window) → the row flash in
+    // FocusHighlighter is the fallback.
+    return entry && isEditableExpenseEntry(entry) ? entry : null;
+  }, [focusId, focusDismissed, ledgerEntries, upcomingEntries]);
   // Scroll-to-load the upcoming list instead of paging it (same feel as the ledger).
   const upcomingReveal = useRevealOnScroll(upcomingEntries, { initial: 15, step: 15, watch: flowTab });
   const pagedUpcomingEntries = upcomingReveal.visibleItems;
@@ -553,6 +570,9 @@ export default function FinancialPageClient({
   const upcomingCount = data.upcomingTotalCount;
   const sourceCount = data.sourceCount;
   const [editingExpense, setEditingExpense] = useState<EditableExpenseEntry | null>(null);
+  // What the edit dialog shows: an expense clicked here, or the one a ?focus=
+  // deep link asked us to open.
+  const activeEditingExpense = editingExpense ?? focusExpense;
   const [deletingExpense, setDeletingExpense] = useState<EditableExpenseEntry | null>(null);
   const [isDeletingExpense, setIsDeletingExpense] = useState(false);
   const [markPaidExpense, setMarkPaidExpense] = useState<EditableExpenseEntry | null>(null);
@@ -1322,6 +1342,7 @@ export default function FinancialPageClient({
                   return (
                   <article
                     key={entry.id}
+                    data-focus-id={entry.id}
                     className={cn(
                       "rounded-2xl border p-4 text-right",
                       isToday ? "border-primary/30 bg-primary/5" : "",
@@ -1396,6 +1417,7 @@ export default function FinancialPageClient({
                       return (
                       <tr
                         key={entry.id}
+                        data-focus-id={entry.id}
                         className={cn(
                           "border-b last:border-b-0",
                           isToday ? "bg-primary/5" : "",
@@ -1515,6 +1537,7 @@ export default function FinancialPageClient({
                       return (
                       <tr
                         key={entry.id}
+                        data-focus-id={entry.id}
                         className={cn(
                           "border-b last:border-b-0",
                           entry.sourceHref ? "cursor-pointer transition-colors hover:bg-muted/30" : ""
@@ -1746,6 +1769,7 @@ export default function FinancialPageClient({
                   return (
                   <article
                     key={entry.id}
+                    data-focus-id={entry.id}
                     className={cn(
                       "rounded-2xl border p-4 text-right",
                       entry.sourceHref ? "cursor-pointer transition-colors hover:bg-muted/30" : ""
@@ -1883,6 +1907,7 @@ export default function FinancialPageClient({
                       return (
                       <tr
                         key={entry.id}
+                        data-focus-id={entry.id}
                         className={cn(
                           "border-b last:border-b-0",
                           entry.sourceHref ? "cursor-pointer transition-colors hover:bg-muted/30" : ""
@@ -2308,30 +2333,32 @@ export default function FinancialPageClient({
       </Dialog>
 
       <ExpenseDialog
-        open={Boolean(editingExpense)}
+        open={Boolean(activeEditingExpense)}
         onOpenChange={(open) => {
-          if (!open) setEditingExpense(null);
+          if (open) return;
+          setEditingExpense(null);
+          if (focusId) setFocusDismissed(focusId);
         }}
-        editingExpense={editingExpense ? {
-          id: editingExpense.expenseId,
-          amount: editingExpense.amount,
-          category: editingExpense.expenseCategory,
-          description: editingExpense.expenseDescriptionRaw,
-          notes: editingExpense.expenseNotes,
-          expense_date: editingExpense.recordedDate ?? editingExpense.flowDate,
-          business_domain: editingExpense.businessDomain,
-          payment_status: editingExpense.paymentStatus,
-          paid_amount: editingExpense.expensePaidAmount ?? null,
-          payment_method: editingExpense.expensePaymentMethod ?? null,
-          account_id: editingExpense.expenseAccountId ?? null,
-          project_id: editingExpense.expenseProjectId,
-          order_id: editingExpense.expenseOrderId,
-          property_id: editingExpense.expensePropertyId,
+        editingExpense={activeEditingExpense ? {
+          id: activeEditingExpense.expenseId,
+          amount: activeEditingExpense.amount,
+          category: activeEditingExpense.expenseCategory,
+          description: activeEditingExpense.expenseDescriptionRaw,
+          notes: activeEditingExpense.expenseNotes,
+          expense_date: activeEditingExpense.recordedDate ?? activeEditingExpense.flowDate,
+          business_domain: activeEditingExpense.businessDomain,
+          payment_status: activeEditingExpense.paymentStatus,
+          paid_amount: activeEditingExpense.expensePaidAmount ?? null,
+          payment_method: activeEditingExpense.expensePaymentMethod ?? null,
+          account_id: activeEditingExpense.expenseAccountId ?? null,
+          project_id: activeEditingExpense.expenseProjectId,
+          order_id: activeEditingExpense.expenseOrderId,
+          property_id: activeEditingExpense.expensePropertyId,
         } : null}
-        editingSourceLabel={editingExpense?.sourceLabel ?? null}
-        lockedProjectId={editingExpense?.expenseProjectId}
-        lockedOrderId={editingExpense?.expenseOrderId}
-        lockedPropertyId={editingExpense?.expensePropertyId}
+        editingSourceLabel={activeEditingExpense?.sourceLabel ?? null}
+        lockedProjectId={activeEditingExpense?.expenseProjectId}
+        lockedOrderId={activeEditingExpense?.expenseOrderId}
+        lockedPropertyId={activeEditingExpense?.expensePropertyId}
         onSaved={() => {
           return refreshAndWait();
         }}
