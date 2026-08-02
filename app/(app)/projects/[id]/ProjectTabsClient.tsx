@@ -2038,6 +2038,7 @@ export default function ProjectTabsClient({
           if (!open) setEditingExpense(null);
         }}
         lockedProjectId={overview.id}
+        editingSourceLabel={overview.name}
         projectStartDate={overview.start_date}
         defaultSessionClockIn={firstWorkerSessionDefaults.clockIn}
         defaultSessionClockOut={firstWorkerSessionDefaults.clockOut}

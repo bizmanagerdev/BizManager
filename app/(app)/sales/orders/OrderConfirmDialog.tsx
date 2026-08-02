@@ -117,6 +117,11 @@ const STEP_META: Record<string, { eyebrow: string; title: string; description?: 
   deliveryDate: { eyebrow: "הוכחת אספקה", title: "מתי סופק?", description: "התאריך שבו אושרה האספקה בפועל." },
   images: { eyebrow: "הוכחת אספקה", title: "צירוף תמונות", description: "צלם או העלה הוכחת אספקה." },
   comments: { eyebrow: "הערות אספקה", title: "הערות למסירה", description: "חוסרים, מצב אספקה, כל דבר שכדאי לתעד." },
+  arrival: {
+    eyebrow: "פרטי הגעה",
+    title: "איך מגיעים למקום?",
+    description: "נשמר על הלקוח לכל מסירה עתידית — לא על ההזמנה הזו.",
+  },
   review: { eyebrow: "אישור", title: "לאשר את האספקה?", description: "בדוק את הסיכום ואשר. המלאי, התשלום והסטטוס יתעדכנו." },
 };
 
@@ -302,6 +307,13 @@ export default function OrderConfirmDialog({
     };
   }, [open, arrivalCustomerId]);
 
+  // Only write the arrival details when they actually changed, so an untouched
+  // step can't blank out standing directions.
+  const arrivalChanged =
+    arrivalInstructions.trim() !== (initialArrival.instructions ?? "") ||
+    arrivalPin?.lat !== initialArrival.pin?.lat ||
+    arrivalPin?.lng !== initialArrival.pin?.lng;
+
   const totalAmount = subtotal - (data?.initialOrder.discount_amount ?? 0);
   const paymentAmountNumber = Number(paymentAmount || 0);
   const pendingPaymentAmount = Number.isFinite(paymentAmountNumber) && paymentAmountNumber > 0 ? paymentAmountNumber : 0;
@@ -400,10 +412,6 @@ export default function OrderConfirmDialog({
       // Arrival details belong to the customer, so they go to their own endpoint
       // before the order save. Fire-and-forget on failure: a GPS pin not sticking
       // must never block confirming a delivery that physically happened.
-      const arrivalChanged =
-        arrivalInstructions.trim() !== (initialArrival.instructions ?? "") ||
-        arrivalPin?.lat !== initialArrival.pin?.lat ||
-        arrivalPin?.lng !== initialArrival.pin?.lng;
       if (arrivalChanged && data.initialOrder.customer_id) {
         void fetch("/api/customers/delivery-location", {
           method: "POST",
@@ -530,7 +538,7 @@ export default function OrderConfirmDialog({
       s.push("reference", "paymentNotes");
     }
     if (refundDue > 0) s.push("refund");
-    s.push("deliveryDate", "images", "comments", "review");
+    s.push("deliveryDate", "images", "comments", "arrival", "review");
     return s;
   }, [paidNow, accountsList.length, refundDue]);
 
@@ -917,48 +925,48 @@ export default function OrderConfirmDialog({
         );
       case "comments":
         return (
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">הערות אספקה</label>
-              <Textarea
-                value={deliveryNotes}
-                onChange={(e) => setDeliveryNotes(e.target.value)}
-                rows={4}
-                placeholder="הערות למסירה, חוסרים, מצב אספקה..."
-              />
-              <p className="text-xs text-muted-foreground">נשמר על ההזמנה הזו בלבד.</p>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">הערות אספקה</label>
+            <Textarea
+              value={deliveryNotes}
+              onChange={(e) => setDeliveryNotes(e.target.value)}
+              rows={4}
+              placeholder="הערות למסירה, חוסרים, מצב אספקה..."
+            />
+            <p className="text-xs text-muted-foreground">נשמר על ההזמנה הזו בלבד.</p>
+          </div>
+        );
+      // Its own step on purpose: the delivery notes describe THIS delivery, while
+      // these describe the PLACE. Saving them on the customer is what lets the next
+      // driver benefit from what this one just worked out — and standing at the door
+      // is the one moment someone actually knows.
+      case "arrival":
+        return (
+          <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/20 p-3">
+            <label className="text-sm font-medium">הוראות הגעה</label>
+            <Textarea
+              value={arrivalInstructions}
+              onChange={(e) => setArrivalInstructions(e.target.value)}
+              rows={3}
+              placeholder="לדוגמה: לעקוף את הבניין מימין, שער כחול בחניון"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="gap-1.5"
+                onClick={captureArrivalPin}
+                disabled={capturingPin}
+              >
+                <MapPin className="h-4 w-4" />
+                {capturingPin ? "מאתר..." : "שמור את המיקום שאני נמצא בו"}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {arrivalPin ? `נקודה נשמרה: ${formatPin(arrivalPin)}` : "לא נשמרה נקודה"}
+              </span>
             </div>
-
-            {/* Separate on purpose: the notes above describe THIS delivery, while
-                these describe the PLACE. Saving them on the customer is what lets
-                the next driver benefit from what this one just worked out — and
-                standing at the door is the one moment someone actually knows. */}
-            <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/20 p-3">
-              <div className="text-sm font-medium">פרטי הגעה — נשמר ללקוח להמשך</div>
-              <Textarea
-                value={arrivalInstructions}
-                onChange={(e) => setArrivalInstructions(e.target.value)}
-                rows={2}
-                placeholder="לדוגמה: לעקוף את הבניין מימין, שער כחול בחניון"
-              />
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={captureArrivalPin}
-                  disabled={capturingPin}
-                >
-                  <MapPin className="h-4 w-4" />
-                  {capturingPin ? "מאתר..." : "שמור את המיקום שאני נמצא בו"}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  {arrivalPin ? `נקודה נשמרה: ${formatPin(arrivalPin)}` : "לא נשמרה נקודה"}
-                </span>
-              </div>
-              {pinError ? <p className="text-xs text-destructive">{pinError}</p> : null}
-            </div>
+            {pinError ? <p className="text-xs text-destructive">{pinError}</p> : null}
           </div>
         );
       case "review":
@@ -993,6 +1001,10 @@ export default function OrderConfirmDialog({
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground">תמונות חדשות</span>
               <span>{deliveryImages.length}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">פרטי הגעה</span>
+              <span>{arrivalChanged ? "יישמרו ללקוח" : "ללא שינוי"}</span>
             </div>
           </div>
         );

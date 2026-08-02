@@ -2271,8 +2271,10 @@ export function ExpenseDialog({
           const labelFor = (type: "project" | "order" | "property") =>
             type === "project" ? "פרויקט" : type === "order" ? "הזמנה" : "נכס";
           if (isSourceLocked) {
+            // Without a real name the row would read "פרויקט: פרויקט" — skip it.
+            if (!editingSourceLabel) return null;
             const type = lockedProjectId ? "project" : lockedOrderId ? "order" : "property";
-            return [labelFor(type), editingSourceLabel ?? labelFor(type)];
+            return [labelFor(type), editingSourceLabel];
           }
           if (effectiveProjectId) {
             return ["פרויקט", recurringProjects.find((p) => p.id === effectiveProjectId)?.label ?? "—"];
@@ -2373,12 +2375,8 @@ export function ExpenseDialog({
           </div>
         </div>
 
-        {isSourceLocked ? (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-1.5 text-xs">
-            <LayoutList className="h-3.5 w-3.5 text-muted-foreground" />
-            <span>משויך ל: <span className="font-medium text-foreground">{editingSourceLabel ?? (lockedProjectId ? "פרויקט" : lockedOrderId ? "הזמנה" : "נכס")}</span></span>
-          </div>
-        ) : null}
+        {/* No "משויך ל" banner here — the source is already stated on the summary
+            step, and the express flow keeps the screen as bare as possible. */}
         {presetTagLabel ? (
           <div className="mt-2 flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-1.5 text-xs">
             <Car className="h-3.5 w-3.5 text-muted-foreground" />
