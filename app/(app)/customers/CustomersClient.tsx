@@ -22,7 +22,7 @@ import StaleDataBadge from "@/components/layout/StaleDataBadge";
 import { emitNavigationStart } from "@/components/layout/TopNavigationProgress";
 import { shouldIgnoreRowNavigation } from "@/lib/ui/row-navigation";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import { ChevronLeft, FolderKanban, Pencil, Plus, Search, ShoppingCart, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, FolderKanban, Pencil, Plus, Search, ShoppingCart, SlidersHorizontal, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { SwipeActions } from "@/components/ui/swipe-actions";
 import { useSetPageTitle } from "@/components/layout/page-title-context";
@@ -356,6 +356,51 @@ export default function CustomersClient({
   // are). The count rides along as the subtitle and follows the active filter.
   useSetPageTitle("לקוחות", `${totalCount ?? filtered.length} לקוחות`);
 
+  // Escape closes the overlay. Gated on filtersOpen so the listener is gone
+  // (and can't swallow keys) whenever the panel is shut.
+  useEffect(() => {
+    if (!filtersOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFiltersOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [filtersOpen]);
+
+  // Same four selects for the phone overlay and the inline tablet/desktop row.
+  const filterFields = (
+    <>
+      <FilterSelect
+        label="פרויקטים"
+        value={withProjects}
+        onChange={(v) => applyFilter({ withProjects: v })}
+        yes="עם פרויקטים"
+        no="ללא פרויקטים"
+      />
+      <FilterSelect
+        label="הזמנות"
+        value={withOrders}
+        onChange={(v) => applyFilter({ withOrders: v })}
+        yes="עם הזמנות"
+        no="ללא הזמנות"
+      />
+      <FilterSelect
+        label="חוב פתוח"
+        value={withDebt}
+        onChange={(v) => applyFilter({ withDebt: v })}
+        yes="חייבים כסף"
+        no="ללא חוב"
+      />
+      <FilterSelect
+        label="סטטוס"
+        value={activeOnly}
+        onChange={(v) => applyFilter({ activeOnly: v })}
+        yes="פעילים"
+        no="לא פעילים"
+      />
+    </>
+  );
+
   return (
     <PageStack>
       {/* Mobile toolbar lives INSIDE the dark header (see PageHeaderToolbar), so
@@ -444,37 +489,39 @@ export default function CustomersClient({
         </AdaptiveCell>
       </AdaptiveGrid>
 
+      {/* Phone: the filters drop DOWN OVER the list, pinned right under the sticky
+          header (60px top bar + 52px toolbar) — not inline at the top of the page.
+          Inline meant that opening filters while scrolled halfway down the list
+          changed something you couldn't see. As an overlay it always appears
+          where you're looking, straight under the button you just pressed. */}
       {filtersOpen ? (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <FilterSelect
-            label="פרויקטים"
-            value={withProjects}
-            onChange={(v) => applyFilter({ withProjects: v })}
-            yes="עם פרויקטים"
-            no="ללא פרויקטים"
+        <>
+          <button
+            type="button"
+            aria-label="סגירת מסננים"
+            className="fixed inset-0 top-[112px] z-20 bg-black/30 md:hidden"
+            onClick={() => setFiltersOpen(false)}
           />
-          <FilterSelect
-            label="הזמנות"
-            value={withOrders}
-            onChange={(v) => applyFilter({ withOrders: v })}
-            yes="עם הזמנות"
-            no="ללא הזמנות"
-          />
-          <FilterSelect
-            label="חוב פתוח"
-            value={withDebt}
-            onChange={(v) => applyFilter({ withDebt: v })}
-            yes="חייבים כסף"
-            no="ללא חוב"
-          />
-          <FilterSelect
-            label="סטטוס"
-            value={activeOnly}
-            onChange={(v) => applyFilter({ activeOnly: v })}
-            yes="פעילים"
-            no="לא פעילים"
-          />
-        </div>
+          <div className="fixed inset-x-0 top-[112px] z-20 border-b border-border bg-card p-3 shadow-lg md:hidden">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium">מסננים</span>
+              <button
+                type="button"
+                aria-label="סגירת מסננים"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground"
+                onClick={() => setFiltersOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">{filterFields}</div>
+          </div>
+        </>
+      ) : null}
+
+      {/* Tablet and up there's no sticky page toolbar, so the filters stay inline. */}
+      {filtersOpen ? (
+        <div className="hidden grid-cols-2 gap-3 md:grid lg:grid-cols-4">{filterFields}</div>
       ) : null}
 
       <div className="hidden text-sm text-muted-foreground lg:block">

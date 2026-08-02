@@ -440,17 +440,31 @@ export function CreateCustomerDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <AdaptiveDialog size="formLg">
-        <DialogHeader>
-          <div className="text-xs font-medium text-muted-foreground">לקוחות</div>
-          <DialogTitle>הוספת לקוח חדש</DialogTitle>
-          <DialogDescription className="sr-only">{description}</DialogDescription>
-        </DialogHeader>
+      <AdaptiveDialog
+        size="formLg"
+        className="flex max-h-[92svh] flex-col gap-0 overflow-y-hidden p-0 sm:p-0"
+      >
+        {/* Pinned top bar: title + step progress. Stays put while the body scrolls. */}
+        <div className="shrink-0 space-y-2 border-b border-border/70 bg-background px-4 py-3 sm:px-6">
+          <DialogHeader className="space-y-1 text-start">
+            <DialogTitle>הוספת לקוח חדש</DialogTitle>
+            <DialogDescription className="sr-only">{description}</DialogDescription>
+          </DialogHeader>
 
-        <CustomerWizardStepper current={step} canClick={canClickStep} onStepClick={goToStep} />
+          <CustomerWizardStepper current={step} canClick={canClickStep} onStepClick={goToStep} />
+        </div>
 
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={(e) => {
+            e.preventDefault();
+            goNext();
+          }}
+        >
+          {/* Scrollable body — only this section scrolls; the bars stay pinned. */}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6">
         {!similarDismissed && similar.length > 0 ? (
-          <div className="sticky top-0 z-10 -mx-6 bg-background px-6 pb-2 pt-1">
+          <div className="sticky top-0 z-10 -mx-4 bg-background px-4 pb-2 pt-1 sm:-mx-6 sm:px-6">
           <div className="space-y-2 rounded-md border border-warning bg-warning/15 p-3 text-sm text-warning-strong">
             <div className="flex items-center justify-between gap-2">
               <div className="font-medium">
@@ -544,13 +558,6 @@ export function CreateCustomerDialog({
           <div className="text-xs text-muted-foreground">בודק אם קיים לקוח דומה...</div>
         ) : null}
 
-        <form
-          className="space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            goNext();
-          }}
-        >
           <fieldset disabled={submitting} className="space-y-3">
             {step === 1 ? (
               <div className="space-y-3">
@@ -636,8 +643,8 @@ export function CreateCustomerDialog({
 
             {step === 3 ? (
               <div className="space-y-3">
-                <div className="flex items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-sm text-secondary-foreground">
-                  <Info className="h-4 w-4 shrink-0" />
+                <div className="flex items-center gap-2 rounded-md border border-secondary/35 bg-secondary/10 px-3 py-2.5 text-sm text-foreground">
+                  <Info className="h-4 w-4 shrink-0 text-secondary" />
                   <span>אפשר להוסיף אנשי קשר כבר עכשיו, או לדלג ולהוסיף מאוחר יותר.</span>
                 </div>
 
@@ -744,8 +751,8 @@ export function CreateCustomerDialog({
 
             {step === 4 ? (
               <div className="space-y-3">
-                <div className="flex items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-sm text-secondary-foreground">
-                  <Sparkles className="h-4 w-4 shrink-0" />
+                <div className="flex items-center gap-2 rounded-md border border-secondary/35 bg-secondary/10 px-3 py-2.5 text-sm text-foreground">
+                  <Sparkles className="h-4 w-4 shrink-0 text-secondary" />
                   <span>
                     בדקו שהכל תקין ולחצו <span className="font-semibold">יצירת לקוח</span>.
                   </span>
@@ -786,44 +793,42 @@ export function CreateCustomerDialog({
               </div>
             ) : null}
           </fieldset>
+          </div>
 
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          {submitting ? (
-            <p className="text-xs text-muted-foreground">יוצר לקוח חדש, נא להמתין...</p>
-          ) : null}
+          {/* Pinned bottom bar */}
+          <div className="shrink-0 space-y-2 border-t border-border/70 bg-background px-4 py-3 sm:px-6">
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            {submitting ? (
+              <p className="text-xs text-muted-foreground">יוצר לקוח חדש, נא להמתין...</p>
+            ) : null}
 
-          <div className="flex items-center justify-between gap-2 border-t pt-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">שלב {step} מתוך 4</span>
-              {step > 1 ? (
-                <Button type="button" variant="secondary" size="sm" onClick={goBack} disabled={submitting}>
-                  <ChevronRight className="h-4 w-4" />
-                  חזרה
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">שלב {step} מתוך 4</span>
+                {step > 1 ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={goBack} disabled={submitting}>
+                    <ChevronRight className="h-4 w-4" />
+                    חזרה
+                  </Button>
+                ) : null}
+              </div>
+              {/* No "ביטול" button — the dialog's X already closes it, and two
+                  ways out crowded the bar next to the primary action. */}
+              <div className="flex items-center gap-2">
+                <Button type="submit" disabled={submitting}>
+                  {step === 4 ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                      {submitting ? "יוצר..." : "יצירת לקוח"}
+                    </>
+                  ) : (
+                    <>
+                      הבא
+                      <ChevronLeft className="h-4 w-4" />
+                    </>
+                  )}
                 </Button>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => handleOpenChange(false)}
-                disabled={submitting}
-              >
-                ביטול
-              </Button>
-              <Button type="submit" disabled={submitting}>
-                {step === 4 ? (
-                  <>
-                    <Check className="h-4 w-4" />
-                    {submitting ? "יוצר..." : "יצירת לקוח"}
-                  </>
-                ) : (
-                  <>
-                    הבא
-                    <ChevronLeft className="h-4 w-4" />
-                  </>
-                )}
-              </Button>
+              </div>
             </div>
           </div>
         </form>
@@ -858,8 +863,8 @@ function CustomerWizardStepper({
                 onClick={() => clickable && onStepClick(s.n)}
                 className={cn(
                   "flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors",
-                  active && "border-primary bg-primary text-primary-foreground",
-                  done && "border-success bg-success text-success-foreground",
+                  active && "border-primary text-primary",
+                  done && "border-primary bg-primary text-primary-foreground",
                   !active && !done && "border-border text-muted-foreground",
                   clickable && !active ? "cursor-pointer hover:border-primary/60" : "cursor-default"
                 )}
@@ -879,7 +884,7 @@ function CustomerWizardStepper({
               <div
                 className={cn(
                   "mx-1 mt-[14px] h-0.5 flex-1 rounded-full sm:mx-2",
-                  done ? "bg-success" : "bg-border"
+                  done ? "bg-primary" : "bg-border"
                 )}
               />
             ) : null}

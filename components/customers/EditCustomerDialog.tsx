@@ -324,18 +324,26 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
         onOpenChange(next);
       }}
     >
-      <AdaptiveDialog size="formLg">
-        <DialogHeader>
-          <DialogTitle>עריכת לקוח</DialogTitle>
-          <DialogDescription>עדכון פרטי לקוח ופרטי חשבונית.</DialogDescription>
-        </DialogHeader>
+      <AdaptiveDialog
+        size="formLg"
+        className="flex max-h-[92svh] flex-col gap-0 overflow-y-hidden p-0 sm:p-0"
+      >
+        {/* Pinned top bar */}
+        <div className="shrink-0 border-b border-border/70 bg-background px-4 py-3 sm:px-6">
+          <DialogHeader className="space-y-1 text-start">
+            <DialogTitle>עריכת לקוח</DialogTitle>
+            <DialogDescription>עדכון פרטי לקוח ופרטי חשבונית.</DialogDescription>
+          </DialogHeader>
+        </div>
         <form
-          className="space-y-3"
+          className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => {
             e.preventDefault();
             void save();
           }}
         >
+          {/* Scrollable body — only this section scrolls; the bars stay pinned. */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
           <fieldset disabled={loading} className="space-y-3">
             <Field label="שם לקוח *">
               <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -505,16 +513,21 @@ export function EditCustomerDialog({ open, onOpenChange, customer, onSaved }: Ed
                 ))}
             </div>
           </fieldset>
-          {err ? <p className="text-sm text-destructive">{err}</p> : null}
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={loading}>
-              ביטול
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "שומר..." : "שמירת שינויים"}
-            </Button>
-          </DialogFooter>
-          {loading ? <p className="text-xs text-muted-foreground">שומר, נא להמתין...</p> : null}
+          </div>
+
+          {/* Pinned bottom bar */}
+          <div className="shrink-0 space-y-2 border-t border-border/70 bg-background px-4 py-3 sm:px-6">
+            {err ? <p className="text-sm text-destructive">{err}</p> : null}
+            {loading ? <p className="text-xs text-muted-foreground">שומר, נא להמתין...</p> : null}
+            <DialogFooter className="mt-0">
+              <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={loading}>
+                ביטול
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? "שומר..." : "שמירת שינויים"}
+              </Button>
+            </DialogFooter>
+          </div>
         </form>
       </AdaptiveDialog>
     </Dialog>
