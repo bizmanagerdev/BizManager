@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildLoanEntries, aggregateProfitLoss } from "@/lib/financial/entries";
-import { deriveLoan, summarizeLoans } from "@/lib/loans";
+import { buildInstallmentSchedule, deriveLoan, overdueInstallments, summarizeLoans } from "@/lib/loans";
 import type { Loan, LoanRepayment } from "@/lib/loans";
 
 // Loans split into a CASH movement (principal, origin "loan", excluded from P&L)
@@ -20,12 +20,20 @@ function makeRepayment(overrides: Partial<LoanRepayment> = {}): LoanRepayment {
     account_id: null,
     notes: null,
     created_at: null,
+    status: "paid",
+    installment_index: null,
+    installment_count: null,
     ...overrides,
   };
 }
 
+/** A planned (not yet paid) installment — a future obligation, no cash moved. */
+function makeInstallment(overrides: Partial<LoanRepayment> = {}): LoanRepayment {
+  return makeRepayment({ status: "planned", ...overrides });
+}
+
 function makeLoan(overrides: Partial<Loan> = {}): Loan {
-  return {
+  const loan: Loan = {
     id: "L1",
     direction: "taken",
     lender: "הבנק",
@@ -45,12 +53,27 @@ function makeLoan(overrides: Partial<Loan> = {}): Loan {
     notes: null,
     created_at: null,
     repayments: [],
+    paidRepayments: [],
+    plannedInstallments: [],
     repaidPrincipal: 0,
     repaidInterest: 0,
     repaidTotal: 0,
     outstanding: 10000,
+    scheduledPrincipal: 0,
+    scheduledTotal: 0,
+    unscheduledPrincipal: 0,
+    nextInstallment: null,
     derivedStatus: "active",
     ...overrides,
+  };
+  // Tests hand in `repayments`; split it the way deriveLoan would so the entry
+  // builder sees the same paid/planned lists it gets in production.
+  return {
+    ...loan,
+    paidRepayments:
+      overrides.paidRepayments ?? loan.repayments.filter((r) => r.status !== "planned"),
+    plannedInstallments:
+      overrides.plannedInstallments ?? loan.repayments.filter((r) => r.status === "planned"),
   };
 }
 
@@ -145,6 +168,111 @@ describe("buildLoanEntries → aggregateProfitLoss integration", () => {
     // 200 interest is an expense; the 10000 + 2000 principal flows never appear.
     expect(row?.cashExpense).toBe(200);
     expect(row?.cashRevenue).toBe(0);
+  });
+});
+
+describe("installment plan — planned installments are forecast, not cash", () => {
+  it("a planned installment is a scheduled entry that never counts as repaid", () => {
+    const loan = deriveLoan({ id: "L1", direction: "taken", amount: 10000 }, [
+      makeInstallment({ id: "p1", repayment_date: "2025-01-10", amount: 2000 }),
+      makeInstallment({ id: "p2", repayment_date: "2025-02-10", amount: 2000 }),
+    ]);
+    // The plan does NOT repay anything — outstanding is untouched.
+    expect(loan.repaidPrincipal).toBe(0);
+    expect(loan.outstanding).toBe(10000);
+    expect(loan.scheduledTotal).toBe(4000);
+    expect(loan.unscheduledPrincipal).toBe(6000);
+    expect(loan.derivedStatus).toBe("active");
+
+    const entry = buildLoanEntries([loan], REF).find((e) => e.id === "loan_planned:p1");
+    expect(entry?.type).toBe("outflow"); // a taken loan is repaid outwards
+    expect(entry?.amount).toBe(2000);
+    expect(entry?.origin).toBe("loan"); // cash forecast only, never P&L
+    expect(entry?.stage).toBe("scheduled");
+  });
+
+  it("a planned installment past its date is 'pending' (overdue on the calendar)", () => {
+    const loan = deriveLoan({ id: "L1", direction: "taken", amount: 10000 }, [
+      makeInstallment({ id: "p1", repayment_date: "2024-06-01", amount: 2000 }),
+    ]);
+    const entry = buildLoanEntries([loan], REF).find((e) => e.id === "loan_planned:p1");
+    expect(entry?.stage).toBe("pending");
+    expect(overdueInstallments(loan, REF)).toHaveLength(1);
+  });
+
+  it("planned installments never reach the P&L", () => {
+    const loan = deriveLoan({ id: "L1", direction: "taken", amount: 10000 }, [
+      makeInstallment({ id: "p1", repayment_date: "2024-06-01", amount: 2000, interest_amount: 200 }),
+    ]);
+    const pl = aggregateProfitLoss(buildLoanEntries([loan], REF));
+    const row = pl.find((r) => r.domain === "general_business");
+    expect(row?.cashExpense ?? 0).toBe(0); // interest only counts once actually paid
+  });
+
+  it("paying an installment moves it out of the plan and into the balance", () => {
+    const loan = deriveLoan({ id: "L1", direction: "taken", amount: 10000 }, [
+      makeRepayment({ id: "p1", repayment_date: "2024-06-01", amount: 2000 }), // now paid
+      makeInstallment({ id: "p2", repayment_date: "2024-07-01", amount: 2000 }),
+    ]);
+    expect(loan.repaidPrincipal).toBe(2000);
+    expect(loan.outstanding).toBe(8000);
+    expect(loan.scheduledTotal).toBe(2000);
+    expect(loan.derivedStatus).toBe("partially_repaid");
+    expect(loan.nextInstallment?.id).toBe("p2");
+
+    const entries = buildLoanEntries([loan], REF);
+    expect(entries.find((e) => e.id === "loan_repay:p1")?.stage).toBe("posted");
+    expect(entries.find((e) => e.id === "loan_planned:p1")).toBeUndefined();
+  });
+
+  it("a lent loan's planned installments are expected INCOMING money", () => {
+    const loan = deriveLoan({ id: "L1", direction: "given", amount: 5000, borrower: "חבר" }, [
+      makeInstallment({ id: "p1", repayment_date: "2025-03-01", amount: 1000 }),
+    ]);
+    const entry = buildLoanEntries([loan], REF).find((e) => e.id === "loan_planned:p1");
+    expect(entry?.type).toBe("inflow");
+    expect(entry?.stage).toBe("scheduled");
+  });
+});
+
+describe("buildInstallmentSchedule", () => {
+  it("splits a total into equal monthly installments summing to the total", () => {
+    const rows = buildInstallmentSchedule({ total: 100000, count: 5, firstDate: "2026-09-01" });
+    expect(rows).toHaveLength(5);
+    expect(rows.map((r) => r.amount)).toEqual([20000, 20000, 20000, 20000, 20000]);
+    expect(rows.map((r) => r.date)).toEqual([
+      "2026-09-01",
+      "2026-10-01",
+      "2026-11-01",
+      "2026-12-01",
+      "2027-01-01",
+    ]);
+  });
+
+  it("puts the rounding remainder on the last installment", () => {
+    const rows = buildInstallmentSchedule({ total: 1000, count: 3, firstDate: "2026-01-01" });
+    expect(rows.map((r) => r.amount)).toEqual([333.33, 333.33, 333.34]);
+    expect(rows.reduce((sum, r) => sum + r.amount, 0)).toBeCloseTo(1000, 6);
+  });
+
+  it("clamps a month-end start date to short months", () => {
+    const rows = buildInstallmentSchedule({ total: 300, count: 3, firstDate: "2026-01-31" });
+    expect(rows.map((r) => r.date)).toEqual(["2026-01-31", "2026-02-28", "2026-03-31"]);
+  });
+
+  it("supports a fixed day interval (weekly / fortnightly)", () => {
+    const rows = buildInstallmentSchedule({
+      total: 300,
+      count: 3,
+      firstDate: "2026-01-01",
+      intervalDays: 14,
+    });
+    expect(rows.map((r) => r.date)).toEqual(["2026-01-01", "2026-01-15", "2026-01-29"]);
+  });
+
+  it("returns nothing without a total or a date", () => {
+    expect(buildInstallmentSchedule({ total: 0, count: 3, firstDate: "2026-01-01" })).toEqual([]);
+    expect(buildInstallmentSchedule({ total: 100, count: 3, firstDate: "" })).toEqual([]);
   });
 });
 

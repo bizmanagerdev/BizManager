@@ -885,8 +885,53 @@ export function buildLoanEntries(loans: Loan[], referenceDate: string): Financia
       });
     }
 
+    // ── Planned installments: forecast only ──
+    // A planned installment is money that WILL move on its date. It never counts
+    // as real cash (stage is scheduled, or pending once its date passed) and —
+    // being origin "loan" — never touches the P&L. Shows up in the upcoming /
+    // forecast views and, for a taken loan, on the payments calendar.
+    for (const installment of loan.plannedInstallments) {
+      if (!installment.id || !installment.repayment_date || !(installment.amount > 0)) continue;
+      const type: FinancialEntryType = taken ? "outflow" : "inflow";
+      const position =
+        installment.installment_index && installment.installment_count
+          ? ` (תשלום ${installment.installment_index} מתוך ${installment.installment_count})`
+          : "";
+      const description = `החזר הלוואה מתוכנן${counterparty ? ` (${counterparty})` : ""}${position}`;
+      entries.push({
+        id: `loan_planned:${installment.id}`,
+        type,
+        amount: installment.amount,
+        signedAmount: type === "inflow" ? installment.amount : -installment.amount,
+        businessDomain,
+        domainName,
+        flowDate: installment.repayment_date,
+        recordedDate: null,
+        dueDate: installment.repayment_date,
+        // Past its date and still unpaid ⇒ pending (the calendar flags it overdue).
+        stage: installment.repayment_date < referenceDate ? "pending" : "scheduled",
+        sourceKind: "general",
+        sourceId: loan.id,
+        sourceLabel: description,
+        sourceHref: `/financial/loans?repay=${loan.id}`,
+        description,
+        origin: "loan",
+        reference: null,
+        paymentMethod: installment.method ?? loan.repayment_method,
+        paymentMethodLabel: installment.method
+          ? paymentMethodLabel(installment.method)
+          : loan.repayment_method
+            ? paymentMethodLabel(loan.repayment_method)
+            : null,
+        paymentStatus: "not_paid",
+        recordedByName: null,
+        customerId: loan.counterparty_customer_id,
+        searchText: [description, counterparty ?? "", domainName].join(" ").toLowerCase(),
+      });
+    }
+
     // ── Repayments: principal (cash only) + interest (P&L) ──
-    for (const repayment of loan.repayments) {
+    for (const repayment of loan.paidRepayments) {
       if (!repayment.id || !repayment.repayment_date) continue;
       const principalPart = Math.max(repayment.amount - repayment.interest_amount, 0);
       const interestPart = Math.max(repayment.interest_amount, 0);

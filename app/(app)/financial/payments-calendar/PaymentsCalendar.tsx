@@ -544,7 +544,14 @@ function DuePaymentsBanner({
     const horizon = isoLocal(new Date(t.getFullYear(), t.getMonth(), t.getDate() + DUE_HEADS_UP_DAYS));
     const list = items
       // Auto-paid (הוראת קבע) bills need no action, so they're not "to pay".
-      .filter((i) => i.origin === "expense" && !i.autoPaid && i.stage !== "posted" && i.date.slice(0, 10) <= horizon)
+      // Planned loan installments (origin "loan" + not_paid) ARE payments to make.
+      .filter(
+        (i) =>
+          ((i.origin === "expense" && !i.autoPaid) ||
+            (i.origin === "loan" && i.paymentStatus === "not_paid")) &&
+          i.stage !== "posted" &&
+          i.date.slice(0, 10) <= horizon
+      )
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const hasOverdue = list.some((i) => i.date.slice(0, 10) < todayStr);
     const hasToday = list.some((i) => i.date.slice(0, 10) === todayStr);

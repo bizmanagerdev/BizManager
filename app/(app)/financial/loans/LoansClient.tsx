@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Receipt, Ban, Paperclip } from "lucide-react";
+import { Plus, Pencil, Trash2, Receipt, Ban, Paperclip, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -39,40 +39,23 @@ import {
   deleteLoan,
   deleteRepayment,
   setLoanWrittenOff,
+  unmarkInstallmentPaid,
   updateLoan,
   type LoanInput,
 } from "./actions";
+import InstallmentPlanSection from "./InstallmentPlanSection";
+import {
+  Field,
+  METHOD_OPTIONS,
+  SELECT_CLASS,
+  StatBox,
+  formatDate,
+  formatIls,
+  todayIso,
+} from "./shared";
 
 // The business owner — auto-filled on "our" side of every loan.
 const BUSINESS_OWNER_NAME = "יעקב הלר";
-
-const SELECT_CLASS =
-  "h-11 w-full rounded-xl border border-input bg-background px-3 text-sm text-right";
-
-const METHOD_OPTIONS = [
-  { value: "", label: "—" },
-  { value: "cash", label: "מזומן" },
-  { value: "bank_transfer", label: "העברה בנקאית" },
-  { value: "check", label: "צ׳ק" },
-  { value: "bit", label: "ביט" },
-  { value: "credit_card", label: "כרטיס אשראי" },
-  { value: "other", label: "אחר" },
-];
-
-function formatIls(amount: number) {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(Math.round(amount));
-}
-
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
-}
 
 function statusColor(status: LoanStatus) {
   switch (status) {
@@ -85,10 +68,6 @@ function statusColor(status: LoanStatus) {
     default:
       return "warning" as const;
   }
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 type FormState = {
@@ -133,32 +112,6 @@ function loanToForm(loan: Loan | null): FormState {
     documentation: loan?.documentation ?? "",
     notes: loan?.notes ?? "",
   };
-}
-
-function StatBox({ label, value, tone }: { label: string; value: string; tone?: "debt" | "asset" }) {
-  return (
-    <div className="rounded-md border bg-background p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div
-        className={
-          "mt-0.5 text-xl font-semibold tabular-nums " +
-          (tone === "debt" ? "text-destructive" : tone === "asset" ? "text-success" : "")
-        }
-        dir="ltr"
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
-    </div>
-  );
 }
 
 // ── Loan create / edit dialog ──────────────────────────────────────────────
@@ -445,11 +398,26 @@ function RepaymentsDialog({
     });
   }
 
+  // Undo a repayment that was marked paid by mistake: it returns to the plan as
+  // a planned installment instead of being deleted outright.
+  function revertRepayment(id: string) {
+    if (!loan) return;
+    startTransition(async () => {
+      const res = await unmarkInstallmentPaid(id, loan.id);
+      if (res.ok) {
+        toast.success("ההחזר הוחזר לתוכנית כתשלום מתוכנן.");
+        router.refresh();
+      } else {
+        toast.error(res.error);
+      }
+    });
+  }
+
   return (
     <Dialog open={Boolean(loan)} onOpenChange={onOpenChange}>
       <AdaptiveDialog size="formLg">
         <DialogHeader>
-          <DialogTitle>החזרים</DialogTitle>
+          <DialogTitle>החזרים ותוכנית תשלומים</DialogTitle>
           <DialogDescription>
             {loan
               ? `${loan.direction === "taken" ? "החזר שלי למלווה" : "החזר מהלווה"} · יתרה לתשלום: ${formatIls(loan.outstanding)}`
@@ -469,8 +437,10 @@ function RepaymentsDialog({
               />
             </AdaptiveGrid>
 
+            <InstallmentPlanSection loan={loan} />
+
             <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-              <div className="text-sm font-semibold">החזר חדש</div>
+              <div className="text-sm font-semibold">רישום החזר מיידי</div>
               <AdaptiveGrid variant="formTwo">
                 <Field label="תאריך">
                   <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -521,17 +491,17 @@ function RepaymentsDialog({
             </div>
 
             <div className="space-y-2">
-              <div className="text-sm font-semibold">היסטוריית החזרים</div>
-              {loan.repayments.length === 0 ? (
+              <div className="text-sm font-semibold">היסטוריית החזרים ששולמו</div>
+              {loan.paidRepayments.length === 0 ? (
                 <div className="text-sm text-muted-foreground">עדיין לא נרשמו החזרים.</div>
               ) : (
-                loan.repayments
+                loan.paidRepayments
                   .slice()
                   .sort((a, b) => b.repayment_date.localeCompare(a.repayment_date))
                   .map((r) => (
                     <div
                       key={r.id}
-                      className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm"
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm"
                     >
                       <div className="min-w-0">
                         <span dir="ltr" className="font-medium tabular-nums">
@@ -541,18 +511,34 @@ function RepaymentsDialog({
                           {" · "}
                           {formatIls(r.amount)}
                           {r.interest_amount > 0 ? ` (מתוכו ריבית ${formatIls(r.interest_amount)})` : ""}
+                          {r.installment_index && r.installment_count
+                            ? ` · תשלום ${r.installment_index} מתוך ${r.installment_count}`
+                            : ""}
                         </span>
                       </div>
-                      <Button
-                        type="button"
-                        variant="destructive-outline"
-                        size="icon-sm"
-                        onClick={() => removeRepayment(r.id)}
-                        disabled={pending}
-                        aria-label="מחק החזר"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="icon-sm"
+                          onClick={() => revertRepayment(r.id)}
+                          disabled={pending}
+                          aria-label="החזר לתשלום מתוכנן"
+                          title="סומן בטעות? החזר אותו לתוכנית כתשלום מתוכנן"
+                        >
+                          <Undo2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive-outline"
+                          size="icon-sm"
+                          onClick={() => removeRepayment(r.id)}
+                          disabled={pending}
+                          aria-label="מחק החזר"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))
               )}
@@ -763,6 +749,7 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Loan | null>(null);
   const [repayLoan, setRepayLoan] = useState<Loan | null>(null);
+  const today = todayIso();
 
   // Deep link: /financial/loans?repay=<loanId> (e.g. from the collections חייבים
   // list) opens that loan's repayment dialog so the repayment can be recorded here.
@@ -922,12 +909,41 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
                         {formatIls(loan.outstanding)}
                       </span>
                     </div>
+                    {loan.nextInstallment ? (
+                      <div className="text-sm">
+                        <span
+                          className={
+                            "rounded-md border px-2 py-0.5 text-xs " +
+                            getStatusColorClasses(
+                              loan.nextInstallment.repayment_date < today ? "danger" : "warning"
+                            )
+                          }
+                        >
+                          {loan.nextInstallment.repayment_date < today ? "תשלום באיחור" : "התשלום הבא"}
+                        </span>
+                        <span className="text-muted-foreground">{" "}</span>
+                        <span className="font-medium tabular-nums" dir="ltr">
+                          {formatIls(loan.nextInstallment.amount)}
+                        </span>
+                        <span className="text-muted-foreground"> ב-</span>
+                        <span className="font-medium tabular-nums" dir="ltr">
+                          {formatDate(loan.nextInstallment.repayment_date)}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {" · "}
+                          {loan.plannedInstallments.length} תשלומים מתוכננים
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <Button type="button" variant="secondary" size="sm" onClick={() => setRepayLoan(loan)}>
                       <Receipt className="h-4 w-4" />
-                      החזרים{loan.repayments.length ? ` (${loan.repayments.length})` : ""}
+                      החזרים
+                      {loan.paidRepayments.length || loan.plannedInstallments.length
+                        ? ` (${loan.paidRepayments.length}/${loan.paidRepayments.length + loan.plannedInstallments.length})`
+                        : ""}
                     </Button>
                     <Button type="button" variant="secondary" size="sm" onClick={() => setDocsLoan(loan)}>
                       <Paperclip className="h-4 w-4" />
