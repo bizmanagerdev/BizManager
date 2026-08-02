@@ -25,20 +25,24 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import OnlineUsersCard from "./OnlineUsersCard";
 
-function formatRelativeTime(isoString: string | null) {
+// Mail-client style stamp: today shows only the clock, older rows prefix the
+// date. Never relative ("לפני X") — the user wants the actual hour.
+function formatActivityTime(isoString: string | null) {
   if (!isoString) return "";
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return "";
+  const clock = date.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
   const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "עכשיו";
-  if (diffMin < 60) return `לפני ${diffMin} דק'`;
-  const diffHrs = Math.floor(diffMin / 60);
-  if (diffHrs < 24) return `לפני ${diffHrs} שע'`;
-  const diffDays = Math.floor(diffHrs / 24);
-  if (diffDays < 7) return `לפני ${diffDays} ימים`;
-  return date.toLocaleDateString("he-IL", { day: "numeric", month: "short", year: "numeric" });
+  const isSameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (isSameDay) return clock;
+  const day = `${date.getDate()}.${date.getMonth() + 1}`;
+  const datePart = date.getFullYear() === now.getFullYear()
+    ? day
+    : `${day}.${String(date.getFullYear()).slice(-2)}`;
+  return `${datePart} ${clock}`;
 }
 
 function formatFullDate(isoString: string | null) {
@@ -193,7 +197,7 @@ function ActivityRow({ item }: { item: AuditFeedItem }) {
           className="shrink-0 text-xs text-muted-foreground whitespace-nowrap tabular-nums"
           title={formatFullDate(item.createdAt)}
         >
-          {formatRelativeTime(item.createdAt)}
+          {formatActivityTime(item.createdAt)}
         </time>
       </div>
 
@@ -246,7 +250,7 @@ function ActivityChildRow({ item }: { item: AuditFeedItem }) {
         />
       </div>
       <time className="shrink-0 text-[10px] text-muted-foreground whitespace-nowrap tabular-nums">
-        {formatRelativeTime(item.createdAt)}
+        {formatActivityTime(item.createdAt)}
       </time>
     </div>
   );
@@ -319,7 +323,7 @@ function ActivityTableChildRow({ item }: { item: AuditFeedItem }) {
         )}
       </td>
       <td className="whitespace-nowrap px-3 py-1 text-right align-top text-[10px] tabular-nums text-muted-foreground">
-        {formatRelativeTime(item.createdAt)}
+        {formatActivityTime(item.createdAt)}
       </td>
     </tr>
   );
@@ -818,7 +822,7 @@ export default function ActivityClient({
                           className="whitespace-nowrap px-3 py-2 text-right align-middle text-xs tabular-nums text-muted-foreground"
                           title={formatFullDate(node.latest)}
                         >
-                          {formatRelativeTime(node.latest)}
+                          {formatActivityTime(node.latest)}
                         </td>
                       </tr>
                       {isExpanded &&
@@ -896,7 +900,7 @@ export default function ActivityClient({
                         className="whitespace-nowrap px-3 py-2 text-right align-middle text-xs tabular-nums text-muted-foreground"
                         title={formatFullDate(header.createdAt)}
                       >
-                        {formatRelativeTime(header.createdAt)}
+                        {formatActivityTime(header.createdAt)}
                       </td>
                     </tr>
                     {isExpanded &&
@@ -930,7 +934,7 @@ export default function ActivityClient({
                           className="shrink-0 text-xs text-muted-foreground whitespace-nowrap tabular-nums"
                           title={formatFullDate(node.latest)}
                         >
-                          {formatRelativeTime(node.latest)}
+                          {formatActivityTime(node.latest)}
                         </time>
                       </div>
                       <div className="text-sm font-medium leading-tight">
