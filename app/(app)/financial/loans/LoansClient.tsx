@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Receipt, Ban, Paperclip, Undo2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Receipt, Paperclip, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -38,12 +38,18 @@ import {
   createLoan,
   deleteLoan,
   deleteRepayment,
-  setLoanWrittenOff,
   unmarkInstallmentPaid,
   updateLoan,
   type LoanInput,
 } from "./actions";
 import InstallmentPlanSection from "./InstallmentPlanSection";
+import RepaymentPlanPicker, {
+  emptyPlanState,
+  planLastDate,
+  planRows,
+  planStateFromInstallments,
+  type RepaymentPlanState,
+} from "./RepaymentPlanPicker";
 import {
   Field,
   METHOD_OPTIONS,
@@ -128,12 +134,33 @@ function LoanFormDialog({
   const [form, setForm] = useState<FormState>(() => loanToForm(loan));
   const [loanAccountsList, setLoanAccountsList] = useState<Account[]>([]);
   const [pending, startTransition] = useTransition();
+  // How the loan gets paid back — chosen here, on the same form as the loan.
+  const [plan, setPlan] = useState<RepaymentPlanState>(() =>
+    loan
+      ? planStateFromInstallments(loan.plannedInstallments, {
+          amount: loan.outstanding,
+          dueDate: loan.due_date,
+        })
+      : emptyPlanState()
+  );
+  // Only send the plan on save if it was actually touched, so editing a loan's
+  // notes doesn't rewrite installments that are already planned.
+  const [planDirty, setPlanDirty] = useState(false);
   // Re-seed the form whenever the dialog opens for a different loan.
   const [seedKey, setSeedKey] = useState<string>("");
   const key = `${open ? "open" : "closed"}:${loan?.id ?? "new"}`;
   if (open && key !== seedKey) {
     setSeedKey(key);
     setForm(loanToForm(loan));
+    setPlan(
+      loan
+        ? planStateFromInstallments(loan.plannedInstallments, {
+            amount: loan.outstanding,
+            dueDate: loan.due_date,
+          })
+        : emptyPlanState()
+    );
+    setPlanDirty(false);
   }
 
   function set<K extends keyof FormState>(field: K, value: FormState[K]) {
@@ -144,6 +171,17 @@ function LoanFormDialog({
     const taken = form.direction === "taken";
     const counterpartyName = form.counterpartyCustomer?.name.trim() ?? "";
     const ourSide = form.ourSide.trim() || BUSINESS_OWNER_NAME;
+    const loanAmount = Number(form.amount) || 0;
+    // The repayment plan covers what's still owed (a partly-repaid loan plans the
+    // rest); the loan's תאריך פרעון is simply the date of its last payment.
+    const planAmount = loan ? Math.max(loanAmount - loan.repaidPrincipal, 0) : loanAmount;
+    const rows = planRows(plan, planAmount).filter((row) => row.date && Number(row.amount) > 0);
+    const installments = rows.map((row) => ({
+      repayment_date: row.date,
+      amount: Number(row.amount),
+      interest_amount: 0,
+      notes: "",
+    }));
     const payload: LoanInput = {
       direction: form.direction,
       // taken: counterparty = lender (מלווה), us = borrower (לווה). given: the reverse.
@@ -154,8 +192,8 @@ function LoanFormDialog({
       loan_method: form.loan_method,
       repayment_method: form.repayment_method,
       documentation: form.documentation,
-      amount: Number(form.amount) || 0,
-      due_date: form.due_date,
+      amount: loanAmount,
+      due_date: planLastDate(plan, planAmount) || form.due_date,
       interest_amount: Number(form.interest_amount) || 0,
       business_domain: form.business_domain,
       account_id: form.account_id || null,
@@ -177,10 +215,22 @@ function LoanFormDialog({
       toast.error("יש לבחור חשבון לתנועה.");
       return;
     }
+    // Send the plan when it was edited — or when an older loan has a repayment
+    // date but no scheduled payment yet, so saving it once fills that in.
+    const sendPlan =
+      planDirty || (loan ? loan.plannedInstallments.length === 0 && installments.length > 0 : true);
     startTransition(async () => {
-      const res = loan ? await updateLoan(loan.id, payload) : await createLoan(payload);
+      const res = loan
+        ? await updateLoan(loan.id, payload, sendPlan ? installments : undefined)
+        : await createLoan(payload, installments);
       if (res.ok) {
-        toast.success(loan ? "ההלוואה עודכנה." : "ההלוואה נוספה.");
+        toast.success(
+          loan
+            ? "ההלוואה עודכנה."
+            : installments.length > 1
+              ? `ההלוואה נוספה עם ${installments.length} תשלומים.`
+              : "ההלוואה נוספה."
+        );
         onOpenChange(false);
         router.refresh();
       } else {
@@ -239,9 +289,6 @@ function LoanFormDialog({
                 value={form.amount}
                 onChange={(e) => set("amount", e.target.value)}
               />
-            </Field>
-            <Field label="תאריך פרעון">
-              <Input type="date" value={form.due_date} onChange={(e) => set("due_date", e.target.value)} />
             </Field>
             <Field label="ריבית (אם יש)">
               <CurrencyInput
@@ -308,6 +355,23 @@ function LoanFormDialog({
             </Field>
           </AdaptiveGrid>
 
+          <div className="rounded-md border bg-muted/20 p-3">
+            <RepaymentPlanPicker
+              label={form.direction === "taken" ? "איך אחזיר?" : "איך יחזירו לי?"}
+              state={plan}
+              amount={Math.max((Number(form.amount) || 0) - (loan?.repaidPrincipal ?? 0), 0)}
+              onChange={(next) => {
+                setPlan(next);
+                setPlanDirty(true);
+              }}
+            />
+            {loan && loan.paidRepayments.length > 0 ? (
+              <div className="mt-2 text-xs text-muted-foreground">
+                שינוי כאן מחליף רק את התשלומים שעדיין לא שולמו.
+              </div>
+            ) : null}
+          </div>
+
           <Field label="הערות">
             <textarea
               className="min-h-[72px] w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
@@ -347,6 +411,9 @@ function RepaymentsDialog({
   const [accountId, setAccountId] = useState("");
   const [accountsList, setAccountsList] = useState<Account[]>([]);
   const [notes, setNotes] = useState("");
+  // Recording a repayment that isn't one of the planned payments — the exception,
+  // so it stays folded away.
+  const [adHocOpen, setAdHocOpen] = useState(false);
 
   function add() {
     if (!loan) return;
@@ -439,57 +506,6 @@ function RepaymentsDialog({
 
             <InstallmentPlanSection loan={loan} />
 
-            <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-              <div className="text-sm font-semibold">רישום החזר מיידי</div>
-              <AdaptiveGrid variant="formTwo">
-                <Field label="תאריך">
-                  <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-                </Field>
-                <Field label="סכום">
-                  <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} />
-                </Field>
-                <Field label="מתוכו ריבית (אם יש)">
-                  <CurrencyInput value={interest} onChange={(e) => setInterest(e.target.value)} />
-                </Field>
-                <Field label="אופן">
-                  <select
-                    className={SELECT_CLASS}
-                    value={method}
-                    onChange={(e) => {
-                      const m = e.target.value;
-                      setMethod(m);
-                      setAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
-                    }}
-                  >
-                    {METHOD_OPTIONS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <AccountSelect
-                  required
-                  value={accountId}
-                  onChange={setAccountId}
-                  onLoaded={(list) => {
-                    setAccountsList(list);
-                    setAccountId((prev) => prev || defaultAccountForMethod(list, method));
-                  }}
-                />
-              </AdaptiveGrid>
-              <Input
-                placeholder="הערה (לא חובה)"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-              <div className="flex justify-end">
-                <Button type="button" onClick={add} disabled={pending}>
-                  {pending ? "רושם..." : "הוסף החזר"}
-                </Button>
-              </div>
-            </div>
-
             <div className="space-y-2">
               <div className="text-sm font-semibold">היסטוריית החזרים ששולמו</div>
               {loan.paidRepayments.length === 0 ? (
@@ -542,6 +558,71 @@ function RepaymentsDialog({
                     </div>
                   ))
               )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold">רישום החזר שלא נקבע מראש</div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setAdHocOpen((prev) => !prev)}
+                >
+                  {adHocOpen ? "סגירה" : "רישום החזר"}
+                </Button>
+              </div>
+              {adHocOpen ? (
+              <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+                <AdaptiveGrid variant="formTwo">
+                  <Field label="תאריך">
+                    <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                  </Field>
+                  <Field label="סכום">
+                    <CurrencyInput value={amount} onChange={(e) => setAmount(e.target.value)} />
+                  </Field>
+                  <Field label="מתוכו ריבית (אם יש)">
+                    <CurrencyInput value={interest} onChange={(e) => setInterest(e.target.value)} />
+                  </Field>
+                  <Field label="אופן">
+                    <select
+                      className={SELECT_CLASS}
+                      value={method}
+                      onChange={(e) => {
+                        const m = e.target.value;
+                        setMethod(m);
+                        setAccountId((prev) => prev || defaultAccountForMethod(accountsList, m));
+                      }}
+                    >
+                      {METHOD_OPTIONS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <AccountSelect
+                    required
+                    value={accountId}
+                    onChange={setAccountId}
+                    onLoaded={(list) => {
+                      setAccountsList(list);
+                      setAccountId((prev) => prev || defaultAccountForMethod(list, method));
+                    }}
+                  />
+                </AdaptiveGrid>
+                <Input
+                  placeholder="הערה (לא חובה)"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+                <div className="flex justify-end">
+                  <Button type="button" onClick={add} disabled={pending}>
+                    {pending ? "רושם..." : "הוסף החזר"}
+                  </Button>
+                </div>
+              </div>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -794,18 +875,6 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
     });
   }
 
-  function toggleWrittenOff(loan: Loan) {
-    startTransition(async () => {
-      const res = await setLoanWrittenOff(loan.id, loan.derivedStatus !== "written_off");
-      if (res.ok) {
-        toast.success(loan.derivedStatus !== "written_off" ? "ההלוואה סומנה כנמחקת." : "הסימון בוטל.");
-        router.refresh();
-      } else {
-        toast.error(res.error);
-      }
-    });
-  }
-
   const filters: Array<{ key: "all" | "taken" | "given"; label: string }> = [
     { key: "all", label: "הכל" },
     { key: "taken", label: "שלקחתי" },
@@ -952,17 +1021,6 @@ export default function LoansClient({ loans, summary }: { loans: Loan[]; summary
                     <Button type="button" variant="secondary" size="sm" onClick={() => openEdit(loan)}>
                       <Pencil className="h-4 w-4" />
                       עריכה
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="icon-sm"
-                      onClick={() => toggleWrittenOff(loan)}
-                      disabled={pending}
-                      aria-label="סמן כנמחקת"
-                      title={loan.derivedStatus === "written_off" ? "בטל מחיקה" : "סמן כנמחקת (מחילה)"}
-                    >
-                      <Ban className="h-4 w-4" />
                     </Button>
                     <Button
                       type="button"

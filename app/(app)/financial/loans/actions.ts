@@ -124,17 +124,46 @@ function loanFields(input: LoanInput) {
   };
 }
 
-export async function createLoan(input: LoanInput): Promise<ActionResult> {
+/**
+ * Create the loan together with how it will be paid back. `installments` is the
+ * repayment plan chosen on the form: one row for "בתשלום אחד", several for
+ * "בכמה תשלומים", an empty list for "no plan yet".
+ */
+export async function createLoan(
+  input: LoanInput,
+  installments?: InstallmentInput[]
+): Promise<ActionResult> {
   try {
     const ctx = await getAdminContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
     if (!input.loan_date) return { ok: false, error: "חובה לבחור תאריך הלוואה." };
     if (!(input.amount > 0)) return { ok: false, error: "חובה להזין סכום הלוואה." };
+    if (installments?.length) {
+      const invalid = validateInstallments(installments);
+      if (invalid) return { ok: false, error: invalid };
+    }
 
-    const { error } = await ctx.supabase
+    const { data, error } = await ctx.supabase
       .from("loans")
-      .insert({ ...loanFields(input), created_by: ctx.profile.id });
+      .insert({ ...loanFields(input), created_by: ctx.profile.id })
+      .select("id")
+      .single();
     if (error) return { ok: false, error: toHebrewError(error.message) };
+
+    const loanId = (data as { id?: string } | null)?.id ?? "";
+    if (loanId && installments?.length) {
+      const planError = await replacePlannedInstallments(
+        ctx.supabase,
+        loanId,
+        installments,
+        ctx.profile.id
+      );
+      // The loan itself is saved — report the plan failure without losing it.
+      if (planError) {
+        revalidateLoans();
+        return { ok: false, error: `ההלוואה נשמרה, אך תוכנית ההחזרים נכשלה: ${planError}` };
+      }
+    }
     revalidateLoans();
     return { ok: true };
   } catch (error) {
@@ -142,19 +171,42 @@ export async function createLoan(input: LoanInput): Promise<ActionResult> {
   }
 }
 
-export async function updateLoan(id: string, input: LoanInput): Promise<ActionResult> {
+/**
+ * Update the loan. Pass `installments` only when the repayment plan was actually
+ * edited — it REPLACES the loan's planned installments (paid ones are untouched);
+ * an empty array clears the plan. Omit it to leave the plan alone.
+ */
+export async function updateLoan(
+  id: string,
+  input: LoanInput,
+  installments?: InstallmentInput[]
+): Promise<ActionResult> {
   try {
     const ctx = await getAdminContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
     if (!id) return { ok: false, error: "חסר מזהה הלוואה." };
     if (!input.loan_date) return { ok: false, error: "חובה לבחור תאריך הלוואה." };
     if (!(input.amount > 0)) return { ok: false, error: "חובה להזין סכום הלוואה." };
+    if (installments?.length) {
+      const invalid = validateInstallments(installments);
+      if (invalid) return { ok: false, error: invalid };
+    }
 
     const { error } = await ctx.supabase
       .from("loans")
       .update({ ...loanFields(input), updated_at: new Date().toISOString() })
       .eq("id", id);
     if (error) return { ok: false, error: toHebrewError(error.message) };
+
+    if (installments) {
+      const planError = await replacePlannedInstallments(
+        ctx.supabase,
+        id,
+        installments,
+        ctx.profile.id
+      );
+      if (planError) return { ok: false, error: planError };
+    }
     await syncLoanStatus(ctx.supabase, id);
     revalidateLoans();
     return { ok: true };
@@ -174,29 +226,6 @@ export async function deleteLoan(id: string): Promise<ActionResult> {
     return { ok: true };
   } catch (error) {
     return { ok: false, error: toHebrewError(error, "שגיאה במחיקת ההלוואה.") };
-  }
-}
-
-export async function setLoanWrittenOff(id: string, writtenOff: boolean): Promise<ActionResult> {
-  try {
-    const ctx = await getAdminContext();
-    if (!ctx.ok) return { ok: false, error: ctx.error };
-    if (!id) return { ok: false, error: "חסר מזהה הלוואה." };
-    if (writtenOff) {
-      const { error } = await ctx.supabase
-        .from("loans")
-        .update({ status: "written_off" })
-        .eq("id", id);
-      if (error) return { ok: false, error: toHebrewError(error.message) };
-    } else {
-      // Un-write-off: recompute from repayments.
-      await ctx.supabase.from("loans").update({ status: "active" }).eq("id", id);
-      await syncLoanStatus(ctx.supabase, id);
-    }
-    revalidateLoans();
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: toHebrewError(error, "שגיאה בעדכון הסטטוס.") };
   }
 }
 
@@ -254,58 +283,70 @@ function validateInstallments(installments: InstallmentInput[]) {
 }
 
 /**
- * Save a repayment plan for a loan. `replaceExisting` wipes the loan's current
- * PLANNED installments first (paid repayments are never touched) so re-planning
- * a loan is one atomic-feeling action instead of a manual cleanup.
+ * Replace a loan's PLANNED installments with `installments` (paid repayments are
+ * never touched). An empty list just clears the plan. Returns a Hebrew error
+ * string on failure, or null on success.
+ */
+async function replacePlannedInstallments(
+  supabase: Awaited<ReturnType<typeof requireProfile>>["supabase"],
+  loanId: string,
+  installments: InstallmentInput[],
+  userId: string
+): Promise<string | null> {
+  const { error: delError } = await supabase
+    .from("loan_repayments")
+    .delete()
+    .eq("loan_id", loanId)
+    .eq("status", "planned");
+  if (delError) {
+    return installmentSchemaError(delError.message) ?? toHebrewError(delError.message);
+  }
+  if (installments.length === 0) return null;
+
+  const ordered = installments
+    .slice()
+    .sort((a, b) => a.repayment_date.localeCompare(b.repayment_date));
+  const { error } = await supabase.from("loan_repayments").insert(
+    ordered.map((row, index) => ({
+      loan_id: loanId,
+      repayment_date: row.repayment_date,
+      amount: Number(row.amount),
+      interest_amount: Number(row.interest_amount) || 0,
+      status: "planned",
+      installment_index: index + 1,
+      installment_count: ordered.length,
+      notes: clean(row.notes),
+      created_by: userId,
+    }))
+  );
+  if (error) return installmentSchemaError(error.message) ?? toHebrewError(error.message);
+  return null;
+}
+
+/**
+ * Save (replace) a loan's repayment plan on its own — used by the plan section
+ * inside the repayments dialog. An empty list clears the plan.
  */
 export async function saveInstallmentPlan(
   loanId: string,
-  installments: InstallmentInput[],
-  replaceExisting = true
+  installments: InstallmentInput[]
 ): Promise<ActionResult> {
   try {
     const ctx = await getAdminContext();
     if (!ctx.ok) return { ok: false, error: ctx.error };
     if (!loanId) return { ok: false, error: "חסר מזהה הלוואה." };
-    const invalid = validateInstallments(installments);
-    if (invalid) return { ok: false, error: invalid };
-
-    if (replaceExisting) {
-      const { error: delError } = await ctx.supabase
-        .from("loan_repayments")
-        .delete()
-        .eq("loan_id", loanId)
-        .eq("status", "planned");
-      if (delError) {
-        return {
-          ok: false,
-          error: installmentSchemaError(delError.message) ?? toHebrewError(delError.message),
-        };
-      }
+    if (installments.length > 0) {
+      const invalid = validateInstallments(installments);
+      if (invalid) return { ok: false, error: invalid };
     }
 
-    const ordered = installments
-      .slice()
-      .sort((a, b) => a.repayment_date.localeCompare(b.repayment_date));
-    const { error } = await ctx.supabase.from("loan_repayments").insert(
-      ordered.map((row, index) => ({
-        loan_id: loanId,
-        repayment_date: row.repayment_date,
-        amount: Number(row.amount),
-        interest_amount: Number(row.interest_amount) || 0,
-        status: "planned",
-        installment_index: index + 1,
-        installment_count: ordered.length,
-        notes: clean(row.notes),
-        created_by: ctx.profile.id,
-      }))
+    const planError = await replacePlannedInstallments(
+      ctx.supabase,
+      loanId,
+      installments,
+      ctx.profile.id
     );
-    if (error) {
-      return {
-        ok: false,
-        error: installmentSchemaError(error.message) ?? toHebrewError(error.message),
-      };
-    }
+    if (planError) return { ok: false, error: planError };
     await syncLoanStatus(ctx.supabase, loanId);
     revalidateLoans();
     return { ok: true };

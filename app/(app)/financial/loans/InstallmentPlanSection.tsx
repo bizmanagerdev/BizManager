@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarClock, Check, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Check, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -18,132 +18,72 @@ import {
 } from "@/components/ui/dialog";
 import { AdaptiveDialog, AdaptiveGrid } from "@/components/layout/page-layout";
 import { getStatusColorClasses } from "@/lib/ui/status-color-classes";
-import {
-  buildInstallmentSchedule,
-  type Loan,
-  type LoanRepayment,
-} from "@/lib/loans";
-import {
-  deleteRepayment,
-  markInstallmentPaid,
-  saveInstallmentPlan,
-  updateInstallment,
-} from "./actions";
+import { type Loan, type LoanRepayment } from "@/lib/loans";
+import { deleteRepayment, markInstallmentPaid, saveInstallmentPlan, updateInstallment } from "./actions";
+import RepaymentPlanPicker, {
+  planRows,
+  planStateFromInstallments,
+  type RepaymentPlanState,
+} from "./RepaymentPlanPicker";
 import { Field, METHOD_OPTIONS, SELECT_CLASS, formatDate, formatIls, todayIso } from "./shared";
 
 // ════════════════════════════════════════════════════════════════════════════
-// תוכנית החזרים — split a loan into installments (5 × ₪20,000 on five dates),
-// then tick them off one by one. A planned installment is a future obligation:
-// it shows on the payments calendar and in the cash forecast, but only becomes
-// real money — and only then lowers the outstanding balance — once it's paid.
+// The repayment schedule of one loan, inside the החזרים dialog: the list of
+// payments still due (each with שולם / edit / delete) plus the same one-payment /
+// several-payments picker used on the loan form.
 // ════════════════════════════════════════════════════════════════════════════
-
-type PlanRow = { date: string; amount: string };
-
-const INTERVALS = [
-  { value: "m1", label: "כל חודש" },
-  { value: "m2", label: "כל חודשיים" },
-  { value: "m3", label: "כל 3 חודשים" },
-  { value: "m6", label: "כל חצי שנה" },
-  { value: "m12", label: "כל שנה" },
-  { value: "w1", label: "כל שבוע" },
-  { value: "w2", label: "כל שבועיים" },
-];
-
-type BuilderState = { total: string; count: string; firstDate: string; interval: string };
-
-function generateRows(state: BuilderState): PlanRow[] {
-  const isWeeks = state.interval.startsWith("w");
-  const step = Number(state.interval.slice(1)) || 1;
-  return buildInstallmentSchedule({
-    total: Number(state.total) || 0,
-    count: Number(state.count) || 0,
-    firstDate: state.firstDate,
-    intervalMonths: isWeeks ? 1 : step,
-    intervalDays: isWeeks ? step * 7 : 0,
-  }).map((row) => ({ date: row.date, amount: String(row.amount) }));
-}
-
-function sumRows(rows: PlanRow[]) {
-  return rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-}
 
 export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const today = todayIso();
 
-  const [builderOpen, setBuilderOpen] = useState(false);
-  const [builder, setBuilder] = useState<BuilderState>(() => ({
-    total: String(Math.round(loan.outstanding)),
-    count: "3",
-    firstDate: loan.due_date && loan.due_date >= today ? loan.due_date : today,
-    interval: "m1",
-  }));
-  const [rows, setRows] = useState<PlanRow[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [plan, setPlan] = useState<RepaymentPlanState>(() =>
+    planStateFromInstallments(loan.plannedInstallments, {
+      amount: loan.outstanding,
+      dueDate: loan.due_date,
+    })
+  );
 
   const [payTarget, setPayTarget] = useState<LoanRepayment | null>(null);
   const [editTarget, setEditTarget] = useState<LoanRepayment | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<LoanRepayment | null>(null);
 
   const planned = loan.plannedInstallments;
-  const overdueCount = useMemo(
-    () => planned.filter((i) => i.repayment_date < today).length,
-    [planned, today]
-  );
-  const rowsTotal = sumRows(rows);
-  const outstandingGap = Math.round(loan.outstanding - rowsTotal);
+  const overdueCount = planned.filter((i) => i.repayment_date < today).length;
 
-  function openBuilder() {
-    const next: BuilderState = {
-      total: String(Math.round(loan.outstanding)),
-      count: builder.count,
-      firstDate: loan.due_date && loan.due_date >= today ? loan.due_date : today,
-      interval: builder.interval,
-    };
-    setBuilder(next);
-    setRows(generateRows(next));
-    setBuilderOpen(true);
-  }
-
-  // Every builder field regenerates the preview immediately — no effect needed.
-  function setParam(key: keyof BuilderState, value: string) {
-    const next = { ...builder, [key]: value };
-    setBuilder(next);
-    setRows(generateRows(next));
-  }
-
-  function setRowField(index: number, key: keyof PlanRow, value: string) {
-    setRows((prev) => prev.map((row, i) => (i === index ? { ...row, [key]: value } : row)));
-  }
-
-  function addRow() {
-    setRows((prev) => {
-      const last = prev[prev.length - 1];
-      return [...prev, { date: last?.date ?? builder.firstDate, amount: last?.amount ?? "" }];
-    });
+  function openEditor() {
+    setPlan(
+      planStateFromInstallments(loan.plannedInstallments, {
+        amount: loan.outstanding,
+        dueDate: loan.due_date,
+      })
+    );
+    setEditing(true);
   }
 
   function savePlan() {
-    const cleaned = rows.filter((row) => row.date && Number(row.amount) > 0);
-    if (cleaned.length === 0) {
-      toast.error("יש להזין לפחות תשלום אחד עם תאריך וסכום.");
+    const rows = planRows(plan, loan.outstanding).filter(
+      (row) => row.date && Number(row.amount) > 0
+    );
+    if (rows.length === 0) {
+      toast.error("יש לבחור תאריך לכל תשלום.");
       return;
     }
     startTransition(async () => {
       const res = await saveInstallmentPlan(
         loan.id,
-        cleaned.map((row) => ({
+        rows.map((row) => ({
           repayment_date: row.date,
           amount: Number(row.amount),
           interest_amount: 0,
           notes: "",
-        })),
-        true
+        }))
       );
       if (res.ok) {
-        toast.success("תוכנית ההחזרים נשמרה.");
-        setBuilderOpen(false);
+        toast.success("התשלומים נשמרו.");
+        setEditing(false);
         router.refresh();
       } else {
         toast.error(res.error);
@@ -157,7 +97,7 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
     startTransition(async () => {
       const res = await deleteRepayment(target.id, loan.id);
       if (res.ok) {
-        toast.success("התשלום נמחק מהתוכנית.");
+        toast.success("התשלום נמחק.");
         setDeleteTarget(null);
         router.refresh();
       } else {
@@ -169,159 +109,63 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
   return (
     <div className="space-y-3 rounded-md border bg-muted/20 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <CalendarClock className="h-4 w-4" />
-          תוכנית החזרים
+        <div className="text-sm font-semibold">
+          תשלומים לתשלום
           {planned.length > 0 ? (
-            <span className="text-xs font-normal text-muted-foreground">
-              {planned.length} תשלומים · {formatIls(loan.scheduledTotal)}
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              — {planned.length} תשלומים, {formatIls(loan.scheduledTotal)}
             </span>
           ) : null}
         </div>
-        <Button type="button" variant="secondary" size="sm" onClick={openBuilder} disabled={pending}>
-          {planned.length > 0 ? <RotateCcw className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {planned.length > 0 ? "בנה תוכנית מחדש" : "בנה תוכנית"}
-        </Button>
+        {!editing ? (
+          <Button type="button" variant="secondary" size="sm" onClick={openEditor} disabled={pending}>
+            <Pencil className="h-4 w-4" />
+            {planned.length > 0 ? "שינוי התשלומים" : "קביעת תשלומים"}
+          </Button>
+        ) : null}
       </div>
 
-      {planned.length === 0 && !builderOpen ? (
-        <div className="text-sm text-muted-foreground">
-          אין עדיין תוכנית. אפשר לפרוס את היתרה ({formatIls(loan.outstanding)}) לתשלומים בתאריכים
-          קבועים, ואז לסמן כל תשלום כשמשולם.
-        </div>
+      {planned.length === 0 && !editing ? (
+        <div className="text-sm text-muted-foreground">לא נקבעו תאריכי החזר.</div>
       ) : null}
 
-      {/* ── Plan builder ── */}
-      {builderOpen ? (
+      {editing ? (
         <div className="space-y-3 rounded-md border bg-background p-3">
-          <AdaptiveGrid variant="formTwo">
-            <Field label="סכום לפריסה">
-              <CurrencyInput
-                value={builder.total}
-                onChange={(e) => setParam("total", e.target.value)}
-              />
-            </Field>
-            <Field label="מספר תשלומים">
-              <Input
-                inputMode="numeric"
-                value={builder.count}
-                onChange={(e) => setParam("count", e.target.value.replace(/[^\d]/g, ""))}
-              />
-            </Field>
-            <Field label="תאריך התשלום הראשון">
-              <Input
-                type="date"
-                value={builder.firstDate}
-                onChange={(e) => setParam("firstDate", e.target.value)}
-              />
-            </Field>
-            <Field label="כל כמה זמן">
-              <select
-                className={SELECT_CLASS}
-                value={builder.interval}
-                onChange={(e) => setParam("interval", e.target.value)}
-              >
-                {INTERVALS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </AdaptiveGrid>
-
-          <div className="space-y-2">
-            <div className="text-sm font-medium">התשלומים (ניתן לשנות כל תאריך וסכום)</div>
-            {rows.length === 0 ? (
-              <div className="text-sm text-muted-foreground">
-                יש להזין סכום ומספר תשלומים כדי לראות את הפריסה.
-              </div>
-            ) : (
-              rows.map((row, index) => (
-                <div key={index} className="flex flex-wrap items-end gap-2">
-                  <span className="min-w-[5.5rem] pb-3 text-xs text-muted-foreground">
-                    תשלום {index + 1}
-                  </span>
-                  <div className="min-w-[9rem] flex-1">
-                    <Input
-                      type="date"
-                      value={row.date}
-                      onChange={(e) => setRowField(index, "date", e.target.value)}
-                    />
-                  </div>
-                  <div className="min-w-[8rem] flex-1">
-                    <CurrencyInput
-                      value={row.amount}
-                      onChange={(e) => setRowField(index, "amount", e.target.value)}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="destructive-outline"
-                    size="icon-sm"
-                    onClick={() => setRows((prev) => prev.filter((_, i) => i !== index))}
-                    aria-label="הסר תשלום"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))
-            )}
-            <Button type="button" variant="secondary" size="sm" onClick={addRow}>
-              <Plus className="h-4 w-4" />
-              הוסף תשלום
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
-            <span>
-              <span className="text-muted-foreground">סך התוכנית </span>
-              <span className="font-semibold tabular-nums" dir="ltr">
-                {formatIls(rowsTotal)}
-              </span>
-            </span>
-            {Math.abs(outstandingGap) >= 1 ? (
-              <span className={"rounded-md border px-2 py-0.5 text-xs " + getStatusColorClasses("warning")}>
-                {outstandingGap > 0
-                  ? `נשארו ${formatIls(outstandingGap)} ללא תשלום מתוכנן`
-                  : `התוכנית גבוהה ב-${formatIls(Math.abs(outstandingGap))} מהיתרה`}
-              </span>
-            ) : (
-              <span className={"rounded-md border px-2 py-0.5 text-xs " + getStatusColorClasses("success")}>
-                מכסה את מלוא היתרה
-              </span>
-            )}
-          </div>
-
+          <RepaymentPlanPicker
+            label=""
+            state={plan}
+            amount={loan.outstanding}
+            onChange={setPlan}
+          />
           <div className="flex flex-wrap justify-end gap-2">
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setBuilderOpen(false)}
+              onClick={() => setEditing(false)}
               disabled={pending}
             >
               ביטול
             </Button>
             <Button type="button" onClick={savePlan} disabled={pending}>
-              {pending ? "שומר..." : "שמור תוכנית"}
+              {pending ? "שומר..." : "שמירה"}
             </Button>
           </div>
           {planned.length > 0 ? (
             <div className="text-xs text-muted-foreground">
-              שמירה תחליף את התשלומים המתוכננים הקיימים. החזרים שכבר שולמו לא ישתנו.
+              השמירה מחליפה את התשלומים שעדיין לא שולמו.
             </div>
           ) : null}
         </div>
       ) : null}
 
-      {/* ── Planned installments ── */}
       {planned.length > 0 ? (
         <div className="space-y-2">
           {overdueCount > 0 ? (
             <div className={"rounded-md border px-3 py-2 text-sm " + getStatusColorClasses("danger")}>
               {overdueCount === 1
-                ? "תשלום אחד עבר את תאריך היעד ועדיין לא סומן כשולם."
-                : `${overdueCount} תשלומים עברו את תאריך היעד ועדיין לא סומנו כשולמו.`}
+                ? "תשלום אחד עבר את התאריך שנקבע."
+                : `${overdueCount} תשלומים עברו את התאריך שנקבע.`}
             </div>
           ) : null}
           {planned.map((installment) => {
@@ -344,14 +188,13 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
                         תשלום {installment.installment_index} מתוך {installment.installment_count}
                       </span>
                     ) : null}
-                    <span
-                      className={
-                        "rounded-md border px-2 py-0.5 text-xs " +
-                        getStatusColorClasses(overdue ? "danger" : "warning")
-                      }
-                    >
-                      {overdue ? "באיחור" : "מתוכנן"}
-                    </span>
+                    {overdue ? (
+                      <span
+                        className={"rounded-md border px-2 py-0.5 text-xs " + getStatusColorClasses("danger")}
+                      >
+                        באיחור
+                      </span>
+                    ) : null}
                   </div>
                   {installment.notes ? (
                     <div className="text-xs text-muted-foreground">{installment.notes}</div>
@@ -383,7 +226,7 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
                     size="icon-sm"
                     onClick={() => setDeleteTarget(installment)}
                     disabled={pending}
-                    aria-label="מחק תשלום מהתוכנית"
+                    aria-label="מחק תשלום"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -391,22 +234,14 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
               </div>
             );
           })}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted-foreground">
-            <span>
-              נותר בתוכנית{" "}
+          {loan.unscheduledPrincipal > 0.5 ? (
+            <div className="px-1 text-xs text-muted-foreground">
+              ללא תאריך:{" "}
               <span className="font-semibold tabular-nums" dir="ltr">
-                {formatIls(loan.scheduledTotal)}
+                {formatIls(loan.unscheduledPrincipal)}
               </span>
-            </span>
-            {loan.unscheduledPrincipal > 0.5 ? (
-              <span>
-                ללא תשלום מתוכנן{" "}
-                <span className="font-semibold tabular-nums" dir="ltr">
-                  {formatIls(loan.unscheduledPrincipal)}
-                </span>
-              </span>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -423,8 +258,8 @@ export default function InstallmentPlanSection({ loan }: { loan: Loan }) {
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="מחיקת תשלום מהתוכנית"
-        description="התשלום המתוכנן יימחק. אפשר תמיד לבנות תוכנית מחדש."
+        title="מחיקת תשלום"
+        description="התשלום המתוכנן יימחק."
         confirmLabel="מחיקה"
         destructive
         loading={pending}
@@ -500,7 +335,7 @@ function MarkPaidDialog({
         notes: form.notes,
       });
       if (res.ok) {
-        toast.success("התשלום סומן כשולם.");
+        toast.success("התשלום נרשם.");
         onOpenChange(false);
         router.refresh();
       } else {
@@ -513,10 +348,10 @@ function MarkPaidDialog({
     <Dialog open={Boolean(installment)} onOpenChange={onOpenChange}>
       <AdaptiveDialog size="formLg">
         <DialogHeader>
-          <DialogTitle>סימון תשלום כשולם</DialogTitle>
+          <DialogTitle>רישום תשלום</DialogTitle>
           <DialogDescription>
             {installment
-              ? `תשלום מתוכנן ל-${formatDate(installment.repayment_date)} על ${formatIls(installment.amount)}. אפשר לשנות את הסכום והתאריך בפועל.`
+              ? `תשלום שנקבע ל-${formatDate(installment.repayment_date)} על ${formatIls(installment.amount)}. אפשר לשנות את הסכום והתאריך בפועל.`
               : ""}
           </DialogDescription>
         </DialogHeader>
@@ -583,7 +418,7 @@ function MarkPaidDialog({
               ביטול
             </Button>
             <Button type="button" onClick={submit} disabled={pending}>
-              {pending ? "רושם..." : "סמן כשולם"}
+              {pending ? "רושם..." : "רישום התשלום"}
             </Button>
           </div>
         </div>
@@ -649,8 +484,8 @@ function EditInstallmentDialog({
     <Dialog open={Boolean(installment)} onOpenChange={onOpenChange}>
       <AdaptiveDialog size="formMd">
         <DialogHeader>
-          <DialogTitle>עריכת תשלום מתוכנן</DialogTitle>
-          <DialogDescription>שינוי התאריך או הסכום של תשלום בתוכנית.</DialogDescription>
+          <DialogTitle>עריכת תשלום</DialogTitle>
+          <DialogDescription>שינוי התאריך או הסכום של תשלום שטרם שולם.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
