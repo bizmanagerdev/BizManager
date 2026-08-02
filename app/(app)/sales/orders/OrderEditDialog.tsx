@@ -142,19 +142,28 @@ export default function OrderEditDialog({
           {buttonLabel}
         </Button>
       )}
-      <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-5xl overflow-y-auto p-4 sm:p-6">
-        <DialogHeader>
+      {/* Once the wizard is up it owns the frame: pinned step bar (with its own
+          close button, hence hideClose), scrolling middle, pinned action bar.
+          While loading there's no wizard yet, so the dialog keeps its own X. */}
+      <DialogContent
+        hideClose={Boolean(data)}
+        className="flex max-h-[92svh] w-[calc(100vw-1rem)] max-w-5xl flex-col gap-0 overflow-y-hidden p-0 sm:p-0"
+      >
+        {/* Visible only before the wizard mounts — it renders its own step heading. */}
+        <DialogHeader className={data ? "sr-only" : "p-4 pb-0 sm:p-6 sm:pb-0"}>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         {loading ? (
-          <LoadingDots
-            label="טוען נתוני עריכה"
-            description="מכין את פרטי הלקוח, המוצרים והתשלומים לעריכה."
-          />
+          <div className="p-4 sm:p-6">
+            <LoadingDots
+              label="טוען נתוני עריכה"
+              description="מכין את פרטי הלקוח, המוצרים והתשלומים לעריכה."
+            />
+          </div>
         ) : null}
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error ? <p className="p-4 text-sm text-destructive sm:p-6">{error}</p> : null}
 
         {data ? (
           <NewOrderClient

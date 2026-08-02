@@ -604,8 +604,10 @@ export default function DashboardActions({
           setOrderOpen(open);
         }}
       >
-        <AdaptiveDialog size="newOrder">
-          <DialogHeader>
+        <AdaptiveDialog size="newOrder" hideClose className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0">
+          {/* Title/description kept for screen readers only — the wizard renders its
+              own visible per-step heading, so showing them here would duplicate it. */}
+          <DialogHeader className="sr-only">
             <DialogTitle>{HEBREW.orderNew}</DialogTitle>
             <DialogDescription>{HEBREW.orderDialogDescription}</DialogDescription>
           </DialogHeader>

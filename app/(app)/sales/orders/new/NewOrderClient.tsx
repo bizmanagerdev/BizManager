@@ -158,8 +158,16 @@ export default function NewOrderClient({
 
   const [step, setStep] = useState<Step>(1);
   const topRef = useRef<HTMLDivElement>(null);
+  // Embedded (dialog) mode is a fixed-height column: the step bar and the action
+  // bar are pinned and only this middle section scrolls, so a step change resets
+  // *it* rather than the dialog/page.
+  const bodyRef = useRef<HTMLDivElement>(null);
   const customerDetailRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    if (embedded) {
+      bodyRef.current?.scrollTo({ top: 0 });
+      return;
+    }
     const el = topRef.current;
     if (!el) return;
     const scrollable = el.closest<HTMLElement>('[role="dialog"]') ?? null;
@@ -168,7 +176,7 @@ export default function NewOrderClient({
     } else {
       window.scrollTo({ top: 0 });
     }
-  }, [step]);
+  }, [step, embedded]);
   const [customerId, setCustomerId] = useState(initialOrder?.customer_id ?? "");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerTab, setCustomerTab] = useState<"existing" | "new">("existing");
@@ -864,7 +872,17 @@ export default function NewOrderClient({
   }
 
   return (
-    <div ref={topRef} className={cn("flex flex-col gap-5", !embedded && "pb-28 md:pb-0")}>
+    <div
+      ref={topRef}
+      className={cn(
+        embedded
+          // Dialog: a fixed-height column — pinned step bar on top, pinned action
+          // bar at the bottom, and only the middle scrolls (same shape as the
+          // new-project wizard).
+          ? "flex min-h-0 flex-1 flex-col"
+          : "flex flex-col gap-5 pb-28 md:pb-0"
+      )}
+    >
       <ConfirmDialog
         open={prepaymentConfirmOpen}
         onOpenChange={setPrepaymentConfirmOpen}
@@ -879,19 +897,42 @@ export default function NewOrderClient({
           void submitOrder(true);
         }}
       />
+      {/* Step bar. Embedded: pinned to the top of the dialog, carrying the close
+          button (the dialog's own X is hidden so there's only one). Standalone:
+          a flush full-width bar on mobile, a pinned rounded card on md+. */}
       <div
         className={cn(
-          // Mobile: a flush, full-width bar that scrolls WITH the page (not pinned),
-          // so content never tucks under it. md+: a pinned rounded card.
-          "z-20 border-border/70 bg-background px-3 py-2.5 sm:px-4",
+          "z-20 border-border/70 bg-background",
           embedded
-            ? "sticky top-0 mb-1 rounded-2xl border shadow-lg"
-            : "-mx-4 -mt-4 mb-1 border-b shadow-[0_2px_12px_rgb(0_0_0_/_0.06)] md:sticky md:top-16 md:mx-0 md:rounded-2xl md:border md:shadow-lg md:-mt-6 lg:-mt-8"
+            ? "flex shrink-0 items-center gap-2 border-b px-4 py-2.5 sm:px-6"
+            : "-mx-4 -mt-4 mb-1 border-b px-3 py-2.5 shadow-[0_2px_12px_rgb(0_0_0_/_0.06)] sm:px-4 md:sticky md:top-16 md:-mt-6 md:mx-0 md:rounded-2xl md:border md:shadow-lg lg:-mt-8"
         )}
       >
-        <WizardStepper current={step} canClick={canClickStep} onStepClick={goToStep} />
+        <div className={cn(embedded && "min-w-0 flex-1")}>
+          <WizardStepper current={step} canClick={canClickStep} onStepClick={goToStep} />
+        </div>
+        {embedded ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={actionLocked}
+            aria-label="סגירה"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        ) : null}
       </div>
 
+      {/* Scrollable body. Embedded: the only scrolling area, so the bars stay put.
+          Standalone: `contents` dissolves this wrapper so the page keeps its
+          existing single-column flow. */}
+      <div
+        ref={bodyRef}
+        className={cn(
+          embedded ? "min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6" : "contents"
+        )}
+      >
       <div>
         <h2 className="text-lg font-semibold text-foreground sm:text-xl">{heading.title}</h2>
         {/* Subtitle is guidance only — hidden on mobile to free vertical room. */}
@@ -1953,15 +1994,17 @@ export default function NewOrderClient({
 
       {/* Inline submit error for steps before review */}
       {submitError && step !== 4 ? <p className="text-sm text-destructive">{submitError}</p> : null}
+      </div>
 
       {/* ---------------------------------------------------------------- FOOTER */}
       <div className={cn(
-        // Action bar. On mobile it's an edge-to-edge bar flush above the bottom
-        // nav (no floating card overlapping content); a rounded card on md+.
-        "border-border/70 bg-background/95 px-3 py-3 backdrop-blur sm:px-4",
+        // Action bar. Embedded: pinned to the bottom of the dialog. Standalone:
+        // an edge-to-edge bar flush above the bottom nav on mobile (no floating
+        // card overlapping content); a rounded card on md+.
+        "border-border/70 bg-background/95 backdrop-blur",
         embedded
-          ? "sticky bottom-0 z-10 mt-1 rounded-2xl border shadow-lg"
-          : "fixed inset-x-0 bottom-[58px] z-40 border-t shadow-[0_-2px_12px_rgb(0_0_0_/_0.06)] md:sticky md:inset-x-auto md:bottom-0 md:z-10 md:mt-1 md:rounded-2xl md:border md:shadow-lg"
+          ? "shrink-0 border-t px-4 py-3 sm:px-6"
+          : "fixed inset-x-0 bottom-[58px] z-40 border-t px-3 py-3 shadow-[0_-2px_12px_rgb(0_0_0_/_0.06)] sm:px-4 md:sticky md:inset-x-auto md:bottom-0 md:z-10 md:mt-1 md:rounded-2xl md:border md:shadow-lg"
       )}>
         {/* Wraps when cramped: total drops to its own row above the buttons on
             narrow screens (me-auto on the back button keeps cancel⇄next spread),

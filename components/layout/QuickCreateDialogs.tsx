@@ -143,8 +143,9 @@ export default function QuickCreateDialogs({
           if (!open) onClose();
         }}
       >
-        <AdaptiveDialog size="newOrder">
-          <DialogHeader>
+        <AdaptiveDialog size="newOrder" hideClose className="flex flex-col gap-0 overflow-y-hidden p-0 sm:p-0">
+          {/* Screen-reader only: the wizard renders its own visible step heading. */}
+          <DialogHeader className="sr-only">
             <DialogTitle>{HEBREW.orderNew}</DialogTitle>
             <DialogDescription>{HEBREW.orderDialogDescription}</DialogDescription>
           </DialogHeader>
