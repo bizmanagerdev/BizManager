@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Pencil, Search, Sparkles, User, UserPlus, X } from "lucide-react";
+import { Check, CreditCard, FileText, Pencil, Search, Sparkles, User, UserPlus, X } from "lucide-react";
 import { StepWizard } from "@/components/ui/step-wizard";
 import { SummaryRow, SummarySection } from "@/components/ui/summary";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -1073,7 +1073,7 @@ export default function NewProjectClient({
             <SummaryRow label="טלפון" value={pickedCustomer?.phone ?? ""} />
           </SummarySection>
 
-          <SummarySection title="פרטי הפרויקט" onEdit={() => goToStep(2)} editDisabled={actionLocked}>
+          <SummarySection icon={<FileText className="h-4 w-4" />} title="פרטי הפרויקט" onEdit={() => goToStep(2)} editDisabled={actionLocked}>
             <SummaryRow label="שם הפרויקט" value={name.trim()} />
             <SummaryRow label="סוג" value={projectTypeLabel(projectType)} />
             <SummaryRow label="סטטוס" value={statusLabel(status)} />
@@ -1082,7 +1082,7 @@ export default function NewProjectClient({
             {notes.trim() ? <SummaryRow label="הערות" value={notes.trim()} /> : null}
           </SummarySection>
 
-          <SummarySection title="תשלום וחיוב" onEdit={() => goToStep(3)} editDisabled={actionLocked}>
+          <SummarySection icon={<CreditCard className="h-4 w-4" />} title="תשלום וחיוב" onEdit={() => goToStep(3)} editDisabled={actionLocked}>
             <SummaryRow
               label="מחיר מוסכם"
               value={noCharge ? "ללא חיוב" : agreedBasePrice ? `₪${agreedBasePrice}` : ""}

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { invalidateCustomerSearchIndex } from "@/hooks/useCustomerSearchIndex";
-import { Plus, Sparkles, UserRound, Users } from "lucide-react";
+import { CreditCard, Plus, Sparkles, User, Users } from "lucide-react";
 import { AdaptiveGrid } from "@/components/layout/page-layout";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -746,7 +746,7 @@ export function CreateCustomerDialog({
                   </span>
                 </div>
 
-                <SummarySection icon={<UserRound className="h-4 w-4" />} title="פרטי הלקוח" onEdit={() => goToStep(1)} editDisabled={submitting}>
+                <SummarySection icon={<User className="h-4 w-4" />} title="פרטי הלקוח" onEdit={() => goToStep(1)} editDisabled={submitting}>
                   <SummaryRow label="שם לקוח" value={name.trim()} />
                   <SummaryRow label="טלפון" value={phone.trim()} />
                   <SummaryRow label="וואטסאפ" value={whatsapp.trim()} />
@@ -754,7 +754,7 @@ export function CreateCustomerDialog({
                   <SummaryRow label="עיר" value={finalCity} />
                 </SummarySection>
 
-                <SummarySection title="חיוב וכתובת" onEdit={() => goToStep(2)} editDisabled={submitting}>
+                <SummarySection icon={<CreditCard className="h-4 w-4" />} title="חיוב וכתובת" onEdit={() => goToStep(2)} editDisabled={submitting}>
                   <SummaryRow label="שם לחשבונית" value={nameForInvoice.trim()} />
                   <SummaryRow label="ח.פ / ת.ז" value={regNumber.trim()} />
                   <SummaryRow label="כתובת" value={address.trim()} />

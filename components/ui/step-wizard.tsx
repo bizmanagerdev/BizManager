@@ -204,8 +204,17 @@ export function StepWizard<TStep extends number>({
   // has no dialog edges to sit against.
   const stepNumber = Math.max(1, steps.findIndex((s) => s.n === current) + 1);
   const nextStep = steps[stepNumber];
+  // On a phone the full "המשך לתשלום ופרטים" pushed the action bar onto three
+  // rows, so the auto label keeps only "המשך" there — the stepper above already
+  // shows which step is next. An explicit nextLabel is always shown in full.
+  const autoNextLabel = nextStep ? `המשך ל${nextStep.label}` : "";
   const resolvedNextLabel =
-    nextLabel ?? (nextStep ? `המשך ל${nextStep.label}` : "");
+    nextLabel ?? (
+      <>
+        <span className="hidden sm:inline">{autoNextLabel}</span>
+        <span className="sm:hidden">המשך</span>
+      </>
+    );
   const headerContent = (
     <div className="min-w-0 flex-1 space-y-2">
       {title}

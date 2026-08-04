@@ -1905,14 +1905,17 @@ export default function NewOrderClient({
           </div>
 
           <div className="space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
-            {/* Order details — editable inline here, sensible defaults */}
-            <div className="space-y-3 rounded-xl border border-border/70 bg-background p-3">
-              <div className="space-y-1">
-                <h3 className="flex items-center gap-2 text-base font-semibold">
-                  <FileText className="h-5 w-5 text-primary" /> פרטי הזמנה
-                </h3>
+            {/* Not a SummarySection: these fields are editable right here, so
+                there is nothing to send you back a step for. Same heading and
+                same bordered box as the summary sections beside it. */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <span className="text-muted-foreground">
+                  <FileText className="h-4 w-4" />
+                </span>
+                פרטי הזמנה
               </div>
-              <div className="space-y-3">
+              <div className="space-y-3 rounded-xl border p-3">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <label className="text-sm font-medium">תאריך הזמנה *</label>
